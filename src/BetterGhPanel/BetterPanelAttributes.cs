@@ -23,14 +23,11 @@ namespace BetterGhPanel
         private static readonly Color Muted = Color.FromArgb(120, 127, 123);
         private static readonly Color Accent = Color.FromArgb(77, 115, 94);
         private RectangleF _panel, _search, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _inspect, _footer;
-        private RectangleF _menuRect;
         private readonly List<RowHit> _rowHits = new List<RowHit>();
-        private int _offset, _shown, _selectedPosition = -1, _menuOffset;
+        private int _offset, _shown, _selectedPosition = -1;
         private PanelQueryResult? _lastResult;
         private PanelSnapshot? _selectedSnapshot;
-        private PanelSnapshot? _menuSnapshot;
-        private string[] _types = Array.Empty<string>();
-        private MenuKind _menu;
+        private readonly CanvasMenu _menu = new CanvasMenu();
         private bool _resizing, _scrolling;
         private PointF _dragStart;
         private float _startWidth, _startHeight, _thumbGrab;
@@ -92,9 +89,9 @@ namespace BetterGhPanel
                 if (_selectedPosition >= 0 && (_selectedSnapshot != result.Snapshot || !result.RowIds.Contains(_selectedPosition))) _selectedPosition = -1;
                 _lastResult = result;
                 _offset = 0;
-                _menu = MenuKind.None;
+                _menu.Close();
             }
-            if (_menuSnapshot != session.Snapshot) _menu = MenuKind.None;
+            if (!_menu.IsCurrent(session.Snapshot)) _menu.Close();
             // Layout is measured in canvas units. Pixel fonts follow the canvas
             // transform without adding the display DPI a second time.
             using (var font = new Font("Arial", 11f, FontStyle.Regular, GraphicsUnit.Pixel))
@@ -121,14 +118,14 @@ namespace BetterGhPanel
                     Control(graphics, _reset, "Reset", small, trim, false);
                     RenderRows(graphics, result, font, small, bold, mono, trim);
                     RenderFooter(graphics, result, small, mono, trim);
-                    if (_menu != MenuKind.None) RenderMenu(graphics, small, mono, trim);
+                    if (_menu.Kind != CanvasMenuKind.None) RenderMenu(graphics, small, mono, trim);
                     using (var gripPen = new Pen(Color.FromArgb(165, 173, 166), 1))
                     {
                         graphics.DrawLine(gripPen, _panel.Right - 10, _panel.Bottom - 4, _panel.Right - 4, _panel.Bottom - 10);
                         graphics.DrawLine(gripPen, _panel.Right - 6, _panel.Bottom - 4, _panel.Right - 4, _panel.Bottom - 6);
                     }
                 }
-                else { _rowHits.Clear(); _menu = MenuKind.None; }
+                else { _rowHits.Clear(); _menu.Close(); }
                 using (var border = new Pen(Selected ? Accent : Color.FromArgb(164, 171, 164), Selected ? 1.5f : 1))
                     graphics.DrawRectangle(border, _panel.X, _panel.Y, _panel.Width, _panel.Height);
                 foreach (var parameter in Owner.Params.Input)
@@ -216,59 +213,30 @@ namespace BetterGhPanel
             canvas.Invalidate();
         }
 
-        private void LayoutMenu()
-        {
-            if (_menu == MenuKind.None) return;
-            var anchor = _menu == MenuKind.Type ? _type : _menu == MenuKind.Sort ? _sort : _branch;
-            float width = Math.Min(_panel.Width - 18, _menu == MenuKind.Sort ? 145 : 235);
-            int visible = Math.Max(2, Math.Min(8, (int)((_panel.Bottom - 9 - anchor.Bottom - 19) / 20)));
-            _menuRect = new RectangleF(Math.Min(anchor.X, _panel.Right - width - 9), anchor.Bottom + 2, width, Math.Min(visible, MenuCount) * 20 + (MenuCount > visible ? 20 : 0));
-        }
-
-        private int MenuVisible => Math.Min(MenuCount, Math.Max(2, (int)(_menuRect.Height / 20) - (MenuCount * 20 > _menuRect.Height ? 1 : 0)));
-        private int MenuCount => _menu == MenuKind.Type ? _types.Length + 2 : _menu == MenuKind.Sort ? 3 : _menu == MenuKind.Branch ? PanelOwner.Session.Snapshot.Branches.Count + 2 : 0;
-
-        private string MenuLabel(int index)
-        {
-            if (_menu == MenuKind.Type)
-                return index == 0 ? "All types" : index == 1 ? (PanelOwner.Session.Options.OnlyInvalid ? "✓ Invalid only" : "Invalid only") : _types[index - 2];
-            if (_menu == MenuKind.Sort) return new[] { "Source order", "Value ascending", "Value descending" }[index];
-            if (index == 0) return "All branches";
-            if (index == 1) return "Jump to exact path…";
-            var branch = PanelOwner.Session.Snapshot.Branches[index - 2];
-            return Short(branch.Path, 150) + "   ·   " + branch.ItemCount.ToString("N0");
-        }
+        private void LayoutMenu() => _menu.Layout(_panel, _type, _sort, _branch);
 
         private void RenderMenu(Graphics g, Font small, Font mono, StringFormat trim)
         {
             LayoutMenu();
-            Fill(g, Color.FromArgb(226, 230, 223), new RectangleF(_menuRect.X + 2, _menuRect.Y + 2, _menuRect.Width, _menuRect.Height));
-            Fill(g, Color.FromArgb(253, 254, 251), _menuRect);
-            using (var pen = new Pen(Color.FromArgb(143, 158, 142))) g.DrawRectangle(pen, _menuRect.X, _menuRect.Y, _menuRect.Width, _menuRect.Height);
-            int visible = MenuVisible;
-            _menuOffset = Math.Max(0, Math.Min(Math.Max(0, MenuCount - visible), _menuOffset));
-            for (int i = 0; i < visible && i + _menuOffset < MenuCount; i++)
-                Text(g, MenuLabel(i + _menuOffset), _menu == MenuKind.Branch ? mono : small, Ink, new RectangleF(_menuRect.X + 7, _menuRect.Y + i * 20, _menuRect.Width - 14, 20), trim);
-            if (MenuCount > visible)
+            Fill(g, Color.FromArgb(226, 230, 223), new RectangleF(_menu.Bounds.X + 2, _menu.Bounds.Y + 2, _menu.Bounds.Width, _menu.Bounds.Height));
+            Fill(g, Color.FromArgb(253, 254, 251), _menu.Bounds);
+            using (var pen = new Pen(Color.FromArgb(143, 158, 142))) g.DrawRectangle(pen, _menu.Bounds.X, _menu.Bounds.Y, _menu.Bounds.Width, _menu.Bounds.Height);
+            int visible = _menu.Visible;
+            for (int i = 0; i < visible && i + _menu.Offset < _menu.Count; i++)
+                Text(g, _menu.Label(i + _menu.Offset, PanelOwner.Session.Options.OnlyInvalid), _menu.Kind == CanvasMenuKind.Branch ? mono : small, Ink, new RectangleF(_menu.Bounds.X + 7, _menu.Bounds.Y + i * 20, _menu.Bounds.Width - 14, 20), trim);
+            if (_menu.Count > visible)
             {
-                float y = _menuRect.Bottom - 20;
-                Fill(g, Color.FromArgb(235, 241, 232), new RectangleF(_menuRect.X, y, _menuRect.Width, 20));
-                Text(g, "‹ Previous", small, Accent, new RectangleF(_menuRect.X + 7, y, _menuRect.Width / 2 - 7, 20), trim);
-                Text(g, "Next ›", small, Accent, new RectangleF(_menuRect.X + _menuRect.Width / 2, y, _menuRect.Width / 2 - 7, 20), trim);
+                float y = _menu.Bounds.Bottom - 20;
+                Fill(g, Color.FromArgb(235, 241, 232), new RectangleF(_menu.Bounds.X, y, _menu.Bounds.Width, 20));
+                Text(g, "‹ Previous", small, Accent, new RectangleF(_menu.Bounds.X + 7, y, _menu.Bounds.Width / 2 - 7, 20), trim);
+                Text(g, "Next ›", small, Accent, new RectangleF(_menu.Bounds.X + _menu.Bounds.Width / 2, y, _menu.Bounds.Width / 2 - 7, 20), trim);
             }
         }
 
-        private void OpenMenu(MenuKind kind, GH_Canvas canvas)
+        private void OpenMenu(CanvasMenuKind kind, GH_Canvas canvas)
         {
-            _menu = _menu == kind ? MenuKind.None : kind;
-            _menuSnapshot = PanelOwner.Session.Snapshot;
-            _menuOffset = 0;
-            if (_menu == MenuKind.Type)
-            {
-                var keys = PanelOwner.Session.Snapshot.TypeCounts.Keys;
-                var active = PanelOwner.Session.Options.TypeName;
-                _types = keys.Concat(active != null && !keys.Contains(active) ? new[] { active } : Array.Empty<string>()).OrderBy(x => x, StringComparer.Ordinal).ToArray();
-            }
+            var session = PanelOwner.Session;
+            _menu.Toggle(kind, session.Snapshot, session.Options);
             LayoutMenu();
             canvas.Invalidate();
         }
@@ -278,26 +246,16 @@ namespace BetterGhPanel
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDown(sender, e);
             if (e.Button != MouseButtons.Left) return base.RespondToMouseDown(sender, e);
             var point = e.CanvasLocation;
-            if (_menu != MenuKind.None)
+            if (_menu.Kind != CanvasMenuKind.None)
             {
-                if (_menuSnapshot != PanelOwner.Session.Snapshot)
+                if (!_menu.IsCurrent(PanelOwner.Session.Snapshot))
                 {
-                    _menu = MenuKind.None;
+                    _menu.Close();
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }
-                if (_menuRect.Contains(point))
-                {
-                    int row = (int)((point.Y - _menuRect.Y) / 20);
-                    if (MenuCount > MenuVisible && row >= MenuVisible)
-                    {
-                        _menuOffset += point.X < _menuRect.X + _menuRect.Width / 2 ? -MenuVisible : MenuVisible;
-                        sender.Invalidate();
-                        return GH_ObjectResponse.Handled;
-                    }
-                    ChooseMenu(_menuOffset + row, sender);
-                }
-                else { _menu = MenuKind.None; sender.Invalidate(); }
+                if (_menu.TrySelect(point, out var index)) ChooseMenu(index, sender);
+                sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
             if (_resize.Contains(point))
@@ -315,9 +273,9 @@ namespace BetterGhPanel
             }
             if (_inspect.Contains(point)) { PanelOwner.OpenInspector(); return GH_ObjectResponse.Handled; }
             if (_search.Contains(point)) { EditSearch(sender); return GH_ObjectResponse.Handled; }
-            if (_type.Contains(point)) { OpenMenu(MenuKind.Type, sender); return GH_ObjectResponse.Handled; }
-            if (_sort.Contains(point)) { OpenMenu(MenuKind.Sort, sender); return GH_ObjectResponse.Handled; }
-            if (_branch.Contains(point)) { OpenMenu(MenuKind.Branch, sender); return GH_ObjectResponse.Handled; }
+            if (_type.Contains(point)) { OpenMenu(CanvasMenuKind.Type, sender); return GH_ObjectResponse.Handled; }
+            if (_sort.Contains(point)) { OpenMenu(CanvasMenuKind.Sort, sender); return GH_ObjectResponse.Handled; }
+            if (_branch.Contains(point)) { OpenMenu(CanvasMenuKind.Branch, sender); return GH_ObjectResponse.Handled; }
             if (_jump.Contains(point))
             {
                 CanvasTextInput.Show(sender, _jump, (_offset + 1).ToString(), text =>
@@ -346,23 +304,23 @@ namespace BetterGhPanel
 
         private void ChooseMenu(int index, GH_Canvas canvas)
         {
-            if (index < 0 || index >= MenuCount) return;
-            var kind = _menu;
-            _menu = MenuKind.None;
+            if (index < 0 || index >= _menu.Count) return;
+            var kind = _menu.Kind;
+            _menu.Close();
             var options = PanelOwner.Session.Options;
-            if (kind == MenuKind.Type)
+            if (kind == CanvasMenuKind.Type)
             {
                 if (index == 1) options.OnlyInvalid = !options.OnlyInvalid;
-                else { options.TypeName = index == 0 ? null : _types[index - 2]; if (index == 0) options.OnlyInvalid = false; }
+                else { options.TypeName = index == 0 ? null : _menu.TypeNameAt(index); if (index == 0) options.OnlyInvalid = false; }
             }
-            else if (kind == MenuKind.Sort) options.SortMode = (PanelSortMode)index;
+            else if (kind == CanvasMenuKind.Sort) options.SortMode = (PanelSortMode)index;
             else if (index == 1)
             {
                 CanvasTextInput.Show(canvas, _branch, options.BranchPath ?? "{0}", text => { var query = PanelOwner.Session.Options; query.BranchPath = string.IsNullOrWhiteSpace(text) ? null : text.Trim(); query.BranchPrefix = false; PanelOwner.Session.UpdateQuery(query); });
                 canvas.Invalidate();
                 return;
             }
-            else { options.BranchPath = index == 0 ? null : PanelOwner.Session.Snapshot.Branches[index - 2].Path; options.BranchPrefix = false; }
+            else { options.BranchPath = index == 0 ? null : _menu.BranchPathAt(index); options.BranchPrefix = false; }
             PanelOwner.Session.UpdateQuery(options);
             canvas.Invalidate();
         }
@@ -406,7 +364,7 @@ namespace BetterGhPanel
             foreach (var hit in _rowHits)
                 if (hit.Bounds.Contains(e.CanvasLocation) && hit.SourcePosition >= 0 && hit.SourcePosition < result.Snapshot.Rows.Count)
                 {
-                    using (var clipboard = new Eto.Forms.Clipboard()) clipboard.Text = PanelOwner.Session.GetDisplayValue(result.Snapshot.Rows[hit.SourcePosition]);
+                    using (var clipboard = new Eto.Forms.Clipboard()) clipboard.Text = PanelOwner.Session.GetDisplayValue(result.Snapshot, hit.SourcePosition);
                     _copiedUntil = DateTime.UtcNow.AddSeconds(3);
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
@@ -467,7 +425,6 @@ namespace BetterGhPanel
         }
         private static string Number(double? value) => value?.ToString("G5", CultureInfo.CurrentCulture) ?? "—";
         private static string Short(string text, int maximum) => text.Length <= maximum ? text : text.Substring(0, maximum - 1) + "…";
-        private enum MenuKind { None, Type, Sort, Branch }
         private readonly struct RowHit
         {
             internal RowHit(RectangleF bounds, int sourcePosition) { Bounds = bounds; SourcePosition = sourcePosition; }

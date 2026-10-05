@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
@@ -17,10 +17,12 @@ try {
   }
   const version = readFileSync(join(root, 'Directory.Build.props'), 'utf8').match(/<Version>([^<]+)<\/Version>/)?.[1];
   const manifestPath = join(root, 'yak', 'manifest.yml');
-  const manifest = readFileSync(manifestPath, 'utf8');
-  if (!version || manifest.match(/^version:\s*(.+)$/m)?.[1].trim() !== version) {
-    throw new Error('Directory.Build.props and yak/manifest.yml versions must match.');
+  const manifestTemplate = readFileSync(manifestPath, 'utf8');
+  if (!version || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(version) ||
+      !/^version: "@VERSION@"$/m.test(manifestTemplate)) {
+    throw new Error('Expected a semantic Version in Directory.Build.props and a version placeholder in yak/manifest.yml.');
   }
+  const manifest = manifestTemplate.replace(/^version: "@VERSION@"$/m, `version: ${version}`);
   const yak = resolve(values.yak || process.env.YAK_PATH || (process.platform === 'darwin'
     ? '/Applications/Rhino 8.app/Contents/Resources/bin/yak'
     : join(process.env.ProgramFiles || 'C:\\Program Files', 'Rhino 8', 'System', 'Yak.exe')));
@@ -47,10 +49,13 @@ try {
     return { framework, source, names };
   });
   mkdirSync(stage, { recursive: true });
-  copyFileSync(manifestPath, join(stage, 'manifest.yml'));
+  writeFileSync(join(stage, 'manifest.yml'), manifest);
   copyFileSync(join(root, 'assets', 'icon.png'), join(stage, 'icon.png'));
   for (const { framework, source, names } of outputs) {
-    const folder = join(stage, framework);
+    const folder = resolve(stage, framework);
+    if (!folder.startsWith(resolve(root, 'artifacts') + sep)) throw new Error(`Invalid staging directory: ${folder}`);
+    // These generated runtime directories contain only this build's payload.
+    rmSync(folder, { recursive: true, force: true });
     mkdirSync(folder, { recursive: true });
     for (const name of names) copyFileSync(join(source, name), join(folder, name));
   }

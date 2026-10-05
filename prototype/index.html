@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Panel+ · Grasshopper data, at a glance</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="./" aria-label="Panel plus home"
+        ><span class="brand-icon">▤</span> panel<span class="plus">+</span
+        ><span class="prototype">DESIGN STUDY / 01</span></a
+      >
+      <nav class="mode-switch" aria-label="Preview mode">
+        <button id="canvas-mode" aria-pressed="false">◇ Canvas</button
+        ><button id="inspector-mode" class="active" aria-pressed="true">
+          ▤ Inspector
+        </button>
+      </nav>
+      <span class="sample-tag"><i></i> Interactive mock · sample data</span>
+    </header>
+    <main>
+      <section class="intro">
+        <div>
+          <div class="eyebrow">LESS SCROLLING. MORE UNDERSTANDING.</div>
+          <h1>Your data. A little clearer.</h1>
+          <p>A better place to look through a Grasshopper tree.</p>
+        </div>
+        <div class="source-info">
+          <span class="source-symbol">⌘</span>
+          <div>
+            <strong>Facade study.gh</strong><span>Surface analysis → D</span>
+          </div>
+          <span class="live-dot">Snapshot</span>
+        </div>
+      </section>
+      <section class="workspace" id="workspace" aria-label="Data inspector">
+        <div class="workspace-header">
+          <div class="workspace-title">
+            <span class="mini-icon">▤</span><strong>Surface analysis</strong
+            ><span class="subtle">/ Data inspector</span>
+          </div>
+          <div class="workspace-actions">
+            <label class="dataset-label"
+              >Sample size
+              <select id="dataset" aria-label="Sample dataset size">
+                <option value="65536">65,536 items</option>
+                <option value="262144">262,144 items</option>
+              </select></label
+            ><button
+              class="plain-button"
+              id="reset"
+              title="Clear search, filters, and selection"
+            >
+              ↺ Reset view
+            </button>
+          </div>
+        </div>
+        <div class="inspector-body">
+          <aside class="tree-sidebar">
+            <div class="section-label">
+              DATA TREE <span id="branch-count">256</span>
+            </div>
+            <label class="tree-search"
+              ><span>⌕</span
+              ><input
+                id="path-search"
+                aria-label="Find or jump to a branch"
+                placeholder="Find path… {0;2;4}"
+              /><kbd>G</kbd></label
+            ><button id="all-branches" class="all-branches active">
+              <span>⊞ &nbsp; All branches</span
+              ><span id="all-count">65,536</span>
+            </button>
+            <div class="tree-root">
+              ⌄ &nbsp; {0} <span id="root-count">256 branches</span>
+            </div>
+            <div id="tree-list" class="tree-list" aria-label="Branches"></div>
+            <div class="tree-footer">
+              <span>Paths stay intact.</span
+              ><span>Sorting changes your view.</span>
+            </div>
+          </aside>
+          <section class="data-area">
+            <div class="search-row">
+              <label class="main-search"
+                ><span>⌕</span
+                ><input
+                  id="search"
+                  placeholder="Search values, or try > 800"
+                  aria-label="Search data"
+                /><kbd>/</kbd></label
+              ><button
+                class="icon-button"
+                id="clear-search"
+                aria-label="Clear search"
+                title="Clear search"
+              >
+                ×
+              </button>
+            </div>
+            <div class="filter-row">
+              <div
+                class="type-filters"
+                role="group"
+                aria-label="Filter by data type"
+              >
+                <button data-type="all" class="active">All types</button
+                ><button data-type="Number">
+                  <span class="type-dot number"></span>Numbers</button
+                ><button data-type="Point">
+                  <span class="type-dot point"></span>Points</button
+                ><button data-type="Text">
+                  <span class="type-dot text"></span>Text</button
+                ><button data-type="Null">
+                  <span class="type-dot null"></span>Nulls</button
+                ><button data-type="Boolean">
+                  <span class="type-dot boolean"></span>Bool
+                </button>
+              </div>
+            </div>
+            <div class="results-bar">
+              <span
+                ><strong id="result-count">65,536</strong>
+                <span id="result-label">items in all branches</span></span
+              ><label
+                >Sort
+                <select id="sort" aria-label="Sort data">
+                  <option value="source">Source order</option>
+                  <option value="asc">Value ↑</option>
+                  <option value="desc">Value ↓</option>
+                </select></label
+              >
+            </div>
+            <div class="table-heading">
+              <span>PATH</span><span>INDEX</span><span>VALUE</span
+              ><span>TYPE</span>
+            </div>
+            <div
+              id="viewport"
+              class="table-viewport"
+              role="region"
+              aria-label="Data rows"
+              tabindex="0"
+            >
+              <div id="spacer"></div>
+              <div id="rows" class="rows"></div>
+              <div id="empty" class="empty-state" hidden>
+                <span>⌕</span><strong>No matching items</strong>
+                <p>Try another value, type, or branch.</p>
+                <button id="empty-reset">Clear filters</button>
+              </div>
+            </div>
+            <footer class="data-footer">
+              <span
+                ><i class="status-dot"></i
+                ><span id="query-status" role="status"
+                  >Preparing sample…</span
+                ></span
+              ><span id="range">—</span>
+            </footer>
+          </section>
+          <aside class="insights">
+            <div class="section-label">AT A GLANCE <span>↗</span></div>
+            <div class="stats-scope" id="stats-scope">
+              Current view · all branches
+            </div>
+            <div class="stat-grid">
+              <div><span>Items</span><strong id="stat-items">—</strong></div>
+              <div>
+                <span>Branches</span><strong id="stat-branches">—</strong>
+              </div>
+            </div>
+            <div class="insight-block">
+              <div class="block-title">
+                Data types <span id="type-total">5 types</span>
+              </div>
+              <div id="type-chart" class="type-chart"></div>
+              <div id="type-breakdown" class="type-breakdown"></div>
+            </div>
+            <div class="insight-block">
+              <div class="block-title">
+                Number distribution <span id="numeric-count">—</span>
+              </div>
+              <div
+                id="histogram"
+                class="histogram"
+                aria-label="Number distribution"
+              ></div>
+              <div class="histogram-axis">
+                <span id="hist-min">—</span><span id="hist-max">—</span>
+              </div>
+              <dl class="number-stats">
+                <div>
+                  <dt>Minimum</dt>
+                  <dd id="stat-min">—</dd>
+                </div>
+                <div>
+                  <dt>Maximum</dt>
+                  <dd id="stat-max">—</dd>
+                </div>
+                <div>
+                  <dt>Mean</dt>
+                  <dd id="stat-mean">—</dd>
+                </div>
+              </dl>
+            </div>
+            <div id="selection-card" class="selection-card">
+              <span class="selection-icon">↖</span
+              ><strong>A closer look</strong>
+              <p>Select a row to see its full value and original address.</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+      <section
+        id="canvas-view"
+        class="canvas-view"
+        hidden
+        aria-label="Grasshopper canvas concept"
+      >
+        <div class="canvas-caption">
+          <span>GRASSHOPPER / CANVAS CONCEPT</span
+          ><span>100% &nbsp; · &nbsp; One lightweight panel</span>
+        </div>
+        <svg
+          class="wires"
+          viewBox="0 0 1100 500"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+        >
+          <path d="M260 252 C360 252 340 230 440 230" />
+          <path d="M790 240 C850 240 860 290 950 290" />
+        </svg>
+        <div class="gh-node">
+          <div>Surface analysis</div>
+          <p>S &nbsp;&nbsp; ▧ &nbsp;&nbsp; D <i></i></p>
+        </div>
+        <div class="compact-panel">
+          <div class="compact-header">
+            <strong>▤ &nbsp; Panel<span>+</span></strong
+            ><button id="expand" aria-label="Open full inspector">↗</button>
+          </div>
+          <div class="compact-summary">
+            <strong id="compact-count">65,536</strong> items
+            <span id="compact-branches">256 branches</span>
+          </div>
+          <label class="compact-search"
+            ><span>⌕</span
+            ><input
+              id="compact-search"
+              aria-label="Search in canvas panel"
+              placeholder="Quick filter…"
+          /></label>
+          <div class="compact-columns">
+            <span>PATH / INDEX</span><span>VALUE</span>
+          </div>
+          <div id="compact-rows"></div>
+          <div class="compact-bottom">
+            <span id="compact-status">Original tree preserved</span
+            ><button id="explore">Explore data ↗</button>
+          </div>
+          <i class="port input-port"></i><i class="port output-port"></i>
+        </div>
+        <div class="gh-output">D &nbsp; ◇ &nbsp; Preview</div>
+        <div class="canvas-note">
+          <span>01 / IN THE DEFINITION</span>
+          <h2>Small on the canvas.<br />Room to explore when you need it.</h2>
+          <p>
+            Quick scanning here. Search, branch navigation,<br />and deeper
+            stats in the inspector.
+          </p>
+        </div>
+      </section>
+      <div class="bottom-note">
+        <span
+          ><strong>View only.</strong> Filters and sorting preserve the original
+          tree and item addresses.</span
+        ><span
+          ><kbd>/</kbd> Search &nbsp; <kbd>G</kbd> Find path &nbsp;
+          <kbd>Esc</kbd> Clear</span
+        >
+      </div>
+    </main>
+    <div id="toast" role="status" class="toast" hidden></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

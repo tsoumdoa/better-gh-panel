@@ -32,10 +32,10 @@ The beta artifact is `artifacts/better-gh-panel-0.1.2-beta.1/better-gh-panel-0.1
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino. CI is configured to compile and stage on Windows and Mac, and does not launch Rhino.
 
-## HTML design study
+## Archived HTML design study
 
 Run `npm start`, then open http://localhost:5173. No dependency installation is needed. Use the **Canvas / Inspector** switch to compare the compact component and expanded explorer.
 
 Try searching `> 800`, filtering **Nulls**, sorting numbers, or entering `{0;2;4}` in the branch search and pressing Enter. The sample size menu switches between 65,536 and 262,144 generated items. `/` focuses search, `G` focuses branch search, and Escape resets the view. Select a row to inspect and copy its value. Filters and sorting only affect the view.
 
-The HTML runs on generated data independently of Rhino. See [the architecture proposal](docs/architecture.md) for the original canvas API assessment, cross-platform hosting options and query design.
+The files in `prototype/` are a preserved visual reference using generated data independently of Rhino. Its query behavior is illustrative; the C# core defines native behavior. See [the current architecture](docs/current-architecture.md) and [the original proposal](docs/architecture.md).

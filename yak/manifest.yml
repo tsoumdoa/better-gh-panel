@@ -1,6 +1,6 @@
 ---
 name: better-gh-panel
-version: 0.1.2-beta.1
+version: "@VERSION@"
 authors:
   - aectooling by tomoS
 description: >

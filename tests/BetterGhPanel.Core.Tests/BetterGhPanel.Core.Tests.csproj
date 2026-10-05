@@ -6,5 +6,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/BetterGhPanel.Core/BetterGhPanel.Core.csproj" />
+    <!-- Pure UI policy can be checked on both CI hosts without loading Rhino. -->
+    <Compile Include="../../src/BetterGhPanel/UI/CanvasPanelSize.cs" Link="CanvasPanelSize.cs" />
+    <Compile Include="../../src/BetterGhPanel/UI/CanvasMenu.cs" Link="CanvasMenu.cs" />
   </ItemGroup>
 </Project>

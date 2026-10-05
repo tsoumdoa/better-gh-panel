@@ -30,8 +30,8 @@ yak install better-gh-panel 0.1.2-beta.1
 
 In Rhino 8's `PackageManager`, enable prereleases to find the beta. For CLI discovery, use `yak search --all --prerelease better-gh-panel`.
 
-Version numbers live in `Directory.Build.props` and `yak/manifest.yml`. Change both for a release; packaging rejects a mismatch. Before a stable release, test Rhino 8 on Windows in both .NET and .NET Framework modes, and on Mac in .NET mode. Verify empty input, mixed/null data, large trees, inspector closure and document removal, saved settings, and unchanged typed output.
+The build version lives in `Directory.Build.props`. Packaging fills the `@VERSION@` placeholder in `yak/manifest.yml` and recreates the generated runtime staging directories after verifying the build outputs, so obsolete DLLs cannot enter a rebuilt package. Before a stable release, test Rhino 8 on Windows in both .NET and .NET Framework modes, and on Mac in .NET mode. Verify empty input, mixed/null data, large trees, inspector closure and document removal, saved settings, and unchanged typed output.
 
-Release validation: both runtime builds passed without warnings, all 13 core checks passed, and the Windows Rhino 8 .NET host checks passed, including native canvas controls, unchanged output, saved dimensions, editor cancellation, and identical 96/192 DPI rendering. Mac and Windows .NET Framework host validation remain pending. The beta manifest identifies the pending Mac validation.
+Published beta validation: both runtime builds passed without warnings, all 13 core checks passed, and the Windows Rhino 8 .NET host checks passed, including native canvas controls, unchanged output, saved dimensions, editor cancellation, and identical 96/192 DPI rendering. Mac and Windows .NET Framework host validation remain pending. The beta manifest identifies the pending Mac validation.
 
 Publication was an explicit `yak push` of the validated archive. GitHub releases and future public versions are separate release actions; build and CI scripts never publish automatically.

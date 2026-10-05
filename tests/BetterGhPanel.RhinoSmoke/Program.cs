@@ -136,7 +136,6 @@ internal static class Program
         });
         var assembly = Assembly.LoadFrom(_plugin);
         var componentType = assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!;
-        var sessionProperty = componentType.GetProperty("Session", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var component = (GH_Component)Activator.CreateInstance(componentType)!;
         var componentIcon = (Bitmap)componentType.GetProperty("Icon", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component)!;
         Assert(componentIcon.Width == 24 && componentIcon.Height == 24, "Embedded component icon is valid 24 × 24 bitmap");
@@ -161,7 +160,7 @@ internal static class Program
         document.AddObject(component, false);
         component.Params.Input[0].AddSource(source);
         document.NewSolution(false, GH_SolutionMode.Silent);
-        object session = sessionProperty.GetValue(component)!;
+        object session = PanelTestAdapter.Session(component);
         Console.WriteLine("GH solved: " + component.Params.Output[0].VolatileData.DataCount + " output items.");
         var inspector = (Eto.Forms.Form)Activator.CreateInstance(assembly.GetType("BetterGhPanel.UI.PanelInspector", true)!, session)!;
         Console.WriteLine("Eto inspector constructed: " + inspector.GetType().Name);
@@ -189,6 +188,7 @@ internal static class Program
         UpdateQuery(session, query.Clone());
         await WaitForQuery(host, session);
         Assert(!document.IsModified, "Unchanged query and worker notifications do not mark the document modified");
+        Assert(ReferenceEquals(result, Get<PanelQueryResult>(session, "Result")), "Equal query submissions reuse the published result");
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { snapshot });
         await WaitForQuery(host, session);
         Assert(!document.IsModified, "New snapshot notifications do not mark view settings modified");
@@ -201,12 +201,28 @@ internal static class Program
             "Rapid cancellation publishes the latest query only");
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(host, session);
-        var search = (Eto.Forms.TextBox)inspector.GetType().GetField("_search", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(inspector)!;
+        var search = PanelTestAdapter.Search(inspector);
         Assert(search.Text == string.Empty, "External reset synchronizes inspector search controls");
         search.Text = "Unsubmitted draft";
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(host, session);
         Assert(search.Text == string.Empty, "Reset clears inspector drafts even when query options already equal defaults");
+
+        var independentRows = snapshot.Rows.Select(row => new PanelRow(row.Id + 1000, row.BranchIndex,
+            row.OriginalIndex, row.Path, row.TypeName, "cached summary", row.NumericValue, row.IsNull, row.IsValid)).ToArray();
+        var independentSnapshot = new PanelSnapshot(50, independentRows, snapshot.Branches);
+        session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { independentSnapshot });
+        await WaitForQuery(host, session);
+        PanelTestAdapter.SelectRow(inspector, 0);
+        Assert(PanelTestAdapter.Detail(inspector) == "10", "Full-value lookup uses source positions even when row IDs differ");
+        UpdateQuery(session, new PanelQueryOptions { Search = "> 42" });
+        await WaitForQuery(host, session);
+        Assert(PanelTestAdapter.Detail(inspector) == string.Empty, "Filtering out the selected row clears the detail and selection");
+        session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { snapshot });
+        var staleValue = (string)session.GetType().GetMethod("GetDisplayValue")!.Invoke(session, new object[] { independentSnapshot, 0 })!;
+        Assert(staleValue == "cached summary", "Obsolete snapshots never resolve full values from a newer solution");
+        session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
+        await WaitForQuery(host, session);
         await Task.Delay(100);
         var native = (System.Windows.Window)inspector.ControlObject;
         native.UpdateLayout();
@@ -222,24 +238,33 @@ internal static class Program
         UpdateQuery(session, new PanelQueryOptions { Search = "alpha", BranchPath = "{0;2}", SortMode = PanelSortMode.ValueDescending });
         await WaitForQuery(host, session);
 
-        var setSize = componentType.GetMethod("SetCanvasSize", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        setSize.Invoke(component, new object[] { 500f, 420f });
+        PanelTestAdapter.Resize(component, 500, 420);
         var archive = new GH_Archive();
         Assert(archive.AppendObject(component, "Panel"), "Component settings serialize");
         var restored = (GH_Component)Activator.CreateInstance(componentType)!;
         restored.CreateAttributes();
         Assert(archive.ExtractObject(restored, "Panel"), "Component settings deserialize");
-        object restoredSession = sessionProperty.GetValue(restored)!;
+        object restoredSession = PanelTestAdapter.Session(restored);
         var restoredOptions = Get<PanelQueryOptions>(restoredSession, "Options");
         Assert(restoredOptions.Search == "alpha" && restoredOptions.BranchPath == "{0;2}" &&
             restoredOptions.SortMode == PanelSortMode.ValueDescending, "Search, branch and sort survive serialization");
-        Assert(GetNonPublic<float>(restored, "CanvasWidth") == 500 && GetNonPublic<float>(restored, "CanvasHeight") == 420,
+        Assert(PanelTestAdapter.Size(restored).Width == 500 && PanelTestAdapter.Size(restored).Height == 420,
             "Canvas width and height survive serialization");
+        Assert(PanelTestAdapter.Preset(restored) == -1, "Custom dimensions do not retain an unrelated preset check mark");
+        var legacy = new GH_LooseChunk("Panel");
+        Assert(restored.Write(legacy), "Legacy fixture serializes the component");
+        legacy.RemoveItem("PanelWidth");
+        legacy.RemoveItem("PanelHeight");
+        legacy.RemoveItem("PanelSize");
+        legacy.SetInt32("PanelSize", 2);
+        Assert(restored.Read(legacy), "Legacy preset-only settings deserialize");
+        Assert(PanelTestAdapter.Size(restored).Width == 440 && PanelTestAdapter.Size(restored).Height == 400 &&
+            PanelTestAdapter.Preset(restored) == 2, "Legacy size presets supply dimensions when explicit dimensions are absent");
         restored.RemovedFromDocument(document);
 
         component.DocumentContextChanged(document, GH_DocumentContext.Unloaded);
         component.DocumentContextChanged(document, GH_DocumentContext.Loaded);
-        object reloadedSession = sessionProperty.GetValue(component)!;
+        object reloadedSession = PanelTestAdapter.Session(component);
         await WaitForQuery(host, reloadedSession);
         Assert(Get<PanelSnapshot>(reloadedSession, "Snapshot").Rows.Count == input.DataCount,
             "Switching document tabs retains the cached tree without recomputing");
@@ -252,85 +277,73 @@ internal static class Program
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { new PanelSnapshot(100, sampleRows, new[] { new PanelBranch(0, "{0;0}", 10000) }) });
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(host, session);
-        setSize.Invoke(component, new object[] { 360f, 280f });
+        PanelTestAdapter.Resize(component, 360, 280);
         component.Attributes.PerformLayout();
         DrawCanvasPreview(component, canvas);
         _canvasDrawingVerified = true;
-        Assert(component.Params.Input[0].Attributes.InputGrip.X == Region(component, "_panel").Left &&
-            component.Params.Output[0].Attributes.OutputGrip.X == Region(component, "_panel").Right,
+        Assert(component.Params.Input[0].Attributes.InputGrip.X == PanelTestAdapter.Bounds(component, CanvasControl.Panel).Left &&
+            component.Params.Output[0].Attributes.OutputGrip.X == PanelTestAdapter.Bounds(component, CanvasControl.Panel).Right,
             "Native wire grips sit on the panel edges");
 
-        Click(component, canvas, Region(component, "_type"));
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Type));
         ClickMenuRow(component, canvas, 2);
         await WaitForQuery(host, session);
         Assert(Get<PanelQueryOptions>(session, "Options").TypeName == "Number", "Canvas type menu updates the query");
-        Click(component, canvas, Region(component, "_sort"));
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Sort));
         ClickMenuRow(component, canvas, 2);
         await WaitForQuery(host, session);
         result = Get<PanelQueryResult>(session, "Result");
         Assert(result.Snapshot.Rows[result.RowIds[0]].NumericValue == 9999, "Canvas sort menu orders values descending");
 
-        var editorType = assembly.GetType("BetterGhPanel.UI.CanvasTextInput", true)!;
-        Click(component, canvas, Region(component, "_search"));
-        var editor = ActiveEditor(editorType);
-        var nativeText = (System.Windows.Forms.TextBox)editorType.BaseType!.GetField("m_inputTextBox", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(editor)!;
-        nativeText.Text = "> 42";
-        editorType.GetMethod("RespondToEnter")!.Invoke(editor, Array.Empty<object>());
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Search));
+        var editor = CanvasEditorAdapter.Active(assembly);
+        editor.Submit("> 42");
         await WaitForQuery(host, session);
         Assert(Get<PanelQueryOptions>(session, "Options").Search == "> 42" && Get<PanelQueryResult>(session, "Result").RowIds.Count == 9957,
             "Host canvas textbox accepts inline search and filters the view");
         long revision = Get<long>(session, "QueryRevision");
-        editorType.GetMethod("HandleTextInputAccepted", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(editor, new object[] { "second commit" });
+        editor.AcceptAgain("second commit");
         Assert(Get<long>(session, "QueryRevision") == revision, "Inline textbox commits its callback once");
-        Click(component, canvas, Region(component, "_search"));
-        editor = ActiveEditor(editorType);
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Search));
+        editor = CanvasEditorAdapter.Active(assembly);
         component.DocumentContextChanged(document, GH_DocumentContext.Unloaded);
-        editorType.GetMethod("HandleTextInputAccepted", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(editor, new object[] { "canceled commit" });
+        editor.AcceptAgain("canceled commit");
         Assert(Get<long>(session, "QueryRevision") == revision, "Document switching cancels inline text without committing");
         component.DocumentContextChanged(document, GH_DocumentContext.Loaded);
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(host, session);
         DrawCanvasPreview(component, canvas);
 
-        var resize = Region(component, "_resize");
+        var resize = PanelTestAdapter.Bounds(component, CanvasControl.Resize);
         var start = new PointF(resize.X + 5, resize.Y + 5);
         Assert(component.Attributes.RespondToMouseDown(canvas, Mouse(start)) == GH_ObjectResponse.Capture, "Canvas resize captures the mouse");
         component.Attributes.RespondToMouseMove(canvas, Mouse(new PointF(start.X + 140, start.Y + 80)));
-        Assert(GetNonPublic<float>(component, "CanvasWidth") == 500 && GetNonPublic<float>(component, "CanvasHeight") == 360,
+        Assert(PanelTestAdapter.Size(component).Width == 500 && PanelTestAdapter.Size(component).Height == 360,
             "Dragging the resize corner updates panel dimensions");
-        Assert(component.Params.Output[0].Attributes.OutputGrip.X == Region(component, "_panel").Right,
+        Assert(component.Params.Output[0].Attributes.OutputGrip.X == PanelTestAdapter.Bounds(component, CanvasControl.Panel).Right,
             "Native output grip follows resized panel bounds");
         Assert(component.Attributes.RespondToMouseUp(canvas, Mouse(start)) == GH_ObjectResponse.Release, "Canvas resize releases the mouse");
-        setSize.Invoke(component, new object[] { 360f, 280f });
+        PanelTestAdapter.Resize(component, 360, 280);
         component.Attributes.PerformLayout();
         DrawCanvasPreview(component, canvas);
         DrawCanvasPreview(component, canvas, 192);
         AssertCanvasDpiInvariant();
         component.DocumentContextChanged(document, GH_DocumentContext.Close);
-        Assert(componentType.GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component) == null,
+        Assert(!PanelTestAdapter.HasSession(component),
             "Document closure disposes the component session");
         Console.WriteLine("PASS: Windows .NET Rhino host smoke checks completed.");
         return 0;
     }
 
     private static T Get<T>(object value, string property) => (T)value.GetType().GetProperty(property)!.GetValue(value)!;
-    private static T GetNonPublic<T>(object value, string property) => (T)value.GetType().GetProperty(property, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(value)!;
     private static void UpdateQuery(object session, PanelQueryOptions options) => session.GetType().GetMethod("UpdateQuery")!.Invoke(session, new object[] { options });
 
     private static GH_CanvasMouseEvent Mouse(PointF point) => new GH_CanvasMouseEvent(Point.Empty, point, System.Windows.Forms.MouseButtons.Left, 1, 0);
-    private static RectangleF Region(GH_Component component, string field) => (RectangleF)component.Attributes.GetType().GetField(field, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component.Attributes)!;
     private static void Click(GH_Component component, GH_Canvas canvas, RectangleF region) => Assert(component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(region.X + region.Width / 2, region.Y + region.Height / 2))) == GH_ObjectResponse.Handled, "Canvas control responds to native mouse events");
     private static void ClickMenuRow(GH_Component component, GH_Canvas canvas, int index)
     {
-        var menu = Region(component, "_menuRect");
+        var menu = PanelTestAdapter.MenuBounds(component);
         component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(menu.X + 10, menu.Y + index * 20 + 10)));
-    }
-    private static object ActiveEditor(Type editorType)
-    {
-        object active = editorType.GetField("_active", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
-        var arguments = new object?[] { null };
-        Assert((bool)active.GetType().GetMethod("TryGetTarget")!.Invoke(active, arguments)!, "Host inline textbox is active");
-        return arguments[0]!;
     }
     private static void DrawCanvasPreview(GH_Component component, GH_Canvas canvas, int dpi = 96)
     {

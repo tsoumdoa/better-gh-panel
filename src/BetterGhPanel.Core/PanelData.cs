@@ -111,9 +111,11 @@ namespace BetterGhPanel.Core
 
     public sealed class PanelStatistics
     {
+        private readonly Lazy<IReadOnlyList<int>> _histogram;
+
         internal PanelStatistics(int itemCount, int branchCount, int numericCount, int nullCount,
             int invalidCount, double? minimum, double? maximum, double? mean,
-            IReadOnlyDictionary<string, int> typeCounts, IReadOnlyList<int> histogram)
+            IReadOnlyDictionary<string, int> typeCounts, Func<IReadOnlyList<int>> histogram)
         {
             ItemCount = itemCount;
             BranchCount = branchCount;
@@ -124,7 +126,7 @@ namespace BetterGhPanel.Core
             Maximum = maximum;
             Mean = mean;
             TypeCounts = typeCounts;
-            Histogram = histogram;
+            _histogram = new Lazy<IReadOnlyList<int>>(histogram);
         }
 
         public int ItemCount { get; }
@@ -136,7 +138,8 @@ namespace BetterGhPanel.Core
         public double? Maximum { get; }
         public double? Mean { get; }
         public IReadOnlyDictionary<string, int> TypeCounts { get; }
-        public IReadOnlyList<int> Histogram { get; }
+        /// <summary>Computed once on demand; native views only request scalar statistics.</summary>
+        public IReadOnlyList<int> Histogram => _histogram.Value;
     }
 
     public sealed class PanelQueryResult

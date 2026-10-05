@@ -31,9 +31,7 @@ namespace BetterGhPanel.UI
         private PanelSnapshot? _typeSnapshot;
         private PanelSnapshot? _detailSnapshot;
         private PanelQueryResult? _lastResult;
-        private PanelQueryOptions? _observedOptions;
         private long _observedQueryRevision;
-        private int _selectedSourcePosition = -1;
         private bool _updating;
         private bool _closed;
 
@@ -148,7 +146,6 @@ namespace BetterGhPanel.UI
             _invalid.Checked = options.OnlyInvalid;
             int typeIndex = options.TypeName == null ? -1 : Array.IndexOf(_typeNames, options.TypeName);
             _types.SelectedIndex = typeIndex < 0 ? 0 : typeIndex + 1;
-            _observedOptions = options;
             _observedQueryRevision = _session.QueryRevision;
             _updating = false;
         }
@@ -157,7 +154,7 @@ namespace BetterGhPanel.UI
         {
             if (_closed || _updating) return;
             _debounce.Stop();
-            var options = _session.Options.Clone();
+            var options = _session.Options;
             options.Search = _search.Text ?? string.Empty;
             options.TypeName = _types.SelectedIndex > 0 && _types.SelectedIndex <= _typeNames.Length ? _typeNames[_types.SelectedIndex - 1] : null;
             options.SortMode = (PanelSortMode)Math.Max(0, _sort.SelectedIndex);
@@ -170,13 +167,6 @@ namespace BetterGhPanel.UI
         private void Reset()
         {
             _debounce.Stop();
-            _updating = true;
-            _search.Text = string.Empty;
-            _branch.Text = string.Empty;
-            _types.SelectedIndex = 0;
-            _sort.SelectedIndex = 0;
-            _invalid.Checked = false;
-            _updating = false;
             _session.ResetView();
         }
 
@@ -191,8 +181,7 @@ namespace BetterGhPanel.UI
             var snapshot = _session.Snapshot;
             // Synchronize externally changed queries (including the canvas reset menu),
             // while preserving drafts when only a worker/busy notification arrives.
-            var options = _session.Options;
-            bool optionsChanged = _observedQueryRevision != _session.QueryRevision || !SameOptions(_observedOptions, options);
+            bool optionsChanged = _observedQueryRevision != _session.QueryRevision;
             if (optionsChanged)
             {
                 _debounce.Stop();
@@ -203,14 +192,14 @@ namespace BetterGhPanel.UI
                 _typeSnapshot = snapshot;
                 _updating = true;
                 string? selectedType = _session.Options.TypeName;
-                var sourceTypes = snapshot == null ? Enumerable.Empty<string>() : snapshot.TypeCounts.Keys;
+                var sourceTypes = snapshot.TypeCounts.Keys;
                 // A saved filter can legitimately disappear from a later solution. Keep
                 // the selected key visible so an empty result never masquerades as All types.
                 if (selectedType != null && !sourceTypes.Contains(selectedType, StringComparer.Ordinal))
                     sourceTypes = sourceTypes.Concat(new[] { selectedType });
                 _typeNames = sourceTypes.OrderBy(x => x, StringComparer.Ordinal).ToArray();
                 _types.DataStore = new[] { "All types" }.Concat(_typeNames.Select(x => Abbreviate(x, 48) +
-                    (snapshot != null && snapshot.TypeCounts.ContainsKey(x) ? string.Empty : " (0 in source)"))).ToArray();
+                    (snapshot.TypeCounts.ContainsKey(x) ? string.Empty : " (0 in source)"))).ToArray();
                 int typeIndex = Array.IndexOf(_typeNames, selectedType);
                 _types.SelectedIndex = typeIndex < 0 ? 0 : typeIndex + 1;
                 _updating = false;
@@ -222,27 +211,24 @@ namespace BetterGhPanel.UI
             }
             if (result != _lastResult)
             {
-                if (_selectedSourcePosition >= 0 && (result == null || result.Snapshot != _detailSnapshot ||
-                    !result.RowIds.Contains(_selectedSourcePosition))) ClearDetail();
                 _lastResult = result;
                 _rows.SetResult(result, true);
+                if (_rows.SelectedSourcePosition < 0) ClearDetail();
             }
-            var stats = result?.Statistics;
-            _summary.Text = stats == null
-                ? "Waiting for connected data"
-                : string.Format(CultureInfo.CurrentCulture, "{0:N0} items   ·   {1:N0} branches   ·   {2:N0} null   ·   {3:N0} invalid", stats.ItemCount, stats.BranchCount, stats.NullCount, stats.InvalidCount);
-            _numbers.Text = stats == null || stats.NumericCount == 0
+            var stats = result.Statistics;
+            _summary.Text = string.Format(CultureInfo.CurrentCulture, "{0:N0} items   ·   {1:N0} branches   ·   {2:N0} null   ·   {3:N0} invalid", stats.ItemCount, stats.BranchCount, stats.NullCount, stats.InvalidCount);
+            _numbers.Text = stats.NumericCount == 0
                 ? "Numeric statistics appear when this view contains numbers."
                 : string.Format(CultureInfo.CurrentCulture, "{0:N0} numbers   ·   Min {1}   ·   Max {2}   ·   Mean {3}", stats.NumericCount, FormatNumber(stats.Minimum), FormatNumber(stats.Maximum), FormatNumber(stats.Mean));
-            var topTypes = stats?.TypeCounts.OrderByDescending(x => x.Value).Take(8).ToArray();
-            var typeLines = topTypes == null ? new string[0] : topTypes.Select(x => Abbreviate(x.Key, 12) + " " + x.Value.ToString("N0")).ToArray();
+            var topTypes = stats.TypeCounts.OrderByDescending(x => x.Value).Take(8).ToArray();
+            var typeLines = topTypes.Select(x => Abbreviate(x.Key, 12) + " " + x.Value.ToString("N0")).ToArray();
             _typeCounts.Text = string.Join("   ·   ", typeLines.Take(4));
             if (typeLines.Length > 4) _typeCounts.Text += "\n" + string.Join("   ·   ", typeLines.Skip(4));
-            if (stats != null && stats.TypeCounts.Count > 8)
+            if (stats.TypeCounts.Count > 8)
                 _typeCounts.Text += "\n… + " + (stats.TypeCounts.Count - 8).ToString("N0") + " more types";
-            _typeCounts.ToolTip = topTypes == null ? string.Empty : string.Join("\n", topTypes.Select(x => Abbreviate(x.Key, 128) + ": " + x.Value.ToString("N0")));
-            _position.MaxValue = Math.Max(1, result?.RowIds.Count ?? 0);
-            _position.Enabled = result != null && result.RowIds.Count > 0;
+            _typeCounts.ToolTip = string.Join("\n", topTypes.Select(x => Abbreviate(x.Key, 128) + ": " + x.Value.ToString("N0")));
+            _position.MaxValue = Math.Max(1, result.RowIds.Count);
+            _position.Enabled = result.RowIds.Count > 0;
             UpdatePosition();
         }
 
@@ -261,16 +247,14 @@ namespace BetterGhPanel.UI
         private void InspectRow(PanelRow row)
         {
             _detailSnapshot = _lastResult?.Snapshot;
-            _selectedSourcePosition = _rows.SelectedSourcePosition;
             _address.Text = Abbreviate(row.Path, 48) + " [" + row.OriginalIndex + "]   ·   " + Abbreviate(row.TypeName, 24) + (row.IsValid ? string.Empty : "   ·   invalid");
             _address.ToolTip = row.Path + " [" + row.OriginalIndex + "]   ·   " + row.TypeName;
-            _detail.Text = _session.GetDisplayValue(row);
+            _detail.Text = _session.GetDisplayValue(_detailSnapshot!, _rows.SelectedSourcePosition);
             _copy.Enabled = true;
         }
 
         private void ClearDetail()
         {
-            _selectedSourcePosition = -1;
             _rows.ClearSelection();
             _address.Text = "Select an item to inspect its original address and full value.";
             _address.ToolTip = string.Empty;
@@ -281,10 +265,5 @@ namespace BetterGhPanel.UI
         private static string FormatNumber(double? value) => value?.ToString("G6", CultureInfo.CurrentCulture) ?? "—";
 
         private static string Abbreviate(string text, int maximumLength) => text.Length <= maximumLength ? text : text.Substring(0, maximumLength - 1) + "…";
-
-        private static bool SameOptions(PanelQueryOptions? previous, PanelQueryOptions current) =>
-            previous != null && previous.Search == current.Search && previous.TypeName == current.TypeName &&
-            previous.BranchPath == current.BranchPath && previous.BranchPrefix == current.BranchPrefix &&
-            previous.OnlyInvalid == current.OnlyInvalid && previous.SortMode == current.SortMode;
     }
 }

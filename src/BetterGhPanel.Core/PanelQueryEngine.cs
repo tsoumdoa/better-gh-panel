@@ -77,24 +77,6 @@ namespace BetterGhPanel.Core
                     : mean + delta / numericCount;
             }
 
-            var histogram = new int[20];
-            if (numericCount != 0)
-            {
-                var range = maximum - minimum;
-                for (var i = 0; i < rowIds.Count; i++)
-                {
-                    CheckCancellation(i, cancellationToken);
-                    var row = snapshot.Rows[rowIds[i]];
-                    if (!HasFiniteNumber(row)) continue;
-                    var value = row.NumericValue!.Value;
-                    var fraction = range == 0 ? 0 : double.IsInfinity(range)
-                        ? (value / 2 - minimum / 2) / (maximum / 2 - minimum / 2)
-                        : (value - minimum) / range;
-                    var bin = Math.Max(0, Math.Min(19, (int)(fraction * 20)));
-                    histogram[bin]++;
-                }
-            }
-
             var ids = rowIds.ToArray();
             if (query.SortMode != PanelSortMode.SourceOrder)
                 StableSort(ids, snapshot.Rows, query.SortMode == PanelSortMode.ValueDescending, cancellationToken);
@@ -102,8 +84,26 @@ namespace BetterGhPanel.Core
             var statistics = new PanelStatistics(ids.Length, branchCounts.Count, numericCount, nullCount,
                 invalidCount, numericCount == 0 ? (double?)null : minimum,
                 numericCount == 0 ? (double?)null : maximum, numericCount == 0 ? (double?)null : mean,
-                new ReadOnlyDictionary<string, int>(typeCounts), Array.AsReadOnly(histogram));
+                new ReadOnlyDictionary<string, int>(typeCounts), () => BuildHistogram(snapshot, ids, minimum, maximum));
             return new PanelQueryResult(snapshot, ids, statistics, new ReadOnlyDictionary<string, int>(branchCounts));
+        }
+
+        private static IReadOnlyList<int> BuildHistogram(PanelSnapshot snapshot, int[] positions, double minimum, double maximum)
+        {
+            var histogram = new int[20];
+            var range = maximum - minimum;
+            foreach (var position in positions)
+            {
+                var row = snapshot.Rows[position];
+                if (!HasFiniteNumber(row)) continue;
+                var value = row.NumericValue!.Value;
+                var fraction = range == 0 ? 0 : double.IsInfinity(range)
+                    ? (value / 2 - minimum / 2) / (maximum / 2 - minimum / 2)
+                    : (value - minimum) / range;
+                var bin = Math.Max(0, Math.Min(19, (int)(fraction * 20)));
+                histogram[bin]++;
+            }
+            return Array.AsReadOnly(histogram);
         }
 
         private static bool MatchesBranch(string path, string? selected, string? prefix)

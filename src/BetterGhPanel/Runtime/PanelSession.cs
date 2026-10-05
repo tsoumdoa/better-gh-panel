@@ -12,7 +12,7 @@ namespace BetterGhPanel.Runtime
         private readonly Action _invalidate;
         private CancellationTokenSource? _queryCancellation;
         private PanelQueryOptions _options = new PanelQueryOptions();
-        private Func<PanelRow, string>? _detailResolver;
+        private Func<int, string?>? _detailResolver;
         private long _request;
         private bool _disposed;
 
@@ -39,15 +39,15 @@ namespace BetterGhPanel.Runtime
             QueueQuery();
         }
 
-        public void SetDetailResolver(Func<PanelRow, string> resolver) => _detailResolver = resolver;
+        public void SetDetailResolver(Func<int, string?> resolver) => _detailResolver = resolver;
 
-        public string GetDisplayValue(PanelRow? row)
+        public string GetDisplayValue(PanelSnapshot snapshot, int sourcePosition)
         {
-            if (row == null) return string.Empty;
+            if (sourcePosition < 0 || sourcePosition >= snapshot.Rows.Count) return string.Empty;
+            var row = snapshot.Rows[sourcePosition];
             // An obsolete view may still be visible while the next solution is indexed.
-            if (row.Id < 0 || row.Id >= Snapshot.Rows.Count || !ReferenceEquals(Snapshot.Rows[row.Id], row))
-                return row.DisplayValue;
-            try { return _detailResolver?.Invoke(row) ?? row.DisplayValue; }
+            if (!ReferenceEquals(snapshot, Snapshot)) return row.DisplayValue;
+            try { return _detailResolver?.Invoke(sourcePosition) ?? row.DisplayValue; }
             catch (Exception ex) { return row.DisplayValue + "\nValue formatting failed: " + ex.Message; }
         }
 
@@ -61,7 +61,8 @@ namespace BetterGhPanel.Runtime
             _options = next;
             ++QueryRevision;
             if (changed) QueryChanged?.Invoke(this, EventArgs.Empty);
-            QueueQuery();
+            if (changed) QueueQuery();
+            else Notify(); // Equal submissions still synchronize drafts, especially Reset.
         }
 
         public void ResetView() => UpdateQuery(new PanelQueryOptions());

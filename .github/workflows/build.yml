@@ -23,6 +23,8 @@ jobs:
           node-version: 22
       - name: Core behavior and performance checks
         run: dotnet run --project tests/BetterGhPanel.Core.Tests -c Release
+      - name: Packaging regression checks
+        run: node --test tests/package.test.mjs
       - name: Build both Rhino runtimes and stage plugin
         run: node scripts/package.mjs --stage-only
       - uses: actions/upload-artifact@v4

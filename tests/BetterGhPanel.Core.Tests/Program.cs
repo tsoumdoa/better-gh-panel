@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading;
 using BetterGhPanel.Core;
+using BetterGhPanel.UI;
 
 internal static class Program
 {
@@ -24,7 +25,9 @@ internal static class Program
             EmptyAndNonfiniteNumbers,
             ExtremeNumericStatistics,
             Cancellation,
-            LargeData
+            LargeData,
+            CanvasDimensionsAndPresets,
+            CanvasMenuPagingAndSnapshot
         };
         var failures = 0;
         foreach (var test in tests)
@@ -279,6 +282,47 @@ internal static class Program
         source.CancelAfter(1);
         Throws<OperationCanceledException>(() => PanelQueryEngine.Execute(snapshot,
             new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending }, source.Token));
+    }
+
+    private static void CanvasDimensionsAndPresets()
+    {
+        Equal(CanvasPanelSize.DefaultWidth, CanvasPanelSize.Width(float.NaN));
+        Equal(CanvasPanelSize.DefaultHeight, CanvasPanelSize.Height(float.PositiveInfinity));
+        Equal(300f, CanvasPanelSize.Width(-100));
+        Equal(220f, CanvasPanelSize.Height(-100));
+        Equal(900f, CanvasPanelSize.Width(1000));
+        for (int i = 0; i < CanvasPanelSize.PresetNames.Length; i++)
+            Equal(i, CanvasPanelSize.PresetIndex(CanvasPanelSize.PresetWidth(i), CanvasPanelSize.PresetHeight(i)));
+        Equal(-1, CanvasPanelSize.PresetIndex(500, 420));
+    }
+
+    private static void CanvasMenuPagingAndSnapshot()
+    {
+        var branches = Enumerable.Range(0, 100).Select(i => new PanelBranch(i, "{" + i + "}", 0)).ToArray();
+        var snapshot = new PanelSnapshot(1, Array.Empty<PanelRow>(), branches);
+        var menu = new CanvasMenu();
+        var panel = new System.Drawing.RectangleF(0, 0, 360, 280);
+        var anchor = new System.Drawing.RectangleF(9, 60, 226, 22);
+        menu.Toggle(CanvasMenuKind.Branch, snapshot, new PanelQueryOptions());
+        menu.Layout(panel, anchor, anchor, anchor);
+        Equal(true, menu.IsCurrent(snapshot));
+        Equal(false, menu.IsCurrent(PanelSnapshot.Empty));
+        Equal(102, menu.Count);
+        var next = new System.Drawing.PointF(menu.Bounds.Right - 5, menu.Bounds.Bottom - 5);
+        for (int i = 0; i < 50; i++) Equal(false, menu.TrySelect(next, out _));
+        Equal(menu.Count - menu.Visible, menu.Offset);
+        Equal(true, menu.TrySelect(new System.Drawing.PointF(menu.Bounds.X + 5, menu.Bounds.Y + 5), out var choice));
+        Equal(menu.Offset, choice);
+        Equal(branches[choice - 2].Path, menu.BranchPathAt(choice));
+        Equal(false, menu.TrySelect(new System.Drawing.PointF(-10, -10), out _));
+        Equal(CanvasMenuKind.None, menu.Kind);
+
+        menu.Toggle(CanvasMenuKind.Type, snapshot, new PanelQueryOptions { TypeName = "Saved type" });
+        menu.Layout(panel, anchor, anchor, anchor);
+        Equal("Saved type", menu.TypeNameAt(2));
+        Equal("✓ Invalid only", menu.Label(1, true));
+        menu.Toggle(CanvasMenuKind.Type, snapshot, new PanelQueryOptions());
+        Equal(CanvasMenuKind.None, menu.Kind);
     }
 
     private static void Equal<T>(T expected, T actual)

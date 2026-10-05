@@ -21,9 +21,9 @@ namespace BetterGhPanel
         private PanelQueryOptions _savedOptions = new PanelQueryOptions();
         private long _version;
         private bool _restoringView;
-        internal int PreviewSize { get; private set; } = 1;
-        internal float CanvasWidth { get; private set; } = 360;
-        internal float CanvasHeight { get; private set; } = 280;
+        internal int PreviewSize => CanvasPanelSize.PresetIndex(CanvasWidth, CanvasHeight);
+        internal float CanvasWidth { get; private set; } = CanvasPanelSize.DefaultWidth;
+        internal float CanvasHeight { get; private set; } = CanvasPanelSize.DefaultHeight;
 
         public BetterPanelComponent() : base("Panel+", "Panel+",
             "Inspect data trees quickly. Filters and sorting only affect the view; the typed tree passes through unchanged.",
@@ -40,7 +40,7 @@ namespace BetterGhPanel
                 if (_session == null)
                 {
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
-                    _session.SetDetailResolver(row => row.Id < _sourceItems.Length ? _sourceItems[row.Id]?.ToString() ?? "<null>" : row.DisplayValue);
+                    _session.SetDetailResolver(position => position < _sourceItems.Length ? _sourceItems[position]?.ToString() ?? "<null>" : null);
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
@@ -59,8 +59,8 @@ namespace BetterGhPanel
 
         internal void SetCanvasSize(float width, float height)
         {
-            CanvasWidth = float.IsNaN(width) || float.IsInfinity(width) ? 360 : Math.Max(300, Math.Min(900, width));
-            CanvasHeight = float.IsNaN(height) || float.IsInfinity(height) ? 280 : Math.Max(220, Math.Min(900, height));
+            CanvasWidth = CanvasPanelSize.Width(width);
+            CanvasHeight = CanvasPanelSize.Height(height);
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
@@ -129,17 +129,17 @@ namespace BetterGhPanel
             Menu_AppendItem(menu, "Open data inspector…", (_, __) => OpenInspector());
             Menu_AppendItem(menu, "Reset inspector view", (_, __) => Session.ResetView());
             var sizeMenu = Menu_AppendItem(menu, "Canvas panel size");
-            var names = new[] { "Small", "Medium", "Large" };
+            var names = CanvasPanelSize.PresetNames;
             for (var i = 0; i < names.Length; i++)
             {
                 var size = i;
                 Menu_AppendItem(sizeMenu.DropDown, names[i], (_, __) =>
                 {
                     RecordUndoEvent("Panel preview size");
-                    PreviewSize = size;
-                    SetCanvasSize(320 + size * 60, 240 + size * 80);
+                    SetCanvasSize(CanvasPanelSize.PresetWidth(size), CanvasPanelSize.PresetHeight(size));
                 }, true, PreviewSize == size);
             }
+            Menu_AppendItem(sizeMenu.DropDown, "Custom", (_, __) => { }, false, PreviewSize < 0);
         }
 
         public override bool Write(GH_IWriter writer)
@@ -151,7 +151,8 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelPrefix", options.BranchPrefix);
             writer.SetBoolean("PanelInvalid", options.OnlyInvalid);
             writer.SetInt32("PanelSort", (int)options.SortMode);
-            writer.SetInt32("PanelSize", PreviewSize);
+            // Retain the legacy key for older plug-in versions; dimensions take precedence.
+            writer.SetInt32("PanelSize", PreviewSize < 0 ? 1 : PreviewSize);
             writer.SetSingle("PanelWidth", CanvasWidth);
             writer.SetSingle("PanelHeight", CanvasHeight);
             return base.Write(writer);
@@ -167,16 +168,17 @@ namespace BetterGhPanel
             reader.TryGetBoolean("PanelPrefix", ref prefix);
             reader.TryGetBoolean("PanelInvalid", ref invalid);
             reader.TryGetInt32("PanelSort", ref sort);
-            reader.TryGetInt32("PanelSize", ref size);
+            bool hasLegacySize = reader.TryGetInt32("PanelSize", ref size);
             _savedOptions = new PanelQueryOptions { Search = search, TypeName = string.IsNullOrEmpty(type) ? null : type,
                 BranchPath = string.IsNullOrEmpty(branch) ? null : branch, BranchPrefix = prefix, OnlyInvalid = invalid,
                 SortMode = Enum.IsDefined(typeof(PanelSortMode), sort) ? (PanelSortMode)sort : PanelSortMode.SourceOrder };
-            PreviewSize = Math.Max(0, Math.Min(2, size));
-            float width = 360, height = 280;
+            size = Math.Max(0, Math.Min(CanvasPanelSize.PresetNames.Length - 1, size));
+            float width = hasLegacySize ? CanvasPanelSize.PresetWidth(size) : CanvasPanelSize.DefaultWidth;
+            float height = hasLegacySize ? CanvasPanelSize.PresetHeight(size) : CanvasPanelSize.DefaultHeight;
             reader.TryGetSingle("PanelWidth", ref width);
             reader.TryGetSingle("PanelHeight", ref height);
-            CanvasWidth = float.IsNaN(width) || float.IsInfinity(width) ? 360 : Math.Max(300, Math.Min(900, width));
-            CanvasHeight = float.IsNaN(height) || float.IsInfinity(height) ? 280 : Math.Max(220, Math.Min(900, height));
+            CanvasWidth = CanvasPanelSize.Width(width);
+            CanvasHeight = CanvasPanelSize.Height(height);
             _restoringView = true;
             try { _session?.UpdateQuery(_savedOptions); }
             finally { _restoringView = false; }

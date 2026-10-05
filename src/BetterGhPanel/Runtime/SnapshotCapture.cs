@@ -43,7 +43,7 @@ namespace BetterGhPanel.Runtime
                 }
             }
             sourceItems = source.ToArray();
-            return new PanelSnapshot(version, rows.AsReadOnly(), branches.AsReadOnly());
+            return new PanelSnapshot(version, rows, branches);
         }
 
         private static string FormatSummary(IGH_Goo? goo, out double? numeric)

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using BetterGhPanel.Core;
 using Eto.Drawing;
 using Eto.Forms;
@@ -23,7 +24,6 @@ namespace BetterGhPanel.UI
         private bool _fontsDisposed;
         private PanelQueryResult? _result;
         private int _first;
-        private int _selectedId = -1;
         private int _selectedSourcePosition = -1;
         private bool _dragging;
         private float _dragOffset;
@@ -65,7 +65,9 @@ namespace BetterGhPanel.UI
 
         public void SetResult(PanelQueryResult? result, bool resetPosition)
         {
-            if (_result?.Snapshot != result?.Snapshot) ClearSelection();
+            if (_result?.Snapshot != result?.Snapshot ||
+                (_selectedSourcePosition >= 0 && (result == null || !result.RowIds.Contains(_selectedSourcePosition))))
+                ClearSelection();
             _result = result;
             SetFirst(resetPosition ? 0 : _first);
         }
@@ -74,7 +76,6 @@ namespace BetterGhPanel.UI
 
         public void ClearSelection()
         {
-            _selectedId = -1;
             _selectedSourcePosition = -1;
             Invalidate();
         }
@@ -141,7 +142,6 @@ namespace BetterGhPanel.UI
             if (_result == null || position < 0 || position >= Count) return;
             var row = _result.Snapshot.Rows[_result.RowIds[position]];
             _selectedSourcePosition = _result.RowIds[position];
-            _selectedId = row.Id;
             RowSelected?.Invoke(row);
             Invalidate();
         }
@@ -190,7 +190,7 @@ namespace BetterGhPanel.UI
                 {
                     var row = _result.Snapshot.Rows[_result.RowIds[position]];
                     int y = HeaderHeight + (position - _first) * RowHeight;
-                    if (row.Id == _selectedId)
+                    if (_result.RowIds[position] == _selectedSourcePosition)
                         g.FillRectangle(Sage, 0, y, right, RowHeight);
                     else if ((position & 1) != 0)
                         g.FillRectangle(Color.FromArgb(248, 250, 247), 0, y, right, RowHeight);
