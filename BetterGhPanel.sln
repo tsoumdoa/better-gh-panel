@@ -1,0 +1,30 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BetterGhPanel.Core", "src\BetterGhPanel.Core\BetterGhPanel.Core.csproj", "{F8711803-9593-49E1-A6F8-C9E176FD7752}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BetterGhPanel", "src\BetterGhPanel\BetterGhPanel.csproj", "{6257DB79-44DB-4053-8CAE-E577355B72E2}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BetterGhPanel.Core.Tests", "tests\BetterGhPanel.Core.Tests\BetterGhPanel.Core.Tests.csproj", "{AB217670-C3F9-482D-8226-D746C03425F7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F8711803-9593-49E1-A6F8-C9E176FD7752}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F8711803-9593-49E1-A6F8-C9E176FD7752}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F8711803-9593-49E1-A6F8-C9E176FD7752}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F8711803-9593-49E1-A6F8-C9E176FD7752}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6257DB79-44DB-4053-8CAE-E577355B72E2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6257DB79-44DB-4053-8CAE-E577355B72E2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6257DB79-44DB-4053-8CAE-E577355B72E2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6257DB79-44DB-4053-8CAE-E577355B72E2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AB217670-C3F9-482D-8226-D746C03425F7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AB217670-C3F9-482D-8226-D746C03425F7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AB217670-C3F9-482D-8226-D746C03425F7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AB217670-C3F9-482D-8226-D746C03425F7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

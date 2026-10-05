@@ -1,0 +1,16 @@
+# .NET and IDE outputs
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+*.rsuser
+*.pdb
+*.binlog
+
+# Local staging, Yak packages, and browser tooling
+artifacts/
+*.yak
+node_modules/
+*.log
+.DS_Store

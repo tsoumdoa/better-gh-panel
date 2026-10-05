@@ -1,0 +1,81 @@
+using System;
+using System.Drawing;
+using System.Linq;
+using BetterGhPanel.Core;
+
+namespace BetterGhPanel.UI
+{
+    internal enum CanvasMenuKind { None, Type, Sort, Branch }
+
+    // One owner for menu lifetime, snapshot validity, layout, and paging.
+    internal sealed class CanvasMenu
+    {
+        private static readonly string[] SortLabels = { "Source order", "Value ascending", "Value descending" };
+        private PanelSnapshot _snapshot = PanelSnapshot.Empty;
+        private string[] _types = Array.Empty<string>();
+        internal CanvasMenuKind Kind { get; private set; }
+        internal RectangleF Bounds { get; private set; }
+        internal int Offset { get; private set; }
+        internal int Count => Kind == CanvasMenuKind.Type ? _types.Length + 2 :
+            Kind == CanvasMenuKind.Sort ? SortLabels.Length : Kind == CanvasMenuKind.Branch ? _snapshot.Branches.Count + 2 : 0;
+        internal int Visible => Math.Min(Count, Math.Max(2, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
+
+        internal void Close() => Kind = CanvasMenuKind.None;
+        internal bool IsCurrent(PanelSnapshot snapshot) => ReferenceEquals(_snapshot, snapshot);
+
+        internal void Toggle(CanvasMenuKind kind, PanelSnapshot snapshot, PanelQueryOptions options)
+        {
+            Kind = Kind == kind ? CanvasMenuKind.None : kind;
+            _snapshot = snapshot;
+            Offset = 0;
+            if (Kind == CanvasMenuKind.Type)
+            {
+                var keys = snapshot.TypeCounts.Keys;
+                var active = options.TypeName;
+                _types = keys.Concat(active != null && !keys.Contains(active) ? new[] { active } : Array.Empty<string>())
+                    .OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            }
+        }
+
+        internal void Layout(RectangleF panel, RectangleF type, RectangleF sort, RectangleF branch)
+        {
+            if (Kind == CanvasMenuKind.None) return;
+            var anchor = Kind == CanvasMenuKind.Type ? type : Kind == CanvasMenuKind.Sort ? sort : branch;
+            float width = Math.Min(panel.Width - 18, Kind == CanvasMenuKind.Sort ? 145 : 235);
+            int visible = Math.Max(2, Math.Min(8, (int)((panel.Bottom - 9 - anchor.Bottom - 19) / 20)));
+            Bounds = new RectangleF(Math.Min(anchor.X, panel.Right - width - 9), anchor.Bottom + 2, width,
+                Math.Min(visible, Count) * 20 + (Count > visible ? 20 : 0));
+            Offset = Math.Max(0, Math.Min(Math.Max(0, Count - Visible), Offset));
+        }
+
+        internal bool TrySelect(PointF point, out int index)
+        {
+            index = -1;
+            if (!Bounds.Contains(point)) { Close(); return false; }
+            int row = (int)((point.Y - Bounds.Y) / 20);
+            if (Count > Visible && row >= Visible)
+            {
+                Offset = Math.Max(0, Math.Min(Count - Visible,
+                    Offset + (point.X < Bounds.X + Bounds.Width / 2 ? -Visible : Visible)));
+                return false;
+            }
+            index = Offset + row;
+            return index >= 0 && index < Count;
+        }
+
+        internal string TypeNameAt(int index) => _types[index - 2];
+        internal string BranchPathAt(int index) => _snapshot.Branches[index - 2].Path;
+
+        internal string Label(int index, bool onlyInvalid)
+        {
+            if (Kind == CanvasMenuKind.Type)
+                return index == 0 ? "All types" : index == 1 ? (onlyInvalid ? "✓ Invalid only" : "Invalid only") : TypeNameAt(index);
+            if (Kind == CanvasMenuKind.Sort) return SortLabels[index];
+            if (index == 0) return "All branches";
+            if (index == 1) return "Jump to exact path…";
+            var branch = _snapshot.Branches[index - 2];
+            var path = branch.Path.Length <= 150 ? branch.Path : branch.Path.Substring(0, 149) + "…";
+            return path + "   ·   " + branch.ItemCount.ToString("N0");
+        }
+    }
+}

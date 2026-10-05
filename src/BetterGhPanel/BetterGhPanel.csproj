@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net48;net7.0</TargetFrameworks>
+    <TargetExt>.gha</TargetExt>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <Title>BetterGhPanel</Title>
+    <Description>A fast Grasshopper data panel with filtering, tree navigation, sorting, and statistics.</Description>
+    <AssemblyIcon>../../assets/icon.png</AssemblyIcon>
+    <NoWarn>$(NoWarn);NU1701;NETSDK1086</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Grasshopper" Version="8.0.23304.9001" ExcludeAssets="runtime" />
+    <ProjectReference Include="../BetterGhPanel.Core/BetterGhPanel.Core.csproj" />
+    <EmbeddedResource Include="../../assets/icon.png" LogicalName="BetterGhPanel.icon.png" />
+  </ItemGroup>
+  <!-- Rhino supplies Grasshopper, RhinoCommon, Eto, Drawing, and WinForms at runtime. -->
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net7.0'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net48" Version="1.0.3" ExcludeAssets="all" GeneratePathProperty="true" PrivateAssets="all" />
+    <Reference Include="System.Windows.Forms">
+      <HintPath>$(PkgMicrosoft_NETFramework_ReferenceAssemblies_net48)/build/.NETFramework/v4.8/System.Windows.Forms.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <PackageReference Include="System.Drawing.Common" Version="7.0.0" ExcludeAssets="runtime" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,9 @@
+{
+  "name": "better-gh-panel-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node prototype/server.mjs",
+    "test:package": "node --test tests/package.test.mjs"
+  }
+}
