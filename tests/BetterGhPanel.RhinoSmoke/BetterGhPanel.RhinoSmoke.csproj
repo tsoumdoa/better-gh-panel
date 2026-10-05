@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net7.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <NoWarn>$(NoWarn);NETSDK1138</NoWarn>
+    <RhinoSystemPath Condition="'$(RhinoSystemPath)' == ''">C:/Program Files/Rhino 8/System</RhinoSystemPath>
+    <GrasshopperPath Condition="'$(GrasshopperPath)' == ''">C:/Program Files/Rhino 8/Plug-ins/Grasshopper</GrasshopperPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/BetterGhPanel.Core/BetterGhPanel.Core.csproj" />
+    <Reference Include="RhinoCommon" HintPath="$(RhinoSystemPath)/RhinoCommon.dll" Private="false" />
+    <Reference Include="Grasshopper" HintPath="$(GrasshopperPath)/Grasshopper.dll" Private="false" />
+    <Reference Include="GH_IO" HintPath="$(GrasshopperPath)/GH_IO.dll" Private="false" />
+    <Reference Include="Eto" HintPath="$(RhinoSystemPath)/Eto.dll" Private="false" />
+    <Reference Include="Eto.Wpf" HintPath="$(RhinoSystemPath)/Eto.Wpf.dll" Private="false" />
+  </ItemGroup>
+</Project>
