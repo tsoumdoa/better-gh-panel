@@ -22,7 +22,8 @@ namespace BetterGhPanel
         private static readonly Color Ink = Color.FromArgb(49, 55, 53);
         private static readonly Color Muted = Color.FromArgb(120, 127, 123);
         private static readonly Color Accent = Color.FromArgb(77, 115, 94);
-        private RectangleF _panel, _search, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _inspect, _footer;
+        private RectangleF _panel, _search, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _footer;
+        private RectangleF _trim, _simplify, _flatten, _reverse;
         private readonly List<RowHit> _rowHits = new List<RowHit>();
         private int _offset, _shown, _selectedPosition = -1;
         private PanelQueryResult? _lastResult;
@@ -42,16 +43,20 @@ namespace BetterGhPanel
         {
             _panel = new RectangleF(Pivot.X, Pivot.Y, PanelOwner.CanvasWidth, PanelOwner.CanvasHeight);
             m_innerBounds = _panel;
-            float x = _panel.X + 9, right = _panel.Right - 9;
-            _inspect = new RectangleF(right - 17, _panel.Y + 4, 17, 17);
+            float x = _panel.X + 9;
             _search = new RectangleF(x, _panel.Y + 33, _panel.Width - 174, 22);
             _type = new RectangleF(_search.Right + 5, _search.Y, 75, 22);
             _sort = new RectangleF(_type.Right + 5, _search.Y, 71, 22);
             _branch = new RectangleF(x, _panel.Y + 60, _panel.Width - 134, 22);
             _jump = new RectangleF(_branch.Right + 5, _branch.Y, 60, 22);
             _reset = new RectangleF(_jump.Right + 5, _branch.Y, 46, 22);
+            float toolWidth = (_panel.Width - 33) / 4;
+            _trim = new RectangleF(x, _panel.Y + 87, toolWidth, 22);
+            _simplify = new RectangleF(_trim.Right + 5, _trim.Y, toolWidth, 22);
+            _flatten = new RectangleF(_simplify.Right + 5, _trim.Y, toolWidth, 22);
+            _reverse = new RectangleF(_flatten.Right + 5, _trim.Y, toolWidth, 22);
             _footer = new RectangleF(x, _panel.Bottom - 37, _panel.Width - 18, 30);
-            _list = new RectangleF(x, _panel.Y + 90, _panel.Width - 28, Math.Max(18, _panel.Height - 134));
+            _list = new RectangleF(x, _panel.Y + 117, _panel.Width - 28, Math.Max(18, _panel.Height - 161));
             _track = new RectangleF(_panel.Right - 14, _list.Y, 8, _list.Height);
             _resize = new RectangleF(_panel.Right - 13, _panel.Bottom - 13, 13, 13);
             // Linked parameter attributes keep Grasshopper's wire/tooltip behavior, but
@@ -105,8 +110,7 @@ namespace BetterGhPanel
                 Text(graphics, "Panel+", bold, Color.FromArgb(241, 245, 239), new RectangleF(_panel.X + 10, _panel.Y + 2, 85, 21), trim);
                 var itemLabel = result.Statistics.ItemCount == 1 ? "item" : "items";
                 var branchLabel = result.Statistics.BranchCount == 1 ? "branch" : "branches";
-                Text(graphics, $"{result.Statistics.ItemCount:N0} {itemLabel}  /  {result.Statistics.BranchCount:N0} {branchLabel}", small, Color.FromArgb(181, 194, 184), new RectangleF(_panel.X + 94, _panel.Y + 2, _panel.Width - 128, 21), trim);
-                Text(graphics, "↗", bold, Color.FromArgb(202, 213, 204), _inspect, trim);
+                Text(graphics, $"{result.Statistics.ItemCount:N0} {itemLabel}  /  {result.Statistics.BranchCount:N0} {branchLabel}", small, Color.FromArgb(181, 194, 184), new RectangleF(_panel.X + 94, _panel.Y + 2, _panel.Width - 104, 21), trim);
                 if (canvas.Viewport.Zoom >= 0.5f)
                 {
                     var options = session.Options;
@@ -116,6 +120,10 @@ namespace BetterGhPanel
                     Control(graphics, _branch, Short(options.BranchPath ?? "All branches", 80) + " ▾", mono, trim, options.BranchPath != null);
                     Control(graphics, _jump, "Jump row", small, trim, false);
                     Control(graphics, _reset, "Reset", small, trim, false);
+                    Control(graphics, _trim, PanelOwner.TrimDepth == 0 ? "Trim: off" : $"Trim: {PanelOwner.TrimDepth}", small, trim, PanelOwner.TrimDepth > 0);
+                    Control(graphics, _simplify, (PanelOwner.SimplifyTree ? "✓ " : "") + "Simplify", small, trim, PanelOwner.SimplifyTree);
+                    Control(graphics, _flatten, (PanelOwner.FlattenTree ? "✓ " : "") + "Flatten", small, trim, PanelOwner.FlattenTree);
+                    Control(graphics, _reverse, (PanelOwner.ReverseTree ? "✓ " : "") + "Reverse", small, trim, PanelOwner.ReverseTree);
                     RenderRows(graphics, result, font, small, bold, mono, trim);
                     RenderFooter(graphics, result, small, mono, trim);
                     if (_menu.Kind != CanvasMenuKind.None) RenderMenu(graphics, small, mono, trim);
@@ -196,7 +204,8 @@ namespace BetterGhPanel
                 : $"{stats.TypeCounts.Count:N0} types   ·   {stats.NullCount:N0} null   ·   {stats.InvalidCount:N0} invalid";
             Text(g, metrics, mono, Ink, new RectangleF(_footer.X, _footer.Y, _footer.Width - 5, 14), trim);
             var session = PanelOwner.Session;
-            string status = session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Updating…" : DateTime.UtcNow < _copiedUntil ? "Value copied" : $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0} / {Count:N0}  ·  view only";
+            string output = PanelOwner.HasTreeOperations ? "tree tools → output" : "original tree → output";
+            string status = session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Updating…" : DateTime.UtcNow < _copiedUntil ? "Value copied" : $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0} / {Count:N0}  ·  {output}";
             Text(g, status, small, Muted, new RectangleF(_footer.X, _footer.Y + 15, _footer.Width - 5, 14), trim);
         }
 
@@ -271,7 +280,23 @@ namespace BetterGhPanel
                 SetOffset(sender, _offset + (point.Y < thumb.Y ? -Math.Max(1, _shown) : Math.Max(1, _shown)));
                 return GH_ObjectResponse.Handled;
             }
-            if (_inspect.Contains(point)) { PanelOwner.OpenInspector(); return GH_ObjectResponse.Handled; }
+            if (_trim.Contains(point))
+            {
+                CanvasTextInput.Show(sender, _trim, PanelOwner.TrimDepth.ToString(), text =>
+                {
+                    if (int.TryParse(text, out var depth) && depth >= 0)
+                        PanelOwner.SetTreeOperations(depth, PanelOwner.FlattenTree, PanelOwner.ReverseTree, PanelOwner.SimplifyTree);
+                });
+                return GH_ObjectResponse.Handled;
+            }
+            if (_simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point))
+            {
+                PanelOwner.SetTreeOperations(PanelOwner.TrimDepth,
+                    _flatten.Contains(point) ? !PanelOwner.FlattenTree : PanelOwner.FlattenTree,
+                    _reverse.Contains(point) ? !PanelOwner.ReverseTree : PanelOwner.ReverseTree,
+                    _simplify.Contains(point) ? !PanelOwner.SimplifyTree : PanelOwner.SimplifyTree);
+                return GH_ObjectResponse.Handled;
+            }
             if (_search.Contains(point)) { EditSearch(sender); return GH_ObjectResponse.Handled; }
             if (_type.Contains(point)) { OpenMenu(CanvasMenuKind.Type, sender); return GH_ObjectResponse.Handled; }
             if (_sort.Contains(point)) { OpenMenu(CanvasMenuKind.Sort, sender); return GH_ObjectResponse.Handled; }
@@ -376,7 +401,20 @@ namespace BetterGhPanel
         public override void SetupTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             base.SetupTooltip(point, e);
-            if (_search.Contains(point))
+            if (_trim.Contains(point) || _simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point))
+            {
+                e.Title = "Tree tools · changes output";
+                e.Text = "Applied in order: Trim → Simplify → Flatten → Reverse";
+                e.Description = _trim.Contains(point) ? "Enter the number of trailing path levels to remove. Matching branches merge in source order. Fully trimmed paths become {0}. Enter 0 to disable." :
+                    _simplify.Contains(point) ? "Toggle removal of path indices shared by all branches." :
+                    _flatten.Contains(point) ? "Toggle merging all branches into {0}." : "Toggle reversing items within each output branch.";
+            }
+            else if (_reset.Contains(point))
+            {
+                e.Title = "Reset panel view";
+                e.Description = "Clear search, type and branch filters, and value sorting. Tree tools stay active; use Reset tree tools in the component menu to disable them.";
+            }
+            else if (_search.Contains(point))
             {
                 e.Title = "Search this view";
                 e.Text = "Press Enter to apply";

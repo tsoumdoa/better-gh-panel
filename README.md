@@ -8,17 +8,19 @@ Created in [T3 Code](https://t3.codes).
 
 ## Native MVP
 
-Find **Panel+** in **Params → Util** after installing the local Yak package. Connect any typed tree to **D**. The output forwards that tree unchanged: searching, filtering and sorting only affect your view.
+Find **Panel+** in **Params → Util** after installing the local Yak package. Connect any typed tree to **D**. With tree tools off, the output forwards that tree unchanged. Searching, filtering and sorting only affect your view.
 
 The public Yak beta is **`better-gh-panel 0.1.2-beta.1`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.2-beta.1`, then restart. Windows native checks pass; Mac runtime validation is pending.
 
-The resizable canvas panel is the primary workspace. It shows grouped branch headers and compact rows, with search, type filtering, sorting, branch selection, row jumps, a logical scrollbar, and numeric statistics. Click the search field and press Enter to apply a text or numeric query. Drag the bottom-right corner to resize; the size and query are saved with the definition.
+The next beta patch is **`0.1.3-beta.1`** (not yet published). It adds **Trim**, **Simplify**, **Flatten**, and **Reverse** directly to the component. Click Trim and enter a nonnegative depth (0 disables it); click the other tools to toggle them. Tools change the typed output and run in that order. Trim removes trailing path levels and merges matching branches; fully trimmed paths become `{0}`. Simplify removes shared path indices, Flatten merges into `{0}`, and Reverse reverses items within each output branch. Upstream data stays intact. Tool settings are saved with the definition and support undo. **Reset** clears only the view; **Reset tree tools** in the component menu restores the original output.
 
-The small expand action and component menu open the optional modeless inspector for deeper inspection and full values.
+New panels start at **360 × 360** (1:1). Saved sizes and legacy size presets are preserved. All interaction stays on the canvas; the popup inspector and expand action have been removed.
 
-The inspector supports debounced text search, numeric comparisons (`> 800`, `<= 25`, `= 10`), type/invalid filters, value sorting, exact branch jumps such as `{0;2;4}`, direct row jumps, virtual scrolling, original item addresses, copying full values, and scoped numeric/type statistics. Use Home/End and Page Up/Down in the row view. View settings are saved with the Grasshopper definition.
+The resizable canvas panel shows grouped branch headers and compact rows, with search, numeric comparisons (`> 800`, `<= 25`, `= 10`), type/invalid filters, value sorting, branch selection, exact branch jumps such as `{0;2;4}`, row jumps, a logical scrollbar, and numeric statistics. Click the search field and press Enter to apply a query. Double-click a row to copy its full value. Addresses describe the output tree after the active tools. Drag the bottom-right corner to resize; size and view settings are saved with the definition.
 
-Primitive values and points/vectors have cached summaries. Heavy geometry and third-party data show a type summary; their full text is formatted on demand when selected. Text search operates on those cached summaries. Numeric statistics include finite Number/Integer values, and exclude NaN and infinity. This MVP inspects connected data; it does not author text like an unconnected stock Panel.
+![Panel+ canvas tree tools, rendered by the native component with sample data](docs/images/panel-tree-tools.png)
+
+Primitive values and points/vectors have cached summaries. Heavy geometry and third-party data show a type summary; their full text is formatted on demand when copied. Text search operates on those cached summaries. Numeric statistics include finite Number/Integer values, and exclude NaN and infinity. This MVP inspects connected data; it does not author text like an unconnected stock Panel.
 
 ### Build and package
 
@@ -28,7 +30,7 @@ dotnet run --project tests/BetterGhPanel.Core.Tests -c Release
 node scripts/package.mjs
 ```
 
-The beta artifact is `artifacts/better-gh-panel-0.1.2-beta.1/better-gh-panel-0.1.2-beta.1-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The beta artifact is `artifacts/better-gh-panel-0.1.3-beta.1/better-gh-panel-0.1.3-beta.1-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino. CI is configured to compile and stage on Windows and Mac, and does not launch Rhino.
 

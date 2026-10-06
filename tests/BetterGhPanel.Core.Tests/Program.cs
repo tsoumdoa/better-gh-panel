@@ -286,6 +286,7 @@ internal static class Program
 
     private static void CanvasDimensionsAndPresets()
     {
+        Equal(CanvasPanelSize.DefaultWidth, CanvasPanelSize.DefaultHeight);
         Equal(CanvasPanelSize.DefaultWidth, CanvasPanelSize.Width(float.NaN));
         Equal(CanvasPanelSize.DefaultHeight, CanvasPanelSize.Height(float.PositiveInfinity));
         Equal(300f, CanvasPanelSize.Width(-100));

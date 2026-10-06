@@ -1,10 +1,9 @@
 using System;
 using System.Drawing;
 using System.Reflection;
-using Eto.Forms;
 using Grasshopper.Kernel;
 
-internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Jump, Reset, Resize, List }
+internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify }
 
 // The .gha is loaded separately. Keep plugin-owned reflection in this adapter.
 internal static class PanelTestAdapter
@@ -14,14 +13,10 @@ internal static class PanelTestAdapter
     internal static bool HasSession(GH_Component component) => Field<object?>(component, "_session") != null;
     internal static int Preset(GH_Component component) => Property<int>(component, "PreviewSize");
     internal static SizeF Size(GH_Component component) => new SizeF(Property<float>(component, "CanvasWidth"), Property<float>(component, "CanvasHeight"));
-    internal static TextBox Search(Form inspector) => Field<TextBox>(inspector, "_search");
-    internal static string Detail(Form inspector) => Field<TextArea>(inspector, "_detail").Text ?? string.Empty;
-
-    internal static void SelectRow(Form inspector, int position)
-    {
-        var rows = Field<object>(inspector, "_rows");
-        rows.GetType().GetMethod("SelectPosition", PrivateInstance)!.Invoke(rows, new object[] { position });
-    }
+    internal static int TrimDepth(GH_Component component) => Property<int>(component, "TrimDepth");
+    internal static bool TreeFlag(GH_Component component, string name) => Property<bool>(component, name + "Tree");
+    internal static void TreeTools(GH_Component component, int depth, bool flatten, bool reverse, bool simplify) =>
+        component.GetType().GetMethod("SetTreeOperations", PrivateInstance)!.Invoke(component, new object[] { depth, flatten, reverse, simplify });
 
     internal static void Resize(GH_Component component, float width, float height) =>
         component.GetType().GetMethod("SetCanvasSize", PrivateInstance)!.Invoke(component, new object[] { width, height });

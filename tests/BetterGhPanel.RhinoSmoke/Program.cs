@@ -162,10 +162,8 @@ internal static class Program
         document.NewSolution(false, GH_SolutionMode.Silent);
         object session = PanelTestAdapter.Session(component);
         Console.WriteLine("GH solved: " + component.Params.Output[0].VolatileData.DataCount + " output items.");
-        var inspector = (Eto.Forms.Form)Activator.CreateInstance(assembly.GetType("BetterGhPanel.UI.PanelInspector", true)!, session)!;
-        Console.WriteLine("Eto inspector constructed: " + inspector.GetType().Name);
-        inspector.Location = new Eto.Drawing.Point(-1800, -1100);
-        inspector.Show();
+        Assert(assembly.GetType("BetterGhPanel.UI.PanelInspector") == null, "Popup inspector is removed from the plugin");
+        Assert(PanelTestAdapter.Size(component) == new SizeF(360, 360), "New canvas panels default to a 1:1 ratio");
         var input = component.Params.Input[0].VolatileData;
         var output = component.Params.Output[0].VolatileData;
         Assert(input.DataCount == 5, "Native Grasshopper solver collected all source items");
@@ -201,44 +199,29 @@ internal static class Program
             "Rapid cancellation publishes the latest query only");
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(host, session);
-        var search = PanelTestAdapter.Search(inspector);
-        Assert(search.Text == string.Empty, "External reset synchronizes inspector search controls");
-        search.Text = "Unsubmitted draft";
-        session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
-        await WaitForQuery(host, session);
-        Assert(search.Text == string.Empty, "Reset clears inspector drafts even when query options already equal defaults");
 
         var independentRows = snapshot.Rows.Select(row => new PanelRow(row.Id + 1000, row.BranchIndex,
             row.OriginalIndex, row.Path, row.TypeName, "cached summary", row.NumericValue, row.IsNull, row.IsValid)).ToArray();
         var independentSnapshot = new PanelSnapshot(50, independentRows, snapshot.Branches);
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { independentSnapshot });
         await WaitForQuery(host, session);
-        PanelTestAdapter.SelectRow(inspector, 0);
-        Assert(PanelTestAdapter.Detail(inspector) == "10", "Full-value lookup uses source positions even when row IDs differ");
-        UpdateQuery(session, new PanelQueryOptions { Search = "> 42" });
-        await WaitForQuery(host, session);
-        Assert(PanelTestAdapter.Detail(inspector) == string.Empty, "Filtering out the selected row clears the detail and selection");
+        var fullValue = (string)session.GetType().GetMethod("GetDisplayValue")!.Invoke(session, new object[] { independentSnapshot, 0 })!;
+        Assert(fullValue == "10", "Full-value lookup uses source positions even when row IDs differ");
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { snapshot });
         var staleValue = (string)session.GetType().GetMethod("GetDisplayValue")!.Invoke(session, new object[] { independentSnapshot, 0 })!;
         Assert(staleValue == "cached summary", "Obsolete snapshots never resolve full values from a newer solution");
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(host, session);
-        await Task.Delay(100);
-        var native = (System.Windows.Window)inspector.ControlObject;
-        native.UpdateLayout();
-        var renderTarget = new System.Windows.Media.Imaging.RenderTargetBitmap((int)native.ActualWidth, (int)native.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
-        renderTarget.Render(native);
-        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
-        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(renderTarget));
-        string inspectorArtifact = Path.Combine(Path.GetDirectoryName(_plugin)!, "rhino-smoke-inspector.png");
-        using (var stream = File.Create(inspectorArtifact)) encoder.Save(stream);
-        Console.WriteLine("Native Eto inspector artifact: " + inspectorArtifact);
-        inspector.Close();
-        inspector.Dispose();
         UpdateQuery(session, new PanelQueryOptions { Search = "alpha", BranchPath = "{0;2}", SortMode = PanelSortMode.ValueDescending });
         await WaitForQuery(host, session);
 
+        VerifyTreeOperations(assembly);
+        PanelTestAdapter.TreeTools(component, 1, true, true, true);
+        await WaitForQuery(host, session);
+        Assert(PanelTestAdapter.TrimDepth(component) == 1 && component.Params.Output[0].VolatileData.PathCount == 1,
+            "Tree settings recompute the Grasshopper output");
         PanelTestAdapter.Resize(component, 500, 420);
+        UpdateQuery(session, new PanelQueryOptions { Search = "alpha", BranchPath = "{0}", SortMode = PanelSortMode.ValueDescending });
         var archive = new GH_Archive();
         Assert(archive.AppendObject(component, "Panel"), "Component settings serialize");
         var restored = (GH_Component)Activator.CreateInstance(componentType)!;
@@ -246,11 +229,14 @@ internal static class Program
         Assert(archive.ExtractObject(restored, "Panel"), "Component settings deserialize");
         object restoredSession = PanelTestAdapter.Session(restored);
         var restoredOptions = Get<PanelQueryOptions>(restoredSession, "Options");
-        Assert(restoredOptions.Search == "alpha" && restoredOptions.BranchPath == "{0;2}" &&
+        Assert(restoredOptions.Search == "alpha" && restoredOptions.BranchPath == "{0}" &&
             restoredOptions.SortMode == PanelSortMode.ValueDescending, "Search, branch and sort survive serialization");
         Assert(PanelTestAdapter.Size(restored).Width == 500 && PanelTestAdapter.Size(restored).Height == 420,
             "Canvas width and height survive serialization");
         Assert(PanelTestAdapter.Preset(restored) == -1, "Custom dimensions do not retain an unrelated preset check mark");
+        Assert(PanelTestAdapter.TrimDepth(restored) == 1 && PanelTestAdapter.TreeFlag(restored, "Flatten") &&
+            PanelTestAdapter.TreeFlag(restored, "Reverse") && PanelTestAdapter.TreeFlag(restored, "Simplify"),
+            "All tree operations survive serialization");
         var legacy = new GH_LooseChunk("Panel");
         Assert(restored.Write(legacy), "Legacy fixture serializes the component");
         legacy.RemoveItem("PanelWidth");
@@ -260,7 +246,15 @@ internal static class Program
         Assert(restored.Read(legacy), "Legacy preset-only settings deserialize");
         Assert(PanelTestAdapter.Size(restored).Width == 440 && PanelTestAdapter.Size(restored).Height == 400 &&
             PanelTestAdapter.Preset(restored) == 2, "Legacy size presets supply dimensions when explicit dimensions are absent");
+        foreach (var key in new[] { "PanelTrimDepth", "PanelFlatten", "PanelReverse", "PanelSimplify", "PanelSize" }) legacy.RemoveItem(key);
+        Assert(restored.Read(legacy) && PanelTestAdapter.TrimDepth(restored) == 0 &&
+            !PanelTestAdapter.TreeFlag(restored, "Flatten") && !PanelTestAdapter.TreeFlag(restored, "Reverse") &&
+            !PanelTestAdapter.TreeFlag(restored, "Simplify") && PanelTestAdapter.Size(restored) == new SizeF(360, 360),
+            "Older definitions without tree settings default to unchanged output and square size");
         restored.RemovedFromDocument(document);
+        PanelTestAdapter.TreeTools(component, 0, false, false, false);
+        await WaitForQuery(host, session);
+        AssertEqualTrees(input, component.Params.Output[0].VolatileData);
 
         component.DocumentContextChanged(document, GH_DocumentContext.Unloaded);
         component.DocumentContextChanged(document, GH_DocumentContext.Loaded);
@@ -273,11 +267,12 @@ internal static class Program
         component.Attributes.ExpireLayout();
         component.Attributes.PerformLayout();
         using var canvas = new GH_Canvas { Size = new Size(720, 520) };
+        await VerifyCanvasTreeTools(component, canvas, assembly, host, session, input);
         var sampleRows = Enumerable.Range(0, 10000).Select(i => new PanelRow(i, 0, i, "{0;0}", "Number", i.ToString(), i)).ToArray();
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { new PanelSnapshot(100, sampleRows, new[] { new PanelBranch(0, "{0;0}", 10000) }) });
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(host, session);
-        PanelTestAdapter.Resize(component, 360, 280);
+        PanelTestAdapter.Resize(component, 360, 360);
         component.Attributes.PerformLayout();
         DrawCanvasPreview(component, canvas);
         _canvasDrawingVerified = true;
@@ -318,21 +313,107 @@ internal static class Program
         var start = new PointF(resize.X + 5, resize.Y + 5);
         Assert(component.Attributes.RespondToMouseDown(canvas, Mouse(start)) == GH_ObjectResponse.Capture, "Canvas resize captures the mouse");
         component.Attributes.RespondToMouseMove(canvas, Mouse(new PointF(start.X + 140, start.Y + 80)));
-        Assert(PanelTestAdapter.Size(component).Width == 500 && PanelTestAdapter.Size(component).Height == 360,
+        Assert(PanelTestAdapter.Size(component).Width == 500 && PanelTestAdapter.Size(component).Height == 440,
             "Dragging the resize corner updates panel dimensions");
         Assert(component.Params.Output[0].Attributes.OutputGrip.X == PanelTestAdapter.Bounds(component, CanvasControl.Panel).Right,
             "Native output grip follows resized panel bounds");
         Assert(component.Attributes.RespondToMouseUp(canvas, Mouse(start)) == GH_ObjectResponse.Release, "Canvas resize releases the mouse");
-        PanelTestAdapter.Resize(component, 360, 280);
+        PanelTestAdapter.Resize(component, 360, 360);
         component.Attributes.PerformLayout();
         DrawCanvasPreview(component, canvas);
         DrawCanvasPreview(component, canvas, 192);
         AssertCanvasDpiInvariant();
+        // Review screenshot uses a real solved typed tree and active controls.
+        PanelTestAdapter.TreeTools(component, 0, false, true, true);
+        await WaitForQuery(host, session);
+        DrawCanvasPreview(component, canvas);
         component.DocumentContextChanged(document, GH_DocumentContext.Close);
         Assert(!PanelTestAdapter.HasSession(component),
             "Document closure disposes the component session");
         Console.WriteLine("PASS: Windows .NET Rhino host smoke checks completed.");
         return 0;
+    }
+
+    private static void VerifyTreeOperations(Assembly assembly)
+    {
+        var source = new GH_Structure<IGH_Goo>();
+        var number = new GH_Number(10);
+        var text = new GH_String("full\nvalue");
+        source.Append(number, new GH_Path(7, 0, 0));
+        source.Append(null!, new GH_Path(7, 0, 0));
+        source.Append(text, new GH_Path(7, 0, 1));
+        source.EnsurePath(new GH_Path(7, 1, 0));
+        var apply = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!
+            .GetMethod("Apply", BindingFlags.Static | BindingFlags.NonPublic)!;
+        GH_Structure<IGH_Goo> Transform(int depth = 0, bool simplify = false, bool flatten = false, bool reverse = false) =>
+            (GH_Structure<IGH_Goo>)apply.Invoke(null, new object[] { source, depth, simplify, flatten, reverse })!;
+
+        Assert(ReferenceEquals(source, Transform()), "Disabled tools pass through the original typed tree");
+        var trimmed = Transform(1);
+        Assert(trimmed.PathCount == 2 && trimmed.Paths[0].ToString() == "{7;0}" &&
+            trimmed.Branches[0].Count == 3 && trimmed.Branches[1].Count == 0,
+            "Trim merges trailing path levels in source order and preserves empty branches");
+        Assert(ReferenceEquals(trimmed.Branches[0][0], number) && ReferenceEquals(trimmed.Branches[0][2], text) &&
+            trimmed.Branches[0][1] == null, "Tree transformations preserve typed goo references and null items");
+        Assert(Transform(int.MaxValue).Paths.Single().ToString() == "{0}", "Trim beyond path depth collapses to {0}");
+        var simplified = Transform(simplify: true);
+        Assert(simplified.Paths.Select(p => p.ToString()).SequenceEqual(new[] { "{0;0}", "{0;1}", "{1;0}" }),
+            "Simplify removes path indices shared by all branches");
+        var reversed = Transform(reverse: true);
+        Assert(reversed.Branches[0][0] == null && ReferenceEquals(reversed.Branches[0][1], number) &&
+            reversed.Branches[2].Count == 0, "Reverse operates within branches and preserves empty branches");
+        var flattened = Transform(flatten: true);
+        Assert(flattened.PathCount == 1 && flattened.Paths[0].ToString() == "{0}" &&
+            flattened.Branches[0].SequenceEqual(new IGH_Goo[] { number, null!, text }),
+            "Flatten merges every item into {0} in source order");
+        var combined = Transform(1, simplify: true, flatten: true, reverse: true);
+        Assert(combined.Branches.Single().SequenceEqual(new IGH_Goo[] { text, null!, number }),
+            "Combined tools use Trim, Simplify, Flatten, then Reverse");
+        Assert(source.Paths.Select(p => p.ToString()).SequenceEqual(new[] { "{7;0;0}", "{7;0;1}", "{7;1;0}" }) &&
+            source.Branches[0].SequenceEqual(new IGH_Goo[] { number, null! }) && source.Branches[2].Count == 0,
+            "Every tool leaves upstream paths, branch lists and values untouched");
+        var empty = new GH_Structure<IGH_Goo>();
+        var emptyResult = (GH_Structure<IGH_Goo>)apply.Invoke(null, new object[] { empty, 3, true, true, true })!;
+        Assert(emptyResult.DataCount == 0 && empty.DataCount == 0, "All tools safely handle empty input");
+    }
+
+    private static async Task VerifyCanvasTreeTools(GH_Component component, GH_Canvas canvas,
+        Assembly assembly, RhinoCore host, object session, IGH_Structure input)
+    {
+        PanelTestAdapter.Resize(component, 360, 360);
+        component.Attributes.PerformLayout();
+        UpdateQuery(session, new PanelQueryOptions { BranchPath = "{0;2}" });
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Flatten));
+        await WaitForQuery(host, session);
+        var output = component.Params.Output[0].VolatileData;
+        Assert(PanelTestAdapter.TreeFlag(component, "Flatten") && output.PathCount == 1 && output.DataCount == input.DataCount,
+            "Canvas Flatten changes the real output tree");
+        Assert(Get<PanelQueryOptions>(session, "Options").BranchPath == null, "Structural changes clear stale branch selections");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reverse));
+        await WaitForQuery(host, session);
+        output = component.Params.Output[0].VolatileData;
+        var first = output.get_Branch(output.Paths[0])[0];
+        var lastInput = input.get_Branch(input.Paths[1]);
+        Assert(first?.ToString() == lastInput[lastInput.Count - 1]?.ToString(), "Canvas Reverse reverses the flattened output");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Simplify));
+        await WaitForQuery(host, session);
+        Assert(PanelTestAdapter.TreeFlag(component, "Simplify"), "Canvas Simplify toggles persistently");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Trim));
+        CanvasEditorAdapter.Active(assembly).Submit("1");
+        await WaitForQuery(host, session);
+        Assert(PanelTestAdapter.TrimDepth(component) == 1, "Canvas Trim accepts a depth through the inline editor");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Trim));
+        CanvasEditorAdapter.Active(assembly).Submit("-1");
+        Assert(PanelTestAdapter.TrimDepth(component) == 1, "Invalid trim depths leave the last setting unchanged");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
+        await WaitForQuery(host, session);
+        Assert(PanelTestAdapter.TrimDepth(component) == 1 && PanelTestAdapter.TreeFlag(component, "Flatten"),
+            "Reset view preserves output tree tools");
+        PanelTestAdapter.TreeTools(component, 0, false, false, false);
+        await WaitForQuery(host, session);
+        AssertEqualTrees(input, component.Params.Output[0].VolatileData);
+        Assert(Get<PanelSnapshot>(session, "Snapshot").Branches.Select(b => b.Path).SequenceEqual(input.Paths.Select(p => p.ToString())),
+            "Canvas snapshot follows the solved output tree");
     }
 
     private static T Get<T>(object value, string property) => (T)value.GetType().GetProperty(property)!.GetValue(value)!;
@@ -406,7 +487,7 @@ internal static class Program
         Assert(input.PathCount == output.PathCount && input.DataCount == output.DataCount, "Output preserves tree shape and item count");
         for (int branch = 0; branch < input.PathCount; branch++)
         {
-            Assert(input.Paths[branch].Equals(output.Paths[branch]), "Output preserves original path " + input.Paths[branch]);
+            Assert(input.Paths[branch].ToString() == output.Paths[branch].ToString(), "Output preserves original path " + input.Paths[branch]);
             var left = input.get_Branch(input.Paths[branch]);
             var right = output.get_Branch(output.Paths[branch]);
             Assert(left.Count == right.Count, "Output preserves branch length");
