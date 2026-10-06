@@ -6,7 +6,7 @@ namespace BetterGhPanel.UI
     internal static class CanvasPanelSize
     {
         internal const float DefaultWidth = 360;
-        internal const float DefaultHeight = 280;
+        internal const float DefaultHeight = 360;
         internal static readonly string[] PresetNames = { "Small", "Medium", "Large" };
 
         internal static float Width(float value) => Clamp(value, DefaultWidth, 300);

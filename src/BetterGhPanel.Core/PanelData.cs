@@ -53,7 +53,8 @@ namespace BetterGhPanel.Core
         public static PanelSnapshot Empty { get; } =
             new PanelSnapshot(0, Array.Empty<PanelRow>(), Array.Empty<PanelBranch>());
 
-        public PanelSnapshot(long version, IReadOnlyList<PanelRow> rows, IReadOnlyList<PanelBranch> branches)
+        public PanelSnapshot(long version, IReadOnlyList<PanelRow> rows, IReadOnlyList<PanelBranch> branches,
+            PanelUnitConversion unitConversion = PanelUnitConversion.None)
         {
             if (rows == null) throw new ArgumentNullException(nameof(rows));
             if (branches == null) throw new ArgumentNullException(nameof(branches));
@@ -70,12 +71,14 @@ namespace BetterGhPanel.Core
             for (var i = 0; i < branchCopy.Length; i++)
                 branchCopy[i] = branches[i] ?? throw new ArgumentException("Branches must not contain null records.", nameof(branches));
             Version = version;
+            UnitConversion = unitConversion;
             Rows = Array.AsReadOnly(rowCopy);
             Branches = Array.AsReadOnly(branchCopy);
             TypeCounts = new ReadOnlyDictionary<string, int>(typeCounts);
         }
 
         public long Version { get; }
+        public PanelUnitConversion UnitConversion { get; }
         public IReadOnlyList<PanelRow> Rows { get; }
         public IReadOnlyList<PanelBranch> Branches { get; }
         /// <summary>Source type counts for populating filters without another full-tree scan.</summary>

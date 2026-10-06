@@ -5,9 +5,10 @@ authors:
   - aectooling by tomoS
 description: >
   Panel+ beta is a fast, resizable Grasshopper data panel for Rhino 8.
-  Search, filter, sort, jump to branches and rows, and inspect numeric
-  statistics directly on the canvas while preserving the original typed
-  output tree. An optional native inspector provides more detail.
+  Trim, simplify, flatten, or reverse typed data trees directly on the
+  canvas. Search, filter, sort, jump to branches and rows, and inspect
+  numeric statistics in a square panel without popup windows. A compact
+  footer menu converts length, area, and angle units and sets decimal formatting.
   Includes Windows and Mac builds; Mac runtime validation is pending.
 url: https://github.com/tsoumdoa/better-gh-panel
 icon: icon.png

@@ -5,7 +5,7 @@ using BetterGhPanel.Core;
 
 namespace BetterGhPanel.UI
 {
-    internal enum CanvasMenuKind { None, Type, Sort, Branch }
+    internal enum CanvasMenuKind { None, Type, Sort, Branch, Units }
 
     // One owner for menu lifetime, snapshot validity, layout, and paging.
     internal sealed class CanvasMenu
@@ -17,7 +17,8 @@ namespace BetterGhPanel.UI
         internal RectangleF Bounds { get; private set; }
         internal int Offset { get; private set; }
         internal int Count => Kind == CanvasMenuKind.Type ? _types.Length + 2 :
-            Kind == CanvasMenuKind.Sort ? SortLabels.Length : Kind == CanvasMenuKind.Branch ? _snapshot.Branches.Count + 2 : 0;
+            Kind == CanvasMenuKind.Sort ? SortLabels.Length : Kind == CanvasMenuKind.Branch ? _snapshot.Branches.Count + 2 :
+            Kind == CanvasMenuKind.Units ? PanelUnits.ConversionCount + 2 : 0;
         internal int Visible => Math.Min(Count, Math.Max(2, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
 
         internal void Close() => Kind = CanvasMenuKind.None;
@@ -37,11 +38,19 @@ namespace BetterGhPanel.UI
             }
         }
 
-        internal void Layout(RectangleF panel, RectangleF type, RectangleF sort, RectangleF branch)
+        internal void Layout(RectangleF panel, RectangleF type, RectangleF sort, RectangleF branch, RectangleF units = default)
         {
             if (Kind == CanvasMenuKind.None) return;
-            var anchor = Kind == CanvasMenuKind.Type ? type : Kind == CanvasMenuKind.Sort ? sort : branch;
+            var anchor = Kind == CanvasMenuKind.Type ? type : Kind == CanvasMenuKind.Sort ? sort : Kind == CanvasMenuKind.Units ? units : branch;
             float width = Math.Min(panel.Width - 18, Kind == CanvasMenuKind.Sort ? 145 : 235);
+            if (Kind == CanvasMenuKind.Units)
+            {
+                int rows = Math.Max(2, Math.Min(Count, (int)((anchor.Top - panel.Top - 31) / 20)));
+                int height = rows * 20;
+                Bounds = new RectangleF(panel.Right - width - 9, anchor.Top - height - 2, width, height);
+                Offset = Math.Max(0, Math.Min(Math.Max(0, Count - Visible), Offset));
+                return;
+            }
             int visible = Math.Max(2, Math.Min(8, (int)((panel.Bottom - 9 - anchor.Bottom - 19) / 20)));
             Bounds = new RectangleF(Math.Min(anchor.X, panel.Right - width - 9), anchor.Bottom + 2, width,
                 Math.Min(visible, Count) * 20 + (Count > visible ? 20 : 0));
@@ -66,8 +75,16 @@ namespace BetterGhPanel.UI
         internal string TypeNameAt(int index) => _types[index - 2];
         internal string BranchPathAt(int index) => _snapshot.Branches[index - 2].Path;
 
-        internal string Label(int index, bool onlyInvalid)
+        internal string Label(int index, bool onlyInvalid, PanelUnitConversion conversion = PanelUnitConversion.None,
+            int decimals = PanelUnits.AutomaticDecimals)
         {
+            if (Kind == CanvasMenuKind.Units)
+            {
+                if (index < PanelUnits.ConversionCount)
+                    return (index == (int)conversion ? "✓ " : "") + PanelUnits.Label((PanelUnitConversion)index);
+                if (index == PanelUnits.ConversionCount) return (decimals < 0 ? "✓ " : "") + "Decimals: automatic";
+                return "Decimal places…" + (decimals >= 0 ? "  (" + decimals + ")" : "");
+            }
             if (Kind == CanvasMenuKind.Type)
                 return index == 0 ? "All types" : index == 1 ? (onlyInvalid ? "✓ Invalid only" : "Invalid only") : TypeNameAt(index);
             if (Kind == CanvasMenuKind.Sort) return SortLabels[index];

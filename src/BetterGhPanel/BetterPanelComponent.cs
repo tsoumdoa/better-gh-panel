@@ -9,14 +9,12 @@ using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
-using Rhino;
 
 namespace BetterGhPanel
 {
     public sealed class BetterPanelComponent : GH_Component
     {
         private PanelSession? _session;
-        private PanelInspector? _inspector;
         private IGH_Goo?[] _sourceItems = Array.Empty<IGH_Goo?>();
         private PanelQueryOptions _savedOptions = new PanelQueryOptions();
         private long _version;
@@ -24,9 +22,16 @@ namespace BetterGhPanel
         internal int PreviewSize => CanvasPanelSize.PresetIndex(CanvasWidth, CanvasHeight);
         internal float CanvasWidth { get; private set; } = CanvasPanelSize.DefaultWidth;
         internal float CanvasHeight { get; private set; } = CanvasPanelSize.DefaultHeight;
+        internal int TrimDepth { get; private set; }
+        internal bool FlattenTree { get; private set; }
+        internal bool ReverseTree { get; private set; }
+        internal bool SimplifyTree { get; private set; }
+        internal bool HasTreeOperations => TrimDepth > 0 || FlattenTree || ReverseTree || SimplifyTree;
+        internal PanelUnitConversion UnitConversion { get; private set; }
+        internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
 
         public BetterPanelComponent() : base("Panel+", "Panel+",
-            "Inspect data trees quickly. Filters and sorting only affect the view; the typed tree passes through unchanged.",
+            "Inspect and manipulate typed data trees on the canvas. Tree tools and unit conversion change the output; filters, sorting and decimal formatting affect the view.",
             "Params", "Util") { }
 
         public override Guid ComponentGuid => new Guid("51DC646E-5F72-496A-8B40-628478541F44");
@@ -66,6 +71,54 @@ namespace BetterGhPanel
             Instances.ActiveCanvas?.Invalidate();
         }
 
+        internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify)
+        {
+            trimDepth = Math.Max(0, trimDepth);
+            if (TrimDepth == trimDepth && FlattenTree == flatten && ReverseTree == reverse && SimplifyTree == simplify) return;
+            bool pathsChanged = TrimDepth != trimDepth || FlattenTree != flatten || SimplifyTree != simplify;
+            RecordUndoEvent("Panel+ tree tools");
+            TrimDepth = trimDepth;
+            FlattenTree = flatten;
+            ReverseTree = reverse;
+            SimplifyTree = simplify;
+            if (pathsChanged)
+            {
+                // Reverse only changes item order, so its branch selection stays valid.
+                var options = Session.Options;
+                options.BranchPath = null;
+                options.BranchPrefix = false;
+                Session.UpdateQuery(options);
+            }
+            OnPingDocument()?.Modified();
+            ExpireSolution(true);
+            Instances.ActiveCanvas?.Invalidate();
+        }
+
+        internal void SetUnits(PanelUnitConversion conversion, int decimals)
+        {
+            if (!Enum.IsDefined(typeof(PanelUnitConversion), conversion)) conversion = PanelUnitConversion.None;
+            decimals = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, decimals));
+            bool conversionChanged = UnitConversion != conversion;
+            if (!conversionChanged && DecimalPlaces == decimals) return;
+            RecordUndoEvent("Panel+ units and decimals");
+            UnitConversion = conversion;
+            DecimalPlaces = decimals;
+            OnPingDocument()?.Modified();
+            if (conversionChanged) ExpireSolution(true);
+            Instances.ActiveCanvas?.Invalidate();
+        }
+
+        internal string DisplayValue(PanelSnapshot snapshot, PanelRow row) => row.NumericValue.HasValue &&
+            (snapshot.UnitConversion != PanelUnitConversion.None || DecimalPlaces >= 0)
+            ? PanelUnits.Format(row.NumericValue.Value, snapshot.UnitConversion, DecimalPlaces) : row.DisplayValue;
+
+        internal string CopyValue(PanelSnapshot snapshot, int position)
+        {
+            var row = snapshot.Rows[position];
+            return row.NumericValue.HasValue && (snapshot.UnitConversion != PanelUnitConversion.None || DecimalPlaces >= 0)
+                ? DisplayValue(snapshot, row) : Session.GetDisplayValue(snapshot, position);
+        }
+
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
             p.AddGenericParameter("Data", "D", "Any typed data tree to inspect", GH_ParamAccess.tree);
@@ -73,23 +126,16 @@ namespace BetterGhPanel
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p) =>
-            p.AddGenericParameter("Data", "D", "Original typed data tree, unchanged by the inspector", GH_ParamAccess.tree);
+            p.AddGenericParameter("Data", "D", "Typed tree after Trim → Simplify → Flatten → Reverse → unit conversion. Filters, sorting and decimal formatting do not change output precision.", GH_ParamAccess.tree);
 
         protected override void SolveInstance(IGH_DataAccess da)
         {
             if (!da.GetDataTree(0, out GH_Structure<IGH_Goo> tree)) tree = new GH_Structure<IGH_Goo>();
+            tree = PanelTreeOperations.Apply(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree);
+            tree = PanelUnitOperations.Apply(tree, UnitConversion);
             da.SetDataTree(0, tree);
-            var snapshot = SnapshotCapture.Capture(tree, ++_version, out _sourceItems);
+            var snapshot = SnapshotCapture.Capture(tree, ++_version, out _sourceItems, UnitConversion);
             Session.AttachSnapshot(snapshot);
-        }
-
-        internal void OpenInspector()
-        {
-            if (_inspector != null) { _inspector.BringToFront(); return; }
-            _inspector = new PanelInspector(Session);
-            _inspector.Closed += (_, __) => _inspector = null;
-            _inspector.Owner = Rhino.UI.RhinoEtoApp.MainWindow;
-            _inspector.Show();
         }
 
         public override void RemovedFromDocument(GH_Document document)
@@ -105,8 +151,6 @@ namespace BetterGhPanel
             {
                 CanvasTextInput.CloseActive();
                 // Unloaded is a canvas/tab switch, not document destruction.
-                _inspector?.Close();
-                _inspector = null;
             }
             base.DocumentContextChanged(document, context);
         }
@@ -115,8 +159,6 @@ namespace BetterGhPanel
         {
             CanvasTextInput.CloseActive();
             if (_session != null) _savedOptions = _session.Options;
-            _inspector?.Close();
-            _inspector = null;
             _session?.Dispose();
             _session = null;
             _sourceItems = Array.Empty<IGH_Goo?>();
@@ -126,8 +168,8 @@ namespace BetterGhPanel
         {
             base.AppendAdditionalComponentMenuItems(menu);
             Menu_AppendSeparator(menu);
-            Menu_AppendItem(menu, "Open data inspector…", (_, __) => OpenInspector());
-            Menu_AppendItem(menu, "Reset inspector view", (_, __) => Session.ResetView());
+            Menu_AppendItem(menu, "Reset panel view", (_, __) => Session.ResetView());
+            Menu_AppendItem(menu, "Reset tree tools", (_, __) => SetTreeOperations(0, false, false, false), HasTreeOperations);
             var sizeMenu = Menu_AppendItem(menu, "Canvas panel size");
             var names = CanvasPanelSize.PresetNames;
             for (var i = 0; i < names.Length; i++)
@@ -155,6 +197,12 @@ namespace BetterGhPanel
             writer.SetInt32("PanelSize", PreviewSize < 0 ? 1 : PreviewSize);
             writer.SetSingle("PanelWidth", CanvasWidth);
             writer.SetSingle("PanelHeight", CanvasHeight);
+            writer.SetInt32("PanelTrimDepth", TrimDepth);
+            writer.SetBoolean("PanelFlatten", FlattenTree);
+            writer.SetBoolean("PanelReverse", ReverseTree);
+            writer.SetBoolean("PanelSimplify", SimplifyTree);
+            writer.SetInt32("PanelUnitConversion", (int)UnitConversion);
+            writer.SetInt32("PanelDecimalPlaces", DecimalPlaces);
             return base.Write(writer);
         }
 
@@ -179,6 +227,22 @@ namespace BetterGhPanel
             reader.TryGetSingle("PanelHeight", ref height);
             CanvasWidth = CanvasPanelSize.Width(width);
             CanvasHeight = CanvasPanelSize.Height(height);
+            int trimDepth = 0;
+            bool flatten = false, reverse = false, simplify = false;
+            reader.TryGetInt32("PanelTrimDepth", ref trimDepth);
+            reader.TryGetBoolean("PanelFlatten", ref flatten);
+            reader.TryGetBoolean("PanelReverse", ref reverse);
+            reader.TryGetBoolean("PanelSimplify", ref simplify);
+            TrimDepth = Math.Max(0, trimDepth);
+            FlattenTree = flatten;
+            ReverseTree = reverse;
+            SimplifyTree = simplify;
+            int conversion = 0, decimals = PanelUnits.AutomaticDecimals;
+            reader.TryGetInt32("PanelUnitConversion", ref conversion);
+            reader.TryGetInt32("PanelDecimalPlaces", ref decimals);
+            UnitConversion = Enum.IsDefined(typeof(PanelUnitConversion), conversion)
+                ? (PanelUnitConversion)conversion : PanelUnitConversion.None;
+            DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, decimals));
             _restoringView = true;
             try { _session?.UpdateQuery(_savedOptions); }
             finally { _restoringView = false; }
