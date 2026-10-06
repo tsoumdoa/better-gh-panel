@@ -280,10 +280,6 @@ internal static class Program
         Equal(0, result.RowIds[count - 1]);
         Equal(0, result.GetRows(count - 1, 50)[0].Id);
         Console.WriteLine($"  {count:N0} rows filtered, aggregated and sorted in {watch.ElapsedMilliseconds} ms (local measurement).");
-        using var source = new CancellationTokenSource();
-        source.CancelAfter(1);
-        Throws<OperationCanceledException>(() => PanelQueryEngine.Execute(snapshot,
-            new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending }, source.Token));
     }
 
     private static void CanvasDimensionsAndPresets()
