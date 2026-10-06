@@ -325,6 +325,7 @@ internal static class Program
         DrawCanvasPreview(component, canvas, 192);
         AssertCanvasDpiInvariant();
         await VerifyCanvasUnits(component, canvas, assembly, host, session, input);
+        await VerifyUndoRedo(component, document, host, session, input);
         // Review screenshot uses a real solved typed tree and active controls.
         PanelTestAdapter.TreeTools(component, 0, false, true, true);
         PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 2);
@@ -387,7 +388,15 @@ internal static class Program
     {
         PanelTestAdapter.Resize(component, 360, 360);
         component.Attributes.PerformLayout();
-        UpdateQuery(session, new PanelQueryOptions { BranchPath = "{0;2}" });
+        UpdateQuery(session, new PanelQueryOptions { BranchPath = "{0;2}", BranchPrefix = true });
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reverse));
+        await WaitForQuery(host, session);
+        var reversedBranch = component.Params.Output[0].VolatileData.get_Branch(new GH_Path(0, 2));
+        Assert(Get<PanelQueryOptions>(session, "Options").BranchPath == "{0;2}" &&
+            Get<PanelQueryOptions>(session, "Options").BranchPrefix && reversedBranch[0] is GH_Point,
+            "Reverse changes item order without clearing exact or prefix branch selection");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reverse));
+        await WaitForQuery(host, session);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Flatten));
         await WaitForQuery(host, session);
         var output = component.Params.Output[0].VolatileData;
@@ -492,6 +501,56 @@ internal static class Program
         AssertEqualTrees(input, component.Params.Output[0].VolatileData);
         Assert(PanelTestAdapter.CopyValue(component, snapshot, 0).EndsWith(" m"),
             "Obsolete snapshots retain their own unit labels while a newer conversion is displayed");
+    }
+
+    private static async Task VerifyUndoRedo(GH_Component component, GH_Document document,
+        RhinoCore host, object session, IGH_Structure originalInput)
+    {
+        var sourceId = component.Params.Input[0].Sources.Single().InstanceGuid;
+        document.UndoServer.Clear();
+        PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 2);
+        await WaitForQuery(host, session);
+        PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 0);
+        document.UndoServer.PerformUndo();
+        await WaitForQuery(host, session);
+        Assert(PanelTestAdapter.Decimals(component) == 2 && Get<PanelSnapshot>(session, "Snapshot").Rows[0].NumericValue == 0.01,
+            "Native undo restores decimals while retaining full-precision converted output");
+        document.UndoServer.PerformRedo();
+        await WaitForQuery(host, session);
+        Assert(PanelTestAdapter.Decimals(component) == 0, "Native redo restores decimal formatting");
+        document.UndoServer.PerformUndo();
+        document.UndoServer.PerformUndo();
+        await WaitForQuery(host, session);
+        Assert(PanelTestAdapter.Conversion(component) == PanelUnitConversion.None && PanelTestAdapter.Decimals(component) == -1,
+            "Native undo restores disabled conversion and automatic decimals");
+        AssertEqualTrees(originalInput, component.Params.Output[0].VolatileData);
+        document.UndoServer.PerformRedo();
+        await WaitForQuery(host, session);
+        Assert(PanelTestAdapter.Conversion(component) == PanelUnitConversion.MillimetersToMeters &&
+            Get<PanelSnapshot>(session, "Snapshot").Rows[0].NumericValue == 0.01, "Native redo recomputes converted output");
+        PanelTestAdapter.Units(component, PanelUnitConversion.None, -1);
+        await WaitForQuery(host, session);
+        document.UndoServer.Clear();
+        UpdateQuery(session, new PanelQueryOptions { BranchPath = "{0;2}" });
+        PanelTestAdapter.TreeTools(component, 1, true, true, true);
+        await WaitForQuery(host, session);
+        document.UndoServer.PerformUndo();
+        await WaitForQuery(host, session);
+        Assert(PanelTestAdapter.TrimDepth(component) == 0 && !PanelTestAdapter.TreeFlag(component, "Flatten") &&
+            !PanelTestAdapter.TreeFlag(component, "Reverse") && !PanelTestAdapter.TreeFlag(component, "Simplify") &&
+            Get<PanelQueryOptions>(session, "Options").BranchPath == "{0;2}", "Native undo restores all tree settings and branch selection");
+        AssertEqualTrees(originalInput, component.Params.Output[0].VolatileData);
+        document.UndoServer.PerformRedo();
+        await WaitForQuery(host, session);
+        Assert(PanelTestAdapter.TrimDepth(component) == 1 && PanelTestAdapter.TreeFlag(component, "Flatten") &&
+            PanelTestAdapter.TreeFlag(component, "Reverse") && PanelTestAdapter.TreeFlag(component, "Simplify") &&
+            component.Params.Output[0].VolatileData.PathCount == 1 && Get<PanelQueryOptions>(session, "Options").BranchPath == null,
+            "Native redo restores tree tools, cleared branch selection and transformed output");
+        Assert(component.Params.Input[0].Sources.Single().InstanceGuid == sourceId, "Undo and redo retain the upstream wire");
+        AssertEqualTrees(originalInput, component.Params.Input[0].VolatileData);
+        PanelTestAdapter.TreeTools(component, 0, false, false, false);
+        session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
+        await WaitForQuery(host, session);
     }
 
     private static T Get<T>(object value, string property) => (T)value.GetType().GetProperty(property)!.GetValue(value)!;

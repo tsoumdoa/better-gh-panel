@@ -75,16 +75,20 @@ namespace BetterGhPanel
         {
             trimDepth = Math.Max(0, trimDepth);
             if (TrimDepth == trimDepth && FlattenTree == flatten && ReverseTree == reverse && SimplifyTree == simplify) return;
+            bool pathsChanged = TrimDepth != trimDepth || FlattenTree != flatten || SimplifyTree != simplify;
             RecordUndoEvent("Panel+ tree tools");
             TrimDepth = trimDepth;
             FlattenTree = flatten;
             ReverseTree = reverse;
             SimplifyTree = simplify;
-            // A selected path may no longer exist after structural changes.
-            var options = Session.Options;
-            options.BranchPath = null;
-            options.BranchPrefix = false;
-            Session.UpdateQuery(options);
+            if (pathsChanged)
+            {
+                // Reverse only changes item order, so its branch selection stays valid.
+                var options = Session.Options;
+                options.BranchPath = null;
+                options.BranchPrefix = false;
+                Session.UpdateQuery(options);
+            }
             OnPingDocument()?.Modified();
             ExpireSolution(true);
             Instances.ActiveCanvas?.Invalidate();
