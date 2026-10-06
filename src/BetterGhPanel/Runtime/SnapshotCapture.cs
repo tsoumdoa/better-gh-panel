@@ -9,7 +9,8 @@ namespace BetterGhPanel.Runtime
 {
     internal static class SnapshotCapture
     {
-        public static PanelSnapshot Capture(GH_Structure<IGH_Goo> tree, long version, out IGH_Goo?[] sourceItems)
+        public static PanelSnapshot Capture(GH_Structure<IGH_Goo> tree, long version, out IGH_Goo?[] sourceItems,
+            PanelUnitConversion conversion = PanelUnitConversion.None)
         {
             var rows = new List<PanelRow>(tree.DataCount);
             var branches = new List<PanelBranch>(tree.PathCount);
@@ -43,7 +44,7 @@ namespace BetterGhPanel.Runtime
                 }
             }
             sourceItems = source.ToArray();
-            return new PanelSnapshot(version, rows, branches);
+            return new PanelSnapshot(version, rows, branches, conversion);
         }
 
         private static string FormatSummary(IGH_Goo? goo, out double? numeric)

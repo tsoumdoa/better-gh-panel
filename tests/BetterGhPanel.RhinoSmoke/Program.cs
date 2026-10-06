@@ -216,6 +216,7 @@ internal static class Program
         await WaitForQuery(host, session);
 
         VerifyTreeOperations(assembly);
+        VerifyUnitOperations(assembly);
         PanelTestAdapter.TreeTools(component, 1, true, true, true);
         await WaitForQuery(host, session);
         Assert(PanelTestAdapter.TrimDepth(component) == 1 && component.Params.Output[0].VolatileData.PathCount == 1,
@@ -266,7 +267,7 @@ internal static class Program
         component.Attributes.Pivot = new PointF(80, 50);
         component.Attributes.ExpireLayout();
         component.Attributes.PerformLayout();
-        using var canvas = new GH_Canvas { Size = new Size(720, 520) };
+        using var canvas = new GH_Canvas { Size = new Size(1200, 900) };
         await VerifyCanvasTreeTools(component, canvas, assembly, host, session, input);
         var sampleRows = Enumerable.Range(0, 10000).Select(i => new PanelRow(i, 0, i, "{0;0}", "Number", i.ToString(), i)).ToArray();
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { new PanelSnapshot(100, sampleRows, new[] { new PanelBranch(0, "{0;0}", 10000) }) });
@@ -323,10 +324,14 @@ internal static class Program
         DrawCanvasPreview(component, canvas);
         DrawCanvasPreview(component, canvas, 192);
         AssertCanvasDpiInvariant();
+        await VerifyCanvasUnits(component, canvas, assembly, host, session, input);
         // Review screenshot uses a real solved typed tree and active controls.
         PanelTestAdapter.TreeTools(component, 0, false, true, true);
+        PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 2);
         await WaitForQuery(host, session);
         DrawCanvasPreview(component, canvas);
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-units-menu.png");
         component.DocumentContextChanged(document, GH_DocumentContext.Close);
         Assert(!PanelTestAdapter.HasSession(component),
             "Document closure disposes the component session");
@@ -416,6 +421,79 @@ internal static class Program
             "Canvas snapshot follows the solved output tree");
     }
 
+    private static void VerifyUnitOperations(Assembly assembly)
+    {
+        var source = new GH_Structure<IGH_Goo>();
+        var number = new GH_Number(1234.56789);
+        var integer = new GH_Integer(2000);
+        var text = new GH_String("1234.5");
+        var point = new GH_Point(new Rhino.Geometry.Point3d(1000, 2000, 3000));
+        source.AppendRange(new IGH_Goo[] { number, integer, null!, text, point }, new GH_Path(0, 1));
+        source.EnsurePath(new GH_Path(0, 2));
+        var method = assembly.GetType("BetterGhPanel.Runtime.PanelUnitOperations", true)!
+            .GetMethod("Apply", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var converted = (GH_Structure<IGH_Goo>)method.Invoke(null, new object[] { source, PanelUnitConversion.MillimetersToMeters })!;
+        Assert(Math.Abs(((GH_Number)converted.Branches[0][0]).Value - 1.23456789) < 1e-12 &&
+            ((GH_Number)converted.Branches[0][1]).Value == 2, "Unit conversion converts Number and Integer items to full-precision numbers");
+        Assert(converted.PathCount == 2 && converted.Branches[1].Count == 0 && converted.Branches[0][2] == null &&
+            ReferenceEquals(converted.Branches[0][3], text) && ReferenceEquals(converted.Branches[0][4], point),
+            "Unit conversion preserves branches, nulls, text and geometry");
+        Assert(number.Value == 1234.56789 && integer.Value == 2000 && source.Branches[0][0] == number,
+            "Unit conversion leaves upstream numeric values untouched");
+        Assert(ReferenceEquals(source, method.Invoke(null, new object[] { source, PanelUnitConversion.None })),
+            "Disabled conversion preserves original types and tree identity");
+    }
+
+    private static async Task VerifyCanvasUnits(GH_Component component, GH_Canvas canvas,
+        Assembly assembly, RhinoCore host, object session, IGH_Structure input)
+    {
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
+        var menu = PanelTestAdapter.MenuBounds(component);
+        Assert(menu.Bottom < PanelTestAdapter.Bounds(component, CanvasControl.Units).Top,
+            "Compact footer unit menu opens upward inside the panel");
+        ClickMenuRow(component, canvas, 1);
+        await WaitForQuery(host, session);
+        var snapshot = Get<PanelSnapshot>(session, "Snapshot");
+        Assert(PanelTestAdapter.Conversion(component) == PanelUnitConversion.MillimetersToMeters &&
+            snapshot.UnitConversion == PanelUnitConversion.MillimetersToMeters && snapshot.Rows[0].NumericValue == 0.01,
+            "Footer unit choice converts real output and snapshot values");
+        var output = component.Params.Output[0].VolatileData;
+        Assert(((GH_Number)output.get_Branch(output.Paths[0])[0]!).Value == 0.01 &&
+            input.get_Branch(input.Paths[0])[0]!.ToString() == "10", "Canvas conversion does not mutate upstream data");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
+        ClickMenuRow(component, canvas, 8);
+        CanvasEditorAdapter.Active(assembly).Submit("0");
+        Assert(PanelTestAdapter.Decimals(component) == 0 && PanelTestAdapter.CopyValue(component, snapshot, 0) == "0 m" &&
+            ReferenceEquals(snapshot, Get<PanelSnapshot>(session, "Snapshot")) &&
+            ((GH_Number)output.get_Branch(output.Paths[0])[0]!).Value == 0.01,
+            "Decimal formatting and copying preserve full output precision without another solution");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
+        ClickMenuRow(component, canvas, 8);
+        CanvasEditorAdapter.Active(assembly).Submit("13");
+        Assert(PanelTestAdapter.Decimals(component) == 0, "Invalid decimal counts retain the previous setting");
+        PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 2);
+        var archive = new GH_Archive();
+        var restored = (GH_Component)Activator.CreateInstance(component.GetType())!;
+        restored.CreateAttributes();
+        Assert(archive.AppendObject(component, "Units") && archive.ExtractObject(restored, "Units") &&
+            PanelTestAdapter.Conversion(restored) == PanelUnitConversion.MillimetersToMeters && PanelTestAdapter.Decimals(restored) == 2,
+            "Unit conversion and decimal settings survive save/load");
+        var chunk = new GH_LooseChunk("Units");
+        restored.Write(chunk);
+        chunk.RemoveItem("PanelUnitConversion"); chunk.RemoveItem("PanelDecimalPlaces");
+        Assert(restored.Read(chunk) && PanelTestAdapter.Conversion(restored) == PanelUnitConversion.None && PanelTestAdapter.Decimals(restored) == -1,
+            "Older definitions default to no conversion and automatic decimals");
+        restored.RemovedFromDocument(component.OnPingDocument());
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
+        ClickMenuRow(component, canvas, 7);
+        Assert(PanelTestAdapter.Decimals(component) == -1, "Unit menu restores automatic decimal formatting");
+        PanelTestAdapter.Units(component, PanelUnitConversion.None, -1);
+        await WaitForQuery(host, session);
+        AssertEqualTrees(input, component.Params.Output[0].VolatileData);
+        Assert(PanelTestAdapter.CopyValue(component, snapshot, 0).EndsWith(" m"),
+            "Obsolete snapshots retain their own unit labels while a newer conversion is displayed");
+    }
+
     private static T Get<T>(object value, string property) => (T)value.GetType().GetProperty(property)!.GetValue(value)!;
     private static void UpdateQuery(object session, PanelQueryOptions options) => session.GetType().GetMethod("UpdateQuery")!.Invoke(session, new object[] { options });
 
@@ -426,7 +504,7 @@ internal static class Program
         var menu = PanelTestAdapter.MenuBounds(component);
         component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(menu.X + 10, menu.Y + index * 20 + 10)));
     }
-    private static void DrawCanvasPreview(GH_Component component, GH_Canvas canvas, int dpi = 96)
+    private static void DrawCanvasPreview(GH_Component component, GH_Canvas canvas, int dpi = 96, string? artifactName = null)
     {
         var bounds = component.Attributes.Bounds;
         const int scale = 2, marginX = 90, marginY = 25;
@@ -449,7 +527,7 @@ internal static class Program
             graphics.DrawBezier(wire, output, new PointF(output.X + 45, output.Y), new PointF(output.X + 55, output.Y + 20), new PointF(output.X + 100, output.Y + 20));
         }
         component.Attributes.GetType().GetMethod("Render", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(component.Attributes, new object[] { canvas, graphics, GH_CanvasChannel.Objects });
-        string artifact = Path.Combine(Path.GetDirectoryName(_plugin)!, dpi == 96 ? "rhino-smoke-canvas.png" : "rhino-smoke-canvas-dpi192.png");
+        string artifact = Path.Combine(Path.GetDirectoryName(_plugin)!, artifactName ?? (dpi == 96 ? "rhino-smoke-canvas.png" : "rhino-smoke-canvas-dpi192.png"));
         bitmap.Save(artifact);
         Console.WriteLine("Actual canvas Objects renderer preview (sample data and illustrative grid/wires): " + artifact);
     }

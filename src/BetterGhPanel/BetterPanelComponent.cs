@@ -27,9 +27,11 @@ namespace BetterGhPanel
         internal bool ReverseTree { get; private set; }
         internal bool SimplifyTree { get; private set; }
         internal bool HasTreeOperations => TrimDepth > 0 || FlattenTree || ReverseTree || SimplifyTree;
+        internal PanelUnitConversion UnitConversion { get; private set; }
+        internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
 
         public BetterPanelComponent() : base("Panel+", "Panel+",
-            "Inspect and manipulate typed data trees on the canvas. Tree tools change the output; filters and sorting only affect the view.",
+            "Inspect and manipulate typed data trees on the canvas. Tree tools and unit conversion change the output; filters, sorting and decimal formatting affect the view.",
             "Params", "Util") { }
 
         public override Guid ComponentGuid => new Guid("51DC646E-5F72-496A-8B40-628478541F44");
@@ -88,6 +90,31 @@ namespace BetterGhPanel
             Instances.ActiveCanvas?.Invalidate();
         }
 
+        internal void SetUnits(PanelUnitConversion conversion, int decimals)
+        {
+            if (!Enum.IsDefined(typeof(PanelUnitConversion), conversion)) conversion = PanelUnitConversion.None;
+            decimals = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, decimals));
+            bool conversionChanged = UnitConversion != conversion;
+            if (!conversionChanged && DecimalPlaces == decimals) return;
+            RecordUndoEvent("Panel+ units and decimals");
+            UnitConversion = conversion;
+            DecimalPlaces = decimals;
+            OnPingDocument()?.Modified();
+            if (conversionChanged) ExpireSolution(true);
+            Instances.ActiveCanvas?.Invalidate();
+        }
+
+        internal string DisplayValue(PanelSnapshot snapshot, PanelRow row) => row.NumericValue.HasValue &&
+            (snapshot.UnitConversion != PanelUnitConversion.None || DecimalPlaces >= 0)
+            ? PanelUnits.Format(row.NumericValue.Value, snapshot.UnitConversion, DecimalPlaces) : row.DisplayValue;
+
+        internal string CopyValue(PanelSnapshot snapshot, int position)
+        {
+            var row = snapshot.Rows[position];
+            return row.NumericValue.HasValue && (snapshot.UnitConversion != PanelUnitConversion.None || DecimalPlaces >= 0)
+                ? DisplayValue(snapshot, row) : Session.GetDisplayValue(snapshot, position);
+        }
+
         protected override void RegisterInputParams(GH_InputParamManager p)
         {
             p.AddGenericParameter("Data", "D", "Any typed data tree to inspect", GH_ParamAccess.tree);
@@ -95,14 +122,15 @@ namespace BetterGhPanel
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p) =>
-            p.AddGenericParameter("Data", "D", "Typed tree after Trim → Simplify → Flatten → Reverse. View filters and sorting do not change this output.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Data", "D", "Typed tree after Trim → Simplify → Flatten → Reverse → unit conversion. Filters, sorting and decimal formatting do not change output precision.", GH_ParamAccess.tree);
 
         protected override void SolveInstance(IGH_DataAccess da)
         {
             if (!da.GetDataTree(0, out GH_Structure<IGH_Goo> tree)) tree = new GH_Structure<IGH_Goo>();
             tree = PanelTreeOperations.Apply(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree);
+            tree = PanelUnitOperations.Apply(tree, UnitConversion);
             da.SetDataTree(0, tree);
-            var snapshot = SnapshotCapture.Capture(tree, ++_version, out _sourceItems);
+            var snapshot = SnapshotCapture.Capture(tree, ++_version, out _sourceItems, UnitConversion);
             Session.AttachSnapshot(snapshot);
         }
 
@@ -169,6 +197,8 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelFlatten", FlattenTree);
             writer.SetBoolean("PanelReverse", ReverseTree);
             writer.SetBoolean("PanelSimplify", SimplifyTree);
+            writer.SetInt32("PanelUnitConversion", (int)UnitConversion);
+            writer.SetInt32("PanelDecimalPlaces", DecimalPlaces);
             return base.Write(writer);
         }
 
@@ -203,6 +233,12 @@ namespace BetterGhPanel
             FlattenTree = flatten;
             ReverseTree = reverse;
             SimplifyTree = simplify;
+            int conversion = 0, decimals = PanelUnits.AutomaticDecimals;
+            reader.TryGetInt32("PanelUnitConversion", ref conversion);
+            reader.TryGetInt32("PanelDecimalPlaces", ref decimals);
+            UnitConversion = Enum.IsDefined(typeof(PanelUnitConversion), conversion)
+                ? (PanelUnitConversion)conversion : PanelUnitConversion.None;
+            DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, decimals));
             _restoringView = true;
             try { _session?.UpdateQuery(_savedOptions); }
             finally { _restoringView = false; }

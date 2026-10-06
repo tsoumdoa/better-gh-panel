@@ -27,7 +27,9 @@ internal static class Program
             Cancellation,
             LargeData,
             CanvasDimensionsAndPresets,
-            CanvasMenuPagingAndSnapshot
+            CanvasMenuPagingAndSnapshot,
+            UnitConversionsAndFormatting,
+            UnitMenuLayout
         };
         var failures = 0;
         foreach (var test in tests)
@@ -324,6 +326,48 @@ internal static class Program
         Equal("✓ Invalid only", menu.Label(1, true));
         menu.Toggle(CanvasMenuKind.Type, snapshot, new PanelQueryOptions());
         Equal(CanvasMenuKind.None, menu.Kind);
+    }
+
+    private static void UnitConversionsAndFormatting()
+    {
+        Near(1.23456789, PanelUnits.Convert(1234.56789, PanelUnitConversion.MillimetersToMeters));
+        Near(1234.56789, PanelUnits.Convert(1.23456789, PanelUnitConversion.MetersToMillimeters));
+        Near(1, PanelUnits.Convert(1000000, PanelUnitConversion.SquareMillimetersToSquareMeters));
+        Near(1000000, PanelUnits.Convert(1, PanelUnitConversion.SquareMetersToSquareMillimeters));
+        Near(180, PanelUnits.Convert(Math.PI, PanelUnitConversion.RadiansToDegrees));
+        Near(Math.PI, PanelUnits.Convert(180, PanelUnitConversion.DegreesToRadians));
+        foreach (var pair in new[] { PanelUnitConversion.MillimetersToMeters, PanelUnitConversion.SquareMillimetersToSquareMeters, PanelUnitConversion.RadiansToDegrees })
+            Near(-1234.5, PanelUnits.Convert(PanelUnits.Convert(-1234.5, pair), (PanelUnitConversion)((int)pair + 1)));
+        Equal("1.23 m", PanelUnits.Format(1.23456789, PanelUnitConversion.MillimetersToMeters, 2, CultureInfo.InvariantCulture));
+        Equal("1.23456789 m", PanelUnits.Format(1.23456789, PanelUnitConversion.MillimetersToMeters, -1, CultureInfo.InvariantCulture));
+        Equal("1 m²", PanelUnits.Format(1, PanelUnitConversion.SquareMillimetersToSquareMeters, 0, CultureInfo.InvariantCulture));
+        Equal("180.00 °", PanelUnits.Format(180, PanelUnitConversion.RadiansToDegrees, 2, CultureInfo.InvariantCulture));
+        Equal("1,23 m", PanelUnits.Format(1.234, PanelUnitConversion.MillimetersToMeters, 2, CultureInfo.GetCultureInfo("de-DE")));
+        Equal("1.000000000000", PanelUnits.Format(1, PanelUnitConversion.None, 100, CultureInfo.InvariantCulture));
+        Equal(true, double.IsNaN(PanelUnits.Convert(double.NaN, PanelUnitConversion.RadiansToDegrees)));
+        Equal(double.PositiveInfinity, PanelUnits.Convert(double.PositiveInfinity, PanelUnitConversion.MillimetersToMeters));
+    }
+
+    private static void UnitMenuLayout()
+    {
+        foreach (float height in new[] { 220f, 360f, 900f })
+        {
+            var menu = new CanvasMenu();
+            var panel = new System.Drawing.RectangleF(0, 0, 300, height);
+            var anchor = new System.Drawing.RectangleF(180, height - 24, 93, 17);
+            menu.Toggle(CanvasMenuKind.Units, PanelSnapshot.Empty, new PanelQueryOptions());
+            menu.Layout(panel, anchor, anchor, anchor, anchor);
+            Equal(9, menu.Count);
+            Equal(true, menu.Bounds.Top >= panel.Top + 25 && menu.Bounds.Bottom < anchor.Top && menu.Bounds.Right <= panel.Right);
+            Equal("✓ mm² → m²", menu.Label(3, false, PanelUnitConversion.SquareMillimetersToSquareMeters));
+            Equal("Decimal places…  (2)", menu.Label(8, false, decimals: 2));
+            if (menu.Count > menu.Visible)
+            {
+                menu.TrySelect(new System.Drawing.PointF(menu.Bounds.Right - 5, menu.Bounds.Bottom - 5), out _);
+                Equal(true, menu.TrySelect(new System.Drawing.PointF(menu.Bounds.Left + 5, menu.Bounds.Top + (8 - menu.Offset) * 20 + 5), out int index));
+                Equal(8, index);
+            }
+        }
     }
 
     private static void Equal<T>(T expected, T actual)

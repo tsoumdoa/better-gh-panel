@@ -16,9 +16,15 @@ The next beta patch is **`0.1.3-beta.1`** (not yet published). It adds **Trim**,
 
 New panels start at **360 × 360** (1:1). Saved sizes and legacy size presets are preserved. All interaction stays on the canvas; the popup inspector and expand action have been removed.
 
+The small **Units** dropdown at the bottom right opens upward inside the panel. Choose **mm ↔ m**, **mm² ↔ m²** (square millimeters / square meters), or **rad ↔ deg**. Conversion changes Number and Integer output values; converted integers become Numbers so fractions are preserved. Text, geometry, nulls, and empty branches pass through. Length and area conversions are separate: 1,000 mm becomes 1 m, while 1,000,000 mm² becomes 1 m². Conversion follows the tree tools, and search, sorting, and statistics use the converted values.
+
+The same dropdown offers **Decimals: automatic** and **Decimal places…** (0–12). Decimal places format numeric rows, copied values, and statistics without rounding the values on the output wire. Conversion and decimal settings are saved with the definition and support undo. Existing definitions default to no conversion and automatic decimals. Reset view and Reset tree tools leave these settings intact; choose No conversion and Decimals: automatic to reset them.
+
 The resizable canvas panel shows grouped branch headers and compact rows, with search, numeric comparisons (`> 800`, `<= 25`, `= 10`), type/invalid filters, value sorting, branch selection, exact branch jumps such as `{0;2;4}`, row jumps, a logical scrollbar, and numeric statistics. Click the search field and press Enter to apply a query. Double-click a row to copy its full value. Addresses describe the output tree after the active tools. Drag the bottom-right corner to resize; size and view settings are saved with the definition.
 
 ![Panel+ canvas tree tools, rendered by the native component with sample data](docs/images/panel-tree-tools.png)
+
+[See the compact units menu](docs/images/panel-units-menu.png).
 
 Primitive values and points/vectors have cached summaries. Heavy geometry and third-party data show a type summary; their full text is formatted on demand when copied. Text search operates on those cached summaries. Numeric statistics include finite Number/Integer values, and exclude NaN and infinity. This MVP inspects connected data; it does not author text like an unconnected stock Panel.
 

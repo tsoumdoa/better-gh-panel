@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Reflection;
 using Grasshopper.Kernel;
 
-internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify }
+internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify, Units }
 
 // The .gha is loaded separately. Keep plugin-owned reflection in this adapter.
 internal static class PanelTestAdapter
@@ -17,6 +17,12 @@ internal static class PanelTestAdapter
     internal static bool TreeFlag(GH_Component component, string name) => Property<bool>(component, name + "Tree");
     internal static void TreeTools(GH_Component component, int depth, bool flatten, bool reverse, bool simplify) =>
         component.GetType().GetMethod("SetTreeOperations", PrivateInstance)!.Invoke(component, new object[] { depth, flatten, reverse, simplify });
+    internal static BetterGhPanel.Core.PanelUnitConversion Conversion(GH_Component component) => Property<BetterGhPanel.Core.PanelUnitConversion>(component, "UnitConversion");
+    internal static int Decimals(GH_Component component) => Property<int>(component, "DecimalPlaces");
+    internal static void Units(GH_Component component, BetterGhPanel.Core.PanelUnitConversion conversion, int decimals) =>
+        component.GetType().GetMethod("SetUnits", PrivateInstance)!.Invoke(component, new object[] { conversion, decimals });
+    internal static string CopyValue(GH_Component component, BetterGhPanel.Core.PanelSnapshot snapshot, int position) =>
+        (string)component.GetType().GetMethod("CopyValue", PrivateInstance)!.Invoke(component, new object[] { snapshot, position })!;
 
     internal static void Resize(GH_Component component, float width, float height) =>
         component.GetType().GetMethod("SetCanvasSize", PrivateInstance)!.Invoke(component, new object[] { width, height });
