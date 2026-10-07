@@ -20,13 +20,21 @@ namespace BetterGhPanel.UI
         internal static void Show(GH_Canvas canvas, RectangleF canvasBounds, string current, Action<string> accepted)
         {
             CloseActive();
+            var projected = Rectangle.Round(canvas.Viewport.ProjectRectangle(canvasBounds));
+            var bounds = projected;
+            // The host reserves 40 UI-scaled pixels for accept/cancel. Compact
+            // buttons still need a readable editor, including when zoomed out.
+            bounds.Width = Math.Min(canvas.ClientSize.Width, Math.Max(bounds.Width, Grasshopper.Global_Proc.UiAdjust(160)));
+            bounds.Height = Math.Min(canvas.ClientSize.Height, Math.Max(bounds.Height, Grasshopper.Global_Proc.UiAdjust(24)));
+            bounds.X = Math.Max(0, Math.Min(bounds.X, canvas.ClientSize.Width - bounds.Width));
+            bounds.Y = Math.Max(0, Math.Min(bounds.Y, canvas.ClientSize.Height - bounds.Height));
             var editor = new CanvasTextInput(accepted)
             {
-                Bounds = Rectangle.Round(canvas.Viewport.ProjectRectangle(canvasBounds)),
+                Bounds = bounds,
                 _canvas = new WeakReference<GH_Canvas>(canvas),
-                _canvasBounds = canvasBounds
+                _canvasBounds = canvasBounds,
+                _screenBounds = projected
             };
-            editor._screenBounds = editor.Bounds;
             _active = new WeakReference<CanvasTextInput>(editor);
             editor.ShowTextInputBox(canvas, current ?? string.Empty, true, true);
         }

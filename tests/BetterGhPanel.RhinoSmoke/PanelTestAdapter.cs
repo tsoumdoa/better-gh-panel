@@ -51,10 +51,13 @@ internal sealed class CanvasEditorAdapter
         return new CanvasEditorAdapter(arguments[0]!, type);
     }
 
+    private System.Windows.Forms.TextBox Input =>
+        (System.Windows.Forms.TextBox)_type.BaseType!.GetField("m_inputTextBox", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_editor)!;
+    internal int TextAreaWidth => Input.ClientSize.Width;
+
     internal void Submit(string text)
     {
-        var input = (System.Windows.Forms.TextBox)_type.BaseType!.GetField("m_inputTextBox", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_editor)!;
-        input.Text = text;
+        Input.Text = text;
         _type.GetMethod("RespondToEnter")!.Invoke(_editor, Array.Empty<object>());
     }
 

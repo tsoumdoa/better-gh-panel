@@ -277,6 +277,14 @@ internal static class Program
         component.Attributes.PerformLayout();
         DrawCanvasPreview(component, canvas);
         _canvasDrawingVerified = true;
+        float originalZoom = canvas.Viewport.Zoom;
+        canvas.Viewport.Zoom = 0.5f;
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Jump));
+        DrawCanvasPreview(component, canvas);
+        Assert(CanvasEditorAdapter.Active(assembly).TextAreaWidth >= Grasshopper.Global_Proc.UiAdjust(100),
+            "Compact Jump editor retains a readable text area after rendering at 50% zoom");
+        CanvasEditorAdapter.Active(assembly).Submit("1");
+        canvas.Viewport.Zoom = originalZoom;
         Assert(component.Params.Input[0].Attributes.InputGrip.X == PanelTestAdapter.Bounds(component, CanvasControl.Panel).Left &&
             component.Params.Output[0].Attributes.OutputGrip.X == PanelTestAdapter.Bounds(component, CanvasControl.Panel).Right,
             "Native wire grips sit on the panel edges");
@@ -431,6 +439,9 @@ internal static class Program
         await WaitForQuery(host, session);
         Assert(PanelTestAdapter.TreeFlag(component, "Simplify"), "Canvas Simplify toggles persistently");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Trim));
+        DrawCanvasPreview(component, canvas);
+        Assert(CanvasEditorAdapter.Active(assembly).TextAreaWidth >= Grasshopper.Global_Proc.UiAdjust(100),
+            "Compact Trim editor retains a readable text area after rendering");
         CanvasEditorAdapter.Active(assembly).Submit("1");
         await WaitForQuery(host, session);
         Assert(PanelTestAdapter.TrimDepth(component) == 1, "Canvas Trim accepts a depth through the inline editor");
