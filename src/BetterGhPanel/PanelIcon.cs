@@ -11,12 +11,17 @@ namespace BetterGhPanel
     {
         private static readonly Lazy<Bitmap> Icon = new Lazy<Bitmap>(() =>
         {
-            using (var stream = typeof(PanelIcon).Assembly.GetManifestResourceStream("BetterGhPanel.icon.png"))
-            {
-                if (stream == null) throw new InvalidOperationException("Panel+ icon resource is missing.");
-                using (var source = new Bitmap(stream)) return new Bitmap(source, 24, 24);
-            }
+            using (var source = Load("BetterGhPanel.icon.png")) return new Bitmap(source, 24, 24);
         });
+
+        internal static Bitmap Load(string resourceName)
+        {
+            using (var stream = typeof(PanelIcon).Assembly.GetManifestResourceStream(resourceName))
+            {
+                if (stream == null) throw new InvalidOperationException("Panel+ image resource is missing: " + resourceName);
+                using (var source = new Bitmap(stream)) return new Bitmap(source);
+            }
+        }
 
         public static Bitmap Create() => Icon.Value;
     }

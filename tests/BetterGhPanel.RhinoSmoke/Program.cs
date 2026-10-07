@@ -326,9 +326,13 @@ internal static class Program
         AssertCanvasDpiInvariant();
         await VerifyCanvasUnits(component, canvas, assembly, host, session, input);
         await VerifyUndoRedo(component, document, host, session, input);
-        // Review screenshot uses a real solved typed tree and active controls.
-        PanelTestAdapter.TreeTools(component, 0, false, true, true);
-        PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 2);
+        // Review screenshot uses a real solved mixed tree with enough rows to show the compact layout.
+        for (int i = 0; i < 24; i++)
+            source.PersistentData.Append(new GH_Number(1200.5 + i * 17.35), new GH_Path(0, 3));
+        source.ExpireSolution(false);
+        document.NewSolution(false, GH_SolutionMode.Silent);
+        PanelTestAdapter.TreeTools(component, 0, false, false, true);
+        PanelTestAdapter.Units(component, PanelUnitConversion.None, 2);
         await WaitForQuery(host, session);
         DrawCanvasPreview(component, canvas);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));

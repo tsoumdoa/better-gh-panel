@@ -21,6 +21,14 @@ namespace BetterGhPanel.UI
             Kind == CanvasMenuKind.Units ? PanelUnits.ConversionCount + 2 : 0;
         internal int Visible => Math.Min(Count, Math.Max(2, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
 
+        internal static string TypeHint(PanelQueryResult result, PanelQueryOptions options)
+        {
+            if (options.OnlyInvalid) return "Invalid";
+            if (options.TypeName != null) return options.TypeName;
+            var types = result.Statistics.TypeCounts.Count > 0 ? result.Statistics.TypeCounts : result.Snapshot.TypeCounts;
+            return types.Count == 0 ? "No data" : types.Count == 1 ? types.Keys.First() : "Mixed";
+        }
+
         internal void Close() => Kind = CanvasMenuKind.None;
         internal bool IsCurrent(PanelSnapshot snapshot) => ReferenceEquals(_snapshot, snapshot);
 

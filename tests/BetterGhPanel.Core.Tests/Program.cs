@@ -322,6 +322,18 @@ internal static class Program
         Equal("✓ Invalid only", menu.Label(1, true));
         menu.Toggle(CanvasMenuKind.Type, snapshot, new PanelQueryOptions());
         Equal(CanvasMenuKind.None, menu.Kind);
+
+        var options = new PanelQueryOptions();
+        Equal("Mixed", CanvasMenu.TypeHint(Query(options), options));
+        options.Search = "Alpha";
+        Equal("Text", CanvasMenu.TypeHint(Query(options), options));
+        options.Search = "no matches";
+        Equal("Mixed", CanvasMenu.TypeHint(Query(options), options));
+        options.TypeName = "Saved type";
+        Equal("Saved type", CanvasMenu.TypeHint(Query(options), options));
+        options.OnlyInvalid = true;
+        Equal("Invalid", CanvasMenu.TypeHint(Query(options), options));
+        Equal("No data", CanvasMenu.TypeHint(PanelQueryEngine.Execute(PanelSnapshot.Empty, new PanelQueryOptions()), new PanelQueryOptions()));
     }
 
     private static void UnitConversionsAndFormatting()
