@@ -179,7 +179,7 @@ namespace BetterGhPanel
                     Text(g, PanelOwner.DisplayValue(result.Snapshot, row), font, Ink,
                         new RectangleF(bounds.X + valueStart, y, bounds.Width - valueStart - (showTypes ? 70 : 4), RowHeight), trim);
                     if (showTypes)
-                        Text(g, row.TypeName, small, Muted, new RectangleF(bounds.Right - 64, y, 60, RowHeight), typeFormat);
+                        Text(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted, new RectangleF(bounds.Right - 64, y, 60, RowHeight), typeFormat);
                     _rowHits.Add(new RowHit(bounds, sourcePosition));
                     _shown++;
                     y += RowHeight;
@@ -446,6 +446,9 @@ namespace BetterGhPanel
                 e.Text = _type.Contains(point) ? CanvasMenu.TypeHint(PanelOwner.Session.Result, options) :
                     _sort.Contains(point) ? options.SortMode.ToString() : options.BranchPath ?? "All branches";
                 e.Description = "Changes the panel view. Output retains the original tree unless a tree operation or unit conversion is active.";
+                if (_type.Contains(point))
+                    e.Description = (PanelOwner.Session.Result.RowIds.Count > 0 ? "Visible types: " : "Source types: ") +
+                        CanvasMenu.TypeDetails(PanelOwner.Session.Result) + "\n\n" + e.Description;
             }
             else if (_reset.Contains(point))
             {

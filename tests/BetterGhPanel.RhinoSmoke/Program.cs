@@ -327,12 +327,26 @@ internal static class Program
         await VerifyCanvasUnits(component, canvas, assembly, host, session, input);
         await VerifyUndoRedo(component, document, host, session, input);
         // Review screenshot uses a real solved mixed tree with enough rows to show the compact layout.
+        source.PersistentData.Append(new GH_Surface(new Rhino.Geometry.PlaneSurface(Rhino.Geometry.Plane.WorldXY,
+            new Rhino.Geometry.Interval(0, 10), new Rhino.Geometry.Interval(0, 10)).ToBrep()), new GH_Path(0, 3));
+        source.PersistentData.Append(new GH_Mesh(Rhino.Geometry.Mesh.CreateFromBox(new Rhino.Geometry.BoundingBox(
+            Rhino.Geometry.Point3d.Origin, new Rhino.Geometry.Point3d(2, 2, 2)), 1, 1, 1)), new GH_Path(0, 3));
+        source.PersistentData.Append(new GH_Curve(new Rhino.Geometry.LineCurve(Rhino.Geometry.Point3d.Origin,
+            new Rhino.Geometry.Point3d(10, 0, 0))), new GH_Path(0, 3));
         for (int i = 0; i < 24; i++)
             source.PersistentData.Append(new GH_Number(1200.5 + i * 17.35), new GH_Path(0, 3));
         source.ExpireSolution(false);
         document.NewSolution(false, GH_SolutionMode.Silent);
         PanelTestAdapter.TreeTools(component, 0, false, false, true);
         PanelTestAdapter.Units(component, PanelUnitConversion.None, 2);
+        await WaitForQuery(host, session);
+        Assert(Get<PanelSnapshot>(session, "Snapshot").TypeCounts.ContainsKey("Surface") &&
+            Get<PanelSnapshot>(session, "Snapshot").TypeCounts.ContainsKey("Mesh"), "Geometry hints use real Grasshopper surface and mesh types");
+        UpdateQuery(session, new PanelQueryOptions { TypeName = "Surface" });
+        await WaitForQuery(host, session);
+        Assert(Get<PanelQueryResult>(session, "Result").RowIds.Count == 1 && component.Params.Output[0].VolatileData.DataCount == 32,
+            "Abbreviated geometry hints retain full-name filtering and unchanged typed output");
+        session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(host, session);
         DrawCanvasPreview(component, canvas);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));

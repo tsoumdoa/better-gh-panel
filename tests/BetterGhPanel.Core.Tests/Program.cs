@@ -324,16 +324,32 @@ internal static class Program
         Equal(CanvasMenuKind.None, menu.Kind);
 
         var options = new PanelQueryOptions();
-        Equal("Mixed", CanvasMenu.TypeHint(Query(options), options));
+        Equal("Num/Text +1", CanvasMenu.TypeHint(Query(options), options));
         options.Search = "Alpha";
         Equal("Text", CanvasMenu.TypeHint(Query(options), options));
         options.Search = "no matches";
-        Equal("Mixed", CanvasMenu.TypeHint(Query(options), options));
+        Equal("Num/Text +1", CanvasMenu.TypeHint(Query(options), options));
         options.TypeName = "Saved type";
         Equal("Saved type", CanvasMenu.TypeHint(Query(options), options));
         options.OnlyInvalid = true;
         Equal("Invalid", CanvasMenu.TypeHint(Query(options), options));
         Equal("No data", CanvasMenu.TypeHint(PanelQueryEngine.Execute(PanelSnapshot.Empty, new PanelQueryOptions()), new PanelQueryOptions()));
+
+        var geometry = new PanelSnapshot(2, new[]
+        {
+            Row(0, 0, 0, "{0}", "Point", "(0,0,0)", null),
+            Row(1, 0, 1, "{0}", "Surface", "<Surface>", null),
+            Row(2, 0, 2, "{0}", "Mesh", "<Mesh>", null)
+        }, new[] { new PanelBranch(0, "{0}", 3) });
+        options = new PanelQueryOptions();
+        var geometryResult = PanelQueryEngine.Execute(geometry, options);
+        Equal("Mesh/Pt +1", CanvasMenu.TypeHint(geometryResult, options));
+        Equal("Mesh: 1, Point: 1, Surface: 1", CanvasMenu.TypeDetails(geometryResult));
+        options.TypeName = "Surface";
+        geometryResult = PanelQueryEngine.Execute(geometry, options);
+        Equal("Srf", CanvasMenu.TypeHint(geometryResult, options));
+        Equal("Surface", geometryResult.GetRows(0, 1)[0].TypeName);
+        Equal("Plugin geometry", CanvasMenu.ShortTypeName("Plugin geometry"));
     }
 
     private static void UnitConversionsAndFormatting()
