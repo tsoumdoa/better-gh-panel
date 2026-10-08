@@ -11,16 +11,32 @@ namespace BetterGhPanel.Runtime
             int trimDepth, bool simplify, bool flatten, bool reverse)
         {
             if (trimDepth == 0 && !simplify && !flatten && !reverse) return source;
-            var result = new GH_Structure<IGH_Goo>();
-            for (int b = 0; b < source.PathCount; b++)
+            var result = source;
+            // Trim creates its own structure; in-place tools need a copy first.
+            if (simplify || trimDepth == 0)
             {
-                var indices = source.Paths[b].Indices;
-                var path = trimDepth >= indices.Length ? new GH_Path(0) :
-                    new GH_Path(indices.Take(indices.Length - trimDepth).ToArray());
-                result.EnsurePath(path);
-                result.AppendRange(source.Branches[b], path);
+                result = new GH_Structure<IGH_Goo>();
+                for (int b = 0; b < source.PathCount; b++)
+                {
+                    var path = new GH_Path(source.Paths[b].Indices.ToArray());
+                    result.EnsurePath(path);
+                    result.AppendRange(source.Branches[b], path);
+                }
+                if (simplify) result.Simplify(GH_SimplificationMode.CollapseAllOverlaps);
             }
-            if (simplify) result.Simplify(GH_SimplificationMode.CollapseAllOverlaps);
+            if (trimDepth > 0)
+            {
+                var trimmed = new GH_Structure<IGH_Goo>();
+                for (int b = 0; b < result.PathCount; b++)
+                {
+                    var indices = result.Paths[b].Indices;
+                    var path = trimDepth >= indices.Length ? new GH_Path(0) :
+                        new GH_Path(indices.Take(indices.Length - trimDepth).ToArray());
+                    trimmed.EnsurePath(path);
+                    trimmed.AppendRange(result.Branches[b], path);
+                }
+                result = trimmed;
+            }
             if (flatten) result.Flatten(new GH_Path(0));
             if (reverse) result.Reverse();
             return result;

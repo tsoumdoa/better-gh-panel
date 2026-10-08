@@ -38,9 +38,9 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Length == 0 || args[0] != "--run")
+        if (args.Length == 0 || (args[0] != "--run" && args[0] != "--tree-only"))
         {
-            Console.WriteLine("Windows Rhino 8 host smoke check (requires a working Rhino license).\nBuild the plugin first, then run with --run [absolute BetterGhPanel.gha path].\nCreates a hidden RhinoCore, loads the workspace assembly directly, and never installs a plugin.");
+            Console.WriteLine("Windows Rhino 8 host smoke check (requires a working Rhino license).\nBuild the plugin first, then run with --run [absolute BetterGhPanel.gha path].\nCreates a hidden RhinoCore, loads the workspace assembly directly, and never installs a plugin.\nUse --tree-only [plugin path] to check managed tree operations with installed Rhino/Grasshopper assemblies without starting Rhino.");
             return 0;
         }
         _system = Environment.GetEnvironmentVariable("RHINO_SYSTEM_PATH") ?? "C:/Program Files/Rhino 8/System";
@@ -52,6 +52,16 @@ internal static class Program
         AppDomain.CurrentDomain.AssemblyResolve += Resolve;
         Environment.SetEnvironmentVariable("PATH", _system + ";" + Environment.GetEnvironmentVariable("PATH"));
         SetDllDirectory(_system);
+        if (args[0] == "--tree-only")
+        {
+            try
+            {
+                VerifyTreeOperations(Assembly.LoadFrom(_plugin));
+                Console.WriteLine("PASS: Managed Grasshopper tree operation checks completed (Rhino host not started).");
+                return 0;
+            }
+            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        }
         // Rhino's in-process startup can report existing plug-in registrations in a
         // completed informational window. Dismiss only its exact Close button in this
         // process; never answer license, install, or any other startup decisions.
@@ -391,6 +401,25 @@ internal static class Program
         var simplified = Transform(simplify: true);
         Assert(simplified.Paths.Select(p => p.ToString()).SequenceEqual(new[] { "{0;0}", "{0;1}", "{1;0}" }),
             "Simplify removes path indices shared by all branches");
+        var simplifiedWithEmptyBranch = Transform(1, simplify: true);
+        Assert(simplifiedWithEmptyBranch.Paths.Select(p => p.ToString()).SequenceEqual(new[] { "{0}", "{1}" }) &&
+            simplifiedWithEmptyBranch.Branches[0].SequenceEqual(new IGH_Goo[] { number, null!, text }) &&
+            simplifiedWithEmptyBranch.Branches[1].Count == 0,
+            "Simplify followed by Trim preserves separate empty output branches");
+        var sharedSuffix = new GH_Structure<IGH_Goo>();
+        sharedSuffix.Append(number, new GH_Path(7, 0, 9));
+        sharedSuffix.Append(null!, new GH_Path(7, 0, 9));
+        sharedSuffix.Append(text, new GH_Path(7, 1, 9));
+        sharedSuffix.EnsurePath(new GH_Path(7, 2, 9));
+        var simplifiedThenTrimmed = (GH_Structure<IGH_Goo>)apply.Invoke(null,
+            new object[] { sharedSuffix, 1, true, false, false })!;
+        Assert(simplifiedThenTrimmed.PathCount == 1 && simplifiedThenTrimmed.Paths[0].ToString() == "{0}" &&
+            simplifiedThenTrimmed.Branches.Single().SequenceEqual(new IGH_Goo[] { number, null!, text }),
+            "Simplify removes shared prefix and suffix before Trim merges the remaining path levels");
+        Assert(sharedSuffix.Paths.Select(p => p.ToString()).SequenceEqual(new[] { "{7;0;9}", "{7;1;9}", "{7;2;9}" }) &&
+            sharedSuffix.Branches[0].SequenceEqual(new IGH_Goo[] { number, null! }) &&
+            sharedSuffix.Branches[1].Single() == text && sharedSuffix.Branches[2].Count == 0,
+            "Simplify followed by Trim preserves upstream paths, typed values, nulls and empty branches");
         var reversed = Transform(reverse: true);
         Assert(reversed.Branches[0][0] == null && ReferenceEquals(reversed.Branches[0][1], number) &&
             reversed.Branches[2].Count == 0, "Reverse operates within branches and preserves empty branches");
@@ -400,7 +429,7 @@ internal static class Program
             "Flatten merges every item into {0} in source order");
         var combined = Transform(1, simplify: true, flatten: true, reverse: true);
         Assert(combined.Branches.Single().SequenceEqual(new IGH_Goo[] { text, null!, number }),
-            "Combined tools use Trim, Simplify, Flatten, then Reverse");
+            "Combined tools use Simplify, Trim, Flatten, then Reverse");
         Assert(source.Paths.Select(p => p.ToString()).SequenceEqual(new[] { "{7;0;0}", "{7;0;1}", "{7;1;0}" }) &&
             source.Branches[0].SequenceEqual(new IGH_Goo[] { number, null! }) && source.Branches[2].Count == 0,
             "Every tool leaves upstream paths, branch lists and values untouched");
