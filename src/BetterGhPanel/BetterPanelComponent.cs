@@ -22,6 +22,8 @@ namespace BetterGhPanel
         internal int PreviewSize => CanvasPanelSize.PresetIndex(CanvasWidth, CanvasHeight);
         internal float CanvasWidth { get; private set; } = CanvasPanelSize.DefaultWidth;
         internal float CanvasHeight { get; private set; } = CanvasPanelSize.DefaultHeight;
+        internal CanvasPanelDisplay CanvasDisplay { get; private set; }
+        internal float DisplayHeight => CanvasPanelSize.DisplayHeight(CanvasHeight, CanvasDisplay);
         internal int TrimDepth { get; private set; }
         internal bool FlattenTree { get; private set; }
         internal bool ReverseTree { get; private set; }
@@ -91,6 +93,17 @@ namespace BetterGhPanel
             }
             OnPingDocument()?.Modified();
             ExpireSolution(true);
+            Instances.ActiveCanvas?.Invalidate();
+        }
+
+        internal void SetCanvasDisplay(CanvasPanelDisplay display)
+        {
+            if (!Enum.IsDefined(typeof(CanvasPanelDisplay), display) || CanvasDisplay == display) return;
+            RecordUndoEvent("Panel+ display size");
+            CanvasTextInput.CloseActive();
+            CanvasDisplay = display;
+            Attributes.ExpireLayout();
+            OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
         }
 
@@ -197,6 +210,7 @@ namespace BetterGhPanel
             writer.SetInt32("PanelSize", PreviewSize < 0 ? 1 : PreviewSize);
             writer.SetSingle("PanelWidth", CanvasWidth);
             writer.SetSingle("PanelHeight", CanvasHeight);
+            writer.SetInt32("PanelDisplay", (int)CanvasDisplay);
             writer.SetInt32("PanelTrimDepth", TrimDepth);
             writer.SetBoolean("PanelFlatten", FlattenTree);
             writer.SetBoolean("PanelReverse", ReverseTree);
@@ -227,6 +241,10 @@ namespace BetterGhPanel
             reader.TryGetSingle("PanelHeight", ref height);
             CanvasWidth = CanvasPanelSize.Width(width);
             CanvasHeight = CanvasPanelSize.Height(height);
+            int display = 0;
+            reader.TryGetInt32("PanelDisplay", ref display);
+            CanvasDisplay = Enum.IsDefined(typeof(CanvasPanelDisplay), display)
+                ? (CanvasPanelDisplay)display : CanvasPanelDisplay.Full;
             int trimDepth = 0;
             bool flatten = false, reverse = false, simplify = false;
             reader.TryGetInt32("PanelTrimDepth", ref trimDepth);
