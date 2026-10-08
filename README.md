@@ -16,13 +16,15 @@ This beta patch is **`0.1.3-beta.1`**. It adds **Trim**, **Simplify**, **Flatten
 
 New panels start at **360 × 360** (1:1). Saved sizes and legacy size presets are preserved. All interaction stays on the canvas; the popup inspector and expand action have been removed.
 
+The development build uses a compact spreadsheet layout: one search/filter row and a small footer dock with the original Grasshopper **Trim**, **Simplify**, **Flatten**, and **Reverse** icons. Hover for each tool's name and trim depth; green icons indicate active tools. Type hints cover Grasshopper geometry and primitive data: **Pt**, **Srf**, **Mesh**, **Crv**, **Brep**, **SubD**, **Vec**, **Num**, and more. The filter summarises the two most common visible types, with a remaining-type count, and its tooltip lists full names and counts. Mixed and invalid-only rows show compact type labels; the menu retains full names, and other built-in or third-party types keep their own names. At the default size, the table has 41% more area than the previous layout. The icons are original Grasshopper assets, used for this Grasshopper plug-in under [McNeel's icon usage terms](https://developer.rhino3d.com/guides/grasshopper/grasshopper-icons/).
+
 The small **Units** dropdown at the bottom right opens upward inside the panel. Choose **mm ↔ m**, **mm² ↔ m²** (square millimeters / square meters), or **rad ↔ deg**. Conversion changes Number and Integer output values; converted integers become Numbers so fractions are preserved. Text, geometry, nulls, and empty branches pass through. Length and area conversions are separate: 1,000 mm becomes 1 m, while 1,000,000 mm² becomes 1 m². Conversion follows the tree tools, and search, sorting, and statistics use the converted values.
 
 The same dropdown offers **Decimals: automatic** and **Decimal places…** (0–12). Decimal places format numeric rows, copied values, and statistics without rounding the values on the output wire. Conversion and decimal settings are saved with the definition and support undo. Existing definitions default to no conversion and automatic decimals. Reset view and Reset tree tools leave these settings intact; choose No conversion and Decimals: automatic to reset them.
 
 The resizable canvas panel shows grouped branch headers and compact rows, with search, numeric comparisons (`> 800`, `<= 25`, `= 10`), type/invalid filters, value sorting, branch selection, exact branch jumps such as `{0;2;4}`, row jumps, a logical scrollbar, and numeric statistics. Click the search field and press Enter to apply a query. Double-click a row to copy its full value. Addresses describe the output tree after the active tools. Drag the bottom-right corner to resize; size and view settings are saved with the definition.
 
-![Panel+ canvas tree tools, rendered by the native component with sample data](docs/images/panel-tree-tools.png)
+![Compact Panel+ canvas with native tree-tool icons and row type hints](docs/images/panel-tree-tools.png)
 
 [See the compact units menu](docs/images/panel-units-menu.png).
 

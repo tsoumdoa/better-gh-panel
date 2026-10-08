@@ -18,7 +18,7 @@ namespace BetterGhPanel
 {
     internal sealed class BetterPanelAttributes : GH_ComponentAttributes
     {
-        private const float RowHeight = 18, BranchHeight = 16, HeaderHeight = 25;
+        private const float RowHeight = 17, BranchHeight = 15, HeaderHeight = 22;
         private static readonly Color Ink = Color.FromArgb(49, 55, 53);
         private static readonly Color Muted = Color.FromArgb(120, 127, 123);
         private static readonly Color Accent = Color.FromArgb(77, 115, 94);
@@ -43,22 +43,21 @@ namespace BetterGhPanel
         {
             _panel = new RectangleF(Pivot.X, Pivot.Y, PanelOwner.CanvasWidth, PanelOwner.CanvasHeight);
             m_innerBounds = _panel;
-            float x = _panel.X + 9;
-            _search = new RectangleF(x, _panel.Y + 33, _panel.Width - 174, 22);
-            _type = new RectangleF(_search.Right + 5, _search.Y, 75, 22);
-            _sort = new RectangleF(_type.Right + 5, _search.Y, 71, 22);
-            _branch = new RectangleF(x, _panel.Y + 60, _panel.Width - 134, 22);
-            _jump = new RectangleF(_branch.Right + 5, _branch.Y, 60, 22);
-            _reset = new RectangleF(_jump.Right + 5, _branch.Y, 46, 22);
-            float toolWidth = (_panel.Width - 33) / 4;
-            _trim = new RectangleF(x, _panel.Y + 87, toolWidth, 22);
-            _simplify = new RectangleF(_trim.Right + 5, _trim.Y, toolWidth, 22);
-            _flatten = new RectangleF(_simplify.Right + 5, _trim.Y, toolWidth, 22);
-            _reverse = new RectangleF(_flatten.Right + 5, _trim.Y, toolWidth, 22);
-            _footer = new RectangleF(x, _panel.Bottom - 37, _panel.Width - 18, 30);
-            _units = new RectangleF(_footer.Right - 103, _footer.Y + 13, 93, 17);
-            _list = new RectangleF(x, _panel.Y + 117, _panel.Width - 28, Math.Max(18, _panel.Height - 161));
-            _track = new RectangleF(_panel.Right - 14, _list.Y, 8, _list.Height);
+            float x = _panel.X + 4;
+            _search = new RectangleF(x + 2, _panel.Y + 25, _panel.Width - 212, 21);
+            _type = new RectangleF(_search.Right + 3, _search.Y, 76, 21);
+            _sort = new RectangleF(_type.Right + 3, _search.Y, 43, 21);
+            _branch = new RectangleF(_sort.Right + 3, _search.Y, 72, 21);
+            _jump = new RectangleF(_panel.Right - 50, _panel.Y + 2, 20, 18);
+            _reset = new RectangleF(_jump.Right + 4, _jump.Y, 20, 18);
+            _footer = new RectangleF(x + 2, _panel.Bottom - 36, _panel.Width - 12, 32);
+            _units = new RectangleF(_footer.Right - 85, _footer.Y + 15, 76, 17);
+            _trim = new RectangleF(_units.Left - 101, _footer.Y + 14, 22, 20);
+            _simplify = new RectangleF(_trim.Right + 2, _trim.Y, 22, 20);
+            _flatten = new RectangleF(_simplify.Right + 2, _trim.Y, 22, 20);
+            _reverse = new RectangleF(_flatten.Right + 2, _trim.Y, 22, 20);
+            _list = new RectangleF(x, _panel.Y + 52, _panel.Width - 15, Math.Max(18, _panel.Height - 90));
+            _track = new RectangleF(_panel.Right - 8, _list.Y, 4, _list.Height);
             _resize = new RectangleF(_panel.Right - 13, _panel.Bottom - 13, 13, 13);
             // Linked parameter attributes keep Grasshopper's wire/tooltip behavior, but
             // expose actual wire grips at our rectangle instead of a hidden default capsule.
@@ -106,25 +105,21 @@ namespace BetterGhPanel
             using (var mono = new Font(FontFamily.GenericMonospace, 10f, FontStyle.Regular, GraphicsUnit.Pixel))
             using (var trim = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap, LineAlignment = StringAlignment.Center })
             {
-                Fill(graphics, Color.FromArgb(248, 249, 247), _panel);
-                Fill(graphics, Color.FromArgb(45, 50, 48), new RectangleF(_panel.X, _panel.Y, _panel.Width, HeaderHeight));
-                Text(graphics, "Panel+", bold, Color.FromArgb(241, 245, 239), new RectangleF(_panel.X + 10, _panel.Y + 2, 85, 21), trim);
+                Fill(graphics, Color.White, _panel);
+                Fill(graphics, Accent, new RectangleF(_panel.X, _panel.Y, 3, HeaderHeight));
+                Text(graphics, "P+", bold, Accent, new RectangleF(_panel.X + 8, _panel.Y + 1, 28, 20), trim);
                 var itemLabel = result.Statistics.ItemCount == 1 ? "item" : "items";
                 var branchLabel = result.Statistics.BranchCount == 1 ? "branch" : "branches";
-                Text(graphics, $"{result.Statistics.ItemCount:N0} {itemLabel}  /  {result.Statistics.BranchCount:N0} {branchLabel}", small, Color.FromArgb(181, 194, 184), new RectangleF(_panel.X + 94, _panel.Y + 2, _panel.Width - 104, 21), trim);
+                Text(graphics, $"{result.Statistics.ItemCount:N0} {itemLabel}  ·  {result.Statistics.BranchCount:N0} {branchLabel}", small, Muted, new RectangleF(_panel.X + 39, _panel.Y + 1, _panel.Width - 93, 20), trim);
                 if (canvas.Viewport.Zoom >= 0.5f)
                 {
                     var options = session.Options;
-                    Control(graphics, _search, string.IsNullOrEmpty(options.Search) ? "Search values or > 800…" : options.Search, small, trim, !string.IsNullOrEmpty(options.Search));
-                    Control(graphics, _type, Short(options.OnlyInvalid ? "Invalid" : options.TypeName ?? "All types", 60) + " ▾", small, trim, options.TypeName != null || options.OnlyInvalid);
-                    Control(graphics, _sort, options.SortMode == PanelSortMode.SourceOrder ? "Source ▾" : options.SortMode == PanelSortMode.ValueAscending ? "Value ↑ ▾" : "Value ↓ ▾", small, trim, options.SortMode != PanelSortMode.SourceOrder);
-                    Control(graphics, _branch, Short(options.BranchPath ?? "All branches", 80) + " ▾", mono, trim, options.BranchPath != null);
-                    Control(graphics, _jump, "Jump row", small, trim, false);
-                    Control(graphics, _reset, "Reset", small, trim, false);
-                    Control(graphics, _trim, PanelOwner.TrimDepth == 0 ? "Trim: off" : $"Trim: {PanelOwner.TrimDepth}", small, trim, PanelOwner.TrimDepth > 0);
-                    Control(graphics, _simplify, (PanelOwner.SimplifyTree ? "✓ " : "") + "Simplify", small, trim, PanelOwner.SimplifyTree);
-                    Control(graphics, _flatten, (PanelOwner.FlattenTree ? "✓ " : "") + "Flatten", small, trim, PanelOwner.FlattenTree);
-                    Control(graphics, _reverse, (PanelOwner.ReverseTree ? "✓ " : "") + "Reverse", small, trim, PanelOwner.ReverseTree);
+                    Control(graphics, _search, string.IsNullOrEmpty(options.Search) ? "Search / > 800…" : options.Search, small, trim, !string.IsNullOrEmpty(options.Search));
+                    Control(graphics, _type, CanvasMenu.TypeHint(result, options) + " ▾", small, trim, options.TypeName != null || options.OnlyInvalid);
+                    Control(graphics, _sort, options.SortMode == PanelSortMode.SourceOrder ? "Src ▾" : options.SortMode == PanelSortMode.ValueAscending ? "↑ ▾" : "↓ ▾", small, trim, options.SortMode != PanelSortMode.SourceOrder);
+                    Control(graphics, _branch, Short(options.BranchPath ?? "Paths", 80) + " ▾", mono, trim, options.BranchPath != null);
+                    DrawViewAction(graphics, _jump, false);
+                    DrawViewAction(graphics, _reset, true);
                     RenderRows(graphics, result, font, small, bold, mono, trim);
                     RenderFooter(graphics, result, small, mono, trim);
                     if (_menu.Kind != CanvasMenuKind.None) RenderMenu(graphics, small, mono, trim);
@@ -151,6 +146,8 @@ namespace BetterGhPanel
             float y = _list.Y;
             string? previousPath = null;
             bool grouped = PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder;
+            bool showTypes = result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
+            using var typeFormat = new StringFormat(trim) { Alignment = StringAlignment.Far };
             _offset = Math.Max(0, Math.Min(Math.Max(0, result.RowIds.Count - 1), _offset));
             var clip = g.Save();
             try
@@ -163,23 +160,26 @@ namespace BetterGhPanel
                     if (grouped && row.Path != previousPath)
                     {
                         if (y + BranchHeight + RowHeight > _list.Bottom) break;
-                        Fill(g, Color.FromArgb(231, 235, 229), new RectangleF(_list.X, y, _list.Width, BranchHeight));
+                        Fill(g, Color.FromArgb(236, 241, 235), new RectangleF(_list.X, y, _list.Width, BranchHeight));
                         Text(g, row.Path, mono, Accent, new RectangleF(_list.X + 6, y, _list.Width - 12, BranchHeight), trim);
                         y += BranchHeight;
                         previousPath = row.Path;
                     }
                     if (y + RowHeight > _list.Bottom) break;
                     var bounds = new RectangleF(_list.X, y, _list.Width, RowHeight);
-                    Fill(g, sourcePosition == _selectedPosition ? Color.FromArgb(216, 232, 219) : (_shown & 1) == 0 ? Color.FromArgb(252, 253, 251) : Color.FromArgb(243, 246, 241), bounds);
+                    Fill(g, sourcePosition == _selectedPosition ? Color.FromArgb(216, 232, 219) : (_shown & 1) == 0 ? Color.White : Color.FromArgb(247, 249, 246), bounds);
                     if (!row.IsValid) Fill(g, Color.FromArgb(180, 106, 67), new RectangleF(bounds.X, bounds.Y + 3, 2, bounds.Height - 6));
-                    Text(g, row.OriginalIndex.ToString(CultureInfo.InvariantCulture), mono, Muted, new RectangleF(bounds.X + 6, y, 37, RowHeight), trim);
-                    float valueStart = 47;
+                    Text(g, row.OriginalIndex.ToString(CultureInfo.InvariantCulture), mono, Muted, new RectangleF(bounds.X + 6, y, 29, RowHeight), trim);
+                    float valueStart = 39;
                     if (!grouped)
                     {
                         Text(g, row.Path, mono, Accent, new RectangleF(bounds.X + 44, y, 68, RowHeight), trim);
                         valueStart = 116;
                     }
-                    Text(g, PanelOwner.DisplayValue(result.Snapshot, row), font, Ink, new RectangleF(bounds.X + valueStart, y, bounds.Width - valueStart - 4, RowHeight), trim);
+                    Text(g, PanelOwner.DisplayValue(result.Snapshot, row), font, Ink,
+                        new RectangleF(bounds.X + valueStart, y, bounds.Width - valueStart - (showTypes ? 70 : 4), RowHeight), trim);
+                    if (showTypes)
+                        Text(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted, new RectangleF(bounds.Right - 64, y, 60, RowHeight), typeFormat);
                     _rowHits.Add(new RowHit(bounds, sourcePosition));
                     _shown++;
                     y += RowHeight;
@@ -205,9 +205,13 @@ namespace BetterGhPanel
                 : $"{stats.TypeCounts.Count:N0} types   ·   {stats.NullCount:N0} null   ·   {stats.InvalidCount:N0} invalid";
             Text(g, metrics, mono, Ink, new RectangleF(_footer.X, _footer.Y, _footer.Width - 5, 14), trim);
             var session = PanelOwner.Session;
-            string output = PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None ? "tools → output" : "original → output";
-            string status = session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Updating…" : DateTime.UtcNow < _copiedUntil ? "Value copied" : $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0} / {Count:N0}  ·  {output}";
-            Text(g, status, small, Muted, new RectangleF(_footer.X, _footer.Y + 15, _units.Left - _footer.X - 5, 14), trim);
+            string output = PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None ? "out: tools" : "out: source";
+            string status = session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Updating…" : DateTime.UtcNow < _copiedUntil ? "Value copied" : $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} · {output}";
+            Text(g, status, small, Muted, new RectangleF(_footer.X, _footer.Y + 15, _trim.Left - _footer.X - 6, 14), trim);
+            TreeToolIcons.Draw(g, _trim, TreeToolIcons.Trim, PanelOwner.TrimDepth > 0);
+            TreeToolIcons.Draw(g, _simplify, TreeToolIcons.Simplify, PanelOwner.SimplifyTree);
+            TreeToolIcons.Draw(g, _flatten, TreeToolIcons.Flatten, PanelOwner.FlattenTree);
+            TreeToolIcons.Draw(g, _reverse, TreeToolIcons.Reverse, PanelOwner.ReverseTree);
             string unitLabel = PanelOwner.UnitConversion == PanelUnitConversion.None ? "Units" : PanelUnits.Label(PanelOwner.UnitConversion).Replace(" → ", "→");
             string precision = PanelOwner.DecimalPlaces < 0 ? "" : $" · {PanelOwner.DecimalPlaces}dp";
             Control(g, _units, unitLabel + precision + " ▾", small, trim,
@@ -429,11 +433,22 @@ namespace BetterGhPanel
             }
             else if (_trim.Contains(point) || _simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point))
             {
-                e.Title = "Tree tools · changes output";
-                e.Text = "Applied in order: Trim → Simplify → Flatten → Reverse";
+                e.Title = _trim.Contains(point) ? "Trim tree" : _simplify.Contains(point) ? "Simplify tree" : _flatten.Contains(point) ? "Flatten tree" : "Reverse tree";
+                e.Text = (_trim.Contains(point) ? "Depth: " + PanelOwner.TrimDepth + " · " : "") + "Changes output · Trim → Simplify → Flatten → Reverse";
                 e.Description = _trim.Contains(point) ? "Enter the number of trailing path levels to remove. Matching branches merge in source order. Fully trimmed paths become {0}. Enter 0 to disable." :
                     _simplify.Contains(point) ? "Toggle removal of path indices shared by all branches." :
                     _flatten.Contains(point) ? "Toggle merging all branches into {0}." : "Toggle reversing items within each output branch.";
+            }
+            else if (_type.Contains(point) || _sort.Contains(point) || _branch.Contains(point))
+            {
+                var options = PanelOwner.Session.Options;
+                e.Title = _type.Contains(point) ? "Filter by type" : _sort.Contains(point) ? "Sort this view" : "Filter by branch";
+                e.Text = _type.Contains(point) ? CanvasMenu.TypeHint(PanelOwner.Session.Result, options) :
+                    _sort.Contains(point) ? options.SortMode.ToString() : options.BranchPath ?? "All branches";
+                e.Description = "Changes the panel view. Output retains the original tree unless a tree operation or unit conversion is active.";
+                if (_type.Contains(point))
+                    e.Description = (PanelOwner.Session.Result.RowIds.Count > 0 ? "Visible types: " : "Source types: ") +
+                        CanvasMenu.TypeDetails(PanelOwner.Session.Result) + "\n\n" + e.Description;
             }
             else if (_reset.Contains(point))
             {
@@ -483,9 +498,30 @@ namespace BetterGhPanel
         }
         private static void Control(Graphics g, RectangleF bounds, string value, Font font, StringFormat trim, bool active)
         {
-            Fill(g, active ? Color.FromArgb(227, 237, 223) : Color.White, bounds);
-            using (var pen = new Pen(Color.FromArgb(212, 219, 208))) g.DrawRectangle(pen, bounds.X, bounds.Y, bounds.Width, bounds.Height);
-            Text(g, value, font, active ? Accent : Muted, new RectangleF(bounds.X + 6, bounds.Y, bounds.Width - 12, bounds.Height), trim);
+            if (active) Fill(g, Color.FromArgb(227, 237, 223), bounds);
+            using (var pen = new Pen(active ? Accent : Color.FromArgb(224, 229, 222)))
+                g.DrawLine(pen, bounds.X, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
+            Text(g, value, font, active ? Accent : Muted, new RectangleF(bounds.X + 3, bounds.Y, bounds.Width - 6, bounds.Height), trim);
+        }
+        private static void DrawViewAction(Graphics g, RectangleF bounds, bool reset)
+        {
+            float x = bounds.X + 5, y = bounds.Y + 4;
+            using (var pen = new Pen(Muted, 1.2f))
+            {
+                if (reset)
+                {
+                    g.DrawArc(pen, x, y, 10, 10, 25, 295);
+                    g.DrawLine(pen, x + 9, y + 2, x + 9, y - 1);
+                    g.DrawLine(pen, x + 9, y + 2, x + 6, y + 2);
+                }
+                else
+                {
+                    g.DrawLine(pen, x + 5, y, x + 5, y + 9);
+                    g.DrawLine(pen, x + 5, y + 9, x + 2, y + 6);
+                    g.DrawLine(pen, x + 5, y + 9, x + 8, y + 6);
+                    g.DrawLine(pen, x, y + 11, x + 10, y + 11);
+                }
+            }
         }
         private string Number(double? value, PanelSnapshot snapshot) => value.HasValue
             ? PanelUnits.Format(value.Value, snapshot.UnitConversion, PanelOwner.DecimalPlaces, automaticFormat: "G5") : "—";

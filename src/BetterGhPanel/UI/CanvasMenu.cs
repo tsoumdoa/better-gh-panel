@@ -21,6 +21,51 @@ namespace BetterGhPanel.UI
             Kind == CanvasMenuKind.Units ? PanelUnits.ConversionCount + 2 : 0;
         internal int Visible => Math.Min(Count, Math.Max(2, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
 
+        internal static string TypeHint(PanelQueryResult result, PanelQueryOptions options)
+        {
+            if (options.OnlyInvalid) return "Invalid";
+            if (options.TypeName != null) return ShortTypeName(options.TypeName);
+            var types = result.Statistics.TypeCounts.Count > 0 ? result.Statistics.TypeCounts : result.Snapshot.TypeCounts;
+            if (types.Count == 0) return "No data";
+            var names = types.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal)
+                .Take(2).Select(pair => ShortTypeName(pair.Key));
+            return string.Join("/", names) + (types.Count > 2 ? " +" + (types.Count - 2) : "");
+        }
+
+        internal static string TypeDetails(PanelQueryResult result)
+        {
+            var types = result.Statistics.TypeCounts.Count > 0 ? result.Statistics.TypeCounts : result.Snapshot.TypeCounts;
+            return string.Join(", ", types.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal)
+                .Select(pair => $"{pair.Key}: {pair.Value:N0}"));
+        }
+
+        // Abbreviations are presentation only; filters and saved settings keep the full goo type name.
+        internal static string ShortTypeName(string name) => name switch
+        {
+            "Number" => "Num",
+            "Integer" => "Int",
+            "Boolean" => "Bool",
+            "Point" => "Pt",
+            "Vector" => "Vec",
+            "Plane" => "Pln",
+            "Line" => "Ln",
+            "Curve" => "Crv",
+            "Circle" => "Cir",
+            "Rectangle" => "Rect",
+            "Surface" => "Srf",
+            "Extrusion" => "Extr",
+            "Mesh Face" => "Face",
+            "Point Cloud" => "Cloud",
+            "Transform" => "Xform",
+            "Geometry Group" => "Geo group",
+            "Colour" => "Col",
+            "Domain" => "Dom",
+            "Domain²" => "Dom²",
+            "Complex Number" => "Cplx",
+            // Mesh, Brep, SubD, Arc, Box, annotations, and third-party goo retain their own names.
+            _ => name
+        };
+
         internal void Close() => Kind = CanvasMenuKind.None;
         internal bool IsCurrent(PanelSnapshot snapshot) => ReferenceEquals(_snapshot, snapshot);
 
@@ -86,7 +131,12 @@ namespace BetterGhPanel.UI
                 return "Decimal places…" + (decimals >= 0 ? "  (" + decimals + ")" : "");
             }
             if (Kind == CanvasMenuKind.Type)
-                return index == 0 ? "All types" : index == 1 ? (onlyInvalid ? "✓ Invalid only" : "Invalid only") : TypeNameAt(index);
+            {
+                if (index == 0) return "All types";
+                if (index == 1) return onlyInvalid ? "✓ Invalid only" : "Invalid only";
+                string name = TypeNameAt(index), hint = ShortTypeName(name);
+                return hint == name ? name : hint + " · " + name;
+            }
             if (Kind == CanvasMenuKind.Sort) return SortLabels[index];
             if (index == 0) return "All branches";
             if (index == 1) return "Jump to exact path…";
