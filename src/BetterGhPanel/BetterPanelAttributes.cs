@@ -18,12 +18,13 @@ namespace BetterGhPanel
 {
     internal sealed class BetterPanelAttributes : GH_ComponentAttributes
     {
-        private const float RowHeight = 17, BranchHeight = 15, HeaderHeight = 22;
+        private const float RowHeight = 17, BranchHeight = 15, HeaderHeight = CanvasPanelSize.HeaderHeight;
         private static readonly Color Ink = Color.FromArgb(49, 55, 53);
         private static readonly Color Muted = Color.FromArgb(120, 127, 123);
         private static readonly Color Accent = Color.FromArgb(77, 115, 94);
         private RectangleF _panel, _search, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _footer;
         private RectangleF _trim, _simplify, _flatten, _reverse, _units;
+        private RectangleF _display;
         private readonly List<RowHit> _rowHits = new List<RowHit>();
         private int _offset, _shown, _selectedPosition = -1;
         private PanelQueryResult? _lastResult;
@@ -41,14 +42,18 @@ namespace BetterGhPanel
 
         protected override void Layout()
         {
-            _panel = new RectangleF(Pivot.X, Pivot.Y, PanelOwner.CanvasWidth, PanelOwner.CanvasHeight);
+            _panel = new RectangleF(Pivot.X,
+                Pivot.Y + CanvasPanelSize.DisplayTopOffset(PanelOwner.CanvasHeight, PanelOwner.CanvasDisplay),
+                PanelOwner.CanvasWidth, PanelOwner.DisplayHeight);
+            _rowHits.Clear();
             m_innerBounds = _panel;
             float x = _panel.X + 4;
             _search = new RectangleF(x + 2, _panel.Y + 25, _panel.Width - 212, 21);
             _type = new RectangleF(_search.Right + 3, _search.Y, 76, 21);
             _sort = new RectangleF(_type.Right + 3, _search.Y, 43, 21);
             _branch = new RectangleF(_sort.Right + 3, _search.Y, 72, 21);
-            _jump = new RectangleF(_panel.Right - 50, _panel.Y + 2, 20, 18);
+            _display = new RectangleF(_panel.Right - 26, _panel.Y + 2, 20, 18);
+            _jump = new RectangleF(_display.Left - 48, _panel.Y + 2, 20, 18);
             _reset = new RectangleF(_jump.Right + 4, _jump.Y, 20, 18);
             _footer = new RectangleF(x + 2, _panel.Bottom - 36, _panel.Width - 12, 32);
             _units = new RectangleF(_footer.Right - 85, _footer.Y + 15, 76, 17);
@@ -64,7 +69,8 @@ namespace BetterGhPanel
             PositionPorts(Owner.Params.Input, true);
             PositionPorts(Owner.Params.Output, false);
             Bounds = new RectangleF(_panel.X - 6, _panel.Y, _panel.Width + 12, _panel.Height);
-            LayoutMenu();
+            if (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed) _menu.Close();
+            else LayoutMenu();
         }
 
         private void PositionPorts(IList<IGH_Param> parameters, bool input)
@@ -77,7 +83,9 @@ namespace BetterGhPanel
                     port = new PanelPortAttributes(parameters[i], this, input);
                     parameters[i].Attributes = port;
                 }
-                var point = new PointF(input ? _panel.Left : _panel.Right, _panel.Y + HeaderHeight + (_panel.Height - HeaderHeight) * (i + 1) / (parameters.Count + 1));
+                // Folding changes only the visible rectangle, never the wire endpoints.
+                var point = new PointF(input ? _panel.Left : _panel.Right,
+                    Pivot.Y + HeaderHeight + (PanelOwner.CanvasHeight - HeaderHeight) * (i + 1) / (parameters.Count + 1));
                 port.Place(point);
             }
         }
@@ -110,8 +118,11 @@ namespace BetterGhPanel
                 Text(graphics, "P+", bold, Accent, new RectangleF(_panel.X + 8, _panel.Y + 1, 28, 20), trim);
                 var itemLabel = result.Statistics.ItemCount == 1 ? "item" : "items";
                 var branchLabel = result.Statistics.BranchCount == 1 ? "branch" : "branches";
-                Text(graphics, $"{result.Statistics.ItemCount:N0} {itemLabel}  ·  {result.Statistics.BranchCount:N0} {branchLabel}", small, Muted, new RectangleF(_panel.X + 39, _panel.Y + 1, _panel.Width - 93, 20), trim);
+                bool collapsed = PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed;
+                Text(graphics, $"{result.Statistics.ItemCount:N0} {itemLabel}  ·  {result.Statistics.BranchCount:N0} {branchLabel}", small, Muted, new RectangleF(_panel.X + 39, _panel.Y + 1, _panel.Width - (collapsed ? 69 : 117), 20), trim);
                 if (canvas.Viewport.Zoom >= 0.5f)
+                    DrawDisplayAction(graphics);
+                if (canvas.Viewport.Zoom >= 0.5f && !collapsed)
                 {
                     var options = session.Options;
                     Control(graphics, _search, string.IsNullOrEmpty(options.Search) ? "Search / > 800…" : options.Search, small, trim, !string.IsNullOrEmpty(options.Search));
@@ -129,7 +140,7 @@ namespace BetterGhPanel
                         graphics.DrawLine(gripPen, _panel.Right - 6, _panel.Bottom - 4, _panel.Right - 4, _panel.Bottom - 6);
                     }
                 }
-                else { _rowHits.Clear(); _menu.Close(); }
+                else { _rowHits.Clear(); _shown = 0; _menu.Close(); }
                 using (var border = new Pen(Selected ? Accent : Color.FromArgb(164, 171, 164), Selected ? 1.5f : 1))
                     graphics.DrawRectangle(border, _panel.X, _panel.Y, _panel.Width, _panel.Height);
                 foreach (var parameter in Owner.Params.Input)
@@ -145,7 +156,10 @@ namespace BetterGhPanel
             _shown = 0;
             float y = _list.Y;
             string? previousPath = null;
-            bool grouped = PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder;
+            // A half-height panel at the minimum saved size still has room for a
+            // value, even when a separate branch heading would consume that row.
+            bool grouped = PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder &&
+                _list.Height >= BranchHeight + RowHeight;
             bool showTypes = result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
             using var typeFormat = new StringFormat(trim) { Alignment = StringAlignment.Far };
             _offset = Math.Max(0, Math.Min(Math.Max(0, result.RowIds.Count - 1), _offset));
@@ -264,6 +278,15 @@ namespace BetterGhPanel
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDown(sender, e);
             if (e.Button != MouseButtons.Left) return base.RespondToMouseDown(sender, e);
             var point = e.CanvasLocation;
+            if (_display.Contains(point))
+            {
+                _menu.Close();
+                PanelOwner.SetCanvasDisplay(CanvasPanelSize.NextDisplay(PanelOwner.CanvasDisplay));
+                PerformLayout();
+                sender.Invalidate();
+                return GH_ObjectResponse.Handled;
+            }
+            if (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed) return base.RespondToMouseDown(sender, e);
             if (_menu.Kind != CanvasMenuKind.None)
             {
                 if (!_menu.IsCurrent(PanelOwner.Session.Snapshot))
@@ -380,7 +403,12 @@ namespace BetterGhPanel
         {
             if (_resizing)
             {
-                PanelOwner.SetCanvasSize(_startWidth + e.CanvasX - _dragStart.X, _startHeight + e.CanvasY - _dragStart.Y);
+                // Half's top offset also changes with the saved height. Account
+                // for that so the visible corner follows the cursor exactly.
+                float height = _startHeight + (e.CanvasY - _dragStart.Y) /
+                    (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Half ? 1.5f : 1);
+                PanelOwner.SetCanvasSize(_startWidth + e.CanvasX - _dragStart.X,
+                    PanelOwner.CanvasDisplay == CanvasPanelDisplay.Half ? height * 2 : height);
                 PerformLayout();
                 sender.Invalidate();
                 return GH_ObjectResponse.Capture;
@@ -402,6 +430,9 @@ namespace BetterGhPanel
 
         public override GH_ObjectResponse RespondToMouseDoubleClick(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
+            if (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed ||
+                _display.Contains(e.CanvasLocation))
+                return GH_ObjectResponse.Handled;
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDoubleClick(sender, e);
             var result = PanelOwner.Session.Result;
             if (_list.Contains(e.CanvasLocation) && !ReferenceEquals(_lastResult, result))
@@ -425,6 +456,15 @@ namespace BetterGhPanel
         public override void SetupTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             base.SetupTooltip(point, e);
+            if (_display.Contains(point))
+            {
+                e.Title = PanelOwner.CanvasDisplay == CanvasPanelDisplay.Full ? "Show half panel" :
+                    PanelOwner.CanvasDisplay == CanvasPanelDisplay.Half ? "Collapse panel" : "Expand panel";
+                e.Text = "Full → Half → Collapsed → Full";
+                e.Description = "Click to cycle panel sizes. Full restores your saved height. Half shows half that height. Collapsed keeps the header and wire connections. Your view settings are retained.";
+                return;
+            }
+            if (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed) return;
             if (_units.Contains(point))
             {
                 e.Title = "Units and decimals";
@@ -503,6 +543,20 @@ namespace BetterGhPanel
                 g.DrawLine(pen, bounds.X, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
             Text(g, value, font, active ? Accent : Muted, new RectangleF(bounds.X + 3, bounds.Y, bounds.Width - 6, bounds.Height), trim);
         }
+        private void DrawDisplayAction(Graphics g)
+        {
+            float x = _display.X + 4, y = _display.Y + 5;
+            bool expand = PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed;
+            using (var pen = new Pen(Muted, 1.2f))
+            {
+                g.DrawLines(pen, expand
+                    ? new[] { new PointF(x, y), new PointF(x + 6, y + 6), new PointF(x + 12, y) }
+                    : new[] { new PointF(x, y + 6), new PointF(x + 6, y), new PointF(x + 12, y + 6) });
+                if (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Half)
+                    g.DrawLine(pen, x, y - 3, x + 12, y - 3);
+            }
+        }
+
         private static void DrawViewAction(Graphics g, RectangleF bounds, bool reset)
         {
             float x = bounds.X + 5, y = bounds.Y + 4;

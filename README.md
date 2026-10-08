@@ -10,13 +10,15 @@ Created in [T3 Code](https://t3.codes).
 
 Find **Panel+** in **Params → Util** after installing the local Yak package. Connect any typed tree to **D**. With tree tools and unit conversion off, the output forwards that tree unchanged. Searching, filtering and sorting only affect your view.
 
-The public Yak beta is **`better-gh-panel 0.1.5-beta.1`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.5-beta.1`, then restart. Managed Grasshopper tree checks pass; the full native host rerun is blocked by Rhino licensing. Mac runtime validation is pending.
+The public Yak beta is **`better-gh-panel 0.1.6-beta.1`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.6-beta.1`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including the single display control and fixed wire connections. Mac runtime validation is pending.
 
-This beta patch is **`0.1.5-beta.1`**. It fixes combined tree tools by applying Simplify before Trim, so the trim depth acts on the simplified paths.
+This beta patch is **`0.1.6-beta.1`**. One header chevron folds the panel through Full, Half, and Collapsed while keeping both wire connections fixed.
 
 **Simplify**, **Trim**, **Flatten**, and **Reverse** change the typed output and run in that order. Click Trim and enter a nonnegative depth (0 disables it); click the other tools to toggle them. Simplify removes shared path indices before Trim removes trailing path levels and merges matching branches; fully trimmed paths become `{0}`. Flatten merges into `{0}`, and Reverse reverses items within each output branch. Upstream data stays intact. Tool settings are saved with the definition and support undo. **Reset** clears only the view; **Reset tree tools** in the component menu disables tree transformations while leaving unit conversion intact.
 
-New panels start at **360 × 360** (1:1). Saved sizes and legacy size presets are preserved. All interaction stays on the canvas; the popup inspector and expand action have been removed.
+New panels start at **360 × 360** (1:1). Saved sizes and legacy size presets are preserved. All interaction stays on the canvas; the popup inspector has been removed.
+
+One small chevron in the header cycles **Full → Half → Collapsed → Full**. Full restores the saved height, Half shows half that height, and Collapsed keeps a 28-unit header. The body folds toward the wire connections, keeping both connection points fixed. Width, filters, selection, and data stay intact. The display mode is saved with the definition and supports undo. Resizing in Half updates the full height proportionally.
 
 The panel uses a compact spreadsheet layout: one search/filter row and a small footer dock with the original Grasshopper **Trim**, **Simplify**, **Flatten**, and **Reverse** icons. Hover for each tool's name and trim depth; green icons indicate active tools. Type hints cover Grasshopper geometry and primitive data: **Pt**, **Srf**, **Mesh**, **Crv**, **Brep**, **SubD**, **Vec**, **Num**, and more. The filter summarises the two most common visible types, with a remaining-type count, and its tooltip lists full names and counts. Mixed and invalid-only rows show compact type labels; the menu retains full names, and other built-in or third-party types keep their own names. At the default size, the table has 41% more area than the previous layout. The icons are original Grasshopper assets, used for this Grasshopper plug-in under [McNeel's icon usage terms](https://developer.rhino3d.com/guides/grasshopper/grasshopper-icons/).
 
@@ -40,7 +42,7 @@ dotnet run --project tests/BetterGhPanel.Core.Tests -c Release
 node scripts/package.mjs
 ```
 
-The beta artifact is `artifacts/better-gh-panel-0.1.5-beta.1/better-gh-panel-0.1.5-beta.1-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The beta artifact is `artifacts/better-gh-panel-0.1.6-beta.1/better-gh-panel-0.1.6-beta.1-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino. CI is configured to compile and stage on Windows and Mac, and does not launch Rhino.
 

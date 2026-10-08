@@ -369,11 +369,68 @@ internal static class Program
         DrawCanvasPreview(component, canvas);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-units-menu.png");
+        VerifyCanvasDisplay(component, canvas, document);
         component.DocumentContextChanged(document, GH_DocumentContext.Close);
         Assert(!PanelTestAdapter.HasSession(component),
             "Document closure disposes the component session");
         Console.WriteLine("PASS: Windows .NET Rhino host smoke checks completed.");
         return 0;
+    }
+
+    private static void VerifyCanvasDisplay(GH_Component component, GH_Canvas canvas, GH_Document document)
+    {
+        var inputGrip = component.Params.Input[0].Attributes.InputGrip;
+        var outputGrip = component.Params.Output[0].Attributes.OutputGrip;
+        var result = Get<PanelQueryResult>(PanelTestAdapter.Session(component), "Result");
+        var output = component.Params.Output[0].VolatileData;
+        document.UndoServer.Clear();
+        foreach (var state in new[] { "half", "collapsed", "full" })
+        {
+            Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
+            float expectedHeight = state == "full" ? 360 : state == "half" ? 180 : 28;
+            Assert(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Height == expectedHeight,
+                "Single native display control cycles to " + state);
+            Assert(component.Params.Input[0].Attributes.InputGrip == inputGrip &&
+                component.Params.Output[0].Attributes.OutputGrip == outputGrip,
+                "Folding keeps both native wire connections fixed");
+        }
+        Assert(PanelTestAdapter.Size(component) == new SizeF(360, 360) &&
+            ReferenceEquals(result, Get<PanelQueryResult>(PanelTestAdapter.Session(component), "Result")) &&
+            ReferenceEquals(output, component.Params.Output[0].VolatileData), "Folding preserves saved size, query and typed output");
+        document.UndoServer.PerformUndo();
+        component.Attributes.PerformLayout();
+        Assert(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Height == 28, "Native undo restores collapsed display");
+        var archive = new GH_Archive();
+        var restored = (GH_Component)Activator.CreateInstance(component.GetType())!;
+        restored.CreateAttributes();
+        Assert(archive.AppendObject(component, "Display") && archive.ExtractObject(restored, "Display"), "Folded display serializes");
+        restored.Attributes.PerformLayout();
+        Assert(PanelTestAdapter.Bounds(restored, CanvasControl.Panel).Height == 28 &&
+            PanelTestAdapter.Size(restored) == new SizeF(360, 360), "Saved collapse retains the full panel size");
+        var legacy = new GH_LooseChunk("Display");
+        restored.Write(legacy);
+        legacy.RemoveItem("PanelDisplay");
+        Assert(restored.Read(legacy), "Legacy display settings load");
+        restored.Attributes.PerformLayout();
+        Assert(PanelTestAdapter.Bounds(restored, CanvasControl.Panel).Height == 360, "Older definitions open in Full mode");
+        restored.RemovedFromDocument(document);
+        document.UndoServer.PerformRedo();
+        component.Attributes.PerformLayout();
+        Assert(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Height == 360, "Native redo restores full display");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
+        var corner = PanelTestAdapter.Bounds(component, CanvasControl.Resize);
+        var start = new PointF(corner.X + 5, corner.Y + 5);
+        float bottom = PanelTestAdapter.Bounds(component, CanvasControl.Panel).Bottom;
+        component.Attributes.RespondToMouseDown(canvas, Mouse(start));
+        component.Attributes.RespondToMouseMove(canvas, Mouse(new PointF(start.X, start.Y + 24)));
+        Assert(Math.Abs(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Bottom - bottom - 24) < 0.01f,
+            "Half panel resize corner follows the cursor");
+        component.Attributes.RespondToMouseUp(canvas, Mouse(start));
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
+        PanelTestAdapter.Resize(component, 360, 360);
+        component.Attributes.PerformLayout();
+        document.UndoServer.Clear();
     }
 
     private static void VerifyTreeOperations(Assembly assembly)
