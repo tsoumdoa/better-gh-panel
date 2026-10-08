@@ -434,7 +434,7 @@ namespace BetterGhPanel
             else if (_trim.Contains(point) || _simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point))
             {
                 e.Title = _trim.Contains(point) ? "Trim tree" : _simplify.Contains(point) ? "Simplify tree" : _flatten.Contains(point) ? "Flatten tree" : "Reverse tree";
-                e.Text = (_trim.Contains(point) ? "Depth: " + PanelOwner.TrimDepth + " · " : "") + "Changes output · Trim → Simplify → Flatten → Reverse";
+                e.Text = (_trim.Contains(point) ? "Depth: " + PanelOwner.TrimDepth + " · " : "") + "Changes output · Simplify → Trim → Flatten → Reverse";
                 e.Description = _trim.Contains(point) ? "Enter the number of trailing path levels to remove. Matching branches merge in source order. Fully trimmed paths become {0}. Enter 0 to disable." :
                     _simplify.Contains(point) ? "Toggle removal of path indices shared by all branches." :
                     _flatten.Contains(point) ? "Toggle merging all branches into {0}." : "Toggle reversing items within each output branch.";

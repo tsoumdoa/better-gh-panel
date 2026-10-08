@@ -126,7 +126,7 @@ namespace BetterGhPanel
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p) =>
-            p.AddGenericParameter("Data", "D", "Typed tree after Trim → Simplify → Flatten → Reverse → unit conversion. Filters, sorting and decimal formatting do not change output precision.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Data", "D", "Typed tree after Simplify → Trim → Flatten → Reverse → unit conversion. Filters, sorting and decimal formatting do not change output precision.", GH_ParamAccess.tree);
 
         protected override void SolveInstance(IGH_DataAccess da)
         {
