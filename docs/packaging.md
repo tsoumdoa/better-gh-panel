@@ -12,17 +12,17 @@ node scripts/package.mjs
 
 Packaging finds Yak in the standard Rhino 8 installation. On a machine without Rhino, `node scripts/package.mjs --stage-only` builds the same folder without creating an archive. Use `--yak <absolute path>` or `YAK_PATH` for a custom installation. Use `--skip-build` only after a successful Release build.
 
-The current beta patch is `0.1.8-beta.1`. The resulting `artifacts/better-gh-panel-0.1.8-beta.1/` contains `manifest.yml`, `icon.png`, and the two runtime folders. Yak builds a `better-gh-panel-0.1.8-beta.1-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. CI runs the core checks and stages both runtimes on Windows and Mac; it does not install or launch Rhino.
+The current beta patch is `0.1.9-beta.1`. The resulting `artifacts/better-gh-panel-0.1.9-beta.1/` contains `manifest.yml`, `icon.png`, and the two runtime folders. Yak builds a `better-gh-panel-0.1.9-beta.1-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. CI runs the core checks and stages both runtimes on Windows and Mac; it does not install or launch Rhino.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
 ```text
-yak install --source artifacts/better-gh-panel-0.1.8-beta.1 better-gh-panel 0.1.8-beta.1
+yak install --source artifacts/better-gh-panel-0.1.9-beta.1 better-gh-panel 0.1.9-beta.1
 ```
 
 Replace `yak` with the full executable path if it is not on PATH. On Windows it is normally `C:\Program Files\Rhino 8\System\Yak.exe`; on Mac it is normally `/Applications/Rhino 8.app/Contents/Resources/bin/yak`. Restart Rhino and open Grasshopper afterward. Local install uses Yak's package directory and avoids copying a second `.gha` into the Grasshopper Libraries folder.
 
-Current beta validation: both runtime builds passed without warnings, all 17 core checks and packaging regression passed, and the full Windows Rhino 8.35 .NET 7 host checks passed. Geometry checks cover analytic line/arc and primitive measurements, curve shape, trimmed surface and open Brep area, closed Brep volume, model units, mesh counts, third-party/invalid fallbacks, lazy measurement, successful/failed hover caching, new-snapshot invalidation, obsolete views and disposal. Existing reset, compact menu, display, serialization, query, tree-tool, conversion and typed-output checks also pass. Mac and Windows .NET Framework host validation remain pending.
+Current beta validation: both runtime builds passed without warnings, all 18 core checks and packaging regression passed, managed net48 tree checks passed, and the full Windows Rhino 8.35 .NET 7 host checks passed. Geometry checks cover synchronous selected-row Measure clicks, zero calculations on hover/selection, successful/failed caching, trimmed area and solid volume, dimension/source-unit guards, mm³ ↔ m³, converted metric formatting without remeasurement, preserved raw values, unchanged geometry output, decimal formatting without a solution, invalid text labels and reasons, obsolete views and disposal. Existing reset, compact menu/paging, display, serialization, query, tree-tool, conversion and typed-output checks also pass. Mac and Windows .NET Framework host validation remain pending.
 
 With Rhino/Grasshopper installed, run the managed tree checks without starting Rhino:
 
@@ -34,10 +34,10 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 Install the current public beta with:
 
 ```text
-yak install better-gh-panel 0.1.8-beta.1
+yak install better-gh-panel 0.1.9-beta.1
 ```
 
-The previous beta, `0.1.7-beta.1`, was published on 2026-10-09. Betas `0.1.6-beta.1`, `0.1.5-beta.1` and `0.1.4-beta.1` were published on 2026-10-08. Earlier betas, `0.1.3-beta.1` and `0.1.2-beta.1`, were published on 2026-10-06 and 2026-10-05 respectively.
+Previous betas `0.1.8-beta.1` and `0.1.7-beta.1` were published on 2026-10-09. Betas `0.1.6-beta.1`, `0.1.5-beta.1` and `0.1.4-beta.1` were published on 2026-10-08. Earlier betas, `0.1.3-beta.1` and `0.1.2-beta.1`, were published on 2026-10-06 and 2026-10-05 respectively.
 
 In Rhino 8's `PackageManager`, enable prereleases to find the beta. For CLI discovery, use `yak search --all --prerelease better-gh-panel`.
 

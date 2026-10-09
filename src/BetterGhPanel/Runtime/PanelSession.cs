@@ -14,8 +14,8 @@ namespace BetterGhPanel.Runtime
         private CancellationTokenSource? _queryCancellation;
         private PanelQueryOptions _options = new PanelQueryOptions();
         private Func<int, string?>? _detailResolver;
-        private Func<int, string?>? _geometryDetailResolver;
-        private readonly Dictionary<int, string> _geometryDetails = new Dictionary<int, string>();
+        private Func<int, PanelGeometryInfo?>? _geometryDetailResolver;
+        private readonly Dictionary<int, PanelGeometryInfo?> _geometryDetails = new Dictionary<int, PanelGeometryInfo?>();
         private long _request;
         private bool _disposed;
 
@@ -36,29 +36,45 @@ namespace BetterGhPanel.Runtime
         public event EventHandler? QueryChanged;
 
         public void AttachSnapshot(PanelSnapshot snapshot)
+            => AttachSnapshotCore(snapshot, null);
+
+        internal void AttachConvertedSnapshot(PanelSnapshot snapshot, Func<int, bool> canRetainMeasurement)
+            => AttachSnapshotCore(snapshot, canRetainMeasurement);
+
+        private void AttachSnapshotCore(PanelSnapshot snapshot, Func<int, bool>? canRetainMeasurement)
         {
             if (_disposed) return;
             Snapshot = snapshot ?? PanelSnapshot.Empty;
-            _geometryDetails.Clear();
+            if (canRetainMeasurement == null) _geometryDetails.Clear();
+            else
+                foreach (var position in new List<int>(_geometryDetails.Keys))
+                    if (position >= Snapshot.Rows.Count || !Snapshot.Rows[position].IsValid || !canRetainMeasurement(position))
+                        _geometryDetails.Remove(position);
             QueueQuery();
         }
 
         public void SetDetailResolver(Func<int, string?> resolver) => _detailResolver = resolver;
 
-        internal void SetGeometryDetailResolver(Func<int, string?> resolver) => _geometryDetailResolver = resolver;
+        internal void SetGeometryDetailResolver(Func<int, PanelGeometryInfo?> resolver) => _geometryDetailResolver = resolver;
 
-        internal string GetGeometryDetails(PanelSnapshot snapshot, int sourcePosition)
+        internal PanelGeometryInfo? GetGeometryDetails(PanelSnapshot snapshot, int sourcePosition) =>
+            ReferenceEquals(snapshot, Snapshot) && _geometryDetails.TryGetValue(sourcePosition, out var details) ? details : null;
+
+        internal bool HasGeometryMeasurement(PanelSnapshot snapshot, int sourcePosition) =>
+            ReferenceEquals(snapshot, Snapshot) && _geometryDetails.ContainsKey(sourcePosition);
+
+        internal bool CanMeasureGeometry(PanelSnapshot snapshot, int sourcePosition) => !_disposed && ReferenceEquals(snapshot, Snapshot) &&
+            sourcePosition >= 0 && sourcePosition < snapshot.Rows.Count && snapshot.Rows[sourcePosition].IsValid &&
+            snapshot.Rows[sourcePosition].GeometryInfo?.CanMeasure == true && !HasGeometryMeasurement(snapshot, sourcePosition);
+
+        internal void MeasureGeometry(PanelSnapshot snapshot, int sourcePosition)
         {
-            if (_disposed || !ReferenceEquals(snapshot, Snapshot) || sourcePosition < 0 ||
-                sourcePosition >= snapshot.Rows.Count || !snapshot.Rows[sourcePosition].IsValid)
-                return string.Empty;
-            if (_geometryDetails.TryGetValue(sourcePosition, out var cached)) return cached;
-            string details;
-            try { details = _geometryDetailResolver?.Invoke(sourcePosition) ?? string.Empty; }
-            catch (Exception) { details = string.Empty; }
-            if (!ReferenceEquals(snapshot, Snapshot)) return string.Empty;
+            if (!CanMeasureGeometry(snapshot, sourcePosition)) return;
+            PanelGeometryInfo? details;
+            try { details = _geometryDetailResolver?.Invoke(sourcePosition); }
+            catch (Exception) { details = null; }
+            if (!ReferenceEquals(snapshot, Snapshot)) return;
             _geometryDetails[sourcePosition] = details;
-            return details;
         }
 
         public string GetDisplayValue(PanelSnapshot snapshot, int sourcePosition)

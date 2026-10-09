@@ -29,7 +29,8 @@ internal static class Program
             CanvasDimensionsAndPresets,
             CanvasMenuPagingAndSnapshot,
             UnitConversionsAndFormatting,
-            UnitMenuLayout
+            UnitMenuLayout,
+            GeometryMetricConversions
         };
         var failures = 0;
         foreach (var test in tests)
@@ -402,23 +403,48 @@ internal static class Program
             var anchor = new System.Drawing.RectangleF(180, height - 24, 93, 17);
             menu.Toggle(CanvasMenuKind.Units, PanelSnapshot.Empty, new PanelQueryOptions());
             menu.Layout(panel, anchor, anchor, anchor, anchor);
-            Equal(9, menu.Count);
+            Equal(PanelUnits.ConversionCount + 2, menu.Count);
             Equal(true, menu.Bounds.Top >= panel.Top + 25 && menu.Bounds.Bottom < anchor.Top && menu.Bounds.Right <= panel.Right);
             Equal(true, menu.Bounds.Width < 180 && menu.Bounds.Right == anchor.Right);
             Equal("mm² → m²", menu.Label(3, false, PanelUnitConversion.SquareMillimetersToSquareMeters));
             Equal(true, menu.IsSelected(3, new PanelQueryOptions(), PanelUnitConversion.SquareMillimetersToSquareMeters, 2));
-            Equal("Decimal places… (2)", menu.Label(8, false, decimals: 2));
+            int decimalsIndex = PanelUnits.ConversionCount + 1;
+            Equal("Decimal places… (2)", menu.Label(decimalsIndex, false, decimals: 2));
+            Equal("mm³ → m³", menu.Label((int)PanelUnitConversion.CubicMillimetersToCubicMeters, false));
             Equal(true, menu.Hover(new System.Drawing.PointF(menu.Bounds.Left + 5, menu.Bounds.Top + 5)));
             Equal(menu.Offset, menu.HoveredIndex);
             Equal(false, menu.Hover(new System.Drawing.PointF(menu.Bounds.Left + 5, menu.Bounds.Top + 5)));
             if (menu.Count > menu.Visible)
             {
-                while (menu.Offset + menu.Visible <= 8)
+                while (menu.Offset + menu.Visible <= decimalsIndex)
                     menu.TrySelect(new System.Drawing.PointF(menu.Bounds.Right - 5, menu.Bounds.Bottom - 5), out _);
-                Equal(true, menu.TrySelect(new System.Drawing.PointF(menu.Bounds.Left + 5, menu.Bounds.Top + (8 - menu.Offset) * 20 + 5), out int index));
-                Equal(8, index);
+                Equal(true, menu.TrySelect(new System.Drawing.PointF(menu.Bounds.Left + 5, menu.Bounds.Top + (decimalsIndex - menu.Offset) * 20 + 5), out int index));
+                Equal(decimalsIndex, index);
             }
         }
+    }
+
+    private static void GeometryMetricConversions()
+    {
+        Equal("1 m", PanelUnits.FormatGeometry(1000, 1, "mm", PanelUnitConversion.MillimetersToMeters, -1));
+        Equal("1 m²", PanelUnits.FormatGeometry(1000000, 2, "mm", PanelUnitConversion.SquareMillimetersToSquareMeters, -1));
+        Equal("1 m³", PanelUnits.FormatGeometry(1000000000, 3, "mm", PanelUnitConversion.CubicMillimetersToCubicMeters, -1));
+        Equal("1000 mm", PanelUnits.FormatGeometry(1, 1, "m", PanelUnitConversion.MetersToMillimeters, -1));
+        Equal("1e+06 mm²", PanelUnits.FormatGeometry(1, 2, "m", PanelUnitConversion.SquareMetersToSquareMillimeters, -1).ToLowerInvariant());
+        Equal("1e+09 mm³", PanelUnits.FormatGeometry(1, 3, "m", PanelUnitConversion.CubicMetersToCubicMillimeters, -1).ToLowerInvariant());
+        Equal("1000 mm²", PanelUnits.FormatGeometry(1000, 2, "mm", PanelUnitConversion.MillimetersToMeters, -1));
+        Equal("1 m", PanelUnits.FormatGeometry(1, 1, "m", PanelUnitConversion.MillimetersToMeters, -1));
+        Equal("2 ft³", PanelUnits.FormatGeometry(2, 3, "ft", PanelUnitConversion.CubicMillimetersToCubicMeters, -1));
+        Equal("1.235 m", PanelUnits.FormatGeometry(1234.56789, 1, "mm", PanelUnitConversion.MillimetersToMeters, 3));
+        Equal("1000.00 mm", PanelUnits.FormatGeometry(1000, 1, "mm", PanelUnitConversion.RadiansToDegrees, 2));
+        Equal("unavailable", PanelUnits.FormatGeometry(double.NaN, 2, "mm", PanelUnitConversion.None, -1));
+        Equal("unavailable", PanelUnits.FormatGeometry(double.MaxValue, 3, "m", PanelUnitConversion.CubicMetersToCubicMillimeters, -1));
+        Near(1, PanelUnits.Convert(1000000000, PanelUnitConversion.CubicMillimetersToCubicMeters));
+        Near(1000000000, PanelUnits.Convert(1, PanelUnitConversion.CubicMetersToCubicMillimeters));
+        Equal(5, (int)PanelUnitConversion.RadiansToDegrees);
+        var info = new PanelGeometryInfo("Brep · closed", 1000000000, 3, "mm", "Volume", "V");
+        Equal("Brep · closed · V 1 m³", info.FormatCompact(PanelUnitConversion.CubicMillimetersToCubicMeters, -1));
+        Equal(1000000000d, info.Value!.Value);
     }
 
     private static void Equal<T>(T expected, T actual)

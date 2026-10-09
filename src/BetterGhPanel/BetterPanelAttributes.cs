@@ -25,6 +25,7 @@ namespace BetterGhPanel
         private RectangleF _panel, _search, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _footer;
         private RectangleF _trim, _simplify, _flatten, _reverse, _units;
         private RectangleF _display;
+        private RectangleF _measure;
         private readonly List<RowHit> _rowHits = new List<RowHit>();
         private int _offset, _shown, _selectedPosition = -1;
         private PanelQueryResult? _lastResult;
@@ -49,6 +50,7 @@ namespace BetterGhPanel
             _scrolling = false;
             _menu.Close();
             _rowHits.Clear();
+            _measure = RectangleF.Empty;
         }
 
         protected override void Layout()
@@ -58,6 +60,7 @@ namespace BetterGhPanel
                 PanelOwner.CanvasWidth, PanelOwner.DisplayHeight);
             _rowHits.Clear();
             m_innerBounds = _panel;
+            _measure = RectangleF.Empty;
             float x = _panel.X + 4;
             _search = new RectangleF(x + 2, _panel.Y + 25, _panel.Width - 212, 21);
             _type = new RectangleF(_search.Right + 3, _search.Y, 76, 21);
@@ -164,6 +167,7 @@ namespace BetterGhPanel
         private void RenderRows(Graphics g, PanelQueryResult result, Font font, Font small, Font bold, Font mono, StringFormat trim)
         {
             _rowHits.Clear();
+            _measure = RectangleF.Empty;
             _shown = 0;
             float y = _list.Y;
             string? previousPath = null;
@@ -201,9 +205,18 @@ namespace BetterGhPanel
                         Text(g, row.Path, mono, Accent, new RectangleF(bounds.X + 44, y, 68, RowHeight), trim);
                         valueStart = 116;
                     }
-                    Text(g, PanelOwner.DisplayValue(result.Snapshot, row), font, Ink,
-                        new RectangleF(bounds.X + valueStart, y, bounds.Width - valueStart - (showTypes ? 70 : 4), RowHeight), trim);
-                    if (showTypes)
+                    bool showMeasure = sourcePosition == _selectedPosition && row.IsValid && row.GeometryInfo?.CanMeasure == true &&
+                        ReferenceEquals(result.Snapshot, PanelOwner.Session.Snapshot);
+                    Text(g, PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition), font, Ink,
+                        new RectangleF(bounds.X + valueStart, y, bounds.Width - valueStart - (showTypes || showMeasure ? 70 : 4), RowHeight), trim);
+                    if (showMeasure)
+                    {
+                        _measure = new RectangleF(bounds.Right - 64, y + 1, 60, RowHeight - 2);
+                        bool attempted = PanelOwner.Session.HasGeometryMeasurement(result.Snapshot, sourcePosition);
+                        bool measured = PanelOwner.Session.GetGeometryDetails(result.Snapshot, sourcePosition) != null;
+                        Control(g, _measure, !attempted ? "Measure" : measured ? "Measured" : "Failed", small, trim, !attempted || measured);
+                    }
+                    else if (showTypes)
                         Text(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted, new RectangleF(bounds.Right - 64, y, 60, RowHeight), typeFormat);
                     _rowHits.Add(new RowHit(bounds, sourcePosition));
                     _shown++;
@@ -385,9 +398,15 @@ namespace BetterGhPanel
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
+            if (_measure.Contains(point) && ReferenceEquals(_selectedSnapshot, currentResult.Snapshot))
+            {
+                PanelOwner.Session.MeasureGeometry(currentResult.Snapshot, _selectedPosition);
+                sender.Invalidate();
+                return GH_ObjectResponse.Handled;
+            }
             foreach (var hit in _rowHits)
                 if (hit.Bounds.Contains(point) && hit.SourcePosition >= 0 && hit.SourcePosition < currentResult.Snapshot.Rows.Count)
-                { _selectedPosition = hit.SourcePosition; _selectedSnapshot = currentResult.Snapshot; sender.Invalidate(); return GH_ObjectResponse.Handled; }
+                { _selectedPosition = hit.SourcePosition; _selectedSnapshot = currentResult.Snapshot; _measure = RectangleF.Empty; sender.Invalidate(); return GH_ObjectResponse.Handled; }
             return base.RespondToMouseDown(sender, e);
         }
 
@@ -466,6 +485,7 @@ namespace BetterGhPanel
                 _display.Contains(e.CanvasLocation))
                 return GH_ObjectResponse.Handled;
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDoubleClick(sender, e);
+            if (_measure.Contains(e.CanvasLocation)) return GH_ObjectResponse.Handled;
             var result = PanelOwner.Session.Result;
             if (_list.Contains(e.CanvasLocation) && !ReferenceEquals(_lastResult, result))
             {
@@ -500,8 +520,8 @@ namespace BetterGhPanel
             if (_units.Contains(point))
             {
                 e.Title = "Units and decimals";
-                e.Text = "Number and Integer values · conversion changes output";
-                e.Description = "Choose length (mm ↔ m), area (mm² ↔ m²), or angle (rad ↔ deg) conversion. Decimal places (0–12 or automatic) format rows, copied values and statistics; output keeps full precision. Lengths are not areas. Geometry and text pass through unchanged.";
+                e.Text = "Numeric output conversion · geometry metric display";
+                e.Description = "Choose length (mm ↔ m), area (mm² ↔ m²), volume (mm³ ↔ m³), or angle (rad ↔ deg). Geometry metrics convert only matching model units and dimensions; the geometry itself is unchanged. Decimal places (0–12 or automatic) format metrics, numeric rows, copied numeric values and statistics without changing output precision.";
             }
             else if (_trim.Contains(point) || _simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point))
             {
@@ -552,9 +572,13 @@ namespace BetterGhPanel
                     if (!hit.Bounds.Contains(point)) continue;
                     var row = PanelOwner.Session.Result.Snapshot.Rows[hit.SourcePosition];
                     e.Title = row.Path + " [" + row.OriginalIndex + "]";
-                    e.Text = row.TypeName;
-                    var value = PanelOwner.DisplayValue(PanelOwner.Session.Result.Snapshot, row);
-                    var details = PanelOwner.Session.GetGeometryDetails(PanelOwner.Session.Result.Snapshot, hit.SourcePosition);
+                    e.Text = (row.IsValid ? "" : "Invalid ") + row.TypeName;
+                    var snapshot = PanelOwner.Session.Result.Snapshot;
+                    var value = PanelOwner.DisplayValue(snapshot, row, hit.SourcePosition);
+                    var geometry = PanelOwner.Session.GetGeometryDetails(snapshot, hit.SourcePosition) ?? row.GeometryInfo;
+                    var details = !row.IsValid ? (string.IsNullOrWhiteSpace(row.InvalidReason) ? "Geometry or value is invalid." : row.InvalidReason) :
+                        geometry?.Value.HasValue == true ? geometry.FormatDetails(snapshot.UnitConversion, PanelOwner.DecimalPlaces) :
+                        PanelOwner.Session.CanMeasureGeometry(snapshot, hit.SourcePosition) ? "Select this row, then click Measure to calculate its metric." : "";
                     e.Description = (value.Length > 1000 ? value.Substring(0, 997) + "…" : value) +
                         (details.Length == 0 ? "" : "\n" + details) + "\n\nDouble-click to copy the full value.";
                     break;
