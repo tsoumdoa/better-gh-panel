@@ -10,9 +10,9 @@ Created in [T3 Code](https://t3.codes).
 
 Find **Panel+** in **Params → Util** after installing the local Yak package. Connect any typed tree to **D**. With tree tools and unit conversion off, the output forwards that tree unchanged. Searching, filtering and sorting only affect your view.
 
-The public Yak beta is **`better-gh-panel 0.1.7-beta.1`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.7-beta.1`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including the single display control and fixed wire connections. Mac runtime validation is pending.
+The public Yak beta is **`better-gh-panel 0.1.8-beta.1`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.8-beta.1`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including the single display control and fixed wire connections. Mac runtime validation is pending.
 
-This beta patch is **`0.1.7-beta.1`**. Reset now restores the original incoming data in one click, with one-step Undo. Canvas dropdowns have tighter spacing, aligned selection marks, and reliable paging in Half mode.
+This beta patch is **`0.1.8-beta.1`**. Geometry rows now show useful compact hints: line and arc length, circle radius, primitive area/volume, curve degree and closure, surface trimming, Brep closure and face count, and mesh vertex/face counts. Hover a curve for its shape and length, a surface or open Brep for area, or a closed Brep for volume. Hover measurements are cached until the next solution.
 
 **Simplify**, **Trim**, **Flatten**, and **Reverse** change the typed output and run in that order. Click Trim and enter a nonnegative depth (0 disables it); click the other tools to toggle them. Simplify removes shared path indices before Trim removes trailing path levels and merges matching branches; fully trimmed paths become `{0}`. Flatten merges into `{0}`, and Reverse reverses items within each output branch. Upstream data stays intact. Tool settings are saved with the definition and support undo. **Reset** restores the original incoming data: it disables every tree tool and unit conversion, restores automatic decimals, clears search, filters, sorting and row selection, and scrolls to the top. It closes dropdowns and discards pending text edits on the first click. One Undo restores the previous settings. Panel dimensions, display mode and wire connections are retained. The component menu also offers **Reset panel view** and **Reset tree tools** for narrower resets.
 
@@ -32,7 +32,7 @@ The resizable canvas panel shows grouped branch headers and compact rows, with s
 
 [See the compact units menu](docs/images/panel-units-menu.png).
 
-Primitive values and points/vectors have cached summaries. Heavy geometry and third-party data show a type summary; their full text is formatted on demand when copied. Text search operates on those cached summaries. Numeric statistics include finite Number/Integer values, and exclude NaN and infinity. This MVP inspects connected data; it does not author text like an unconnected stock Panel.
+Primitive values, points/vectors, and cheap geometry properties have cached summaries. Rows use analytic measurements for lines, arcs, circles, rectangles and boxes; general curve lengths and surface/Brep mass properties are calculated only on hover, once per row per solution. Surface area respects trimming. Geometry measurements use Rhino model units (including squared/cubed units), independently of the numeric Units conversion. The layout stays unchanged. Third-party data keeps a type summary; full text is formatted on demand when copied. Text search operates on cached summaries, excluding hover-only measurements. Numeric statistics include finite Number/Integer values, and exclude NaN and infinity. This MVP inspects connected data; it does not author text like an unconnected stock Panel.
 
 ### Build and package
 
@@ -42,7 +42,7 @@ dotnet run --project tests/BetterGhPanel.Core.Tests -c Release
 node scripts/package.mjs
 ```
 
-The beta artifact is `artifacts/better-gh-panel-0.1.7-beta.1/better-gh-panel-0.1.7-beta.1-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The beta artifact is `artifacts/better-gh-panel-0.1.8-beta.1/better-gh-panel-0.1.8-beta.1-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino. CI is configured to compile and stage on Windows and Mac, and does not launch Rhino.
 

@@ -1,6 +1,9 @@
 using System;
+using System.Collections;
 using System.Drawing;
 using System.Reflection;
+using Grasshopper.GUI;
+using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 
 internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify, Units, Display }
@@ -33,6 +36,21 @@ internal static class PanelTestAdapter
     internal static RectangleF Bounds(GH_Component component, CanvasControl control) =>
         Field<RectangleF>(component.Attributes, "_" + control.ToString().ToLowerInvariant());
     internal static RectangleF MenuBounds(GH_Component component) => Property<RectangleF>(Field<object>(component.Attributes, "_menu"), "Bounds");
+
+    internal static GH_TooltipDisplayEventArgs Tooltip(GH_Component component, GH_Canvas canvas, int sourcePosition)
+    {
+        foreach (var hit in Field<IEnumerable>(component.Attributes, "_rowHits"))
+        {
+            if (Property<int>(hit, "SourcePosition") != sourcePosition) continue;
+            var bounds = Property<RectangleF>(hit, "Bounds");
+            var point = new PointF(bounds.X + 45, bounds.Y + bounds.Height / 2);
+            var args = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(point) }, null)!;
+            component.Attributes.SetupTooltip(point, args);
+            return args;
+        }
+        throw new InvalidOperationException("Tooltip row is not visible.");
+    }
 
     private static T Property<T>(object owner, string name) => (T)owner.GetType().GetProperty(name, PrivateInstance)!.GetValue(owner)!;
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, PrivateInstance)!.GetValue(owner)!;

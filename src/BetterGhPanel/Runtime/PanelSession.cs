@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
@@ -13,6 +14,8 @@ namespace BetterGhPanel.Runtime
         private CancellationTokenSource? _queryCancellation;
         private PanelQueryOptions _options = new PanelQueryOptions();
         private Func<int, string?>? _detailResolver;
+        private Func<int, string?>? _geometryDetailResolver;
+        private readonly Dictionary<int, string> _geometryDetails = new Dictionary<int, string>();
         private long _request;
         private bool _disposed;
 
@@ -36,10 +39,27 @@ namespace BetterGhPanel.Runtime
         {
             if (_disposed) return;
             Snapshot = snapshot ?? PanelSnapshot.Empty;
+            _geometryDetails.Clear();
             QueueQuery();
         }
 
         public void SetDetailResolver(Func<int, string?> resolver) => _detailResolver = resolver;
+
+        internal void SetGeometryDetailResolver(Func<int, string?> resolver) => _geometryDetailResolver = resolver;
+
+        internal string GetGeometryDetails(PanelSnapshot snapshot, int sourcePosition)
+        {
+            if (_disposed || !ReferenceEquals(snapshot, Snapshot) || sourcePosition < 0 ||
+                sourcePosition >= snapshot.Rows.Count || !snapshot.Rows[sourcePosition].IsValid)
+                return string.Empty;
+            if (_geometryDetails.TryGetValue(sourcePosition, out var cached)) return cached;
+            string details;
+            try { details = _geometryDetailResolver?.Invoke(sourcePosition) ?? string.Empty; }
+            catch (Exception) { details = string.Empty; }
+            if (!ReferenceEquals(snapshot, Snapshot)) return string.Empty;
+            _geometryDetails[sourcePosition] = details;
+            return details;
+        }
 
         public string GetDisplayValue(PanelSnapshot snapshot, int sourcePosition)
         {
@@ -129,6 +149,8 @@ namespace BetterGhPanel.Runtime
             Changed = null;
             QueryChanged = null;
             _detailResolver = null;
+            _geometryDetailResolver = null;
+            _geometryDetails.Clear();
             Snapshot = PanelSnapshot.Empty;
         }
     }
