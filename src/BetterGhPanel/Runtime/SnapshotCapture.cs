@@ -10,7 +10,7 @@ namespace BetterGhPanel.Runtime
     internal static class SnapshotCapture
     {
         public static PanelSnapshot Capture(GH_Structure<IGH_Goo> tree, long version, out IGH_Goo?[] sourceItems,
-            PanelUnitConversion conversion = PanelUnitConversion.None)
+            PanelUnitConversion conversion = PanelUnitConversion.None, string geometryUnits = "units")
         {
             var rows = new List<PanelRow>(tree.DataCount);
             var branches = new List<PanelBranch>(tree.PathCount);
@@ -31,6 +31,8 @@ namespace BetterGhPanel.Runtime
                         type = item?.TypeName ?? "Null";
                         valid = item == null || item.IsValid;
                         display = FormatSummary(item, out number);
+                        if (valid && item != null)
+                            display = GeometryHints.Summary(item, geometryUnits) ?? display;
                     }
                     catch (Exception)
                     {

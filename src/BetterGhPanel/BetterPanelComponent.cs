@@ -16,6 +16,7 @@ namespace BetterGhPanel
     {
         private PanelSession? _session;
         private IGH_Goo?[] _sourceItems = Array.Empty<IGH_Goo?>();
+        private string _geometryUnits = "units";
         private PanelQueryOptions _savedOptions = new PanelQueryOptions();
         private long _version;
         private bool _restoringView;
@@ -48,6 +49,8 @@ namespace BetterGhPanel
                 {
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
                     _session.SetDetailResolver(position => position < _sourceItems.Length ? _sourceItems[position]?.ToString() ?? "<null>" : null);
+                    _session.SetGeometryDetailResolver(position => position < _sourceItems.Length
+                        ? GeometryHints.Details(_sourceItems[position], _geometryUnits) : null);
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
@@ -172,7 +175,11 @@ namespace BetterGhPanel
             tree = PanelTreeOperations.Apply(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree);
             tree = PanelUnitOperations.Apply(tree, UnitConversion);
             da.SetDataTree(0, tree);
-            var snapshot = SnapshotCapture.Capture(tree, ++_version, out _sourceItems, UnitConversion);
+            var rhinoDocument = Rhino.RhinoDoc.ActiveDoc;
+            _geometryUnits = rhinoDocument == null || rhinoDocument.ModelUnitSystem == Rhino.UnitSystem.None
+                ? "units" : rhinoDocument.GetUnitSystemName(true, false, false, true);
+            if (string.IsNullOrWhiteSpace(_geometryUnits)) _geometryUnits = "units";
+            var snapshot = SnapshotCapture.Capture(tree, ++_version, out _sourceItems, UnitConversion, _geometryUnits);
             Session.AttachSnapshot(snapshot);
         }
 

@@ -554,7 +554,9 @@ namespace BetterGhPanel
                     e.Title = row.Path + " [" + row.OriginalIndex + "]";
                     e.Text = row.TypeName;
                     var value = PanelOwner.DisplayValue(PanelOwner.Session.Result.Snapshot, row);
-                    e.Description = (value.Length > 1000 ? value.Substring(0, 997) + "…" : value) + "\n\nDouble-click to copy the full value.";
+                    var details = PanelOwner.Session.GetGeometryDetails(PanelOwner.Session.Result.Snapshot, hit.SourcePosition);
+                    e.Description = (value.Length > 1000 ? value.Substring(0, 997) + "…" : value) +
+                        (details.Length == 0 ? "" : "\n" + details) + "\n\nDouble-click to copy the full value.";
                     break;
                 }
             }

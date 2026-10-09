@@ -145,6 +145,7 @@ internal static class Program
             Console.WriteLine("Worker native UI invoke returned.");
         });
         var assembly = Assembly.LoadFrom(_plugin);
+        GeometryHintChecks.Run(assembly);
         var componentType = assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!;
         var component = (GH_Component)Activator.CreateInstance(componentType)!;
         var componentIcon = (Bitmap)componentType.GetProperty("Icon", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component)!;
@@ -365,6 +366,10 @@ internal static class Program
             Rhino.Geometry.Point3d.Origin, new Rhino.Geometry.Point3d(2, 2, 2)), 1, 1, 1)), new GH_Path(0, 3));
         source.PersistentData.Append(new GH_Curve(new Rhino.Geometry.LineCurve(Rhino.Geometry.Point3d.Origin,
             new Rhino.Geometry.Point3d(10, 0, 0))), new GH_Path(0, 3));
+        source.PersistentData.Append(new GH_Line(new Rhino.Geometry.Line(Rhino.Geometry.Point3d.Origin,
+            new Rhino.Geometry.Point3d(3, 4, 0))), new GH_Path(0, 3));
+        source.PersistentData.Append(new GH_Brep(new Rhino.Geometry.Box(new Rhino.Geometry.BoundingBox(
+            Rhino.Geometry.Point3d.Origin, new Rhino.Geometry.Point3d(2, 3, 4))).ToBrep()), new GH_Path(0, 3));
         for (int i = 0; i < 24; i++)
             source.PersistentData.Append(new GH_Number(1200.5 + i * 17.35), new GH_Path(0, 3));
         source.ExpireSolution(false);
@@ -376,8 +381,21 @@ internal static class Program
             Get<PanelSnapshot>(session, "Snapshot").TypeCounts.ContainsKey("Mesh"), "Geometry hints use real Grasshopper surface and mesh types");
         UpdateQuery(session, new PanelQueryOptions { TypeName = "Surface" });
         await WaitForQuery(host, session);
-        Assert(Get<PanelQueryResult>(session, "Result").RowIds.Count == 1 && component.Params.Output[0].VolatileData.DataCount == 32,
+        Assert(Get<PanelQueryResult>(session, "Result").RowIds.Count == 1 && component.Params.Output[0].VolatileData.DataCount == 34,
             "Abbreviated geometry hints retain full-name filtering and unchanged typed output");
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-surface-hint.png");
+        var surfacePosition = Get<PanelQueryResult>(session, "Result").RowIds[0];
+        var surfaceTooltip = PanelTestAdapter.Tooltip(component, canvas, surfacePosition);
+        Assert(surfaceTooltip.Text == "Surface" && surfaceTooltip.Description.Contains("Area: 100 "),
+            "Native row tooltip shows measured surface area after filtering");
+        Assert(!PanelTestAdapter.CopyValue(component, Get<PanelSnapshot>(session, "Snapshot"), surfacePosition).Contains("Area:"),
+            "Geometry hints do not replace the full value copied from a row");
+        UpdateQuery(session, new PanelQueryOptions { TypeName = "Brep" });
+        await WaitForQuery(host, session);
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-brep-hint.png");
+        var brepTooltip = PanelTestAdapter.Tooltip(component, canvas, Get<PanelQueryResult>(session, "Result").RowIds[0]);
+        Assert(brepTooltip.Text == "Brep" && brepTooltip.Description.Contains("Volume: 24 "),
+            "Native row tooltip shows closed Brep volume without adding UI controls");
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(host, session);
         DrawCanvasPreview(component, canvas);
