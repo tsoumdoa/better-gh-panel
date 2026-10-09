@@ -40,6 +40,17 @@ namespace BetterGhPanel
 
         internal BetterPanelAttributes(BetterPanelComponent owner) : base(owner) { }
 
+        internal void ResetViewState()
+        {
+            _offset = 0;
+            _selectedPosition = -1;
+            _selectedSnapshot = null;
+            _copiedUntil = default;
+            _scrolling = false;
+            _menu.Close();
+            _rowHits.Clear();
+        }
+
         protected override void Layout()
         {
             _panel = new RectangleF(Pivot.X,
@@ -126,9 +137,9 @@ namespace BetterGhPanel
                 {
                     var options = session.Options;
                     Control(graphics, _search, string.IsNullOrEmpty(options.Search) ? "Search / > 800…" : options.Search, small, trim, !string.IsNullOrEmpty(options.Search));
-                    Control(graphics, _type, CanvasMenu.TypeHint(result, options) + " ▾", small, trim, options.TypeName != null || options.OnlyInvalid);
-                    Control(graphics, _sort, options.SortMode == PanelSortMode.SourceOrder ? "Src ▾" : options.SortMode == PanelSortMode.ValueAscending ? "↑ ▾" : "↓ ▾", small, trim, options.SortMode != PanelSortMode.SourceOrder);
-                    Control(graphics, _branch, Short(options.BranchPath ?? "Paths", 80) + " ▾", mono, trim, options.BranchPath != null);
+                    DropdownControl(graphics, _type, CanvasMenu.TypeHint(result, options), small, trim, options.TypeName != null || options.OnlyInvalid);
+                    DropdownControl(graphics, _sort, options.SortMode == PanelSortMode.SourceOrder ? "Src" : options.SortMode == PanelSortMode.ValueAscending ? "↑" : "↓", small, trim, options.SortMode != PanelSortMode.SourceOrder);
+                    DropdownControl(graphics, _branch, Short(options.BranchPath ?? "Paths", 80), mono, trim, options.BranchPath != null);
                     DrawViewAction(graphics, _jump, false);
                     DrawViewAction(graphics, _reset, true);
                     RenderRows(graphics, result, font, small, bold, mono, trim);
@@ -228,7 +239,7 @@ namespace BetterGhPanel
             TreeToolIcons.Draw(g, _reverse, TreeToolIcons.Reverse, PanelOwner.ReverseTree);
             string unitLabel = PanelOwner.UnitConversion == PanelUnitConversion.None ? "Units" : PanelUnits.Label(PanelOwner.UnitConversion).Replace(" → ", "→");
             string precision = PanelOwner.DecimalPlaces < 0 ? "" : $" · {PanelOwner.DecimalPlaces}dp";
-            Control(g, _units, unitLabel + precision + " ▾", small, trim,
+            DropdownControl(g, _units, unitLabel + precision, small, trim,
                 PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.DecimalPlaces >= 0);
         }
 
@@ -250,12 +261,26 @@ namespace BetterGhPanel
         private void RenderMenu(Graphics g, Font small, Font mono, StringFormat trim)
         {
             LayoutMenu();
-            Fill(g, Color.FromArgb(226, 230, 223), new RectangleF(_menu.Bounds.X + 2, _menu.Bounds.Y + 2, _menu.Bounds.Width, _menu.Bounds.Height));
-            Fill(g, Color.FromArgb(253, 254, 251), _menu.Bounds);
-            using (var pen = new Pen(Color.FromArgb(143, 158, 142))) g.DrawRectangle(pen, _menu.Bounds.X, _menu.Bounds.Y, _menu.Bounds.Width, _menu.Bounds.Height);
+            Fill(g, Color.FromArgb(32, 49, 55, 53), new RectangleF(_menu.Bounds.X + 1, _menu.Bounds.Y + 2, _menu.Bounds.Width, _menu.Bounds.Height));
+            Fill(g, Color.White, _menu.Bounds);
             int visible = _menu.Visible;
+            var options = PanelOwner.Session.Options;
             for (int i = 0; i < visible && i + _menu.Offset < _menu.Count; i++)
-                Text(g, _menu.Label(i + _menu.Offset, PanelOwner.Session.Options.OnlyInvalid, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces), _menu.Kind == CanvasMenuKind.Branch ? mono : small, Ink, new RectangleF(_menu.Bounds.X + 7, _menu.Bounds.Y + i * 20, _menu.Bounds.Width - 14, 20), trim);
+            {
+                int index = i + _menu.Offset;
+                var row = new RectangleF(_menu.Bounds.X + 1, _menu.Bounds.Y + i * 20, _menu.Bounds.Width - 2, 20);
+                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces);
+                if (index == _menu.HoveredIndex || selected)
+                    Fill(g, index == _menu.HoveredIndex ? Color.FromArgb(226, 236, 226) : Color.FromArgb(242, 247, 241), row);
+                if (_menu.Kind == CanvasMenuKind.Units && index == PanelUnits.ConversionCount)
+                    using (var divider = new Pen(Color.FromArgb(225, 231, 224)))
+                        g.DrawLine(divider, row.X + 7, row.Y, row.Right - 7, row.Y);
+                if (selected)
+                    using (var check = new Pen(Accent, 1.3f))
+                        g.DrawLines(check, new[] { new PointF(row.X + 7, row.Y + 10), new PointF(row.X + 10, row.Y + 13), new PointF(row.X + 16, row.Y + 7) });
+                Text(g, _menu.Label(index, options.OnlyInvalid, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces), _menu.Kind == CanvasMenuKind.Branch ? mono : small,
+                    selected ? Accent : Ink, new RectangleF(row.X + 23, row.Y, row.Width - 30, 20), trim);
+            }
             if (_menu.Count > visible)
             {
                 float y = _menu.Bounds.Bottom - 20;
@@ -263,6 +288,7 @@ namespace BetterGhPanel
                 Text(g, "‹ Previous", small, Accent, new RectangleF(_menu.Bounds.X + 7, y, _menu.Bounds.Width / 2 - 7, 20), trim);
                 Text(g, "Next ›", small, Accent, new RectangleF(_menu.Bounds.X + _menu.Bounds.Width / 2, y, _menu.Bounds.Width / 2 - 7, 20), trim);
             }
+            using (var pen = new Pen(Color.FromArgb(194, 205, 194))) g.DrawRectangle(pen, _menu.Bounds.X, _menu.Bounds.Y, _menu.Bounds.Width, _menu.Bounds.Height);
         }
 
         private void OpenMenu(CanvasMenuKind kind, GH_Canvas canvas)
@@ -287,6 +313,12 @@ namespace BetterGhPanel
                 return GH_ObjectResponse.Handled;
             }
             if (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed) return base.RespondToMouseDown(sender, e);
+            if (_reset.Contains(point))
+            {
+                PanelOwner.ResetPanel();
+                sender.Invalidate();
+                return GH_ObjectResponse.Handled;
+            }
             if (_menu.Kind != CanvasMenuKind.None)
             {
                 if (!_menu.IsCurrent(PanelOwner.Session.Snapshot))
@@ -314,7 +346,7 @@ namespace BetterGhPanel
             }
             if (_trim.Contains(point))
             {
-                CanvasTextInput.Show(sender, _trim, PanelOwner.TrimDepth.ToString(), text =>
+                CanvasTextInput.Show(sender, PanelOwner, _trim, PanelOwner.TrimDepth.ToString(), text =>
                 {
                     if (int.TryParse(text, out var depth) && depth >= 0)
                         PanelOwner.SetTreeOperations(depth, PanelOwner.FlattenTree, PanelOwner.ReverseTree, PanelOwner.SimplifyTree);
@@ -336,7 +368,7 @@ namespace BetterGhPanel
             if (_branch.Contains(point)) { OpenMenu(CanvasMenuKind.Branch, sender); return GH_ObjectResponse.Handled; }
             if (_jump.Contains(point))
             {
-                CanvasTextInput.Show(sender, _jump, (_offset + 1).ToString(), text =>
+                CanvasTextInput.Show(sender, PanelOwner, _jump, (_offset + 1).ToString(), text =>
                 {
                     if (!int.TryParse(text, out var row)) return;
                     // Put the requested item first; grouped branch headings can change
@@ -346,7 +378,6 @@ namespace BetterGhPanel
                 });
                 return GH_ObjectResponse.Handled;
             }
-            if (_reset.Contains(point)) { PanelOwner.Session.ResetView(); return GH_ObjectResponse.Handled; }
             var currentResult = PanelOwner.Session.Result;
             if (_list.Contains(point) && !ReferenceEquals(_lastResult, currentResult))
             {
@@ -371,7 +402,7 @@ namespace BetterGhPanel
                     PanelOwner.SetUnits((PanelUnitConversion)index, PanelOwner.DecimalPlaces);
                 else if (index == PanelUnits.ConversionCount)
                     PanelOwner.SetUnits(PanelOwner.UnitConversion, PanelUnits.AutomaticDecimals);
-                else CanvasTextInput.Show(canvas, _units, Math.Max(0, PanelOwner.DecimalPlaces).ToString(), text =>
+                else CanvasTextInput.Show(canvas, PanelOwner, _units, Math.Max(0, PanelOwner.DecimalPlaces).ToString(), text =>
                 {
                     if (int.TryParse(text, out var decimals) && decimals >= 0 && decimals <= PanelUnits.MaximumDecimals)
                         PanelOwner.SetUnits(PanelOwner.UnitConversion, decimals);
@@ -388,7 +419,7 @@ namespace BetterGhPanel
             else if (kind == CanvasMenuKind.Sort) options.SortMode = (PanelSortMode)index;
             else if (index == 1)
             {
-                CanvasTextInput.Show(canvas, _branch, options.BranchPath ?? "{0}", text => { var query = PanelOwner.Session.Options; query.BranchPath = string.IsNullOrWhiteSpace(text) ? null : text.Trim(); query.BranchPrefix = false; PanelOwner.Session.UpdateQuery(query); });
+                CanvasTextInput.Show(canvas, PanelOwner, _branch, options.BranchPath ?? "{0}", text => { var query = PanelOwner.Session.Options; query.BranchPath = string.IsNullOrWhiteSpace(text) ? null : text.Trim(); query.BranchPrefix = false; PanelOwner.Session.UpdateQuery(query); });
                 canvas.Invalidate();
                 return;
             }
@@ -397,10 +428,11 @@ namespace BetterGhPanel
             canvas.Invalidate();
         }
 
-        private void EditSearch(GH_Canvas canvas) => CanvasTextInput.Show(canvas, _search, PanelOwner.Session.Options.Search, text => { var options = PanelOwner.Session.Options; options.Search = text; PanelOwner.Session.UpdateQuery(options); });
+        private void EditSearch(GH_Canvas canvas) => CanvasTextInput.Show(canvas, PanelOwner, _search, PanelOwner.Session.Options.Search, text => { var options = PanelOwner.Session.Options; options.Search = text; PanelOwner.Session.UpdateQuery(options); });
 
         public override GH_ObjectResponse RespondToMouseMove(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
+            if (_menu.Hover(e.CanvasLocation)) sender.Invalidate();
             if (_resizing)
             {
                 // Half's top offset also changes with the saved height. Account
@@ -492,8 +524,8 @@ namespace BetterGhPanel
             }
             else if (_reset.Contains(point))
             {
-                e.Title = "Reset panel view";
-                e.Description = "Clear search, type and branch filters, and value sorting. Tree tools stay active; use Reset tree tools in the component menu to disable them.";
+                e.Title = "Reset panel";
+                e.Description = "Restore the original incoming data: disable all tree tools and unit conversion, restore automatic decimals, clear search, filters, sorting and selection, and scroll to the top. Undo restores the previous settings.";
             }
             else if (_search.Contains(point))
             {
@@ -542,6 +574,14 @@ namespace BetterGhPanel
             using (var pen = new Pen(active ? Accent : Color.FromArgb(224, 229, 222)))
                 g.DrawLine(pen, bounds.X, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
             Text(g, value, font, active ? Accent : Muted, new RectangleF(bounds.X + 3, bounds.Y, bounds.Width - 6, bounds.Height), trim);
+        }
+        private static void DropdownControl(Graphics g, RectangleF bounds, string value, Font font, StringFormat trim, bool active)
+        {
+            Control(g, bounds, "", font, trim, active);
+            Text(g, value, font, active ? Accent : Muted, new RectangleF(bounds.X + 4, bounds.Y, bounds.Width - 17, bounds.Height), trim);
+            float x = bounds.Right - 10, y = bounds.Y + bounds.Height / 2 - 1;
+            using (var pen = new Pen(active ? Accent : Muted, 1))
+                g.DrawLines(pen, new[] { new PointF(x, y), new PointF(x + 3, y + 3), new PointF(x + 6, y) });
         }
         private void DrawDisplayAction(Graphics g)
         {

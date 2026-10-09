@@ -11,13 +11,14 @@ namespace BetterGhPanel.UI
     {
         private static WeakReference<CanvasTextInput>? _active;
         private Action<string>? _accepted;
+        private object? _owner;
         private WeakReference<GH_Canvas>? _canvas;
         private RectangleF _canvasBounds;
         private Rectangle _screenBounds;
 
         private CanvasTextInput(Action<string> accepted) { _accepted = accepted; }
 
-        internal static void Show(GH_Canvas canvas, RectangleF canvasBounds, string current, Action<string> accepted)
+        internal static void Show(GH_Canvas canvas, object owner, RectangleF canvasBounds, string current, Action<string> accepted)
         {
             CloseActive();
             var projected = Rectangle.Round(canvas.Viewport.ProjectRectangle(canvasBounds));
@@ -31,6 +32,7 @@ namespace BetterGhPanel.UI
             var editor = new CanvasTextInput(accepted)
             {
                 Bounds = bounds,
+                _owner = owner,
                 _canvas = new WeakReference<GH_Canvas>(canvas),
                 _canvasBounds = canvasBounds,
                 _screenBounds = projected
@@ -55,10 +57,11 @@ namespace BetterGhPanel.UI
                 current._screenBounds != Rectangle.Round(canvas.Viewport.ProjectRectangle(current._canvasBounds))) CloseActive();
         }
 
-        internal static void CloseActive()
+        internal static void CloseActive(object? owner = null)
         {
             if (_active != null && _active.TryGetTarget(out var current))
             {
+                if (owner != null && !ReferenceEquals(current._owner, owner)) return;
                 current._accepted = null;
                 current.HideTextInputBox();
             }

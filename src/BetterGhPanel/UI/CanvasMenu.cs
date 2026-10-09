@@ -16,10 +16,11 @@ namespace BetterGhPanel.UI
         internal CanvasMenuKind Kind { get; private set; }
         internal RectangleF Bounds { get; private set; }
         internal int Offset { get; private set; }
+        internal int HoveredIndex { get; private set; } = -1;
         internal int Count => Kind == CanvasMenuKind.Type ? _types.Length + 2 :
             Kind == CanvasMenuKind.Sort ? SortLabels.Length : Kind == CanvasMenuKind.Branch ? _snapshot.Branches.Count + 2 :
             Kind == CanvasMenuKind.Units ? PanelUnits.ConversionCount + 2 : 0;
-        internal int Visible => Math.Min(Count, Math.Max(2, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
+        internal int Visible => Math.Min(Count, Math.Max(1, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
 
         internal static string TypeHint(PanelQueryResult result, PanelQueryOptions options)
         {
@@ -66,7 +67,7 @@ namespace BetterGhPanel.UI
             _ => name
         };
 
-        internal void Close() => Kind = CanvasMenuKind.None;
+        internal void Close() { Kind = CanvasMenuKind.None; HoveredIndex = -1; }
         internal bool IsCurrent(PanelSnapshot snapshot) => ReferenceEquals(_snapshot, snapshot);
 
         internal void Toggle(CanvasMenuKind kind, PanelSnapshot snapshot, PanelQueryOptions options)
@@ -74,6 +75,7 @@ namespace BetterGhPanel.UI
             Kind = Kind == kind ? CanvasMenuKind.None : kind;
             _snapshot = snapshot;
             Offset = 0;
+            HoveredIndex = -1;
             if (Kind == CanvasMenuKind.Type)
             {
                 var keys = snapshot.TypeCounts.Keys;
@@ -87,12 +89,13 @@ namespace BetterGhPanel.UI
         {
             if (Kind == CanvasMenuKind.None) return;
             var anchor = Kind == CanvasMenuKind.Type ? type : Kind == CanvasMenuKind.Sort ? sort : Kind == CanvasMenuKind.Units ? units : branch;
-            float width = Math.Min(panel.Width - 18, Kind == CanvasMenuKind.Sort ? 145 : 235);
+            float width = Math.Min(panel.Width - 18, Kind == CanvasMenuKind.Sort ? 138 :
+                Kind == CanvasMenuKind.Units ? 156 : Kind == CanvasMenuKind.Type ? 180 : 235);
             if (Kind == CanvasMenuKind.Units)
             {
                 int rows = Math.Max(2, Math.Min(Count, (int)((anchor.Top - panel.Top - 31) / 20)));
                 int height = rows * 20;
-                Bounds = new RectangleF(panel.Right - width - 9, anchor.Top - height - 2, width, height);
+                Bounds = new RectangleF(Math.Min(anchor.Right, panel.Right - 9) - width, anchor.Top - height - 3, width, height);
                 Offset = Math.Max(0, Math.Min(Math.Max(0, Count - Visible), Offset));
                 return;
             }
@@ -117,6 +120,26 @@ namespace BetterGhPanel.UI
             return index >= 0 && index < Count;
         }
 
+        internal bool Hover(PointF point)
+        {
+            int row = (int)((point.Y - Bounds.Y) / 20);
+            int index = Kind != CanvasMenuKind.None && Bounds.Contains(point) && row < Visible ? Offset + row : -1;
+            if (HoveredIndex == index) return false;
+            HoveredIndex = index;
+            return true;
+        }
+
+        internal bool IsSelected(int index, PanelQueryOptions options, PanelUnitConversion conversion, int decimals)
+        {
+            if (Kind == CanvasMenuKind.Units)
+                return index < PanelUnits.ConversionCount ? index == (int)conversion :
+                    index == PanelUnits.ConversionCount ? decimals < 0 : decimals >= 0;
+            if (Kind == CanvasMenuKind.Sort) return index == (int)options.SortMode;
+            if (Kind == CanvasMenuKind.Type) return index == 0 ? options.TypeName == null && !options.OnlyInvalid :
+                index == 1 ? options.OnlyInvalid : TypeNameAt(index) == options.TypeName;
+            return index == 0 ? options.BranchPath == null : index >= 2 && BranchPathAt(index) == options.BranchPath;
+        }
+
         internal string TypeNameAt(int index) => _types[index - 2];
         internal string BranchPathAt(int index) => _snapshot.Branches[index - 2].Path;
 
@@ -126,14 +149,14 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.Units)
             {
                 if (index < PanelUnits.ConversionCount)
-                    return (index == (int)conversion ? "✓ " : "") + PanelUnits.Label((PanelUnitConversion)index);
-                if (index == PanelUnits.ConversionCount) return (decimals < 0 ? "✓ " : "") + "Decimals: automatic";
-                return "Decimal places…" + (decimals >= 0 ? "  (" + decimals + ")" : "");
+                    return PanelUnits.Label((PanelUnitConversion)index);
+                if (index == PanelUnits.ConversionCount) return "Decimals: automatic";
+                return "Decimal places…" + (decimals >= 0 ? " (" + decimals + ")" : "");
             }
             if (Kind == CanvasMenuKind.Type)
             {
                 if (index == 0) return "All types";
-                if (index == 1) return onlyInvalid ? "✓ Invalid only" : "Invalid only";
+                if (index == 1) return "Invalid only";
                 string name = TypeNameAt(index), hint = ShortTypeName(name);
                 return hint == name ? name : hint + " · " + name;
             }
