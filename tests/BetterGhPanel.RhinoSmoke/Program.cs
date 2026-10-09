@@ -370,6 +370,7 @@ internal static class Program
             new Rhino.Geometry.Point3d(3, 4, 0))), new GH_Path(0, 3));
         source.PersistentData.Append(new GH_Brep(new Rhino.Geometry.Box(new Rhino.Geometry.BoundingBox(
             Rhino.Geometry.Point3d.Origin, new Rhino.Geometry.Point3d(2, 3, 4))).ToBrep()), new GH_Path(0, 3));
+        source.PersistentData.Append(new GH_Curve(), new GH_Path(0, 3));
         for (int i = 0; i < 24; i++)
             source.PersistentData.Append(new GH_Number(1200.5 + i * 17.35), new GH_Path(0, 3));
         source.ExpireSolution(false);
@@ -381,21 +382,83 @@ internal static class Program
             Get<PanelSnapshot>(session, "Snapshot").TypeCounts.ContainsKey("Mesh"), "Geometry hints use real Grasshopper surface and mesh types");
         UpdateQuery(session, new PanelQueryOptions { TypeName = "Surface" });
         await WaitForQuery(host, session);
-        Assert(Get<PanelQueryResult>(session, "Result").RowIds.Count == 1 && component.Params.Output[0].VolatileData.DataCount == 34,
+        Assert(Get<PanelQueryResult>(session, "Result").RowIds.Count == 1 && component.Params.Output[0].VolatileData.DataCount == 35,
             "Abbreviated geometry hints retain full-name filtering and unchanged typed output");
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-surface-hint.png");
         var surfacePosition = Get<PanelQueryResult>(session, "Result").RowIds[0];
         var surfaceTooltip = PanelTestAdapter.Tooltip(component, canvas, surfacePosition);
-        Assert(surfaceTooltip.Text == "Surface" && surfaceTooltip.Description.Contains("Area: 100 "),
-            "Native row tooltip shows measured surface area after filtering");
+        Assert(!surfaceTooltip.Description.Contains("Area:") && surfaceTooltip.Description.Contains("click Measure"),
+            "Hovering an unmeasured row does not calculate geometry");
+        var surfaceSnapshot = Get<PanelSnapshot>(session, "Snapshot");
+        Click(component, canvas, PanelTestAdapter.RowBounds(component, surfacePosition));
+        Assert(!GetGeometryMeasurement(session, surfaceSnapshot, surfacePosition).HasValue,
+            "Selecting a row does not calculate geometry");
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-measure-button.png");
+        var beforeMeasure = Get<PanelQueryResult>(session, "Result");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Measure));
+        Assert(GetGeometryMeasurement(session, surfaceSnapshot, surfacePosition) == 100 &&
+            ReferenceEquals(beforeMeasure, Get<PanelQueryResult>(session, "Result")) && !Get<bool>(session, "IsBusy"),
+            "Measure click returns the selected surface area synchronously without a query or solution");
+        surfaceTooltip = PanelTestAdapter.Tooltip(component, canvas, surfacePosition);
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-measured-surface.png");
+        var measureBounds = PanelTestAdapter.Bounds(component, CanvasControl.Measure);
+        Assert(component.Attributes.RespondToMouseDoubleClick(canvas, Mouse(new PointF(measureBounds.X + 5, measureBounds.Y + 5))) == GH_ObjectResponse.Handled,
+            "Double-clicking Measure is consumed without copying the row or calculating again");
+        Assert(surfaceTooltip.Text == "Surface" && surfaceTooltip.Description.Contains("Area: 100.00 "),
+            "Native row tooltip reads the explicitly measured surface area");
+        PanelTestAdapter.Units(component, PanelUnitConversion.SquareMillimetersToSquareMeters, -1);
+        await WaitForQuery(host, session);
+        var convertedSurface = Get<PanelSnapshot>(session, "Snapshot");
+        Assert(GetGeometryMeasurement(session, convertedSurface, surfacePosition) == 100 &&
+            PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("A 0.0001 m²"),
+            "Units converts the cached surface metric without remeasurement or scaling its raw area");
+        PanelTestAdapter.Units(component, PanelUnitConversion.SquareMillimetersToSquareMeters, 6);
+        Assert(ReferenceEquals(convertedSurface, Get<PanelSnapshot>(session, "Snapshot")) &&
+            PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("0.000100 m²"),
+            "Decimals reformat geometry metrics without solving or measuring again");
+        PanelTestAdapter.Units(component, PanelUnitConversion.SquareMillimetersToSquareMeters, -1);
         Assert(!PanelTestAdapter.CopyValue(component, Get<PanelSnapshot>(session, "Snapshot"), surfacePosition).Contains("Area:"),
             "Geometry hints do not replace the full value copied from a row");
         UpdateQuery(session, new PanelQueryOptions { TypeName = "Brep" });
         await WaitForQuery(host, session);
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-brep-hint.png");
-        var brepTooltip = PanelTestAdapter.Tooltip(component, canvas, Get<PanelQueryResult>(session, "Result").RowIds[0]);
+        var brepPosition = Get<PanelQueryResult>(session, "Result").RowIds[0];
+        var brepTooltip = PanelTestAdapter.Tooltip(component, canvas, brepPosition);
+        Assert(!brepTooltip.Description.Contains("Volume:"), "Hover never opts another row into measurement");
+        Click(component, canvas, PanelTestAdapter.RowBounds(component, brepPosition));
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-brep-selected.png");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Measure));
+        brepTooltip = PanelTestAdapter.Tooltip(component, canvas, brepPosition);
         Assert(brepTooltip.Text == "Brep" && brepTooltip.Description.Contains("Volume: 24 "),
             "Native row tooltip shows closed Brep volume without adding UI controls");
+        PanelTestAdapter.Units(component, PanelUnitConversion.CubicMillimetersToCubicMeters, -1);
+        await WaitForQuery(host, session);
+        var convertedBrep = Get<PanelSnapshot>(session, "Snapshot");
+        Assert(Math.Abs((GetGeometryMeasurement(session, convertedBrep, brepPosition) ?? double.NaN) - 24) < 1e-9 &&
+            PanelTestAdapter.DisplayValue(component, convertedBrep, brepPosition).Contains("2.4E-08 m³"),
+            "Units offers cubic conversion and retains the measured solid volume: " + PanelTestAdapter.DisplayValue(component, convertedBrep, brepPosition));
+        UpdateQuery(session, new PanelQueryOptions { TypeName = "Line" });
+        PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, -1);
+        await WaitForQuery(host, session);
+        var linePosition = Get<PanelQueryResult>(session, "Result").RowIds[0];
+        var lineSnapshot = Get<PanelSnapshot>(session, "Snapshot");
+        Assert(PanelTestAdapter.DisplayValue(component, lineSnapshot, linePosition) == "Ln · L 0.005 m",
+            "Units converts automatic line metrics as well as explicit measurements");
+        var geometryOutput = component.Params.Output[0].VolatileData.AllData(true).OfType<GH_Line>().Single();
+        Assert(geometryOutput.Value.Length == 5, "Geometry unit display never scales output geometry");
+        PanelTestAdapter.Units(component, PanelUnitConversion.None, 2);
+        UpdateQuery(session, new PanelQueryOptions { OnlyInvalid = true });
+        await WaitForQuery(host, session);
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-invalid-geometry.png");
+        var invalidPosition = Get<PanelQueryResult>(session, "Result").RowIds.Single();
+        var invalidSnapshot = Get<PanelSnapshot>(session, "Snapshot");
+        var invalidTooltip = PanelTestAdapter.Tooltip(component, canvas, invalidPosition);
+        Assert(PanelTestAdapter.DisplayValue(component, invalidSnapshot, invalidPosition).StartsWith("Invalid ·", StringComparison.Ordinal) &&
+            invalidTooltip.Text == "Invalid Curve" && invalidTooltip.Description.Contains(invalidSnapshot.Rows[invalidPosition].InvalidReason),
+            "Invalid geometry has a visible text label and its reason in the tooltip");
+        Click(component, canvas, PanelTestAdapter.RowBounds(component, invalidPosition));
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-invalid-selected.png");
+        Assert(PanelTestAdapter.Bounds(component, CanvasControl.Measure).IsEmpty, "Invalid geometry cannot expose a Measure action");
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(host, session);
         DrawCanvasPreview(component, canvas);
@@ -464,6 +527,10 @@ internal static class Program
         component.Attributes.PerformLayout();
         document.UndoServer.Clear();
     }
+
+    private static double? GetGeometryMeasurement(object session, PanelSnapshot snapshot, int position) =>
+        ((PanelGeometryInfo?)session.GetType().GetMethod("GetGeometryDetails", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(session, new object[] { snapshot, position }))?.Value;
 
     private static void VerifyTreeOperations(Assembly assembly)
     {
@@ -687,14 +754,14 @@ internal static class Program
         Assert(((GH_Number)output.get_Branch(output.Paths[0])[0]!).Value == 0.01 &&
             input.get_Branch(input.Paths[0])[0]!.ToString() == "10", "Canvas conversion does not mutate upstream data");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
-        ClickMenuRow(component, canvas, 8);
+        ClickMenuRow(component, canvas, PanelUnits.ConversionCount + 1);
         CanvasEditorAdapter.Active(assembly).Submit("0");
         Assert(PanelTestAdapter.Decimals(component) == 0 && PanelTestAdapter.CopyValue(component, snapshot, 0) == "0 m" &&
             ReferenceEquals(snapshot, Get<PanelSnapshot>(session, "Snapshot")) &&
             ((GH_Number)output.get_Branch(output.Paths[0])[0]!).Value == 0.01,
             "Decimal formatting and copying preserve full output precision without another solution");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
-        ClickMenuRow(component, canvas, 8);
+        ClickMenuRow(component, canvas, PanelUnits.ConversionCount + 1);
         CanvasEditorAdapter.Active(assembly).Submit("13");
         Assert(PanelTestAdapter.Decimals(component) == 0, "Invalid decimal counts retain the previous setting");
         PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 2);
@@ -711,7 +778,7 @@ internal static class Program
             "Older definitions default to no conversion and automatic decimals");
         restored.RemovedFromDocument(component.OnPingDocument());
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
-        ClickMenuRow(component, canvas, 7);
+        ClickMenuRow(component, canvas, PanelUnits.ConversionCount);
         Assert(PanelTestAdapter.Decimals(component) == -1, "Unit menu restores automatic decimal formatting");
         PanelTestAdapter.Units(component, PanelUnitConversion.None, -1);
         await WaitForQuery(host, session);

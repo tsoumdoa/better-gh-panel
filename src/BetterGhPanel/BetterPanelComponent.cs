@@ -17,6 +17,7 @@ namespace BetterGhPanel
         private PanelSession? _session;
         private IGH_Goo?[] _sourceItems = Array.Empty<IGH_Goo?>();
         private string _geometryUnits = "units";
+        private bool _retainGeometryMeasurements;
         private PanelQueryOptions _savedOptions = new PanelQueryOptions();
         private long _version;
         private bool _restoringView;
@@ -50,7 +51,7 @@ namespace BetterGhPanel
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
                     _session.SetDetailResolver(position => position < _sourceItems.Length ? _sourceItems[position]?.ToString() ?? "<null>" : null);
                     _session.SetGeometryDetailResolver(position => position < _sourceItems.Length
-                        ? GeometryHints.Details(_sourceItems[position], _geometryUnits) : null);
+                        ? GeometryHints.Measure(_sourceItems[position], _geometryUnits) : null);
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
@@ -145,13 +146,26 @@ namespace BetterGhPanel
             UnitConversion = conversion;
             DecimalPlaces = decimals;
             OnPingDocument()?.Modified();
-            if (conversionChanged) ExpireSolution(true);
+            if (conversionChanged)
+            {
+                _retainGeometryMeasurements = true;
+                try { ExpireSolution(true); }
+                finally { _retainGeometryMeasurements = false; }
+            }
             Instances.ActiveCanvas?.Invalidate();
         }
 
-        internal string DisplayValue(PanelSnapshot snapshot, PanelRow row) => row.NumericValue.HasValue &&
-            (snapshot.UnitConversion != PanelUnitConversion.None || DecimalPlaces >= 0)
-            ? PanelUnits.Format(row.NumericValue.Value, snapshot.UnitConversion, DecimalPlaces) : row.DisplayValue;
+        internal string DisplayValue(PanelSnapshot snapshot, PanelRow row, int sourcePosition = -1)
+        {
+            if (!row.IsValid) return "Invalid · " + row.DisplayValue;
+            var geometry = Session.GetGeometryDetails(snapshot, sourcePosition) ?? row.GeometryInfo;
+            if (geometry != null)
+                return geometry.FormatCompact(snapshot.UnitConversion, DecimalPlaces) +
+                    (Session.HasGeometryMeasurement(snapshot, sourcePosition) && Session.GetGeometryDetails(snapshot, sourcePosition) == null
+                        ? " · measurement unavailable" : "");
+            return row.NumericValue.HasValue && (snapshot.UnitConversion != PanelUnitConversion.None || DecimalPlaces >= 0)
+                ? PanelUnits.Format(row.NumericValue.Value, snapshot.UnitConversion, DecimalPlaces) : row.DisplayValue;
+        }
 
         internal string CopyValue(PanelSnapshot snapshot, int position)
         {
@@ -175,12 +189,17 @@ namespace BetterGhPanel
             tree = PanelTreeOperations.Apply(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree);
             tree = PanelUnitOperations.Apply(tree, UnitConversion);
             da.SetDataTree(0, tree);
+            var previousSources = _sourceItems;
+            var previousUnits = _geometryUnits;
             var rhinoDocument = Rhino.RhinoDoc.ActiveDoc;
             _geometryUnits = rhinoDocument == null || rhinoDocument.ModelUnitSystem == Rhino.UnitSystem.None
                 ? "units" : rhinoDocument.GetUnitSystemName(true, false, false, true);
             if (string.IsNullOrWhiteSpace(_geometryUnits)) _geometryUnits = "units";
             var snapshot = SnapshotCapture.Capture(tree, ++_version, out _sourceItems, UnitConversion, _geometryUnits);
-            Session.AttachSnapshot(snapshot);
+            if (_retainGeometryMeasurements && previousUnits == _geometryUnits)
+                Session.AttachConvertedSnapshot(snapshot, position => position < previousSources.Length &&
+                    position < _sourceItems.Length && ReferenceEquals(previousSources[position], _sourceItems[position]));
+            else Session.AttachSnapshot(snapshot);
         }
 
         public override void RemovedFromDocument(GH_Document document)

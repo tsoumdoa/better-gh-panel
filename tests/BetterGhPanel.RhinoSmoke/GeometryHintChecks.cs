@@ -11,8 +11,8 @@ internal static class GeometryHintChecks
     internal static void Run(Assembly assembly)
     {
         var hints = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!;
-        string? Details(IGH_Goo goo) => (string?)hints.GetMethod("Details", BindingFlags.Static | BindingFlags.NonPublic)!
-            .Invoke(null, new object[] { goo, "mm" });
+        string? Details(IGH_Goo goo) => ((PanelGeometryInfo?)hints.GetMethod("Measure", BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, new object[] { goo, "mm" }))?.FormatDetails(PanelUnitConversion.None, -1);
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("Capture")!;
         PanelSnapshot Capture(params IGH_Goo[] items)
         {
@@ -51,19 +51,21 @@ internal static class GeometryHintChecks
             "Surface and Brep capture omits mass calculations");
         Check(snapshot.Rows[10].DisplayValue == "<Widget>" && !snapshot.Rows[11].IsValid,
             "Third-party and invalid goo retain safe fallback summaries without formatting");
+        Check(!string.IsNullOrWhiteSpace(snapshot.Rows[11].InvalidReason) && snapshot.Rows[11].GeometryInfo == null,
+            "Invalid geometry captures its validity reason and cannot be measured");
         Check(Details(lineCurve) == "Linear · open\nLength: 5 mm" && Details(linearNurbs) == "Linear · open\nLength: 5 mm",
-            "Hover detects linear NURBS as well as line curves");
+            "Explicit measurement detects linear NURBS as well as line curves");
         Check(Details(new GH_Curve(new ArcCurve(circle)))!.StartsWith("Circle · closed\nLength:", StringComparison.Ordinal),
-            "Circle curve hover reports closed shape and circumference");
+            "Circle measurement reports closed shape and circumference");
         var curved = new GH_Curve(NurbsCurve.Create(false, 2, new[] { Point3d.Origin, new Point3d(5, 5, 0), new Point3d(10, 0, 0) }));
         Check(Details(curved)!.StartsWith("Curve · open\nLength:", StringComparison.Ordinal), "Curved NURBS are not labeled linear");
-        Check(Details(surface) == "Area: 100 mm²" && Details(solid) == "Volume: 24 mm³",
-            "Hover measures surface area and closed Brep volume");
+        Check(Details(surface) == "Srf\nArea: 100 mm²" && Details(solid) == "Brep · closed\nVolume: 24 mm³",
+            "Explicit measurement computes surface area and closed Brep volume");
         var triangle = Brep.CreatePlanarBreps(new PolylineCurve(new[] { Point3d.Origin, new Point3d(10, 0, 0),
             new Point3d(0, 10, 0), Point3d.Origin }), 1e-8).Single();
-        Check(Details(new GH_Surface(triangle)) == "Area: 50 mm²" && Details(new GH_Brep(triangle)) == "Area: 50 mm²",
+        Check(Details(new GH_Surface(triangle)) == "Srf\nArea: 50 mm²" && Details(new GH_Brep(triangle)) == "Brep · open\nArea: 50 mm²",
             "Surface and open Brep area respects trimming instead of measuring the underlying rectangle");
-        Check(Details(unknown) == null, "Hover never formats or measures third-party goo");
+        Check(Details(unknown) == null, "Measurement never formats third-party goo");
         VerifyCache(assembly, snapshot);
     }
 
@@ -74,28 +76,43 @@ internal static class GeometryHintChecks
         var get = type.GetMethod("GetGeometryDetails", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var set = type.GetMethod("SetGeometryDetailResolver", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var attach = type.GetMethod("AttachSnapshot")!;
-        string Get(PanelSnapshot source, int position) => (string)get.Invoke(lifetime, new object[] { source, position })!;
+        var measure = type.GetMethod("MeasureGeometry", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        PanelGeometryInfo? Get(PanelSnapshot source, int position) => (PanelGeometryInfo?)get.Invoke(lifetime, new object[] { source, position });
+        void Measure(PanelSnapshot source, int position) => measure.Invoke(lifetime, new object[] { source, position });
         int calls = 0;
-        set.Invoke(lifetime, new object[] { (Func<int, string?>)(position =>
+        set.Invoke(lifetime, new object[] { (Func<int, PanelGeometryInfo?>)(position =>
         {
             calls++;
-            if (position == 1) throw new InvalidOperationException("Unavailable geometry");
-            return "measured " + position;
+            if (position == 8) throw new InvalidOperationException("Unavailable geometry");
+            if (position == 9) return null;
+            return new PanelGeometryInfo("measured " + position, position, units: "mm");
         }) });
         attach.Invoke(lifetime, new object[] { snapshot });
         Check(calls == 0, "Attaching a snapshot never invokes geometry measurements");
-        Check(Get(snapshot, 0) == "measured 0" && Get(snapshot, 0) == "measured 0" && calls == 1,
-            "Repeated hover measures a row only once");
-        Check(Get(snapshot, 1) == "" && Get(snapshot, 1) == "" && calls == 2,
-            "Failed measurements are cached without tooltip exceptions or repeated work");
-        Check(Get(snapshot, -1) == "" && Get(snapshot, 100) == "" && Get(snapshot, 11) == "" && calls == 2,
-            "Invalid rows and positions never request geometry measurements");
+        Check(Get(snapshot, 2) == null && Get(snapshot, 2) == null && calls == 0, "Hover reads cached details without calculating anything");
+        Measure(snapshot, 2);
+        Check(calls == 1 && Get(snapshot, 2)?.Description == "measured 2", "Click completes measurement synchronously");
+        Measure(snapshot, 2);
+        Check(Get(snapshot, 2)?.Value == 2 && calls == 1, "Repeated clicks and reads reuse the raw measurement");
+        Measure(snapshot, 8); Measure(snapshot, 8); Measure(snapshot, 9); Measure(snapshot, 9);
+        Check(Get(snapshot, 8) == null && Get(snapshot, 9) == null && calls == 3, "Failures and unavailable results are cached without repeated calculation");
+        Measure(snapshot, -1); Measure(snapshot, 100); Measure(snapshot, 11); Measure(snapshot, 0);
+        Check(calls == 3, "Invalid rows, positions and already analytic metrics never request calculations");
         var newer = new PanelSnapshot(2, snapshot.Rows, snapshot.Branches);
         attach.Invoke(lifetime, new object[] { newer });
-        Check(Get(snapshot, 0) == "" && calls == 2, "Stale snapshots cannot measure current source geometry");
-        Check(Get(newer, 0) == "measured 0" && calls == 3, "A new solution invalidates cached measurements");
+        Measure(snapshot, 2);
+        Check(Get(snapshot, 2) == null && calls == 3, "Stale snapshots cannot measure current source geometry");
+        Check(Get(newer, 2) == null, "A new solution invalidates cached measurements");
+        Measure(newer, 2);
+        Check(Get(newer, 2)?.Value == 2 && calls == 4, "New geometry can be explicitly measured again");
+        var converted = new PanelSnapshot(3, snapshot.Rows, snapshot.Branches, PanelUnitConversion.MillimetersToMeters);
+        type.GetMethod("AttachConvertedSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(lifetime, new object[] { converted, (Func<int, bool>)(position => position == 2) });
+        Check(Get(converted, 2)?.FormatCompact(converted.UnitConversion, -1) == "measured 2 · L 0.002 m" && calls == 4,
+            "Unit-only changes retain and reformat raw metrics without remeasurement");
         lifetime.Dispose();
-        Check(Get(newer, 0) == "" && calls == 3, "Disposed sessions cannot measure geometry");
+        Measure(converted, 2);
+        Check(Get(converted, 2) == null && calls == 4, "Disposed sessions cannot measure geometry");
     }
 
     private static void Check(bool condition, string description)

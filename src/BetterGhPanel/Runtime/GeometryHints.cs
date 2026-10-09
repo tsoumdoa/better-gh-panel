@@ -1,5 +1,5 @@
 using System;
-using System.Globalization;
+using BetterGhPanel.Core;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
 
@@ -7,44 +7,34 @@ namespace BetterGhPanel.Runtime
 {
     internal static class GeometryHints
     {
-        // Only analytic primitive measurements and stored properties belong in the
-        // snapshot. General curve length and mass properties are hover-only.
-        internal static string? Summary(IGH_Goo goo, string units)
+        // Only analytic measurements and stored properties belong in the snapshot.
+        internal static PanelGeometryInfo? Describe(IGH_Goo goo, string units)
         {
             switch (goo)
             {
-                case GH_Line line:
-                    return Line(line.Value.Length, units);
-                case GH_Arc arc:
-                    return Arc(arc.Value, units);
-                case GH_Circle circle:
-                    return "Cir · R " + Measure(circle.Value.Radius, units);
-                case GH_Rectangle rectangle:
-                    return "Rect · A " + Measure(rectangle.Value.Area, units, 2);
-                case GH_Box box:
-                    return "Box · V " + Measure(box.Value.Volume, units, 3);
-                case GH_Curve curve when curve.Value is LineCurve lineCurve:
-                    return Line(lineCurve.Line.Length, units);
-                case GH_Curve curve when curve.Value is ArcCurve arcCurve:
-                    return Arc(arcCurve.Arc, units);
+                case GH_Line line: return Length("Ln", line.Value.Length, units);
+                case GH_Arc arc: return ArcInfo(arc.Value, units);
+                case GH_Circle circle: return new PanelGeometryInfo("Cir", circle.Value.Radius, units: units, metricName: "Radius", metricLabel: "R");
+                case GH_Rectangle rectangle: return new PanelGeometryInfo("Rect", rectangle.Value.Area, 2, units, "Area", "A");
+                case GH_Box box: return new PanelGeometryInfo("Box", box.Value.Volume, 3, units, "Volume", "V");
+                case GH_Curve curve when curve.Value is LineCurve line: return Length("Ln", line.Line.Length, units);
+                case GH_Curve curve when curve.Value is ArcCurve arc: return ArcInfo(arc.Arc, units);
                 case GH_Curve curve when curve.Value is PolylineCurve polyline:
-                    return "Polyline · " + (polyline.PointCount - 1) + " segments · " + Closed(polyline.IsClosed);
+                    return new PanelGeometryInfo("Polyline · " + Count(polyline.PointCount - 1, "segment") + " · " + Closed(polyline.IsClosed), canMeasure: true);
                 case GH_Curve curve when curve.Value != null:
-                    return "Crv · degree " + curve.Value.Degree + " · " + Closed(curve.Value.IsClosed);
+                    return new PanelGeometryInfo("Crv · degree " + curve.Value.Degree + " · " + Closed(curve.Value.IsClosed), canMeasure: true);
                 case GH_Surface surface when surface.Value != null:
-                    return "Srf · " + (surface.Value.IsSurface ? "untrimmed" : "trimmed");
+                    return new PanelGeometryInfo("Srf · " + (surface.Value.IsSurface ? "untrimmed" : "trimmed"), canMeasure: true);
                 case GH_Brep brep when brep.Value != null:
-                    return "Brep · " + Closed(brep.Value.IsSolid) + " · " + Count(brep.Value.Faces.Count, "face");
+                    return new PanelGeometryInfo("Brep · " + Closed(brep.Value.IsSolid) + " · " + Count(brep.Value.Faces.Count, "face"), canMeasure: true);
                 case GH_Mesh mesh when mesh.Value != null:
-                    return "Mesh · " + mesh.Value.Vertices.Count + " vertices · " + Count(mesh.Value.Faces.Count, "face");
-                default:
-                    return null;
+                    return new PanelGeometryInfo("Mesh · " + mesh.Value.Vertices.Count + " vertices · " + Count(mesh.Value.Faces.Count, "face"));
+                default: return null;
             }
         }
 
-        // Called on the Rhino UI thread only for a hovered row. The session caches
-        // both successful results and unavailable measurements until the next solution.
-        internal static string? Details(IGH_Goo? goo, string units)
+        // Synchronous, on the Rhino UI thread, only after an explicit Measure click.
+        internal static PanelGeometryInfo? Measure(IGH_Goo? goo, string units)
         {
             switch (goo)
             {
@@ -52,33 +42,28 @@ namespace BetterGhPanel.Runtime
                     var value = curve.Value;
                     var shape = value.IsLinear() ? "Linear" : value is PolylineCurve ? "Polyline" :
                         value is ArcCurve arc ? (arc.Arc.IsCircle ? "Circle" : "Arc") : "Curve";
-                    return shape + " · " + Closed(value.IsClosed) + "\nLength: " + Measure(value.GetLength(), units);
-                case GH_Surface surface when surface.Value != null:
-                    return Area(surface.Value, units);
+                    return Length(shape + " · " + Closed(value.IsClosed), value.GetLength(), units);
+                case GH_Surface surface when surface.Value != null: return Area("Srf", surface.Value, units);
                 case GH_Brep brep when brep.Value != null:
-                    if (!brep.Value.IsSolid) return Area(brep.Value, units);
+                    if (!brep.Value.IsSolid) return Area("Brep · open", brep.Value, units);
                     using (var mass = VolumeMassProperties.Compute(brep.Value, true, false, false, false))
-                        return mass == null ? null : "Volume: " + Measure(Math.Abs(mass.Volume), units, 3);
-                default:
-                    return null;
+                        return mass == null ? null : new PanelGeometryInfo("Brep · closed", Math.Abs(mass.Volume), 3, units, "Volume", "V");
+                default: return null;
             }
         }
 
-        private static string? Area(Brep brep, string units)
+        private static PanelGeometryInfo? Area(string description, Brep brep, string units)
         {
             // Measure the trimmed Brep, not its underlying untrimmed surface.
             using (var mass = AreaMassProperties.Compute(brep, true, false, false, false))
-                return mass == null ? null : "Area: " + Measure(mass.Area, units, 2);
+                return mass == null ? null : new PanelGeometryInfo(description, mass.Area, 2, units, "Area", "A");
         }
 
-        private static string Line(double length, string units) => "Ln · L " + Measure(length, units);
-        private static string Arc(Arc arc, string units) => arc.IsCircle
-            ? "Cir · R " + Measure(arc.Radius, units)
-            : "Arc · L " + Measure(arc.Length, units);
+        private static PanelGeometryInfo Length(string description, double length, string units) => new PanelGeometryInfo(description, length, units: units);
+        private static PanelGeometryInfo ArcInfo(Arc arc, string units) => arc.IsCircle
+            ? new PanelGeometryInfo("Cir", arc.Radius, units: units, metricName: "Radius", metricLabel: "R")
+            : Length("Arc", arc.Length, units);
         private static string Closed(bool closed) => closed ? "closed" : "open";
         private static string Count(int count, string noun) => count + " " + noun + (count == 1 ? "" : "s");
-        private static string Measure(double value, string units, int power = 1) =>
-            double.IsNaN(value) || double.IsInfinity(value) || value < 0 ? "unavailable" :
-                value.ToString("G6", CultureInfo.InvariantCulture) + " " + units + (power == 2 ? "²" : power == 3 ? "³" : "");
     }
 }

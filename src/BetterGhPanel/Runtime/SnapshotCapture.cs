@@ -26,13 +26,23 @@ namespace BetterGhPanel.Runtime
                     string type, display;
                     double? number;
                     var valid = true;
+                    PanelGeometryInfo? geometry = null;
+                    string invalidReason = "";
                     try
                     {
                         type = item?.TypeName ?? "Null";
                         valid = item == null || item.IsValid;
                         display = FormatSummary(item, out number);
                         if (valid && item != null)
-                            display = GeometryHints.Summary(item, geometryUnits) ?? display;
+                        {
+                            geometry = GeometryHints.Describe(item, geometryUnits);
+                            display = geometry?.FormatCompact(PanelUnitConversion.None, PanelUnits.AutomaticDecimals) ?? display;
+                        }
+                        else if (item != null)
+                        {
+                            try { invalidReason = item.IsValidWhyNot; }
+                            catch (Exception) { invalidReason = "Validity details unavailable."; }
+                        }
                     }
                     catch (Exception)
                     {
@@ -40,8 +50,9 @@ namespace BetterGhPanel.Runtime
                         display = "<unavailable value>";
                         number = null;
                         valid = false;
+                        invalidReason = "Value could not be read.";
                     }
-                    rows.Add(new PanelRow(rows.Count, b, i, path, type, display, number, item == null, valid));
+                    rows.Add(new PanelRow(rows.Count, b, i, path, type, display, number, item == null, valid, geometry, invalidReason));
                     source.Add(item);
                 }
             }

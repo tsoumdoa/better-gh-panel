@@ -9,7 +9,8 @@ description: >
   canvas. Search, filter, sort, jump to branches and rows, and inspect
   numeric statistics without popup windows. One header chevron folds the panel
   through full, half, and collapsed views while keeping wire connections fixed. A compact
-  footer menu converts length, area, and angle units and sets decimal formatting.
+  footer menu converts length, area, volume, and angle units and sets decimal formatting.
+  Select a geometry row and click Measure for cached metrics; invalid values have clear labels.
   Includes Windows and Mac builds; Mac runtime validation is pending.
 url: https://github.com/tsoumdoa/better-gh-panel
 icon: icon.png

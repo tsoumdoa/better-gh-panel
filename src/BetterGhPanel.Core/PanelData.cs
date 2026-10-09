@@ -8,7 +8,8 @@ namespace BetterGhPanel.Core
     public sealed class PanelRow
     {
         public PanelRow(int id, int branchIndex, int originalIndex, string path, string typeName,
-            string displayValue, double? numericValue, bool isNull = false, bool isValid = true)
+            string displayValue, double? numericValue, bool isNull = false, bool isValid = true,
+            PanelGeometryInfo? geometryInfo = null, string invalidReason = "")
         {
             Id = id;
             BranchIndex = branchIndex;
@@ -19,6 +20,8 @@ namespace BetterGhPanel.Core
             NumericValue = numericValue;
             IsNull = isNull;
             IsValid = isValid;
+            GeometryInfo = geometryInfo;
+            InvalidReason = invalidReason;
         }
 
         public int Id { get; }
@@ -30,6 +33,8 @@ namespace BetterGhPanel.Core
         public double? NumericValue { get; }
         public bool IsNull { get; }
         public bool IsValid { get; }
+        public PanelGeometryInfo? GeometryInfo { get; }
+        public string InvalidReason { get; }
     }
 
     public sealed class PanelBranch

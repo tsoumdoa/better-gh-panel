@@ -6,7 +6,7 @@ using Grasshopper.GUI;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 
-internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify, Units, Display }
+internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify, Units, Display, Measure }
 
 // The .gha is loaded separately. Keep plugin-owned reflection in this adapter.
 internal static class PanelTestAdapter
@@ -51,6 +51,17 @@ internal static class PanelTestAdapter
         }
         throw new InvalidOperationException("Tooltip row is not visible.");
     }
+
+    internal static RectangleF RowBounds(GH_Component component, int sourcePosition)
+    {
+        foreach (var hit in Field<IEnumerable>(component.Attributes, "_rowHits"))
+            if (Property<int>(hit, "SourcePosition") == sourcePosition) return Property<RectangleF>(hit, "Bounds");
+        throw new InvalidOperationException("Row is not visible.");
+    }
+
+    internal static string DisplayValue(GH_Component component, BetterGhPanel.Core.PanelSnapshot snapshot, int position) =>
+        (string)component.GetType().GetMethod("DisplayValue", PrivateInstance)!
+            .Invoke(component, new object[] { snapshot, snapshot.Rows[position], position })!;
 
     private static T Property<T>(object owner, string name) => (T)owner.GetType().GetProperty(name, PrivateInstance)!.GetValue(owner)!;
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, PrivateInstance)!.GetValue(owner)!;
