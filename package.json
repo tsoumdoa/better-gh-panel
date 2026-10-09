@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "node prototype/server.mjs",
+    "check": "node scripts/check.mjs",
     "test:package": "node --test tests/package.test.mjs"
   }
 }

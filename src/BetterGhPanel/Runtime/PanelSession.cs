@@ -29,10 +29,8 @@ namespace BetterGhPanel.Runtime
         public PanelSnapshot Snapshot { get; private set; }
         public PanelQueryResult Result { get; private set; }
         public PanelQueryOptions Options => _options.Clone();
-        public long QueryRevision { get; private set; }
         public bool IsBusy { get; private set; }
         public string? Error { get; private set; }
-        public event EventHandler? Changed;
         public event EventHandler? QueryChanged;
 
         public void AttachSnapshot(PanelSnapshot snapshot)
@@ -95,10 +93,12 @@ namespace BetterGhPanel.Runtime
                 _options.BranchPath != next.BranchPath || _options.BranchPrefix != next.BranchPrefix ||
                 _options.OnlyInvalid != next.OnlyInvalid || _options.SortMode != next.SortMode;
             _options = next;
-            ++QueryRevision;
-            if (changed) QueryChanged?.Invoke(this, EventArgs.Empty);
-            if (changed) QueueQuery();
-            else Notify(); // Equal submissions still synchronize drafts, especially Reset.
+            if (changed)
+            {
+                QueryChanged?.Invoke(this, EventArgs.Empty);
+                QueueQuery();
+            }
+            else Notify(); // View resets can clear transient state even when options are unchanged.
         }
 
         public void ResetView() => UpdateQuery(new PanelQueryOptions());
@@ -149,8 +149,7 @@ namespace BetterGhPanel.Runtime
             RhinoApp.InvokeOnUiThread((Action)(() =>
             {
                 if (_disposed) return;
-                Changed?.Invoke(this, EventArgs.Empty);
-                _invalidate?.Invoke();
+                _invalidate();
             }));
         }
 
@@ -162,7 +161,6 @@ namespace BetterGhPanel.Runtime
             _queryCancellation?.Cancel();
             _queryCancellation?.Dispose();
             _queryCancellation = null;
-            Changed = null;
             QueryChanged = null;
             _detailResolver = null;
             _geometryDetailResolver = null;

@@ -24,8 +24,8 @@ namespace BetterGhPanel.Core
                     : selectedBranch + ";"
                 : null;
             var numericPredicate = ParseNumericPredicate(search);
-            var rowIds = new List<int>(snapshot.Rows.Count);
-            var branchCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            var rowPositions = new List<int>(snapshot.Rows.Count);
+            var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var hasItemFilter = search.Length != 0 || query.TypeName != null || query.OnlyInvalid;
 
@@ -36,7 +36,7 @@ namespace BetterGhPanel.Core
                 {
                     CheckCancellation(i, cancellationToken);
                     var branch = snapshot.Branches[i];
-                    if (MatchesBranch(branch.Path, selectedBranch, branchPrefix)) branchCounts[branch.Path] = 0;
+                    if (MatchesBranch(branch.Path, selectedBranch, branchPrefix)) branches.Add(branch.Path);
                 }
             }
 
@@ -60,8 +60,8 @@ namespace BetterGhPanel.Core
                 else if (search.Length != 0 && !Contains(row.DisplayValue, search) &&
                     !Contains(row.Path, search) && !Contains(row.TypeName, search)) continue;
 
-                rowIds.Add(i);
-                Increment(branchCounts, row.Path);
+                rowPositions.Add(i);
+                branches.Add(row.Path);
                 Increment(typeCounts, row.TypeName);
                 if (row.IsNull) nullCount++;
                 if (!row.IsValid) invalidCount++;
@@ -77,33 +77,15 @@ namespace BetterGhPanel.Core
                     : mean + delta / numericCount;
             }
 
-            var ids = rowIds.ToArray();
+            var positions = rowPositions.ToArray();
             if (query.SortMode != PanelSortMode.SourceOrder)
-                StableSort(ids, snapshot.Rows, query.SortMode == PanelSortMode.ValueDescending, cancellationToken);
+                StableSort(positions, snapshot.Rows, query.SortMode == PanelSortMode.ValueDescending, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            var statistics = new PanelStatistics(ids.Length, branchCounts.Count, numericCount, nullCount,
+            var statistics = new PanelStatistics(positions.Length, branches.Count, numericCount, nullCount,
                 invalidCount, numericCount == 0 ? (double?)null : minimum,
                 numericCount == 0 ? (double?)null : maximum, numericCount == 0 ? (double?)null : mean,
-                new ReadOnlyDictionary<string, int>(typeCounts), () => BuildHistogram(snapshot, ids, minimum, maximum));
-            return new PanelQueryResult(snapshot, ids, statistics, new ReadOnlyDictionary<string, int>(branchCounts));
-        }
-
-        private static IReadOnlyList<int> BuildHistogram(PanelSnapshot snapshot, int[] positions, double minimum, double maximum)
-        {
-            var histogram = new int[20];
-            var range = maximum - minimum;
-            foreach (var position in positions)
-            {
-                var row = snapshot.Rows[position];
-                if (!HasFiniteNumber(row)) continue;
-                var value = row.NumericValue!.Value;
-                var fraction = range == 0 ? 0 : double.IsInfinity(range)
-                    ? (value / 2 - minimum / 2) / (maximum / 2 - minimum / 2)
-                    : (value - minimum) / range;
-                var bin = Math.Max(0, Math.Min(19, (int)(fraction * 20)));
-                histogram[bin]++;
-            }
-            return Array.AsReadOnly(histogram);
+                new ReadOnlyDictionary<string, int>(typeCounts));
+            return new PanelQueryResult(snapshot, positions, statistics);
         }
 
         private static bool MatchesBranch(string path, string? selected, string? prefix)
