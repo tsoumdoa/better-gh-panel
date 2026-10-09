@@ -21,7 +21,6 @@ internal static class Program
             StableMixedSorting,
             OddLengthSorting,
             ImmutableSnapshotAndView,
-            WindowRetrieval,
             EmptyAndNonfiniteNumbers,
             ExtremeNumericStatistics,
             Cancellation,
@@ -46,25 +45,21 @@ internal static class Program
         return failures == 0 ? 0 : 1;
     }
 
-    private static PanelSnapshot Sample() => new PanelSnapshot(42,
+    private static PanelSnapshot Sample() => new PanelSnapshot(
         new[]
         {
-            Row(100, 0, 0, "{0;1}", "Number", "10", 10),
-            Row(200, 0, 1, "{0;1}", "Number", "2", 2),
-            Row(300, 1, 0, "{0;1;2}", "Text", "Alpha", null),
-            Row(400, 2, 0, "{0;10}", "Number", "10", 10),
-            Row(500, 2, 1, "{0;10}", "Null", "<null>", null, true, false),
-            Row(600, 2, 2, "{0;10}", "Text", "broken", null, false, false)
+            new PanelRow(0, "{0;1}", "Number", "10", 10),
+            new PanelRow(1, "{0;1}", "Number", "2", 2),
+            new PanelRow(0, "{0;1;2}", "Text", "Alpha", null),
+            new PanelRow(0, "{0;10}", "Number", "10", 10),
+            new PanelRow(1, "{0;10}", "Null", "<null>", null, true, false),
+            new PanelRow(2, "{0;10}", "Text", "broken", null, false, false)
         },
         new[]
         {
-            new PanelBranch(0, "{0;1}", 2), new PanelBranch(1, "{0;1;2}", 1),
-            new PanelBranch(2, "{0;10}", 3), new PanelBranch(3, "{9}", 0)
+            new PanelBranch("{0;1}", 2), new PanelBranch("{0;1;2}", 1),
+            new PanelBranch("{0;10}", 3), new PanelBranch("{9}", 0)
         });
-
-    private static PanelRow Row(int id, int branch, int index, string path, string type,
-        string value, double? number, bool isNull = false, bool isValid = true) =>
-        new PanelRow(id, branch, index, path, type, value, number, isNull, isValid);
 
     private static PanelQueryResult Query(PanelQueryOptions? options = null) =>
         PanelQueryEngine.Execute(Sample(), options ?? new PanelQueryOptions());
@@ -72,10 +67,8 @@ internal static class Program
     private static void StatisticsAndEmptyBranches()
     {
         var result = Query();
-        Equal(42L, result.Snapshot.Version);
         Equal(6, result.Statistics.ItemCount);
         Equal(4, result.Statistics.BranchCount);
-        Equal(0, result.BranchCounts["{9}"]);
         Equal(3, result.Statistics.NumericCount);
         Equal(1, result.Statistics.NullCount);
         Equal(2, result.Statistics.InvalidCount);
@@ -84,17 +77,13 @@ internal static class Program
         Near(22.0 / 3, result.Statistics.Mean!.Value);
         Equal(3, result.Statistics.TypeCounts["Number"]);
         Equal(2, result.Statistics.TypeCounts["Text"]);
-        Equal(20, result.Statistics.Histogram.Count);
-        Equal(1, result.Statistics.Histogram[0]);
-        Equal(2, result.Statistics.Histogram[19]);
-        Equal(3, result.Statistics.Histogram.Sum());
     }
 
     private static void SearchMatchesValuePathAndType()
     {
-        Sequence(new[] { 2 }, Query(new PanelQueryOptions { Search = "ALpHa" }).RowIds);
-        Sequence(new[] { 0, 1, 3 }, Query(new PanelQueryOptions { Search = "nUmBeR" }).RowIds);
-        Sequence(new[] { 2 }, Query(new PanelQueryOptions { Search = "{0;1;2}" }).RowIds);
+        Sequence(new[] { 2 }, Query(new PanelQueryOptions { Search = "ALpHa" }).RowPositions);
+        Sequence(new[] { 0, 1, 3 }, Query(new PanelQueryOptions { Search = "nUmBeR" }).RowPositions);
+        Sequence(new[] { 2 }, Query(new PanelQueryOptions { Search = "{0;1;2}" }).RowPositions);
         Equal(0, Query(new PanelQueryOptions { Search = "absent" }).Statistics.BranchCount);
         Equal(3, Query(new PanelQueryOptions { Search = "number" }).Statistics.NumericCount);
     }
@@ -105,22 +94,22 @@ internal static class Program
         try
         {
             CultureInfo.CurrentCulture = new CultureInfo("fr-FR");
-            Sequence(new[] { 0, 3 }, Query(new PanelQueryOptions { Search = "> 2.5" }).RowIds);
-            Sequence(new[] { 0, 1, 3 }, Query(new PanelQueryOptions { Search = ">= 2" }).RowIds);
-            Sequence(new[] { 1 }, Query(new PanelQueryOptions { Search = "< 10" }).RowIds);
-            Sequence(new[] { 1 }, Query(new PanelQueryOptions { Search = "<= 2" }).RowIds);
-            Sequence(new[] { 0, 3 }, Query(new PanelQueryOptions { Search = "= 1e1" }).RowIds);
-            Sequence(new[] { 0, 3 }, Query(new PanelQueryOptions { Search = "==10" }).RowIds);
-            Equal(0, Query(new PanelQueryOptions { Search = "> nonsense" }).RowIds.Count);
+            Sequence(new[] { 0, 3 }, Query(new PanelQueryOptions { Search = "> 2.5" }).RowPositions);
+            Sequence(new[] { 0, 1, 3 }, Query(new PanelQueryOptions { Search = ">= 2" }).RowPositions);
+            Sequence(new[] { 1 }, Query(new PanelQueryOptions { Search = "< 10" }).RowPositions);
+            Sequence(new[] { 1 }, Query(new PanelQueryOptions { Search = "<= 2" }).RowPositions);
+            Sequence(new[] { 0, 3 }, Query(new PanelQueryOptions { Search = "= 1e1" }).RowPositions);
+            Sequence(new[] { 0, 3 }, Query(new PanelQueryOptions { Search = "==10" }).RowPositions);
+            Equal(0, Query(new PanelQueryOptions { Search = "> nonsense" }).RowPositions.Count);
         }
         finally { CultureInfo.CurrentCulture = previous; }
     }
 
     private static void BranchSelectionPreservesTreeSemantics()
     {
-        Sequence(new[] { 0, 1 }, Query(new PanelQueryOptions { BranchPath = "{0;1}" }).RowIds);
+        Sequence(new[] { 0, 1 }, Query(new PanelQueryOptions { BranchPath = "{0;1}" }).RowPositions);
         var descendants = Query(new PanelQueryOptions { BranchPath = "{0;1}", BranchPrefix = true });
-        Sequence(new[] { 0, 1, 2 }, descendants.RowIds);
+        Sequence(new[] { 0, 1, 2 }, descendants.RowPositions);
         Equal(2, descendants.Statistics.BranchCount);
         Equal(1, Query(new PanelQueryOptions { BranchPath = "{9}" }).Statistics.BranchCount);
         Equal(0, Query(new PanelQueryOptions { BranchPath = "{9}", Search = "hello" }).Statistics.BranchCount);
@@ -129,9 +118,9 @@ internal static class Program
 
     private static void TypeAndInvalidFilters()
     {
-        Sequence(new[] { 0, 1, 3 }, Query(new PanelQueryOptions { TypeName = "number" }).RowIds);
-        Sequence(new[] { 4, 5 }, Query(new PanelQueryOptions { OnlyInvalid = true }).RowIds);
-        Sequence(new[] { 5 }, Query(new PanelQueryOptions { OnlyInvalid = true, TypeName = "text" }).RowIds);
+        Sequence(new[] { 0, 1, 3 }, Query(new PanelQueryOptions { TypeName = "number" }).RowPositions);
+        Sequence(new[] { 4, 5 }, Query(new PanelQueryOptions { OnlyInvalid = true }).RowPositions);
+        Sequence(new[] { 5 }, Query(new PanelQueryOptions { OnlyInvalid = true, TypeName = "text" }).RowPositions);
         var options = new PanelQueryOptions { Search = "alpha", BranchPath = "{0;1}", BranchPrefix = true,
             TypeName = "Text", OnlyInvalid = true, SortMode = PanelSortMode.ValueDescending };
         var clone = options.Clone();
@@ -147,39 +136,39 @@ internal static class Program
     private static void StableMixedSorting()
     {
         var ascending = Query(new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending });
-        Sequence(new[] { 1, 0, 3, 2, 5, 4 }, ascending.RowIds);
+        Sequence(new[] { 1, 0, 3, 2, 5, 4 }, ascending.RowPositions);
         var descending = Query(new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
-        Sequence(new[] { 0, 3, 1, 5, 2, 4 }, descending.RowIds);
-        Equal(100, descending.GetRows(0, 1)[0].Id);
-        Equal(0, descending.GetRows(0, 1)[0].OriginalIndex);
-        Equal("{0;1}", descending.GetRows(0, 1)[0].Path);
-        var mixed = new PanelSnapshot(1, new[]
+        Sequence(new[] { 0, 3, 1, 5, 2, 4 }, descending.RowPositions);
+        var first = descending.Snapshot.Rows[descending.RowPositions[0]];
+        Equal(0, first.OriginalIndex);
+        Equal("{0;1}", first.Path);
+        var mixed = new PanelSnapshot(new[]
         {
-            Row(1, 0, 0, "{0}", "ZType", "A", null),
-            Row(2, 0, 1, "{0}", "AType", "Z", null),
-            Row(3, 0, 2, "{0}", "AType", "A", null),
-            Row(4, 0, 3, "{0}", "AType", "a", null)
-        }, new[] { new PanelBranch(0, "{0}", 4) });
+            new PanelRow(0, "{0}", "ZType", "A", null),
+            new PanelRow(1, "{0}", "AType", "Z", null),
+            new PanelRow(2, "{0}", "AType", "A", null),
+            new PanelRow(3, "{0}", "AType", "a", null)
+        }, new[] { new PanelBranch("{0}", 4) });
         Sequence(new[] { 1, 2, 3, 0 }, PanelQueryEngine.Execute(mixed,
-            new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending }).RowIds);
+            new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending }).RowPositions);
     }
 
     private static void ImmutableSnapshotAndView()
     {
         var rows = new List<PanelRow>(Sample().Rows);
+        var originalRows = rows.ToArray();
         var branches = new List<PanelBranch>(Sample().Branches);
-        var snapshot = new PanelSnapshot(1, rows, branches);
+        var snapshot = new PanelSnapshot(rows, branches);
         rows.Clear(); branches.Clear();
         Equal(6, snapshot.Rows.Count);
         Equal(4, snapshot.Branches.Count);
         Equal(3, snapshot.TypeCounts["number"]);
         PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
-        Sequence(new[] { 0, 1, 2, 3, 4, 5 }, PanelQueryEngine.Execute(snapshot, new PanelQueryOptions()).RowIds);
-        Sequence(new[] { 100, 200, 300, 400, 500, 600 }, snapshot.Rows.Select(row => row.Id));
+        Sequence(new[] { 0, 1, 2, 3, 4, 5 }, PanelQueryEngine.Execute(snapshot, new PanelQueryOptions()).RowPositions);
+        Sequence(originalRows, snapshot.Rows);
         Throws<NotSupportedException>(() => ((IList<PanelRow>)snapshot.Rows)[0] = snapshot.Rows[1]);
         var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
-        Throws<NotSupportedException>(() => ((IList<int>)result.RowIds)[0] = 5);
-        Throws<NotSupportedException>(() => ((IDictionary<string, int>)result.BranchCounts)["{9}"] = 5);
+        Throws<NotSupportedException>(() => ((IList<int>)result.RowPositions)[0] = 5);
     }
 
     private static void OddLengthSorting()
@@ -187,61 +176,46 @@ internal static class Program
         foreach (var length in new[] { 1, 3, 7, 17, 257 })
         {
             var rows = Enumerable.Range(0, length).Select(index =>
-                Row(index, 0, index, "{0}", "Number", string.Empty, (index * 7) % 11)).ToArray();
-            var snapshot = new PanelSnapshot(1, rows, new[] { new PanelBranch(0, "{0}", length) });
+                new PanelRow(index, "{0}", "Number", string.Empty, (index * 7) % 11)).ToArray();
+            var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", length) });
             var ascending = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending });
             var descending = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
-            Sequence(rows.OrderBy(row => row.NumericValue).Select(row => row.Id), ascending.GetRows(0, length).Select(row => row.Id));
-            Sequence(rows.OrderByDescending(row => row.NumericValue).Select(row => row.Id), descending.GetRows(0, length).Select(row => row.Id));
+            Sequence(rows.OrderBy(row => row.NumericValue), ascending.RowPositions.Select(position => snapshot.Rows[position]));
+            Sequence(rows.OrderByDescending(row => row.NumericValue), descending.RowPositions.Select(position => snapshot.Rows[position]));
         }
-    }
-
-    private static void WindowRetrieval()
-    {
-        var result = Query();
-        Sequence(new[] { 500, 600 }, result.GetRows(4, 100).Select(row => row.Id));
-        Equal(0, result.GetRows(10, 2).Count);
-        Equal(0, result.GetRows(0, 0).Count);
-        Equal(0, result.GetRows(int.MaxValue, int.MaxValue).Count);
-        Throws<ArgumentOutOfRangeException>(() => result.GetRows(-1, 1));
-        Throws<ArgumentOutOfRangeException>(() => result.GetRows(0, -1));
     }
 
     private static void EmptyAndNonfiniteNumbers()
     {
         var empty = PanelQueryEngine.Execute(PanelSnapshot.Empty, new PanelQueryOptions());
-        Equal(0, empty.RowIds.Count);
+        Equal(0, empty.RowPositions.Count);
         Equal(0, empty.Statistics.BranchCount);
         Equal<double?>(null, empty.Statistics.Mean);
         Equal<double?>(null, empty.Statistics.Minimum);
         Equal<double?>(null, empty.Statistics.Maximum);
-        Equal(0, empty.Statistics.Histogram.Sum());
-        var snapshot = new PanelSnapshot(1, new[]
+        var snapshot = new PanelSnapshot(new[]
         {
-            Row(1, 0, 0, "{0}", "Number", "NaN", double.NaN),
-            Row(2, 0, 1, "{0}", "Number", "Infinity", double.PositiveInfinity),
-            Row(3, 0, 2, "{0}", "Number", "null", 5, true),
-            Row(4, 0, 3, "{0}", "Number", "3", 3),
-            Row(5, 0, 4, "{0}", "Number", "3", 3)
-        }, new[] { new PanelBranch(0, "{0}", 5) });
+            new PanelRow(0, "{0}", "Number", "NaN", double.NaN),
+            new PanelRow(1, "{0}", "Number", "Infinity", double.PositiveInfinity),
+            new PanelRow(2, "{0}", "Number", "null", 5, true),
+            new PanelRow(3, "{0}", "Number", "3", 3),
+            new PanelRow(4, "{0}", "Number", "3", 3)
+        }, new[] { new PanelBranch("{0}", 5) });
         var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
         Equal(2, result.Statistics.NumericCount);
-        Equal(2, result.Statistics.Histogram[0]);
         Equal(3.0, result.Statistics.Mean!.Value);
-        Sequence(new[] { 3, 4 }, PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = ">0" }).RowIds);
+        Sequence(new[] { 3, 4 }, PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = ">0" }).RowPositions);
     }
 
     private static void ExtremeNumericStatistics()
     {
-        var snapshot = new PanelSnapshot(1, new[]
+        var snapshot = new PanelSnapshot(new[]
         {
-            Row(1, 0, 0, "{0}", "Number", "min", -double.MaxValue),
-            Row(2, 0, 1, "{0}", "Number", "max", double.MaxValue)
-        }, new[] { new PanelBranch(0, "{0}", 2) });
+            new PanelRow(0, "{0}", "Number", "min", -double.MaxValue),
+            new PanelRow(1, "{0}", "Number", "max", double.MaxValue)
+        }, new[] { new PanelBranch("{0}", 2) });
         var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
         Equal(0.0, result.Statistics.Mean!.Value);
-        Equal(1, result.Statistics.Histogram[0]);
-        Equal(1, result.Statistics.Histogram[19]);
     }
 
     private static void Cancellation()
@@ -261,25 +235,23 @@ internal static class Program
         for (var branch = 0; branch < branches.Length; branch++)
         {
             var path = "{" + branch.ToString(CultureInfo.InvariantCulture) + "}";
-            branches[branch] = new PanelBranch(branch, path, branchSize);
+            branches[branch] = new PanelBranch(path, branchSize);
             for (var index = 0; index < branchSize; index++)
             {
                 var position = branch * branchSize + index;
-                rows[position] = Row(position, branch, index, path, "Number",
+                rows[position] = new PanelRow(index, path, "Number",
                     position.ToString(CultureInfo.InvariantCulture), position);
             }
         }
-        var snapshot = new PanelSnapshot(1, rows, branches);
+        var snapshot = new PanelSnapshot(rows, branches);
         var watch = Stopwatch.StartNew();
         var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
         watch.Stop();
         Equal(count, result.Statistics.ItemCount);
         Equal(count / branchSize, result.Statistics.BranchCount);
         Near((count - 1) / 2.0, result.Statistics.Mean!.Value);
-        Equal(count, result.Statistics.Histogram.Sum());
-        Equal(count - 1, result.RowIds[0]);
-        Equal(0, result.RowIds[count - 1]);
-        Equal(0, result.GetRows(count - 1, 50)[0].Id);
+        Equal(count - 1, result.RowPositions[0]);
+        Equal(0, result.RowPositions[count - 1]);
         Console.WriteLine($"  {count:N0} rows filtered, aggregated and sorted in {watch.ElapsedMilliseconds} ms (local measurement).");
     }
 
@@ -318,8 +290,8 @@ internal static class Program
 
     private static void CanvasMenuPagingAndSnapshot()
     {
-        var branches = Enumerable.Range(0, 100).Select(i => new PanelBranch(i, "{" + i + "}", 0)).ToArray();
-        var snapshot = new PanelSnapshot(1, Array.Empty<PanelRow>(), branches);
+        var branches = Enumerable.Range(0, 100).Select(i => new PanelBranch("{" + i + "}", 0)).ToArray();
+        var snapshot = new PanelSnapshot(Array.Empty<PanelRow>(), branches);
         var menu = new CanvasMenu();
         var panel = new System.Drawing.RectangleF(0, 0, 360, 280);
         var anchor = new System.Drawing.RectangleF(9, 60, 226, 22);
@@ -340,7 +312,7 @@ internal static class Program
         menu.Toggle(CanvasMenuKind.Type, snapshot, new PanelQueryOptions { TypeName = "Saved type" });
         menu.Layout(panel, anchor, anchor, anchor);
         Equal("Saved type", menu.TypeNameAt(2));
-        Equal("Invalid only", menu.Label(1, true));
+        Equal("Invalid only", menu.Label(1));
         Equal(true, menu.IsSelected(1, new PanelQueryOptions { OnlyInvalid = true }, PanelUnitConversion.None, -1));
         menu.Toggle(CanvasMenuKind.Type, snapshot, new PanelQueryOptions());
         Equal(CanvasMenuKind.None, menu.Kind);
@@ -357,12 +329,12 @@ internal static class Program
         Equal("Invalid", CanvasMenu.TypeHint(Query(options), options));
         Equal("No data", CanvasMenu.TypeHint(PanelQueryEngine.Execute(PanelSnapshot.Empty, new PanelQueryOptions()), new PanelQueryOptions()));
 
-        var geometry = new PanelSnapshot(2, new[]
+        var geometry = new PanelSnapshot(new[]
         {
-            Row(0, 0, 0, "{0}", "Point", "(0,0,0)", null),
-            Row(1, 0, 1, "{0}", "Surface", "<Surface>", null),
-            Row(2, 0, 2, "{0}", "Mesh", "<Mesh>", null)
-        }, new[] { new PanelBranch(0, "{0}", 3) });
+            new PanelRow(0, "{0}", "Point", "(0,0,0)", null),
+            new PanelRow(1, "{0}", "Surface", "<Surface>", null),
+            new PanelRow(2, "{0}", "Mesh", "<Mesh>", null)
+        }, new[] { new PanelBranch("{0}", 3) });
         options = new PanelQueryOptions();
         var geometryResult = PanelQueryEngine.Execute(geometry, options);
         Equal("Mesh/Pt +1", CanvasMenu.TypeHint(geometryResult, options));
@@ -370,7 +342,7 @@ internal static class Program
         options.TypeName = "Surface";
         geometryResult = PanelQueryEngine.Execute(geometry, options);
         Equal("Srf", CanvasMenu.TypeHint(geometryResult, options));
-        Equal("Surface", geometryResult.GetRows(0, 1)[0].TypeName);
+        Equal("Surface", geometryResult.Snapshot.Rows[geometryResult.RowPositions[0]].TypeName);
         Equal("Plugin geometry", CanvasMenu.ShortTypeName("Plugin geometry"));
     }
 
@@ -406,11 +378,11 @@ internal static class Program
             Equal(PanelUnits.ConversionCount + 2, menu.Count);
             Equal(true, menu.Bounds.Top >= panel.Top + 25 && menu.Bounds.Bottom < anchor.Top && menu.Bounds.Right <= panel.Right);
             Equal(true, menu.Bounds.Width < 180 && menu.Bounds.Right == anchor.Right);
-            Equal("mm² → m²", menu.Label(3, false, PanelUnitConversion.SquareMillimetersToSquareMeters));
+            Equal("mm² → m²", menu.Label(3));
             Equal(true, menu.IsSelected(3, new PanelQueryOptions(), PanelUnitConversion.SquareMillimetersToSquareMeters, 2));
             int decimalsIndex = PanelUnits.ConversionCount + 1;
-            Equal("Decimal places… (2)", menu.Label(decimalsIndex, false, decimals: 2));
-            Equal("mm³ → m³", menu.Label((int)PanelUnitConversion.CubicMillimetersToCubicMeters, false));
+            Equal("Decimal places… (2)", menu.Label(decimalsIndex, decimals: 2));
+            Equal("mm³ → m³", menu.Label((int)PanelUnitConversion.CubicMillimetersToCubicMeters));
             Equal(true, menu.Hover(new System.Drawing.PointF(menu.Bounds.Left + 5, menu.Bounds.Top + 5)));
             Equal(menu.Offset, menu.HoveredIndex);
             Equal(false, menu.Hover(new System.Drawing.PointF(menu.Bounds.Left + 5, menu.Bounds.Top + 5)));

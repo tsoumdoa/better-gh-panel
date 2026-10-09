@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using BetterGhPanel.Core;
@@ -26,19 +27,21 @@ namespace BetterGhPanel.UI
         {
             if (options.OnlyInvalid) return "Invalid";
             if (options.TypeName != null) return ShortTypeName(options.TypeName);
-            var types = result.Statistics.TypeCounts.Count > 0 ? result.Statistics.TypeCounts : result.Snapshot.TypeCounts;
+            var types = TypeCounts(result);
             if (types.Count == 0) return "No data";
-            var names = types.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal)
+            var names = OrderedTypes(types)
                 .Take(2).Select(pair => ShortTypeName(pair.Key));
             return string.Join("/", names) + (types.Count > 2 ? " +" + (types.Count - 2) : "");
         }
 
-        internal static string TypeDetails(PanelQueryResult result)
-        {
-            var types = result.Statistics.TypeCounts.Count > 0 ? result.Statistics.TypeCounts : result.Snapshot.TypeCounts;
-            return string.Join(", ", types.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal)
-                .Select(pair => $"{pair.Key}: {pair.Value:N0}"));
-        }
+        internal static string TypeDetails(PanelQueryResult result) =>
+            string.Join(", ", OrderedTypes(TypeCounts(result)).Select(pair => $"{pair.Key}: {pair.Value:N0}"));
+
+        private static IReadOnlyDictionary<string, int> TypeCounts(PanelQueryResult result) =>
+            result.Statistics.TypeCounts.Count > 0 ? result.Statistics.TypeCounts : result.Snapshot.TypeCounts;
+
+        private static IOrderedEnumerable<KeyValuePair<string, int>> OrderedTypes(IReadOnlyDictionary<string, int> types) =>
+            types.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal);
 
         // Abbreviations are presentation only; filters and saved settings keep the full goo type name.
         internal static string ShortTypeName(string name) => name switch
@@ -143,8 +146,7 @@ namespace BetterGhPanel.UI
         internal string TypeNameAt(int index) => _types[index - 2];
         internal string BranchPathAt(int index) => _snapshot.Branches[index - 2].Path;
 
-        internal string Label(int index, bool onlyInvalid, PanelUnitConversion conversion = PanelUnitConversion.None,
-            int decimals = PanelUnits.AutomaticDecimals)
+        internal string Label(int index, int decimals = PanelUnits.AutomaticDecimals)
         {
             if (Kind == CanvasMenuKind.Units)
             {

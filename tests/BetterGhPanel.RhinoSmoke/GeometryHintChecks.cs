@@ -18,9 +18,9 @@ internal static class GeometryHintChecks
         {
             var tree = new GH_Structure<IGH_Goo>();
             tree.AppendRange(items, new GH_Path(0));
-            var arguments = new object?[] { tree, 1L, null, PanelUnitConversion.None, "mm" };
+            var arguments = new object?[] { tree, null, PanelUnitConversion.None, "mm" };
             var snapshot = (PanelSnapshot)capture.Invoke(null, arguments)!;
-            Check(((IGH_Goo?[])arguments[2]!).SequenceEqual(items), "Capture preserves source goo references");
+            Check(((IGH_Goo?[])arguments[1]!).SequenceEqual(items), "Capture preserves source goo references");
             return snapshot;
         }
 
@@ -98,14 +98,14 @@ internal static class GeometryHintChecks
         Check(Get(snapshot, 8) == null && Get(snapshot, 9) == null && calls == 3, "Failures and unavailable results are cached without repeated calculation");
         Measure(snapshot, -1); Measure(snapshot, 100); Measure(snapshot, 11); Measure(snapshot, 0);
         Check(calls == 3, "Invalid rows, positions and already analytic metrics never request calculations");
-        var newer = new PanelSnapshot(2, snapshot.Rows, snapshot.Branches);
+        var newer = new PanelSnapshot(snapshot.Rows, snapshot.Branches);
         attach.Invoke(lifetime, new object[] { newer });
         Measure(snapshot, 2);
         Check(Get(snapshot, 2) == null && calls == 3, "Stale snapshots cannot measure current source geometry");
         Check(Get(newer, 2) == null, "A new solution invalidates cached measurements");
         Measure(newer, 2);
         Check(Get(newer, 2)?.Value == 2 && calls == 4, "New geometry can be explicitly measured again");
-        var converted = new PanelSnapshot(3, snapshot.Rows, snapshot.Branches, PanelUnitConversion.MillimetersToMeters);
+        var converted = new PanelSnapshot(snapshot.Rows, snapshot.Branches, PanelUnitConversion.MillimetersToMeters);
         type.GetMethod("AttachConvertedSnapshot", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(lifetime, new object[] { converted, (Func<int, bool>)(position => position == 2) });
         Check(Get(converted, 2)?.FormatCompact(converted.UnitConversion, -1) == "measured 2 · L 0.002 m" && calls == 4,

@@ -27,6 +27,8 @@ jobs:
         run: node --test tests/package.test.mjs
       - name: Build both Rhino runtimes and stage plugin
         run: node scripts/package.mjs --stage-only
+      - name: Check unused code
+        run: dotnet format style BetterGhPanel.sln --verify-no-changes --no-restore --diagnostics IDE0005 IDE0051 IDE0052 IDE0059 IDE0060 --severity info
       - uses: actions/upload-artifact@v4
         with:
           name: better-gh-panel-${{ matrix.os }}

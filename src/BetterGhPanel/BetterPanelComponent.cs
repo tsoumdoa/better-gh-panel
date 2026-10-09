@@ -19,7 +19,6 @@ namespace BetterGhPanel
         private string _geometryUnits = "units";
         private bool _retainGeometryMeasurements;
         private PanelQueryOptions _savedOptions = new PanelQueryOptions();
-        private long _version;
         private bool _restoringView;
         internal int PreviewSize => CanvasPanelSize.PresetIndex(CanvasWidth, CanvasHeight);
         internal float CanvasWidth { get; private set; } = CanvasPanelSize.DefaultWidth;
@@ -195,7 +194,7 @@ namespace BetterGhPanel
             _geometryUnits = rhinoDocument == null || rhinoDocument.ModelUnitSystem == Rhino.UnitSystem.None
                 ? "units" : rhinoDocument.GetUnitSystemName(true, false, false, true);
             if (string.IsNullOrWhiteSpace(_geometryUnits)) _geometryUnits = "units";
-            var snapshot = SnapshotCapture.Capture(tree, ++_version, out _sourceItems, UnitConversion, _geometryUnits);
+            var snapshot = SnapshotCapture.Capture(tree, out _sourceItems, UnitConversion, _geometryUnits);
             if (_retainGeometryMeasurements && previousUnits == _geometryUnits)
                 Session.AttachConvertedSnapshot(snapshot, position => position < previousSources.Length &&
                     position < _sourceItems.Length && ReferenceEquals(previousSources[position], _sourceItems[position]));

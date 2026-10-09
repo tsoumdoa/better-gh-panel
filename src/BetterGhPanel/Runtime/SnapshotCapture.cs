@@ -9,7 +9,7 @@ namespace BetterGhPanel.Runtime
 {
     internal static class SnapshotCapture
     {
-        public static PanelSnapshot Capture(GH_Structure<IGH_Goo> tree, long version, out IGH_Goo?[] sourceItems,
+        public static PanelSnapshot Capture(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
             PanelUnitConversion conversion = PanelUnitConversion.None, string geometryUnits = "units")
         {
             var rows = new List<PanelRow>(tree.DataCount);
@@ -19,13 +19,13 @@ namespace BetterGhPanel.Runtime
             {
                 var path = tree.Paths[b].ToString();
                 var items = tree.Branches[b];
-                branches.Add(new PanelBranch(b, path, items.Count));
+                branches.Add(new PanelBranch(path, items.Count));
                 for (var i = 0; i < items.Count; i++)
                 {
                     var item = items[i];
                     string type, display;
                     double? number;
-                    var valid = true;
+                    bool valid;
                     PanelGeometryInfo? geometry = null;
                     string invalidReason = "";
                     try
@@ -52,12 +52,12 @@ namespace BetterGhPanel.Runtime
                         valid = false;
                         invalidReason = "Value could not be read.";
                     }
-                    rows.Add(new PanelRow(rows.Count, b, i, path, type, display, number, item == null, valid, geometry, invalidReason));
+                    rows.Add(new PanelRow(i, path, type, display, number, item == null, valid, geometry, invalidReason));
                     source.Add(item);
                 }
             }
             sourceItems = source.ToArray();
-            return new PanelSnapshot(version, rows, branches, conversion);
+            return new PanelSnapshot(rows, branches, conversion);
         }
 
         private static string FormatSummary(IGH_Goo? goo, out double? numeric)

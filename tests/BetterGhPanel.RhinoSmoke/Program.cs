@@ -123,7 +123,7 @@ internal static class Program
         timer.Tick += async (sender, args) =>
         {
             timer.Stop();
-            try { exitCode = await ExecuteSmoke(host); }
+            try { exitCode = await ExecuteSmoke(); }
             catch (Exception error) { Console.Error.WriteLine(error); }
             finally
             {
@@ -136,14 +136,8 @@ internal static class Program
         return exitCode;
     }
 
-    private static async Task<int> ExecuteSmoke(RhinoCore host)
+    private static async Task<int> ExecuteSmoke()
     {
-        _ = Task.Run(() =>
-        {
-            Console.WriteLine("Worker queues native UI invoke.");
-            Rhino.RhinoApp.InvokeOnUiThread((Action)(() => Console.WriteLine("Native UI invoke delivered.")));
-            Console.WriteLine("Worker native UI invoke returned.");
-        });
         var assembly = Assembly.LoadFrom(_plugin);
         GeometryHintChecks.Run(assembly);
         var componentType = assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!;
@@ -173,13 +167,12 @@ internal static class Program
         document.NewSolution(false, GH_SolutionMode.Silent);
         object session = PanelTestAdapter.Session(component);
         Console.WriteLine("GH solved: " + component.Params.Output[0].VolatileData.DataCount + " output items.");
-        Assert(assembly.GetType("BetterGhPanel.UI.PanelInspector") == null, "Popup inspector is removed from the plugin");
         Assert(PanelTestAdapter.Size(component) == new SizeF(360, 360), "New canvas panels default to a 1:1 ratio");
         var input = component.Params.Input[0].VolatileData;
         var output = component.Params.Output[0].VolatileData;
         Assert(input.DataCount == 5, "Native Grasshopper solver collected all source items");
         AssertEqualTrees(input, output);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         var snapshot = Get<PanelSnapshot>(session, "Snapshot");
         Assert(snapshot.Rows.Count == input.DataCount, "Snapshot preserves input item positions");
         Assert(snapshot.Branches.Count == input.PathCount, "Snapshot preserves input branch paths");
@@ -188,48 +181,48 @@ internal static class Program
         document.IsModified = false;
         UpdateQuery(session, query);
         Assert(document.IsModified, "Changed query settings mark the Grasshopper document modified");
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         var result = Get<PanelQueryResult>(session, "Result");
-        Assert(result.RowIds.Count == 1 && result.Snapshot.Rows[result.RowIds[0]].NumericValue == 100,
+        Assert(result.RowPositions.Count == 1 && result.Snapshot.Rows[result.RowPositions[0]].NumericValue == 100,
             "Native query filters and sorts without mutating source");
         AssertEqualTrees(input, component.Params.Output[0].VolatileData);
         document.IsModified = false;
         UpdateQuery(session, query.Clone());
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(!document.IsModified, "Unchanged query and worker notifications do not mark the document modified");
         Assert(ReferenceEquals(result, Get<PanelQueryResult>(session, "Result")), "Equal query submissions reuse the published result");
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { snapshot });
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(!document.IsModified, "New snapshot notifications do not mark view settings modified");
 
         for (int i = 0; i < 100; i++) UpdateQuery(session, new PanelQueryOptions { Search = "> " + i });
         UpdateQuery(session, new PanelQueryOptions { Search = "alpha", BranchPath = "{0;2}", SortMode = PanelSortMode.ValueDescending });
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         result = Get<PanelQueryResult>(session, "Result");
-        Assert(result.RowIds.Count == 1 && result.Snapshot.Rows[result.RowIds[0]].TypeName == "Text",
+        Assert(result.RowPositions.Count == 1 && result.Snapshot.Rows[result.RowPositions[0]].TypeName == "Text",
             "Rapid cancellation publishes the latest query only");
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
 
-        var independentRows = snapshot.Rows.Select(row => new PanelRow(row.Id + 1000, row.BranchIndex,
+        var independentRows = snapshot.Rows.Select(row => new PanelRow(
             row.OriginalIndex, row.Path, row.TypeName, "cached summary", row.NumericValue, row.IsNull, row.IsValid)).ToArray();
-        var independentSnapshot = new PanelSnapshot(50, independentRows, snapshot.Branches);
+        var independentSnapshot = new PanelSnapshot(independentRows, snapshot.Branches);
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { independentSnapshot });
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         var fullValue = (string)session.GetType().GetMethod("GetDisplayValue")!.Invoke(session, new object[] { independentSnapshot, 0 })!;
-        Assert(fullValue == "10", "Full-value lookup uses source positions even when row IDs differ");
+        Assert(fullValue == "10", "Full-value lookup resolves live goo by source position");
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { snapshot });
         var staleValue = (string)session.GetType().GetMethod("GetDisplayValue")!.Invoke(session, new object[] { independentSnapshot, 0 })!;
         Assert(staleValue == "cached summary", "Obsolete snapshots never resolve full values from a newer solution");
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         UpdateQuery(session, new PanelQueryOptions { Search = "alpha", BranchPath = "{0;2}", SortMode = PanelSortMode.ValueDescending });
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
 
         VerifyTreeOperations(assembly);
         VerifyUnitOperations(assembly);
         PanelTestAdapter.TreeTools(component, 1, true, true, true);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(PanelTestAdapter.TrimDepth(component) == 1 && component.Params.Output[0].VolatileData.PathCount == 1,
             "Tree settings recompute the Grasshopper output");
         PanelTestAdapter.Resize(component, 500, 420);
@@ -265,13 +258,13 @@ internal static class Program
             "Older definitions without tree settings default to unchanged output and square size");
         restored.RemovedFromDocument(document);
         PanelTestAdapter.TreeTools(component, 0, false, false, false);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         AssertEqualTrees(input, component.Params.Output[0].VolatileData);
 
         component.DocumentContextChanged(document, GH_DocumentContext.Unloaded);
         component.DocumentContextChanged(document, GH_DocumentContext.Loaded);
         object reloadedSession = PanelTestAdapter.Session(component);
-        await WaitForQuery(host, reloadedSession);
+        await WaitForQuery(reloadedSession);
         Assert(Get<PanelSnapshot>(reloadedSession, "Snapshot").Rows.Count == input.DataCount,
             "Switching document tabs retains the cached tree without recomputing");
 
@@ -279,12 +272,12 @@ internal static class Program
         component.Attributes.ExpireLayout();
         component.Attributes.PerformLayout();
         using var canvas = new GH_Canvas { Size = new Size(1200, 900) };
-        await VerifyCanvasTreeTools(component, canvas, assembly, host, session, input);
-        await VerifyCanvasReset(component, canvas, assembly, host, session, input, document);
-        var sampleRows = Enumerable.Range(0, 10000).Select(i => new PanelRow(i, 0, i, "{0;0}", "Number", i.ToString(), i)).ToArray();
-        session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { new PanelSnapshot(100, sampleRows, new[] { new PanelBranch(0, "{0;0}", 10000) }) });
+        await VerifyCanvasTreeTools(component, canvas, assembly, session, input);
+        await VerifyCanvasReset(component, canvas, assembly, session, input, document);
+        var sampleRows = Enumerable.Range(0, 10000).Select(i => new PanelRow(i, "{0;0}", "Number", i.ToString(), i)).ToArray();
+        session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { new PanelSnapshot(sampleRows, new[] { new PanelBranch("{0;0}", 10000) }) });
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         PanelTestAdapter.Resize(component, 360, 360);
         component.Attributes.PerformLayout();
         DrawCanvasPreview(component, canvas);
@@ -316,31 +309,30 @@ internal static class Program
 
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Type));
         ClickMenuRow(component, canvas, 2);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(Get<PanelQueryOptions>(session, "Options").TypeName == "Number", "Canvas type menu updates the query");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Sort));
         ClickMenuRow(component, canvas, 2);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         result = Get<PanelQueryResult>(session, "Result");
-        Assert(result.Snapshot.Rows[result.RowIds[0]].NumericValue == 9999, "Canvas sort menu orders values descending");
+        Assert(result.Snapshot.Rows[result.RowPositions[0]].NumericValue == 9999, "Canvas sort menu orders values descending");
 
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Search));
         var editor = CanvasEditorAdapter.Active(assembly);
         editor.Submit("> 42");
-        await WaitForQuery(host, session);
-        Assert(Get<PanelQueryOptions>(session, "Options").Search == "> 42" && Get<PanelQueryResult>(session, "Result").RowIds.Count == 9957,
+        await WaitForQuery(session);
+        Assert(Get<PanelQueryOptions>(session, "Options").Search == "> 42" && Get<PanelQueryResult>(session, "Result").RowPositions.Count == 9957,
             "Host canvas textbox accepts inline search and filters the view");
-        long revision = Get<long>(session, "QueryRevision");
         editor.AcceptAgain("second commit");
-        Assert(Get<long>(session, "QueryRevision") == revision, "Inline textbox commits its callback once");
+        Assert(Get<PanelQueryOptions>(session, "Options").Search == "> 42", "Inline textbox commits its callback once");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Search));
         editor = CanvasEditorAdapter.Active(assembly);
         component.DocumentContextChanged(document, GH_DocumentContext.Unloaded);
         editor.AcceptAgain("canceled commit");
-        Assert(Get<long>(session, "QueryRevision") == revision, "Document switching cancels inline text without committing");
+        Assert(Get<PanelQueryOptions>(session, "Options").Search == "> 42", "Document switching cancels inline text without committing");
         component.DocumentContextChanged(document, GH_DocumentContext.Loaded);
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         DrawCanvasPreview(component, canvas);
 
         var resize = PanelTestAdapter.Bounds(component, CanvasControl.Resize);
@@ -357,8 +349,8 @@ internal static class Program
         DrawCanvasPreview(component, canvas);
         DrawCanvasPreview(component, canvas, 192);
         AssertCanvasDpiInvariant();
-        await VerifyCanvasUnits(component, canvas, assembly, host, session, input);
-        await VerifyUndoRedo(component, document, host, session, input);
+        await VerifyCanvasUnits(component, canvas, assembly, session, input);
+        await VerifyUndoRedo(component, document, session, input);
         // Review screenshot uses a real solved mixed tree with enough rows to show the compact layout.
         source.PersistentData.Append(new GH_Surface(new Rhino.Geometry.PlaneSurface(Rhino.Geometry.Plane.WorldXY,
             new Rhino.Geometry.Interval(0, 10), new Rhino.Geometry.Interval(0, 10)).ToBrep()), new GH_Path(0, 3));
@@ -377,15 +369,15 @@ internal static class Program
         document.NewSolution(false, GH_SolutionMode.Silent);
         PanelTestAdapter.TreeTools(component, 0, false, false, true);
         PanelTestAdapter.Units(component, PanelUnitConversion.None, 2);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(Get<PanelSnapshot>(session, "Snapshot").TypeCounts.ContainsKey("Surface") &&
             Get<PanelSnapshot>(session, "Snapshot").TypeCounts.ContainsKey("Mesh"), "Geometry hints use real Grasshopper surface and mesh types");
         UpdateQuery(session, new PanelQueryOptions { TypeName = "Surface" });
-        await WaitForQuery(host, session);
-        Assert(Get<PanelQueryResult>(session, "Result").RowIds.Count == 1 && component.Params.Output[0].VolatileData.DataCount == 35,
+        await WaitForQuery(session);
+        Assert(Get<PanelQueryResult>(session, "Result").RowPositions.Count == 1 && component.Params.Output[0].VolatileData.DataCount == 35,
             "Abbreviated geometry hints retain full-name filtering and unchanged typed output");
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-surface-hint.png");
-        var surfacePosition = Get<PanelQueryResult>(session, "Result").RowIds[0];
+        var surfacePosition = Get<PanelQueryResult>(session, "Result").RowPositions[0];
         var surfaceTooltip = PanelTestAdapter.Tooltip(component, canvas, surfacePosition);
         Assert(!surfaceTooltip.Description.Contains("Area:") && surfaceTooltip.Description.Contains("click Measure"),
             "Hovering an unmeasured row does not calculate geometry");
@@ -407,7 +399,7 @@ internal static class Program
         Assert(surfaceTooltip.Text == "Surface" && surfaceTooltip.Description.Contains("Area: 100.00 "),
             "Native row tooltip reads the explicitly measured surface area");
         PanelTestAdapter.Units(component, PanelUnitConversion.SquareMillimetersToSquareMeters, -1);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         var convertedSurface = Get<PanelSnapshot>(session, "Snapshot");
         Assert(GetGeometryMeasurement(session, convertedSurface, surfacePosition) == 100 &&
             PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("A 0.0001 m²"),
@@ -420,9 +412,9 @@ internal static class Program
         Assert(!PanelTestAdapter.CopyValue(component, Get<PanelSnapshot>(session, "Snapshot"), surfacePosition).Contains("Area:"),
             "Geometry hints do not replace the full value copied from a row");
         UpdateQuery(session, new PanelQueryOptions { TypeName = "Brep" });
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-brep-hint.png");
-        var brepPosition = Get<PanelQueryResult>(session, "Result").RowIds[0];
+        var brepPosition = Get<PanelQueryResult>(session, "Result").RowPositions[0];
         var brepTooltip = PanelTestAdapter.Tooltip(component, canvas, brepPosition);
         Assert(!brepTooltip.Description.Contains("Volume:"), "Hover never opts another row into measurement");
         Click(component, canvas, PanelTestAdapter.RowBounds(component, brepPosition));
@@ -432,15 +424,15 @@ internal static class Program
         Assert(brepTooltip.Text == "Brep" && brepTooltip.Description.Contains("Volume: 24 "),
             "Native row tooltip shows closed Brep volume without adding UI controls");
         PanelTestAdapter.Units(component, PanelUnitConversion.CubicMillimetersToCubicMeters, -1);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         var convertedBrep = Get<PanelSnapshot>(session, "Snapshot");
         Assert(Math.Abs((GetGeometryMeasurement(session, convertedBrep, brepPosition) ?? double.NaN) - 24) < 1e-9 &&
             PanelTestAdapter.DisplayValue(component, convertedBrep, brepPosition).Contains("2.4E-08 m³"),
             "Units offers cubic conversion and retains the measured solid volume: " + PanelTestAdapter.DisplayValue(component, convertedBrep, brepPosition));
         UpdateQuery(session, new PanelQueryOptions { TypeName = "Line" });
         PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, -1);
-        await WaitForQuery(host, session);
-        var linePosition = Get<PanelQueryResult>(session, "Result").RowIds[0];
+        await WaitForQuery(session);
+        var linePosition = Get<PanelQueryResult>(session, "Result").RowPositions[0];
         var lineSnapshot = Get<PanelSnapshot>(session, "Snapshot");
         Assert(PanelTestAdapter.DisplayValue(component, lineSnapshot, linePosition) == "Ln · L 0.005 m",
             "Units converts automatic line metrics as well as explicit measurements");
@@ -448,9 +440,9 @@ internal static class Program
         Assert(geometryOutput.Value.Length == 5, "Geometry unit display never scales output geometry");
         PanelTestAdapter.Units(component, PanelUnitConversion.None, 2);
         UpdateQuery(session, new PanelQueryOptions { OnlyInvalid = true });
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-invalid-geometry.png");
-        var invalidPosition = Get<PanelQueryResult>(session, "Result").RowIds.Single();
+        var invalidPosition = Get<PanelQueryResult>(session, "Result").RowPositions.Single();
         var invalidSnapshot = Get<PanelSnapshot>(session, "Snapshot");
         var invalidTooltip = PanelTestAdapter.Tooltip(component, canvas, invalidPosition);
         Assert(PanelTestAdapter.DisplayValue(component, invalidSnapshot, invalidPosition).StartsWith("Invalid ·", StringComparison.Ordinal) &&
@@ -460,7 +452,7 @@ internal static class Program
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-invalid-selected.png");
         Assert(PanelTestAdapter.Bounds(component, CanvasControl.Measure).IsEmpty, "Invalid geometry cannot expose a Measure action");
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         DrawCanvasPreview(component, canvas);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-units-menu.png");
@@ -595,63 +587,63 @@ internal static class Program
     }
 
     private static async Task VerifyCanvasTreeTools(GH_Component component, GH_Canvas canvas,
-        Assembly assembly, RhinoCore host, object session, IGH_Structure input)
+        Assembly assembly, object session, IGH_Structure input)
     {
         PanelTestAdapter.Resize(component, 360, 360);
         component.Attributes.PerformLayout();
         UpdateQuery(session, new PanelQueryOptions { BranchPath = "{0;2}", BranchPrefix = true });
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reverse));
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         var reversedBranch = component.Params.Output[0].VolatileData.get_Branch(new GH_Path(0, 2));
         Assert(Get<PanelQueryOptions>(session, "Options").BranchPath == "{0;2}" &&
             Get<PanelQueryOptions>(session, "Options").BranchPrefix && reversedBranch[0] is GH_Point,
             "Reverse changes item order without clearing exact or prefix branch selection");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reverse));
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Flatten));
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         var output = component.Params.Output[0].VolatileData;
         Assert(PanelTestAdapter.TreeFlag(component, "Flatten") && output.PathCount == 1 && output.DataCount == input.DataCount,
             "Canvas Flatten changes the real output tree");
         Assert(Get<PanelQueryOptions>(session, "Options").BranchPath == null, "Structural changes clear stale branch selections");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reverse));
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         output = component.Params.Output[0].VolatileData;
         var first = output.get_Branch(output.Paths[0])[0];
         var lastInput = input.get_Branch(input.Paths[1]);
         Assert(first?.ToString() == lastInput[lastInput.Count - 1]?.ToString(), "Canvas Reverse reverses the flattened output");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Simplify));
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(PanelTestAdapter.TreeFlag(component, "Simplify"), "Canvas Simplify toggles persistently");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Trim));
         DrawCanvasPreview(component, canvas);
         Assert(CanvasEditorAdapter.Active(assembly).TextAreaWidth >= Grasshopper.Global_Proc.UiAdjust(100),
             "Compact Trim editor retains a readable text area after rendering");
         CanvasEditorAdapter.Active(assembly).Submit("1");
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(PanelTestAdapter.TrimDepth(component) == 1, "Canvas Trim accepts a depth through the inline editor");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Trim));
         CanvasEditorAdapter.Active(assembly).Submit("-1");
         Assert(PanelTestAdapter.TrimDepth(component) == 1, "Invalid trim depths leave the last setting unchanged");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(PanelTestAdapter.TrimDepth(component) == 0 && !PanelTestAdapter.TreeFlag(component, "Flatten"),
             "Reset button disables output tree tools");
         PanelTestAdapter.TreeTools(component, 0, false, false, false);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         AssertEqualTrees(input, component.Params.Output[0].VolatileData);
         Assert(Get<PanelSnapshot>(session, "Snapshot").Branches.Select(b => b.Path).SequenceEqual(input.Paths.Select(p => p.ToString())),
             "Canvas snapshot follows the solved output tree");
     }
 
     private static async Task VerifyCanvasReset(GH_Component component, GH_Canvas canvas,
-        Assembly assembly, RhinoCore host, object session, IGH_Structure input, GH_Document document)
+        Assembly assembly, object session, IGH_Structure input, GH_Document document)
     {
         PanelTestAdapter.TreeTools(component, 1, true, true, true);
         PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 2);
         UpdateQuery(session, new PanelQueryOptions { Search = "> 0", TypeName = "Number", BranchPath = "{0}",
             BranchPrefix = true, OnlyInvalid = true, SortMode = PanelSortMode.ValueDescending });
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         var transformed = Get<PanelSnapshot>(session, "Snapshot");
         document.UndoServer.Clear();
         var size = PanelTestAdapter.Size(component);
@@ -659,7 +651,7 @@ internal static class Program
         var outputGrip = component.Params.Output[0].Attributes.OutputGrip;
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         var options = Get<PanelQueryOptions>(session, "Options");
         Assert(PanelTestAdapter.TrimDepth(component) == 0 && !PanelTestAdapter.TreeFlag(component, "Flatten") &&
             !PanelTestAdapter.TreeFlag(component, "Reverse") && !PanelTestAdapter.TreeFlag(component, "Simplify") &&
@@ -672,7 +664,7 @@ internal static class Program
         Assert(PanelTestAdapter.Size(component) == size && component.Params.Input[0].Attributes.InputGrip == inputGrip &&
             component.Params.Output[0].Attributes.OutputGrip == outputGrip, "Reset retains panel dimensions and wire grips");
         document.UndoServer.PerformUndo();
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         options = Get<PanelQueryOptions>(session, "Options");
         Assert(PanelTestAdapter.TrimDepth(component) == 1 && PanelTestAdapter.TreeFlag(component, "Flatten") &&
             PanelTestAdapter.TreeFlag(component, "Reverse") && PanelTestAdapter.TreeFlag(component, "Simplify") &&
@@ -682,7 +674,7 @@ internal static class Program
             Get<PanelSnapshot>(session, "Snapshot").Rows.Select(r => r.DisplayValue).SequenceEqual(transformed.Rows.Select(r => r.DisplayValue)),
             "One Undo restores every setting and transformed output before Reset");
         document.UndoServer.PerformRedo();
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         AssertEqualTrees(input, component.Params.Output[0].VolatileData);
         Assert(PanelTestAdapter.Decimals(component) == -1 && Get<PanelQueryOptions>(session, "Options").Search == "",
             "Redo restores the fully reset panel");
@@ -698,19 +690,18 @@ internal static class Program
             Click(component, canvas, PanelTestAdapter.Bounds(component, control));
             var editor = CanvasEditorAdapter.Active(assembly);
             Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
-            long revision = Get<long>(session, "QueryRevision");
             editor.AcceptAgain("1");
-            Assert(Get<long>(session, "QueryRevision") == revision && PanelTestAdapter.TrimDepth(component) == 0 &&
+            Assert(Get<PanelQueryOptions>(session, "Options").Search == "" && PanelTestAdapter.TrimDepth(component) == 0 &&
                 PanelTestAdapter.Offset(component) == 0, "Reset cancels stale search, jump and tree-tool editor callbacks");
         }
         PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 2);
         PanelTestAdapter.TreeTools(component, 1, true, true, true);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         PanelTestAdapter.ResetView(component);
         Assert(PanelTestAdapter.Conversion(component) == PanelUnitConversion.MillimetersToMeters && PanelTestAdapter.Decimals(component) == 2 &&
             PanelTestAdapter.TrimDepth(component) == 1, "Explicit Reset panel view retains output tools and units");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         document.UndoServer.Clear();
     }
 
@@ -738,14 +729,14 @@ internal static class Program
     }
 
     private static async Task VerifyCanvasUnits(GH_Component component, GH_Canvas canvas,
-        Assembly assembly, RhinoCore host, object session, IGH_Structure input)
+        Assembly assembly, object session, IGH_Structure input)
     {
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
         var menu = PanelTestAdapter.MenuBounds(component);
         Assert(menu.Bottom < PanelTestAdapter.Bounds(component, CanvasControl.Units).Top,
             "Compact footer unit menu opens upward inside the panel");
         ClickMenuRow(component, canvas, 1);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         var snapshot = Get<PanelSnapshot>(session, "Snapshot");
         Assert(PanelTestAdapter.Conversion(component) == PanelUnitConversion.MillimetersToMeters &&
             snapshot.UnitConversion == PanelUnitConversion.MillimetersToMeters && snapshot.Rows[0].NumericValue == 0.01,
@@ -781,51 +772,51 @@ internal static class Program
         ClickMenuRow(component, canvas, PanelUnits.ConversionCount);
         Assert(PanelTestAdapter.Decimals(component) == -1, "Unit menu restores automatic decimal formatting");
         PanelTestAdapter.Units(component, PanelUnitConversion.None, -1);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         AssertEqualTrees(input, component.Params.Output[0].VolatileData);
         Assert(PanelTestAdapter.CopyValue(component, snapshot, 0).EndsWith(" m"),
             "Obsolete snapshots retain their own unit labels while a newer conversion is displayed");
     }
 
     private static async Task VerifyUndoRedo(GH_Component component, GH_Document document,
-        RhinoCore host, object session, IGH_Structure originalInput)
+        object session, IGH_Structure originalInput)
     {
         var sourceId = component.Params.Input[0].Sources.Single().InstanceGuid;
         document.UndoServer.Clear();
         PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 2);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 0);
         document.UndoServer.PerformUndo();
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(PanelTestAdapter.Decimals(component) == 2 && Get<PanelSnapshot>(session, "Snapshot").Rows[0].NumericValue == 0.01,
             "Native undo restores decimals while retaining full-precision converted output");
         document.UndoServer.PerformRedo();
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(PanelTestAdapter.Decimals(component) == 0, "Native redo restores decimal formatting");
         document.UndoServer.PerformUndo();
         document.UndoServer.PerformUndo();
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(PanelTestAdapter.Conversion(component) == PanelUnitConversion.None && PanelTestAdapter.Decimals(component) == -1,
             "Native undo restores disabled conversion and automatic decimals");
         AssertEqualTrees(originalInput, component.Params.Output[0].VolatileData);
         document.UndoServer.PerformRedo();
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(PanelTestAdapter.Conversion(component) == PanelUnitConversion.MillimetersToMeters &&
             Get<PanelSnapshot>(session, "Snapshot").Rows[0].NumericValue == 0.01, "Native redo recomputes converted output");
         PanelTestAdapter.Units(component, PanelUnitConversion.None, -1);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         document.UndoServer.Clear();
         UpdateQuery(session, new PanelQueryOptions { BranchPath = "{0;2}" });
         PanelTestAdapter.TreeTools(component, 1, true, true, true);
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         document.UndoServer.PerformUndo();
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(PanelTestAdapter.TrimDepth(component) == 0 && !PanelTestAdapter.TreeFlag(component, "Flatten") &&
             !PanelTestAdapter.TreeFlag(component, "Reverse") && !PanelTestAdapter.TreeFlag(component, "Simplify") &&
             Get<PanelQueryOptions>(session, "Options").BranchPath == "{0;2}", "Native undo restores all tree settings and branch selection");
         AssertEqualTrees(originalInput, component.Params.Output[0].VolatileData);
         document.UndoServer.PerformRedo();
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
         Assert(PanelTestAdapter.TrimDepth(component) == 1 && PanelTestAdapter.TreeFlag(component, "Flatten") &&
             PanelTestAdapter.TreeFlag(component, "Reverse") && PanelTestAdapter.TreeFlag(component, "Simplify") &&
             component.Params.Output[0].VolatileData.PathCount == 1 && Get<PanelQueryOptions>(session, "Options").BranchPath == null,
@@ -834,7 +825,7 @@ internal static class Program
         AssertEqualTrees(originalInput, component.Params.Input[0].VolatileData);
         PanelTestAdapter.TreeTools(component, 0, false, false, false);
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
-        await WaitForQuery(host, session);
+        await WaitForQuery(session);
     }
 
     private static T Get<T>(object value, string property) => (T)value.GetType().GetProperty(property)!.GetValue(value)!;
@@ -892,7 +883,7 @@ internal static class Program
         finally { normal.UnlockBits(first); high.UnlockBits(second); }
     }
 
-    private static async Task WaitForQuery(RhinoCore host, object session)
+    private static async Task WaitForQuery(object session)
     {
         var timeout = Stopwatch.StartNew();
         while (Get<bool>(session, "IsBusy"))
