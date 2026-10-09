@@ -427,7 +427,7 @@ internal static class Program
 
     private static void Near(double expected, double actual)
     {
-        if (Math.Abs(expected - actual) > Math.Max(1, Math.Abs(expected)) * 1e-12)
+        if (!(Math.Abs(expected - actual) <= Math.Max(1, Math.Abs(expected)) * 1e-12))
             throw new Exception($"Expected approximately {expected}; got {actual}.");
     }
 
