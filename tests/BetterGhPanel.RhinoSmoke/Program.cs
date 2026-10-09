@@ -690,7 +690,7 @@ internal static class Program
             Click(component, canvas, PanelTestAdapter.Bounds(component, control));
             var editor = CanvasEditorAdapter.Active(assembly);
             Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
-            editor.AcceptAgain("1");
+            editor.AcceptAgain("2");
             Assert(Get<PanelQueryOptions>(session, "Options").Search == "" && PanelTestAdapter.TrimDepth(component) == 0 &&
                 PanelTestAdapter.Offset(component) == 0, "Reset cancels stale search, jump and tree-tool editor callbacks");
         }

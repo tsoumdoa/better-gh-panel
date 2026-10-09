@@ -48,7 +48,7 @@ The beta artifact is `artifacts/better-gh-panel-0.1.9-beta.1/better-gh-panel-0.1
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino. CI is configured to compile and stage on Windows and Mac, and does not launch Rhino.
 
-CI also checks for unused parameters, private members, assignments, and imports. Run the same focused check locally after building:
+CI runs once per pull-request update and on pushes to `main`. It also checks for unused parameters, private members, assignments, and imports, with those diagnostics explicitly enabled in `.editorconfig`. Run the same focused check locally after building:
 
 ```text
 dotnet format style BetterGhPanel.sln --verify-no-changes --no-restore --diagnostics IDE0005 IDE0051 IDE0052 IDE0059 IDE0060 --severity info
