@@ -64,6 +64,31 @@ namespace BetterGhPanel
 
         public override void CreateAttributes() => m_attributes = new BetterPanelAttributes(this);
 
+        internal void ResetPanelView()
+        {
+            CanvasTextInput.CloseActive(this);
+            (Attributes as BetterPanelAttributes)?.ResetViewState();
+            Session.ResetView();
+        }
+
+        internal void ResetPanel()
+        {
+            var options = Session.Options;
+            bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None;
+            bool settingsChanged = outputChanged || DecimalPlaces != PanelUnits.AutomaticDecimals ||
+                !string.IsNullOrEmpty(options.Search) || options.TypeName != null || options.BranchPath != null ||
+                options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
+            if (settingsChanged) RecordUndoEvent("Reset Panel+");
+            TrimDepth = 0;
+            FlattenTree = ReverseTree = SimplifyTree = false;
+            UnitConversion = PanelUnitConversion.None;
+            DecimalPlaces = PanelUnits.AutomaticDecimals;
+            ResetPanelView();
+            if (settingsChanged) OnPingDocument()?.Modified();
+            if (outputChanged) ExpireSolution(true);
+            Instances.ActiveCanvas?.Invalidate();
+        }
+
         internal void SetCanvasSize(float width, float height)
         {
             CanvasWidth = CanvasPanelSize.Width(width);
@@ -181,7 +206,8 @@ namespace BetterGhPanel
         {
             base.AppendAdditionalComponentMenuItems(menu);
             Menu_AppendSeparator(menu);
-            Menu_AppendItem(menu, "Reset panel view", (_, __) => Session.ResetView());
+            Menu_AppendItem(menu, "Reset panel", (_, __) => ResetPanel());
+            Menu_AppendItem(menu, "Reset panel view", (_, __) => ResetPanelView());
             Menu_AppendItem(menu, "Reset tree tools", (_, __) => SetTreeOperations(0, false, false, false), HasTreeOperations);
             var sizeMenu = Menu_AppendItem(menu, "Canvas panel size");
             var names = CanvasPanelSize.PresetNames;

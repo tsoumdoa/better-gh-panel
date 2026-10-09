@@ -19,6 +19,10 @@ internal static class PanelTestAdapter
         component.GetType().GetMethod("SetTreeOperations", PrivateInstance)!.Invoke(component, new object[] { depth, flatten, reverse, simplify });
     internal static BetterGhPanel.Core.PanelUnitConversion Conversion(GH_Component component) => Property<BetterGhPanel.Core.PanelUnitConversion>(component, "UnitConversion");
     internal static int Decimals(GH_Component component) => Property<int>(component, "DecimalPlaces");
+    internal static int Offset(GH_Component component) => Field<int>(component.Attributes, "_offset");
+    internal static int SelectedPosition(GH_Component component) => Field<int>(component.Attributes, "_selectedPosition");
+    internal static bool MenuOpen(GH_Component component) => Property<object>(Field<object>(component.Attributes, "_menu"), "Kind").ToString() != "None";
+    internal static void ResetView(GH_Component component) => component.GetType().GetMethod("ResetPanelView", PrivateInstance)!.Invoke(component, Array.Empty<object>());
     internal static void Units(GH_Component component, BetterGhPanel.Core.PanelUnitConversion conversion, int decimals) =>
         component.GetType().GetMethod("SetUnits", PrivateInstance)!.Invoke(component, new object[] { conversion, decimals });
     internal static string CopyValue(GH_Component component, BetterGhPanel.Core.PanelSnapshot snapshot, int position) =>

@@ -279,6 +279,7 @@ internal static class Program
         component.Attributes.PerformLayout();
         using var canvas = new GH_Canvas { Size = new Size(1200, 900) };
         await VerifyCanvasTreeTools(component, canvas, assembly, host, session, input);
+        await VerifyCanvasReset(component, canvas, assembly, host, session, input, document);
         var sampleRows = Enumerable.Range(0, 10000).Select(i => new PanelRow(i, 0, i, "{0;0}", "Number", i.ToString(), i)).ToArray();
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { new PanelSnapshot(100, sampleRows, new[] { new PanelBranch(0, "{0;0}", 10000) }) });
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
@@ -287,6 +288,19 @@ internal static class Program
         component.Attributes.PerformLayout();
         DrawCanvasPreview(component, canvas);
         _canvasDrawingVerified = true;
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Jump));
+        CanvasEditorAdapter.Active(assembly).Submit("5000");
+        DrawCanvasPreview(component, canvas);
+        var list = PanelTestAdapter.Bounds(component, CanvasControl.List);
+        component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(list.X + 40, list.Y + 24)));
+        Assert(PanelTestAdapter.Offset(component) == 4999 && PanelTestAdapter.SelectedPosition(component) >= 0,
+            "Reset regression starts with scrolled, selected rows and default query options");
+        var unchangedResult = Get<PanelQueryResult>(session, "Result");
+        document.IsModified = false;
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
+        Assert(PanelTestAdapter.Offset(component) == 0 && PanelTestAdapter.SelectedPosition(component) == -1 &&
+            ReferenceEquals(unchangedResult, Get<PanelQueryResult>(session, "Result")) && !document.IsModified,
+            "Reset clears scroll and selection even when no query scan or document change is needed");
         float originalZoom = canvas.Viewport.Zoom;
         canvas.Viewport.Zoom = 0.5f;
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Jump));
@@ -536,13 +550,83 @@ internal static class Program
         Assert(PanelTestAdapter.TrimDepth(component) == 1, "Invalid trim depths leave the last setting unchanged");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
         await WaitForQuery(host, session);
-        Assert(PanelTestAdapter.TrimDepth(component) == 1 && PanelTestAdapter.TreeFlag(component, "Flatten"),
-            "Reset view preserves output tree tools");
+        Assert(PanelTestAdapter.TrimDepth(component) == 0 && !PanelTestAdapter.TreeFlag(component, "Flatten"),
+            "Reset button disables output tree tools");
         PanelTestAdapter.TreeTools(component, 0, false, false, false);
         await WaitForQuery(host, session);
         AssertEqualTrees(input, component.Params.Output[0].VolatileData);
         Assert(Get<PanelSnapshot>(session, "Snapshot").Branches.Select(b => b.Path).SequenceEqual(input.Paths.Select(p => p.ToString())),
             "Canvas snapshot follows the solved output tree");
+    }
+
+    private static async Task VerifyCanvasReset(GH_Component component, GH_Canvas canvas,
+        Assembly assembly, RhinoCore host, object session, IGH_Structure input, GH_Document document)
+    {
+        PanelTestAdapter.TreeTools(component, 1, true, true, true);
+        PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 2);
+        UpdateQuery(session, new PanelQueryOptions { Search = "> 0", TypeName = "Number", BranchPath = "{0}",
+            BranchPrefix = true, OnlyInvalid = true, SortMode = PanelSortMode.ValueDescending });
+        await WaitForQuery(host, session);
+        var transformed = Get<PanelSnapshot>(session, "Snapshot");
+        document.UndoServer.Clear();
+        var size = PanelTestAdapter.Size(component);
+        var inputGrip = component.Params.Input[0].Attributes.InputGrip;
+        var outputGrip = component.Params.Output[0].Attributes.OutputGrip;
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
+        await WaitForQuery(host, session);
+        var options = Get<PanelQueryOptions>(session, "Options");
+        Assert(PanelTestAdapter.TrimDepth(component) == 0 && !PanelTestAdapter.TreeFlag(component, "Flatten") &&
+            !PanelTestAdapter.TreeFlag(component, "Reverse") && !PanelTestAdapter.TreeFlag(component, "Simplify") &&
+            PanelTestAdapter.Conversion(component) == PanelUnitConversion.None && PanelTestAdapter.Decimals(component) == -1,
+            "Reset disables every tree tool, conversion and fixed decimal formatting in one click");
+        Assert(options.Search == "" && options.TypeName == null && options.BranchPath == null &&
+            !options.BranchPrefix && !options.OnlyInvalid && options.SortMode == PanelSortMode.SourceOrder &&
+            !PanelTestAdapter.MenuOpen(component), "Reset bypasses an open dropdown and clears every query setting");
+        AssertEqualTrees(input, component.Params.Output[0].VolatileData);
+        Assert(PanelTestAdapter.Size(component) == size && component.Params.Input[0].Attributes.InputGrip == inputGrip &&
+            component.Params.Output[0].Attributes.OutputGrip == outputGrip, "Reset retains panel dimensions and wire grips");
+        document.UndoServer.PerformUndo();
+        await WaitForQuery(host, session);
+        options = Get<PanelQueryOptions>(session, "Options");
+        Assert(PanelTestAdapter.TrimDepth(component) == 1 && PanelTestAdapter.TreeFlag(component, "Flatten") &&
+            PanelTestAdapter.TreeFlag(component, "Reverse") && PanelTestAdapter.TreeFlag(component, "Simplify") &&
+            PanelTestAdapter.Conversion(component) == PanelUnitConversion.MillimetersToMeters && PanelTestAdapter.Decimals(component) == 2 &&
+            options.Search == "> 0" && options.TypeName == "Number" && options.BranchPath == "{0}" && options.BranchPrefix &&
+            options.OnlyInvalid && options.SortMode == PanelSortMode.ValueDescending &&
+            Get<PanelSnapshot>(session, "Snapshot").Rows.Select(r => r.DisplayValue).SequenceEqual(transformed.Rows.Select(r => r.DisplayValue)),
+            "One Undo restores every setting and transformed output before Reset");
+        document.UndoServer.PerformRedo();
+        await WaitForQuery(host, session);
+        AssertEqualTrees(input, component.Params.Output[0].VolatileData);
+        Assert(PanelTestAdapter.Decimals(component) == -1 && Get<PanelQueryOptions>(session, "Options").Search == "",
+            "Redo restores the fully reset panel");
+        foreach (var control in new[] { CanvasControl.Type, CanvasControl.Sort, CanvasControl.Branch, CanvasControl.Units })
+        {
+            Click(component, canvas, PanelTestAdapter.Bounds(component, control));
+            Assert(PanelTestAdapter.MenuOpen(component), "Reset regression opens each dropdown");
+            Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
+            Assert(!PanelTestAdapter.MenuOpen(component), "Reset closes every dropdown on the first click");
+        }
+        foreach (var control in new[] { CanvasControl.Search, CanvasControl.Jump, CanvasControl.Trim })
+        {
+            Click(component, canvas, PanelTestAdapter.Bounds(component, control));
+            var editor = CanvasEditorAdapter.Active(assembly);
+            Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
+            long revision = Get<long>(session, "QueryRevision");
+            editor.AcceptAgain("1");
+            Assert(Get<long>(session, "QueryRevision") == revision && PanelTestAdapter.TrimDepth(component) == 0 &&
+                PanelTestAdapter.Offset(component) == 0, "Reset cancels stale search, jump and tree-tool editor callbacks");
+        }
+        PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 2);
+        PanelTestAdapter.TreeTools(component, 1, true, true, true);
+        await WaitForQuery(host, session);
+        PanelTestAdapter.ResetView(component);
+        Assert(PanelTestAdapter.Conversion(component) == PanelUnitConversion.MillimetersToMeters && PanelTestAdapter.Decimals(component) == 2 &&
+            PanelTestAdapter.TrimDepth(component) == 1, "Explicit Reset panel view retains output tools and units");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
+        await WaitForQuery(host, session);
+        document.UndoServer.Clear();
     }
 
     private static void VerifyUnitOperations(Assembly assembly)

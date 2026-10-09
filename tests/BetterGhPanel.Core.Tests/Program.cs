@@ -339,7 +339,8 @@ internal static class Program
         menu.Toggle(CanvasMenuKind.Type, snapshot, new PanelQueryOptions { TypeName = "Saved type" });
         menu.Layout(panel, anchor, anchor, anchor);
         Equal("Saved type", menu.TypeNameAt(2));
-        Equal("✓ Invalid only", menu.Label(1, true));
+        Equal("Invalid only", menu.Label(1, true));
+        Equal(true, menu.IsSelected(1, new PanelQueryOptions { OnlyInvalid = true }, PanelUnitConversion.None, -1));
         menu.Toggle(CanvasMenuKind.Type, snapshot, new PanelQueryOptions());
         Equal(CanvasMenuKind.None, menu.Kind);
 
@@ -394,7 +395,7 @@ internal static class Program
 
     private static void UnitMenuLayout()
     {
-        foreach (float height in new[] { 220f, 360f, 900f })
+        foreach (float height in new[] { 110f, 180f, 220f, 360f, 900f })
         {
             var menu = new CanvasMenu();
             var panel = new System.Drawing.RectangleF(0, 0, 300, height);
@@ -403,11 +404,17 @@ internal static class Program
             menu.Layout(panel, anchor, anchor, anchor, anchor);
             Equal(9, menu.Count);
             Equal(true, menu.Bounds.Top >= panel.Top + 25 && menu.Bounds.Bottom < anchor.Top && menu.Bounds.Right <= panel.Right);
-            Equal("✓ mm² → m²", menu.Label(3, false, PanelUnitConversion.SquareMillimetersToSquareMeters));
-            Equal("Decimal places…  (2)", menu.Label(8, false, decimals: 2));
+            Equal(true, menu.Bounds.Width < 180 && menu.Bounds.Right == anchor.Right);
+            Equal("mm² → m²", menu.Label(3, false, PanelUnitConversion.SquareMillimetersToSquareMeters));
+            Equal(true, menu.IsSelected(3, new PanelQueryOptions(), PanelUnitConversion.SquareMillimetersToSquareMeters, 2));
+            Equal("Decimal places… (2)", menu.Label(8, false, decimals: 2));
+            Equal(true, menu.Hover(new System.Drawing.PointF(menu.Bounds.Left + 5, menu.Bounds.Top + 5)));
+            Equal(menu.Offset, menu.HoveredIndex);
+            Equal(false, menu.Hover(new System.Drawing.PointF(menu.Bounds.Left + 5, menu.Bounds.Top + 5)));
             if (menu.Count > menu.Visible)
             {
-                menu.TrySelect(new System.Drawing.PointF(menu.Bounds.Right - 5, menu.Bounds.Bottom - 5), out _);
+                while (menu.Offset + menu.Visible <= 8)
+                    menu.TrySelect(new System.Drawing.PointF(menu.Bounds.Right - 5, menu.Bounds.Bottom - 5), out _);
                 Equal(true, menu.TrySelect(new System.Drawing.PointF(menu.Bounds.Left + 5, menu.Bounds.Top + (8 - menu.Offset) * 20 + 5), out int index));
                 Equal(8, index);
             }
