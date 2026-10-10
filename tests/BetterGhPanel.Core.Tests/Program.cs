@@ -416,6 +416,13 @@ internal static class Program
         var info = new PanelGeometryInfo("Brep · closed", 1000000000, 3, "mm", "Volume", "V");
         Equal("Brep · closed · V 1 m³", info.FormatCompact(PanelUnitConversion.CubicMillimetersToCubicMeters, -1));
         Equal(1000000000d, info.Value!.Value);
+        var surface = new PanelGeometryInfo("Srf · untrimmed · planar", 1000000, 2, "mm", "Area", "A",
+            details: "Trimming: Untrimmed\nPlanarity: Planar\nDegree (U/V): 1/1");
+        Equal("Srf · untrimmed · planar · A 1.00 m²", surface.FormatCompact(PanelUnitConversion.SquareMillimetersToSquareMeters, 2));
+        Equal("Area: 1.00 m²\nTrimming: Untrimmed\nPlanarity: Planar\nDegree (U/V): 1/1",
+            surface.FormatDetails(PanelUnitConversion.SquareMillimetersToSquareMeters, 2));
+        Equal("Trimming: Untrimmed", new PanelGeometryInfo("Srf · untrimmed", canMeasure: true,
+            details: "Trimming: Untrimmed").FormatDetails(PanelUnitConversion.None, -1));
     }
 
     private static void Equal<T>(T expected, T actual)

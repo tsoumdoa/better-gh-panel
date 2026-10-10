@@ -379,8 +379,9 @@ internal static class Program
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-surface-hint.png");
         var surfacePosition = Get<PanelQueryResult>(session, "Result").RowPositions[0];
         var surfaceTooltip = PanelTestAdapter.Tooltip(component, canvas, surfacePosition);
-        Assert(!surfaceTooltip.Description.Contains("Area:") && surfaceTooltip.Description.Contains("Calculating measurement"),
-            "Painting and hover queue visible geometry without calculating it inline");
+        Assert(!surfaceTooltip.Description.Contains("Area:") && surfaceTooltip.Description.Contains("Calculating measurement") &&
+            surfaceTooltip.Description.Contains("Trimming: Untrimmed") && surfaceTooltip.Description.Contains("Degree (U/V): 1/1"),
+            "Pending tooltips show captured metadata while visible geometry is queued without inline calculation");
         var surfaceSnapshot = Get<PanelSnapshot>(session, "Snapshot");
         Click(component, canvas, PanelTestAdapter.RowBounds(component, surfacePosition));
         Assert(!GetGeometryMeasurement(session, surfaceSnapshot, surfacePosition).HasValue,
@@ -393,14 +394,18 @@ internal static class Program
             "Visible surface area appears asynchronously without a click, query or solution");
         surfaceTooltip = PanelTestAdapter.Tooltip(component, canvas, surfacePosition);
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-measured-surface.png");
-        Assert(surfaceTooltip.Text == "Surface" && surfaceTooltip.Description.Contains("Area: 100.00 "),
-            "Native row tooltip reads the cached asynchronous surface area");
+        Assert(surfaceTooltip.Text == "Surface" && surfaceTooltip.Description.StartsWith("Area: 100.00 ", StringComparison.Ordinal) &&
+            surfaceTooltip.Description.Contains("Trimming: Untrimmed") && surfaceTooltip.Description.Contains("Planarity: Planar") &&
+            !surfaceTooltip.Description.Contains("Srf ·"), "Surface tooltip shows one metric followed by labeled metadata without repeating the compact row");
+        Assert(PanelTestAdapter.DisplayValue(component, surfaceSnapshot, surfacePosition).StartsWith("Srf · untrimmed · planar · A 100.00 ", StringComparison.Ordinal),
+            "Measured rows keep trimming and planarity beside their area");
         PanelTestAdapter.Units(component, PanelUnitConversion.SquareMillimetersToSquareMeters, -1);
         await WaitForQuery(session);
         var convertedSurface = Get<PanelSnapshot>(session, "Snapshot");
         Assert(GetGeometryMeasurement(session, convertedSurface, surfacePosition) == 100 &&
-            PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("A 0.0001 m²"),
-            "Units converts the cached surface metric without remeasurement or scaling its raw area");
+            PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("A 0.0001 m²") &&
+            PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("untrimmed · planar"),
+            "Units converts the cached metric while preserving surface metadata and its raw area");
         PanelTestAdapter.Units(component, PanelUnitConversion.SquareMillimetersToSquareMeters, 6);
         Assert(ReferenceEquals(convertedSurface, Get<PanelSnapshot>(session, "Snapshot")) &&
             PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("0.000100 m²"),
@@ -416,8 +421,10 @@ internal static class Program
         Assert(!brepTooltip.Description.Contains("Volume:"), "Brep paint and hover return before its volume is calculated");
         await WaitForMeasurement(session, Get<PanelSnapshot>(session, "Snapshot"), brepPosition);
         brepTooltip = PanelTestAdapter.Tooltip(component, canvas, brepPosition);
-        Assert(brepTooltip.Text == "Brep" && brepTooltip.Description.Contains("Volume: 24 "),
-            "Native row tooltip shows closed Brep volume without adding UI controls");
+        Assert(brepTooltip.Text == "Brep" && brepTooltip.Description.Contains("Volume: 24 ") &&
+            brepTooltip.Description.Contains("Topology: Closed solid") && brepTooltip.Description.Contains("Faces: 6") &&
+            PanelTestAdapter.DisplayValue(component, Get<PanelSnapshot>(session, "Snapshot"), brepPosition).Contains("closed · 6 faces · V"),
+            "Brep volume augments topology and face count in both the compact row and labeled tooltip");
         PanelTestAdapter.Units(component, PanelUnitConversion.CubicMillimetersToCubicMeters, -1);
         await WaitForQuery(session);
         var convertedBrep = Get<PanelSnapshot>(session, "Snapshot");

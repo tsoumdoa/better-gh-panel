@@ -203,9 +203,12 @@ namespace BetterGhPanel
                         Text(g, row.Path, mono, Accent, new RectangleF(bounds.X + 44, y, 68, RowHeight), trim);
                         valueStart = 116;
                     }
+                    // Geometry summaries already name their type; reserve the extra
+                    // label only for values whose text does not identify their type.
+                    bool showRowType = showTypes && row.GeometryInfo == null;
                     Text(g, PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition), font, Ink,
-                        new RectangleF(bounds.X + valueStart, y, bounds.Width - valueStart - (showTypes ? 70 : 4), RowHeight), trim);
-                    if (showTypes)
+                        new RectangleF(bounds.X + valueStart, y, bounds.Width - valueStart - (showRowType ? 70 : 4), RowHeight), trim);
+                    if (showRowType)
                         Text(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted, new RectangleF(bounds.Right - 64, y, 60, RowHeight), typeFormat);
                     _rowHits.Add(new RowHit(bounds, sourcePosition));
                     _shown++;
@@ -555,11 +558,18 @@ namespace BetterGhPanel
                     var snapshot = PanelOwner.Session.Result.Snapshot;
                     var value = PanelOwner.DisplayValue(snapshot, row, hit.SourcePosition);
                     var geometry = PanelOwner.Session.GetGeometryDetails(snapshot, hit.SourcePosition) ?? row.GeometryInfo;
-                    var details = !row.IsValid ? (string.IsNullOrWhiteSpace(row.InvalidReason) ? "Geometry or value is invalid." : row.InvalidReason) :
-                        geometry?.Value.HasValue == true ? geometry.FormatDetails(snapshot.UnitConversion, PanelOwner.DecimalPlaces) :
-                        PanelOwner.Session.IsGeometryPending(snapshot, hit.SourcePosition) ? "Calculating measurement…" : "";
-                    e.Description = (value.Length > 1000 ? value.Substring(0, 997) + "…" : value) +
-                        (details.Length == 0 ? "" : "\n" + details) + "\n\nDouble-click to copy the full value.";
+                    string details;
+                    if (!row.IsValid)
+                        details = value + "\n" + (string.IsNullOrWhiteSpace(row.InvalidReason) ? "Geometry or value is invalid." : row.InvalidReason);
+                    else if (geometry != null)
+                    {
+                        details = geometry.FormatDetails(snapshot.UnitConversion, PanelOwner.DecimalPlaces);
+                        if (PanelOwner.Session.IsGeometryPending(snapshot, hit.SourcePosition)) details += "\nCalculating measurement…";
+                        else if (PanelOwner.Session.HasGeometryMeasurement(snapshot, hit.SourcePosition) && !geometry.Value.HasValue)
+                            details += "\nMeasurement unavailable.";
+                    }
+                    else details = value.Length > 1000 ? value.Substring(0, 997) + "…" : value;
+                    e.Description = details + "\n\nDouble-click to copy the full value.";
                     break;
                 }
             }

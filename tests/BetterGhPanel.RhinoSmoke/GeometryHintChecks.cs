@@ -59,18 +59,43 @@ internal static class GeometryHintChecks
             "Third-party and invalid goo retain safe fallback summaries without formatting");
         Check(!string.IsNullOrWhiteSpace(snapshot.Rows[11].InvalidReason) && snapshot.Rows[11].GeometryInfo == null,
             "Invalid geometry captures its validity reason and cannot be measured");
-        Check(Details(lineCurve) == "Linear · open\nLength: 5 mm" && Details(linearNurbs) == "Linear · open\nLength: 5 mm",
-            "Deferred measurement detects linear NURBS as well as line curves");
-        Check(Details(new GH_Curve(new ArcCurve(circle)))!.StartsWith("Circle · closed\nLength:", StringComparison.Ordinal),
+        var lineDetails = Details(lineCurve)!;
+        var nurbsDetails = Details(linearNurbs)!;
+        Check(lineDetails.StartsWith("Length: 5 mm\n", StringComparison.Ordinal) && lineDetails.Contains("Shape: Linear") &&
+            nurbsDetails.Contains("Shape: Linear") && nurbsDetails.Contains("Degree: 1") && nurbsDetails.Contains("Topology: Open"),
+            "Deferred linearity adds shape information without losing curve degree or topology");
+        var circleDetails = Details(new GH_Curve(new ArcCurve(circle)))!;
+        Check(circleDetails.StartsWith("Length:", StringComparison.Ordinal) && circleDetails.Contains("Shape: Circle") && circleDetails.Contains("Topology: Closed"),
             "Circle measurement reports closed shape and circumference");
         var curved = new GH_Curve(NurbsCurve.Create(false, 2, new[] { Point3d.Origin, new Point3d(5, 5, 0), new Point3d(10, 0, 0) }));
-        Check(Details(curved)!.StartsWith("Curve · open\nLength:", StringComparison.Ordinal), "Curved NURBS are not labeled linear");
-        Check(Details(surface) == "Srf\nArea: 100 mm²" && Details(solid) == "Brep · closed\nVolume: 24 mm³",
-            "Deferred measurement computes surface area and closed Brep volume");
+        Check(Details(curved)!.Contains("Shape: Curve") && Details(curved)!.Contains("Degree: 2"), "Curved NURBS retain their degree and are not labeled linear");
+        var surfaceDetails = Details(surface)!;
+        var solidDetails = Details(solid)!;
+        Check(surfaceDetails.StartsWith("Area: 100 mm²\n", StringComparison.Ordinal) && surfaceDetails.Contains("Trimming: Untrimmed") &&
+            surfaceDetails.Contains("Planarity: Planar") && surfaceDetails.Contains("Degree (U/V): 1/1"),
+            "Surface measurements retain trimming and degree and add planarity in labeled details");
+        Check(solidDetails.StartsWith("Volume: 24 mm³\n", StringComparison.Ordinal) && solidDetails.Contains("Topology: Closed solid") &&
+            solidDetails.Contains("Faces: 6") && solidDetails.Contains("Edges: 12") && solidDetails.Contains("Vertices: 8"),
+            "Solid volume keeps the Brep topology, face count and additional construction metadata");
+        Check(Prepare(linearNurbs)!()!.Description.StartsWith(snapshot.Rows[2].GeometryInfo!.Description + " ·", StringComparison.Ordinal) &&
+            Prepare(solid)!()!.Description == snapshot.Rows[9].GeometryInfo!.Description,
+            "Metrics extend captured curve and Brep summaries instead of replacing them");
+        var polyline = new GH_Curve(new PolylineCurve(new[] { Point3d.Origin, new Point3d(3, 0, 0), new Point3d(3, 4, 0) }));
+        var polylineInfo = Prepare(polyline)!()!;
+        Check(polylineInfo.Description.Contains("2 segments") && polylineInfo.Description.Contains("open") && polylineInfo.Value == 7 &&
+            polylineInfo.Details.Contains("Segments: 2"), "Polyline length keeps its segment count and open topology");
         var triangle = Brep.CreatePlanarBreps(new PolylineCurve(new[] { Point3d.Origin, new Point3d(10, 0, 0),
             new Point3d(0, 10, 0), Point3d.Origin }), 1e-8).Single();
-        Check(Details(new GH_Surface(triangle)) == "Srf\nArea: 50 mm²" && Details(new GH_Brep(triangle)) == "Brep · open\nArea: 50 mm²",
-            "Surface and open Brep area respects trimming instead of measuring the underlying rectangle");
+        var trimmedDetails = Details(new GH_Surface(triangle))!;
+        var openDetails = Details(new GH_Brep(triangle))!;
+        Check(trimmedDetails.StartsWith("Area: 50 mm²\n", StringComparison.Ordinal) && trimmedDetails.Contains("Trimming: Trimmed") &&
+            trimmedDetails.Contains("Planarity: Planar") && openDetails.StartsWith("Area: 50 mm²\n", StringComparison.Ordinal) && openDetails.Contains("Faces: 1"),
+            "Trimmed planar area keeps metadata and measures the trimmed region instead of the underlying rectangle");
+        var sphere = new GH_Surface(new Sphere(Point3d.Origin, 2).ToBrep());
+        Check(Details(sphere)!.Contains("Planarity: Nonplanar"), "Curved surfaces are not incorrectly labeled planar");
+        var sphereSolid = Details(new GH_Brep(sphere.Value))!;
+        Check(sphereSolid.StartsWith("Volume:", StringComparison.Ordinal) && sphereSolid.Contains("Planarity: Nonplanar") &&
+            sphereSolid.Contains("Faces: 1"), "Single-face solids retain planarity and face count when their volume is measured");
         Check(Details(unknown) == null, "Measurement never formats third-party goo");
         var copiedCurve = Prepare(linearNurbs)!;
         linearNurbs.Value.Transform(Transform.Scale(Point3d.Origin, 2));
