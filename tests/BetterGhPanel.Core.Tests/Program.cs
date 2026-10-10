@@ -268,21 +268,20 @@ internal static class Program
         Equal(-1, CanvasPanelSize.PresetIndex(500, 420));
         Equal(360f, CanvasPanelSize.DisplayHeight(360, CanvasPanelDisplay.Full));
         Equal(180f, CanvasPanelSize.DisplayHeight(360, CanvasPanelDisplay.Half));
-        Equal(28f, CanvasPanelSize.DisplayHeight(360, CanvasPanelDisplay.Collapsed));
+        Equal(360f, CanvasPanelSize.DisplayHeight(360, (CanvasPanelDisplay)2));
         Equal(210f, CanvasPanelSize.DisplayHeight(420, CanvasPanelDisplay.Half));
         Equal(110f, CanvasPanelSize.DisplayHeight(220, CanvasPanelDisplay.Half));
         Equal(180f, CanvasPanelSize.DisplayHeight(float.NaN, CanvasPanelDisplay.Half));
         Equal(CanvasPanelDisplay.Half, CanvasPanelSize.NextDisplay(CanvasPanelDisplay.Full));
-        Equal(CanvasPanelDisplay.Collapsed, CanvasPanelSize.NextDisplay(CanvasPanelDisplay.Half));
-        Equal(CanvasPanelDisplay.Full, CanvasPanelSize.NextDisplay(CanvasPanelDisplay.Collapsed));
+        Equal(CanvasPanelDisplay.Full, CanvasPanelSize.NextDisplay(CanvasPanelDisplay.Half));
+        Equal(CanvasPanelDisplay.Full, CanvasPanelSize.NextDisplay((CanvasPanelDisplay)2));
         foreach (float fullHeight in new[] { 220f, 360f, 420f })
         {
             float fixedGrip = (fullHeight + CanvasPanelSize.HeaderHeight) / 2;
             foreach (CanvasPanelDisplay display in Enum.GetValues(typeof(CanvasPanelDisplay)))
             {
                 float visibleGrip = CanvasPanelSize.DisplayTopOffset(fullHeight, display) +
-                    (CanvasPanelSize.DisplayHeight(fullHeight, display) +
-                    (display == CanvasPanelDisplay.Collapsed ? 0 : CanvasPanelSize.HeaderHeight)) / 2;
+                    (CanvasPanelSize.DisplayHeight(fullHeight, display) + CanvasPanelSize.HeaderHeight) / 2;
                 Equal(fixedGrip, visibleGrip);
             }
         }

@@ -7,15 +7,17 @@ using Rhino;
 
 namespace BetterGhPanel.Runtime
 {
-    /// <summary>Owns one component's immutable view and cancelable background queries.</summary>
+    /// <summary>Owns one component's view, background queries and lazy geometry measurements.</summary>
     public sealed class PanelSession : IDisposable
     {
         private readonly Action _invalidate;
         private CancellationTokenSource? _queryCancellation;
         private PanelQueryOptions _options = new PanelQueryOptions();
         private Func<int, string?>? _detailResolver;
-        private Func<int, PanelGeometryInfo?>? _geometryDetailResolver;
-        private readonly Dictionary<int, PanelGeometryInfo?> _geometryDetails = new Dictionary<int, PanelGeometryInfo?>();
+        private Func<int, Func<PanelGeometryInfo?>?>? _geometryDetailResolver;
+        private readonly Dictionary<int, GeometryMeasurement> _geometryDetails = new Dictionary<int, GeometryMeasurement>();
+        private readonly List<int> _visibleGeometry = new List<int>();
+        private bool _geometryScheduled, _geometryRunning;
         private long _request;
         private bool _disposed;
 
@@ -43,6 +45,7 @@ namespace BetterGhPanel.Runtime
         {
             if (_disposed) return;
             Snapshot = snapshot ?? PanelSnapshot.Empty;
+            _visibleGeometry.Clear();
             if (canRetainMeasurement == null) _geometryDetails.Clear();
             else
                 foreach (var position in new List<int>(_geometryDetails.Keys))
@@ -53,26 +56,97 @@ namespace BetterGhPanel.Runtime
 
         public void SetDetailResolver(Func<int, string?> resolver) => _detailResolver = resolver;
 
-        internal void SetGeometryDetailResolver(Func<int, PanelGeometryInfo?> resolver) => _geometryDetailResolver = resolver;
+        internal void SetGeometryDetailResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) => _geometryDetailResolver = resolver;
 
         internal PanelGeometryInfo? GetGeometryDetails(PanelSnapshot snapshot, int sourcePosition) =>
-            ReferenceEquals(snapshot, Snapshot) && _geometryDetails.TryGetValue(sourcePosition, out var details) ? details : null;
+            ReferenceEquals(snapshot, Snapshot) && _geometryDetails.TryGetValue(sourcePosition, out var measurement) ? measurement.Details : null;
 
         internal bool HasGeometryMeasurement(PanelSnapshot snapshot, int sourcePosition) =>
-            ReferenceEquals(snapshot, Snapshot) && _geometryDetails.ContainsKey(sourcePosition);
+            ReferenceEquals(snapshot, Snapshot) && _geometryDetails.TryGetValue(sourcePosition, out var measurement) && measurement.Complete;
+
+        internal bool IsGeometryPending(PanelSnapshot snapshot, int sourcePosition) => ReferenceEquals(snapshot, Snapshot) &&
+            ((_geometryDetails.TryGetValue(sourcePosition, out var measurement) && !measurement.Complete) || _visibleGeometry.Contains(sourcePosition));
 
         internal bool CanMeasureGeometry(PanelSnapshot snapshot, int sourcePosition) => !_disposed && ReferenceEquals(snapshot, Snapshot) &&
             sourcePosition >= 0 && sourcePosition < snapshot.Rows.Count && snapshot.Rows[sourcePosition].IsValid &&
             snapshot.Rows[sourcePosition].GeometryInfo?.CanMeasure == true && !HasGeometryMeasurement(snapshot, sourcePosition);
 
-        internal void MeasureGeometry(PanelSnapshot snapshot, int sourcePosition)
+        internal void RequestGeometryMeasurements(PanelSnapshot snapshot, IEnumerable<int> visiblePositions)
         {
-            if (!CanMeasureGeometry(snapshot, sourcePosition)) return;
-            PanelGeometryInfo? details;
-            try { details = _geometryDetailResolver?.Invoke(sourcePosition); }
-            catch (Exception) { details = null; }
-            if (!ReferenceEquals(snapshot, Snapshot)) return;
-            _geometryDetails[sourcePosition] = details;
+            if (_disposed || !ReferenceEquals(snapshot, Snapshot)) return;
+            // Replace the pending viewport, so scrolling never accumulates offscreen work.
+            _visibleGeometry.Clear();
+            foreach (var position in visiblePositions)
+                if (CanMeasureGeometry(snapshot, position) && !_visibleGeometry.Contains(position)) _visibleGeometry.Add(position);
+            QueueGeometryPump();
+        }
+
+        private void QueueGeometryPump()
+        {
+            if (_disposed || _geometryRunning || _geometryScheduled || _visibleGeometry.Count == 0) return;
+            _geometryScheduled = true;
+            // Yield until painting and rapid scrolling finish before copying any geometry.
+            Task.Run(async () =>
+            {
+                await Task.Delay(40).ConfigureAwait(false);
+                RhinoApp.InvokeOnUiThread((Action)(() =>
+                {
+                    _geometryScheduled = false;
+                    PumpGeometry();
+                }));
+            });
+        }
+
+        private void PumpGeometry()
+        {
+            if (_disposed || _geometryRunning) return;
+            int position = _visibleGeometry.FindIndex(candidate => CanMeasureGeometry(Snapshot, candidate));
+            if (position < 0) return;
+            position = _visibleGeometry[position];
+            var measurement = new GeometryMeasurement();
+            _geometryDetails[position] = measurement;
+            Func<PanelGeometryInfo?>? compute;
+            try { compute = _geometryDetailResolver?.Invoke(position); }
+            catch (Exception) { compute = null; }
+            if (compute == null)
+            {
+                measurement.Complete = true;
+                _visibleGeometry.Remove(position);
+                Notify();
+                QueueGeometryPump();
+                return;
+            }
+            _geometryRunning = true;
+            Notify();
+            // One operation per session bounds CPU and native-copy memory. It touches
+            // only its owned geometry, never source goo or the Rhino document.
+            Task.Run(() =>
+            {
+                PanelGeometryInfo? details;
+                try { details = compute(); }
+                catch (Exception) { details = null; }
+                RhinoApp.InvokeOnUiThread((Action)(() =>
+                {
+                    _geometryRunning = false;
+                    if (_disposed) return;
+                    // Entry identity also preserves in-flight work across unit-only
+                    // snapshots while rejecting new solutions and reordered sources.
+                    if (_geometryDetails.TryGetValue(position, out var current) && ReferenceEquals(current, measurement))
+                    {
+                        measurement.Details = details;
+                        measurement.Complete = true;
+                        _visibleGeometry.Remove(position);
+                        Notify();
+                    }
+                    QueueGeometryPump();
+                }));
+            });
+        }
+
+        private sealed class GeometryMeasurement
+        {
+            internal PanelGeometryInfo? Details;
+            internal bool Complete;
         }
 
         public string GetDisplayValue(PanelSnapshot snapshot, int sourcePosition)
@@ -165,6 +239,7 @@ namespace BetterGhPanel.Runtime
             _detailResolver = null;
             _geometryDetailResolver = null;
             _geometryDetails.Clear();
+            _visibleGeometry.Clear();
             Snapshot = PanelSnapshot.Empty;
         }
     }

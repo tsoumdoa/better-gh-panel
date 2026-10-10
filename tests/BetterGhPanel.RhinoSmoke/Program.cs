@@ -139,7 +139,7 @@ internal static class Program
     private static async Task<int> ExecuteSmoke()
     {
         var assembly = Assembly.LoadFrom(_plugin);
-        GeometryHintChecks.Run(assembly);
+        await GeometryHintChecks.Run(assembly);
         var componentType = assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!;
         var component = (GH_Component)Activator.CreateInstance(componentType)!;
         var componentIcon = (Bitmap)componentType.GetProperty("Icon", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component)!;
@@ -379,25 +379,22 @@ internal static class Program
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-surface-hint.png");
         var surfacePosition = Get<PanelQueryResult>(session, "Result").RowPositions[0];
         var surfaceTooltip = PanelTestAdapter.Tooltip(component, canvas, surfacePosition);
-        Assert(!surfaceTooltip.Description.Contains("Area:") && surfaceTooltip.Description.Contains("click Measure"),
-            "Hovering an unmeasured row does not calculate geometry");
+        Assert(!surfaceTooltip.Description.Contains("Area:") && surfaceTooltip.Description.Contains("Calculating measurement"),
+            "Painting and hover queue visible geometry without calculating it inline");
         var surfaceSnapshot = Get<PanelSnapshot>(session, "Snapshot");
         Click(component, canvas, PanelTestAdapter.RowBounds(component, surfacePosition));
         Assert(!GetGeometryMeasurement(session, surfaceSnapshot, surfacePosition).HasValue,
             "Selecting a row does not calculate geometry");
-        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-measure-button.png");
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-measure-pending.png");
         var beforeMeasure = Get<PanelQueryResult>(session, "Result");
-        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Measure));
+        await WaitForMeasurement(session, surfaceSnapshot, surfacePosition);
         Assert(GetGeometryMeasurement(session, surfaceSnapshot, surfacePosition) == 100 &&
             ReferenceEquals(beforeMeasure, Get<PanelQueryResult>(session, "Result")) && !Get<bool>(session, "IsBusy"),
-            "Measure click returns the selected surface area synchronously without a query or solution");
+            "Visible surface area appears asynchronously without a click, query or solution");
         surfaceTooltip = PanelTestAdapter.Tooltip(component, canvas, surfacePosition);
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-measured-surface.png");
-        var measureBounds = PanelTestAdapter.Bounds(component, CanvasControl.Measure);
-        Assert(component.Attributes.RespondToMouseDoubleClick(canvas, Mouse(new PointF(measureBounds.X + 5, measureBounds.Y + 5))) == GH_ObjectResponse.Handled,
-            "Double-clicking Measure is consumed without copying the row or calculating again");
         Assert(surfaceTooltip.Text == "Surface" && surfaceTooltip.Description.Contains("Area: 100.00 "),
-            "Native row tooltip reads the explicitly measured surface area");
+            "Native row tooltip reads the cached asynchronous surface area");
         PanelTestAdapter.Units(component, PanelUnitConversion.SquareMillimetersToSquareMeters, -1);
         await WaitForQuery(session);
         var convertedSurface = Get<PanelSnapshot>(session, "Snapshot");
@@ -416,10 +413,8 @@ internal static class Program
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-brep-hint.png");
         var brepPosition = Get<PanelQueryResult>(session, "Result").RowPositions[0];
         var brepTooltip = PanelTestAdapter.Tooltip(component, canvas, brepPosition);
-        Assert(!brepTooltip.Description.Contains("Volume:"), "Hover never opts another row into measurement");
-        Click(component, canvas, PanelTestAdapter.RowBounds(component, brepPosition));
-        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-brep-selected.png");
-        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Measure));
+        Assert(!brepTooltip.Description.Contains("Volume:"), "Brep paint and hover return before its volume is calculated");
+        await WaitForMeasurement(session, Get<PanelSnapshot>(session, "Snapshot"), brepPosition);
         brepTooltip = PanelTestAdapter.Tooltip(component, canvas, brepPosition);
         Assert(brepTooltip.Text == "Brep" && brepTooltip.Description.Contains("Volume: 24 "),
             "Native row tooltip shows closed Brep volume without adding UI controls");
@@ -435,7 +430,7 @@ internal static class Program
         var linePosition = Get<PanelQueryResult>(session, "Result").RowPositions[0];
         var lineSnapshot = Get<PanelSnapshot>(session, "Snapshot");
         Assert(PanelTestAdapter.DisplayValue(component, lineSnapshot, linePosition) == "Ln · L 0.005 m",
-            "Units converts automatic line metrics as well as explicit measurements");
+            "Units converts analytic line metrics as well as asynchronous measurements");
         var geometryOutput = component.Params.Output[0].VolatileData.AllData(true).OfType<GH_Line>().Single();
         Assert(geometryOutput.Value.Length == 5, "Geometry unit display never scales output geometry");
         PanelTestAdapter.Units(component, PanelUnitConversion.None, 2);
@@ -450,7 +445,8 @@ internal static class Program
             "Invalid geometry has a visible text label and its reason in the tooltip");
         Click(component, canvas, PanelTestAdapter.RowBounds(component, invalidPosition));
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-invalid-selected.png");
-        Assert(PanelTestAdapter.Bounds(component, CanvasControl.Measure).IsEmpty, "Invalid geometry cannot expose a Measure action");
+        Assert(!GetGeometryMeasurement(session, invalidSnapshot, invalidPosition).HasValue,
+            "Invalid geometry never requests a measurement");
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(session);
         DrawCanvasPreview(component, canvas);
@@ -471,10 +467,10 @@ internal static class Program
         var result = Get<PanelQueryResult>(PanelTestAdapter.Session(component), "Result");
         var output = component.Params.Output[0].VolatileData;
         document.UndoServer.Clear();
-        foreach (var state in new[] { "half", "collapsed", "full" })
+        foreach (var state in new[] { "half", "full" })
         {
             Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
-            float expectedHeight = state == "full" ? 360 : state == "half" ? 180 : 28;
+            float expectedHeight = state == "full" ? 360 : 180;
             Assert(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Height == expectedHeight,
                 "Single native display control cycles to " + state);
             Assert(component.Params.Input[0].Attributes.InputGrip == inputGrip &&
@@ -486,16 +482,21 @@ internal static class Program
             ReferenceEquals(output, component.Params.Output[0].VolatileData), "Folding preserves saved size, query and typed output");
         document.UndoServer.PerformUndo();
         component.Attributes.PerformLayout();
-        Assert(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Height == 28, "Native undo restores collapsed display");
+        Assert(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Height == 180, "Native undo restores half display");
         var archive = new GH_Archive();
         var restored = (GH_Component)Activator.CreateInstance(component.GetType())!;
         restored.CreateAttributes();
         Assert(archive.AppendObject(component, "Display") && archive.ExtractObject(restored, "Display"), "Folded display serializes");
         restored.Attributes.PerformLayout();
-        Assert(PanelTestAdapter.Bounds(restored, CanvasControl.Panel).Height == 28 &&
-            PanelTestAdapter.Size(restored) == new SizeF(360, 360), "Saved collapse retains the full panel size");
+        Assert(PanelTestAdapter.Bounds(restored, CanvasControl.Panel).Height == 180 &&
+            PanelTestAdapter.Size(restored) == new SizeF(360, 360), "Saved half view retains the full panel size");
         var legacy = new GH_LooseChunk("Display");
         restored.Write(legacy);
+        legacy.RemoveItem("PanelDisplay");
+        legacy.SetInt32("PanelDisplay", 2);
+        Assert(restored.Read(legacy), "Previously collapsed display settings load");
+        restored.Attributes.PerformLayout();
+        Assert(PanelTestAdapter.Bounds(restored, CanvasControl.Panel).Height == 360, "Previously collapsed panels reopen in Full mode");
         legacy.RemoveItem("PanelDisplay");
         Assert(restored.Read(legacy), "Legacy display settings load");
         restored.Attributes.PerformLayout();
@@ -514,7 +515,6 @@ internal static class Program
             "Half panel resize corner follows the cursor");
         component.Attributes.RespondToMouseUp(canvas, Mouse(start));
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
-        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
         PanelTestAdapter.Resize(component, 360, 360);
         component.Attributes.PerformLayout();
         document.UndoServer.Clear();
@@ -523,6 +523,17 @@ internal static class Program
     private static double? GetGeometryMeasurement(object session, PanelSnapshot snapshot, int position) =>
         ((PanelGeometryInfo?)session.GetType().GetMethod("GetGeometryDetails", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(session, new object[] { snapshot, position }))?.Value;
+
+    private static async Task WaitForMeasurement(object session, PanelSnapshot snapshot, int position)
+    {
+        var has = session.GetType().GetMethod("HasGeometryMeasurement", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var timeout = Stopwatch.StartNew();
+        while (!(bool)has.Invoke(session, new object[] { snapshot, position })!)
+        {
+            if (timeout.Elapsed.TotalSeconds > 15) throw new TimeoutException("Visible geometry measurement did not reach the UI");
+            await Task.Delay(10);
+        }
+    }
 
     private static void VerifyTreeOperations(Assembly assembly)
     {

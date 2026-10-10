@@ -33,20 +33,45 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        // Synchronous, on the Rhino UI thread, only after an explicit Measure click.
-        internal static PanelGeometryInfo? Measure(IGH_Goo? goo, string units)
+        // Capture an owned deep copy on the UI thread, outside painting. The returned
+        // operation runs once on a worker and releases its copy even on failure.
+        internal static Func<PanelGeometryInfo?>? PrepareMeasurement(IGH_Goo? goo, string units)
         {
+            GeometryBase? geometry;
+            bool surface = false;
             switch (goo)
             {
                 case GH_Curve curve when curve.Value != null:
-                    var value = curve.Value;
+                    geometry = curve.Value.DuplicateCurve();
+                    break;
+                case GH_Surface value when value.Value != null:
+                    geometry = value.Value.DuplicateBrep();
+                    surface = true;
+                    break;
+                case GH_Brep brep when brep.Value != null:
+                    geometry = brep.Value.DuplicateBrep();
+                    break;
+                default: return null;
+            }
+            if (geometry == null) return null;
+            return () =>
+            {
+                using (geometry) return Measure(geometry, surface, units);
+            };
+        }
+
+        private static PanelGeometryInfo? Measure(GeometryBase geometry, bool surface, string units)
+        {
+            switch (geometry)
+            {
+                case Curve value:
                     var shape = value.IsLinear() ? "Linear" : value is PolylineCurve ? "Polyline" :
                         value is ArcCurve arc ? (arc.Arc.IsCircle ? "Circle" : "Arc") : "Curve";
                     return Length(shape + " · " + Closed(value.IsClosed), value.GetLength(), units);
-                case GH_Surface surface when surface.Value != null: return Area("Srf", surface.Value, units);
-                case GH_Brep brep when brep.Value != null:
-                    if (!brep.Value.IsSolid) return Area("Brep · open", brep.Value, units);
-                    using (var mass = VolumeMassProperties.Compute(brep.Value, true, false, false, false))
+                case Brep brep:
+                    if (surface) return Area("Srf", brep, units);
+                    if (!brep.IsSolid) return Area("Brep · open", brep, units);
+                    using (var mass = VolumeMassProperties.Compute(brep, true, false, false, false))
                         return mass == null ? null : new PanelGeometryInfo("Brep · closed", Math.Abs(mass.Volume), 3, units, "Volume", "V");
                 default: return null;
             }

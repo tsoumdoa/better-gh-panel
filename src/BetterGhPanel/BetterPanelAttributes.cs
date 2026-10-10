@@ -25,7 +25,6 @@ namespace BetterGhPanel
         private RectangleF _panel, _search, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _footer;
         private RectangleF _trim, _simplify, _flatten, _reverse, _units;
         private RectangleF _display;
-        private RectangleF _measure;
         private readonly List<RowHit> _rowHits = new List<RowHit>();
         private int _offset, _shown, _selectedPosition = -1;
         private PanelQueryResult? _lastResult;
@@ -50,7 +49,6 @@ namespace BetterGhPanel
             _scrolling = false;
             _menu.Close();
             _rowHits.Clear();
-            _measure = RectangleF.Empty;
         }
 
         protected override void Layout()
@@ -60,7 +58,6 @@ namespace BetterGhPanel
                 PanelOwner.CanvasWidth, PanelOwner.DisplayHeight);
             _rowHits.Clear();
             m_innerBounds = _panel;
-            _measure = RectangleF.Empty;
             float x = _panel.X + 4;
             _search = new RectangleF(x + 2, _panel.Y + 25, _panel.Width - 212, 21);
             _type = new RectangleF(_search.Right + 3, _search.Y, 76, 21);
@@ -83,8 +80,7 @@ namespace BetterGhPanel
             PositionPorts(Owner.Params.Input, true);
             PositionPorts(Owner.Params.Output, false);
             Bounds = new RectangleF(_panel.X - 6, _panel.Y, _panel.Width + 12, _panel.Height);
-            if (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed) _menu.Close();
-            else LayoutMenu();
+            LayoutMenu();
         }
 
         private void PositionPorts(IList<IGH_Param> parameters, bool input)
@@ -132,11 +128,10 @@ namespace BetterGhPanel
                 Text(graphics, "P+", bold, Accent, new RectangleF(_panel.X + 8, _panel.Y + 1, 28, 20), trim);
                 var itemLabel = result.Statistics.ItemCount == 1 ? "item" : "items";
                 var branchLabel = result.Statistics.BranchCount == 1 ? "branch" : "branches";
-                bool collapsed = PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed;
-                Text(graphics, $"{result.Statistics.ItemCount:N0} {itemLabel}  ·  {result.Statistics.BranchCount:N0} {branchLabel}", small, Muted, new RectangleF(_panel.X + 39, _panel.Y + 1, _panel.Width - (collapsed ? 69 : 117), 20), trim);
+                Text(graphics, $"{result.Statistics.ItemCount:N0} {itemLabel}  ·  {result.Statistics.BranchCount:N0} {branchLabel}", small, Muted, new RectangleF(_panel.X + 39, _panel.Y + 1, _panel.Width - 117, 20), trim);
                 if (canvas.Viewport.Zoom >= 0.5f)
                     DrawDisplayAction(graphics);
-                if (canvas.Viewport.Zoom >= 0.5f && !collapsed)
+                if (canvas.Viewport.Zoom >= 0.5f)
                 {
                     var options = session.Options;
                     Control(graphics, _search, string.IsNullOrEmpty(options.Search) ? "Search / > 800…" : options.Search, small, trim, !string.IsNullOrEmpty(options.Search));
@@ -154,7 +149,11 @@ namespace BetterGhPanel
                         graphics.DrawLine(gripPen, _panel.Right - 6, _panel.Bottom - 4, _panel.Right - 4, _panel.Bottom - 6);
                     }
                 }
-                else { _rowHits.Clear(); _shown = 0; _menu.Close(); }
+                else
+                {
+                    _rowHits.Clear(); _shown = 0; _menu.Close();
+                    session.RequestGeometryMeasurements(session.Snapshot, Array.Empty<int>());
+                }
                 using (var border = new Pen(Selected ? Accent : Color.FromArgb(164, 171, 164), Selected ? 1.5f : 1))
                     graphics.DrawRectangle(border, _panel.X, _panel.Y, _panel.Width, _panel.Height);
                 foreach (var parameter in Owner.Params.Input)
@@ -167,7 +166,6 @@ namespace BetterGhPanel
         private void RenderRows(Graphics g, PanelQueryResult result, Font font, Font small, Font mono, StringFormat trim)
         {
             _rowHits.Clear();
-            _measure = RectangleF.Empty;
             _shown = 0;
             float y = _list.Y;
             string? previousPath = null;
@@ -205,18 +203,9 @@ namespace BetterGhPanel
                         Text(g, row.Path, mono, Accent, new RectangleF(bounds.X + 44, y, 68, RowHeight), trim);
                         valueStart = 116;
                     }
-                    bool showMeasure = sourcePosition == _selectedPosition && row.IsValid && row.GeometryInfo?.CanMeasure == true &&
-                        ReferenceEquals(result.Snapshot, PanelOwner.Session.Snapshot);
                     Text(g, PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition), font, Ink,
-                        new RectangleF(bounds.X + valueStart, y, bounds.Width - valueStart - (showTypes || showMeasure ? 70 : 4), RowHeight), trim);
-                    if (showMeasure)
-                    {
-                        _measure = new RectangleF(bounds.Right - 64, y + 1, 60, RowHeight - 2);
-                        bool attempted = PanelOwner.Session.HasGeometryMeasurement(result.Snapshot, sourcePosition);
-                        bool measured = PanelOwner.Session.GetGeometryDetails(result.Snapshot, sourcePosition) != null;
-                        Control(g, _measure, !attempted ? "Measure" : measured ? "Measured" : "Failed", small, trim, !attempted || measured);
-                    }
-                    else if (showTypes)
+                        new RectangleF(bounds.X + valueStart, y, bounds.Width - valueStart - (showTypes ? 70 : 4), RowHeight), trim);
+                    if (showTypes)
                         Text(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted, new RectangleF(bounds.Right - 64, y, 60, RowHeight), typeFormat);
                     _rowHits.Add(new RowHit(bounds, sourcePosition));
                     _shown++;
@@ -228,6 +217,7 @@ namespace BetterGhPanel
                 }
             }
             finally { g.Restore(clip); }
+            PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, _rowHits.Select(hit => hit.SourcePosition));
             if (Count > _shown)
             {
                 Fill(g, Color.FromArgb(232, 236, 229), _track);
@@ -325,7 +315,6 @@ namespace BetterGhPanel
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
-            if (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed) return base.RespondToMouseDown(sender, e);
             if (_reset.Contains(point))
             {
                 PanelOwner.ResetPanel();
@@ -398,15 +387,9 @@ namespace BetterGhPanel
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
-            if (_measure.Contains(point) && ReferenceEquals(_selectedSnapshot, currentResult.Snapshot))
-            {
-                PanelOwner.Session.MeasureGeometry(currentResult.Snapshot, _selectedPosition);
-                sender.Invalidate();
-                return GH_ObjectResponse.Handled;
-            }
             foreach (var hit in _rowHits)
                 if (hit.Bounds.Contains(point) && hit.SourcePosition >= 0 && hit.SourcePosition < currentResult.Snapshot.Rows.Count)
-                { _selectedPosition = hit.SourcePosition; _selectedSnapshot = currentResult.Snapshot; _measure = RectangleF.Empty; sender.Invalidate(); return GH_ObjectResponse.Handled; }
+                { _selectedPosition = hit.SourcePosition; _selectedSnapshot = currentResult.Snapshot; sender.Invalidate(); return GH_ObjectResponse.Handled; }
             return base.RespondToMouseDown(sender, e);
         }
 
@@ -481,11 +464,9 @@ namespace BetterGhPanel
 
         public override GH_ObjectResponse RespondToMouseDoubleClick(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
-            if (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed ||
-                _display.Contains(e.CanvasLocation))
+            if (_display.Contains(e.CanvasLocation))
                 return GH_ObjectResponse.Handled;
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDoubleClick(sender, e);
-            if (_measure.Contains(e.CanvasLocation)) return GH_ObjectResponse.Handled;
             var result = PanelOwner.Session.Result;
             if (_list.Contains(e.CanvasLocation) && !ReferenceEquals(_lastResult, result))
             {
@@ -510,13 +491,11 @@ namespace BetterGhPanel
             base.SetupTooltip(point, e);
             if (_display.Contains(point))
             {
-                e.Title = PanelOwner.CanvasDisplay == CanvasPanelDisplay.Full ? "Show half panel" :
-                    PanelOwner.CanvasDisplay == CanvasPanelDisplay.Half ? "Collapse panel" : "Expand panel";
-                e.Text = "Full → Half → Collapsed → Full";
-                e.Description = "Click to cycle panel sizes. Full restores your saved height. Half shows half that height. Collapsed keeps the header and wire connections. Your view settings are retained.";
+                e.Title = PanelOwner.CanvasDisplay == CanvasPanelDisplay.Full ? "Show half panel" : "Show full panel";
+                e.Text = "Full ↔ Half";
+                e.Description = "Click to toggle panel sizes. Full restores your saved height. Half shows half that height. Wire connections and view settings are retained.";
                 return;
             }
-            if (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed) return;
             if (_units.Contains(point))
             {
                 e.Title = "Units and decimals";
@@ -578,7 +557,7 @@ namespace BetterGhPanel
                     var geometry = PanelOwner.Session.GetGeometryDetails(snapshot, hit.SourcePosition) ?? row.GeometryInfo;
                     var details = !row.IsValid ? (string.IsNullOrWhiteSpace(row.InvalidReason) ? "Geometry or value is invalid." : row.InvalidReason) :
                         geometry?.Value.HasValue == true ? geometry.FormatDetails(snapshot.UnitConversion, PanelOwner.DecimalPlaces) :
-                        PanelOwner.Session.CanMeasureGeometry(snapshot, hit.SourcePosition) ? "Select this row, then click Measure to calculate its metric." : "";
+                        PanelOwner.Session.IsGeometryPending(snapshot, hit.SourcePosition) ? "Calculating measurement…" : "";
                     e.Description = (value.Length > 1000 ? value.Substring(0, 997) + "…" : value) +
                         (details.Length == 0 ? "" : "\n" + details) + "\n\nDouble-click to copy the full value.";
                     break;
@@ -612,14 +591,12 @@ namespace BetterGhPanel
         private void DrawDisplayAction(Graphics g)
         {
             float x = _display.X + 4, y = _display.Y + 5;
-            bool expand = PanelOwner.CanvasDisplay == CanvasPanelDisplay.Collapsed;
+            bool expand = PanelOwner.CanvasDisplay == CanvasPanelDisplay.Half;
             using (var pen = new Pen(Muted, 1.2f))
             {
                 g.DrawLines(pen, expand
                     ? new[] { new PointF(x, y), new PointF(x + 6, y + 6), new PointF(x + 12, y) }
                     : new[] { new PointF(x, y + 6), new PointF(x + 6, y), new PointF(x + 12, y + 6) });
-                if (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Half)
-                    g.DrawLine(pen, x, y - 3, x + 12, y - 3);
             }
         }
 
