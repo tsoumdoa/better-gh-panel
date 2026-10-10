@@ -268,21 +268,20 @@ internal static class Program
         Equal(-1, CanvasPanelSize.PresetIndex(500, 420));
         Equal(360f, CanvasPanelSize.DisplayHeight(360, CanvasPanelDisplay.Full));
         Equal(180f, CanvasPanelSize.DisplayHeight(360, CanvasPanelDisplay.Half));
-        Equal(28f, CanvasPanelSize.DisplayHeight(360, CanvasPanelDisplay.Collapsed));
+        Equal(360f, CanvasPanelSize.DisplayHeight(360, (CanvasPanelDisplay)2));
         Equal(210f, CanvasPanelSize.DisplayHeight(420, CanvasPanelDisplay.Half));
         Equal(110f, CanvasPanelSize.DisplayHeight(220, CanvasPanelDisplay.Half));
         Equal(180f, CanvasPanelSize.DisplayHeight(float.NaN, CanvasPanelDisplay.Half));
         Equal(CanvasPanelDisplay.Half, CanvasPanelSize.NextDisplay(CanvasPanelDisplay.Full));
-        Equal(CanvasPanelDisplay.Collapsed, CanvasPanelSize.NextDisplay(CanvasPanelDisplay.Half));
-        Equal(CanvasPanelDisplay.Full, CanvasPanelSize.NextDisplay(CanvasPanelDisplay.Collapsed));
+        Equal(CanvasPanelDisplay.Full, CanvasPanelSize.NextDisplay(CanvasPanelDisplay.Half));
+        Equal(CanvasPanelDisplay.Full, CanvasPanelSize.NextDisplay((CanvasPanelDisplay)2));
         foreach (float fullHeight in new[] { 220f, 360f, 420f })
         {
             float fixedGrip = (fullHeight + CanvasPanelSize.HeaderHeight) / 2;
             foreach (CanvasPanelDisplay display in Enum.GetValues(typeof(CanvasPanelDisplay)))
             {
                 float visibleGrip = CanvasPanelSize.DisplayTopOffset(fullHeight, display) +
-                    (CanvasPanelSize.DisplayHeight(fullHeight, display) +
-                    (display == CanvasPanelDisplay.Collapsed ? 0 : CanvasPanelSize.HeaderHeight)) / 2;
+                    (CanvasPanelSize.DisplayHeight(fullHeight, display) + CanvasPanelSize.HeaderHeight) / 2;
                 Equal(fixedGrip, visibleGrip);
             }
         }
@@ -417,6 +416,13 @@ internal static class Program
         var info = new PanelGeometryInfo("Brep · closed", 1000000000, 3, "mm", "Volume", "V");
         Equal("Brep · closed · V 1 m³", info.FormatCompact(PanelUnitConversion.CubicMillimetersToCubicMeters, -1));
         Equal(1000000000d, info.Value!.Value);
+        var surface = new PanelGeometryInfo("Srf · untrimmed · planar", 1000000, 2, "mm", "Area", "A",
+            details: "Trimming: Untrimmed\nPlanarity: Planar\nDegree (U/V): 1/1");
+        Equal("Srf · untrimmed · planar · A 1.00 m²", surface.FormatCompact(PanelUnitConversion.SquareMillimetersToSquareMeters, 2));
+        Equal("Area: 1.00 m²\nTrimming: Untrimmed\nPlanarity: Planar\nDegree (U/V): 1/1",
+            surface.FormatDetails(PanelUnitConversion.SquareMillimetersToSquareMeters, 2));
+        Equal("Trimming: Untrimmed", new PanelGeometryInfo("Srf · untrimmed", canMeasure: true,
+            details: "Trimming: Untrimmed").FormatDetails(PanelUnitConversion.None, -1));
     }
 
     private static void Equal<T>(T expected, T actual)

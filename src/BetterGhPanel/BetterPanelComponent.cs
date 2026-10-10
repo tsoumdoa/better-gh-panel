@@ -50,7 +50,7 @@ namespace BetterGhPanel
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
                     _session.SetDetailResolver(position => position < _sourceItems.Length ? _sourceItems[position]?.ToString() ?? "<null>" : null);
                     _session.SetGeometryDetailResolver(position => position < _sourceItems.Length
-                        ? GeometryHints.Measure(_sourceItems[position], _geometryUnits) : null);
+                        ? GeometryHints.PrepareMeasurement(_sourceItems[position], _geometryUnits) : null);
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
@@ -161,7 +161,7 @@ namespace BetterGhPanel
             if (geometry != null)
                 return geometry.FormatCompact(snapshot.UnitConversion, DecimalPlaces) +
                     (Session.HasGeometryMeasurement(snapshot, sourcePosition) && Session.GetGeometryDetails(snapshot, sourcePosition) == null
-                        ? " · measurement unavailable" : "");
+                        ? " · measurement unavailable" : Session.IsGeometryPending(snapshot, sourcePosition) ? " · measuring…" : "");
             return row.NumericValue.HasValue && (snapshot.UnitConversion != PanelUnitConversion.None || DecimalPlaces >= 0)
                 ? PanelUnits.Format(row.NumericValue.Value, snapshot.UnitConversion, DecimalPlaces) : row.DisplayValue;
         }
@@ -214,6 +214,7 @@ namespace BetterGhPanel
             {
                 CanvasTextInput.CloseActive();
                 // Unloaded is a canvas/tab switch, not document destruction.
+                if (_session != null) _session.RequestGeometryMeasurements(_session.Snapshot, Array.Empty<int>());
             }
             base.DocumentContextChanged(document, context);
         }

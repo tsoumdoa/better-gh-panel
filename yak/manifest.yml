@@ -7,10 +7,10 @@ description: >
   Panel+ beta is a fast, resizable Grasshopper data panel for Rhino 8.
   Trim, simplify, flatten, or reverse typed data trees directly on the
   canvas. Search, filter, sort, jump to branches and rows, and inspect
-  numeric statistics without popup windows. One header chevron folds the panel
-  through full, half, and collapsed views while keeping wire connections fixed. A compact
+  numeric statistics without popup windows. One header chevron toggles the panel
+  between full and half views while keeping wire connections fixed. A compact
   footer menu converts length, area, volume, and angle units and sets decimal formatting.
-  Select a geometry row and click Measure for cached metrics; invalid values have clear labels.
+  Visible geometry rows show cached metrics calculated lazily in the background; invalid values have clear labels.
   Includes Windows and Mac builds; Mac runtime validation is pending.
 url: https://github.com/tsoumdoa/better-gh-panel
 icon: icon.png

@@ -6,7 +6,7 @@ using Grasshopper.GUI;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 
-internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify, Units, Display, Measure }
+internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify, Units, Display }
 
 // The .gha is loaded separately. Keep plugin-owned reflection in this adapter.
 internal static class PanelTestAdapter
@@ -36,6 +36,10 @@ internal static class PanelTestAdapter
     internal static RectangleF Bounds(GH_Component component, CanvasControl control) =>
         Field<RectangleF>(component.Attributes, "_" + control.ToString().ToLowerInvariant());
     internal static RectangleF MenuBounds(GH_Component component) => Property<RectangleF>(Field<object>(component.Attributes, "_menu"), "Bounds");
+
+    internal static void Render(GH_Component component, GH_Canvas canvas, Graphics graphics) =>
+        component.Attributes.GetType().GetMethod("Render", PrivateInstance)!
+            .Invoke(component.Attributes, new object[] { canvas, graphics, GH_CanvasChannel.Objects });
 
     internal static GH_TooltipDisplayEventArgs Tooltip(GH_Component component, GH_Canvas canvas, int sourcePosition)
     {
