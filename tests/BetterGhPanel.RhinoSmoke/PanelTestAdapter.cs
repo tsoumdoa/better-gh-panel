@@ -37,6 +37,10 @@ internal static class PanelTestAdapter
         Field<RectangleF>(component.Attributes, "_" + control.ToString().ToLowerInvariant());
     internal static RectangleF MenuBounds(GH_Component component) => Property<RectangleF>(Field<object>(component.Attributes, "_menu"), "Bounds");
 
+    internal static void Render(GH_Component component, GH_Canvas canvas, Graphics graphics) =>
+        component.Attributes.GetType().GetMethod("Render", PrivateInstance)!
+            .Invoke(component.Attributes, new object[] { canvas, graphics, GH_CanvasChannel.Objects });
+
     internal static GH_TooltipDisplayEventArgs Tooltip(GH_Component component, GH_Canvas canvas, int sourcePosition)
     {
         foreach (var hit in Field<IEnumerable>(component.Attributes, "_rowHits"))

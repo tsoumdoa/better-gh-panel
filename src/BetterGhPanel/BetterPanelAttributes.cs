@@ -106,6 +106,14 @@ namespace BetterGhPanel
             if (channel != GH_CanvasChannel.Objects) return;
             CanvasTextInput.Maintain(canvas);
             var session = PanelOwner.Session;
+            var visibleRegion = canvas.Viewport.VisibleRegion;
+            // Grasshopper also renders components outside the canvas viewport.
+            if (!Bounds.IntersectsWith(visibleRegion))
+            {
+                _rowHits.Clear(); _shown = 0; _menu.Close();
+                session.RequestGeometryMeasurements(session.Snapshot, Array.Empty<int>());
+                return;
+            }
             var result = session.Result;
             if (!ReferenceEquals(result, _lastResult))
             {
@@ -140,7 +148,7 @@ namespace BetterGhPanel
                     DropdownControl(graphics, _branch, Short(options.BranchPath ?? "Paths", 80), mono, trim, options.BranchPath != null);
                     DrawViewAction(graphics, _jump, false);
                     DrawViewAction(graphics, _reset, true);
-                    RenderRows(graphics, result, font, small, mono, trim);
+                    RenderRows(graphics, result, visibleRegion, font, small, mono, trim);
                     RenderFooter(graphics, result, small, mono, trim);
                     if (_menu.Kind != CanvasMenuKind.None) RenderMenu(graphics, small, mono, trim);
                     using (var gripPen = new Pen(Color.FromArgb(165, 173, 166), 1))
@@ -163,7 +171,7 @@ namespace BetterGhPanel
             }
         }
 
-        private void RenderRows(Graphics g, PanelQueryResult result, Font font, Font small, Font mono, StringFormat trim)
+        private void RenderRows(Graphics g, PanelQueryResult result, RectangleF visibleRegion, Font font, Font small, Font mono, StringFormat trim)
         {
             _rowHits.Clear();
             _shown = 0;
@@ -220,7 +228,8 @@ namespace BetterGhPanel
                 }
             }
             finally { g.Restore(clip); }
-            PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, _rowHits.Select(hit => hit.SourcePosition));
+            PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot,
+                _rowHits.Where(hit => hit.Bounds.IntersectsWith(visibleRegion)).Select(hit => hit.SourcePosition));
             if (Count > _shown)
             {
                 Fill(g, Color.FromArgb(232, 236, 229), _track);

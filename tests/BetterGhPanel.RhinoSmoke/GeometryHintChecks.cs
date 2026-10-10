@@ -1,15 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
+using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
+using Point = System.Drawing.Point;
 
 internal static class GeometryHintChecks
 {
@@ -108,6 +111,7 @@ internal static class GeometryHintChecks
             "Background area uses an owned trimmed Brep copy instead of live source goo");
         await VerifyCache(assembly, snapshot);
         await VerifyInactiveDocument(assembly, snapshot);
+        await VerifyCanvasViewport(assembly);
     }
 
     private static async Task VerifyCache(Assembly assembly, PanelSnapshot snapshot)
@@ -257,6 +261,103 @@ internal static class GeometryHintChecks
             request.Invoke(session, new object[] { snapshot, new[] { 2, 8 } });
             await WaitUntil(() => Has(8));
             Check(calls == 2 && Has(2), "Rendering the panel again resumes visible work and reuses cached measurements");
+        }
+        finally
+        {
+            gate.Set();
+            component.DocumentContextChanged(document, GH_DocumentContext.Close);
+        }
+    }
+
+    private static async Task VerifyCanvasViewport(Assembly assembly)
+    {
+        var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
+        component.CreateAttributes();
+        component.Attributes.Pivot = new PointF(40, 40);
+        component.Attributes.ExpireLayout();
+        component.Attributes.PerformLayout();
+        using var document = new GH_Document();
+        using var canvas = new GH_Canvas { Size = new Size(500, 500) };
+        var session = PanelTestAdapter.Session(component);
+        var type = session.GetType();
+        var attach = type.GetMethod("AttachSnapshot")!;
+        var has = type.GetMethod("HasGeometryMeasurement", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var rows = Enumerable.Range(0, 3).Select(position => new PanelRow(position, "{0}", "Surface", "Srf", null,
+            geometryInfo: new PanelGeometryInfo("Srf", canMeasure: true))).ToArray();
+        var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", rows.Length) });
+        bool Has(int position) => (bool)has.Invoke(session, new object[] { snapshot, position })!;
+        var prepared = new List<int>();
+        int calls = 0;
+        using var gate = new ManualResetEventSlim(false);
+        type.GetMethod("SetGeometryDetailResolver", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(session, new object[] { (Func<int, Func<PanelGeometryInfo?>?>)(position =>
+            {
+                prepared.Add(position);
+                return () =>
+                {
+                    Interlocked.Increment(ref calls);
+                    if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Test gate timed out");
+                    return new PanelGeometryInfo("Srf", position, 2, "mm", "Area", "A");
+                };
+            }) });
+        void Paint(Point target, Size size, float zoom = 1)
+        {
+            canvas.Size = size;
+            canvas.Viewport.Size = size;
+            canvas.Viewport.Target = target;
+            canvas.Viewport.Zoom = zoom;
+            canvas.Viewport.ComputeProjection();
+            using var bitmap = new Bitmap(size.Width, size.Height);
+            using var graphics = Graphics.FromImage(bitmap);
+            canvas.Viewport.ApplyProjection(graphics);
+            PanelTestAdapter.Render(component, canvas, graphics);
+        }
+        var fullSize = new Size(500, 500);
+        var hiddenTarget = new Point(-1000, -1000);
+        try
+        {
+            attach.Invoke(session, new object[] { snapshot });
+            await WaitUntil(() => !(bool)type.GetProperty("IsBusy")!.GetValue(session)!);
+            Paint(hiddenTarget, fullSize);
+            await Task.Delay(160);
+            Check(prepared.Count == 0 && calls == 0, "Offscreen panel rendering never prepares or measures geometry");
+
+            Paint(Point.Empty, fullSize);
+            var first = PanelTestAdapter.RowBounds(component, 0);
+            var second = PanelTestAdapter.RowBounds(component, 1);
+            Paint(hiddenTarget, fullSize);
+            await Task.Delay(160);
+            Check(prepared.Count == 0, "Panning out before the deferred callback clears queued geometry entirely");
+
+            Paint(new Point(0, -(int)second.Y), new Size(500, (int)second.Height));
+            await WaitUntil(() => Volatile.Read(ref calls) == 1);
+            Check(prepared.SequenceEqual(new[] { 1 }) && !Has(0) && !Has(2),
+                "A partially visible panel measures only rows intersecting the canvas viewport");
+            Check(PanelTestAdapter.RowBounds(component, 0) == first && PanelTestAdapter.RowBounds(component, 1) == second &&
+                PanelTestAdapter.Offset(component) == 0, "Canvas clipping preserves row layout and the panel scroll position");
+            Paint(Point.Empty, fullSize);
+            Paint(hiddenTarget, fullSize);
+            gate.Set();
+            await WaitUntil(() => Has(1));
+            await Task.Delay(160);
+            Check(prepared.SequenceEqual(new[] { 1 }) && !Has(0) && !Has(2),
+                "Panning away during a measurement stops queued rows and retains the finished metric");
+
+            Paint(Point.Empty, fullSize);
+            await WaitUntil(() => Has(0) && Has(2));
+            Check(calls == 3 && prepared.SequenceEqual(new[] { 1, 0, 2 }),
+                "Panning back resumes visible measurements and reuses the cached metric");
+
+            snapshot = new PanelSnapshot(rows, snapshot.Branches);
+            attach.Invoke(session, new object[] { snapshot });
+            await WaitUntil(() => !(bool)type.GetProperty("IsBusy")!.GetValue(session)!);
+            Paint(new Point(0, -40), new Size(500, 50));
+            await Task.Delay(160);
+            Check(calls == 3, "Seeing only a panel header never queues geometry below the viewport");
+            Paint(Point.Empty, fullSize);
+            Paint(Point.Empty, fullSize, 0.25f);
+            await Task.Delay(160);
+            Check(calls == 3, "Zooming below the row display threshold clears queued geometry");
         }
         finally
         {

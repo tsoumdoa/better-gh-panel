@@ -878,7 +878,7 @@ internal static class Program
             graphics.DrawBezier(wire, new PointF(input.X - 100, input.Y - 20), new PointF(input.X - 55, input.Y - 20), new PointF(input.X - 45, input.Y), input);
             graphics.DrawBezier(wire, output, new PointF(output.X + 45, output.Y), new PointF(output.X + 55, output.Y + 20), new PointF(output.X + 100, output.Y + 20));
         }
-        component.Attributes.GetType().GetMethod("Render", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(component.Attributes, new object[] { canvas, graphics, GH_CanvasChannel.Objects });
+        PanelTestAdapter.Render(component, canvas, graphics);
         string artifact = Path.Combine(Path.GetDirectoryName(_plugin)!, artifactName ?? (dpi == 96 ? "rhino-smoke-canvas.png" : "rhino-smoke-canvas-dpi192.png"));
         bitmap.Save(artifact);
         Console.WriteLine("Actual canvas Objects renderer preview (sample data and illustrative grid/wires): " + artifact);
