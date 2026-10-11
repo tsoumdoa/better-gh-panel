@@ -139,6 +139,7 @@ internal static class Program
     private static async Task<int> ExecuteSmoke()
     {
         var assembly = Assembly.LoadFrom(_plugin);
+        await RecomputeChecks.Run(assembly);
         await GeometryHintChecks.Run(assembly);
         await GeometryMeasurementBatchChecks.Run(assembly);
         await RowActionChecks.Run(assembly);
@@ -261,6 +262,7 @@ internal static class Program
             !PanelTestAdapter.TreeFlag(restored, "Simplify") && PanelTestAdapter.Size(restored) == new SizeF(360, 360),
             "Older definitions without tree settings default to unchanged output and square size");
         restored.RemovedFromDocument(document);
+        PanelTestAdapter.ResetView(component);
         PanelTestAdapter.TreeTools(component, 0, false, false, false);
         await WaitForQuery(session);
         AssertEqualTrees(input, component.Params.Output[0].VolatileData);
@@ -378,8 +380,10 @@ internal static class Program
             Get<PanelSnapshot>(session, "Snapshot").TypeCounts.ContainsKey("Mesh"), "Geometry hints use real Grasshopper surface and mesh types");
         UpdateQuery(session, new PanelQueryOptions { TypeName = "Surface" });
         await WaitForQuery(session);
-        Assert(Get<PanelQueryResult>(session, "Result").RowPositions.Count == 1 && component.Params.Output[0].VolatileData.DataCount == 35,
-            "Abbreviated geometry hints retain full-name filtering and unchanged typed output");
+        document.NewSolution(false, GH_SolutionMode.Silent);
+        Assert(Get<PanelQueryResult>(session, "Result").RowPositions.Count == 1 && component.Params.Output[0].VolatileData.DataCount == 1 &&
+            component.Params.Output[0].VolatileData.AllData(true).Single() is GH_Surface,
+            "Abbreviated geometry hints retain full-name filtering and publish matching typed output");
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-surface-hint.png");
         var surfacePosition = Get<PanelQueryResult>(session, "Result").RowPositions[0];
         var surfaceTooltip = PanelTestAdapter.Tooltip(component, canvas, surfacePosition);
@@ -838,7 +842,9 @@ internal static class Program
         Assert(PanelTestAdapter.TrimDepth(component) == 0 && !PanelTestAdapter.TreeFlag(component, "Flatten") &&
             !PanelTestAdapter.TreeFlag(component, "Reverse") && !PanelTestAdapter.TreeFlag(component, "Simplify") &&
             Get<PanelQueryOptions>(session, "Options").BranchPath == "{0;2}", "Native undo restores all tree settings and branch selection");
-        AssertEqualTrees(originalInput, component.Params.Output[0].VolatileData);
+        var branchOutput = new GH_Structure<IGH_Goo>();
+        branchOutput.AppendRange(originalInput.get_Branch(new GH_Path(0, 2)).Cast<IGH_Goo>(), new GH_Path(0, 2));
+        AssertEqualTrees(branchOutput, component.Params.Output[0].VolatileData);
         document.UndoServer.PerformRedo();
         await WaitForQuery(session);
         Assert(PanelTestAdapter.TrimDepth(component) == 1 && PanelTestAdapter.TreeFlag(component, "Flatten") &&

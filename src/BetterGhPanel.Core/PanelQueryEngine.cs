@@ -76,7 +76,7 @@ namespace BetterGhPanel.Core
                 invalidCount, numericCount == 0 ? (double?)null : minimum,
                 numericCount == 0 ? (double?)null : maximum, numericCount == 0 ? (double?)null : mean,
                 new ReadOnlyDictionary<string, int>(typeCounts));
-            return new PanelQueryResult(snapshot, positions, statistics);
+            return new PanelQueryResult(snapshot, positions, statistics, branches);
         }
 
         public static bool RequiresGeometryMeasurements(PanelQueryOptions options)

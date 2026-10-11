@@ -263,7 +263,8 @@ internal static class RowActionChecks
             new GH_ObjectWrapper(new Point3d(30, 0, 0)), new GH_Curve(), null };
         var highlight = Field<object>(component, "_highlight");
         using var args = new PreviewArguments(document, rhino.Views.ActiveView.ActiveViewport);
-        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 1, 2 } });
+        var visible = Enumerable.Range(0, items.Length).ToArray();
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 1, 2 }, visible });
         component.DrawViewportWires(args);
         component.DrawViewportMeshes(args);
         Check(normal.WireColor == args.WireColour && selected.WireColor == args.WireColour_Selected &&
@@ -282,12 +283,17 @@ internal static class RowActionChecks
         component.Locked = false;
         Check(selected.WireCalls == 1 && selected.MeshCalls == 1,
             "Hidden or disabled components cannot draw stale row highlights");
+        Check(!Property<bool>(highlight, "HasSelection"), "Expiring component data clears borrowed geometry highlights");
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 1, 2 }, visible });
         Check(component.IsPreviewCapable && component.ClippingBox.Contains(normal.Value) && component.ClippingBox.Contains(new Point3d(30, 0, 0)),
             "Highlight preview clipping retains unselected geometry and wrapped geometric values");
-        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 3, 4, 5, 6, 7 } });
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 2 }, new[] { 2 } });
+        Check(!component.ClippingBox.Contains(normal.Value) && !component.ClippingBox.Contains(new Point3d(30, 0, 0)),
+            "Filtered-out geometry cannot reappear through selection preview or its clipping bounds");
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 3, 4, 5, 6, 7 }, visible });
         Check(Property<int>(highlight, "Count") == 1,
             "Highlight accepts wrapped geometry and excludes numbers, vectors, nulls and invalid geometry");
-        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 3 } });
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 3 }, visible });
         component.DrawViewportWires(args);
         Check(Property<bool>(highlight, "HasSelection") && Property<int>(highlight, "Count") == 0 && selected.WireColor == args.WireColour,
             "Selecting a numeric row removes the previous green highlight without hiding the remaining geometry");

@@ -28,6 +28,11 @@ namespace BetterGhPanel
         private double _geometryTolerance = 0.001;
         private CancellationTokenSource? _copyCancellation;
         private bool _retainGeometryMeasurements;
+        private GH_Structure<IGH_Goo>? _queryTree;
+        private bool _solving, _preserveQuery, _reuseQuery;
+        private long _outputRequest;
+        private PanelQueryOptions? _outputOptions;
+        private bool _outputPending;
         private PanelQueryOptions _savedOptions = new PanelQueryOptions();
         private bool _restoringView;
         internal int PreviewSize => CanvasPanelSize.PresetIndex(CanvasWidth, CanvasHeight);
@@ -44,7 +49,7 @@ namespace BetterGhPanel
         internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
 
         public BetterPanelComponent() : base("Panel+", "Panel+",
-            "Inspect and manipulate typed data trees on the canvas. Tree tools and unit conversion change the output; filters, sorting and decimal formatting affect the view.",
+            "Inspect and manipulate typed data trees on the canvas. Tree tools, unit conversion and filters change the output; sorting and decimal formatting affect the view.",
             "Params", "Util") { }
 
         public override Guid ComponentGuid => new Guid("51DC646E-5F72-496A-8B40-628478541F44");
@@ -97,9 +102,14 @@ namespace BetterGhPanel
                         {
                             var document = OnPingDocument();
                             document?.Modified();
+                            ScheduleOutput();
                         }
                     };
-                    _session.ResultChanged += (_, __) => (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
+                    _session.ResultChanged += (_, __) =>
+                    {
+                        (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
+                        if (!_solving && !_restoringView) ScheduleOutput();
+                    };
                 }
                 return _session;
             }
@@ -265,7 +275,7 @@ namespace BetterGhPanel
                 ClearHighlight();
                 return;
             }
-            _highlight.Set(_sourceItems, ordered);
+            _highlight.Set(_sourceItems, ordered, Session.Result.RowPositions);
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
 
@@ -335,29 +345,95 @@ namespace BetterGhPanel
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p) =>
-            p.AddGenericParameter("Data", "D", "Typed tree after Simplify → Trim → Flatten → Reverse → unit conversion. Filters, sorting and decimal formatting do not change output precision.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Data", "D", "Matching typed items after Simplify → Trim → Flatten → Reverse → unit conversion → filters. Sorting and decimal formatting affect only the view.", GH_ParamAccess.tree);
+
+        private void ScheduleOutput()
+        {
+            var document = OnPingDocument();
+            var session = _session;
+            if (document == null || session == null || _queryTree == null) return;
+            var options = session.Options;
+            if (!_outputPending && _outputOptions != null && SameOutputFilter(_outputOptions, options)) return;
+            var snapshot = session.Snapshot;
+            long request = ++_outputRequest;
+            // Never solve recursively from a query callback. Publish through a
+            // normal GH solution so downstream components collect the new tree.
+            document.ScheduleSolution(1, _ =>
+            {
+                if (request != _outputRequest || !ReferenceEquals(document, OnPingDocument()) ||
+                    !ReferenceEquals(session, _session) || !ReferenceEquals(snapshot, session.Snapshot) || _queryTree == null) return;
+                _preserveQuery = true;
+                _reuseQuery = true;
+                try { ExpireSolution(false); }
+                finally { _preserveQuery = false; }
+            });
+        }
+
+        private static bool SameOutputFilter(PanelQueryOptions left, PanelQueryOptions right) =>
+            left.Search == right.Search && left.SearchMode == right.SearchMode && left.TypeName == right.TypeName &&
+            left.OnlyInvalid == right.OnlyInvalid && left.BranchPath == right.BranchPath && left.BranchPrefix == right.BranchPrefix;
+
+        private static bool HasOutputFilter(PanelQueryOptions options) =>
+            !string.IsNullOrWhiteSpace(options.Search) || options.TypeName != null || options.OnlyInvalid || !string.IsNullOrWhiteSpace(options.BranchPath);
+
+        public override void ClearData()
+        {
+            // Grasshopper expires the component before collecting its next input.
+            // Invalidate now, even when solving is deferred or an upstream node fails.
+            if (!_preserveQuery)
+            {
+                ++_outputRequest;
+                _queryTree = null;
+                _reuseQuery = false;
+                CancelPendingCopy();
+                ClearHighlight();
+                (Attributes as BetterPanelAttributes)?.ResetViewState();
+                _session?.InvalidateInput(_retainGeometryMeasurements);
+            }
+            base.ClearData();
+        }
 
         protected override void SolveInstance(IGH_DataAccess da)
         {
-            CancelPendingCopy();
-            ClearHighlight();
             if (!da.GetDataTree(0, out GH_Structure<IGH_Goo> tree)) tree = new GH_Structure<IGH_Goo>();
-            tree = PanelTreeOperations.Apply(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree);
-            tree = PanelUnitOperations.Apply(tree, UnitConversion);
-            da.SetDataTree(0, tree);
-            var previousSources = _sourceItems;
-            var previousUnits = _geometryUnits;
-            var rhinoDocument = Rhino.RhinoDoc.ActiveDoc;
-            _geometryUnitSystem = rhinoDocument?.ModelUnitSystem ?? Rhino.UnitSystem.None;
-            _geometryTolerance = rhinoDocument?.ModelAbsoluteTolerance ?? 0.001;
-            _geometryUnits = rhinoDocument == null || rhinoDocument.ModelUnitSystem == Rhino.UnitSystem.None
-                ? "units" : rhinoDocument.GetUnitSystemName(true, false, false, true);
-            if (string.IsNullOrWhiteSpace(_geometryUnits)) _geometryUnits = "units";
-            var snapshot = SnapshotCapture.Capture(tree, out _sourceItems, UnitConversion, _geometryUnits);
-            if (_retainGeometryMeasurements && previousUnits == _geometryUnits)
-                Session.AttachConvertedSnapshot(snapshot, position => position < previousSources.Length &&
-                    position < _sourceItems.Length && ReferenceEquals(previousSources[position], _sourceItems[position]));
-            else Session.AttachSnapshot(snapshot);
+            // Any upstream expiration clears this flag through ClearData. GH may
+            // duplicate input goo during collection even when sources are unchanged,
+            // so ownership follows the captured solution, not recollected identity.
+            bool reuse = _reuseQuery && _queryTree != null;
+            _reuseQuery = false;
+            _solving = true;
+            try
+            {
+                if (!reuse)
+                {
+                    CancelPendingCopy();
+                    ClearHighlight();
+                    tree = PanelTreeOperations.Apply(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree);
+                    _queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.Apply(tree, UnitConversion));
+                    var previousSources = _sourceItems;
+                    var previousUnits = _geometryUnits;
+                    var rhinoDocument = Rhino.RhinoDoc.ActiveDoc;
+                    _geometryUnitSystem = rhinoDocument?.ModelUnitSystem ?? Rhino.UnitSystem.None;
+                    _geometryTolerance = rhinoDocument?.ModelAbsoluteTolerance ?? 0.001;
+                    _geometryUnits = rhinoDocument == null || rhinoDocument.ModelUnitSystem == Rhino.UnitSystem.None
+                        ? "units" : rhinoDocument.GetUnitSystemName(true, false, false, true);
+                    if (string.IsNullOrWhiteSpace(_geometryUnits)) _geometryUnits = "units";
+                    var snapshot = SnapshotCapture.Capture(_queryTree, out _sourceItems, UnitConversion, _geometryUnits);
+                    if (_retainGeometryMeasurements && previousUnits == _geometryUnits)
+                        Session.AttachConvertedSnapshot(snapshot, position => position < previousSources.Length &&
+                            position < _sourceItems.Length && ReferenceEquals(previousSources[position], _sourceItems[position]));
+                    else Session.AttachSnapshot(snapshot);
+                }
+                // Pending/failed filters expose no stale or unfiltered items. The
+                // completed query schedules another solution using this same tree.
+                _outputOptions = Session.Options;
+                bool filtering = HasOutputFilter(_outputOptions);
+                _outputPending = filtering && Session.IsBusy;
+                da.SetDataTree(0, _queryTree == null ? new GH_Structure<IGH_Goo>() : !filtering ? _queryTree :
+                    Session.HasCurrentResult ? PanelTreeOperations.Filter(_queryTree, Session.Result) : new GH_Structure<IGH_Goo>());
+                if (Session.Error != null) AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Filter: " + Session.Error);
+            }
+            finally { _solving = false; }
         }
 
         public override void RemovedFromDocument(GH_Document document)
@@ -377,7 +453,11 @@ namespace BetterGhPanel
                 CancelPendingCopy();
                 CanvasTextInput.CloseActive();
                 // Unloaded is a canvas/tab switch, not document destruction.
-                if (_session != null) _session.RequestGeometryMeasurements(_session.Snapshot, Array.Empty<int>());
+                if (_session != null)
+                {
+                    _session.AnimateBusyState(false);
+                    _session.RequestGeometryMeasurements(_session.Snapshot, Array.Empty<int>());
+                }
             }
             else if (context == GH_DocumentContext.Loaded || context == GH_DocumentContext.Open)
                 _previewSuspended = false;
@@ -386,6 +466,9 @@ namespace BetterGhPanel
 
         private void ReleaseSession()
         {
+            ++_outputRequest;
+            _queryTree = null;
+            _reuseQuery = false;
             CancelPendingCopy();
             ClearHighlight();
             (Attributes as BetterPanelAttributes)?.ResetViewState();
