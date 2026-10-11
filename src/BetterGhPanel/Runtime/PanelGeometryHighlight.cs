@@ -19,33 +19,33 @@ namespace BetterGhPanel.Runtime
 
         internal bool HasSelection { get; private set; }
         internal int Count => _selected.Count;
+        internal int PreviewCount => _normal.Count + _selected.Count;
         internal BoundingBox ClippingBox { get; private set; } = BoundingBox.Empty;
 
-        internal void Set(IReadOnlyList<IGH_Goo?> sourceItems, IReadOnlyList<int> selectedPositions, IReadOnlyList<int> visiblePositions)
+        internal void Set(IReadOnlyList<IGH_Goo?> sourceItems, IReadOnlyList<int> previewPositions, IReadOnlyList<int> selectedPositions)
         {
             Clear();
             var selected = new HashSet<int>();
             foreach (var position in selectedPositions)
                 if (position >= 0 && position < sourceItems.Count) selected.Add(position);
-            if (selected.Count == 0) return;
-
-            // Numeric rows also constitute an explicit selection: other geometry
-            // should use normal colors, even if the component itself is selected.
-            HasSelection = true;
+            HasSelection = selected.Count > 0;
             var bounds = BoundingBox.Empty;
-            foreach (int position in visiblePositions)
+            foreach (int position in previewPositions)
             {
                 if (position < 0 || position >= sourceItems.Count) continue;
                 var item = sourceItems[position];
-                var box = PanelGeometryActions.GetBounds(item);
-                if (item == null || !box.IsValid) continue;
+                if (item == null) continue;
                 try
                 {
-                    // Prefer the original preview implementation, including custom
-                    // goo. Only convert wrappers after geometry bounds validation,
-                    // so numbers and vectors cannot become artificial points.
-                    var preview = item as IGH_PreviewData ??
-                        GH_Convert.ToGeometricGoo(PanelGeometryActions.Unwrap(item)) as IGH_PreviewData;
+                    if (!item.IsValid) continue;
+                    // Custom preview goo may supply its own bounds without being
+                    // geometric goo. Validate wrappers before converting them so
+                    // numbers and vectors cannot become artificial points.
+                    var preview = item as IGH_PreviewData;
+                    var box = preview?.ClippingBox ?? PanelGeometryActions.GetBounds(item);
+                    if (!box.IsValid) box = PanelGeometryActions.GetBounds(item);
+                    if (!box.IsValid) continue;
+                    preview ??= GH_Convert.ToGeometricGoo(PanelGeometryActions.Unwrap(item)) as IGH_PreviewData;
                     if (preview == null) continue;
                     var clippingBox = preview.ClippingBox;
                     bounds.Union(clippingBox.IsValid ? clippingBox : box);

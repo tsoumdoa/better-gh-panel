@@ -10,6 +10,27 @@ internal static class FilterCanvasChecks
     {
         VerifyCompactMenus();
         VerifyBranchSelection();
+        VerifyPreviewMenu();
+    }
+
+    private static void VerifyPreviewMenu()
+    {
+        var panel = new RectangleF(50, 100, 300, 110);
+        var anchor = new RectangleF(160, 102, 112, 18);
+        var menu = new CanvasMenu();
+        var options = new PanelQueryOptions();
+        menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
+        menu.Layout(panel, default, default, default, preview: anchor);
+        Require(panel.Contains(menu.Bounds) && menu.Visible == 3, "All preview choices fit the minimum Half panel");
+        foreach (PanelPreviewMode mode in Enum.GetValues(typeof(PanelPreviewMode)))
+        {
+            int index = (int)mode;
+            Require(menu.TrySelect(new PointF(menu.Bounds.X + 10, menu.Bounds.Y + index * 20 + 10), out int chosen) && chosen == index,
+                "Each preview mode is directly selectable");
+            Require(menu.IsSelected(index, options, PanelUnitConversion.None, -1, mode) &&
+                !menu.IsSelected((index + 1) % 3, options, PanelUnitConversion.None, -1, mode),
+                "Only the active preview mode is checked");
+        }
     }
 
     private static void VerifyCompactMenus()

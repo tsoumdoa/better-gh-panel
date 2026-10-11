@@ -219,11 +219,12 @@ internal static class RecomputeChecks
         input.PersistentData.Append(new LocalPreviewProbe(excluded), new GH_Path(0));
         input.PersistentData.Append(new LocalPreviewProbe(included), new GH_Path(1));
         component.ExpireSolution(true);
+        PanelTestAdapter.PreviewMode(component, "FilteredResults");
         using var viewport = new Rhino.Display.RhinoViewport();
         using var args = new RowActionChecks.PreviewArguments(fixture.Document, viewport);
         Draw();
         Check(input.DataType == GH_ParamData.local && excluded.Wires == 1 && included.Wires == 1 &&
-            excluded.Meshes == 1 && included.Meshes == 1, "Internalised geometry previews once through output");
+            excluded.Meshes == 1 && included.Meshes == 1, "Filtered results previews each internalised custom geometry once");
         Query(fixture.Session, new PanelQueryOptions { BranchPath = "{1}" });
         await Wait(() => fixture.Sink.VolatileData.DataCount == 1);
         Draw();

@@ -61,6 +61,7 @@ internal static class FilterUiChecks
         Paint(component, canvas);
         SavePreview(component, canvas, "tree-icons");
 
+        await VerifyPreviewModes(component, canvas, session, document);
         await VerifyFilters(component, canvas, assembly, session);
         await VerifyBranches(component, canvas, session);
         await VerifyCompactErrors(component, canvas, assembly, session);
@@ -80,6 +81,109 @@ internal static class FilterUiChecks
             "Search modes and branch actions retain original numeric and text values");
         component.DocumentContextChanged(document, GH_DocumentContext.Close);
         await VerifyFooterStatistics(assembly);
+        await VerifyPreviewUndo(assembly);
+    }
+
+    private static async Task VerifyPreviewModes(GH_Component component, GH_Canvas canvas, object session, GH_Document document)
+    {
+        var preview = Field<object>(component, "_highlight");
+        var snapshot = Property<PanelSnapshot>(session, "Snapshot");
+        Check(PanelTestAdapter.PreviewMode(component) == "Selected" && PreviewCount() == 0 && !component.ClippingBox.IsValid,
+            "New panels preview no geometry until rows are selected");
+        var viewport = RhinoDoc.ActiveDoc.Views.ActiveView.ActiveViewport;
+        var target = viewport.CameraTarget;
+        Click(component, canvas, PanelTestAdapter.RowBounds(component, 0));
+        Check(PreviewCount() == 1 && component.ClippingBox.Max.X == 0 && viewport.CameraTarget == target,
+            "Default Selected mode previews only the clicked row without moving the camera");
+        Mode(1);
+        Check(PreviewCount() == 37 && Property<int>(preview, "Count") == 1,
+            "Filtered results previews all matching geometry including offscreen rows, keeping row selection");
+        SavePreview(component, canvas, "preview-results");
+        Mode(2);
+        Check(PreviewCount() == 0 && !component.ClippingBox.IsValid && Selected(component, session).SequenceEqual(new[] { 0 }),
+            "Off removes preview and clipping bounds while retaining row selection");
+        Mode(0);
+        Check(PreviewCount() == 1 && Selected(component, session).SequenceEqual(new[] { 0 }),
+            "Returning from Off restores the selected row preview");
+        Mode(1);
+        Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = ".", TypeName = "Point", BranchPath = "{1}" });
+        Check(PreviewCount() == 0, "Starting a filter clears the old full-result preview immediately");
+        await Wait(session);
+        Check(PreviewCount() == 1 && Property<int>(preview, "Count") == 0 && component.ClippingBox.Min.X == 250,
+            "Filtered preview publishes the new query without painting and drops hidden selection");
+        Query(session, new PanelQueryOptions { Search = "no matching geometry" });
+        await Wait(session);
+        Check(PreviewCount() == 0 && !component.ClippingBox.IsValid, "An empty filtered result draws nothing");
+        Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "[" });
+        await Wait(session, allowError: true);
+        Check(PreviewCount() == 0 && !component.ClippingBox.IsValid, "A failed filter cannot fall back to full-tree preview");
+        Query(session, new PanelQueryOptions { BranchPath = "{1}" });
+        component.DocumentContextChanged(document, GH_DocumentContext.Unloaded);
+        await Wait(session);
+        Check(PreviewCount() == 0, "Filtered preview stays cleared while its document is inactive");
+        component.DocumentContextChanged(document, GH_DocumentContext.Loaded);
+        Check(PreviewCount() == 3 && !Highlighted(component), "Returning to a document restores its filtered scope without selecting rows");
+        Paint(component, canvas);
+        Click(component, canvas, PanelTestAdapter.RowBounds(component, 34));
+        Mode(0);
+        var list = PanelTestAdapter.Bounds(component, CanvasControl.List);
+        Click(component, canvas, new RectangleF(list.X, list.Bottom - 18, list.Width, 16));
+        Check(Selected(component, session).Count == 0 && PreviewCount() == 0,
+            "Clicking empty table space clears selection and its Selected preview");
+        Mode(1);
+        PanelTestAdapter.ResetView(component);
+        await Wait(session);
+        Check(PreviewCount() == 37 && PanelTestAdapter.PreviewMode(component) == "FilteredResults",
+            "Reset restores the unfiltered result while retaining the explicit preview mode");
+        Check(ReferenceEquals(snapshot, Property<PanelSnapshot>(session, "Snapshot")) && viewport.CameraTarget == target,
+            "Preview controls and filters retain the captured snapshot and camera position");
+
+        PanelTestAdapter.Resize(component, 300, 220);
+        component.Attributes.PerformLayout();
+        Paint(component, canvas);
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
+        Paint(component, canvas);
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Preview));
+        Check(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Contains(PanelTestAdapter.MenuBounds(component)),
+            "Preview menu stays inside the minimum Half panel");
+        SavePreview(component, canvas, "preview-menu-half");
+        MenuRow(component, canvas, 2);
+        Check(PanelTestAdapter.PreviewMode(component) == "Off", "Off remains reachable in minimum Half mode");
+        Mode(0);
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
+        PanelTestAdapter.Resize(component, 360, 360);
+        component.Attributes.PerformLayout();
+        Paint(component, canvas);
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Preview));
+        SavePreview(component, canvas, "preview-menu");
+        MenuRow(component, canvas, 0);
+
+        int PreviewCount() => Property<int>(preview, "PreviewCount");
+        void Mode(int index)
+        {
+            Paint(component, canvas);
+            Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Preview));
+            MenuRow(component, canvas, index);
+        }
+    }
+
+    private static async Task VerifyPreviewUndo(Assembly assembly)
+    {
+        using var document = new GH_Document { Enabled = true };
+        var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
+        component.CreateAttributes();
+        document.AddObject(component, false);
+        try
+        {
+            document.UndoServer.Clear();
+            PanelTestAdapter.PreviewMode(component, "FilteredResults");
+            document.UndoServer.PerformUndo();
+            Check(PanelTestAdapter.PreviewMode(component) == "Selected", "Undo restores the previous preview mode");
+            document.UndoServer.PerformRedo();
+            Check(PanelTestAdapter.PreviewMode(component) == "FilteredResults", "Redo restores the requested preview mode");
+            await Wait(PanelTestAdapter.Session(component));
+        }
+        finally { component.DocumentContextChanged(document, GH_DocumentContext.Close); }
     }
 
     private static async Task VerifyFooterStatistics(Assembly assembly)
@@ -209,18 +313,18 @@ internal static class FilterUiChecks
         component.Attributes.PerformLayout();
         Paint(component, canvas);
         var list = PanelTestAdapter.Bounds(component, CanvasControl.List);
+        var target = view.ActiveViewport.CameraTarget;
         Click(component, canvas, new RectangleF(list.X, list.Y, list.Width, 15));
         Check(Selected(component, session).SequenceEqual(Enumerable.Range(0, 32)) && Highlighted(component),
             "Branch heading selects and highlights matching rows including offscreen geometry");
-        var target = view.ActiveViewport.CameraTarget;
-        Check(target.X > 50 && target.X < 100, "Branch heading frames the extent of offscreen rows");
+        Check(view.ActiveViewport.CameraTarget == target, "Branch heading leaves the active camera unchanged");
 
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Branch));
         MenuRow(component, canvas, 3);
         await Wait(session);
-        Check(Selected(component, session).SequenceEqual(new[] { 34 }) && Highlighted(component) &&
-            view.ActiveViewport.CameraTarget.DistanceTo(new Point3d(250, 80, 0)) < 1e-8,
-            "Choosing a branch filters, highlights and frames its current result before any paint");
+        Check(Positions(session).SequenceEqual(new[] { 34 }) && Selected(component, session).Count == 0 && !Highlighted(component) &&
+            view.ActiveViewport.CameraTarget == target,
+            "Choosing a branch filters without selecting rows or moving the camera");
         target = view.ActiveViewport.CameraTarget;
         Paint(component, canvas);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Branch));
@@ -239,7 +343,7 @@ internal static class FilterUiChecks
         Query(session, new PanelQueryOptions { TypeName = "Point", BranchPath = "{1}" });
         await Wait(session);
         Check(Selected(component, session).Count == 0 && view.ActiveViewport.CameraTarget == target,
-            "A newer query cancels an earlier branch focus request");
+            "Replacing a branch query never selects rows or moves the camera");
         Query(session, new PanelQueryOptions());
         await Wait(session);
     }
@@ -282,6 +386,7 @@ internal static class FilterUiChecks
     {
         Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = ">= 12" });
         await Wait(session);
+        PanelTestAdapter.PreviewMode(component, "FilteredResults");
         var chunk = new GH_LooseChunk("Panel");
         Check(component.Write(chunk), "Geometry filter settings serialize");
         var restored = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
@@ -291,6 +396,13 @@ internal static class FilterUiChecks
         {
             Check(restored.Read(chunk) && Options(PanelTestAdapter.Session(restored)).SearchMode == PanelSearchMode.Area &&
                 Options(PanelTestAdapter.Session(restored)).Search == ">= 12", "Filter mode and comparison survive saved definitions");
+            Check(PanelTestAdapter.PreviewMode(restored) == "FilteredResults", "Preview mode survives saved definitions");
+            chunk.RemoveItem("PanelPreviewMode");
+            Check(restored.Read(chunk) && PanelTestAdapter.PreviewMode(restored) == "Selected",
+                "Older definitions default to Selected preview");
+            chunk.SetInt32("PanelPreviewMode", 999);
+            Check(restored.Read(chunk) && PanelTestAdapter.PreviewMode(restored) == "Selected",
+                "Unknown saved preview modes fall back to Selected");
             chunk.RemoveItem("PanelSearchMode");
             Check(restored.Read(chunk) && Options(PanelTestAdapter.Session(restored)).SearchMode == PanelSearchMode.Text,
                 "Older definitions default to legacy text search");
