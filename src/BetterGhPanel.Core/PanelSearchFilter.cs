@@ -1,0 +1,103 @@
+using System;
+using System.Diagnostics;
+using System.Globalization;
+using System.Text.RegularExpressions;
+using System.Threading;
+
+namespace BetterGhPanel.Core
+{
+    // Prepared once per scan; only immutable snapshot data enters this predicate.
+    internal sealed class PanelSearchFilter
+    {
+        private readonly PanelSearchMode _mode;
+        private readonly string? _metricName;
+        private readonly string _text;
+        private readonly Func<double, bool>? _comparison;
+        private readonly Regex? _regex;
+        private readonly Stopwatch? _regexBudget;
+
+        internal PanelSearchFilter(PanelQueryOptions options)
+        {
+            _mode = options.SearchMode;
+            if (!Enum.IsDefined(typeof(PanelSearchMode), _mode)) throw new ArgumentException("Unknown search mode.");
+            _metricName = _mode == PanelSearchMode.Length ? "Length" : _mode == PanelSearchMode.Area ? "Area" :
+                _mode == PanelSearchMode.Volume ? "Volume" : null;
+            _text = options.Search ?? string.Empty;
+            // Spaces in a regular expression are significant.
+            if (_mode != PanelSearchMode.Regex) _text = _text.Trim();
+            if (_text.Length == 0) return;
+            if (_mode == PanelSearchMode.Regex)
+            {
+                try { _regex = new Regex(_text, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)); }
+                catch (ArgumentException) { throw new ArgumentException("Invalid regular expression. Check the pattern and try again."); }
+                _regexBudget = Stopwatch.StartNew();
+            }
+            else
+            {
+                _comparison = ParseComparison(_text, _mode != PanelSearchMode.Text);
+                if (_comparison == null && _mode != PanelSearchMode.Text)
+                    throw new ArgumentException("Enter a finite number with >, >=, <, <=, = or != (for example, > 25).");
+            }
+        }
+
+        internal bool HasFilter => _text.Length != 0;
+        internal bool IsGeometry => _metricName != null;
+
+        internal bool CanMeasure(PanelRow row) => row.IsValid && !row.IsNull && row.GeometryInfo?.CanMeasure == true &&
+            MatchesMetric(row.GeometryInfo);
+
+        internal bool Matches(PanelRow row, PanelUnitConversion conversion, PanelGeometryInfo? measured, CancellationToken token)
+        {
+            if (!HasFilter) return true;
+            if (_regex != null)
+            {
+                token.ThrowIfCancellationRequested();
+                if (_regexBudget!.ElapsedMilliseconds >= 2000) throw RegexTooSlow();
+                try { return _regex.IsMatch(row.DisplayValue); }
+                catch (RegexMatchTimeoutException) { throw RegexTooSlow(); }
+            }
+            if (_comparison == null)
+                return Contains(row.DisplayValue, _text) || Contains(row.Path, _text) || Contains(row.TypeName, _text);
+            if (!IsGeometry)
+                return !row.IsNull && row.NumericValue.HasValue && IsFinite(row.NumericValue.Value) && _comparison(row.NumericValue.Value);
+            if (row.IsNull || !row.IsValid) return false;
+            var geometry = measured ?? row.GeometryInfo;
+            if (geometry == null || !MatchesMetric(geometry) || !geometry.Value.HasValue) return false;
+            double value = geometry.Value.Value;
+            if (!IsFinite(value) || value < 0) return false;
+            // Circles display a radius, but a length comparison means circumference.
+            if (_mode == PanelSearchMode.Length && string.Equals(geometry.MetricName, "Radius", StringComparison.OrdinalIgnoreCase))
+                value *= 2 * Math.PI;
+            value = PanelUnits.ConvertGeometry(value, geometry.Power, geometry.Units, conversion);
+            return IsFinite(value) && _comparison(value);
+        }
+
+        private bool MatchesMetric(PanelGeometryInfo geometry) =>
+            string.Equals(geometry.MetricName, _metricName, StringComparison.OrdinalIgnoreCase) ||
+            _mode == PanelSearchMode.Length && string.Equals(geometry.MetricName, "Radius", StringComparison.OrdinalIgnoreCase);
+
+        private static ArgumentException RegexTooSlow() => new ArgumentException("Regular expression took too long. Simplify the pattern and try again.");
+        private static bool Contains(string value, string search) => value.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0;
+        private static bool IsFinite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+
+        private static Func<double, bool>? ParseComparison(string text, bool implicitEquality)
+        {
+            var operatorLength = text.StartsWith(">=", StringComparison.Ordinal) || text.StartsWith("<=", StringComparison.Ordinal) ||
+                text.StartsWith("==", StringComparison.Ordinal) || text.StartsWith("!=", StringComparison.Ordinal) ? 2 :
+                text.StartsWith(">", StringComparison.Ordinal) || text.StartsWith("<", StringComparison.Ordinal) ||
+                text.StartsWith("=", StringComparison.Ordinal) ? 1 : 0;
+            if (operatorLength == 0 && !implicitEquality ||
+                !double.TryParse(text.Substring(operatorLength).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var threshold) ||
+                !IsFinite(threshold)) return null;
+            switch (text.Substring(0, operatorLength))
+            {
+                case ">": return value => value > threshold;
+                case ">=": return value => value >= threshold;
+                case "<": return value => value < threshold;
+                case "<=": return value => value <= threshold;
+                case "!=": return value => value != threshold;
+                default: return value => value == threshold;
+            }
+        }
+    }
+}

@@ -11,7 +11,9 @@ description: >
   between full and half views while keeping wire connections fixed. A compact
   footer menu converts length, area, volume, and angle units and sets decimal formatting.
   Visible geometry rows show cached metrics calculated lazily in the background; invalid values have clear labels.
-  Select multiple rows to frame geometry in the active Rhino viewport or copy converted numeric values.
+  Select rows or branches to highlight and frame geometry in the active Rhino viewport.
+  Filter values, length, area or volume with comparisons, or match text with regular expressions.
+  Copy converted numeric values from selected rows.
   Native geometry copying for Rhino Paste supports Windows with standard model units.
   Includes Windows and Mac builds; Mac runtime validation is pending.
 url: https://github.com/tsoumdoa/better-gh-panel

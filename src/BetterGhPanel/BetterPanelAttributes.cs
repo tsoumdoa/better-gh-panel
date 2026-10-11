@@ -22,10 +22,15 @@ namespace BetterGhPanel
         private static readonly Color Ink = Color.FromArgb(49, 55, 53);
         private static readonly Color Muted = Color.FromArgb(120, 127, 123);
         private static readonly Color Accent = Color.FromArgb(77, 115, 94);
-        private RectangleF _panel, _search, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _footer;
+        private RectangleF _panel, _search, _filter, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _footer;
         private RectangleF _trim, _simplify, _flatten, _reverse, _units;
         private RectangleF _display;
         private readonly List<RowHit> _rowHits = new List<RowHit>();
+        private readonly List<BranchHit> _branchHits = new List<BranchHit>();
+        private PanelSnapshot? _branchFocusSnapshot;
+        private string? _branchFocusPath;
+        private bool _settingBranchFilter;
+        private PanelSearchMode _editingSearchMode;
         private int _offset, _shown;
         private PanelQueryResult? _lastResult;
         private readonly PanelRowSelection _selection = new PanelRowSelection();
@@ -51,6 +56,9 @@ namespace BetterGhPanel
         {
             _offset = 0;
             _selection.Clear();
+            _branchFocusSnapshot = null;
+            _branchFocusPath = null;
+            PanelOwner.ClearHighlight();
             InvalidateCopyStatus();
             _scrolling = false;
             _rowContextHandled = false;
@@ -58,6 +66,54 @@ namespace BetterGhPanel
             CloseRowMenu();
             _rowActionDismissedUntil = default;
             _rowHits.Clear();
+            _branchHits.Clear();
+        }
+
+        internal void OnQueryChanged()
+        {
+            if (_settingBranchFilter) return;
+            _branchFocusSnapshot = null;
+            _branchFocusPath = null;
+        }
+
+        internal void OnQueryCompleted()
+        {
+            var session = PanelOwner.Session;
+            if (session.IsBusy) return;
+            var result = session.Result;
+            bool focusBranch = session.Error == null && _branchFocusPath != null &&
+                ReferenceEquals(_branchFocusSnapshot, session.Snapshot) && session.Options.BranchPath == _branchFocusPath;
+            _branchFocusSnapshot = null;
+            _branchFocusPath = null;
+            if (session.Error != null || !ReferenceEquals(result.Snapshot, session.Snapshot))
+            {
+                _selection.Clear();
+                PanelOwner.ClearHighlight();
+                return;
+            }
+            _selection.Synchronize(result);
+            if (focusBranch) _selection.SelectAll(result);
+            var positions = _selection.OrderedPositions(result);
+            if (positions.Count == 0) PanelOwner.ClearHighlight();
+            else if (focusBranch) PanelOwner.FrameRows(result.Snapshot, positions);
+            else PanelOwner.HighlightRows(result.Snapshot, positions);
+        }
+
+        private void SetBranchFilter(string? path)
+        {
+            var session = PanelOwner.Session;
+            var options = session.Options;
+            options.BranchPath = string.IsNullOrWhiteSpace(path) ? null : path!.Trim();
+            options.BranchPrefix = false;
+            _selection.Clear();
+            InvalidateCopyStatus();
+            PanelOwner.ClearHighlight();
+            _branchFocusPath = options.BranchPath;
+            _branchFocusSnapshot = _branchFocusPath == null ? null : session.Snapshot;
+            _settingBranchFilter = true;
+            try { session.UpdateQuery(options); }
+            finally { _settingBranchFilter = false; }
+            if (!session.IsBusy) OnQueryCompleted();
         }
 
         protected override void Layout()
@@ -67,9 +123,11 @@ namespace BetterGhPanel
                 Pivot.Y + CanvasPanelSize.DisplayTopOffset(PanelOwner.CanvasHeight, PanelOwner.CanvasDisplay),
                 PanelOwner.CanvasWidth, PanelOwner.DisplayHeight);
             _rowHits.Clear();
+            _branchHits.Clear();
             m_innerBounds = _panel;
             float x = _panel.X + 4;
             _search = new RectangleF(x + 2, _panel.Y + 25, _panel.Width - 212, 21);
+            _filter = new RectangleF(_search.Right - 18, _search.Y, 18, _search.Height);
             _type = new RectangleF(_search.Right + 3, _search.Y, 76, 21);
             _sort = new RectangleF(_type.Right + 3, _search.Y, 43, 21);
             _branch = new RectangleF(_sort.Right + 3, _search.Y, 72, 21);
@@ -120,7 +178,7 @@ namespace BetterGhPanel
             // Grasshopper also renders components outside the canvas viewport.
             if (!Bounds.IntersectsWith(visibleRegion))
             {
-                _rowHits.Clear(); _shown = 0; _menu.Close(); CloseRowMenu();
+                _rowHits.Clear(); _branchHits.Clear(); _shown = 0; _menu.Close(); CloseRowMenu();
                 session.RequestGeometryMeasurements(session.Snapshot, Array.Empty<int>());
                 return;
             }
@@ -160,7 +218,8 @@ namespace BetterGhPanel
                 if (canvas.Viewport.Zoom >= 0.5f)
                 {
                     var options = session.Options;
-                    Control(graphics, _search, string.IsNullOrEmpty(options.Search) ? "Search / > 800…" : options.Search, small, trim, !string.IsNullOrEmpty(options.Search));
+                    DropdownControl(graphics, _search, CanvasMenu.SearchHint(options), small, trim,
+                        options.SearchMode != PanelSearchMode.Text || !string.IsNullOrEmpty(options.Search));
                     DropdownControl(graphics, _type, CanvasMenu.TypeHint(result, options), small, trim, options.TypeName != null || options.OnlyInvalid);
                     DropdownControl(graphics, _sort, options.SortMode == PanelSortMode.SourceOrder ? "Src" : options.SortMode == PanelSortMode.ValueAscending ? "↑" : "↓", small, trim, options.SortMode != PanelSortMode.SourceOrder);
                     DropdownControl(graphics, _branch, Short(options.BranchPath ?? "Paths", 80), mono, trim, options.BranchPath != null);
@@ -178,7 +237,7 @@ namespace BetterGhPanel
                 }
                 else
                 {
-                    _rowHits.Clear(); _shown = 0; _menu.Close(); CloseRowMenu();
+                    _rowHits.Clear(); _branchHits.Clear(); _shown = 0; _menu.Close(); CloseRowMenu();
                     session.RequestGeometryMeasurements(session.Snapshot, Array.Empty<int>());
                 }
                 using (var border = new Pen(Selected ? Accent : Color.FromArgb(164, 171, 164), Selected ? 1.5f : 1))
@@ -193,7 +252,15 @@ namespace BetterGhPanel
         private void RenderRows(Graphics g, PanelQueryResult result, RectangleF visibleRegion, Font font, Font small, Font mono, StringFormat trim)
         {
             _rowHits.Clear();
+            _branchHits.Clear();
             _shown = 0;
+            if (PanelOwner.Session.Error != null)
+            {
+                Text(g, "Filter needs attention. Edit search or Reset.", small, Muted,
+                    new RectangleF(_list.X + 6, _list.Y, _list.Width - 12, 22), trim);
+                PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, Array.Empty<int>());
+                return;
+            }
             float y = _list.Y;
             string? previousPath = null;
             // A half-height panel at the minimum saved size still has room for a
@@ -214,8 +281,10 @@ namespace BetterGhPanel
                     if (grouped && row.Path != previousPath)
                     {
                         if (y + BranchHeight + RowHeight > _list.Bottom) break;
-                        Fill(g, Color.FromArgb(236, 241, 235), new RectangleF(_list.X, y, _list.Width, BranchHeight));
+                        var branchBounds = new RectangleF(_list.X, y, _list.Width, BranchHeight);
+                        Fill(g, Color.FromArgb(236, 241, 235), branchBounds);
                         Text(g, row.Path, mono, Accent, new RectangleF(_list.X + 6, y, _list.Width - 12, BranchHeight), trim);
+                        _branchHits.Add(new BranchHit(branchBounds, row.Path));
                         y += BranchHeight;
                         previousPath = row.Path;
                     }
@@ -291,11 +360,12 @@ namespace BetterGhPanel
         {
             _offset = Math.Max(0, Math.Min(MaximumOffset, value));
             _rowHits.Clear();
+            _branchHits.Clear();
             CloseRowMenu();
             canvas.Invalidate();
         }
 
-        private void LayoutMenu() => _menu.Layout(_panel, _type, _sort, _branch, _units);
+        private void LayoutMenu() => _menu.Layout(_panel, _type, _sort, _branch, _units, _search);
 
         private void RenderMenu(Graphics g, Font small, Font mono, StringFormat trim)
         {
@@ -341,7 +411,7 @@ namespace BetterGhPanel
 
         private bool RowsAreCurrent(PanelQueryResult result) =>
             ReferenceEquals(_lastResult, result) && ReferenceEquals(result, PanelOwner.Session.Result) &&
-            ReferenceEquals(result.Snapshot, PanelOwner.Session.Snapshot) && !PanelOwner.Session.IsBusy;
+            ReferenceEquals(result.Snapshot, PanelOwner.Session.Snapshot) && !PanelOwner.Session.IsBusy && PanelOwner.Session.Error == null;
 
         private void CloseRowMenu()
         {
@@ -392,6 +462,7 @@ namespace BetterGhPanel
                 _rowContextHandled = true;
                 InvalidateCopyStatus();
                 _selection.Select(result, hit.SourcePosition, preserveSelected: true);
+                PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
                 _rowMenuResult = result;
                 float width = Math.Min(190, _panel.Width - 12);
                 _rowMenuBounds = new RectangleF(
@@ -553,6 +624,7 @@ namespace BetterGhPanel
                     _simplify.Contains(point) ? !PanelOwner.SimplifyTree : PanelOwner.SimplifyTree);
                 return GH_ObjectResponse.Handled;
             }
+            if (_filter.Contains(point)) { OpenMenu(CanvasMenuKind.SearchMode, sender); return GH_ObjectResponse.Handled; }
             if (_search.Contains(point)) { EditSearch(sender); return GH_ObjectResponse.Handled; }
             if (_units.Contains(point)) { OpenMenu(CanvasMenuKind.Units, sender); return GH_ObjectResponse.Handled; }
             if (_type.Contains(point)) { OpenMenu(CanvasMenuKind.Type, sender); return GH_ObjectResponse.Handled; }
@@ -567,6 +639,7 @@ namespace BetterGhPanel
                     // page capacity, so previous-page size must not hide the final item.
                     _offset = Math.Max(0, Math.Min(Math.Max(0, Count - 1), row <= 1 ? 0 : row - 1));
                     _rowHits.Clear();
+                    _branchHits.Clear();
                     sender.Invalidate();
                 });
                 return GH_ObjectResponse.Handled;
@@ -578,13 +651,25 @@ namespace BetterGhPanel
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
+            foreach (var hit in _branchHits)
+                if (hit.Bounds.Contains(point))
+                {
+                    InvalidateCopyStatus();
+                    _selection.SelectAll(currentResult, hit.Path);
+                    PanelOwner.FrameRows(currentResult.Snapshot, _selection.OrderedPositions(currentResult));
+                    SuppressTrailingDoubleClick();
+                    sender.Invalidate();
+                    return GH_ObjectResponse.Handled;
+                }
             foreach (var hit in _rowHits)
                 if (hit.Bounds.Contains(point) && hit.SourcePosition >= 0 && hit.SourcePosition < currentResult.Snapshot.Rows.Count)
                 {
                     var modifiers = RowModifiers();
                     InvalidateCopyStatus();
                     _selection.Select(currentResult, hit.SourcePosition, modifiers.Toggle, modifiers.Range, preserveSelected: true);
-                    PanelOwner.FrameRows(currentResult.Snapshot, _selection.OrderedPositions(currentResult));
+                    var positions = _selection.OrderedPositions(currentResult);
+                    if (positions.Count == 0) PanelOwner.ClearHighlight();
+                    else PanelOwner.FrameRows(currentResult.Snapshot, positions);
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }
@@ -611,6 +696,31 @@ namespace BetterGhPanel
                 return;
             }
             var options = PanelOwner.Session.Options;
+            if (kind == CanvasMenuKind.SearchMode)
+            {
+                _editingSearchMode = (PanelSearchMode)index;
+                if (_editingSearchMode >= PanelSearchMode.Value)
+                {
+                    OpenMenu(CanvasMenuKind.Comparison, canvas);
+                    SuppressTrailingDoubleClick();
+                }
+                else EditSearch(canvas, _editingSearchMode, options.SearchMode == _editingSearchMode ? options.Search : string.Empty);
+                return;
+            }
+            if (kind == CanvasMenuKind.Comparison)
+            {
+                string comparison = CanvasMenu.ComparisonAt(index);
+                string value = CanvasMenu.WithComparison(options.Search, index).Substring(comparison.Length).Trim();
+                var mode = _editingSearchMode;
+                CanvasTextInput.Show(canvas, PanelOwner, _search, value, text =>
+                {
+                    var query = PanelOwner.Session.Options;
+                    query.SearchMode = mode;
+                    query.Search = string.IsNullOrWhiteSpace(text) ? string.Empty : comparison + " " + text.Trim();
+                    PanelOwner.Session.UpdateQuery(query);
+                });
+                return;
+            }
             if (kind == CanvasMenuKind.Type)
             {
                 if (index == 1) options.OnlyInvalid = !options.OnlyInvalid;
@@ -619,16 +729,34 @@ namespace BetterGhPanel
             else if (kind == CanvasMenuKind.Sort) options.SortMode = (PanelSortMode)index;
             else if (index == 1)
             {
-                CanvasTextInput.Show(canvas, PanelOwner, _branch, options.BranchPath ?? "{0}", text => { var query = PanelOwner.Session.Options; query.BranchPath = string.IsNullOrWhiteSpace(text) ? null : text.Trim(); query.BranchPrefix = false; PanelOwner.Session.UpdateQuery(query); });
+                CanvasTextInput.Show(canvas, PanelOwner, _branch, options.BranchPath ?? "{0}", SetBranchFilter);
                 canvas.Invalidate();
                 return;
             }
-            else { options.BranchPath = index == 0 ? null : _menu.BranchPathAt(index); options.BranchPrefix = false; }
+            else
+            {
+                SetBranchFilter(index == 0 ? null : _menu.BranchPathAt(index));
+                canvas.Invalidate();
+                return;
+            }
             PanelOwner.Session.UpdateQuery(options);
             canvas.Invalidate();
         }
 
-        private void EditSearch(GH_Canvas canvas) => CanvasTextInput.Show(canvas, PanelOwner, _search, PanelOwner.Session.Options.Search, text => { var options = PanelOwner.Session.Options; options.Search = text; PanelOwner.Session.UpdateQuery(options); });
+        private void EditSearch(GH_Canvas canvas)
+        {
+            var options = PanelOwner.Session.Options;
+            EditSearch(canvas, options.SearchMode, options.Search);
+        }
+
+        private void EditSearch(GH_Canvas canvas, PanelSearchMode mode, string current) =>
+            CanvasTextInput.Show(canvas, PanelOwner, _search, current, text =>
+            {
+                var options = PanelOwner.Session.Options;
+                options.SearchMode = mode;
+                options.Search = text;
+                PanelOwner.Session.UpdateQuery(options);
+            });
 
         public override GH_ObjectResponse RespondToMouseMove(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
@@ -690,6 +818,7 @@ namespace BetterGhPanel
                     CopySelectedValues(result, sender);
                     return GH_ObjectResponse.Handled;
                 }
+            if (_filter.Contains(e.CanvasLocation)) return GH_ObjectResponse.Handled;
             if (_search.Contains(e.CanvasLocation) || _list.Contains(e.CanvasLocation)) { EditSearch(sender); return GH_ObjectResponse.Handled; }
             return base.RespondToMouseDoubleClick(sender, e);
         }
@@ -738,6 +867,8 @@ namespace BetterGhPanel
                 if (_type.Contains(point))
                     e.Description = (PanelOwner.Session.Result.RowPositions.Count > 0 ? "Visible types: " : "Source types: ") +
                         CanvasMenu.TypeDetails(PanelOwner.Session.Result) + "\n\n" + e.Description;
+                else if (_branch.Contains(point))
+                    e.Description = "Choose a branch to select, highlight and frame all of its matching rows in Rhino. All branches clears this selection.\n\n" + e.Description;
             }
             else if (_reset.Contains(point))
             {
@@ -746,9 +877,15 @@ namespace BetterGhPanel
             }
             else if (_search.Contains(point))
             {
-                e.Title = "Search this view";
-                e.Text = "Press Enter to apply";
-                e.Description = "Search values, paths and types, or use numeric comparisons such as > 800 or <= 25.";
+                var options = PanelOwner.Session.Options;
+                e.Title = CanvasMenu.SearchModeLabel(options.SearchMode);
+                e.Text = string.IsNullOrEmpty(options.Search) ? "Press Enter to apply · arrow chooses filter mode" : options.Search;
+                e.Description = options.SearchMode == PanelSearchMode.Text
+                    ? "Search values, paths and types, or use numeric comparisons such as > 800 or <= 25. Use the arrow for text regex or measured geometry filters."
+                    : options.SearchMode == PanelSearchMode.Regex
+                    ? "Match row text with a case-insensitive regular expression, such as ^Wall or beam-[0-9]+. Empty text clears the filter."
+                    : "Compare full-precision values using >, >=, <, <=, = or !=. A number alone means equal. Geometry uses the selected display units. Length: curves, including circle circumference. Area: rectangles, surfaces and open Breps. Volume: boxes and closed Breps. Rows without that measurement are excluded. Empty text clears the filter.";
+                if (PanelOwner.Session.Error != null) e.Description = PanelOwner.Session.Error + "\n\n" + e.Description;
             }
             else if (_jump.Contains(point))
             {
@@ -764,12 +901,27 @@ namespace BetterGhPanel
             }
             else if (_footer.Contains(point))
             {
+                if (PanelOwner.Session.Error != null)
+                {
+                    e.Title = "Filter needs attention";
+                    e.Text = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode);
+                    e.Description = PanelOwner.Session.Error + "\n\nEdit the search or use Reset to clear the filter.";
+                    return;
+                }
                 e.Title = "Row selection and copy";
                 e.Text = _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus : $"{_selection.Count:N0} selected";
                 e.Description = "Click a row to select and frame its geometry in Rhino's active viewport. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Right-click for value or geometry copy. Double-click copies selected values, one per line.";
             }
             else if (ReferenceEquals(_lastResult, PanelOwner.Session.Result))
             {
+                foreach (var hit in _branchHits)
+                    if (hit.Bounds.Contains(point))
+                    {
+                        e.Title = "Select branch " + hit.Path;
+                        e.Text = "Highlight and frame in Rhino";
+                        e.Description = "Select every matching row in this branch, including rows outside the panel's visible area. Other active filters are respected.";
+                        return;
+                    }
                 foreach (var hit in _rowHits)
                 {
                     if (!hit.Bounds.Contains(point)) continue;
@@ -859,6 +1011,13 @@ namespace BetterGhPanel
             internal RowHit(RectangleF bounds, int sourcePosition) { Bounds = bounds; SourcePosition = sourcePosition; }
             internal RectangleF Bounds { get; }
             internal int SourcePosition { get; }
+        }
+
+        private readonly struct BranchHit
+        {
+            internal BranchHit(RectangleF bounds, string path) { Bounds = bounds; Path = path; }
+            internal RectangleF Bounds { get; }
+            internal string Path { get; }
         }
 
         private sealed class PanelPortAttributes : GH_LinkedParamAttributes

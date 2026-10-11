@@ -71,6 +71,19 @@ namespace BetterGhPanel.UI
             return result.RowPositions.Where(_positions.Contains).ToArray();
         }
 
+        internal void SelectAll(PanelQueryResult result, string? branchPath = null)
+        {
+            Synchronize(result);
+            _positions.Clear();
+            _anchor = -1;
+            foreach (int position in result.RowPositions)
+            {
+                if (branchPath != null && result.Snapshot.Rows[position].Path != branchPath) continue;
+                _positions.Add(position);
+                if (_anchor < 0) _anchor = position;
+            }
+        }
+
         private static int IndexOf(IReadOnlyList<int> positions, int position)
         {
             for (int i = 0; i < positions.Count; i++)

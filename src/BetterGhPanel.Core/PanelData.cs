@@ -89,9 +89,20 @@ namespace BetterGhPanel.Core
         ValueDescending
     }
 
+    public enum PanelSearchMode
+    {
+        Text,
+        Regex,
+        Value,
+        Length,
+        Area,
+        Volume
+    }
+
     public sealed class PanelQueryOptions
     {
         public string Search { get; set; } = string.Empty;
+        public PanelSearchMode SearchMode { get; set; } = PanelSearchMode.Text;
         public string? TypeName { get; set; }
         public string? BranchPath { get; set; }
         public bool BranchPrefix { get; set; }
@@ -101,6 +112,7 @@ namespace BetterGhPanel.Core
         public PanelQueryOptions Clone() => new PanelQueryOptions
         {
             Search = Search,
+            SearchMode = SearchMode,
             TypeName = TypeName,
             BranchPath = BranchPath,
             BranchPrefix = BranchPrefix,

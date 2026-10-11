@@ -74,8 +74,11 @@ internal static class RowActionChecks
             Check(Snapshot(session).Rows.Count == items.Length, "Row action fixture retains mixed and null rows");
             uint surfaceCrc = surface.DataCRC(0), solidCrc = solid.DataCRC(0), subdCrc = subd!.DataCRC(0);
 
+            VerifyHighlightDrawing(assembly, document, rhino);
+            await VerifyNativePreviewOverlap(assembly, rhino);
             await VerifyValues(component, session);
             await VerifyCanvasAndQueryActions(component, session, rhino);
+            await VerifyBranchHighlight(component, session, document, rhino);
             await VerifyGeometryClipboard(component, session, rhino, items.Length);
             await VerifyFailuresAndCancellation(component, session);
 
@@ -97,6 +100,244 @@ internal static class RowActionChecks
             if (previousClipboard == null) Forms.Clipboard.Clear();
             else Forms.Clipboard.SetDataObject(previousClipboard, true);
         }
+    }
+
+    private static async Task VerifyNativePreviewOverlap(Assembly assembly, RhinoDoc rhino)
+    {
+        var previousView = rhino.Views.ActiveView;
+        var view = rhino.Views.Add("Panel highlight overlap", Rhino.Display.DefinedViewportProjection.Top,
+            new Rectangle(0, 0, 640, 480), false);
+        using var document = new GH_Document();
+        try
+        {
+            rhino.Views.ActiveView = view;
+            view.ActiveViewport.ConstructionGridVisible = view.ActiveViewport.ConstructionAxesVisible = view.ActiveViewport.WorldAxesVisible = false;
+            document.Enabled = true;
+            // The public KeepOpen option enables this isolated document's native
+            // preview without opening or replacing the user's Grasshopper canvas.
+            document.Properties.KeepOpen = true;
+            document.PreviewColour = Color.FromArgb(100, 220, 40, 20);
+            document.PreviewColourSelected = Color.FromArgb(100, 0, 210, 40);
+            var components = new List<GH_Component>();
+            foreach (bool upstreamLast in new[] { false, true })
+            {
+                double bottom = upstreamLast ? -5 : 1;
+                var source = new Param_Geometry();
+                source.CreateAttributes();
+                source.PersistentData.Append(new GH_Curve(new LineCurve(new Point3d(-4, bottom, 0), new Point3d(-4, bottom + 4, 0))), new GH_Path(0));
+                source.PersistentData.Append(new GH_Curve(new LineCurve(new Point3d(4, bottom, 0), new Point3d(4, bottom + 4, 0))), new GH_Path(0));
+                source.PersistentData.Append(new GH_Mesh(Mesh.CreateFromBox(new BoundingBox(
+                    new Point3d(-3, bottom + 1, -1), new Point3d(-1, bottom + 3, 1)), 1, 1, 1)), new GH_Path(0));
+                source.PersistentData.Append(new GH_Mesh(Mesh.CreateFromBox(new BoundingBox(
+                    new Point3d(1, bottom + 1, -1), new Point3d(3, bottom + 3, 1)), 1, 1, 1)), new GH_Path(0));
+                var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
+                component.CreateAttributes();
+                if (upstreamLast) { document.AddObject(component, false); document.AddObject(source, false); }
+                else { document.AddObject(source, false); document.AddObject(component, false); }
+                component.Params.Input[0].AddSource(source);
+                components.Add(component);
+                Check(!component.Attributes.Selected && !source.Attributes.Selected && !source.Hidden,
+                    "Overlap fixture retains an unselected panel and the upstream component's usual preview");
+            }
+            document.NewSolution(false, GH_SolutionMode.Silent);
+            foreach (var component in components)
+            {
+                var session = PanelTestAdapter.Session(component);
+                await WaitForQuery(session);
+                Method(component, "HighlightRows").Invoke(component, new object[] { Snapshot(session), new[] { 0, 2 } });
+            }
+            view.ActiveViewport.ZoomBoundingBox(new BoundingBox(new Point3d(-6, -6, -2), new Point3d(6, 6, 2)));
+            view.Redraw();
+            using var capture = Rhino.Display.DisplayPipeline.DrawToBitmap(view.ActiveViewport, 640, 480);
+            Check(capture != null, "Rhino renders an offscreen viewport capture with native Grasshopper previews");
+            string path = Path.Combine(Path.GetDirectoryName(assembly.Location)!, "rhino-smoke-highlight-overlap.png");
+            capture!.Save(path);
+            // Both insertion orders share one native capture: top pair is panel-last,
+            // bottom pair is upstream-last. The tests tolerate antialiasing and DPI.
+            for (int half = 0; half < 2; half++)
+            {
+                string order = half == 0 ? "panel-last" : "upstream-last";
+                int green = 0, red = 0, meshGreen = 0, meshRed = 0;
+                for (int y = half * capture.Height / 2; y < (half + 1) * capture.Height / 2; y++)
+                    for (int x = 0; x < capture.Width; x++)
+                    {
+                        var color = capture.GetPixel(x, y);
+                        bool meshRegion = x > capture.Width * 0.30 && x < capture.Width * 0.70;
+                        if (meshRegion && color.G > color.R + 10 && color.G > color.B + 30) meshGreen++;
+                        if (!meshRegion && color.G > color.R + 50 && color.G > color.B + 50)
+                        {
+                            green++;
+                        }
+                        if (color.R > color.G + 50 && color.R > color.B + 50)
+                        {
+                            if (meshRegion) meshRed++; else red++;
+                        }
+                    }
+                Console.WriteLine("Native highlight overlap " + order + ": curves " + green + " green / " + red +
+                    " red; meshes " + meshGreen + " green / " + meshRed + " red; " + path);
+                Check(green > 50 && red > 50,
+                    "Green selection and normal red geometry remain visible with upstream preview enabled (" + order + ")");
+                // GH's translucent selected material blends with the upstream red
+                // preview into an olive green, unlike the saturated wire color.
+                // The hue still distinguishes it from both gray background and red
+                // unselected faces without depending on exact rendered RGB values.
+                Check(meshGreen > 50 && meshRed > 50,
+                    "Shaded mesh selections retain a distinct green tint alongside normal red meshes (" + order + ")");
+            }
+            foreach (var component in components) component.DocumentContextChanged(document, GH_DocumentContext.Close);
+        }
+        finally
+        {
+            document.Properties.KeepOpen = false;
+            document.PreviewMode = GH_PreviewMode.Disabled;
+            if (previousView != null) rhino.Views.ActiveView = previousView;
+            view.Close();
+        }
+    }
+
+    private static async Task VerifyBranchHighlight(GH_Component component, object session, GH_Document document, RhinoDoc rhino)
+    {
+        var highlight = Field<object>(component, "_highlight");
+        var viewport = rhino.Views.ActiveView.ActiveViewport;
+        var sentinel = rhino.Objects.AddPoint(new Point3d(-200, -200, -200));
+        rhino.Objects.FindId(sentinel).Select(true);
+        int objectCount = rhino.Objects.Count;
+        var selectedIds = rhino.Objects.GetSelectedObjects(false, false).Select(item => item.Id).ToArray();
+        Branch("{0}");
+        await WaitForQuery(session);
+        Check(Property<int>(highlight, "Count") == 7 &&
+            InsideFrustum(viewport, Point3d.Origin, new Point3d(20, 30, 40), new Point3d(103, 104, 0)),
+            "Choosing a branch highlights and frames all its geometry without waiting for a canvas repaint");
+        var inspectedTarget = new Point3d(250, 300, 350);
+        viewport.SetCameraTarget(inspectedTarget, true);
+        var options = Property<PanelQueryOptions>(session, "Options");
+        options.SortMode = PanelSortMode.ValueAscending;
+        Query(session, options);
+        await WaitForQuery(session);
+        Check(Property<int>(highlight, "Count") == 7 && viewport.CameraTarget.DistanceTo(inspectedTarget) < 1e-8,
+            "Sorting retains the branch highlight without repeatedly moving the user's camera");
+        Branch(null);
+        await WaitForQuery(session);
+        Check(Property<int>(highlight, "Count") == 0 && viewport.CameraTarget.DistanceTo(inspectedTarget) < 1e-8,
+            "All branches clears the branch highlight without zooming the entire model");
+
+        Query(session, new PanelQueryOptions { TypeName = "Point" });
+        await WaitForQuery(session);
+        Branch("{0}");
+        await WaitForQuery(session);
+        Check(Property<int>(highlight, "Count") == 1 && viewport.CameraTarget.DistanceTo(new Point3d(20, 30, 40)) < 1e-8,
+            "Choosing a branch with a type filter frames and highlights only its matching geometry");
+        Branch(null);
+        await WaitForQuery(session);
+        Query(session, new PanelQueryOptions());
+        await WaitForQuery(session);
+        Method(component, "FrameRows").Invoke(component, new object[] { Snapshot(session), new[] { 4 } });
+        component.ExpireSolution(true);
+        Check(!Property<bool>(highlight, "HasSelection"), "A new solution clears old geometry highlights immediately");
+        await WaitForQuery(session);
+        Check(!Property<bool>(highlight, "HasSelection"), "A new snapshot cannot restore a stale row highlight");
+
+        Branch("{0}");
+        component.DocumentContextChanged(document, GH_DocumentContext.Unloaded);
+        await WaitForQuery(session);
+        Check(!Property<bool>(highlight, "HasSelection"), "A query completing after a document unload cannot revive its highlight");
+        component.DocumentContextChanged(document, GH_DocumentContext.Loaded);
+        Branch(null);
+        await WaitForQuery(session);
+        Check(rhino.Objects.Count == objectCount && selectedIds.SequenceEqual(rhino.Objects.GetSelectedObjects(false, false).Select(item => item.Id)),
+            "Row and branch highlighting never bakes objects or modifies Rhino's native object selection");
+        // Run's finally removes this sentinel together with the clipboard fixtures.
+
+        void Branch(string? path) => Method(component.Attributes, "SetBranchFilter").Invoke(component.Attributes, new object?[] { path });
+    }
+
+    private static void VerifyHighlightDrawing(Assembly assembly, GH_Document document, RhinoDoc rhino)
+    {
+        var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
+        component.CreateAttributes();
+        component.Attributes.Selected = true;
+        var normal = new PreviewProbe(new Point3d(-10, 0, 0));
+        var selected = new PreviewProbe(new Point3d(10, 0, 0));
+        var throwing = new PreviewProbe(new Point3d(0, 10, 0)) { ThrowOnDraw = true };
+        var items = new IGH_Goo?[] { normal, throwing, selected, new GH_Number(5), new GH_Vector(Vector3d.XAxis),
+            new GH_ObjectWrapper(new Point3d(30, 0, 0)), new GH_Curve(), null };
+        var highlight = Field<object>(component, "_highlight");
+        using var args = new PreviewArguments(document, rhino.Views.ActiveView.ActiveViewport);
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 1, 2 } });
+        component.DrawViewportWires(args);
+        component.DrawViewportMeshes(args);
+        Check(normal.WireColor == args.WireColour && selected.WireColor == args.WireColour_Selected &&
+            normal.MeshMaterial == args.ShadeMaterial && selected.MeshMaterial == args.ShadeMaterial_Selected &&
+            selected.WireThickness == args.DefaultCurveThickness,
+            "Selected rows use Grasshopper selected wire and face colors; other geometry stays normal even when the component is selected");
+        Check(selected.WireCalls == 1 && selected.MeshCalls == 1 && Property<int>(highlight, "Count") == 2,
+            "One throwing third-party preview cannot prevent other selected rows from drawing");
+        component.Hidden = true;
+        component.DrawViewportWires(args);
+        component.DrawViewportMeshes(args);
+        component.Hidden = false;
+        component.Locked = true;
+        component.DrawViewportWires(args);
+        component.DrawViewportMeshes(args);
+        component.Locked = false;
+        Check(selected.WireCalls == 1 && selected.MeshCalls == 1,
+            "Hidden or disabled components cannot draw stale row highlights");
+        Check(component.IsPreviewCapable && component.ClippingBox.Contains(normal.Value) && component.ClippingBox.Contains(new Point3d(30, 0, 0)),
+            "Highlight preview clipping retains unselected geometry and wrapped geometric values");
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 3, 4, 5, 6, 7 } });
+        Check(Property<int>(highlight, "Count") == 1,
+            "Highlight accepts wrapped geometry and excludes numbers, vectors, nulls and invalid geometry");
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 3 } });
+        component.DrawViewportWires(args);
+        Check(Property<bool>(highlight, "HasSelection") && Property<int>(highlight, "Count") == 0 && selected.WireColor == args.WireColour,
+            "Selecting a numeric row removes the previous green highlight without hiding the remaining geometry");
+        Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
+        Check(!Property<bool>(highlight, "HasSelection") && !Property<BoundingBox>(highlight, "ClippingBox").IsValid,
+            "Clearing a highlight releases all borrowed previews and clipping bounds");
+    }
+
+    private sealed class PreviewProbe : GH_Point, IGH_PreviewData
+    {
+        internal PreviewProbe(Point3d point) : base(point) { }
+        internal bool ThrowOnDraw;
+        internal Color WireColor;
+        internal int WireThickness, WireCalls, MeshCalls;
+        internal Rhino.Display.DisplayMaterial? MeshMaterial;
+        BoundingBox IGH_PreviewData.ClippingBox => Boundingbox;
+        void IGH_PreviewData.DrawViewportWires(GH_PreviewWireArgs args)
+        {
+            if (ThrowOnDraw) throw new InvalidOperationException("Third-party preview failure");
+            WireCalls++;
+            WireColor = args.Color;
+            WireThickness = args.Thickness;
+        }
+        void IGH_PreviewData.DrawViewportMeshes(GH_PreviewMeshArgs args)
+        {
+            if (ThrowOnDraw) throw new InvalidOperationException("Third-party preview failure");
+            MeshCalls++;
+            MeshMaterial = args.Material;
+        }
+    }
+
+    private sealed class PreviewArguments : IGH_PreviewArgs, IDisposable
+    {
+        internal PreviewArguments(GH_Document document, Rhino.Display.RhinoViewport viewport)
+        {
+            Document = document;
+            Viewport = viewport;
+            ShadeMaterial = new Rhino.Display.DisplayMaterial(WireColour);
+            ShadeMaterial_Selected = new Rhino.Display.DisplayMaterial(WireColour_Selected);
+        }
+        public int DefaultCurveThickness => 3;
+        public Color WireColour => Color.FromArgb(200, 80, 50);
+        public Color WireColour_Selected => Color.FromArgb(40, 220, 70);
+        public Rhino.Display.DisplayMaterial ShadeMaterial { get; }
+        public Rhino.Display.DisplayMaterial ShadeMaterial_Selected { get; }
+        public Rhino.Display.RhinoViewport Viewport { get; }
+        public Rhino.Display.DisplayPipeline Display => null!; // Recording goo does not issue native drawing commands.
+        public GH_Document Document { get; }
+        public MeshingParameters MeshingParameters => MeshingParameters.FastRenderMesh;
+        public void Dispose() { ShadeMaterial.Dispose(); ShadeMaterial_Selected.Dispose(); }
     }
 
     private static async Task VerifyValues(GH_Component component, object session)
@@ -148,12 +389,16 @@ internal static class RowActionChecks
         var viewport = rhino.Views.ActiveView.ActiveViewport;
         var cameraOffset = viewport.CameraLocation - viewport.CameraTarget;
         Click(component, canvas, PanelTestAdapter.RowBounds(component, 4));
+        Check(Property<int>(Field<object>(component, "_highlight"), "Count") == 1,
+            "Clicking a geometry row installs its native Grasshopper highlight");
         Check(viewport.CameraTarget.DistanceTo(new Point3d(20, 30, 40)) < 1e-8 &&
             (viewport.CameraLocation - viewport.CameraTarget - cameraOffset).Length < 1e-8,
             "Clicking a point row pans the active Rhino camera while preserving its scale");
         var cameraTarget = viewport.CameraTarget;
         Click(component, canvas, PanelTestAdapter.RowBounds(component, 0));
         Check(viewport.CameraTarget == cameraTarget, "Clicking numeric rows leaves the active camera unchanged");
+        Check(Property<int>(Field<object>(component, "_highlight"), "Count") == 0,
+            "Clicking a numeric row clears the previously highlighted geometry");
 
         var selection = Field<object>(component.Attributes, "_selection");
         Select(selection, Result(session), 4);
@@ -161,6 +406,8 @@ internal static class RowActionChecks
         Click(component, canvas, PanelTestAdapter.RowBounds(component, 4));
         Check(Selected(selection, Result(session)).SequenceEqual(new[] { 4, 5 }),
             "Clicking a selected row preserves a multirow group");
+        Check(Property<int>(Field<object>(component, "_highlight"), "Count") == 2,
+            "A multirow click highlights all selected geometry");
         Check(InsideFrustum(viewport, new Point3d(20, 30, 40), new Point3d(100, 100, 0), new Point3d(103, 104, 0)),
             "A multirow click frames all selected geometry in the active Rhino viewport");
         var unlockedCamera = viewport.CameraLocation;
@@ -207,6 +454,8 @@ internal static class RowActionChecks
         var staleRowBounds = PanelTestAdapter.RowBounds(component, 4);
         var staleTarget = viewport.CameraTarget;
         Query(session, new PanelQueryOptions { Search = "full" });
+        Check(!Property<bool>(Field<object>(component, "_highlight"), "HasSelection"),
+            "Starting a query clears stale highlights before the canvas paints its next result");
         Click(component, canvas, staleRowBounds);
         Check(viewport.CameraTarget == staleTarget, "An old painted row cannot move the camera while a query is pending");
         await WaitForQuery(session);
@@ -302,7 +551,9 @@ internal static class RowActionChecks
 
         var beforePaste = rhino.Objects.Select(item => item.Id).ToHashSet();
         Check(RhinoApp.RunScript(rhino.RuntimeSerialNumber, "_Paste", false), "Rhino accepts native Paste for the geometry clipboard");
-        await WaitUntil(() => rhino.Objects.Count == objectCount + 7);
+        // Native commands can purge deleted object-table entries. Verify the
+        // actual newly pasted live objects instead of table bookkeeping counts.
+        await WaitUntil(() => rhino.Objects.Count(item => !beforePaste.Contains(item.Id)) == 7);
         var pasted = rhino.Objects.Where(item => !beforePaste.Contains(item.Id)).ToArray();
         Check(pasted.Length == 7 && pasted.Any(item => item.Geometry is SubD) &&
             pasted.Select(item => item.Geometry).OfType<Rhino.Geometry.Point>().Single().Location == new Point3d(20, 30, 40),
@@ -351,7 +602,7 @@ internal static class RowActionChecks
             var rhino = RhinoDoc.ActiveDoc;
             var beforePaste = rhino.Objects.Select(item => item.Id).ToHashSet();
             Check(RhinoApp.RunScript(rhino.RuntimeSerialNumber, "_Paste", false), "Rhino accepts the superseding single-point geometry clipboard");
-            await WaitUntil(() => rhino.Objects.Count == beforePaste.Count + 1);
+            await WaitUntil(() => rhino.Objects.Count(item => !beforePaste.Contains(item.Id)) == 1);
             var pasted = rhino.Objects.Where(item => !beforePaste.Contains(item.Id)).ToArray();
             Check(pasted.Length == 1 && pasted[0].Geometry is Rhino.Geometry.Point point && point.Location == new Point3d(20, 30, 40),
                 "The superseding clipboard still pastes exactly the requested point at its source coordinates");

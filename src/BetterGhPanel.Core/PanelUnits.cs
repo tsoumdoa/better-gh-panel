@@ -77,20 +77,30 @@ namespace BetterGhPanel.Core
             bool includeUnits = true)
         {
             if (double.IsNaN(value) || double.IsInfinity(value) || value < 0) return "unavailable";
+            var matchingConversion = GeometryConversion(power, units, conversion);
+            if (matchingConversion != PanelUnitConversion.None)
+            {
+                var converted = Convert(value, matchingConversion);
+                return double.IsInfinity(converted) ? "unavailable" : Format(converted,
+                    includeUnits ? matchingConversion : PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6");
+            }
+            return Format(value, PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6") +
+                (includeUnits ? " " + units + (power == 2 ? "²" : power == 3 ? "³" : "") : "");
+        }
+
+        /// <summary>Converts an unrounded geometry metric exactly as its displayed units are converted.</summary>
+        public static double ConvertGeometry(double value, int power, string units, PanelUnitConversion conversion) =>
+            Convert(value, GeometryConversion(power, units, conversion));
+
+        private static PanelUnitConversion GeometryConversion(int power, string units, PanelUnitConversion conversion)
+        {
             bool toMeters = units == "mm" && (power == 1 && conversion == PanelUnitConversion.MillimetersToMeters ||
                 power == 2 && conversion == PanelUnitConversion.SquareMillimetersToSquareMeters ||
                 power == 3 && conversion == PanelUnitConversion.CubicMillimetersToCubicMeters);
             bool toMillimeters = units == "m" && (power == 1 && conversion == PanelUnitConversion.MetersToMillimeters ||
                 power == 2 && conversion == PanelUnitConversion.SquareMetersToSquareMillimeters ||
                 power == 3 && conversion == PanelUnitConversion.CubicMetersToCubicMillimeters);
-            if (toMeters || toMillimeters)
-            {
-                var converted = Convert(value, conversion);
-                return double.IsInfinity(converted) ? "unavailable" : Format(converted,
-                    includeUnits ? conversion : PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6");
-            }
-            return Format(value, PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6") +
-                (includeUnits ? " " + units + (power == 2 ? "²" : power == 3 ? "³" : "") : "");
+            return toMeters || toMillimeters ? conversion : PanelUnitConversion.None;
         }
 
         // Formatting never rounds the value carried by the output wire.

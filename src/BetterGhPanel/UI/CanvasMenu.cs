@@ -6,12 +6,15 @@ using BetterGhPanel.Core;
 
 namespace BetterGhPanel.UI
 {
-    internal enum CanvasMenuKind { None, Type, Sort, Branch, Units }
+    internal enum CanvasMenuKind { None, Type, Sort, Branch, Units, SearchMode, Comparison }
 
     // One owner for menu lifetime, snapshot validity, layout, and paging.
     internal sealed class CanvasMenu
     {
         private static readonly string[] SortLabels = { "Source order", "Value ascending", "Value descending" };
+        private static readonly string[] SearchLabels = { "Text search", "Text · regular expression", "Numeric value", "Geometry · length", "Geometry · area", "Geometry · volume" };
+        private static readonly string[] ComparisonLabels = { "Greater than  >", "At least  ≥", "Less than  <", "At most  ≤", "Equal to  =", "Not equal to  ≠" };
+        private static readonly string[] Comparisons = { ">", ">=", "<", "<=", "=", "!=" };
         private PanelSnapshot _snapshot = PanelSnapshot.Empty;
         private string[] _types = Array.Empty<string>();
         internal CanvasMenuKind Kind { get; private set; }
@@ -20,7 +23,8 @@ namespace BetterGhPanel.UI
         internal int HoveredIndex { get; private set; } = -1;
         internal int Count => Kind == CanvasMenuKind.Type ? _types.Length + 2 :
             Kind == CanvasMenuKind.Sort ? SortLabels.Length : Kind == CanvasMenuKind.Branch ? _snapshot.Branches.Count + 2 :
-            Kind == CanvasMenuKind.Units ? PanelUnits.ConversionCount + 2 : 0;
+            Kind == CanvasMenuKind.Units ? PanelUnits.ConversionCount + 2 :
+            Kind == CanvasMenuKind.SearchMode ? SearchLabels.Length : Kind == CanvasMenuKind.Comparison ? ComparisonLabels.Length : 0;
         internal int Visible => Math.Min(Count, Math.Max(1, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
 
         internal static string TypeHint(PanelQueryResult result, PanelQueryOptions options)
@@ -88,12 +92,13 @@ namespace BetterGhPanel.UI
             }
         }
 
-        internal void Layout(RectangleF panel, RectangleF type, RectangleF sort, RectangleF branch, RectangleF units = default)
+        internal void Layout(RectangleF panel, RectangleF type, RectangleF sort, RectangleF branch, RectangleF units = default, RectangleF search = default)
         {
             if (Kind == CanvasMenuKind.None) return;
-            var anchor = Kind == CanvasMenuKind.Type ? type : Kind == CanvasMenuKind.Sort ? sort : Kind == CanvasMenuKind.Units ? units : branch;
+            var anchor = Kind == CanvasMenuKind.Type ? type : Kind == CanvasMenuKind.Sort ? sort : Kind == CanvasMenuKind.Units ? units :
+                Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? search : branch;
             float width = Math.Min(panel.Width - 18, Kind == CanvasMenuKind.Sort ? 138 :
-                Kind == CanvasMenuKind.Units ? 156 : Kind == CanvasMenuKind.Type ? 180 : 235);
+                Kind == CanvasMenuKind.Units ? 156 : Kind == CanvasMenuKind.Type || Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? 180 : 235);
             if (Kind == CanvasMenuKind.Units)
             {
                 int rows = Math.Max(2, Math.Min(Count, (int)((anchor.Top - panel.Top - 31) / 20)));
@@ -138,6 +143,8 @@ namespace BetterGhPanel.UI
                 return index < PanelUnits.ConversionCount ? index == (int)conversion :
                     index == PanelUnits.ConversionCount ? decimals < 0 : decimals >= 0;
             if (Kind == CanvasMenuKind.Sort) return index == (int)options.SortMode;
+            if (Kind == CanvasMenuKind.SearchMode) return index == (int)options.SearchMode;
+            if (Kind == CanvasMenuKind.Comparison) return ComparisonAt(index) == ComparisonPrefix(options.Search);
             if (Kind == CanvasMenuKind.Type) return index == 0 ? options.TypeName == null && !options.OnlyInvalid :
                 index == 1 ? options.OnlyInvalid : TypeNameAt(index) == options.TypeName;
             return index == 0 ? options.BranchPath == null : index >= 2 && BranchPathAt(index) == options.BranchPath;
@@ -145,6 +152,35 @@ namespace BetterGhPanel.UI
 
         internal string TypeNameAt(int index) => _types[index - 2];
         internal string BranchPathAt(int index) => _snapshot.Branches[index - 2].Path;
+        internal static string ComparisonAt(int index) => Comparisons[index];
+        internal static string SearchModeLabel(PanelSearchMode mode) => SearchLabels[(int)mode];
+        internal static string SearchHint(PanelQueryOptions options)
+        {
+            string prefix = options.SearchMode == PanelSearchMode.Regex ? ".* " :
+                options.SearchMode == PanelSearchMode.Text ? "" : options.SearchMode + " ";
+            return prefix + (string.IsNullOrEmpty(options.Search) ?
+                options.SearchMode == PanelSearchMode.Text ? "Search…" : options.SearchMode == PanelSearchMode.Regex ? "Pattern…" : "filter…" : options.Search);
+        }
+
+        internal static string WithComparison(string search, int index)
+        {
+            string value = (search ?? "").Trim();
+            string prefix = ComparisonPrefix(value);
+            if (prefix.Length > 0) value = value.Substring(value.StartsWith("==", StringComparison.Ordinal) ? 2 : prefix.Length).Trim();
+            // Switching from text or regex starts with an empty threshold; an
+            // existing numeric threshold survives an operator change.
+            if (!double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double number) ||
+                double.IsNaN(number) || double.IsInfinity(number)) value = "";
+            return ComparisonAt(index) + " " + value;
+        }
+
+        private static string ComparisonPrefix(string search)
+        {
+            string value = (search ?? "").TrimStart();
+            foreach (string comparison in new[] { ">=", "<=", "!=", "==", ">", "<", "=" })
+                if (value.StartsWith(comparison, StringComparison.Ordinal)) return comparison == "==" ? "=" : comparison;
+            return "";
+        }
 
         internal string Label(int index, int decimals = PanelUnits.AutomaticDecimals)
         {
@@ -163,6 +199,8 @@ namespace BetterGhPanel.UI
                 return hint == name ? name : hint + " · " + name;
             }
             if (Kind == CanvasMenuKind.Sort) return SortLabels[index];
+            if (Kind == CanvasMenuKind.SearchMode) return SearchLabels[index];
+            if (Kind == CanvasMenuKind.Comparison) return ComparisonLabels[index];
             if (index == 0) return "All branches";
             if (index == 1) return "Jump to exact path…";
             var branch = _snapshot.Branches[index - 2];
