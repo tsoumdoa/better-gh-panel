@@ -40,21 +40,23 @@ internal static class RecomputeChecks
         var numbers = Enumerable.Range(0, 256).Select(i => new PanelRow(i, "{0}", "Number", i.ToString(), i)).ToArray();
         var small = new PanelSnapshot(numbers, new[] { new PanelBranch("{0}", numbers.Length) });
         Invoke(session, "AttachSnapshot", small);
-        Check(Current(session), "Trees at the immediate threshold publish synchronously");
+        await Wait(() => Current(session));
         Query(session, new PanelQueryOptions { Search = "> 250" });
-        Check(Current(session) && Result(session).RowPositions.Count == 5, "Small scalar filters complete without a pending frame");
+        await Wait(() => Current(session));
+        Check(Result(session).RowPositions.Count == 5, "Budgeted scalar filters publish the complete matching result");
         var large = new PanelSnapshot(numbers.Concat(new[] { numbers[0] }).ToArray(), small.Branches);
         Invoke(session, "AttachSnapshot", large);
-        Check(Property<bool>(session, "IsBusy") && !Current(session), "Trees above the threshold use a background query");
         await Wait(() => Current(session));
         var emptyBranches = new PanelSnapshot(Array.Empty<PanelRow>(), Enumerable.Range(0, 257).Select(i => new PanelBranch("{" + i + "}", 0)).ToArray());
         Invoke(session, "AttachSnapshot", emptyBranches);
-        Check(Property<bool>(session, "IsBusy"), "Empty branch count also bounds synchronous query work");
         await Wait(() => Current(session));
+        Check(Result(session).Statistics.BranchCount == 0, "Budgeted queries preserve filtering across empty branches");
         Query(session, new PanelQueryOptions());
+        await Wait(() => Current(session));
         var geometry = new PanelSnapshot(new[] { new PanelRow(0, "{0}", "Surface", "Srf", null,
             geometryInfo: new PanelGeometryInfo("Srf", power: 2, metricName: "Area", canMeasure: true)) }, small.Branches);
         Invoke(session, "AttachSnapshot", geometry);
+        await Wait(() => Current(session));
         int started = 0;
         Invoke(session, "SetGeometryDetailResolver", (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
         {
@@ -78,6 +80,7 @@ internal static class RecomputeChecks
             Query(session, new PanelQueryOptions());
             Check(Property<bool>(session, "IsBusy") && !Current(session), "Changing a filter cannot revive expired input while awaiting the next solution");
             Invoke(session, "AttachSnapshot", small);
+            await Wait(() => Current(session));
             gate.Set();
             await Wait(() => !Field<bool>(session, "_geometryRunning"));
             Check(Current(session) && ReferenceEquals(Result(session).Snapshot, small) && !timer.Enabled,
@@ -89,7 +92,8 @@ internal static class RecomputeChecks
             Check(!Current(session) && Property<string?>(session, "Error") != null && Hits(fixture.Component, "_rowHits") == 0,
                 "Failed queries leave old results hidden and recover through Reset");
             Query(session, new PanelQueryOptions());
-            Check(Current(session), "Reset recovers immediately from a failed query");
+            await Wait(() => Current(session));
+            Check(Result(session).RowPositions.Count == small.Rows.Count, "Reset recovers from a failed query");
         }
         finally { gate.Set(); }
     }

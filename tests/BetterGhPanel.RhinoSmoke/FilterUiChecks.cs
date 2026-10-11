@@ -229,8 +229,8 @@ internal static class FilterUiChecks
         Check(Selected(component, session).Count == 0 && !Highlighted(component) && view.ActiveViewport.CameraTarget == target,
             "All branches clears the branch highlight without reframing the whole tree");
 
-        // Use a background query here: small non-regex branch queries now finish
-        // immediately, so there is no pending focus intent left to supersede.
+        // Force a background query here: branch queries may finish inside the UI
+        // time budget, leaving no pending focus intent to supersede.
         Query(session, new PanelQueryOptions { TypeName = "Point", SearchMode = PanelSearchMode.Regex, Search = ".*" });
         await Wait(session);
         Paint(component, canvas);

@@ -11,8 +11,9 @@ namespace BetterGhPanel.Runtime
     /// <summary>Owns one component's view, background queries and lazy geometry measurements.</summary>
     public sealed class PanelSession : IDisposable
     {
-        // Bound synchronous work by both rows and paths (including empty branches).
-        internal const int ImmediateQueryLimit = 256;
+        // Reserve roughly a quarter of a 60 Hz frame for querying. This is a soft
+        // deadline checked between operations, not a limit on tree size.
+        private static readonly TimeSpan ImmediateQueryBudget = TimeSpan.FromMilliseconds(4);
         private readonly Action _invalidate;
         private CancellationTokenSource? _queryCancellation;
         private PanelQueryOptions _options = new PanelQueryOptions();
@@ -359,14 +360,26 @@ namespace BetterGhPanel.Runtime
             Error = null;
             _visibleGeometry.Clear();
             if (_awaitingSnapshot) { Notify(); return; }
-            // Regex can consume its timeout even on one row, and native geometry
-            // cost is unrelated to row count. Keep both off the UI thread.
-            if (snapshot.Rows.Count <= ImmediateQueryLimit && snapshot.Branches.Count <= ImmediateQueryLimit &&
-                options.SearchMode != PanelSearchMode.Regex && !PanelQueryEngine.RequiresGeometryMeasurements(options))
+            PanelQueryWork? work = null;
+            // Regex and native calls cannot yield midway through one operation.
+            // All other queries get the same time budget regardless of tree size.
+            if (options.SearchMode != PanelSearchMode.Regex && !PanelQueryEngine.RequiresGeometryMeasurements(options))
             {
-                try { PublishQuery(PanelQueryEngine.Execute(snapshot, options, token), null); }
-                catch (Exception ex) { PublishQuery(null, ex.Message); }
-                return;
+                try
+                {
+                    work = PanelQueryEngine.Start(snapshot, options, token);
+                    if (work.TryComplete(ImmediateQueryBudget))
+                    {
+                        PublishQuery(work.Result, null);
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    work?.Dispose();
+                    PublishQuery(null, ex.Message);
+                    return;
+                }
             }
             Notify();
             // Only plain immutable managed snapshot values cross this boundary.
@@ -385,7 +398,9 @@ namespace BetterGhPanel.Runtime
                         measurements = await CaptureGeometryMeasurements(snapshot, request, token).ConfigureAwait(false);
                         if (measurements == null) return;
                     }
-                    var result = PanelQueryEngine.Execute(snapshot, options, token, measurements);
+                    // Resume the same scan, statistics and sort state. Work already
+                    // performed within the UI budget is never restarted.
+                    var result = work?.Complete() ?? PanelQueryEngine.Execute(snapshot, options, token, measurements);
                     RhinoApp.InvokeOnUiThread((Action)(() =>
                     {
                         if (_disposed || request != _request || token.IsCancellationRequested) return;
@@ -401,6 +416,7 @@ namespace BetterGhPanel.Runtime
                         PublishQuery(null, ex.Message);
                     }));
                 }
+                finally { work?.Dispose(); }
             });
         }
 

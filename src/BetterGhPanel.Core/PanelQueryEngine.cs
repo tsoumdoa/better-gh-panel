@@ -10,15 +10,31 @@ namespace BetterGhPanel.Core
         public static PanelQueryResult Execute(PanelSnapshot snapshot, PanelQueryOptions options,
             CancellationToken cancellationToken = default, IReadOnlyDictionary<int, PanelGeometryInfo>? measuredGeometry = null)
         {
+            using var work = Start(snapshot, options, cancellationToken, measuredGeometry);
+            return work.Complete();
+        }
+
+        public static PanelQueryWork Start(PanelSnapshot snapshot, PanelQueryOptions options,
+            CancellationToken cancellationToken = default, IReadOnlyDictionary<int, PanelGeometryInfo>? measuredGeometry = null)
+        {
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
             if (options == null) throw new ArgumentNullException(nameof(options));
             cancellationToken.ThrowIfCancellationRequested();
-            // Capture mutable UI settings once before the background scan.
+            // Capture options now, before either execution or handoff can be deferred.
             var query = options.Clone();
+            return new PanelQueryWork(work => ExecuteSteps(snapshot, query, cancellationToken, measuredGeometry, work).GetEnumerator());
+        }
+
+        private static IEnumerable<PanelQueryResult?> ExecuteSteps(PanelSnapshot snapshot, PanelQueryOptions query,
+            CancellationToken cancellationToken, IReadOnlyDictionary<int, PanelGeometryInfo>? measuredGeometry, PanelQueryWork work)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             var search = new PanelSearchFilter(query);
             var selectedBranch = string.IsNullOrWhiteSpace(query.BranchPath) ? null : query.BranchPath!.Trim();
             var branchPrefix = BranchPrefix(query, selectedBranch);
-            var rowPositions = new List<int>(snapshot.Rows.Count);
+            // Grow with the work performed instead of allocating for a whole large
+            // tree before the first opportunity to yield.
+            var rowPositions = new List<int>();
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var hasItemFilter = search.HasFilter || query.TypeName != null || query.OnlyInvalid;
@@ -28,6 +44,7 @@ namespace BetterGhPanel.Core
             {
                 for (var i = 0; i < snapshot.Branches.Count; i++)
                 {
+                    if (work.ShouldYield()) yield return null;
                     CheckCancellation(i, cancellationToken);
                     var branch = snapshot.Branches[i];
                     if (MatchesBranch(branch.Path, selectedBranch, branchPrefix)) branches.Add(branch.Path);
@@ -42,6 +59,7 @@ namespace BetterGhPanel.Core
             var mean = 0.0;
             for (var i = 0; i < snapshot.Rows.Count; i++)
             {
+                if (work.ShouldYield()) yield return null;
                 CheckCancellation(i, cancellationToken);
                 var row = snapshot.Rows[i];
                 if (!MatchesBranch(row.Path, selectedBranch, branchPrefix)) continue;
@@ -68,15 +86,19 @@ namespace BetterGhPanel.Core
                     : mean + delta / numericCount;
             }
 
+            if (work.ShouldYield()) yield return null;
+            cancellationToken.ThrowIfCancellationRequested();
             var positions = rowPositions.ToArray();
             if (query.SortMode != PanelSortMode.SourceOrder)
-                StableSort(positions, snapshot.Rows, query.SortMode == PanelSortMode.ValueDescending, cancellationToken);
+                foreach (var step in StableSort(positions, snapshot.Rows, query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work))
+                    yield return step;
+            if (work.ShouldYield()) yield return null;
             cancellationToken.ThrowIfCancellationRequested();
             var statistics = new PanelStatistics(positions.Length, branches.Count, numericCount, nullCount,
                 invalidCount, numericCount == 0 ? (double?)null : minimum,
                 numericCount == 0 ? (double?)null : maximum, numericCount == 0 ? (double?)null : mean,
                 new ReadOnlyDictionary<string, int>(typeCounts));
-            return new PanelQueryResult(snapshot, positions, statistics, branches);
+            yield return new PanelQueryResult(snapshot, positions, statistics, branches);
         }
 
         public static bool RequiresGeometryMeasurements(PanelQueryOptions options)
@@ -139,9 +161,11 @@ namespace BetterGhPanel.Core
         }
 
         // Own merge sort keeps cancellation exceptions unwrapped and never mutates snapshot data.
-        private static void StableSort(int[] ids, IReadOnlyList<PanelRow> rows, bool descending, CancellationToken token)
+        private static IEnumerable<PanelQueryResult?> StableSort(int[] ids, IReadOnlyList<PanelRow> rows, bool descending,
+            CancellationToken token, PanelQueryWork work)
         {
-            if (ids.Length < 2) return;
+            if (ids.Length < 2) yield break;
+            if (work.ShouldYield()) yield return null;
             var buffer = new int[ids.Length];
             var source = ids;
             var destination = buffer;
@@ -156,6 +180,7 @@ namespace BetterGhPanel.Core
                     var right = middle;
                     for (var output = start; output < end; output++)
                     {
+                        if (work.ShouldYield()) yield return null;
                         CheckCancellation(output, token);
                         destination[output] = left < middle && (right >= end ||
                             Compare(source[left], source[right], rows, descending) <= 0)
@@ -167,6 +192,8 @@ namespace BetterGhPanel.Core
                 source = destination;
                 destination = temporary;
             }
+            if (work.ShouldYield()) yield return null;
+            token.ThrowIfCancellationRequested();
             if (!ReferenceEquals(source, ids)) Array.Copy(source, ids, ids.Length);
         }
 

@@ -24,6 +24,7 @@ internal static class Program
             EmptyAndNonfiniteNumbers,
             ExtremeNumericStatistics,
             Cancellation,
+            BudgetedQueryChecks.Run,
             LargeData,
             CanvasDimensionsAndPresets,
             CanvasMenuPagingAndSnapshot,
