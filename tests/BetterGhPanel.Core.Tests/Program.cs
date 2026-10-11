@@ -27,6 +27,7 @@ internal static class Program
             LargeData,
             CanvasDimensionsAndPresets,
             CanvasMenuPagingAndSnapshot,
+            PanelRowSelectionChecks.Run,
             UnitConversionsAndFormatting,
             UnitMenuLayout,
             GeometryMetricConversions
@@ -423,6 +424,10 @@ internal static class Program
             surface.FormatDetails(PanelUnitConversion.SquareMillimetersToSquareMeters, 2));
         Equal("Trimming: Untrimmed", new PanelGeometryInfo("Srf · untrimmed", canMeasure: true,
             details: "Trimming: Untrimmed").FormatDetails(PanelUnitConversion.None, -1));
+        Equal("1.00", PanelUnits.FormatGeometry(1000000, 2, "mm", PanelUnitConversion.SquareMillimetersToSquareMeters, 2, false));
+        Equal("1E+06", PanelUnits.FormatGeometry(1000000, 2, "mm", PanelUnitConversion.MillimetersToMeters, -1, false));
+        Equal("1", PanelUnits.FormatGeometry(1000000000, 3, "mm", PanelUnitConversion.CubicMillimetersToCubicMeters, -1, false));
+        Equal("unavailable", PanelUnits.FormatGeometry(double.MaxValue, 3, "m", PanelUnitConversion.CubicMetersToCubicMillimeters, -1, false));
     }
 
     private static void Equal<T>(T expected, T actual)

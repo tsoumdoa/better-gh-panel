@@ -9,5 +9,6 @@
     <!-- Pure UI policy can be checked on Windows and Mac without loading Rhino. -->
     <Compile Include="../../src/BetterGhPanel/UI/CanvasPanelSize.cs" Link="CanvasPanelSize.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/CanvasMenu.cs" Link="CanvasMenu.cs" />
+    <Compile Include="../../src/BetterGhPanel/UI/PanelRowSelection.cs" Link="PanelRowSelection.cs" />
   </ItemGroup>
 </Project>
