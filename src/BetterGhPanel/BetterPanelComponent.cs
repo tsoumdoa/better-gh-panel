@@ -115,8 +115,9 @@ namespace BetterGhPanel
             CancelPendingCopy();
             CanvasTextInput.CloseActive(this);
             (Attributes as BetterPanelAttributes)?.ResetViewState();
+            var previousResult = Session.Result;
             Session.ResetView();
-            (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
+            if (ReferenceEquals(previousResult, Session.Result)) (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
         }
 
         internal void SetPreviewMode(PanelPreviewMode mode)
@@ -254,8 +255,7 @@ namespace BetterGhPanel
         {
             ordered = Array.Empty<int>();
             var session = _session;
-            if (session == null || session.IsBusy || session.Error != null || !ReferenceEquals(snapshot, session.Snapshot) ||
-                !ReferenceEquals(snapshot, session.Result.Snapshot) || positions.Count == 0) return false;
+            if (session == null || !session.HasCurrentResult || !ReferenceEquals(snapshot, session.Snapshot) || positions.Count == 0) return false;
             var selected = new HashSet<int>(positions);
             if (selected.Any(position => position < 0 || position >= _sourceItems.Length || position >= snapshot.Rows.Count)) return false;
             ordered = session.Result.RowPositions.Where(selected.Contains).ToArray();
@@ -265,9 +265,7 @@ namespace BetterGhPanel
         internal string? FrameRows(PanelSnapshot snapshot, IReadOnlyList<int> positions)
         {
             if (_previewSuspended) return "Activate this Grasshopper document to frame geometry";
-            if (positions.Count == 0) { HighlightRows(snapshot, positions); return null; }
             if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
-            HighlightRows(snapshot, ordered);
             var result = PanelGeometryActions.Frame(ordered.Select(position => _sourceItems[position]));
             return result.Success ? null : result.Error;
         }
@@ -276,7 +274,7 @@ namespace BetterGhPanel
         {
             var session = _session;
             if (_previewSuspended || Locked || PreviewMode == PanelPreviewMode.Off || session == null || !session.HasCurrentResult ||
-                !ReferenceEquals(snapshot, session.Snapshot) || !ReferenceEquals(snapshot, session.Result.Snapshot))
+                !ReferenceEquals(snapshot, session.Snapshot))
             {
                 ClearHighlight();
                 return;
@@ -293,7 +291,7 @@ namespace BetterGhPanel
 
         internal void ClearHighlight()
         {
-            if (!_highlight.HasSelection && _highlight.PreviewCount == 0) return;
+            if (_highlight.PreviewCount == 0) return;
             _highlight.Clear();
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }

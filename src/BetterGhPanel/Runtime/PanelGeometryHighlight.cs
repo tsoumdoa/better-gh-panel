@@ -17,7 +17,6 @@ namespace BetterGhPanel.Runtime
         private readonly List<IGH_PreviewData> _normal = new List<IGH_PreviewData>();
         private readonly List<IGH_PreviewData> _selected = new List<IGH_PreviewData>();
 
-        internal bool HasSelection { get; private set; }
         internal int Count => _selected.Count;
         internal int PreviewCount => _normal.Count + _selected.Count;
         internal BoundingBox ClippingBox { get; private set; } = BoundingBox.Empty;
@@ -25,30 +24,22 @@ namespace BetterGhPanel.Runtime
         internal void Set(IReadOnlyList<IGH_Goo?> sourceItems, IReadOnlyList<int> previewPositions, IReadOnlyList<int> selectedPositions)
         {
             Clear();
-            var selected = new HashSet<int>();
-            foreach (var position in selectedPositions)
-                if (position >= 0 && position < sourceItems.Count) selected.Add(position);
-            HasSelection = selected.Count > 0;
+            var selected = new HashSet<int>(selectedPositions);
             var bounds = BoundingBox.Empty;
             foreach (int position in previewPositions)
             {
                 if (position < 0 || position >= sourceItems.Count) continue;
                 var item = sourceItems[position];
-                if (item == null) continue;
+                var box = PanelGeometryActions.GetBounds(item);
+                if (item == null || !box.IsValid) continue;
                 try
                 {
-                    if (!item.IsValid) continue;
-                    // Custom preview goo may supply its own bounds without being
-                    // geometric goo. Validate wrappers before converting them so
-                    // numbers and vectors cannot become artificial points.
-                    var preview = item as IGH_PreviewData;
-                    var box = preview?.ClippingBox ?? PanelGeometryActions.GetBounds(item);
-                    if (!box.IsValid) box = PanelGeometryActions.GetBounds(item);
-                    if (!box.IsValid) continue;
-                    preview ??= GH_Convert.ToGeometricGoo(PanelGeometryActions.Unwrap(item)) as IGH_PreviewData;
+                    // Share bounds with framing. Validate wrappers before converting
+                    // them so numbers and vectors cannot become artificial points.
+                    var preview = item as IGH_PreviewData ??
+                        GH_Convert.ToGeometricGoo(PanelGeometryActions.Unwrap(item)) as IGH_PreviewData;
                     if (preview == null) continue;
-                    var clippingBox = preview.ClippingBox;
-                    bounds.Union(clippingBox.IsValid ? clippingBox : box);
+                    bounds.Union(box);
                     (selected.Contains(position) ? _selected : _normal).Add(preview);
                 }
                 catch (Exception) { } // One third-party goo cannot disable the other previews.
@@ -58,7 +49,6 @@ namespace BetterGhPanel.Runtime
 
         internal void Clear()
         {
-            HasSelection = false;
             _normal.Clear();
             _selected.Clear();
             ClippingBox = BoundingBox.Empty;

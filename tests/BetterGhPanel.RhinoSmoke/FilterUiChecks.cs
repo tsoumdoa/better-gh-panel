@@ -495,7 +495,7 @@ internal static class FilterUiChecks
     private static IReadOnlyList<int> Positions(object session) => Property<PanelQueryResult>(session, "Result").RowPositions;
     private static IReadOnlyList<int> Selected(GH_Component component, object session) =>
         (IReadOnlyList<int>)Invoke(Field<object>(component.Attributes, "_selection"), "OrderedPositions", Property<PanelQueryResult>(session, "Result"))!;
-    private static bool Highlighted(GH_Component component) => Property<bool>(Field<object>(component, "_highlight"), "HasSelection");
+    private static bool Highlighted(GH_Component component) => Property<int>(Field<object>(component, "_highlight"), "Count") > 0;
     private static string MenuKind(GH_Component component) => Property<object>(Field<object>(component.Attributes, "_menu"), "Kind").ToString()!;
     private static void Query(object session, PanelQueryOptions options) => Invoke(session, "UpdateQuery", options);
     private static object? Invoke(object owner, string method, params object[] arguments) => owner.GetType().GetMethod(method, Instance)!.Invoke(owner, arguments);

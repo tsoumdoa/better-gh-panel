@@ -53,11 +53,10 @@ namespace BetterGhPanel
         {
             _offset = 0;
             ClearRowSelection();
-            InvalidateCopyStatus();
+            PanelOwner.ClearHighlight();
             _scrolling = false;
             _rowContextHandled = false;
             _menu.Close();
-            CloseRowMenu();
             _rowActionDismissedUntil = default;
             _rowHits.Clear();
             _branchHits.Clear();
@@ -66,7 +65,8 @@ namespace BetterGhPanel
         internal void ClearRowSelection()
         {
             _selection.Clear();
-            PanelOwner.ClearHighlight();
+            InvalidateCopyStatus();
+            CloseRowMenu();
         }
 
         internal void OnQueryCompleted()
@@ -74,13 +74,12 @@ namespace BetterGhPanel
             var session = PanelOwner.Session;
             if (session.IsBusy) { PanelOwner.ClearHighlight(); return; }
             var result = session.Result;
-            if (session.Error != null || !ReferenceEquals(result.Snapshot, session.Snapshot))
+            if (!session.HasCurrentResult)
             {
-                _selection.Clear();
+                ClearRowSelection();
                 PanelOwner.ClearHighlight();
                 return;
             }
-            _selection.Synchronize(result);
             PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
         }
 
@@ -90,11 +89,10 @@ namespace BetterGhPanel
             var options = session.Options;
             options.BranchPath = string.IsNullOrWhiteSpace(path) ? null : path!.Trim();
             options.BranchPrefix = false;
-            _selection.Clear();
-            InvalidateCopyStatus();
-            PanelOwner.ClearHighlight();
+            ClearRowSelection();
+            var previousResult = session.Result;
             session.UpdateQuery(options);
-            if (!session.IsBusy) OnQueryCompleted();
+            if (ReferenceEquals(previousResult, session.Result)) OnQueryCompleted();
         }
 
         protected override void Layout()
@@ -690,7 +688,6 @@ namespace BetterGhPanel
             if (_list.Contains(point))
             {
                 ClearRowSelection();
-                InvalidateCopyStatus();
                 OnQueryCompleted();
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
