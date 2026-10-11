@@ -4,4 +4,7 @@
     <Title>BetterGhPanel Core</Title>
     <Description>Immutable tree snapshots, filtering, sorting, and statistics for BetterGhPanel.</Description>
   </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="BetterGhPanel.Core.Tests" />
+  </ItemGroup>
 </Project>

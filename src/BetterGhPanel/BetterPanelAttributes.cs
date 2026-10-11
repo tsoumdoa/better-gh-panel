@@ -47,7 +47,7 @@ namespace BetterGhPanel
         private bool _copyPending;
         private long _actionGeneration;
         private BetterPanelComponent PanelOwner => (BetterPanelComponent)Owner;
-        private int Count => PanelOwner.Session.Result.RowPositions.Count;
+        private int Count => PanelOwner.Session.HasCurrentResult ? PanelOwner.Session.Result.RowPositions.Count : 0;
         private int MaximumOffset => Math.Max(0, Count - Math.Max(1, _shown));
 
         internal BetterPanelAttributes(BetterPanelComponent owner) : base(owner) { }
@@ -176,6 +176,7 @@ namespace BetterGhPanel
             CanvasTextInput.Maintain(canvas);
             var session = PanelOwner.Session;
             var visibleRegion = canvas.Viewport.VisibleRegion;
+            session.AnimateBusyState(!PanelOwner.Locked && Bounds.IntersectsWith(visibleRegion) && canvas.Viewport.Zoom >= 0.5f);
             // Grasshopper also renders components outside the canvas viewport.
             if (!Bounds.IntersectsWith(visibleRegion))
             {
@@ -213,7 +214,10 @@ namespace BetterGhPanel
                 Text(graphics, "P+", bold, Accent, new RectangleF(_panel.X + 8, _panel.Y + 1, 28, 20), trim);
                 var itemLabel = result.Statistics.ItemCount == 1 ? "item" : "items";
                 var branchLabel = result.Statistics.BranchCount == 1 ? "branch" : "branches";
-                Text(graphics, $"{result.Statistics.ItemCount:N0} {itemLabel}  ·  {result.Statistics.BranchCount:N0} {branchLabel}", small, Muted, new RectangleF(_panel.X + 39, _panel.Y + 1, _panel.Width - 117, 20), trim);
+                Text(graphics, PanelOwner.Locked ? "Disabled" : session.HasCurrentResult
+                    ? $"{result.Statistics.ItemCount:N0} {itemLabel}  ·  {result.Statistics.BranchCount:N0} {branchLabel}"
+                    : session.IsBusy ? "Recomputing…" : "Filter needs attention", small, Muted,
+                    new RectangleF(_panel.X + 39, _panel.Y + 1, _panel.Width - 117, 20), trim);
                 if (canvas.Viewport.Zoom >= 0.5f)
                     DrawDisplayAction(graphics);
                 if (canvas.Viewport.Zoom >= 0.5f)
@@ -221,7 +225,7 @@ namespace BetterGhPanel
                     var options = session.Options;
                     DropdownControl(graphics, _search, CanvasMenu.SearchHint(options), small, trim,
                         options.SearchMode != PanelSearchMode.Text || !string.IsNullOrEmpty(options.Search));
-                    DropdownControl(graphics, _type, CanvasMenu.TypeHint(result, options), small, trim, options.TypeName != null || options.OnlyInvalid);
+                    DropdownControl(graphics, _type, session.HasCurrentResult ? CanvasMenu.TypeHint(result, options) : "Types", small, trim, options.TypeName != null || options.OnlyInvalid);
                     DropdownControl(graphics, _sort, options.SortMode == PanelSortMode.SourceOrder ? "Src" : options.SortMode == PanelSortMode.ValueAscending ? "↑" : "↓", small, trim, options.SortMode != PanelSortMode.SourceOrder);
                     DropdownControl(graphics, _branch, Short(options.BranchPath ?? "Paths", 80), mono, trim, options.BranchPath != null);
                     DrawViewAction(graphics, _jump, false);
@@ -255,6 +259,28 @@ namespace BetterGhPanel
             _rowHits.Clear();
             _branchHits.Clear();
             _shown = 0;
+            if (PanelOwner.Locked)
+            {
+                Text(g, "Disabled. Enable the component to recompute.", small, Muted,
+                    new RectangleF(_list.X + 6, _list.Y + 12, _list.Width - 12, 22), trim);
+                PanelOwner.Session.RequestGeometryMeasurements(PanelOwner.Session.Snapshot, Array.Empty<int>());
+                return;
+            }
+            if (PanelOwner.Session.IsBusy)
+            {
+                // Clear both rows and their hit regions while the current view is
+                // being computed; never mix old statistics/values with new input.
+                float busyY = _list.Y + Math.Max(0, (_list.Height - 22) / 2);
+                var ring = new RectangleF(_list.X + 9, busyY + 5, 12, 12);
+                using (var track = new Pen(Color.FromArgb(225, 231, 224), 2))
+                    g.DrawEllipse(track, ring);
+                using (var progress = new Pen(Accent, 2))
+                    g.DrawArc(progress, ring, (float)(DateTime.UtcNow.TimeOfDay.TotalMilliseconds % 900 / 900 * 360), 250);
+                Text(g, "Recomputing…", small, Muted,
+                    new RectangleF(_list.X + 29, busyY, _list.Width - 35, 22), trim);
+                PanelOwner.Session.RequestGeometryMeasurements(PanelOwner.Session.Snapshot, Array.Empty<int>());
+                return;
+            }
             if (PanelOwner.Session.Error != null)
             {
                 Text(g, "Filter needs attention. Edit search or Reset.", small, Muted,
@@ -262,6 +288,7 @@ namespace BetterGhPanel
                 PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, Array.Empty<int>());
                 return;
             }
+            if (!PanelOwner.Session.HasCurrentResult) return;
             float y = _list.Y;
             string? previousPath = null;
             // A half-height panel at the minimum saved size still has room for a
@@ -332,10 +359,12 @@ namespace BetterGhPanel
             string metrics = stats.NumericCount > 0
                 ? $"min {Number(stats.Minimum, result.Snapshot)}   max {Number(stats.Maximum, result.Snapshot)}   avg {Number(stats.Mean, result.Snapshot)}"
                 : $"{stats.TypeCounts.Count:N0} types   ·   {stats.NullCount:N0} null   ·   {stats.InvalidCount:N0} invalid";
-            Text(g, metrics, small, Ink, new RectangleF(_footer.X, _footer.Y, _footer.Width - 5, _units.Y - _footer.Y), trim);
             var session = PanelOwner.Session;
-            string output = PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None ? "out: tools" : "out: source";
-            string status = session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Updating…" :
+            if (session.HasCurrentResult)
+                Text(g, metrics, small, Ink, new RectangleF(_footer.X, _footer.Y, _footer.Width - 5, _units.Y - _footer.Y), trim);
+            string output = result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count
+                ? "out: filtered" : PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None ? "out: tools" : "out: source";
+            string status = PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
                 _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
                 _selection.Count > 0 ? $"{_selection.Count:N0} selected · right-click to copy" :
                 $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} · {output}";
@@ -412,7 +441,7 @@ namespace BetterGhPanel
 
         private bool RowsAreCurrent(PanelQueryResult result) =>
             ReferenceEquals(_lastResult, result) && ReferenceEquals(result, PanelOwner.Session.Result) &&
-            ReferenceEquals(result.Snapshot, PanelOwner.Session.Snapshot) && !PanelOwner.Session.IsBusy && PanelOwner.Session.Error == null;
+            PanelOwner.Session.HasCurrentResult;
 
         private void CloseRowMenu()
         {
@@ -862,10 +891,10 @@ namespace BetterGhPanel
             {
                 var options = PanelOwner.Session.Options;
                 e.Title = _type.Contains(point) ? "Filter by type" : _sort.Contains(point) ? "Sort this view" : "Filter by branch";
-                e.Text = _type.Contains(point) ? CanvasMenu.TypeHint(PanelOwner.Session.Result, options) :
+                e.Text = _type.Contains(point) ? PanelOwner.Session.HasCurrentResult ? CanvasMenu.TypeHint(PanelOwner.Session.Result, options) : "Types" :
                     _sort.Contains(point) ? options.SortMode.ToString() : options.BranchPath ?? "All branches";
-                e.Description = "Changes the panel view. Output retains the original tree unless a tree operation or unit conversion is active.";
-                if (_type.Contains(point))
+                e.Description = "Filters keep matching items on the output wire after tree tools and unit conversion. Sorting changes only the view; output keeps its tree order.";
+                if (_type.Contains(point) && PanelOwner.Session.HasCurrentResult)
                     e.Description = (PanelOwner.Session.Result.RowPositions.Count > 0 ? "Visible types: " : "Source types: ") +
                         CanvasMenu.TypeDetails(PanelOwner.Session.Result) + "\n\n" + e.Description;
                 else if (_branch.Contains(point))
@@ -902,6 +931,18 @@ namespace BetterGhPanel
             }
             else if (_footer.Contains(point))
             {
+                if (PanelOwner.Locked)
+                {
+                    e.Title = "Disabled";
+                    e.Description = "Enable the component to recompute its input.";
+                    return;
+                }
+                if (PanelOwner.Session.IsBusy)
+                {
+                    e.Title = "Recomputing…";
+                    e.Description = "Rows and statistics will appear when the current data is ready.";
+                    return;
+                }
                 if (PanelOwner.Session.Error != null)
                 {
                     e.Title = "Filter needs attention";
@@ -913,7 +954,7 @@ namespace BetterGhPanel
                 e.Text = _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus : $"{_selection.Count:N0} selected";
                 e.Description = "Click a row to select and frame its geometry in Rhino's active viewport. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Right-click for value or geometry copy. Double-click copies selected values, one per line.";
             }
-            else if (ReferenceEquals(_lastResult, PanelOwner.Session.Result))
+            else if (RowsAreCurrent(PanelOwner.Session.Result))
             {
                 foreach (var hit in _branchHits)
                     if (hit.Bounds.Contains(point))

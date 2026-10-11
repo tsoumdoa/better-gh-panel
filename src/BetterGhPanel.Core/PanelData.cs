@@ -151,16 +151,19 @@ namespace BetterGhPanel.Core
 
     public sealed class PanelQueryResult
     {
-        internal PanelQueryResult(PanelSnapshot snapshot, int[] rowPositions, PanelStatistics statistics)
+        internal PanelQueryResult(PanelSnapshot snapshot, int[] rowPositions, PanelStatistics statistics, IEnumerable<string> branchPaths)
         {
             Snapshot = snapshot;
             RowPositions = Array.AsReadOnly(rowPositions);
             Statistics = statistics;
+            BranchPaths = Array.AsReadOnly(new List<string>(branchPaths).ToArray());
         }
 
         public PanelSnapshot Snapshot { get; }
         /// <summary>Positions in Snapshot.Rows, retaining each row's original tree address.</summary>
         public IReadOnlyList<int> RowPositions { get; }
         public PanelStatistics Statistics { get; }
+        /// <summary>Matching paths, including empty branches when no item filter is active.</summary>
+        public IReadOnlyList<string> BranchPaths { get; }
     }
 }

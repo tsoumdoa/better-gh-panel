@@ -24,6 +24,7 @@ internal static class Program
             EmptyAndNonfiniteNumbers,
             ExtremeNumericStatistics,
             Cancellation,
+            BudgetedQueryChecks.Run,
             LargeData,
             CanvasDimensionsAndPresets,
             CanvasMenuPagingAndSnapshot,
@@ -72,6 +73,7 @@ internal static class Program
         var result = Query();
         Equal(6, result.Statistics.ItemCount);
         Equal(4, result.Statistics.BranchCount);
+        Equal(true, result.BranchPaths.ToHashSet().SetEquals(Sample().Branches.Select(branch => branch.Path)));
         Equal(3, result.Statistics.NumericCount);
         Equal(1, result.Statistics.NullCount);
         Equal(2, result.Statistics.InvalidCount);

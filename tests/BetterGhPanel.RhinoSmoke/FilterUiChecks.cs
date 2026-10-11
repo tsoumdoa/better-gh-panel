@@ -49,7 +49,7 @@ internal static class FilterUiChecks
         var session = PanelTestAdapter.Session(component);
         await Wait(session);
         // Grasshopper may duplicate persistent goo while collecting the first
-        // solution. View-only actions must preserve the resulting output items.
+        // solution. Reset must restore these typed items after filtering.
         var initialOutput = component.Params.Output[0].VolatileData;
         var initialPaths = initialOutput.Paths.Select(path => path.ToString()).ToArray();
         var initialBranchCounts = initialOutput.Paths.Select(path => initialOutput.get_Branch(path).Count).ToArray();
@@ -65,15 +65,16 @@ internal static class FilterUiChecks
         await VerifyBranches(component, canvas, session);
         await VerifyCompactErrors(component, canvas, assembly, session);
         await VerifyPersistence(component, canvas, assembly, session);
+        document.NewSolution(false, GH_SolutionMode.Silent);
         var output = component.Params.Output[0].VolatileData;
         var items = output.AllData(true).ToArray();
         Check(output.DataCount == initialItems.Length && items.Length == initialItems.Length,
-            "Search modes and branch actions retain every output row");
+            "Reset after search and branch filters restores every output row");
         Check(output.Paths.Select(path => path.ToString()).SequenceEqual(initialPaths) &&
             output.Paths.Select(path => output.get_Branch(path).Count).SequenceEqual(initialBranchCounts),
-            "Search modes and branch actions retain output paths and branch lengths");
+            "Reset restores output paths and branch lengths");
         Check(items.Zip(initialItems, (current, original) => ReferenceEquals(current, original)).All(same => same),
-            "Search modes and branch actions retain the solved output goo identities");
+            "Filtering and reset preserve the captured typed goo identities");
         Check(items.OfType<GH_Number>().Single().Value == 24 &&
             items.OfType<GH_String>().Select(item => item.Value).SequenceEqual(new[] { "Wall-A", "Wall-B" }),
             "Search modes and branch actions retain original numeric and text values");
@@ -228,6 +229,10 @@ internal static class FilterUiChecks
         Check(Selected(component, session).Count == 0 && !Highlighted(component) && view.ActiveViewport.CameraTarget == target,
             "All branches clears the branch highlight without reframing the whole tree");
 
+        // Force a background query here: branch queries may finish inside the UI
+        // time budget, leaving no pending focus intent to supersede.
+        Query(session, new PanelQueryOptions { TypeName = "Point", SearchMode = PanelSearchMode.Regex, Search = ".*" });
+        await Wait(session);
         Paint(component, canvas);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Branch));
         MenuRow(component, canvas, 2);

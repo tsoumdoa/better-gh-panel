@@ -21,7 +21,7 @@ namespace BetterGhPanel.Runtime
         internal int Count => _selected.Count;
         internal BoundingBox ClippingBox { get; private set; } = BoundingBox.Empty;
 
-        internal void Set(IReadOnlyList<IGH_Goo?> sourceItems, IReadOnlyList<int> selectedPositions)
+        internal void Set(IReadOnlyList<IGH_Goo?> sourceItems, IReadOnlyList<int> selectedPositions, IReadOnlyList<int> visiblePositions)
         {
             Clear();
             var selected = new HashSet<int>();
@@ -33,8 +33,9 @@ namespace BetterGhPanel.Runtime
             // should use normal colors, even if the component itself is selected.
             HasSelection = true;
             var bounds = BoundingBox.Empty;
-            for (int position = 0; position < sourceItems.Count; position++)
+            foreach (int position in visiblePositions)
             {
+                if (position < 0 || position >= sourceItems.Count) continue;
                 var item = sourceItems[position];
                 var box = PanelGeometryActions.GetBounds(item);
                 if (item == null || !box.IsValid) continue;
