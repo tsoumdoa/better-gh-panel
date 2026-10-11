@@ -6,7 +6,7 @@ using Grasshopper.GUI;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 
-internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Filter, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify, Units, Display }
+internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Filter, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify, Units, Display, Preview }
 
 // The .gha is loaded separately. Keep plugin-owned reflection in this adapter.
 internal static class PanelTestAdapter
@@ -15,6 +15,12 @@ internal static class PanelTestAdapter
     internal static object Session(GH_Component component) => Property<object>(component, "Session");
     internal static bool HasSession(GH_Component component) => Field<object?>(component, "_session") != null;
     internal static int Preset(GH_Component component) => Property<int>(component, "PreviewSize");
+    internal static string PreviewMode(GH_Component component) => Property<object>(component, "PreviewMode").ToString()!;
+    internal static void PreviewMode(GH_Component component, string mode)
+    {
+        var method = component.GetType().GetMethod("SetPreviewMode", PrivateInstance)!;
+        method.Invoke(component, new[] { Enum.Parse(method.GetParameters()[0].ParameterType, mode) });
+    }
     internal static SizeF Size(GH_Component component) => new SizeF(Property<float>(component, "CanvasWidth"), Property<float>(component, "CanvasHeight"));
     internal static int TrimDepth(GH_Component component) => Property<int>(component, "TrimDepth");
     internal static bool TreeFlag(GH_Component component, string name) => Property<bool>(component, name + "Tree");

@@ -68,7 +68,7 @@ namespace BetterGhPanel.UI
         internal IReadOnlyList<int> OrderedPositions(PanelQueryResult result)
         {
             Synchronize(result);
-            return result.RowPositions.Where(_positions.Contains).ToArray();
+            return _positions.Count == 0 ? Array.Empty<int>() : result.RowPositions.Where(_positions.Contains).ToArray();
         }
 
         internal void SelectAll(PanelQueryResult result, string? branchPath = null)

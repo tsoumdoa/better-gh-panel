@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Grasshopper.Kernel;
 using Grasshopper.Kernel.Types;
 using Rhino;
 using Rhino.Display;
@@ -149,6 +150,11 @@ namespace BetterGhPanel.Runtime
             try
             {
                 if (item == null || !item.IsValid) return BoundingBox.Empty;
+                if (item is IGH_PreviewData preview)
+                {
+                    var bounds = preview.ClippingBox;
+                    if (bounds.IsValid) return bounds;
+                }
                 if (item is IGH_GeometricGoo geometric) return geometric.Boundingbox;
                 var value = Unwrap(item);
                 if (value is GeometryBase geometry) return geometry.IsValid ? geometry.GetBoundingBox(false) : BoundingBox.Empty;

@@ -80,6 +80,7 @@ internal static class RowActionChecks
             await VerifyCanvasAndQueryActions(component, session, rhino);
             await VerifyBranchHighlight(component, session, document, rhino);
             await VerifyGeometryClipboard(component, session, rhino, items.Length);
+            await VerifyCopyDuringDocumentSwitch(component, session, document);
             await VerifyFailuresAndCancellation(component, session);
 
             Check(source.PersistentData.Branches[0].SequenceEqual(items), "Row actions preserve upstream goo identities and positions");
@@ -203,19 +204,18 @@ internal static class RowActionChecks
         rhino.Objects.FindId(sentinel).Select(true);
         int objectCount = rhino.Objects.Count;
         var selectedIds = rhino.Objects.GetSelectedObjects(false, false).Select(item => item.Id).ToArray();
-        Branch("{0}");
-        await WaitForQuery(session);
-        Check(Property<int>(highlight, "Count") == 7 &&
-            InsideFrustum(viewport, Point3d.Origin, new Point3d(20, 30, 40), new Point3d(103, 104, 0)),
-            "Choosing a branch highlights and frames all its geometry without waiting for a canvas repaint");
         var inspectedTarget = new Point3d(250, 300, 350);
         viewport.SetCameraTarget(inspectedTarget, true);
+        Branch("{0}");
+        await WaitForQuery(session);
+        Check(Property<int>(highlight, "PreviewCount") == 0 && viewport.CameraTarget == inspectedTarget,
+            "Choosing a branch only filters rows in Selected preview mode");
         var options = Property<PanelQueryOptions>(session, "Options");
         options.SortMode = PanelSortMode.ValueAscending;
         Query(session, options);
         await WaitForQuery(session);
-        Check(Property<int>(highlight, "Count") == 7 && viewport.CameraTarget.DistanceTo(inspectedTarget) < 1e-8,
-            "Sorting retains the branch highlight without repeatedly moving the user's camera");
+        Check(Property<int>(highlight, "Count") == 0 && viewport.CameraTarget.DistanceTo(inspectedTarget) < 1e-8,
+            "Sorting a branch filter neither selects geometry nor moves the camera");
         Branch(null);
         await WaitForQuery(session);
         Check(Property<int>(highlight, "Count") == 0 && viewport.CameraTarget.DistanceTo(inspectedTarget) < 1e-8,
@@ -225,22 +225,22 @@ internal static class RowActionChecks
         await WaitForQuery(session);
         Branch("{0}");
         await WaitForQuery(session);
-        Check(Property<int>(highlight, "Count") == 1 && viewport.CameraTarget.DistanceTo(new Point3d(20, 30, 40)) < 1e-8,
-            "Choosing a branch with a type filter frames and highlights only its matching geometry");
+        Check(Property<int>(highlight, "Count") == 0 && viewport.CameraTarget == inspectedTarget,
+            "Combining branch and type filters does not implicitly select or frame geometry");
         Branch(null);
         await WaitForQuery(session);
         Query(session, new PanelQueryOptions());
         await WaitForQuery(session);
-        Method(component, "FrameRows").Invoke(component, new object[] { Snapshot(session), new[] { 4 } });
+        Method(component, "HighlightRows").Invoke(component, new object[] { Snapshot(session), new[] { 4 } });
         component.ExpireSolution(true);
-        Check(!Property<bool>(highlight, "HasSelection"), "A new solution clears old geometry highlights immediately");
+        Check(Property<int>(highlight, "PreviewCount") == 0, "A new solution clears old geometry highlights immediately");
         await WaitForQuery(session);
-        Check(!Property<bool>(highlight, "HasSelection"), "A new snapshot cannot restore a stale row highlight");
+        Check(Property<int>(highlight, "PreviewCount") == 0, "A new snapshot cannot restore a stale row highlight");
 
         Branch("{0}");
         component.DocumentContextChanged(document, GH_DocumentContext.Unloaded);
         await WaitForQuery(session);
-        Check(!Property<bool>(highlight, "HasSelection"), "A query completing after a document unload cannot revive its highlight");
+        Check(Property<int>(highlight, "PreviewCount") == 0, "A query completing after a document unload cannot revive its highlight");
         component.DocumentContextChanged(document, GH_DocumentContext.Loaded);
         Branch(null);
         await WaitForQuery(session);
@@ -263,8 +263,7 @@ internal static class RowActionChecks
             new GH_ObjectWrapper(new Point3d(30, 0, 0)), new GH_Curve(), null };
         var highlight = Field<object>(component, "_highlight");
         using var args = new PreviewArguments(document, rhino.Views.ActiveView.ActiveViewport);
-        var visible = Enumerable.Range(0, items.Length).ToArray();
-        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 1, 2 }, visible });
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, Enumerable.Range(0, items.Length).ToArray(), new[] { 1, 2 } });
         component.DrawViewportWires(args);
         component.DrawViewportMeshes(args);
         Check(normal.WireColor == args.WireColour && selected.WireColor == args.WireColour_Selected &&
@@ -283,22 +282,32 @@ internal static class RowActionChecks
         component.Locked = false;
         Check(selected.WireCalls == 1 && selected.MeshCalls == 1,
             "Hidden or disabled components cannot draw stale row highlights");
-        Check(!Property<bool>(highlight, "HasSelection"), "Expiring component data clears borrowed geometry highlights");
-        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 1, 2 }, visible });
+        Check(Property<int>(highlight, "PreviewCount") == 0, "Expiring component data clears borrowed geometry highlights");
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, Enumerable.Range(0, items.Length).ToArray(), new[] { 1, 2 } });
         Check(component.IsPreviewCapable && component.ClippingBox.Contains(normal.Value) && component.ClippingBox.Contains(new Point3d(30, 0, 0)),
             "Highlight preview clipping retains unselected geometry and wrapped geometric values");
-        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 2 }, new[] { 2 } });
-        Check(!component.ClippingBox.Contains(normal.Value) && !component.ClippingBox.Contains(new Point3d(30, 0, 0)),
-            "Filtered-out geometry cannot reappear through selection preview or its clipping bounds");
-        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 3, 4, 5, 6, 7 }, visible });
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 3, 4, 5, 6, 7 }, new[] { 3, 4, 5, 6, 7 } });
         Check(Property<int>(highlight, "Count") == 1,
             "Highlight accepts wrapped geometry and excludes numbers, vectors, nulls and invalid geometry");
-        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 3 }, visible });
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 3 }, new[] { 3 } });
         component.DrawViewportWires(args);
-        Check(Property<bool>(highlight, "HasSelection") && Property<int>(highlight, "Count") == 0 && selected.WireColor == args.WireColour,
-            "Selecting a numeric row removes the previous green highlight without hiding the remaining geometry");
+        Check(Property<int>(highlight, "PreviewCount") == 0 &&
+            selected.WireCalls == 1 && !component.ClippingBox.IsValid,
+            "Selecting only numeric rows draws no geometry and has no clipping bounds");
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 2 }, new[] { 2 } });
+        component.DrawViewportWires(args);
+        component.DrawViewportMeshes(args);
+        Check(normal.WireCalls == 1 && normal.MeshCalls == 1 && selected.WireCalls == 2 && selected.MeshCalls == 2 &&
+            !component.ClippingBox.Contains(normal.Value) && component.ClippingBox.Contains(selected.Value),
+            "Selected preview draws and clips only its selected geometry");
+        Method(highlight, "Set").Invoke(highlight, new object[] { items, new[] { 0 }, Array.Empty<int>() });
+        component.DrawViewportWires(args);
+        component.DrawViewportMeshes(args);
+        Check(normal.WireCalls == 2 && normal.MeshCalls == 2 && normal.WireColor == args.WireColour &&
+            selected.WireCalls == 2 && !component.ClippingBox.Contains(selected.Value),
+            "Filtered preview draws only matching geometry in normal colors without a row selection");
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
-        Check(!Property<bool>(highlight, "HasSelection") && !Property<BoundingBox>(highlight, "ClippingBox").IsValid,
+        Check(Property<int>(highlight, "PreviewCount") == 0 && !Property<BoundingBox>(highlight, "ClippingBox").IsValid,
             "Clearing a highlight releases all borrowed previews and clipping bounds");
     }
 
@@ -393,14 +402,13 @@ internal static class RowActionChecks
         component.Attributes.PerformLayout();
         Paint(component, canvas);
         var viewport = rhino.Views.ActiveView.ActiveViewport;
-        var cameraOffset = viewport.CameraLocation - viewport.CameraTarget;
+        var cameraLocation = viewport.CameraLocation;
+        var cameraTarget = viewport.CameraTarget;
         Click(component, canvas, PanelTestAdapter.RowBounds(component, 4));
         Check(Property<int>(Field<object>(component, "_highlight"), "Count") == 1,
             "Clicking a geometry row installs its native Grasshopper highlight");
-        Check(viewport.CameraTarget.DistanceTo(new Point3d(20, 30, 40)) < 1e-8 &&
-            (viewport.CameraLocation - viewport.CameraTarget - cameraOffset).Length < 1e-8,
-            "Clicking a point row pans the active Rhino camera while preserving its scale");
-        var cameraTarget = viewport.CameraTarget;
+        Check(viewport.CameraTarget == cameraTarget && viewport.CameraLocation == cameraLocation,
+            "Clicking a geometry row leaves the active Rhino camera unchanged");
         Click(component, canvas, PanelTestAdapter.RowBounds(component, 0));
         Check(viewport.CameraTarget == cameraTarget, "Clicking numeric rows leaves the active camera unchanged");
         Check(Property<int>(Field<object>(component, "_highlight"), "Count") == 0,
@@ -414,8 +422,8 @@ internal static class RowActionChecks
             "Clicking a selected row preserves a multirow group");
         Check(Property<int>(Field<object>(component, "_highlight"), "Count") == 2,
             "A multirow click highlights all selected geometry");
-        Check(InsideFrustum(viewport, new Point3d(20, 30, 40), new Point3d(100, 100, 0), new Point3d(103, 104, 0)),
-            "A multirow click frames all selected geometry in the active Rhino viewport");
+        Check(viewport.CameraTarget == cameraTarget && viewport.CameraLocation == cameraLocation,
+            "Selecting a multirow group leaves the active Rhino camera unchanged");
         var unlockedCamera = viewport.CameraLocation;
         var unlockedTarget = viewport.CameraTarget;
         try
@@ -430,6 +438,8 @@ internal static class RowActionChecks
         SaveMenuPreview(component, canvas);
         var geometryMenu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
         Click(component, canvas, new RectangleF(geometryMenu.X, geometryMenu.Y, geometryMenu.Width, 20));
+        Check(InsideFrustum(viewport, new Point3d(20, 30, 40), new Point3d(100, 100, 0), new Point3d(103, 104, 0)),
+            "Explicit Frame selection fits the complete selected geometry group");
 
         Select(selection, Result(session), 0);
         Select(selection, Result(session), 1, toggle: true);
@@ -460,7 +470,7 @@ internal static class RowActionChecks
         var staleRowBounds = PanelTestAdapter.RowBounds(component, 4);
         var staleTarget = viewport.CameraTarget;
         Query(session, new PanelQueryOptions { Search = "full" });
-        Check(!Property<bool>(Field<object>(component, "_highlight"), "HasSelection"),
+        Check(Property<int>(Field<object>(component, "_highlight"), "PreviewCount") == 0,
             "Starting a query clears stale highlights before the canvas paints its next result");
         Click(component, canvas, staleRowBounds);
         Check(viewport.CameraTarget == staleTarget, "An old painted row cannot move the camera while a query is pending");
@@ -625,6 +635,50 @@ internal static class RowActionChecks
         Forms.Clipboard.SetText("keep failed measurement clipboard");
         await CopyValues(component, Snapshot(session), 0, 8);
         Check(ClipboardText() == "keep failed measurement clipboard", "Measurement failure cannot publish a partial multirow clipboard");
+    }
+
+    private static async Task VerifyCopyDuringDocumentSwitch(GH_Component component, object session, GH_Document document)
+    {
+        component.ExpireSolution(true);
+        await WaitForQuery(session);
+        using var gate = new ManualResetEventSlim(false);
+        var resolver = Field<Func<int, Func<PanelGeometryInfo?>?>>(session, "_geometryDetailResolver");
+        Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
+        {
+            (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
+            {
+                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+                return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
+            })
+        });
+        try
+        {
+            using var canvas = new GH_Canvas { Size = new Size(1000, 1000) };
+            component.Attributes.Pivot = new PointF(50, 50);
+            PanelTestAdapter.Resize(component, 500, 800);
+            component.Attributes.PerformLayout();
+            Paint(component, canvas);
+            Forms.Clipboard.SetText("keep document-switch clipboard");
+            Click(component, canvas, PanelTestAdapter.RowBounds(component, 8), Forms.MouseButtons.Right);
+            var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+            Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
+            await WaitUntil(() => Field<bool>(session, "_geometryRunning"));
+            Check(Field<bool>(component.Attributes, "_copyPending"), "Value copy is pending while its geometry is measured");
+            component.DocumentContextChanged(document, GH_DocumentContext.Unloaded);
+            gate.Set();
+            await WaitUntil(() => !Field<bool>(session, "_geometryRunning"));
+            component.DocumentContextChanged(document, GH_DocumentContext.Loaded);
+            Paint(component, canvas);
+            Check(!Field<bool>(component.Attributes, "_copyPending") && ClipboardText() == "keep document-switch clipboard",
+                "Switching documents cancels the copy and clears its pending status after returning");
+            Check(PanelTestAdapter.SelectedPosition(component) < 0,
+                "A cancelled document-switch copy cannot revive its old row selection");
+        }
+        finally
+        {
+            gate.Set();
+            Method(session, "SetGeometryDetailResolver").Invoke(session, new object[] { resolver });
+        }
     }
 
     private static Task<string> CopyValues(GH_Component component, PanelSnapshot snapshot, params int[] positions) =>

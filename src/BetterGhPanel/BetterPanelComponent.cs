@@ -39,6 +39,7 @@ namespace BetterGhPanel
         internal float CanvasWidth { get; private set; } = CanvasPanelSize.DefaultWidth;
         internal float CanvasHeight { get; private set; } = CanvasPanelSize.DefaultHeight;
         internal CanvasPanelDisplay CanvasDisplay { get; private set; }
+        internal PanelPreviewMode PreviewMode { get; private set; }
         internal float DisplayHeight => CanvasPanelSize.DisplayHeight(CanvasHeight, CanvasDisplay);
         internal int TrimDepth { get; private set; }
         internal bool FlattenTree { get; private set; }
@@ -56,36 +57,22 @@ namespace BetterGhPanel
         protected override Bitmap Icon => PanelIcon.Create();
         public override GH_Exposure Exposure => GH_Exposure.primary;
 
-        // Grasshopper's default preview also draws internalised input. Preview
-        // only output so excluded items cannot bypass the panel's filters.
-        private IEnumerable<IGH_PreviewObject> OutputPreviews => Params.Output.OfType<IGH_PreviewObject>()
-            .Where(preview => !preview.Hidden && preview.IsPreviewCapable);
+        public override bool IsPreviewCapable => _highlight.PreviewCount > 0 || base.IsPreviewCapable;
 
-        public override bool IsPreviewCapable => _highlight.HasSelection || OutputPreviews.Any();
-
-        public override Rhino.Geometry.BoundingBox ClippingBox
-        {
-            get
-            {
-                var bounds = Rhino.Geometry.BoundingBox.Empty;
-                foreach (var preview in OutputPreviews) bounds.Union(preview.ClippingBox);
-                bounds.Union(_highlight.ClippingBox);
-                return bounds;
-            }
-        }
+        public override Rhino.Geometry.BoundingBox ClippingBox =>
+            Hidden || Locked || _previewSuspended || PreviewMode == PanelPreviewMode.Off
+                ? Rhino.Geometry.BoundingBox.Empty : _highlight.ClippingBox;
 
         public override void DrawViewportWires(IGH_PreviewArgs args)
         {
-            if (Hidden || Locked || _previewSuspended) return;
-            if (_highlight.HasSelection) _highlight.DrawWires(args, Attributes.Selected);
-            else foreach (var preview in OutputPreviews) preview.DrawViewportWires(args);
+            if (Hidden || Locked || _previewSuspended || PreviewMode == PanelPreviewMode.Off) return;
+            _highlight.DrawWires(args, Attributes.Selected);
         }
 
         public override void DrawViewportMeshes(IGH_PreviewArgs args)
         {
-            if (Hidden || Locked || _previewSuspended) return;
-            if (_highlight.HasSelection) _highlight.DrawMeshes(args);
-            else foreach (var preview in OutputPreviews) preview.DrawViewportMeshes(args);
+            if (Hidden || Locked || _previewSuspended || PreviewMode == PanelPreviewMode.Off) return;
+            _highlight.DrawMeshes(args);
         }
 
         internal PanelSession Session
@@ -103,7 +90,6 @@ namespace BetterGhPanel
                     _session.QueryChanged += (_, __) =>
                     {
                         CancelPendingCopy();
-                        (Attributes as BetterPanelAttributes)?.OnQueryChanged();
                         ClearHighlight();
                         if (!_restoringView)
                         {
@@ -129,7 +115,19 @@ namespace BetterGhPanel
             CancelPendingCopy();
             CanvasTextInput.CloseActive(this);
             (Attributes as BetterPanelAttributes)?.ResetViewState();
+            var previousResult = Session.Result;
             Session.ResetView();
+            if (ReferenceEquals(previousResult, Session.Result)) (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
+        }
+
+        internal void SetPreviewMode(PanelPreviewMode mode)
+        {
+            if (!Enum.IsDefined(typeof(PanelPreviewMode), mode) || PreviewMode == mode) return;
+            RecordUndoEvent("Panel preview mode");
+            PreviewMode = mode;
+            (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
+            OnPingDocument()?.Modified();
+            Instances.ActiveCanvas?.Invalidate();
         }
 
         internal void ResetPanel()
@@ -257,8 +255,7 @@ namespace BetterGhPanel
         {
             ordered = Array.Empty<int>();
             var session = _session;
-            if (session == null || session.IsBusy || session.Error != null || !ReferenceEquals(snapshot, session.Snapshot) ||
-                !ReferenceEquals(snapshot, session.Result.Snapshot) || positions.Count == 0) return false;
+            if (session == null || !session.HasCurrentResult || !ReferenceEquals(snapshot, session.Snapshot) || positions.Count == 0) return false;
             var selected = new HashSet<int>(positions);
             if (selected.Any(position => position < 0 || position >= _sourceItems.Length || position >= snapshot.Rows.Count)) return false;
             ordered = session.Result.RowPositions.Where(selected.Contains).ToArray();
@@ -268,27 +265,33 @@ namespace BetterGhPanel
         internal string? FrameRows(PanelSnapshot snapshot, IReadOnlyList<int> positions)
         {
             if (_previewSuspended) return "Activate this Grasshopper document to frame geometry";
-            if (positions.Count == 0) { ClearHighlight(); return null; }
             if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
-            HighlightRows(snapshot, ordered);
             var result = PanelGeometryActions.Frame(ordered.Select(position => _sourceItems[position]));
             return result.Success ? null : result.Error;
         }
 
         internal void HighlightRows(PanelSnapshot snapshot, IReadOnlyList<int> positions)
         {
-            if (_previewSuspended || !TryGetActionPositions(snapshot, positions, out var ordered))
+            var session = _session;
+            if (_previewSuspended || Locked || PreviewMode == PanelPreviewMode.Off || session == null || !session.HasCurrentResult ||
+                !ReferenceEquals(snapshot, session.Snapshot))
             {
                 ClearHighlight();
                 return;
             }
-            _highlight.Set(_sourceItems, ordered, Session.Result.RowPositions);
+            var ordered = Array.Empty<int>();
+            if (positions.Count > 0 && !TryGetActionPositions(snapshot, positions, out ordered))
+            {
+                ClearHighlight();
+                return;
+            }
+            _highlight.Set(_sourceItems, PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.RowPositions : ordered, ordered);
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
 
         internal void ClearHighlight()
         {
-            if (!_highlight.HasSelection) return;
+            if (_highlight.PreviewCount == 0) return;
             _highlight.Clear();
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
@@ -456,8 +459,8 @@ namespace BetterGhPanel
             else if (context == GH_DocumentContext.Unloaded)
             {
                 _previewSuspended = true;
+                (Attributes as BetterPanelAttributes)?.ClearRowSelection();
                 ClearHighlight();
-                (Attributes as BetterPanelAttributes)?.OnQueryChanged();
                 CancelPendingCopy();
                 CanvasTextInput.CloseActive();
                 // Unloaded is a canvas/tab switch, not document destruction.
@@ -468,7 +471,10 @@ namespace BetterGhPanel
                 }
             }
             else if (context == GH_DocumentContext.Loaded || context == GH_DocumentContext.Open)
+            {
                 _previewSuspended = false;
+                (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
+            }
             base.DocumentContextChanged(document, context);
         }
 
@@ -523,6 +529,7 @@ namespace BetterGhPanel
             writer.SetSingle("PanelWidth", CanvasWidth);
             writer.SetSingle("PanelHeight", CanvasHeight);
             writer.SetInt32("PanelDisplay", (int)CanvasDisplay);
+            writer.SetInt32("PanelPreviewMode", (int)PreviewMode);
             writer.SetInt32("PanelTrimDepth", TrimDepth);
             writer.SetBoolean("PanelFlatten", FlattenTree);
             writer.SetBoolean("PanelReverse", ReverseTree);
@@ -536,6 +543,7 @@ namespace BetterGhPanel
         {
             CancelPendingCopy();
             ClearHighlight();
+            (Attributes as BetterPanelAttributes)?.ResetViewState();
             var search = ""; var type = ""; var branch = "";
             var prefix = false; var invalid = false; var sort = 0; var size = 1; var searchMode = 0;
             reader.TryGetString("PanelSearch", ref search);
@@ -561,6 +569,10 @@ namespace BetterGhPanel
             reader.TryGetInt32("PanelDisplay", ref display);
             CanvasDisplay = Enum.IsDefined(typeof(CanvasPanelDisplay), display)
                 ? (CanvasPanelDisplay)display : CanvasPanelDisplay.Full;
+            int previewMode = 0;
+            reader.TryGetInt32("PanelPreviewMode", ref previewMode);
+            PreviewMode = Enum.IsDefined(typeof(PanelPreviewMode), previewMode)
+                ? (PanelPreviewMode)previewMode : PanelPreviewMode.Selected;
             int trimDepth = 0;
             bool flatten = false, reverse = false, simplify = false;
             reader.TryGetInt32("PanelTrimDepth", ref trimDepth);
@@ -581,6 +593,7 @@ namespace BetterGhPanel
             try { _session?.UpdateQuery(_savedOptions); }
             finally { _restoringView = false; }
             var success = base.Read(reader);
+            (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
             Attributes?.ExpireLayout();
             return success;
         }

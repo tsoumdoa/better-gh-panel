@@ -219,17 +219,20 @@ internal static class RecomputeChecks
         input.PersistentData.Append(new LocalPreviewProbe(excluded), new GH_Path(0));
         input.PersistentData.Append(new LocalPreviewProbe(included), new GH_Path(1));
         component.ExpireSolution(true);
+        PanelTestAdapter.PreviewMode(component, "FilteredResults");
         using var viewport = new Rhino.Display.RhinoViewport();
         using var args = new RowActionChecks.PreviewArguments(fixture.Document, viewport);
         Draw();
         Check(input.DataType == GH_ParamData.local && excluded.Wires == 1 && included.Wires == 1 &&
-            excluded.Meshes == 1 && included.Meshes == 1, "Internalised geometry previews once through output");
+            excluded.Meshes == 1 && included.Meshes == 1, "Filtered results previews each internalised custom geometry once");
         Query(fixture.Session, new PanelQueryOptions { BranchPath = "{1}" });
         await Wait(() => fixture.Sink.VolatileData.DataCount == 1);
         Draw();
         Check(excluded.Wires == 1 && excluded.Meshes == 1 && included.Wires == 2 && included.Meshes == 2 &&
             !component.ClippingBox.Contains(excluded.Bounds.Center) && component.ClippingBox.Contains(included.Bounds.Center),
             "Filtered-out internalised geometry cannot draw or enter clipping bounds");
+        var frameError = (string?)Invoke(component, "FrameRows", Property<PanelSnapshot>(fixture.Session, "Snapshot"), new[] { 1 });
+        Check(frameError == null, "Frame selection accepts custom geometry that provides preview bounds");
         Query(fixture.Session, new PanelQueryOptions { TypeName = "Text" });
         await Wait(() => fixture.Sink.VolatileData.DataCount == 0);
         Draw();
@@ -272,6 +275,11 @@ internal static class RecomputeChecks
             Paint(component, canvas);
             Check(!Property<bool>(session, "IsBusy") && !Current(session) && !timer.Enabled && Hits(component, "_rowHits") == 0,
                 "Disabling cancels the query, hides stale rows and stops animation");
+            var viewport = Rhino.RhinoDoc.ActiveDoc.Views.ActiveView.ActiveViewport;
+            var target = viewport.CameraTarget;
+            var frameError = (string?)Invoke(component, "FrameRows", Property<PanelSnapshot>(session, "Snapshot"), new[] { 0 });
+            Check(frameError != null && viewport.CameraTarget == target,
+                "Disabled input rejects stale geometry actions without moving the camera");
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "." });
             gate.Set();
             await Wait(() => !Field<bool>(session, "_geometryRunning"));
