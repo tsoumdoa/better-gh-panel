@@ -11,7 +11,8 @@ description: >
   between full and half views while keeping wire connections fixed. A compact
   footer menu converts length, area, volume, and angle units and sets decimal formatting.
   Visible geometry rows show cached metrics calculated lazily in the background; invalid values have clear labels.
-  Select rows or branches to highlight and frame geometry in the active Rhino viewport.
+  Preview selected geometry by default, all filtered results, or none.
+  Select rows or branches without moving the camera; use Frame selection to zoom explicitly.
   Filter values, length, area or volume with comparisons, or match text with regular expressions.
   Filters apply to typed output after tree tools and unit conversion.
   Pending results show a recomputing state instead of stale rows and statistics.
