@@ -135,8 +135,9 @@ namespace BetterGhPanel
             _jump = new RectangleF(_display.Left - 48, _panel.Y + 2, 20, 18);
             _reset = new RectangleF(_jump.Right + 4, _jump.Y, 20, 18);
             _footer = new RectangleF(x + 2, _panel.Bottom - 36, _panel.Width - 12, 32);
-            _units = new RectangleF(_footer.Right - 85, _footer.Y + 15, 76, 17);
-            _trim = new RectangleF(_units.Left - 101, _footer.Y + 14, 22, 20);
+            // Share one row so status text, tool glyphs and Units have the same center.
+            _units = new RectangleF(_footer.Right - 85, _footer.Y + 12, 76, 20);
+            _trim = new RectangleF(_units.Left - 101, _units.Y, 22, _units.Height);
             _simplify = new RectangleF(_trim.Right + 2, _trim.Y, 22, 20);
             _flatten = new RectangleF(_simplify.Right + 2, _trim.Y, 22, 20);
             _reverse = new RectangleF(_flatten.Right + 2, _trim.Y, 22, 20);
@@ -226,7 +227,7 @@ namespace BetterGhPanel
                     DrawViewAction(graphics, _jump, false);
                     DrawViewAction(graphics, _reset, true);
                     RenderRows(graphics, result, visibleRegion, font, small, mono, trim);
-                    RenderFooter(graphics, result, small, mono, trim);
+                    RenderFooter(graphics, result, small, trim);
                     if (_menu.Kind != CanvasMenuKind.None) RenderMenu(graphics, small, mono, trim);
                     if (_rowMenuResult != null) RenderRowMenu(graphics, small, trim);
                     using (var gripPen = new Pen(Color.FromArgb(165, 173, 166), 1))
@@ -325,24 +326,24 @@ namespace BetterGhPanel
             }
         }
 
-        private void RenderFooter(Graphics g, PanelQueryResult result, Font small, Font mono, StringFormat trim)
+        private void RenderFooter(Graphics g, PanelQueryResult result, Font small, StringFormat trim)
         {
             var stats = result.Statistics;
             string metrics = stats.NumericCount > 0
                 ? $"min {Number(stats.Minimum, result.Snapshot)}   max {Number(stats.Maximum, result.Snapshot)}   avg {Number(stats.Mean, result.Snapshot)}"
                 : $"{stats.TypeCounts.Count:N0} types   ·   {stats.NullCount:N0} null   ·   {stats.InvalidCount:N0} invalid";
-            Text(g, metrics, mono, Ink, new RectangleF(_footer.X, _footer.Y, _footer.Width - 5, 14), trim);
+            Text(g, metrics, small, Ink, new RectangleF(_footer.X, _footer.Y, _footer.Width - 5, _units.Y - _footer.Y), trim);
             var session = PanelOwner.Session;
             string output = PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None ? "out: tools" : "out: source";
             string status = session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Updating…" :
                 _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
                 _selection.Count > 0 ? $"{_selection.Count:N0} selected · right-click to copy" :
                 $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} · {output}";
-            Text(g, status, small, Muted, new RectangleF(_footer.X, _footer.Y + 15, _trim.Left - _footer.X - 6, 14), trim);
-            TreeToolIcons.Draw(g, _trim, TreeToolIcons.Trim, PanelOwner.TrimDepth > 0);
-            TreeToolIcons.Draw(g, _simplify, TreeToolIcons.Simplify, PanelOwner.SimplifyTree);
-            TreeToolIcons.Draw(g, _flatten, TreeToolIcons.Flatten, PanelOwner.FlattenTree);
-            TreeToolIcons.Draw(g, _reverse, TreeToolIcons.Reverse, PanelOwner.ReverseTree);
+            Text(g, status, small, Muted, new RectangleF(_footer.X, _units.Y, _trim.Left - _footer.X - 6, _units.Height), trim);
+            TreeToolIcons.Draw(g, _trim, TreeToolIcon.Trim, PanelOwner.TrimDepth > 0);
+            TreeToolIcons.Draw(g, _simplify, TreeToolIcon.Simplify, PanelOwner.SimplifyTree);
+            TreeToolIcons.Draw(g, _flatten, TreeToolIcon.Flatten, PanelOwner.FlattenTree);
+            TreeToolIcons.Draw(g, _reverse, TreeToolIcon.Reverse, PanelOwner.ReverseTree);
             string unitLabel = PanelOwner.UnitConversion == PanelUnitConversion.None ? "Units" : PanelUnits.Label(PanelOwner.UnitConversion).Replace(" → ", "→");
             string precision = PanelOwner.DecimalPlaces < 0 ? "" : $" · {PanelOwner.DecimalPlaces}dp";
             DropdownControl(g, _units, unitLabel + precision, small, trim,

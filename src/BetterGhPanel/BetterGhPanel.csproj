@@ -13,7 +13,6 @@
     <PackageReference Include="Grasshopper" Version="8.0.23304.9001" ExcludeAssets="runtime" />
     <ProjectReference Include="../BetterGhPanel.Core/BetterGhPanel.Core.csproj" />
     <EmbeddedResource Include="../../assets/icon.png" LogicalName="BetterGhPanel.icon.png" />
-    <EmbeddedResource Include="../../assets/tree-tools/*.png" LogicalName="BetterGhPanel.tree-tools.%(Filename)%(Extension)" />
   </ItemGroup>
   <!-- Rhino supplies Grasshopper, RhinoCommon, Eto, Drawing, and WinForms at runtime. -->
   <PropertyGroup Condition="'$(TargetFramework)' == 'net48'">

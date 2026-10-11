@@ -10,7 +10,9 @@ Created in [T3 Code](https://t3.codes).
 
 Find **Panel+** in **Params → Util** after installing the local Yak package. Connect any typed tree to **D**. With tree tools and unit conversion off, the output forwards that tree unchanged. Searching, filtering and sorting only affect your view.
 
-The public Yak beta is **`better-gh-panel 0.1.12-beta.1`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.12-beta.1`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including the single display control and fixed wire connections. Mac runtime validation is pending.
+The public Yak beta is **`better-gh-panel 0.1.13-beta.1`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.13-beta.1`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including the single display control and fixed wire connections. Mac runtime validation is pending.
+
+Beta patch **`0.1.13-beta.1`** replaces the tree-tool bitmaps with thin vector icons in Panel+'s muted grey and green palette. Active tools use a soft green fill and underline. The footer aligns status text, icons and Units on one center line, with matching text styles and tighter spacing below the statistics.
 
 Beta patch **`0.1.12-beta.1`** adds Grasshopper-style green highlighting for selected rows, branch selection and framing, and compact filters for numeric values, length, area, volume and regular expressions. Use the search dropdown to choose a mode and comparison. Select rows with Ctrl/Cmd-click or Shift-click, or click a branch heading to select its matching rows. Right-click for framing and value/geometry copying.
 
@@ -22,7 +24,7 @@ New panels start at **360 × 360** (1:1). Saved sizes and legacy size presets ar
 
 One small chevron in the header toggles **Full ↔ Half**. Full restores the saved height and Half shows half that height. Both connection points stay fixed. Width, filters, selection, and data stay intact. The display mode is saved with the definition and supports undo. Resizing in Half updates the full height proportionally. Definitions saved with the removed Collapsed mode reopen in Full.
 
-The panel uses a compact spreadsheet layout: one search/filter row and a small footer dock with the original Grasshopper **Trim**, **Simplify**, **Flatten**, and **Reverse** icons. Hover for each tool's name and trim depth; green icons indicate active tools. Type hints cover Grasshopper geometry and primitive data: **Pt**, **Srf**, **Mesh**, **Crv**, **Brep**, **SubD**, **Vec**, **Num**, and more. The filter summarises the two most common visible types, with a remaining-type count, and its tooltip lists full names and counts. Mixed and invalid-only rows show compact type labels. Geometry summaries already name their type, so they use that space for metadata instead of repeating a type label. The menu retains full names, and other built-in or third-party types keep their own names. At the default size, the table has 41% more area than the previous layout. The icons are original Grasshopper assets, used for this Grasshopper plug-in under [McNeel's icon usage terms](https://developer.rhino3d.com/guides/grasshopper/grasshopper-icons/).
+The panel uses a compact spreadsheet layout: one search/filter row and a small footer dock with Panel+'s own vector **Trim**, **Simplify**, **Flatten**, and **Reverse** icons. Hover for each tool's name and trim depth; green icons, a soft fill and an underline indicate active tools. Type hints cover Grasshopper geometry and primitive data: **Pt**, **Srf**, **Mesh**, **Crv**, **Brep**, **SubD**, **Vec**, **Num**, and more. The filter summarises the two most common visible types, with a remaining-type count, and its tooltip lists full names and counts. Mixed and invalid-only rows show compact type labels. Geometry summaries already name their type, so they use that space for metadata instead of repeating a type label. The menu retains full names, and other built-in or third-party types keep their own names. At the default size, the table has 41% more area than the previous layout.
 
 The small **Units** dropdown at the bottom right opens upward inside the panel. Choose **mm ↔ m**, **mm² ↔ m²** (area), **mm³ ↔ m³** (volume), or **rad ↔ deg**. Conversion changes Number and Integer output values; converted integers become Numbers so fractions are preserved. Text, geometry, nulls, and empty branches pass through. Geometry metrics use the same menu for display only, applying a conversion only when its source model units and dimension match. Length, area and volume are separate: 1,000 mm, 1,000,000 mm² and 1,000,000,000 mm³ become 1 m, 1 m² and 1 m³ respectively. Conversion follows the tree tools, and search, sorting, and statistics use converted numeric values.
 
@@ -38,7 +40,7 @@ Right-click a row for **Frame selection**, **Copy value(s)**, or **Copy geometry
 
 **Copy geometry for Rhino** places supported valid geometry on the native Windows clipboard for Rhino's normal **Paste** command. It preserves source model units and geometry coordinates; numeric display conversions do not scale geometry. Non-geometric, invalid and unsupported rows are skipped and counted. Copying does not bake objects into the Rhino document. Mac native geometry copying and custom model unit systems are currently unsupported; value copying and viewport framing remain available. New solutions clear row selection; filtering drops hidden selections, and sorting retains the selected rows.
 
-![Compact Panel+ canvas with native tree-tool icons and row type hints](docs/images/panel-tree-tools.png)
+![Compact Panel+ canvas with vector tree-tool icons and aligned footer text](docs/images/panel-tree-tools.png)
 
 [See the compact units menu](docs/images/panel-units-menu.png).
 
@@ -56,7 +58,7 @@ dotnet run --project tests/BetterGhPanel.Core.Tests -c Release
 node scripts/package.mjs
 ```
 
-The beta artifact is `artifacts/better-gh-panel-0.1.12-beta.1/better-gh-panel-0.1.12-beta.1-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The beta artifact is `artifacts/better-gh-panel-0.1.13-beta.1/better-gh-panel-0.1.13-beta.1-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino.
 
