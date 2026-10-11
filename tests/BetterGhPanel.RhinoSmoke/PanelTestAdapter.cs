@@ -23,7 +23,14 @@ internal static class PanelTestAdapter
     internal static BetterGhPanel.Core.PanelUnitConversion Conversion(GH_Component component) => Property<BetterGhPanel.Core.PanelUnitConversion>(component, "UnitConversion");
     internal static int Decimals(GH_Component component) => Property<int>(component, "DecimalPlaces");
     internal static int Offset(GH_Component component) => Field<int>(component.Attributes, "_offset");
-    internal static int SelectedPosition(GH_Component component) => Field<int>(component.Attributes, "_selectedPosition");
+    internal static int SelectedPosition(GH_Component component)
+    {
+        var selection = Field<object>(component.Attributes, "_selection");
+        var result = Session(component).GetType().GetProperty("Result")!.GetValue(Session(component));
+        var positions = (System.Collections.Generic.IReadOnlyList<int>)selection.GetType().GetMethod("OrderedPositions", PrivateInstance)!
+            .Invoke(selection, new[] { result })!;
+        return positions.Count == 0 ? -1 : positions[0];
+    }
     internal static bool MenuOpen(GH_Component component) => Property<object>(Field<object>(component.Attributes, "_menu"), "Kind").ToString() != "None";
     internal static void ResetView(GH_Component component) => component.GetType().GetMethod("ResetPanelView", PrivateInstance)!.Invoke(component, Array.Empty<object>());
     internal static void Units(GH_Component component, BetterGhPanel.Core.PanelUnitConversion conversion, int decimals) =>

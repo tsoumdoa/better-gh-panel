@@ -140,6 +140,8 @@ internal static class Program
     {
         var assembly = Assembly.LoadFrom(_plugin);
         await GeometryHintChecks.Run(assembly);
+        await GeometryMeasurementBatchChecks.Run(assembly);
+        await RowActionChecks.Run(assembly);
         var componentType = assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!;
         var component = (GH_Component)Activator.CreateInstance(componentType)!;
         var componentIcon = (Bitmap)componentType.GetProperty("Icon", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component)!;
@@ -411,8 +413,8 @@ internal static class Program
             PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("0.000100 m²"),
             "Decimals reformat geometry metrics without solving or measuring again");
         PanelTestAdapter.Units(component, PanelUnitConversion.SquareMillimetersToSquareMeters, -1);
-        Assert(!PanelTestAdapter.CopyValue(component, Get<PanelSnapshot>(session, "Snapshot"), surfacePosition).Contains("Area:"),
-            "Geometry hints do not replace the full value copied from a row");
+        Assert(PanelTestAdapter.CopyValue(component, Get<PanelSnapshot>(session, "Snapshot"), surfacePosition) == "0.0001",
+            "Copy value uses the converted measured area without labels or units");
         UpdateQuery(session, new PanelQueryOptions { TypeName = "Brep" });
         await WaitForQuery(session);
         DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-brep-hint.png");
@@ -765,7 +767,7 @@ internal static class Program
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Units));
         ClickMenuRow(component, canvas, PanelUnits.ConversionCount + 1);
         CanvasEditorAdapter.Active(assembly).Submit("0");
-        Assert(PanelTestAdapter.Decimals(component) == 0 && PanelTestAdapter.CopyValue(component, snapshot, 0) == "0 m" &&
+        Assert(PanelTestAdapter.Decimals(component) == 0 && PanelTestAdapter.CopyValue(component, snapshot, 0) == "0" &&
             ReferenceEquals(snapshot, Get<PanelSnapshot>(session, "Snapshot")) &&
             ((GH_Number)output.get_Branch(output.Paths[0])[0]!).Value == 0.01,
             "Decimal formatting and copying preserve full output precision without another solution");
@@ -792,8 +794,10 @@ internal static class Program
         PanelTestAdapter.Units(component, PanelUnitConversion.None, -1);
         await WaitForQuery(session);
         AssertEqualTrees(input, component.Params.Output[0].VolatileData);
-        Assert(PanelTestAdapter.CopyValue(component, snapshot, 0).EndsWith(" m"),
-            "Obsolete snapshots retain their own unit labels while a newer conversion is displayed");
+        bool rejectedStaleCopy = false;
+        try { PanelTestAdapter.CopyValue(component, snapshot, 0); }
+        catch (TargetInvocationException error) when (error.InnerException is InvalidOperationException) { rejectedStaleCopy = true; }
+        Assert(rejectedStaleCopy, "Obsolete snapshots cannot copy values from a newer solution");
     }
 
     private static async Task VerifyUndoRedo(GH_Component component, GH_Document document,

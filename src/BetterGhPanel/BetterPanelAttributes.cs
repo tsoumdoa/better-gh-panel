@@ -26,14 +26,21 @@ namespace BetterGhPanel
         private RectangleF _trim, _simplify, _flatten, _reverse, _units;
         private RectangleF _display;
         private readonly List<RowHit> _rowHits = new List<RowHit>();
-        private int _offset, _shown, _selectedPosition = -1;
+        private int _offset, _shown;
         private PanelQueryResult? _lastResult;
-        private PanelSnapshot? _selectedSnapshot;
+        private readonly PanelRowSelection _selection = new PanelRowSelection();
+        private PanelQueryResult? _rowMenuResult;
+        private RectangleF _rowMenuBounds;
+        private int _rowMenuHovered = -1;
         private readonly CanvasMenu _menu = new CanvasMenu();
-        private bool _resizing, _scrolling;
+        private bool _resizing, _scrolling, _rowContextHandled;
         private PointF _dragStart;
         private float _startWidth, _startHeight, _thumbGrab;
         private DateTime _copiedUntil;
+        private DateTime _rowActionDismissedUntil;
+        private string _actionStatus = string.Empty;
+        private bool _copyPending;
+        private long _actionGeneration;
         private BetterPanelComponent PanelOwner => (BetterPanelComponent)Owner;
         private int Count => PanelOwner.Session.Result.RowPositions.Count;
         private int MaximumOffset => Math.Max(0, Count - Math.Max(1, _shown));
@@ -43,16 +50,19 @@ namespace BetterGhPanel
         internal void ResetViewState()
         {
             _offset = 0;
-            _selectedPosition = -1;
-            _selectedSnapshot = null;
-            _copiedUntil = default;
+            _selection.Clear();
+            InvalidateCopyStatus();
             _scrolling = false;
+            _rowContextHandled = false;
             _menu.Close();
+            CloseRowMenu();
+            _rowActionDismissedUntil = default;
             _rowHits.Clear();
         }
 
         protected override void Layout()
         {
+            CloseRowMenu();
             _panel = new RectangleF(Pivot.X,
                 Pivot.Y + CanvasPanelSize.DisplayTopOffset(PanelOwner.CanvasHeight, PanelOwner.CanvasDisplay),
                 PanelOwner.CanvasWidth, PanelOwner.DisplayHeight);
@@ -110,18 +120,26 @@ namespace BetterGhPanel
             // Grasshopper also renders components outside the canvas viewport.
             if (!Bounds.IntersectsWith(visibleRegion))
             {
-                _rowHits.Clear(); _shown = 0; _menu.Close();
+                _rowHits.Clear(); _shown = 0; _menu.Close(); CloseRowMenu();
                 session.RequestGeometryMeasurements(session.Snapshot, Array.Empty<int>());
                 return;
             }
             var result = session.Result;
             if (!ReferenceEquals(result, _lastResult))
             {
-                if (_selectedPosition >= 0 && (_selectedSnapshot != result.Snapshot || !result.RowPositions.Contains(_selectedPosition))) _selectedPosition = -1;
+                _selection.Synchronize(result);
+                InvalidateCopyStatus();
                 _lastResult = result;
                 _offset = 0;
                 _menu.Close();
+                CloseRowMenu();
             }
+            if (!ReferenceEquals(result.Snapshot, session.Snapshot) && (_selection.Count > 0 || _copyPending))
+            {
+                _selection.Clear();
+                InvalidateCopyStatus();
+            }
+            if (session.IsBusy || !ReferenceEquals(result.Snapshot, session.Snapshot)) CloseRowMenu();
             if (!_menu.IsCurrent(session.Snapshot)) _menu.Close();
             // Layout is measured in canvas units. Pixel fonts follow the canvas
             // transform without adding the display DPI a second time.
@@ -151,6 +169,7 @@ namespace BetterGhPanel
                     RenderRows(graphics, result, visibleRegion, font, small, mono, trim);
                     RenderFooter(graphics, result, small, mono, trim);
                     if (_menu.Kind != CanvasMenuKind.None) RenderMenu(graphics, small, mono, trim);
+                    if (_rowMenuResult != null) RenderRowMenu(graphics, small, trim);
                     using (var gripPen = new Pen(Color.FromArgb(165, 173, 166), 1))
                     {
                         graphics.DrawLine(gripPen, _panel.Right - 10, _panel.Bottom - 4, _panel.Right - 4, _panel.Bottom - 10);
@@ -159,7 +178,7 @@ namespace BetterGhPanel
                 }
                 else
                 {
-                    _rowHits.Clear(); _shown = 0; _menu.Close();
+                    _rowHits.Clear(); _shown = 0; _menu.Close(); CloseRowMenu();
                     session.RequestGeometryMeasurements(session.Snapshot, Array.Empty<int>());
                 }
                 using (var border = new Pen(Selected ? Accent : Color.FromArgb(164, 171, 164), Selected ? 1.5f : 1))
@@ -202,7 +221,7 @@ namespace BetterGhPanel
                     }
                     if (y + RowHeight > _list.Bottom) break;
                     var bounds = new RectangleF(_list.X, y, _list.Width, RowHeight);
-                    Fill(g, sourcePosition == _selectedPosition ? Color.FromArgb(216, 232, 219) : (_shown & 1) == 0 ? Color.White : Color.FromArgb(247, 249, 246), bounds);
+                    Fill(g, _selection.Contains(sourcePosition) ? Color.FromArgb(216, 232, 219) : (_shown & 1) == 0 ? Color.White : Color.FromArgb(247, 249, 246), bounds);
                     if (!row.IsValid) Fill(g, Color.FromArgb(180, 106, 67), new RectangleF(bounds.X, bounds.Y + 3, 2, bounds.Height - 6));
                     Text(g, row.OriginalIndex.ToString(CultureInfo.InvariantCulture), mono, Muted, new RectangleF(bounds.X + 6, y, 29, RowHeight), trim);
                     float valueStart = 39;
@@ -246,7 +265,10 @@ namespace BetterGhPanel
             Text(g, metrics, mono, Ink, new RectangleF(_footer.X, _footer.Y, _footer.Width - 5, 14), trim);
             var session = PanelOwner.Session;
             string output = PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None ? "out: tools" : "out: source";
-            string status = session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Updating…" : DateTime.UtcNow < _copiedUntil ? "Value copied" : $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} · {output}";
+            string status = session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Updating…" :
+                _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
+                _selection.Count > 0 ? $"{_selection.Count:N0} selected · right-click to copy" :
+                $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} · {output}";
             Text(g, status, small, Muted, new RectangleF(_footer.X, _footer.Y + 15, _trim.Left - _footer.X - 6, 14), trim);
             TreeToolIcons.Draw(g, _trim, TreeToolIcons.Trim, PanelOwner.TrimDepth > 0);
             TreeToolIcons.Draw(g, _simplify, TreeToolIcons.Simplify, PanelOwner.SimplifyTree);
@@ -268,6 +290,8 @@ namespace BetterGhPanel
         private void SetOffset(GH_Canvas canvas, int value)
         {
             _offset = Math.Max(0, Math.Min(MaximumOffset, value));
+            _rowHits.Clear();
+            CloseRowMenu();
             canvas.Invalidate();
         }
 
@@ -308,20 +332,160 @@ namespace BetterGhPanel
 
         private void OpenMenu(CanvasMenuKind kind, GH_Canvas canvas)
         {
+            CloseRowMenu();
             var session = PanelOwner.Session;
             _menu.Toggle(kind, session.Snapshot, session.Options);
             LayoutMenu();
             canvas.Invalidate();
         }
 
+        private bool RowsAreCurrent(PanelQueryResult result) =>
+            ReferenceEquals(_lastResult, result) && ReferenceEquals(result, PanelOwner.Session.Result) &&
+            ReferenceEquals(result.Snapshot, PanelOwner.Session.Snapshot) && !PanelOwner.Session.IsBusy;
+
+        private void CloseRowMenu()
+        {
+            _rowMenuResult = null;
+            _rowMenuHovered = -1;
+        }
+
+        private void SuppressTrailingDoubleClick() =>
+            _rowActionDismissedUntil = DateTime.UtcNow.AddMilliseconds(SystemInformation.DoubleClickTime);
+
+        private void RenderRowMenu(Graphics g, Font font, StringFormat trim)
+        {
+            Fill(g, Color.FromArgb(32, 49, 55, 53), new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + 2, _rowMenuBounds.Width, _rowMenuBounds.Height));
+            Fill(g, Color.White, _rowMenuBounds);
+            var labels = new[] { "Frame selection in Rhino", _selection.Count == 1 ? "Copy value" : "Copy values", "Copy geometry for Rhino" };
+            for (int i = 0; i < labels.Length; i++)
+            {
+                var bounds = new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + i * 20, _rowMenuBounds.Width - 2, 20);
+                if (i == _rowMenuHovered) Fill(g, Color.FromArgb(226, 236, 226), bounds);
+                Text(g, labels[i], font, Ink, new RectangleF(bounds.X + 8, bounds.Y, bounds.Width - 16, bounds.Height), trim);
+            }
+            using (var pen = new Pen(Color.FromArgb(194, 205, 194)))
+                g.DrawRectangle(pen, _rowMenuBounds.X, _rowMenuBounds.Y, _rowMenuBounds.Width, _rowMenuBounds.Height);
+        }
+
+        private GH_ObjectResponse RespondToRowContextMenu(GH_Canvas canvas, GH_CanvasMouseEvent e)
+        {
+            _rowContextHandled = false;
+            if (_rowMenuResult != null || _menu.Kind != CanvasMenuKind.None)
+            {
+                _rowContextHandled = true;
+                CloseRowMenu();
+                _menu.Close();
+                canvas.Invalidate();
+                return GH_ObjectResponse.Handled;
+            }
+            var result = PanelOwner.Session.Result;
+            if (_list.Contains(e.CanvasLocation) && !RowsAreCurrent(result))
+            {
+                _rowContextHandled = true;
+                _rowHits.Clear();
+                canvas.Invalidate();
+                return GH_ObjectResponse.Handled;
+            }
+            foreach (var hit in _rowHits)
+            {
+                if (!hit.Bounds.Contains(e.CanvasLocation)) continue;
+                _rowContextHandled = true;
+                InvalidateCopyStatus();
+                _selection.Select(result, hit.SourcePosition, preserveSelected: true);
+                _rowMenuResult = result;
+                float width = Math.Min(190, _panel.Width - 12);
+                _rowMenuBounds = new RectangleF(
+                    Math.Max(_panel.Left + 6, Math.Min(e.CanvasX, _panel.Right - width - 6)),
+                    Math.Max(_panel.Top + HeaderHeight, Math.Min(e.CanvasY, _panel.Bottom - 66)), width, 60);
+                canvas.Invalidate();
+                return GH_ObjectResponse.Handled;
+            }
+            return base.RespondToMouseDown(canvas, e);
+        }
+
+        private void ChooseRowAction(int action, PanelQueryResult result, GH_Canvas canvas)
+        {
+            var positions = _selection.OrderedPositions(result);
+            if (positions.Count == 0) return;
+            if (action == 0)
+            {
+                InvalidateCopyStatus();
+                _actionStatus = PanelOwner.FrameRows(result.Snapshot, positions) ?? "Selection framed";
+                _copiedUntil = DateTime.UtcNow.AddSeconds(5);
+            }
+            else if (action == 1) CopySelectedValues(result, canvas);
+            else
+            {
+                InvalidateCopyStatus();
+                PanelOwner.TryCopyGeometry(result.Snapshot, positions, out var status);
+                _actionStatus = status;
+                _copiedUntil = DateTime.UtcNow.AddSeconds(5);
+            }
+        }
+
+        private void InvalidateCopyStatus()
+        {
+            _actionGeneration++;
+            PanelOwner.CancelPendingCopy();
+            _copyPending = false;
+            _copiedUntil = default;
+            _actionStatus = string.Empty;
+        }
+
+        private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas)
+        {
+            var positions = _selection.OrderedPositions(result);
+            if (positions.Count == 0) return;
+            InvalidateCopyStatus();
+            long generation = _actionGeneration;
+            _copyPending = true;
+            _actionStatus = "Copying values…";
+            canvas.Invalidate();
+            string status;
+            try { status = await PanelOwner.CopyValuesAsync(result.Snapshot, positions); }
+            catch (Exception) { status = "Could not copy values. Try again."; }
+            Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
+            {
+                if (generation != _actionGeneration || canvas.IsDisposed || !RowsAreCurrent(result) ||
+                    !positions.SequenceEqual(_selection.OrderedPositions(result))) return;
+                _copyPending = false;
+                _actionStatus = status;
+                _copiedUntil = DateTime.UtcNow.AddSeconds(5);
+                canvas.Invalidate();
+            }));
+        }
+
+        private static (bool Toggle, bool Range) RowModifiers()
+        {
+            // Eto reports Command on Mac; WinForms supplies the fallback used by
+            // Grasshopper hosts without an initialized Eto application.
+            if (Eto.Forms.Application.Instance != null)
+            {
+                var keys = Eto.Forms.Keyboard.Modifiers;
+                return ((keys & (Eto.Forms.Keys.Control | Eto.Forms.Keys.Application)) != 0,
+                    (keys & Eto.Forms.Keys.Shift) != 0);
+            }
+            var modifiers = System.Windows.Forms.Control.ModifierKeys;
+            return ((modifiers & Keys.Control) != 0, (modifiers & Keys.Shift) != 0);
+        }
+
         public override GH_ObjectResponse RespondToMouseDown(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDown(sender, e);
+            if (e.Button == MouseButtons.Right) return RespondToRowContextMenu(sender, e);
             if (e.Button != MouseButtons.Left) return base.RespondToMouseDown(sender, e);
             var point = e.CanvasLocation;
+            // A fresh gesture may start elsewhere before the prior menu's
+            // double-click interval expires. Only its trailing click is blocked.
+            if (e.Clicks == 1) _rowActionDismissedUntil = default;
+            if (e.Clicks > 1 && DateTime.UtcNow < _rowActionDismissedUntil) return GH_ObjectResponse.Handled;
             if (_display.Contains(point))
             {
+                // Expanding Half moves this header away from the pointer and can
+                // expose a row beneath the second click of the same gesture.
+                SuppressTrailingDoubleClick();
                 _menu.Close();
+                CloseRowMenu();
                 PanelOwner.SetCanvasDisplay(CanvasPanelSize.NextDisplay(PanelOwner.CanvasDisplay));
                 PerformLayout();
                 sender.Invalidate();
@@ -333,15 +497,29 @@ namespace BetterGhPanel
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
+            if (_rowMenuResult != null)
+            {
+                var menuResult = _rowMenuResult;
+                int action = _rowMenuBounds.Contains(point) ? (int)((point.Y - _rowMenuBounds.Y) / 20) : -1;
+                CloseRowMenu();
+                SuppressTrailingDoubleClick();
+                if (RowsAreCurrent(menuResult) && action >= 0 && action < 3) ChooseRowAction(action, menuResult, sender);
+                sender.Invalidate();
+                return GH_ObjectResponse.Handled;
+            }
             if (_menu.Kind != CanvasMenuKind.None)
             {
                 if (!_menu.IsCurrent(PanelOwner.Session.Snapshot))
                 {
                     _menu.Close();
+                    SuppressTrailingDoubleClick();
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }
                 if (_menu.TrySelect(point, out var index)) ChooseMenu(index, sender);
+                // A no-op choice (such as the already active sort order) does
+                // not replace the result, so its exposed rows remain hittable.
+                if (_menu.Kind == CanvasMenuKind.None) SuppressTrailingDoubleClick();
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
@@ -388,12 +566,13 @@ namespace BetterGhPanel
                     // Put the requested item first; grouped branch headings can change
                     // page capacity, so previous-page size must not hide the final item.
                     _offset = Math.Max(0, Math.Min(Math.Max(0, Count - 1), row <= 1 ? 0 : row - 1));
+                    _rowHits.Clear();
                     sender.Invalidate();
                 });
                 return GH_ObjectResponse.Handled;
             }
             var currentResult = PanelOwner.Session.Result;
-            if (_list.Contains(point) && !ReferenceEquals(_lastResult, currentResult))
+            if (_list.Contains(point) && !RowsAreCurrent(currentResult))
             {
                 _rowHits.Clear();
                 sender.Invalidate();
@@ -401,7 +580,14 @@ namespace BetterGhPanel
             }
             foreach (var hit in _rowHits)
                 if (hit.Bounds.Contains(point) && hit.SourcePosition >= 0 && hit.SourcePosition < currentResult.Snapshot.Rows.Count)
-                { _selectedPosition = hit.SourcePosition; _selectedSnapshot = currentResult.Snapshot; sender.Invalidate(); return GH_ObjectResponse.Handled; }
+                {
+                    var modifiers = RowModifiers();
+                    InvalidateCopyStatus();
+                    _selection.Select(currentResult, hit.SourcePosition, modifiers.Toggle, modifiers.Range, preserveSelected: true);
+                    PanelOwner.FrameRows(currentResult.Snapshot, _selection.OrderedPositions(currentResult));
+                    sender.Invalidate();
+                    return GH_ObjectResponse.Handled;
+                }
             return base.RespondToMouseDown(sender, e);
         }
 
@@ -447,6 +633,9 @@ namespace BetterGhPanel
         public override GH_ObjectResponse RespondToMouseMove(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             if (_menu.Hover(e.CanvasLocation)) sender.Invalidate();
+            int rowMenuHovered = _rowMenuResult != null && _rowMenuBounds.Contains(e.CanvasLocation)
+                ? (int)((e.CanvasY - _rowMenuBounds.Y) / 20) : -1;
+            if (rowMenuHovered != _rowMenuHovered) { _rowMenuHovered = rowMenuHovered; sender.Invalidate(); }
             if (_resizing)
             {
                 // Half's top offset also changes with the saved height. Account
@@ -470,17 +659,25 @@ namespace BetterGhPanel
 
         public override GH_ObjectResponse RespondToMouseUp(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
+            if (e.Button == MouseButtons.Right && _rowContextHandled)
+            {
+                _rowContextHandled = false;
+                return GH_ObjectResponse.Handled;
+            }
             if (_resizing || _scrolling) { _resizing = false; _scrolling = false; return GH_ObjectResponse.Release; }
             return base.RespondToMouseUp(sender, e);
         }
 
         public override GH_ObjectResponse RespondToMouseDoubleClick(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
+            if (e.Button != MouseButtons.Left) return base.RespondToMouseDoubleClick(sender, e);
+            if (DateTime.UtcNow < _rowActionDismissedUntil) return GH_ObjectResponse.Handled;
             if (_display.Contains(e.CanvasLocation))
                 return GH_ObjectResponse.Handled;
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDoubleClick(sender, e);
+            if (_rowMenuResult != null || _menu.Kind != CanvasMenuKind.None) return GH_ObjectResponse.Handled;
             var result = PanelOwner.Session.Result;
-            if (_list.Contains(e.CanvasLocation) && !ReferenceEquals(_lastResult, result))
+            if (_list.Contains(e.CanvasLocation) && !RowsAreCurrent(result))
             {
                 _rowHits.Clear();
                 sender.Invalidate();
@@ -489,9 +686,8 @@ namespace BetterGhPanel
             foreach (var hit in _rowHits)
                 if (hit.Bounds.Contains(e.CanvasLocation) && hit.SourcePosition >= 0 && hit.SourcePosition < result.Snapshot.Rows.Count)
                 {
-                    using (var clipboard = new Eto.Forms.Clipboard()) clipboard.Text = PanelOwner.CopyValue(result.Snapshot, hit.SourcePosition);
-                    _copiedUntil = DateTime.UtcNow.AddSeconds(3);
-                    sender.Invalidate();
+                    _selection.Select(result, hit.SourcePosition, preserveSelected: true);
+                    CopySelectedValues(result, sender);
                     return GH_ObjectResponse.Handled;
                 }
             if (_search.Contains(e.CanvasLocation) || _list.Contains(e.CanvasLocation)) { EditSearch(sender); return GH_ObjectResponse.Handled; }
@@ -501,6 +697,16 @@ namespace BetterGhPanel
         public override void SetupTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             base.SetupTooltip(point, e);
+            if (_rowMenuResult != null && _rowMenuBounds.Contains(point))
+            {
+                int action = (int)((point.Y - _rowMenuBounds.Y) / 20);
+                e.Title = action == 0 ? "Frame selection in Rhino" : action == 1 ? "Copy values" : "Copy geometry for Rhino";
+                e.Text = $"{_selection.Count:N0} selected";
+                e.Description = action == 0 ? "Fit the selected geometry in Rhino's active viewport." :
+                    action == 1 ? "Copy one value per line in the current displayed order. Geometry measurements such as length, area and volume copy as numbers, using the selected unit conversion and decimal formatting." :
+                    "Copy the selected supported geometry to the clipboard, then paste it into Rhino. Other rows are skipped. Model geometry keeps its original dimensions.";
+                return;
+            }
             if (_display.Contains(point))
             {
                 e.Title = PanelOwner.CanvasDisplay == CanvasPanelDisplay.Full ? "Show half panel" : "Show full panel";
@@ -556,6 +762,12 @@ namespace BetterGhPanel
                 e.Text = "Drag this corner";
                 e.Description = "The panel size is saved with the Grasshopper definition.";
             }
+            else if (_footer.Contains(point))
+            {
+                e.Title = "Row selection and copy";
+                e.Text = _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus : $"{_selection.Count:N0} selected";
+                e.Description = "Click a row to select and frame its geometry in Rhino's active viewport. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Right-click for value or geometry copy. Double-click copies selected values, one per line.";
+            }
             else if (ReferenceEquals(_lastResult, PanelOwner.Session.Result))
             {
                 foreach (var hit in _rowHits)
@@ -578,7 +790,7 @@ namespace BetterGhPanel
                             details += "\nMeasurement unavailable.";
                     }
                     else details = value.Length > 1000 ? value.Substring(0, 997) + "…" : value;
-                    e.Description = details + "\n\nDouble-click to copy the full value.";
+                    e.Description = details + "\n\nClick to select and frame geometry in Rhino's active viewport. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Right-click for value or geometry copy. Double-click copies selected values, one per line.";
                     break;
                 }
             }

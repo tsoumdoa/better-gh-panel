@@ -1,5 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
+using System.Globalization;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using BetterGhPanel.Core;
 using BetterGhPanel.Runtime;
@@ -17,6 +22,9 @@ namespace BetterGhPanel
         private PanelSession? _session;
         private IGH_Goo?[] _sourceItems = Array.Empty<IGH_Goo?>();
         private string _geometryUnits = "units";
+        private Rhino.UnitSystem _geometryUnitSystem = Rhino.UnitSystem.None;
+        private double _geometryTolerance = 0.001;
+        private CancellationTokenSource? _copyCancellation;
         private bool _retainGeometryMeasurements;
         private PanelQueryOptions _savedOptions = new PanelQueryOptions();
         private bool _restoringView;
@@ -54,6 +62,7 @@ namespace BetterGhPanel
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
+                        CancelPendingCopy();
                         if (!_restoringView)
                         {
                             var document = OnPingDocument();
@@ -69,6 +78,7 @@ namespace BetterGhPanel
 
         internal void ResetPanelView()
         {
+            CancelPendingCopy();
             CanvasTextInput.CloseActive(this);
             (Attributes as BetterPanelAttributes)?.ResetViewState();
             Session.ResetView();
@@ -141,6 +151,7 @@ namespace BetterGhPanel
             decimals = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, decimals));
             bool conversionChanged = UnitConversion != conversion;
             if (!conversionChanged && DecimalPlaces == decimals) return;
+            CancelPendingCopy();
             RecordUndoEvent("Panel+ units and decimals");
             UnitConversion = conversion;
             DecimalPlaces = decimals;
@@ -168,9 +179,101 @@ namespace BetterGhPanel
 
         internal string CopyValue(PanelSnapshot snapshot, int position)
         {
+            if (!ReferenceEquals(snapshot, Session.Snapshot) || position < 0 || position >= snapshot.Rows.Count)
+                throw new InvalidOperationException("The selected data has changed. Select the rows again.");
             var row = snapshot.Rows[position];
-            return row.NumericValue.HasValue && (snapshot.UnitConversion != PanelUnitConversion.None || DecimalPlaces >= 0)
-                ? DisplayValue(snapshot, row) : Session.GetDisplayValue(snapshot, position);
+            if (row.NumericValue.HasValue)
+                return PanelUnits.Format(row.NumericValue.Value, PanelUnitConversion.None, DecimalPlaces, CultureInfo.InvariantCulture);
+            var geometry = Session.GetGeometryDetails(snapshot, position) ?? row.GeometryInfo;
+            if (row.IsValid && geometry?.Value != null)
+            {
+                var value = PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units,
+                    snapshot.UnitConversion, DecimalPlaces, includeUnits: false);
+                if (value == "unavailable") throw new InvalidOperationException("A selected measurement is unavailable.");
+                return value;
+            }
+            if (row.IsValid && geometry?.CanMeasure == true)
+                throw new InvalidOperationException("A selected measurement is unavailable.");
+            return Session.GetDisplayValue(snapshot, position);
+        }
+
+        internal void CancelPendingCopy()
+        {
+            var cancellation = _copyCancellation;
+            _copyCancellation = null;
+            cancellation?.Cancel();
+            cancellation?.Dispose();
+        }
+
+        private bool TryGetActionPositions(PanelSnapshot snapshot, IReadOnlyList<int> positions, out int[] ordered)
+        {
+            ordered = Array.Empty<int>();
+            var session = _session;
+            if (session == null || session.IsBusy || !ReferenceEquals(snapshot, session.Snapshot) ||
+                !ReferenceEquals(snapshot, session.Result.Snapshot) || positions.Count == 0) return false;
+            var selected = new HashSet<int>(positions);
+            if (selected.Any(position => position < 0 || position >= _sourceItems.Length || position >= snapshot.Rows.Count)) return false;
+            ordered = session.Result.RowPositions.Where(selected.Contains).ToArray();
+            return ordered.Length == selected.Count;
+        }
+
+        internal string? FrameRows(PanelSnapshot snapshot, IReadOnlyList<int> positions)
+        {
+            if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
+            var result = PanelGeometryActions.Frame(ordered.Select(position => _sourceItems[position]));
+            return result.Success ? null : result.Error;
+        }
+
+        internal async Task<string> CopyValuesAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions)
+        {
+            CancelPendingCopy();
+            if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
+            var session = _session!;
+            var cancellation = new CancellationTokenSource();
+            _copyCancellation = cancellation;
+            bool measured = await session.MeasureGeometryAsync(snapshot, ordered, cancellation.Token);
+            var completion = new TaskCompletionSource<string>();
+            // Rhino does not guarantee a SynchronizationContext for every canvas
+            // callback. Live goo and the system clipboard belong to its UI thread.
+            Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
+            {
+                try
+                {
+                    if (!measured || !ReferenceEquals(_copyCancellation, cancellation) || !ReferenceEquals(_session, session) ||
+                        !TryGetActionPositions(snapshot, ordered, out _)) completion.SetResult("Copy cancelled");
+                    else
+                    {
+                        var text = string.Join(Environment.NewLine, ordered.Select(position => CopyValue(snapshot, position)));
+                        using (var clipboard = new Eto.Forms.Clipboard()) clipboard.Text = text;
+                        completion.SetResult(ordered.Length == 1 ? "Value copied" : ordered.Length + " values copied");
+                    }
+                }
+                catch (Exception ex) { completion.SetResult("Copy failed: " + ex.Message); }
+                finally
+                {
+                    if (ReferenceEquals(_copyCancellation, cancellation))
+                    {
+                        _copyCancellation = null;
+                        cancellation.Dispose();
+                    }
+                }
+            }));
+            return await completion.Task;
+        }
+
+        internal bool TryCopyGeometry(PanelSnapshot snapshot, IReadOnlyList<int> positions, out string status)
+        {
+            CancelPendingCopy();
+            if (!TryGetActionPositions(snapshot, positions, out var ordered))
+            {
+                status = "Data changed; select rows again";
+                return false;
+            }
+            var result = PanelGeometryActions.CopyGeometry(ordered.Select(position => _sourceItems[position]),
+                _geometryUnitSystem, _geometryTolerance);
+            status = result.Success ? result.Count + " geometries copied" +
+                (result.Skipped > 0 ? "; " + result.Skipped + " skipped" : "") : result.Error ?? "Copy geometry failed";
+            return result.Success;
         }
 
         protected override void RegisterInputParams(GH_InputParamManager p)
@@ -184,6 +287,7 @@ namespace BetterGhPanel
 
         protected override void SolveInstance(IGH_DataAccess da)
         {
+            CancelPendingCopy();
             if (!da.GetDataTree(0, out GH_Structure<IGH_Goo> tree)) tree = new GH_Structure<IGH_Goo>();
             tree = PanelTreeOperations.Apply(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree);
             tree = PanelUnitOperations.Apply(tree, UnitConversion);
@@ -191,6 +295,8 @@ namespace BetterGhPanel
             var previousSources = _sourceItems;
             var previousUnits = _geometryUnits;
             var rhinoDocument = Rhino.RhinoDoc.ActiveDoc;
+            _geometryUnitSystem = rhinoDocument?.ModelUnitSystem ?? Rhino.UnitSystem.None;
+            _geometryTolerance = rhinoDocument?.ModelAbsoluteTolerance ?? 0.001;
             _geometryUnits = rhinoDocument == null || rhinoDocument.ModelUnitSystem == Rhino.UnitSystem.None
                 ? "units" : rhinoDocument.GetUnitSystemName(true, false, false, true);
             if (string.IsNullOrWhiteSpace(_geometryUnits)) _geometryUnits = "units";
@@ -212,6 +318,7 @@ namespace BetterGhPanel
             if (context == GH_DocumentContext.Close) ReleaseSession();
             else if (context == GH_DocumentContext.Unloaded)
             {
+                CancelPendingCopy();
                 CanvasTextInput.CloseActive();
                 // Unloaded is a canvas/tab switch, not document destruction.
                 if (_session != null) _session.RequestGeometryMeasurements(_session.Snapshot, Array.Empty<int>());
@@ -221,6 +328,8 @@ namespace BetterGhPanel
 
         private void ReleaseSession()
         {
+            CancelPendingCopy();
+            (Attributes as BetterPanelAttributes)?.ResetViewState();
             CanvasTextInput.CloseActive();
             if (_session != null) _savedOptions = _session.Options;
             _session?.Dispose();
@@ -274,6 +383,7 @@ namespace BetterGhPanel
 
         public override bool Read(GH_IReader reader)
         {
+            CancelPendingCopy();
             var search = ""; var type = ""; var branch = "";
             var prefix = false; var invalid = false; var sort = 0; var size = 1;
             reader.TryGetString("PanelSearch", ref search);

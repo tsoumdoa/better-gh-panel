@@ -73,7 +73,8 @@ namespace BetterGhPanel.Core
 
         // Geometry retains its model units. Convert only a matching source unit and
         // dimension; numeric output conversion must never scale the geometry itself.
-        public static string FormatGeometry(double value, int power, string units, PanelUnitConversion conversion, int decimals)
+        public static string FormatGeometry(double value, int power, string units, PanelUnitConversion conversion, int decimals,
+            bool includeUnits = true)
         {
             if (double.IsNaN(value) || double.IsInfinity(value) || value < 0) return "unavailable";
             bool toMeters = units == "mm" && (power == 1 && conversion == PanelUnitConversion.MillimetersToMeters ||
@@ -85,10 +86,11 @@ namespace BetterGhPanel.Core
             if (toMeters || toMillimeters)
             {
                 var converted = Convert(value, conversion);
-                return double.IsInfinity(converted) ? "unavailable" : Format(converted, conversion, decimals, CultureInfo.InvariantCulture, "G6");
+                return double.IsInfinity(converted) ? "unavailable" : Format(converted,
+                    includeUnits ? conversion : PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6");
             }
             return Format(value, PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6") +
-                " " + units + (power == 2 ? "²" : power == 3 ? "³" : "");
+                (includeUnits ? " " + units + (power == 2 ? "²" : power == 3 ? "³" : "") : "");
         }
 
         // Formatting never rounds the value carried by the output wire.
