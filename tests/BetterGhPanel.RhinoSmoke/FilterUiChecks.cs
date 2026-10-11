@@ -59,6 +59,7 @@ internal static class FilterUiChecks
         component.Attributes.Pivot = new PointF(50, 50);
         component.Attributes.PerformLayout();
         Paint(component, canvas);
+        SavePreview(component, canvas, "tree-icons");
 
         await VerifyFilters(component, canvas, assembly, session);
         await VerifyBranches(component, canvas, session);
@@ -77,6 +78,92 @@ internal static class FilterUiChecks
             items.OfType<GH_String>().Select(item => item.Value).SequenceEqual(new[] { "Wall-A", "Wall-B" }),
             "Search modes and branch actions retain original numeric and text values");
         component.DocumentContextChanged(document, GH_DocumentContext.Close);
+        await VerifyFooterStatistics(assembly);
+    }
+
+    private static async Task VerifyFooterStatistics(Assembly assembly)
+    {
+        // Keep output-tool changes isolated from the filter fixture above.
+        using var document = new GH_Document { Enabled = true };
+        var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
+        component.CreateAttributes();
+        var source = new Param_GenericObject();
+        source.CreateAttributes();
+        source.PersistentData.Append(new GH_Number(1234567890.12), new GH_Path(0, 0));
+        document.AddObject(source, false);
+        document.AddObject(component, false);
+        component.Params.Input[0].AddSource(source);
+        try
+        {
+            document.NewSolution(false, GH_SolutionMode.Silent);
+            PanelTestAdapter.TreeTools(component, 1, true, true, true);
+            PanelTestAdapter.Units(component, PanelUnitConversion.None, 2);
+            var session = PanelTestAdapter.Session(component);
+            await Wait(session);
+            var result = Property<PanelQueryResult>(session, "Result");
+            foreach (int width in new[] { 300, 360 })
+            {
+                PanelTestAdapter.Resize(component, width, 220);
+                component.Attributes.PerformLayout();
+                using var reference = RenderFooter(component, result, hideControls: true);
+                using var actual = RenderFooter(component, result, hideControls: false);
+                var footer = Field<RectangleF>(component.Attributes, "_footer");
+                int unitsLeft = (int)((PanelTestAdapter.Bounds(component, CanvasControl.Units).Left - footer.Left) * 2);
+                bool reachesUnits = false, textIntact = true;
+                for (int y = 0; y < reference.Height; y++)
+                for (int x = 0; x < reference.Width; x++)
+                {
+                    int pixel = reference.GetPixel(x, y).ToArgb();
+                    if (pixel == Color.White.ToArgb()) continue;
+                    reachesUnits |= x >= unitsLeft;
+                    textIntact &= actual.GetPixel(x, y).ToArgb() == pixel;
+                }
+                Check(reachesUnits, $"Long fixed-decimal statistics reach across the Units control at {width}px width");
+                Check(textIntact, $"Active tree tools and Units preserve every statistics text pixel at {width}px width");
+            }
+        }
+        finally { component.DocumentContextChanged(document, GH_DocumentContext.Close); }
+    }
+
+    private static Bitmap RenderFooter(GH_Component component, PanelQueryResult result, bool hideControls)
+    {
+        var attributes = component.Attributes;
+        var footer = Field<RectangleF>(attributes, "_footer");
+        var fields = new[] { "_trim", "_simplify", "_flatten", "_reverse", "_units" }
+            .Select(name => attributes.GetType().GetField(name, Instance)!).ToArray();
+        var bounds = fields.Select(field => (RectangleF)field.GetValue(attributes)!).ToArray();
+        var bitmap = new Bitmap((int)footer.Width * 2, (int)footer.Height * 2);
+        try
+        {
+            // Render the same native footer twice. Keep Units.Y/Height and
+            // Trim.Left fixed because the text uses those layout anchors.
+            if (hideControls)
+                for (int i = 0; i < fields.Length; i++)
+                {
+                    var moved = bounds[i];
+                    if (fields[i].Name == "_units") moved.Offset(footer.Width + 100, 0);
+                    else moved.Offset(0, footer.Height + 100);
+                    fields[i].SetValue(attributes, moved);
+                }
+            using var graphics = Graphics.FromImage(bitmap);
+            graphics.Clear(Color.White);
+            graphics.ScaleTransform(2, 2);
+            graphics.TranslateTransform(-footer.X, -footer.Y);
+            using var font = new Font("Arial", 10f, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var format = new StringFormat
+            {
+                Trimming = StringTrimming.EllipsisCharacter,
+                FormatFlags = StringFormatFlags.NoWrap,
+                LineAlignment = StringAlignment.Center
+            };
+            Invoke(attributes, "RenderFooter", graphics, result, font, format);
+            return bitmap;
+        }
+        catch { bitmap.Dispose(); throw; }
+        finally
+        {
+            for (int i = 0; i < fields.Length; i++) fields[i].SetValue(attributes, bounds[i]);
+        }
     }
 
     private static async Task VerifyFilters(GH_Component component, GH_Canvas canvas, Assembly assembly, object session)
