@@ -103,19 +103,24 @@ namespace BetterGhPanel.Runtime
         private static PanelGeometryInfo SurfaceInfo(Brep brep)
         {
             if (brep.Faces.Count != 1)
-                return new PanelGeometryInfo("Srf · " + Count(brep.Faces.Count, "face"), canMeasure: true,
+                return new PanelGeometryInfo("Srf · " + Count(brep.Faces.Count, "face"), power: 2, metricName: "Area", metricLabel: "A", canMeasure: true,
                     details: "Faces: " + brep.Faces.Count);
             bool untrimmed = brep.IsSurface;
             var face = brep.Faces[0];
-            return new PanelGeometryInfo("Srf · " + (untrimmed ? "untrimmed" : "trimmed"), canMeasure: true,
+            return new PanelGeometryInfo("Srf · " + (untrimmed ? "untrimmed" : "trimmed"), power: 2, metricName: "Area", metricLabel: "A", canMeasure: true,
                 details: "Trimming: " + (untrimmed ? "Untrimmed" : "Trimmed") +
                     "\nDegree (U/V): " + face.Degree(0) + "/" + face.Degree(1));
         }
 
-        private static PanelGeometryInfo BrepInfo(Brep brep) => new PanelGeometryInfo(
-            "Brep · " + Closed(brep.IsSolid) + " · " + Count(brep.Faces.Count, "face"), canMeasure: true,
-            details: "Topology: " + (brep.IsSolid ? "Closed solid" : "Open") + "\nFaces: " + brep.Faces.Count +
-                "\nEdges: " + brep.Edges.Count + "\nVertices: " + brep.Vertices.Count);
+        private static PanelGeometryInfo BrepInfo(Brep brep)
+        {
+            bool solid = brep.IsSolid;
+            return new PanelGeometryInfo(
+                "Brep · " + Closed(solid) + " · " + Count(brep.Faces.Count, "face"), power: solid ? 3 : 2,
+                metricName: solid ? "Volume" : "Area", metricLabel: solid ? "V" : "A", canMeasure: true,
+                details: "Topology: " + (solid ? "Closed solid" : "Open") + "\nFaces: " + brep.Faces.Count +
+                    "\nEdges: " + brep.Edges.Count + "\nVertices: " + brep.Vertices.Count);
+        }
 
         private static PanelGeometryInfo Metric(PanelGeometryInfo summary, double value, int power, string units,
             string name, string label, string? shape = null, string? details = null) => new PanelGeometryInfo(

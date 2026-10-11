@@ -20,6 +20,8 @@ namespace BetterGhPanel
     public sealed class BetterPanelComponent : GH_Component
     {
         private PanelSession? _session;
+        private readonly PanelGeometryHighlight _highlight = new PanelGeometryHighlight();
+        private bool _previewSuspended;
         private IGH_Goo?[] _sourceItems = Array.Empty<IGH_Goo?>();
         private string _geometryUnits = "units";
         private Rhino.UnitSystem _geometryUnitSystem = Rhino.UnitSystem.None;
@@ -49,6 +51,32 @@ namespace BetterGhPanel
         protected override Bitmap Icon => PanelIcon.Create();
         public override GH_Exposure Exposure => GH_Exposure.primary;
 
+        public override bool IsPreviewCapable => _highlight.HasSelection || base.IsPreviewCapable;
+
+        public override Rhino.Geometry.BoundingBox ClippingBox
+        {
+            get
+            {
+                var bounds = base.ClippingBox;
+                bounds.Union(_highlight.ClippingBox);
+                return bounds;
+            }
+        }
+
+        public override void DrawViewportWires(IGH_PreviewArgs args)
+        {
+            if (Hidden || Locked || _previewSuspended) return;
+            if (_highlight.HasSelection) _highlight.DrawWires(args, Attributes.Selected);
+            else base.DrawViewportWires(args);
+        }
+
+        public override void DrawViewportMeshes(IGH_PreviewArgs args)
+        {
+            if (Hidden || Locked || _previewSuspended) return;
+            if (_highlight.HasSelection) _highlight.DrawMeshes(args);
+            else base.DrawViewportMeshes(args);
+        }
+
         internal PanelSession Session
         {
             get
@@ -63,12 +91,15 @@ namespace BetterGhPanel
                     _session.QueryChanged += (_, __) =>
                     {
                         CancelPendingCopy();
+                        (Attributes as BetterPanelAttributes)?.OnQueryChanged();
+                        ClearHighlight();
                         if (!_restoringView)
                         {
                             var document = OnPingDocument();
                             document?.Modified();
                         }
                     };
+                    _session.ResultChanged += (_, __) => (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
                 }
                 return _session;
             }
@@ -89,7 +120,7 @@ namespace BetterGhPanel
             var options = Session.Options;
             bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None;
             bool settingsChanged = outputChanged || DecimalPlaces != PanelUnits.AutomaticDecimals ||
-                !string.IsNullOrEmpty(options.Search) || options.TypeName != null || options.BranchPath != null ||
+                !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.TypeName != null || options.BranchPath != null ||
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
             if (settingsChanged) RecordUndoEvent("Reset Panel+");
             TrimDepth = 0;
@@ -209,7 +240,7 @@ namespace BetterGhPanel
         {
             ordered = Array.Empty<int>();
             var session = _session;
-            if (session == null || session.IsBusy || !ReferenceEquals(snapshot, session.Snapshot) ||
+            if (session == null || session.IsBusy || session.Error != null || !ReferenceEquals(snapshot, session.Snapshot) ||
                 !ReferenceEquals(snapshot, session.Result.Snapshot) || positions.Count == 0) return false;
             var selected = new HashSet<int>(positions);
             if (selected.Any(position => position < 0 || position >= _sourceItems.Length || position >= snapshot.Rows.Count)) return false;
@@ -219,9 +250,30 @@ namespace BetterGhPanel
 
         internal string? FrameRows(PanelSnapshot snapshot, IReadOnlyList<int> positions)
         {
+            if (_previewSuspended) return "Activate this Grasshopper document to frame geometry";
+            if (positions.Count == 0) { ClearHighlight(); return null; }
             if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
+            HighlightRows(snapshot, ordered);
             var result = PanelGeometryActions.Frame(ordered.Select(position => _sourceItems[position]));
             return result.Success ? null : result.Error;
+        }
+
+        internal void HighlightRows(PanelSnapshot snapshot, IReadOnlyList<int> positions)
+        {
+            if (_previewSuspended || !TryGetActionPositions(snapshot, positions, out var ordered))
+            {
+                ClearHighlight();
+                return;
+            }
+            _highlight.Set(_sourceItems, ordered);
+            Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
+        }
+
+        internal void ClearHighlight()
+        {
+            if (!_highlight.HasSelection) return;
+            _highlight.Clear();
+            Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
 
         internal async Task<string> CopyValuesAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions)
@@ -288,6 +340,7 @@ namespace BetterGhPanel
         protected override void SolveInstance(IGH_DataAccess da)
         {
             CancelPendingCopy();
+            ClearHighlight();
             if (!da.GetDataTree(0, out GH_Structure<IGH_Goo> tree)) tree = new GH_Structure<IGH_Goo>();
             tree = PanelTreeOperations.Apply(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree);
             tree = PanelUnitOperations.Apply(tree, UnitConversion);
@@ -318,17 +371,23 @@ namespace BetterGhPanel
             if (context == GH_DocumentContext.Close) ReleaseSession();
             else if (context == GH_DocumentContext.Unloaded)
             {
+                _previewSuspended = true;
+                ClearHighlight();
+                (Attributes as BetterPanelAttributes)?.OnQueryChanged();
                 CancelPendingCopy();
                 CanvasTextInput.CloseActive();
                 // Unloaded is a canvas/tab switch, not document destruction.
                 if (_session != null) _session.RequestGeometryMeasurements(_session.Snapshot, Array.Empty<int>());
             }
+            else if (context == GH_DocumentContext.Loaded || context == GH_DocumentContext.Open)
+                _previewSuspended = false;
             base.DocumentContextChanged(document, context);
         }
 
         private void ReleaseSession()
         {
             CancelPendingCopy();
+            ClearHighlight();
             (Attributes as BetterPanelAttributes)?.ResetViewState();
             CanvasTextInput.CloseActive();
             if (_session != null) _savedOptions = _session.Options;
@@ -362,6 +421,7 @@ namespace BetterGhPanel
         {
             var options = _session?.Options ?? _savedOptions;
             writer.SetString("PanelSearch", options.Search ?? "");
+            writer.SetInt32("PanelSearchMode", (int)options.SearchMode);
             writer.SetString("PanelType", options.TypeName ?? "");
             writer.SetString("PanelBranch", options.BranchPath ?? "");
             writer.SetBoolean("PanelPrefix", options.BranchPrefix);
@@ -384,9 +444,11 @@ namespace BetterGhPanel
         public override bool Read(GH_IReader reader)
         {
             CancelPendingCopy();
+            ClearHighlight();
             var search = ""; var type = ""; var branch = "";
-            var prefix = false; var invalid = false; var sort = 0; var size = 1;
+            var prefix = false; var invalid = false; var sort = 0; var size = 1; var searchMode = 0;
             reader.TryGetString("PanelSearch", ref search);
+            reader.TryGetInt32("PanelSearchMode", ref searchMode);
             reader.TryGetString("PanelType", ref type);
             reader.TryGetString("PanelBranch", ref branch);
             reader.TryGetBoolean("PanelPrefix", ref prefix);
@@ -394,6 +456,7 @@ namespace BetterGhPanel
             reader.TryGetInt32("PanelSort", ref sort);
             bool hasLegacySize = reader.TryGetInt32("PanelSize", ref size);
             _savedOptions = new PanelQueryOptions { Search = search, TypeName = string.IsNullOrEmpty(type) ? null : type,
+                SearchMode = Enum.IsDefined(typeof(PanelSearchMode), searchMode) ? (PanelSearchMode)searchMode : PanelSearchMode.Text,
                 BranchPath = string.IsNullOrEmpty(branch) ? null : branch, BranchPrefix = prefix, OnlyInvalid = invalid,
                 SortMode = Enum.IsDefined(typeof(PanelSortMode), sort) ? (PanelSortMode)sort : PanelSortMode.SourceOrder };
             size = Math.Max(0, Math.Min(CanvasPanelSize.PresetNames.Length - 1, size));

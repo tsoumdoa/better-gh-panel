@@ -28,9 +28,11 @@ internal static class Program
             CanvasDimensionsAndPresets,
             CanvasMenuPagingAndSnapshot,
             PanelRowSelectionChecks.Run,
+            FilterCanvasChecks.Run,
             UnitConversionsAndFormatting,
             UnitMenuLayout,
-            GeometryMetricConversions
+            GeometryMetricConversions,
+            FilterQueryChecks.Run
         };
         var failures = 0;
         foreach (var test in tests)

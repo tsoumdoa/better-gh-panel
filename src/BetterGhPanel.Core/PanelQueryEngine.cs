@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.Threading;
 
 namespace BetterGhPanel.Core
@@ -9,25 +8,20 @@ namespace BetterGhPanel.Core
     public static class PanelQueryEngine
     {
         public static PanelQueryResult Execute(PanelSnapshot snapshot, PanelQueryOptions options,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default, IReadOnlyDictionary<int, PanelGeometryInfo>? measuredGeometry = null)
         {
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
             if (options == null) throw new ArgumentNullException(nameof(options));
             cancellationToken.ThrowIfCancellationRequested();
             // Capture mutable UI settings once before the background scan.
             var query = options.Clone();
-            var search = (query.Search ?? string.Empty).Trim();
+            var search = new PanelSearchFilter(query);
             var selectedBranch = string.IsNullOrWhiteSpace(query.BranchPath) ? null : query.BranchPath!.Trim();
-            var branchPrefix = query.BranchPrefix && selectedBranch != null
-                ? selectedBranch.EndsWith("}", StringComparison.Ordinal)
-                    ? selectedBranch.Substring(0, selectedBranch.Length - 1) + ";"
-                    : selectedBranch + ";"
-                : null;
-            var numericPredicate = ParseNumericPredicate(search);
+            var branchPrefix = BranchPrefix(query, selectedBranch);
             var rowPositions = new List<int>(snapshot.Rows.Count);
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            var hasItemFilter = search.Length != 0 || query.TypeName != null || query.OnlyInvalid;
+            var hasItemFilter = search.HasFilter || query.TypeName != null || query.OnlyInvalid;
 
             // Empty branches remain visible when browsing the tree, but not in item-filter results.
             if (!hasItemFilter)
@@ -53,12 +47,9 @@ namespace BetterGhPanel.Core
                 if (!MatchesBranch(row.Path, selectedBranch, branchPrefix)) continue;
                 if (query.TypeName != null && !string.Equals(row.TypeName, query.TypeName, StringComparison.OrdinalIgnoreCase)) continue;
                 if (query.OnlyInvalid && row.IsValid) continue;
-                if (numericPredicate != null)
-                {
-                    if (!HasFiniteNumber(row) || !numericPredicate(row.NumericValue!.Value)) continue;
-                }
-                else if (search.Length != 0 && !Contains(row.DisplayValue, search) &&
-                    !Contains(row.Path, search) && !Contains(row.TypeName, search)) continue;
+                PanelGeometryInfo? measured = null;
+                measuredGeometry?.TryGetValue(i, out measured);
+                if (!search.Matches(row, snapshot.UnitConversion, measured, cancellationToken)) continue;
 
                 rowPositions.Add(i);
                 branches.Add(row.Path);
@@ -88,6 +79,43 @@ namespace BetterGhPanel.Core
             return new PanelQueryResult(snapshot, positions, statistics);
         }
 
+        public static bool RequiresGeometryMeasurements(PanelQueryOptions options)
+        {
+            if (options == null) throw new ArgumentNullException(nameof(options));
+            return !string.IsNullOrWhiteSpace(options.Search) && (options.SearchMode == PanelSearchMode.Length ||
+                options.SearchMode == PanelSearchMode.Area || options.SearchMode == PanelSearchMode.Volume);
+        }
+
+        /// <summary>Finds offscreen measurements needed by a geometry query, after cheap tree filters.</summary>
+        public static IReadOnlyList<int> GeometryCandidates(PanelSnapshot snapshot, PanelQueryOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
+            if (options == null) throw new ArgumentNullException(nameof(options));
+            cancellationToken.ThrowIfCancellationRequested();
+            var query = options.Clone();
+            var filter = new PanelSearchFilter(query);
+            if (!filter.HasFilter || !filter.IsGeometry) return Array.Empty<int>();
+            var selected = string.IsNullOrWhiteSpace(query.BranchPath) ? null : query.BranchPath!.Trim();
+            var prefix = BranchPrefix(query, selected);
+            var candidates = new List<int>();
+            for (int index = 0; index < snapshot.Rows.Count; index++)
+            {
+                CheckCancellation(index, cancellationToken);
+                var row = snapshot.Rows[index];
+                if (!MatchesBranch(row.Path, selected, prefix) ||
+                    query.TypeName != null && !string.Equals(row.TypeName, query.TypeName, StringComparison.OrdinalIgnoreCase) ||
+                    query.OnlyInvalid && row.IsValid || !filter.CanMeasure(row)) continue;
+                candidates.Add(index);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            return candidates.AsReadOnly();
+        }
+
+        private static string? BranchPrefix(PanelQueryOptions query, string? selected) => query.BranchPrefix && selected != null
+            ? selected.EndsWith("}", StringComparison.Ordinal) ? selected.Substring(0, selected.Length - 1) + ";" : selected + ";"
+            : null;
+
         private static bool MatchesBranch(string path, string? selected, string? prefix)
         {
             if (selected == null) return true;
@@ -95,9 +123,6 @@ namespace BetterGhPanel.Core
             // Prefix selection means descendants of {0;1}, not siblings like {0;10}.
             return prefix != null && path.StartsWith(prefix, StringComparison.Ordinal);
         }
-
-        private static bool Contains(string value, string search) =>
-            value.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0;
 
         private static void Increment(Dictionary<string, int> counts, string key)
         {
@@ -111,25 +136,6 @@ namespace BetterGhPanel.Core
         private static void CheckCancellation(int index, CancellationToken token)
         {
             if ((index & 255) == 0) token.ThrowIfCancellationRequested();
-        }
-
-        private static Func<double, bool>? ParseNumericPredicate(string text)
-        {
-            var operatorLength = text.StartsWith(">=", StringComparison.Ordinal) ||
-                text.StartsWith("<=", StringComparison.Ordinal) || text.StartsWith("==", StringComparison.Ordinal) ? 2 :
-                text.StartsWith(">", StringComparison.Ordinal) || text.StartsWith("<", StringComparison.Ordinal) ||
-                text.StartsWith("=", StringComparison.Ordinal) ? 1 : 0;
-            if (operatorLength == 0 || !double.TryParse(text.Substring(operatorLength).Trim(),
-                NumberStyles.Float, CultureInfo.InvariantCulture, out var threshold) ||
-                double.IsNaN(threshold) || double.IsInfinity(threshold)) return null;
-            switch (text.Substring(0, operatorLength))
-            {
-                case ">": return value => value > threshold;
-                case ">=": return value => value >= threshold;
-                case "<": return value => value < threshold;
-                case "<=": return value => value <= threshold;
-                default: return value => value == threshold;
-            }
         }
 
         // Own merge sort keeps cancellation exceptions unwrapped and never mutates snapshot data.

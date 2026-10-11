@@ -144,7 +144,7 @@ namespace BetterGhPanel.Runtime
         private static PanelGeometryActionResult Failure(string error, int skipped = 0)
             => new PanelGeometryActionResult(false, 0, skipped, error);
 
-        private static BoundingBox GetBounds(IGH_Goo? item)
+        internal static BoundingBox GetBounds(IGH_Goo? item)
         {
             try
             {
@@ -173,7 +173,7 @@ namespace BetterGhPanel.Runtime
             return null;
         }
 
-        private static object? Unwrap(IGH_Goo item)
+        internal static object? Unwrap(IGH_Goo item)
         {
             object? value = item;
             // Avoid cycles in third-party wrappers. Do not cast numbers, vectors,
