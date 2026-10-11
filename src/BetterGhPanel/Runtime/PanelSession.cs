@@ -11,9 +11,9 @@ namespace BetterGhPanel.Runtime
     /// <summary>Owns one component's view, background queries and lazy geometry measurements.</summary>
     public sealed class PanelSession : IDisposable
     {
-        // Reserve roughly a quarter of a 60 Hz frame for querying. This is a soft
-        // deadline checked between operations, not a limit on tree size.
-        private static readonly TimeSpan ImmediateQueryBudget = TimeSpan.FromMilliseconds(4);
+        // Allow queries 120 ms to finish on the UI thread before handing off.
+        // This is a soft deadline checked between operations.
+        private static readonly TimeSpan ImmediateQueryBudget = TimeSpan.FromMilliseconds(120);
         private readonly Action _invalidate;
         private CancellationTokenSource? _queryCancellation;
         private PanelQueryOptions _options = new PanelQueryOptions();
