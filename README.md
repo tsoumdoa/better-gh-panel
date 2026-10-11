@@ -16,11 +16,13 @@ Created in [T3 Code](https://t3.codes).
 
 Find **Panel+** in **Params → Util** after installing the local Yak package. Connect any typed tree to **D**. The output applies **Simplify → Trim → Flatten → Reverse → unit conversion → filters**. Search, type, invalid and branch filters keep only matching typed items on the output wire. Sorting and decimal formatting affect the view; output retains its transformed tree order and full precision. With all operations and filters off, the output forwards the input unchanged.
 
-The working version hides old rows, counts, type summaries and statistics behind **Recomputing…** and an animated spinner whenever input or a pending query changes. Managed queries get a 120 ms UI time budget, regardless of tree size. Queries that need longer resume their scan, statistics and sorting in the background without restarting. This is a cooperative deadline checked between operations; an operation already in progress finishes before yielding. Regex and geometry filters start in the background because individual operations cannot yield midway. A pending or invalid output filter produces an empty tree until its current result is ready; completion schedules a Grasshopper solution so downstream components update automatically. Reset restores the full input. These changes are not yet in the public beta below.
+Panel+ hides old rows, counts, type summaries and statistics behind **Recomputing…** and an animated spinner whenever input or a pending query changes. Managed queries get a 120 ms UI time budget, regardless of tree size. Queries that need longer resume their scan, statistics and sorting in the background without restarting. This is a cooperative deadline checked between operations; an operation already in progress finishes before yielding. Regex and geometry filters start in the background because individual operations cannot yield midway. A pending or invalid output filter produces an empty tree until its current result is ready; completion schedules a Grasshopper solution so downstream components update automatically. Reset restores the full input. Disabled components show **Disabled** and stop animating until re-enabled.
 
 [See the native recomputing state](docs/images/panel-recomputing.png).
 
-The public Yak beta is **`better-gh-panel 0.1.14-beta`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.14-beta`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including the single display control and fixed wire connections. Mac runtime validation is pending.
+The public Yak beta is **`better-gh-panel 0.1.15-beta`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.15-beta`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including filtered output, whitespace regex, internalised geometry preview, disabled-state recovery and fixed wire connections. Mac runtime validation is pending.
+
+Beta **`0.1.15-beta`** adds current-result loading states, resumable queries with a 120 ms time budget, and filters on typed output after tree tools and unit conversion. Whitespace-only regex patterns filter output correctly; internalised geometry preview respects filters.
 
 Beta **`0.1.14-beta`** includes the icon and footer update below; plugin behavior is unchanged from `0.1.13-beta.1`.
 
@@ -70,7 +72,7 @@ dotnet run --project tests/BetterGhPanel.Core.Tests -c Release
 node scripts/package.mjs
 ```
 
-The beta artifact is `artifacts/better-gh-panel-0.1.14-beta/better-gh-panel-0.1.14-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The beta artifact is `artifacts/better-gh-panel-0.1.15-beta/better-gh-panel-0.1.15-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino.
 

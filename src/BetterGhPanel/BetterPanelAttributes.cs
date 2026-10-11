@@ -176,7 +176,7 @@ namespace BetterGhPanel
             CanvasTextInput.Maintain(canvas);
             var session = PanelOwner.Session;
             var visibleRegion = canvas.Viewport.VisibleRegion;
-            session.AnimateBusyState(Bounds.IntersectsWith(visibleRegion) && canvas.Viewport.Zoom >= 0.5f);
+            session.AnimateBusyState(!PanelOwner.Locked && Bounds.IntersectsWith(visibleRegion) && canvas.Viewport.Zoom >= 0.5f);
             // Grasshopper also renders components outside the canvas viewport.
             if (!Bounds.IntersectsWith(visibleRegion))
             {
@@ -214,7 +214,7 @@ namespace BetterGhPanel
                 Text(graphics, "P+", bold, Accent, new RectangleF(_panel.X + 8, _panel.Y + 1, 28, 20), trim);
                 var itemLabel = result.Statistics.ItemCount == 1 ? "item" : "items";
                 var branchLabel = result.Statistics.BranchCount == 1 ? "branch" : "branches";
-                Text(graphics, session.HasCurrentResult
+                Text(graphics, PanelOwner.Locked ? "Disabled" : session.HasCurrentResult
                     ? $"{result.Statistics.ItemCount:N0} {itemLabel}  ·  {result.Statistics.BranchCount:N0} {branchLabel}"
                     : session.IsBusy ? "Recomputing…" : "Filter needs attention", small, Muted,
                     new RectangleF(_panel.X + 39, _panel.Y + 1, _panel.Width - 117, 20), trim);
@@ -259,6 +259,13 @@ namespace BetterGhPanel
             _rowHits.Clear();
             _branchHits.Clear();
             _shown = 0;
+            if (PanelOwner.Locked)
+            {
+                Text(g, "Disabled. Enable the component to recompute.", small, Muted,
+                    new RectangleF(_list.X + 6, _list.Y + 12, _list.Width - 12, 22), trim);
+                PanelOwner.Session.RequestGeometryMeasurements(PanelOwner.Session.Snapshot, Array.Empty<int>());
+                return;
+            }
             if (PanelOwner.Session.IsBusy)
             {
                 // Clear both rows and their hit regions while the current view is
@@ -357,7 +364,7 @@ namespace BetterGhPanel
                 Text(g, metrics, small, Ink, new RectangleF(_footer.X, _footer.Y, _footer.Width - 5, _units.Y - _footer.Y), trim);
             string output = result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count
                 ? "out: filtered" : PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None ? "out: tools" : "out: source";
-            string status = session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
+            string status = PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
                 _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
                 _selection.Count > 0 ? $"{_selection.Count:N0} selected · right-click to copy" :
                 $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} · {output}";
@@ -924,6 +931,12 @@ namespace BetterGhPanel
             }
             else if (_footer.Contains(point))
             {
+                if (PanelOwner.Locked)
+                {
+                    e.Title = "Disabled";
+                    e.Description = "Enable the component to recompute its input.";
+                    return;
+                }
                 if (PanelOwner.Session.IsBusy)
                 {
                     e.Title = "Recomputing…";

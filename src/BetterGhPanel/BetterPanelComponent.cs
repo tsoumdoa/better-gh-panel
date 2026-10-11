@@ -56,13 +56,19 @@ namespace BetterGhPanel
         protected override Bitmap Icon => PanelIcon.Create();
         public override GH_Exposure Exposure => GH_Exposure.primary;
 
-        public override bool IsPreviewCapable => _highlight.HasSelection || base.IsPreviewCapable;
+        // Grasshopper's default preview also draws internalised input. Preview
+        // only output so excluded items cannot bypass the panel's filters.
+        private IEnumerable<IGH_PreviewObject> OutputPreviews => Params.Output.OfType<IGH_PreviewObject>()
+            .Where(preview => !preview.Hidden && preview.IsPreviewCapable);
+
+        public override bool IsPreviewCapable => _highlight.HasSelection || OutputPreviews.Any();
 
         public override Rhino.Geometry.BoundingBox ClippingBox
         {
             get
             {
-                var bounds = base.ClippingBox;
+                var bounds = Rhino.Geometry.BoundingBox.Empty;
+                foreach (var preview in OutputPreviews) bounds.Union(preview.ClippingBox);
                 bounds.Union(_highlight.ClippingBox);
                 return bounds;
             }
@@ -72,14 +78,14 @@ namespace BetterGhPanel
         {
             if (Hidden || Locked || _previewSuspended) return;
             if (_highlight.HasSelection) _highlight.DrawWires(args, Attributes.Selected);
-            else base.DrawViewportWires(args);
+            else foreach (var preview in OutputPreviews) preview.DrawViewportWires(args);
         }
 
         public override void DrawViewportMeshes(IGH_PreviewArgs args)
         {
             if (Hidden || Locked || _previewSuspended) return;
             if (_highlight.HasSelection) _highlight.DrawMeshes(args);
-            else base.DrawViewportMeshes(args);
+            else foreach (var preview in OutputPreviews) preview.DrawViewportMeshes(args);
         }
 
         internal PanelSession Session
@@ -89,6 +95,7 @@ namespace BetterGhPanel
                 if (_session == null)
                 {
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
+                    if (Locked) _session.InvalidateInput(false, suspended: true);
                     _session.SetDetailResolver(position => position < _sourceItems.Length ? _sourceItems[position]?.ToString() ?? "<null>" : null);
                     _session.SetGeometryDetailResolver(position => position < _sourceItems.Length
                         ? GeometryHints.PrepareMeasurement(_sourceItems[position], _geometryUnits) : null);
@@ -374,7 +381,8 @@ namespace BetterGhPanel
             left.OnlyInvalid == right.OnlyInvalid && left.BranchPath == right.BranchPath && left.BranchPrefix == right.BranchPrefix;
 
         private static bool HasOutputFilter(PanelQueryOptions options) =>
-            !string.IsNullOrWhiteSpace(options.Search) || options.TypeName != null || options.OnlyInvalid || !string.IsNullOrWhiteSpace(options.BranchPath);
+            (options.SearchMode == PanelSearchMode.Regex ? !string.IsNullOrEmpty(options.Search) : !string.IsNullOrWhiteSpace(options.Search)) ||
+            options.TypeName != null || options.OnlyInvalid || !string.IsNullOrWhiteSpace(options.BranchPath);
 
         public override void ClearData()
         {
@@ -388,7 +396,7 @@ namespace BetterGhPanel
                 CancelPendingCopy();
                 ClearHighlight();
                 (Attributes as BetterPanelAttributes)?.ResetViewState();
-                _session?.InvalidateInput(_retainGeometryMeasurements);
+                _session?.InvalidateInput(_retainGeometryMeasurements, suspended: Locked);
             }
             base.ClearData();
         }

@@ -23,7 +23,7 @@ namespace BetterGhPanel.Runtime
         private readonly List<int> _visibleGeometry = new List<int>();
         private readonly List<GeometryBatch> _geometryBatches = new List<GeometryBatch>();
         private bool _geometryScheduled, _geometryRunning;
-        private bool _awaitingSnapshot, _measurementNotifyScheduled;
+        private bool _awaitingSnapshot, _inputSuspended, _measurementNotifyScheduled;
         private System.Windows.Forms.Timer? _busyAnimation;
         private long _request;
         private bool _disposed;
@@ -39,7 +39,7 @@ namespace BetterGhPanel.Runtime
         public PanelQueryResult Result { get; private set; }
         public PanelQueryOptions Options => _options.Clone();
         public bool IsBusy { get; private set; }
-        public bool HasCurrentResult => !_disposed && !IsBusy && Error == null && ReferenceEquals(Result.Snapshot, Snapshot);
+        public bool HasCurrentResult => !_disposed && !_awaitingSnapshot && !IsBusy && Error == null && ReferenceEquals(Result.Snapshot, Snapshot);
         public string? Error { get; private set; }
         public event EventHandler? QueryChanged;
         public event EventHandler? ResultChanged;
@@ -56,6 +56,7 @@ namespace BetterGhPanel.Runtime
             CancelGeometryBatches();
             Snapshot = snapshot ?? PanelSnapshot.Empty;
             _awaitingSnapshot = false;
+            _inputSuspended = false;
             _visibleGeometry.Clear();
             if (canRetainMeasurement == null) _geometryDetails.Clear();
             else
@@ -65,7 +66,7 @@ namespace BetterGhPanel.Runtime
             QueueQuery();
         }
 
-        internal void InvalidateInput(bool retainMeasurements)
+        internal void InvalidateInput(bool retainMeasurements, bool suspended = false)
         {
             if (_disposed) return;
             ++_request;
@@ -75,7 +76,9 @@ namespace BetterGhPanel.Runtime
             if (!retainMeasurements) _geometryDetails.Clear();
             Snapshot = PanelSnapshot.Empty;
             _awaitingSnapshot = true;
-            IsBusy = true;
+            _inputSuspended = suspended;
+            IsBusy = !suspended;
+            _busyAnimation?.Stop();
             Error = null;
             Notify();
         }
@@ -356,7 +359,7 @@ namespace BetterGhPanel.Runtime
             var snapshot = Snapshot;
             var options = _options.Clone();
             var request = ++_request;
-            IsBusy = true;
+            IsBusy = !_inputSuspended;
             Error = null;
             _visibleGeometry.Clear();
             if (_awaitingSnapshot) { Notify(); return; }

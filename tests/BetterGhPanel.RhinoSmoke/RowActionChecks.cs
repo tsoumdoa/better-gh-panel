@@ -325,7 +325,7 @@ internal static class RowActionChecks
         }
     }
 
-    private sealed class PreviewArguments : IGH_PreviewArgs, IDisposable
+    internal sealed class PreviewArguments : IGH_PreviewArgs, IDisposable
     {
         internal PreviewArguments(GH_Document document, Rhino.Display.RhinoViewport viewport)
         {
