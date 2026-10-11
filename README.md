@@ -6,6 +6,12 @@ Created in [T3 Code](https://t3.codes).
 
 **Panel+** is a Grasshopper data inspector for Rhino 8 on Windows and Mac. This repository contains the native MVP and the original interactive HTML design study.
 
+[Watch the one-minute animated tour](docs/demo/panel-plus-demo.mp4) for filtering, geometry measurements and selection, tree tools, units, and layout controls. The video uses illustrated sample data and includes captions. Run `npm run demo` for the editable animation and chapter controls; see [the demo source and recording notes](docs/demo/README.md).
+
+[日本語版の動画はこちら / Japanese version](docs/demo/panel-plus-demo-ja.mp4) — Japanese titles, captions, and explanations, with the original plugin control names.
+
+[![Panel+ animated tour — See what flows](docs/demo/poster.jpg)](docs/demo/panel-plus-demo.mp4)
+
 ## Native MVP
 
 Find **Panel+** in **Params → Util** after installing the local Yak package. Connect any typed tree to **D**. With tree tools and unit conversion off, the output forwards that tree unchanged. Searching, filtering and sorting only affect your view.

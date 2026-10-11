@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f1f3ed">
+    <meta name="description" content="Rhino 8・Grasshopper 用データインスペクター Panel+ の機能を、60秒の日本語アニメーションで紹介。">
+    <title>Panel+ — データの流れを、ひと目で。</title>
+    <link rel="stylesheet" href="demo.css">
+    <script src="demo-ja.js" defer></script>
+    <script src="demo.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <header class="page-header">
+        <a class="brand" href="ja.html" aria-label="Panel+ 日本語デモ"><span class="brand-mark">P<span>+</span></span><span>Panel<span class="plus">+</span></span></a>
+        <span class="header-note">GRASSHOPPER のデータを、もっとわかりやすく</span>
+        <a class="download" href="panel-plus-demo-ja.mp4" download>動画をダウンロード <span aria-hidden="true">↗</span></a>
+      </header>
+      <section class="player" aria-label="Panel+ 機能紹介アニメーション">
+        <canvas id="film" width="1600" height="900" role="img" aria-label="Panel+ の機能を紹介するアニメーション。下に説明全文があります。">全8章の説明は、下の「説明を読む」から確認できます。</canvas>
+        <div class="controls">
+          <button id="play" aria-label="アニメーションを一時停止" title="再生・一時停止（Space）">一時停止</button>
+          <button id="restart" aria-label="最初から再生" title="最初から再生">↺</button>
+          <span id="elapsed" class="time">0:00</span>
+          <input id="seek" type="range" min="0" max="60" step="0.05" value="0" aria-label="再生位置" aria-valuetext="60秒中0秒">
+          <span class="time">1:00</span>
+          <button id="speed" title="再生速度" aria-label="再生速度：1倍">1×</button>
+        </div>
+      </section>
+      <div class="under-player"><p>小さなパネルで、データを見通す。</p><span>60秒 · 日本語字幕付き · サンプルデータによる図解</span></div>
+      <nav id="chapters" class="chapters" aria-label="章を選択"></nav>
+      <details class="transcript">
+        <summary>説明を読む</summary>
+        <div id="transcript"></div>
+        <p>この動画は、Panel+ ベータ版の動作をサンプルデータで図解したもので、Rhino の画面録画ではありません。プラグイン内の操作名は英語のまま表示しています。Rhino 用の形状コピーは Windows のみに対応しています。Mac での実行時検証は未完了です。</p>
+      </details>
+      <footer>Rhino 8 + Grasshopper 用 <a href="index.html" lang="en">English version</a><span>Panel+ / better-gh-panel</span></footer>
+    </main>
+  </body>
+</html>

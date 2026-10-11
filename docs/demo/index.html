@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f1f3ed">
+    <meta name="description" content="A one-minute animated tour of Panel+, the Grasshopper data inspector for Rhino 8.">
+    <title>Panel+ — See what flows.</title>
+    <link rel="stylesheet" href="demo.css">
+    <script src="demo.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <header class="page-header">
+        <a class="brand" href="./" aria-label="Panel plus demo"><span class="brand-mark">P<span>+</span></span><span>Panel<span class="plus">+</span></span></a>
+        <span class="header-note">A LITTLE CLARITY FOR GRASSHOPPER</span>
+        <a class="download" href="panel-plus-demo.mp4" download>Download film <span aria-hidden="true">↗</span></a>
+      </header>
+      <section class="player" aria-label="Animated Panel plus walkthrough">
+        <canvas id="film" width="1600" height="900" role="img" aria-label="Illustrated Panel plus walkthrough. A complete text transcript follows the player.">Read the transcript below for all eight chapters of this walkthrough.</canvas>
+        <div class="controls">
+          <button id="play" aria-label="Pause animation" title="Play / pause (Space)">Pause</button>
+          <button id="restart" aria-label="Restart animation" title="Restart">↺</button>
+          <span id="elapsed" class="time">0:00</span>
+          <input id="seek" type="range" min="0" max="60" step="0.05" value="0" aria-label="Animation position" aria-valuetext="0 seconds of 60 seconds">
+          <span class="time">1:00</span>
+          <button id="speed" title="Playback speed" aria-label="Playback speed: 1 times">1×</button>
+        </div>
+      </section>
+      <div class="under-player"><p>A small panel. A much clearer picture.</p><span>60 seconds · captions included · illustrated sample data</span></div>
+      <nav id="chapters" class="chapters" aria-label="Jump to a chapter"></nav>
+      <details class="transcript">
+        <summary>Read the walkthrough</summary>
+        <div id="transcript"></div>
+        <p>This animation illustrates the native Panel+ beta using sample data; it is not a Rhino screen recording. Native geometry clipboard copying is Windows-only. Mac runtime validation is pending.</p>
+      </details>
+      <footer>Built for Rhino 8 + Grasshopper <a href="ja.html" lang="ja">日本語版</a><span>Panel+ / better-gh-panel</span></footer>
+    </main>
+  </body>
+</html>
