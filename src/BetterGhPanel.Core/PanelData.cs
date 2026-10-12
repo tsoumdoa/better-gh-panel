@@ -9,7 +9,7 @@ namespace BetterGhPanel.Core
     {
         public PanelRow(int originalIndex, string path, string typeName,
             string displayValue, double? numericValue, bool isNull = false, bool isValid = true,
-            PanelGeometryInfo? geometryInfo = null, string invalidReason = "")
+            PanelGeometryInfo? geometryInfo = null, string invalidReason = "", string? stringValue = null)
         {
             OriginalIndex = originalIndex;
             Path = path ?? string.Empty;
@@ -20,6 +20,7 @@ namespace BetterGhPanel.Core
             IsValid = isValid;
             GeometryInfo = geometryInfo;
             InvalidReason = invalidReason;
+            StringValue = stringValue;
         }
 
         public int OriginalIndex { get; }
@@ -31,6 +32,8 @@ namespace BetterGhPanel.Core
         public bool IsValid { get; }
         public PanelGeometryInfo? GeometryInfo { get; }
         public string InvalidReason { get; }
+        /// <summary>The exact captured string scalar, not an arbitrary goo's display summary.</summary>
+        public string? StringValue { get; }
     }
 
     public sealed class PanelBranch
@@ -67,12 +70,18 @@ namespace BetterGhPanel.Core
                 typeCounts[row.TypeName] = count + 1;
             }
             var branchCopy = new PanelBranch[branches.Count];
+            var branchCounts = new Dictionary<string, int>(StringComparer.Ordinal);
             for (var i = 0; i < branchCopy.Length; i++)
-                branchCopy[i] = branches[i] ?? throw new ArgumentException("Branches must not contain null records.", nameof(branches));
+            {
+                var branch = branches[i] ?? throw new ArgumentException("Branches must not contain null records.", nameof(branches));
+                branchCopy[i] = branch;
+                branchCounts[branch.Path] = branch.ItemCount;
+            }
             UnitConversion = unitConversion;
             Rows = Array.AsReadOnly(rowCopy);
             Branches = Array.AsReadOnly(branchCopy);
             TypeCounts = new ReadOnlyDictionary<string, int>(typeCounts);
+            BranchItemCounts = new ReadOnlyDictionary<string, int>(branchCounts);
         }
 
         public PanelUnitConversion UnitConversion { get; }
@@ -80,6 +89,7 @@ namespace BetterGhPanel.Core
         public IReadOnlyList<PanelBranch> Branches { get; }
         /// <summary>Source type counts for populating filters without another full-tree scan.</summary>
         public IReadOnlyDictionary<string, int> TypeCounts { get; }
+        public IReadOnlyDictionary<string, int> BranchItemCounts { get; }
     }
 
     public enum PanelSortMode
@@ -121,11 +131,27 @@ namespace BetterGhPanel.Core
         };
     }
 
+    /// <summary>One exact numeric or string value, ordered by its first occurrence in the source.</summary>
+    public sealed class PanelValueFrequency
+    {
+        internal PanelValueFrequency(double? numericValue, string? stringValue, int count)
+        {
+            NumericValue = numericValue;
+            StringValue = stringValue;
+            Count = count;
+        }
+
+        public double? NumericValue { get; }
+        public string? StringValue { get; }
+        public int Count { get; }
+    }
+
     public sealed class PanelStatistics
     {
         internal PanelStatistics(int itemCount, int branchCount, int numericCount, int nullCount,
             int invalidCount, double? minimum, double? maximum, double? mean,
-            IReadOnlyDictionary<string, int> typeCounts)
+            IReadOnlyDictionary<string, int> typeCounts, IReadOnlyDictionary<string, int> branchItemCounts,
+            IReadOnlyList<PanelValueFrequency> uniqueValues, int scalarCount)
         {
             ItemCount = itemCount;
             BranchCount = branchCount;
@@ -136,6 +162,9 @@ namespace BetterGhPanel.Core
             Maximum = maximum;
             Mean = mean;
             TypeCounts = typeCounts;
+            BranchItemCounts = branchItemCounts;
+            UniqueValues = uniqueValues;
+            ScalarCount = scalarCount;
         }
 
         public int ItemCount { get; }
@@ -147,6 +176,12 @@ namespace BetterGhPanel.Core
         public double? Maximum { get; }
         public double? Mean { get; }
         public IReadOnlyDictionary<string, int> TypeCounts { get; }
+        /// <summary>Counts in this filtered result, including retained empty branches.</summary>
+        public IReadOnlyDictionary<string, int> BranchItemCounts { get; }
+        /// <summary>Valid finite numbers and exact captured strings; these kinds never compare equal.</summary>
+        public IReadOnlyList<PanelValueFrequency> UniqueValues { get; }
+        public int ScalarCount { get; }
+        public int UniqueExcludedCount => ItemCount - ScalarCount;
     }
 
     public sealed class PanelQueryResult

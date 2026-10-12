@@ -37,6 +37,11 @@ namespace BetterGhPanel.Core
             var rowPositions = new List<int>();
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var branchCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            var numericValues = new Dictionary<double, ValueCount>();
+            var stringValues = new Dictionary<string, ValueCount>(StringComparer.Ordinal);
+            var uniqueValues = new List<ValueCount>();
+            var scalarCount = 0;
             var hasItemFilter = search.HasFilter || query.TypeName != null || query.OnlyInvalid;
 
             // Empty branches remain visible when browsing the tree, but not in item-filter results.
@@ -47,7 +52,11 @@ namespace BetterGhPanel.Core
                     if (work.ShouldYield()) yield return null;
                     CheckCancellation(i, cancellationToken);
                     var branch = snapshot.Branches[i];
-                    if (MatchesBranch(branch.Path, selectedBranch, branchPrefix)) branches.Add(branch.Path);
+                    if (MatchesBranch(branch.Path, selectedBranch, branchPrefix))
+                    {
+                        branches.Add(branch.Path);
+                        branchCounts[branch.Path] = 0;
+                    }
                 }
             }
 
@@ -72,8 +81,36 @@ namespace BetterGhPanel.Core
                 rowPositions.Add(i);
                 branches.Add(row.Path);
                 Increment(typeCounts, row.TypeName);
+                Increment(branchCounts, row.Path);
                 if (row.IsNull) nullCount++;
                 if (!row.IsValid) invalidCount++;
+                if (!row.IsNull && row.IsValid)
+                {
+                    if (HasFiniteNumber(row))
+                    {
+                        // Numeric equality deliberately unifies integer/number values and signed zero.
+                        var number = row.NumericValue!.Value == 0 ? 0 : row.NumericValue.Value;
+                        if (!numericValues.TryGetValue(number, out var frequency))
+                        {
+                            frequency = new ValueCount(number, null);
+                            numericValues.Add(number, frequency);
+                            uniqueValues.Add(frequency);
+                        }
+                        frequency.Count++;
+                        scalarCount++;
+                    }
+                    else if (row.StringValue != null)
+                    {
+                        if (!stringValues.TryGetValue(row.StringValue, out var frequency))
+                        {
+                            frequency = new ValueCount(null, row.StringValue);
+                            stringValues.Add(row.StringValue, frequency);
+                            uniqueValues.Add(frequency);
+                        }
+                        frequency.Count++;
+                        scalarCount++;
+                    }
+                }
                 if (!HasFiniteNumber(row)) continue;
                 var value = row.NumericValue!.Value;
                 numericCount++;
@@ -94,10 +131,20 @@ namespace BetterGhPanel.Core
                     yield return step;
             if (work.ShouldYield()) yield return null;
             cancellationToken.ThrowIfCancellationRequested();
+            var frequencies = new PanelValueFrequency[uniqueValues.Count];
+            for (int index = 0; index < frequencies.Length; index++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, cancellationToken);
+                var value = uniqueValues[index];
+                frequencies[index] = new PanelValueFrequency(value.Number, value.Text, value.Count);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
             var statistics = new PanelStatistics(positions.Length, branches.Count, numericCount, nullCount,
                 invalidCount, numericCount == 0 ? (double?)null : minimum,
                 numericCount == 0 ? (double?)null : maximum, numericCount == 0 ? (double?)null : mean,
-                new ReadOnlyDictionary<string, int>(typeCounts));
+                new ReadOnlyDictionary<string, int>(typeCounts), new ReadOnlyDictionary<string, int>(branchCounts),
+                Array.AsReadOnly(frequencies), scalarCount);
             yield return new PanelQueryResult(snapshot, positions, statistics, branches);
         }
 
@@ -154,6 +201,14 @@ namespace BetterGhPanel.Core
 
         private static bool HasFiniteNumber(PanelRow row) => !row.IsNull && row.NumericValue.HasValue &&
             !double.IsNaN(row.NumericValue.Value) && !double.IsInfinity(row.NumericValue.Value);
+
+        private sealed class ValueCount
+        {
+            internal ValueCount(double? number, string? text) { Number = number; Text = text; }
+            internal double? Number { get; }
+            internal string? Text { get; }
+            internal int Count { get; set; }
+        }
 
         private static void CheckCancellation(int index, CancellationToken token)
         {

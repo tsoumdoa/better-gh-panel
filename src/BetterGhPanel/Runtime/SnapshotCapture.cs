@@ -52,7 +52,8 @@ namespace BetterGhPanel.Runtime
                         valid = false;
                         invalidReason = "Value could not be read.";
                     }
-                    rows.Add(new PanelRow(i, path, type, display, number, item == null, valid, geometry, invalidReason));
+                    rows.Add(new PanelRow(i, path, type, display, number, item == null, valid, geometry, invalidReason,
+                        item is GH_String text ? text.Value : null));
                     source.Add(item);
                 }
             }

@@ -213,18 +213,18 @@ internal static class FilterUiChecks
                 using var reference = RenderFooter(component, result, hideControls: true);
                 using var actual = RenderFooter(component, result, hideControls: false);
                 var footer = Field<RectangleF>(component.Attributes, "_footer");
-                int unitsLeft = (int)((PanelTestAdapter.Bounds(component, CanvasControl.Units).Left - footer.Left) * 2);
-                bool reachesUnits = false, textIntact = true;
-                for (int y = 0; y < reference.Height; y++)
+                bool hasSummary = false, textIntact = true;
+                int statsLeft = (int)((PanelTestAdapter.Bounds(component, CanvasControl.Statistics).Left - footer.Left) * 2);
+                for (int y = 0; y < 32; y++)
                 for (int x = 0; x < reference.Width; x++)
                 {
                     int pixel = reference.GetPixel(x, y).ToArgb();
                     if (pixel == Color.White.ToArgb()) continue;
-                    reachesUnits |= x >= unitsLeft;
+                    hasSummary |= x < statsLeft;
                     textIntact &= actual.GetPixel(x, y).ToArgb() == pixel;
                 }
-                Check(reachesUnits, $"Long fixed-decimal statistics reach across the Units control at {width}px width");
-                Check(textIntact, $"Active tree tools and Units preserve every statistics text pixel at {width}px width");
+                Check(hasSummary, $"The compact footer has visible item/branch counts at {width}px width");
+                Check(textIntact, $"Active tree tools and Units preserve the summary and Stats affordance at {width}px width");
             }
         }
         finally { component.DocumentContextChanged(document, GH_DocumentContext.Close); }

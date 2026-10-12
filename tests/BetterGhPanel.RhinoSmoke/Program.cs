@@ -147,6 +147,7 @@ internal static class Program
         await RowActionChecks.Run(assembly);
         await FilterChecks.Run(assembly);
         await FilterUiChecks.Run(assembly);
+        await StatisticsUiChecks.Run(assembly);
         var componentType = assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!;
         var component = (GH_Component)Activator.CreateInstance(componentType)!;
         var componentIcon = (Bitmap)componentType.GetProperty("Icon", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component)!;
