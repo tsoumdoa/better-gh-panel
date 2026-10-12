@@ -21,7 +21,7 @@ internal static class FilterCanvasChecks
         var options = new PanelQueryOptions();
         menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
         menu.Layout(panel, default, default, default, preview: anchor);
-        Require(panel.Contains(menu.Bounds) && menu.Visible == 3, "All preview choices fit the minimum Half panel");
+        Require(panel.Contains(menu.Bounds) && menu.Visible == 4, "All preview scopes and the item-order toggle fit the minimum Half panel");
         foreach (PanelPreviewMode mode in Enum.GetValues(typeof(PanelPreviewMode)))
         {
             int index = (int)mode;

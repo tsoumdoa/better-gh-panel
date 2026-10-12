@@ -16,6 +16,9 @@ internal static class PanelTestAdapter
     internal static bool HasSession(GH_Component component) => Field<object?>(component, "_session") != null;
     internal static int Preset(GH_Component component) => Property<int>(component, "PreviewSize");
     internal static string PreviewMode(GH_Component component) => Property<object>(component, "PreviewMode").ToString()!;
+    internal static bool ShowItemOrder(GH_Component component) => Property<bool>(component, "ShowItemOrder");
+    internal static void ShowItemOrder(GH_Component component, bool show) =>
+        component.GetType().GetMethod("SetShowItemOrder", PrivateInstance)!.Invoke(component, new object[] { show });
     internal static void PreviewMode(GH_Component component, string mode)
     {
         var method = component.GetType().GetMethod("SetPreviewMode", PrivateInstance)!;

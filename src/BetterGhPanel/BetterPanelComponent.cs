@@ -42,6 +42,7 @@ namespace BetterGhPanel
         internal CanvasPanelDisplay CanvasDisplay { get; private set; }
         internal bool PanelMinimized { get; private set; }
         internal PanelPreviewMode PreviewMode { get; private set; }
+        internal bool ShowItemOrder { get; private set; }
         internal float DisplayHeight => CanvasPanelSize.DisplayHeight(CanvasHeight, CanvasDisplay);
         internal int TrimDepth { get; private set; }
         internal bool FlattenTree { get; private set; }
@@ -131,6 +132,35 @@ namespace BetterGhPanel
             (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
+        }
+
+        internal void SetShowItemOrder(bool show)
+        {
+            if (ShowItemOrder == show) return;
+            RecordUndoEvent("Panel+ item order", new ItemOrderUndo(InstanceGuid, ShowItemOrder, show));
+            ApplyShowItemOrder(show);
+        }
+
+        private void ApplyShowItemOrder(bool show)
+        {
+            ShowItemOrder = show;
+            (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
+            OnPingDocument()?.Modified();
+            Instances.ActiveCanvas?.Invalidate();
+        }
+
+        private sealed class ItemOrderUndo : GH_UndoAction
+        {
+            private readonly Guid _component;
+            private readonly bool _before, _after;
+            internal ItemOrderUndo(Guid component, bool before, bool after)
+            { _component = component; _before = before; _after = after; }
+            public override bool ExpiresSolution => false;
+            public override bool ExpiresDisplay => false;
+            protected override void Internal_Undo(GH_Document doc) => Apply(doc, _before);
+            protected override void Internal_Redo(GH_Document doc) => Apply(doc, _after);
+            private void Apply(GH_Document doc, bool show) =>
+                (doc.FindObject(_component, false) as BetterPanelComponent)?.ApplyShowItemOrder(show);
         }
 
         internal void ResetPanel()
@@ -322,15 +352,17 @@ namespace BetterGhPanel
                 ClearHighlight();
                 return;
             }
-            _highlight.Set(_sourceItems, PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.RowPositions : ordered, ordered);
+            var previewPositions = PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.RowPositions : ordered;
+            _highlight.SetOrderResult(ShowItemOrder && previewPositions.Count > 0 ? session.Result : null);
+            _highlight.Set(_sourceItems, previewPositions, ordered);
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
 
         internal void ClearHighlight()
         {
-            if (_highlight.PreviewCount == 0) return;
+            bool visible = _highlight.PreviewCount > 0;
             _highlight.Clear();
-            Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
+            if (visible) Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
 
         internal async Task<string> CopyValuesAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions)
@@ -569,6 +601,7 @@ namespace BetterGhPanel
             writer.SetInt32("PanelDisplay", (int)CanvasDisplay);
             writer.SetBoolean("PanelMinimized", PanelMinimized);
             writer.SetInt32("PanelPreviewMode", (int)PreviewMode);
+            writer.SetBoolean("PanelShowItemOrder", ShowItemOrder);
             writer.SetInt32("PanelTrimDepth", TrimDepth);
             writer.SetBoolean("PanelFlatten", FlattenTree);
             writer.SetBoolean("PanelReverse", ReverseTree);
@@ -615,6 +648,9 @@ namespace BetterGhPanel
             reader.TryGetInt32("PanelPreviewMode", ref previewMode);
             PreviewMode = Enum.IsDefined(typeof(PanelPreviewMode), previewMode)
                 ? (PanelPreviewMode)previewMode : PanelPreviewMode.Selected;
+            bool showOrder = false;
+            reader.TryGetBoolean("PanelShowItemOrder", ref showOrder);
+            ShowItemOrder = showOrder;
             int trimDepth = 0;
             bool flatten = false, reverse = false, simplify = false;
             reader.TryGetInt32("PanelTrimDepth", ref trimDepth);
