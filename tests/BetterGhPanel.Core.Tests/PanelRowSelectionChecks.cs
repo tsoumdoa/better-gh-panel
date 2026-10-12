@@ -20,7 +20,7 @@ internal static class PanelRowSelectionChecks
         Expect(selection, source, 2);
         selection.Select(source, 4, toggle: true);
         selection.Select(source, 2, preserveSelected: true);
-        Expect(selection, source, 2, 4); // right-click/double-click retains the selected group
+        Expect(selection, source, 2, 4); // right-click retains the selected group
         selection.Select(source, 0, preserveSelected: true);
         Expect(selection, source, 0); // an unselected row starts a new group
 

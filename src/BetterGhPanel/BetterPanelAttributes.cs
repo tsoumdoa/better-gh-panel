@@ -8,6 +8,7 @@ using BetterGhPanel.Core;
 using BetterGhPanel.UI;
 using Grasshopper.GUI;
 using Grasshopper.GUI.Canvas;
+using Grasshopper.GUI.Canvas.Interaction;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Attributes;
 
@@ -30,6 +31,7 @@ namespace BetterGhPanel
         private int _offset, _shown;
         private PanelQueryResult? _lastResult;
         private readonly PanelRowSelection _selection = new PanelRowSelection();
+        private GH_Canvas? _selectionCanvas;
         private PanelQueryResult? _rowMenuResult;
         private RectangleF _rowMenuBounds;
         private int _rowMenuHovered = -1;
@@ -64,8 +66,64 @@ namespace BetterGhPanel
         internal void ClearRowSelection()
         {
             _selection.Clear();
+            DetachSelectionCanvas();
             InvalidateCopyStatus();
             CloseRowMenu();
+        }
+
+        private void ClearRowSelection(GH_Canvas canvas)
+        {
+            ClearRowSelection();
+            OnQueryCompleted();
+            canvas.Invalidate();
+        }
+
+        private void TrackSelectionCanvas(GH_Canvas canvas)
+        {
+            if (_selection.Count == 0) { DetachSelectionCanvas(); return; }
+            if (ReferenceEquals(_selectionCanvas, canvas)) return;
+            DetachSelectionCanvas();
+            _selectionCanvas = canvas;
+            canvas.MouseDown += SelectionCanvasMouseDown;
+            canvas.DocumentChanged += SelectionCanvasDocumentChanged;
+            canvas.Disposed += SelectionCanvasDisposed;
+        }
+
+        private void DetachSelectionCanvas()
+        {
+            if (_selectionCanvas == null) return;
+            _selectionCanvas.MouseDown -= SelectionCanvasMouseDown;
+            _selectionCanvas.DocumentChanged -= SelectionCanvasDocumentChanged;
+            _selectionCanvas.Disposed -= SelectionCanvasDisposed;
+            _selectionCanvas = null;
+        }
+
+        private void SelectionCanvasMouseDown(object? sender, MouseEventArgs e)
+        {
+            if (sender is not GH_Canvas canvas || e.Button != MouseButtons.Left ||
+                !ReferenceEquals(canvas.Document, Owner.OnPingDocument()) || canvas.Document == null) return;
+            if (e.Clicks > 1 && DateTime.UtcNow < _rowActionDismissedUntil) return;
+            // The host handles this event first. Only its ordinary blank-canvas
+            // selection gesture clears rows; wire, widget, pan and drag gestures do not.
+            if (canvas.ActiveInteraction is not GH_WindowSelectInteraction) return;
+            var modifiers = RowModifiers();
+            if (modifiers.Toggle || modifiers.Range || (System.Windows.Forms.Control.ModifierKeys & Keys.Alt) != 0) return;
+            var point = canvas.Viewport.UnprojectPoint(e.Location);
+            if (canvas.Document.RelevantObjectAtPoint(point) != null) return;
+            ClearRowSelection(canvas);
+        }
+
+        private void SelectionCanvasDocumentChanged(GH_Canvas canvas, GH_CanvasDocumentChangedEventArgs e)
+        {
+            if (ReferenceEquals(e.NewDocument, Owner.OnPingDocument())) return;
+            ClearRowSelection();
+            PanelOwner.ClearHighlight();
+        }
+
+        private void SelectionCanvasDisposed(object? sender, EventArgs e)
+        {
+            ClearRowSelection();
+            PanelOwner.ClearHighlight();
         }
 
         internal void OnQueryCompleted()
@@ -80,6 +138,7 @@ namespace BetterGhPanel
                 return;
             }
             PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
+            if (_selection.Count == 0) DetachSelectionCanvas();
         }
 
         private void SetBranchFilter(string? path)
@@ -180,6 +239,7 @@ namespace BetterGhPanel
             }
             if (session.IsBusy || !ReferenceEquals(result.Snapshot, session.Snapshot)) CloseRowMenu();
             if (!_menu.IsCurrent(session.Snapshot)) _menu.Close();
+            TrackSelectionCanvas(canvas);
             // Layout is measured in canvas units. Pixel fonts follow the canvas
             // transform without adding the display DPI a second time.
             using (var font = new Font("Arial", 11f, FontStyle.Regular, GraphicsUnit.Pixel))
@@ -475,6 +535,7 @@ namespace BetterGhPanel
                 InvalidateCopyStatus();
                 _selection.Select(result, hit.SourcePosition, preserveSelected: true);
                 PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
+                TrackSelectionCanvas(canvas);
                 _rowMenuResult = result;
                 float width = Math.Min(190, _panel.Width - 12);
                 _rowMenuBounds = new RectangleF(
@@ -670,7 +731,7 @@ namespace BetterGhPanel
                     InvalidateCopyStatus();
                     _selection.SelectAll(currentResult, hit.Path);
                     PanelOwner.HighlightRows(currentResult.Snapshot, _selection.OrderedPositions(currentResult));
-                    SuppressTrailingDoubleClick();
+                    TrackSelectionCanvas(sender);
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }
@@ -682,16 +743,18 @@ namespace BetterGhPanel
                     _selection.Select(currentResult, hit.SourcePosition, modifiers.Toggle, modifiers.Range, preserveSelected: true);
                     var positions = _selection.OrderedPositions(currentResult);
                     PanelOwner.HighlightRows(currentResult.Snapshot, positions);
+                    TrackSelectionCanvas(sender);
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }
             if (_list.Contains(point))
             {
-                ClearRowSelection();
-                OnQueryCompleted();
-                sender.Invalidate();
+                ClearRowSelection(sender);
                 return GH_ObjectResponse.Handled;
             }
+            // Empty panel margins and its header also clear rows, while the host
+            // remains responsible for selecting and dragging the component itself.
+            if (_panel.Contains(point)) ClearRowSelection(sender);
             return base.RespondToMouseDown(sender, e);
         }
 
@@ -829,22 +892,13 @@ namespace BetterGhPanel
                 return GH_ObjectResponse.Handled;
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDoubleClick(sender, e);
             if (_rowMenuResult != null || _menu.Kind != CanvasMenuKind.None) return GH_ObjectResponse.Handled;
-            var result = PanelOwner.Session.Result;
-            if (_list.Contains(e.CanvasLocation) && !RowsAreCurrent(result))
+            if (_list.Contains(e.CanvasLocation))
             {
-                _rowHits.Clear();
-                sender.Invalidate();
+                ClearRowSelection(sender);
                 return GH_ObjectResponse.Handled;
             }
-            foreach (var hit in _rowHits)
-                if (hit.Bounds.Contains(e.CanvasLocation) && hit.SourcePosition >= 0 && hit.SourcePosition < result.Snapshot.Rows.Count)
-                {
-                    _selection.Select(result, hit.SourcePosition, preserveSelected: true);
-                    CopySelectedValues(result, sender);
-                    return GH_ObjectResponse.Handled;
-                }
             if (_filter.Contains(e.CanvasLocation)) return GH_ObjectResponse.Handled;
-            if (_search.Contains(e.CanvasLocation) || _list.Contains(e.CanvasLocation)) { EditSearch(sender); return GH_ObjectResponse.Handled; }
+            if (_search.Contains(e.CanvasLocation)) { EditSearch(sender); return GH_ObjectResponse.Handled; }
             return base.RespondToMouseDoubleClick(sender, e);
         }
 
@@ -953,7 +1007,7 @@ namespace BetterGhPanel
                 }
                 e.Title = "Row selection and copy";
                 e.Text = _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus : $"{_selection.Count:N0} selected";
-                e.Description = "Click a row to select it without moving the camera. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Click empty table space to clear selection. Right-click to frame the selection or copy values or geometry. Double-click copies selected values, one per line.";
+                e.Description = "Click a row to select it without moving the camera. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Double-click a row or branch heading, or click empty table, panel or canvas space, to clear selection. Right-click to frame the selection or copy values or geometry.";
             }
             else if (RowsAreCurrent(PanelOwner.Session.Result))
             {
@@ -962,7 +1016,7 @@ namespace BetterGhPanel
                     {
                         e.Title = "Select branch " + hit.Path;
                         e.Text = "Select matching rows without moving the camera";
-                        e.Description = "Select every matching row in this branch, including rows outside the panel's visible area. Other active filters are respected.";
+                        e.Description = "Select every matching row in this branch, including rows outside the panel's visible area. Other active filters are respected. Double-click to clear selection.";
                         return;
                     }
                 foreach (var hit in _rowHits)
@@ -985,7 +1039,7 @@ namespace BetterGhPanel
                             details += "\nMeasurement unavailable.";
                     }
                     else details = value.Length > 1000 ? value.Substring(0, 997) + "…" : value;
-                    e.Description = details + "\n\nClick to select without moving the camera. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Right-click to frame the selection or copy values or geometry. Double-click copies selected values, one per line.";
+                    e.Description = details + "\n\nClick to select without moving the camera. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Double-click to clear selection. Right-click to frame the selection or copy values or geometry.";
                     break;
                 }
             }

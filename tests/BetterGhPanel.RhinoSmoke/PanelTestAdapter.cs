@@ -54,6 +54,17 @@ internal static class PanelTestAdapter
         component.Attributes.GetType().GetMethod("Render", PrivateInstance)!
             .Invoke(component.Attributes, new object[] { canvas, graphics, GH_CanvasChannel.Objects });
 
+    internal static void CanvasClick(GH_Canvas canvas, PointF point,
+        System.Windows.Forms.MouseButtons button = System.Windows.Forms.MouseButtons.Left, int clicks = 1)
+    {
+        var location = Point.Round(canvas.Viewport.ProjectPoint(point));
+        var args = new System.Windows.Forms.MouseEventArgs(button, clicks, location.X, location.Y, 0);
+        // Raise the host's normal control event so Grasshopper performs its own
+        // hit dispatch before the panel's blank-canvas observer runs.
+        foreach (string name in new[] { "OnMouseDown", "OnMouseUp" })
+            typeof(System.Windows.Forms.Control).GetMethod(name, PrivateInstance)!.Invoke(canvas, new object[] { args });
+    }
+
     internal static GH_TooltipDisplayEventArgs Tooltip(GH_Component component, GH_Canvas canvas, int sourcePosition)
     {
         foreach (var hit in Field<IEnumerable>(component.Attributes, "_rowHits"))
@@ -90,6 +101,15 @@ internal sealed class CanvasEditorAdapter
     private readonly object _editor;
     private readonly Type _type;
     private CanvasEditorAdapter(object editor, Type type) { _editor = editor; _type = type; }
+
+    internal static bool IsActive(Assembly assembly)
+    {
+        var type = assembly.GetType("BetterGhPanel.UI.CanvasTextInput", true)!;
+        var active = type.GetField("_active", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null);
+        var arguments = new object?[] { null };
+        return active != null && (bool)active.GetType().GetMethod("TryGetTarget")!.Invoke(active, arguments)! &&
+            (bool)type.GetProperty("IsTextInput")!.GetValue(arguments[0])!;
+    }
 
     internal static CanvasEditorAdapter Active(Assembly assembly)
     {
