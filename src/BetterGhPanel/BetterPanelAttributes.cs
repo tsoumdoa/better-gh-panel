@@ -24,7 +24,7 @@ namespace BetterGhPanel
         private static readonly Color Accent = Color.FromArgb(77, 115, 94);
         private RectangleF _panel, _search, _filter, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _footer;
         private RectangleF _trim, _simplify, _flatten, _reverse, _units;
-        private RectangleF _display, _preview;
+        private RectangleF _display, _preview, _move;
         private readonly List<RowHit> _rowHits = new List<RowHit>();
         private readonly List<BranchHit> _branchHits = new List<BranchHit>();
         private PanelSearchMode _editingSearchMode;
@@ -172,16 +172,18 @@ namespace BetterGhPanel
             _jump = new RectangleF(_display.Left - 48, _panel.Y + 2, 20, 18);
             _reset = new RectangleF(_jump.Right + 4, _jump.Y, 20, 18);
             _preview = new RectangleF(_jump.Left - 116, _jump.Y, 112, 18);
-            _footer = new RectangleF(x + 2, _panel.Bottom - 36, _panel.Width - 12, 32);
+            _move = new RectangleF(_panel.X + 4, _panel.Y + 1, _preview.Left - _panel.X - 8, 23);
+            // Reserve the corner for resizing rather than overlaying footer controls.
+            _footer = new RectangleF(x + 2, _panel.Bottom - 36, _panel.Width - 34, 32);
             // Share one row so status text, tool glyphs and Units have the same center.
-            _units = new RectangleF(_footer.Right - 85, _footer.Y + 12, 76, 20);
+            _units = new RectangleF(_footer.Right - 76, _footer.Y + 12, 76, 20);
             _trim = new RectangleF(_units.Left - 101, _units.Y, 22, _units.Height);
             _simplify = new RectangleF(_trim.Right + 2, _trim.Y, 22, 20);
             _flatten = new RectangleF(_simplify.Right + 2, _trim.Y, 22, 20);
             _reverse = new RectangleF(_flatten.Right + 2, _trim.Y, 22, 20);
             _list = new RectangleF(x, _panel.Y + 52, _panel.Width - 15, Math.Max(18, _panel.Height - 90));
             _track = new RectangleF(_panel.Right - 8, _list.Y, 4, _list.Height);
-            _resize = new RectangleF(_panel.Right - 13, _panel.Bottom - 13, 13, 13);
+            _resize = new RectangleF(_panel.Right - 24, _panel.Bottom - 24, 24, 24);
             // Linked parameter attributes keep Grasshopper's wire/tooltip behavior, but
             // expose actual wire grips at our rectangle instead of a hidden default capsule.
             PositionPorts(Owner.Params.Input, true);
@@ -250,13 +252,11 @@ namespace BetterGhPanel
             {
                 Fill(graphics, Color.White, _panel);
                 Fill(graphics, Accent, new RectangleF(_panel.X, _panel.Y, 3, HeaderHeight));
-                Text(graphics, "P+", bold, Accent, new RectangleF(_panel.X + 8, _panel.Y + 1, 28, 20), trim);
-                var itemLabel = result.Statistics.ItemCount == 1 ? "item" : "items";
-                var branchLabel = result.Statistics.BranchCount == 1 ? "branch" : "branches";
-                Text(graphics, PanelOwner.Locked ? "Disabled" : session.HasCurrentResult
-                    ? $"{result.Statistics.ItemCount:N0} {itemLabel}  ·  {result.Statistics.BranchCount:N0} {branchLabel}"
-                    : session.IsBusy ? "Recomputing…" : "Filter needs attention", small, Muted,
-                    new RectangleF(_panel.X + 39, _panel.Y + 1, _preview.Left - _panel.X - 43, 20), trim);
+                using (var grip = new SolidBrush(Muted))
+                    for (int column = 0; column < 2; column++)
+                        for (int row = 0; row < 3; row++)
+                            graphics.FillEllipse(grip, _move.X + 5 + column * 4, _move.Y + 5 + row * 4, 1.5f, 1.5f);
+                Text(graphics, "P+", bold, Accent, new RectangleF(_move.X + 18, _move.Y, _move.Width - 20, 20), trim);
                 if (canvas.Viewport.Zoom >= 0.5f)
                     DrawDisplayAction(graphics);
                 if (canvas.Viewport.Zoom >= 0.5f)
@@ -277,8 +277,8 @@ namespace BetterGhPanel
                     if (_rowMenuResult != null) RenderRowMenu(graphics, small, trim);
                     using (var gripPen = new Pen(Color.FromArgb(165, 173, 166), 1))
                     {
-                        graphics.DrawLine(gripPen, _panel.Right - 10, _panel.Bottom - 4, _panel.Right - 4, _panel.Bottom - 10);
-                        graphics.DrawLine(gripPen, _panel.Right - 6, _panel.Bottom - 4, _panel.Right - 4, _panel.Bottom - 6);
+                        for (int inset = 8; inset <= 18; inset += 5)
+                            graphics.DrawLine(gripPen, _panel.Right - inset, _panel.Bottom - 4, _panel.Right - 4, _panel.Bottom - inset);
                     }
                 }
                 else
@@ -848,6 +848,12 @@ namespace BetterGhPanel
 
         public override GH_ObjectResponse RespondToMouseMove(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
+            // Hidden controls must not claim a cursor that their mouse-down path
+            // cannot act on. An already captured gesture still needs its moves.
+            if (!_resizing && !_scrolling && sender.Viewport.Zoom < 0.5f)
+                return base.RespondToMouseMove(sender, e);
+            sender.Cursor = _resizing || _resize.Contains(e.CanvasLocation) ? Cursors.SizeNWSE :
+                _move.Contains(e.CanvasLocation) ? Cursors.SizeAll : Cursors.Default;
             if (_menu.Hover(e.CanvasLocation)) sender.Invalidate();
             int rowMenuHovered = _rowMenuResult != null && _rowMenuBounds.Contains(e.CanvasLocation)
                 ? (int)((e.CanvasY - _rowMenuBounds.Y) / 20) : -1;
@@ -870,6 +876,8 @@ namespace BetterGhPanel
                 if (travel > 0) SetOffset(sender, (int)Math.Round((e.CanvasY - _track.Y - _thumbGrab) / travel * MaximumOffset));
                 return GH_ObjectResponse.Capture;
             }
+            // Grasshopper replaces the cursor after an ignored move event.
+            if (_move.Contains(e.CanvasLocation) || _resize.Contains(e.CanvasLocation)) return GH_ObjectResponse.Handled;
             return base.RespondToMouseMove(sender, e);
         }
 
@@ -905,6 +913,13 @@ namespace BetterGhPanel
         public override void SetupTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             base.SetupTooltip(point, e);
+            if (_move.Contains(point))
+            {
+                e.Title = "Move Panel+";
+                e.Text = "Drag this header";
+                e.Description = "The dotted grip and the space beside Panel+ move the component on the Grasshopper canvas.";
+                return;
+            }
             if (_rowMenuResult != null && _rowMenuBounds.Contains(point))
             {
                 int action = (int)((point.Y - _rowMenuBounds.Y) / 20);
