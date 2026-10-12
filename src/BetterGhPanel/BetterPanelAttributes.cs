@@ -848,6 +848,10 @@ namespace BetterGhPanel
 
         public override GH_ObjectResponse RespondToMouseMove(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
+            // Hidden controls must not claim a cursor that their mouse-down path
+            // cannot act on. An already captured gesture still needs its moves.
+            if (!_resizing && !_scrolling && sender.Viewport.Zoom < 0.5f)
+                return base.RespondToMouseMove(sender, e);
             sender.Cursor = _resizing || _resize.Contains(e.CanvasLocation) ? Cursors.SizeNWSE :
                 _move.Contains(e.CanvasLocation) ? Cursors.SizeAll : Cursors.Default;
             if (_menu.Hover(e.CanvasLocation)) sender.Invalidate();

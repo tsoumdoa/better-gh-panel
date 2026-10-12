@@ -33,6 +33,21 @@ internal static class PanelHandleChecks
         var outputGrip = component.Params.Output[0].Attributes.OutputGrip;
         CanvasEvent("OnMouseMove", start, Forms.MouseButtons.None);
         Check(canvas.Cursor == Forms.Cursors.SizeAll, "Native header hover retains the move cursor");
+        canvas.Viewport.Zoom = 0.4f;
+        canvas.Viewport.ComputeProjection();
+        foreach (var hiddenHandle in new[] { move, PanelTestAdapter.Bounds(component, CanvasControl.Resize) })
+        {
+            var point = new PointF(hiddenHandle.Right - 2, hiddenHandle.Bottom - 2);
+            Check(component.Attributes.RespondToMouseMove(canvas, Mouse(point)) == GH_ObjectResponse.Ignore,
+                "Hidden controls leave low-zoom mouse movement to Grasshopper");
+            CanvasEvent("OnMouseMove", point, Forms.MouseButtons.None);
+            Check(canvas.Cursor != Forms.Cursors.SizeAll && canvas.Cursor != Forms.Cursors.SizeNWSE,
+                "Native low-zoom hover does not advertise invisible move or resize controls");
+        }
+        canvas.Viewport.Zoom = 1;
+        canvas.Viewport.ComputeProjection();
+        CanvasEvent("OnMouseMove", start, Forms.MouseButtons.None);
+        Check(canvas.Cursor == Forms.Cursors.SizeAll, "Zooming back in restores the move cursor");
         CanvasEvent("OnMouseDown", start);
         CanvasEvent("OnMouseMove", new PointF(start.X + 12, start.Y + 8));
         CanvasEvent("OnMouseMove", new PointF(start.X + 32, start.Y + 20));
@@ -76,6 +91,19 @@ internal static class PanelHandleChecks
                     "Full and Half resize handles follow the cursor from their padded edges");
             }
         }
+        var activeResize = PanelTestAdapter.Bounds(component, CanvasControl.Resize);
+        var activeStart = new PointF(activeResize.Right - 2, activeResize.Bottom - 2);
+        var activeSize = PanelTestAdapter.Size(component);
+        Check(component.Attributes.RespondToMouseDown(canvas, Mouse(activeStart)) == GH_ObjectResponse.Capture,
+            "A visible resize target captures before the canvas zoom changes");
+        canvas.Viewport.Zoom = 0.4f;
+        canvas.Viewport.ComputeProjection();
+        var activeEnd = new PointF(activeStart.X + 12, activeStart.Y + 12);
+        Check(component.Attributes.RespondToMouseMove(canvas, Mouse(activeEnd)) == GH_ObjectResponse.Capture &&
+            PanelTestAdapter.Size(component).Width == activeSize.Width + 12,
+            "An active resize continues across the control visibility threshold");
+        Check(component.Attributes.RespondToMouseUp(canvas, Mouse(activeEnd)) == GH_ObjectResponse.Release,
+            "An active resize still releases normally after zooming out");
         component.DocumentContextChanged(document, GH_DocumentContext.Close);
 
         void CanvasEvent(string name, PointF point, Forms.MouseButtons button = Forms.MouseButtons.Left)
