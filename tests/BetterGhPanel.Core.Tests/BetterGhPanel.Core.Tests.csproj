@@ -11,5 +11,6 @@
     <Compile Include="../../src/BetterGhPanel/UI/CanvasMenu.cs" Link="CanvasMenu.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/CanvasStatistics.cs" Link="CanvasStatistics.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/PanelRowSelection.cs" Link="PanelRowSelection.cs" />
+    <Compile Include="../../src/BetterGhPanel/UI/LabelCollisionGrid.cs" Link="LabelCollisionGrid.cs" />
   </ItemGroup>
 </Project>

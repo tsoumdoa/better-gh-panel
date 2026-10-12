@@ -12,6 +12,10 @@ namespace BetterGhPanel.UI
     // One owner for menu lifetime, snapshot validity, layout, and paging.
     internal sealed class CanvasMenu
     {
+        internal const int ItemOrderIndex = 3;
+        internal const string ItemOrderDescription = "Show 1-based positions in the current filtered and sorted view, across all branches. " +
+            "All rows consume a number; selected subsets retain their view numbers. Points use their locations; other geometry uses bounding-box centers. " +
+            "Labels follow the Preview scope and remain active in a minimized panel. Overlapping labels are hidden, with selected rows taking priority; zoom in or select fewer items to separate them.";
         private static readonly string[] SortLabels = { "Source order", "Value ascending", "Value descending" };
         private static readonly string[] PreviewLabels = { "Selected", "Filtered results", "Off" };
         private static readonly string[] SearchLabels = { "Text search", "Text · regular expression", "Numeric value", "Geometry · length", "Geometry · area", "Geometry · volume" };
@@ -28,7 +32,7 @@ namespace BetterGhPanel.UI
             Kind == CanvasMenuKind.Sort ? SortLabels.Length : Kind == CanvasMenuKind.Branch ? _snapshot.Branches.Count + 2 :
             Kind == CanvasMenuKind.Units ? PanelUnits.ConversionCount + 2 :
             Kind == CanvasMenuKind.SearchMode ? SearchLabels.Length : Kind == CanvasMenuKind.Comparison ? ComparisonLabels.Length :
-            Kind == CanvasMenuKind.Preview ? PreviewLabels.Length :
+            Kind == CanvasMenuKind.Preview ? PreviewLabels.Length + 1 :
             Kind == CanvasMenuKind.Statistics && _statisticsResult != null ? CanvasStatistics.OverviewRows + _statisticsResult.Statistics.UniqueValues.Count : 0;
         internal int Visible => Math.Min(Count, Math.Max(1, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
 
@@ -146,10 +150,10 @@ namespace BetterGhPanel.UI
             return true;
         }
 
-        internal bool IsSelected(int index, PanelQueryOptions options, PanelUnitConversion conversion, int decimals, PanelPreviewMode preview = PanelPreviewMode.Selected)
+        internal bool IsSelected(int index, PanelQueryOptions options, PanelUnitConversion conversion, int decimals, PanelPreviewMode preview = PanelPreviewMode.Selected, bool showItemOrder = false)
         {
             if (Kind == CanvasMenuKind.Statistics) return false;
-            if (Kind == CanvasMenuKind.Preview) return index == (int)preview;
+            if (Kind == CanvasMenuKind.Preview) return index == ItemOrderIndex ? showItemOrder : index == (int)preview;
             if (Kind == CanvasMenuKind.Units)
                 return index < PanelUnits.ConversionCount ? index == (int)conversion :
                     index == PanelUnits.ConversionCount ? decimals < 0 : decimals >= 0;
@@ -197,7 +201,7 @@ namespace BetterGhPanel.UI
         internal string Label(int index, int decimals = PanelUnits.AutomaticDecimals)
         {
             if (Kind == CanvasMenuKind.Statistics) return CanvasStatistics.Label(_statisticsResult!, index, decimals);
-            if (Kind == CanvasMenuKind.Preview) return PreviewLabels[index];
+            if (Kind == CanvasMenuKind.Preview) return index == ItemOrderIndex ? "Show item order" : PreviewLabels[index];
             if (Kind == CanvasMenuKind.Units)
             {
                 if (index < PanelUnits.ConversionCount)

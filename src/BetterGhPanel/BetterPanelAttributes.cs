@@ -537,11 +537,12 @@ namespace BetterGhPanel
             {
                 int index = i + _menu.Offset;
                 var row = new RectangleF(_menu.Bounds.X + 1, _menu.Bounds.Y + i * 20, _menu.Bounds.Width - 2, 20);
-                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode);
+                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder);
                 if (index == _menu.HoveredIndex || selected)
                     Fill(g, index == _menu.HoveredIndex ? Color.FromArgb(226, 236, 226) : Color.FromArgb(242, 247, 241), row);
                 if (_menu.Kind == CanvasMenuKind.Units && index == PanelUnits.ConversionCount ||
-                    _menu.Kind == CanvasMenuKind.Statistics && index == CanvasStatistics.OverviewRows)
+                    _menu.Kind == CanvasMenuKind.Statistics && index == CanvasStatistics.OverviewRows ||
+                    _menu.Kind == CanvasMenuKind.Preview && index == CanvasMenu.ItemOrderIndex)
                     using (var divider = new Pen(Color.FromArgb(225, 231, 224)))
                         g.DrawLine(divider, row.X + 7, row.Y, row.Right - 7, row.Y);
                 if (selected)
@@ -884,7 +885,8 @@ namespace BetterGhPanel
             _menu.Close();
             if (kind == CanvasMenuKind.Preview)
             {
-                PanelOwner.SetPreviewMode((PanelPreviewMode)index);
+                if (index == CanvasMenu.ItemOrderIndex) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
+                else PanelOwner.SetPreviewMode((PanelPreviewMode)index);
                 canvas.Invalidate();
                 return;
             }
@@ -1033,6 +1035,17 @@ namespace BetterGhPanel
         public override void SetupTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             base.SetupTooltip(point, e);
+            if (_menu.Kind == CanvasMenuKind.Preview && _menu.Bounds.Contains(point))
+            {
+                int row = (int)((point.Y - _menu.Bounds.Y) / 20);
+                if (row < _menu.Visible && _menu.Offset + row == CanvasMenu.ItemOrderIndex)
+                {
+                    e.Title = "Show item order";
+                    e.Text = PanelOwner.ShowItemOrder ? "On" : "Off";
+                    e.Description = CanvasMenu.ItemOrderDescription;
+                    return;
+                }
+            }
             if (PanelOwner.PanelMinimized)
             {
                 e.Title = _restore.Contains(point) ? "Restore panel" : "Panel+ capsule";
@@ -1099,7 +1112,8 @@ namespace BetterGhPanel
             {
                 e.Title = "Geometry preview";
                 e.Text = CanvasMenu.PreviewLabel(PanelOwner.PreviewMode);
-                e.Description = "Selected previews only selected rows; an empty selection draws nothing. Filtered results previews all matching geometry, including offscreen rows, with selected rows highlighted. Off disables Panel+ preview. Other components keep their own previews. Right-click a row to frame the selection.";
+                e.Description = "Selected previews only selected rows; an empty selection draws nothing. Filtered results previews all matching geometry, including offscreen rows, with selected rows highlighted. Off disables Panel+ preview. Show item order adds numbered labels in Rhino (" +
+                    (PanelOwner.ShowItemOrder ? "on" : "off") + "). Other components keep their own previews. Right-click a row to frame the selection.";
             }
             else if (_units.Contains(point))
             {
@@ -1196,7 +1210,8 @@ namespace BetterGhPanel
                 {
                     if (!hit.Bounds.Contains(point)) continue;
                     var row = PanelOwner.Session.Result.Snapshot.Rows[hit.SourcePosition];
-                    e.Title = (PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder ? "" : "Row " + hit.ViewNumber + " · ") + row.Path + " [" + row.OriginalIndex + "]";
+                    e.Title = (PanelOwner.ShowItemOrder ? "View row " + hit.ViewNumber + " · " :
+                        PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder ? "" : "Row " + hit.ViewNumber + " · ") + row.Path + " [" + row.OriginalIndex + "]";
                     e.Text = (row.IsValid ? "" : "Invalid ") + row.TypeName;
                     var snapshot = PanelOwner.Session.Result.Snapshot;
                     var value = PanelOwner.DisplayValue(snapshot, row, hit.SourcePosition);

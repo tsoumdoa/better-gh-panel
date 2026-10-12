@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using BetterGhPanel.Core;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Types;
@@ -16,14 +17,16 @@ namespace BetterGhPanel.Runtime
     {
         private readonly List<IGH_PreviewData> _normal = new List<IGH_PreviewData>();
         private readonly List<IGH_PreviewData> _selected = new List<IGH_PreviewData>();
+        private readonly PanelOrderLabels _orderLabels = new PanelOrderLabels();
 
         internal int Count => _selected.Count;
         internal int PreviewCount => _normal.Count + _selected.Count;
         internal BoundingBox ClippingBox { get; private set; } = BoundingBox.Empty;
+        internal void SetOrderResult(PanelQueryResult? result) => _orderLabels.SetResult(result);
 
         internal void Set(IReadOnlyList<IGH_Goo?> sourceItems, IReadOnlyList<int> previewPositions, IReadOnlyList<int> selectedPositions)
         {
-            Clear();
+            ClearGeometry();
             var selected = new HashSet<int>(selectedPositions);
             var bounds = BoundingBox.Empty;
             foreach (int position in previewPositions)
@@ -40,7 +43,12 @@ namespace BetterGhPanel.Runtime
                         GH_Convert.ToGeometricGoo(PanelGeometryActions.Unwrap(item)) as IGH_PreviewData;
                     if (preview == null) continue;
                     bounds.Union(box);
-                    (selected.Contains(position) ? _selected : _normal).Add(preview);
+                    bool isSelected = selected.Contains(position);
+                    (isSelected ? _selected : _normal).Add(preview);
+                    // Point goo uses its actual position even when custom preview bounds
+                    // include adornments. Other preview data reuses its cheap existing bounds.
+                    var anchor = preview is GH_Point point ? point.Value : box.Center;
+                    _orderLabels.Add(position, anchor, isSelected);
                 }
                 catch (Exception) { } // One third-party goo cannot disable the other previews.
             }
@@ -49,9 +57,16 @@ namespace BetterGhPanel.Runtime
 
         internal void Clear()
         {
+            ClearGeometry();
+            _orderLabels.Clear();
+        }
+
+        private void ClearGeometry()
+        {
             _normal.Clear();
             _selected.Clear();
             ClippingBox = BoundingBox.Empty;
+            _orderLabels.ClearEntries();
         }
 
         internal void DrawWires(IGH_PreviewArgs args, bool componentSelected)
@@ -86,6 +101,7 @@ namespace BetterGhPanel.Runtime
             {
                 if (pushed) args.Display.PopModelTransform();
             }
+            _orderLabels.Arm(args);
         }
 
         internal void DrawMeshes(IGH_PreviewArgs args)
