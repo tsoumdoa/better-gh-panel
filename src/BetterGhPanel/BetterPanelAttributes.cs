@@ -346,8 +346,7 @@ namespace BetterGhPanel
             var session = PanelOwner.Session;
             if (PanelOwner.Locked) return "Disabled";
             if (!session.HasCurrentResult) return session.IsBusy ? "Recomputing…" : "Filter needs attention";
-            var stats = session.Result.Statistics;
-            return $"{stats.ItemCount:N0} {(stats.ItemCount == 1 ? "item" : "items")} · {stats.BranchCount:N0} {(stats.BranchCount == 1 ? "branch" : "branches")}";
+            return CanvasStatistics.Summary(session.Result);
         }
 
         private void RenderCapsule(GH_Canvas canvas, Graphics g, Font bold, Font small, StringFormat trim)
@@ -831,6 +830,8 @@ namespace BetterGhPanel
                 });
                 return GH_ObjectResponse.Handled;
             }
+            // Moving the panel is a presentation control, so keep its row selection.
+            if (_move.Contains(point)) return base.RespondToMouseDown(sender, e);
             var currentResult = PanelOwner.Session.Result;
             if (_list.Contains(point) && !RowsAreCurrent(currentResult))
             {

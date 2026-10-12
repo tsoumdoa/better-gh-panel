@@ -124,6 +124,12 @@ internal static class CapsuleChecks
             "Minimize preserves another panel's active editor");
         other.RemovedFromDocument(document);
 
+        session.GetType().GetMethod("UpdateQuery")!.Invoke(session, new object[] { new PanelQueryOptions { Search = "> 100" } });
+        await Wait(session);
+        Paint(component, canvas);
+        Check(PanelTestAdapter.CapsuleSummary(component) == "19/120 items · 1/3 branches",
+            "Capsule retains the same matched/total count context as the expanded footer");
+
         // Invalidated or failed input must never reuse the prior count label.
         PanelTestAdapter.Minimize(component, true);
         component.Attributes.PerformLayout();
