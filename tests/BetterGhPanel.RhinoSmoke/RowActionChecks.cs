@@ -525,8 +525,8 @@ internal static class RowActionChecks
         Click(component, canvas, row);
         var response = component.Attributes.RespondToMouseDown(canvas,
             new GH_CanvasMouseEvent(DrawingPoint.Empty, new PointF(panel.Left + 12, panel.Top + 8), Forms.MouseButtons.Left, 1, 0));
-        Check(Selected(selection, result).Count == 0 && response == GH_ObjectResponse.Ignore,
-            "Clicking the panel title clears rows and leaves component dragging to Grasshopper");
+        Check(Selected(selection, result).Count == 1 && response == GH_ObjectResponse.Ignore,
+            "The dedicated move handle preserves rows and leaves component dragging to Grasshopper");
 
         Click(component, canvas, row);
         Check(Field<GH_Canvas?>(component.Attributes, "_selectionCanvas") == canvas, "Row selection observes its owning canvas only while selected");

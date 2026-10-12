@@ -24,7 +24,7 @@ namespace BetterGhPanel
         private static readonly Color Accent = Color.FromArgb(77, 115, 94);
         private RectangleF _panel, _search, _filter, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _footer;
         private RectangleF _trim, _simplify, _flatten, _reverse, _units;
-        private RectangleF _display, _preview, _move, _statistics;
+        private RectangleF _display, _preview, _move, _statistics, _close, _restore;
         private readonly List<RowHit> _rowHits = new List<RowHit>();
         private readonly List<BranchHit> _branchHits = new List<BranchHit>();
         private PanelSearchMode _editingSearchMode;
@@ -126,6 +126,15 @@ namespace BetterGhPanel
             PanelOwner.ClearHighlight();
         }
 
+        internal void ClosePresentationControls()
+        {
+            _menu.Close();
+            CloseRowMenu();
+            _resizing = _scrolling = _rowContextHandled = false;
+            _rowHits.Clear();
+            _branchHits.Clear();
+        }
+
         internal void OnQueryCompleted()
         {
             var session = PanelOwner.Session;
@@ -165,6 +174,20 @@ namespace BetterGhPanel
         protected override void Layout()
         {
             CloseRowMenu();
+            if (PanelOwner.PanelMinimized)
+            {
+                _panel = new RectangleF(Pivot.X, Pivot.Y, CanvasPanelSize.CapsuleWidth, CanvasPanelSize.CapsuleHeight);
+                m_innerBounds = _panel;
+                ClosePresentationControls();
+                _search = _filter = _type = _sort = _branch = _jump = _reset = _resize = _list = _track = _footer = RectangleF.Empty;
+                _trim = _simplify = _flatten = _reverse = _units = _display = _preview = _close = _move = _statistics = RectangleF.Empty;
+                _restore = new RectangleF(_panel.Right - 26, _panel.Y + 5, 22, 22);
+                PositionPorts(Owner.Params.Input, true);
+                PositionPorts(Owner.Params.Output, false);
+                Bounds = new RectangleF(_panel.X - 6, _panel.Y, _panel.Width + 12, _panel.Height);
+                return;
+            }
+            _restore = RectangleF.Empty;
             _panel = new RectangleF(Pivot.X,
                 Pivot.Y + CanvasPanelSize.DisplayTopOffset(PanelOwner.CanvasHeight, PanelOwner.CanvasDisplay),
                 PanelOwner.CanvasWidth, PanelOwner.DisplayHeight);
@@ -177,7 +200,8 @@ namespace BetterGhPanel
             _type = new RectangleF(_search.Right + 3, _search.Y, 76, 21);
             _sort = new RectangleF(_type.Right + 3, _search.Y, 43, 21);
             _branch = new RectangleF(_sort.Right + 3, _search.Y, 72, 21);
-            _display = new RectangleF(_panel.Right - 26, _panel.Y + 2, 20, 18);
+            _close = new RectangleF(_panel.Right - 26, _panel.Y + 2, 20, 18);
+            _display = new RectangleF(_close.Left - 22, _close.Y, 20, 18);
             _jump = new RectangleF(_display.Left - 48, _panel.Y + 2, 20, 18);
             _reset = new RectangleF(_jump.Right + 4, _jump.Y, 20, 18);
             _preview = new RectangleF(_jump.Left - 116, _jump.Y, 112, 18);
@@ -212,8 +236,10 @@ namespace BetterGhPanel
                     port = new PanelPortAttributes(parameters[i], this, input);
                     parameters[i].Attributes = port;
                 }
-                // Folding changes only the visible rectangle, never the wire endpoints.
+                // Full/Half retain canonical grips. A capsule owns only its
+                // compact bounds, so its grips move to the visible edges.
                 var point = new PointF(input ? _panel.Left : _panel.Right,
+                    PanelOwner.PanelMinimized ? _panel.Y + _panel.Height * (i + 1) / (parameters.Count + 1) :
                     Pivot.Y + HeaderHeight + (PanelOwner.CanvasHeight - HeaderHeight) * (i + 1) / (parameters.Count + 1));
                 port.Place(point);
             }
@@ -261,6 +287,12 @@ namespace BetterGhPanel
             using (var mono = CanvasRowRenderer.MonospaceFont(10))
             using (var trim = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap, LineAlignment = StringAlignment.Center })
             {
+                if (PanelOwner.PanelMinimized)
+                {
+                    RenderCapsule(canvas, graphics, bold, small, trim);
+                    session.RequestGeometryMeasurements(session.Snapshot, Array.Empty<int>());
+                    return;
+                }
                 Fill(graphics, Color.White, _panel);
                 Fill(graphics, Accent, new RectangleF(_panel.X, _panel.Y, 3, HeaderHeight));
                 using (var grip = new SolidBrush(Muted))
@@ -269,7 +301,10 @@ namespace BetterGhPanel
                             graphics.FillEllipse(grip, _move.X + 5 + column * 4, _move.Y + 5 + row * 4, 1.5f, 1.5f);
                 Text(graphics, "P+", bold, Accent, new RectangleF(_move.X + 18, _move.Y, _move.Width - 20, 20), trim);
                 if (canvas.Viewport.Zoom >= 0.5f)
+                {
                     DrawDisplayAction(graphics);
+                    DrawCloseAction(graphics);
+                }
                 if (canvas.Viewport.Zoom >= 0.5f)
                 {
                     var options = session.Options;
@@ -304,6 +339,45 @@ namespace BetterGhPanel
                 foreach (var parameter in Owner.Params.Output)
                     GH_CapsuleRenderEngine.RenderOutputGrip(graphics, canvas.Viewport.Zoom, parameter.Attributes.OutputGrip, false);
             }
+        }
+
+        private string CapsuleSummary()
+        {
+            var session = PanelOwner.Session;
+            if (PanelOwner.Locked) return "Disabled";
+            if (!session.HasCurrentResult) return session.IsBusy ? "Recomputing…" : "Filter needs attention";
+            return CanvasStatistics.Summary(session.Result);
+        }
+
+        private void RenderCapsule(GH_Canvas canvas, Graphics g, Font bold, Font small, StringFormat trim)
+        {
+            using (var shape = new GraphicsPath())
+            using (var fill = new SolidBrush(Color.White))
+            using (var border = new Pen(Selected ? Accent : Color.FromArgb(164, 171, 164), Selected ? 1.5f : 1))
+            {
+                const float corner = 12;
+                shape.AddArc(_panel.X, _panel.Y, corner, corner, 180, 90);
+                shape.AddArc(_panel.Right - corner, _panel.Y, corner, corner, 270, 90);
+                shape.AddArc(_panel.Right - corner, _panel.Bottom - corner, corner, corner, 0, 90);
+                shape.AddArc(_panel.X, _panel.Bottom - corner, corner, corner, 90, 90);
+                shape.CloseFigure();
+                g.FillPath(fill, shape);
+                g.DrawPath(border, shape);
+            }
+            Text(g, "P+", bold, Accent, new RectangleF(_panel.X + 8, _panel.Y + 5, 27, 22), trim);
+            Text(g, CapsuleSummary(), small, Muted,
+                new RectangleF(_panel.X + 36, _panel.Y + 5, _restore.Left - _panel.X - 40, 22), trim);
+            using (var pen = new Pen(Accent, 1.2f))
+            {
+                float x = _restore.X + 5, y = _restore.Y + 5;
+                g.DrawRectangle(pen, x, y + 3, 8, 8);
+                g.DrawLine(pen, x + 5, y + 6, x + 11, y);
+                g.DrawLines(pen, new[] { new PointF(x + 6, y), new PointF(x + 11, y), new PointF(x + 11, y + 5) });
+            }
+            foreach (var parameter in Owner.Params.Input)
+                GH_CapsuleRenderEngine.RenderInputGrip(g, canvas.Viewport.Zoom, parameter.Attributes.InputGrip, false);
+            foreach (var parameter in Owner.Params.Output)
+                GH_CapsuleRenderEngine.RenderOutputGrip(g, canvas.Viewport.Zoom, parameter.Attributes.OutputGrip, false);
         }
 
         private void RenderRows(Graphics g, PanelQueryResult result, RectangleF visibleRegion, Font font, Font small, Font mono, StringFormat trim)
@@ -631,6 +705,20 @@ namespace BetterGhPanel
 
         public override GH_ObjectResponse RespondToMouseDown(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
+            if (PanelOwner.PanelMinimized)
+            {
+                if (e.Button == MouseButtons.Left && _restore.Contains(e.CanvasLocation))
+                {
+                    if (e.Clicks > 1 && DateTime.UtcNow < _rowActionDismissedUntil) return GH_ObjectResponse.Handled;
+                    SuppressTrailingDoubleClick();
+                    PanelOwner.SetPanelMinimized(false);
+                    PerformLayout();
+                    CanvasDoubleClickGuard.Start(sender, e);
+                    sender.Invalidate();
+                    return GH_ObjectResponse.Handled;
+                }
+                return base.RespondToMouseDown(sender, e);
+            }
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDown(sender, e);
             if (e.Button == MouseButtons.Right) return RespondToRowContextMenu(sender, e);
             if (e.Button != MouseButtons.Left) return base.RespondToMouseDown(sender, e);
@@ -639,6 +727,15 @@ namespace BetterGhPanel
             // double-click interval expires. Only its trailing click is blocked.
             if (e.Clicks == 1) _rowActionDismissedUntil = default;
             if (e.Clicks > 1 && DateTime.UtcNow < _rowActionDismissedUntil) return GH_ObjectResponse.Handled;
+            if (_close.Contains(point))
+            {
+                SuppressTrailingDoubleClick();
+                PanelOwner.SetPanelMinimized(true);
+                PerformLayout();
+                CanvasDoubleClickGuard.Start(sender, e);
+                sender.Invalidate();
+                return GH_ObjectResponse.Handled;
+            }
             if (_display.Contains(point))
             {
                 // Expanding Half moves this header away from the pointer and can
@@ -648,6 +745,7 @@ namespace BetterGhPanel
                 CloseRowMenu();
                 PanelOwner.SetCanvasDisplay(CanvasPanelSize.NextDisplay(PanelOwner.CanvasDisplay));
                 PerformLayout();
+                CanvasDoubleClickGuard.Start(sender, e);
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
@@ -735,6 +833,8 @@ namespace BetterGhPanel
                 });
                 return GH_ObjectResponse.Handled;
             }
+            // Moving the panel is a presentation control, so keep its row selection.
+            if (_move.Contains(point)) return base.RespondToMouseDown(sender, e);
             var currentResult = PanelOwner.Session.Result;
             if (_list.Contains(point) && !RowsAreCurrent(currentResult))
             {
@@ -867,6 +967,7 @@ namespace BetterGhPanel
 
         public override GH_ObjectResponse RespondToMouseMove(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
+            if (PanelOwner.PanelMinimized) return base.RespondToMouseMove(sender, e);
             // Hidden controls must not claim a cursor that their mouse-down path
             // cannot act on. An already captured gesture still needs its moves.
             if (!_resizing && !_scrolling && sender.Viewport.Zoom < 0.5f)
@@ -915,7 +1016,7 @@ namespace BetterGhPanel
         {
             if (e.Button != MouseButtons.Left) return base.RespondToMouseDoubleClick(sender, e);
             if (DateTime.UtcNow < _rowActionDismissedUntil) return GH_ObjectResponse.Handled;
-            if (_display.Contains(e.CanvasLocation))
+            if (PanelOwner.PanelMinimized || _close.Contains(e.CanvasLocation) || _display.Contains(e.CanvasLocation))
                 return GH_ObjectResponse.Handled;
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDoubleClick(sender, e);
             if (_rowMenuResult != null || _menu.Kind != CanvasMenuKind.None) return GH_ObjectResponse.Handled;
@@ -932,6 +1033,21 @@ namespace BetterGhPanel
         public override void SetupTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             base.SetupTooltip(point, e);
+            if (PanelOwner.PanelMinimized)
+            {
+                e.Title = _restore.Contains(point) ? "Restore panel" : "Panel+ capsule";
+                e.Text = CapsuleSummary();
+                e.Description = "Click the restore arrow to return to your " + PanelOwner.CanvasDisplay +
+                    " panel. Filters, selection, scrolling and geometry preview are retained.";
+                return;
+            }
+            if (_close.Contains(point))
+            {
+                e.Title = "Minimize to capsule";
+                e.Text = "Keep the panel on the canvas";
+                e.Description = "Shrink width and height to a compact summary. Restore reopens the same Full or Half view with your saved size, filters, selection and scrolling.";
+                return;
+            }
             if (_menu.Kind == CanvasMenuKind.Statistics && _menu.Bounds.Contains(point))
             {
                 if (!StatisticsAreCurrent()) { InvalidateStatistics(); return; }
@@ -1125,6 +1241,16 @@ namespace BetterGhPanel
             using (var pen = new Pen(active ? Accent : Muted, 1))
                 g.DrawLines(pen, new[] { new PointF(x, y), new PointF(x + 3, y + 3), new PointF(x + 6, y) });
         }
+        private void DrawCloseAction(Graphics g)
+        {
+            float x = _close.X + 6, y = _close.Y + 5;
+            using (var pen = new Pen(Muted, 1.2f))
+            {
+                g.DrawLine(pen, x, y, x + 8, y + 8);
+                g.DrawLine(pen, x + 8, y, x, y + 8);
+            }
+        }
+
         private void DrawDisplayAction(Graphics g)
         {
             float x = _display.X + 4, y = _display.Y + 5;

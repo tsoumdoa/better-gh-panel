@@ -14,6 +14,7 @@ using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
+using Grasshopper.Kernel.Undo;
 
 namespace BetterGhPanel
 {
@@ -39,6 +40,7 @@ namespace BetterGhPanel
         internal float CanvasWidth { get; private set; } = CanvasPanelSize.DefaultWidth;
         internal float CanvasHeight { get; private set; } = CanvasPanelSize.DefaultHeight;
         internal CanvasPanelDisplay CanvasDisplay { get; private set; }
+        internal bool PanelMinimized { get; private set; }
         internal PanelPreviewMode PreviewMode { get; private set; }
         internal float DisplayHeight => CanvasPanelSize.DisplayHeight(CanvasHeight, CanvasDisplay);
         internal int TrimDepth { get; private set; }
@@ -190,6 +192,40 @@ namespace BetterGhPanel
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
+        }
+
+        internal void SetPanelMinimized(bool minimized)
+        {
+            if (PanelMinimized == minimized) return;
+            // A generic component undo reloads the data and clears transient row
+            // state. This action changes presentation only, including on undo.
+            RecordUndoEvent(minimized ? "Minimize Panel+" : "Restore Panel+",
+                new MinimizedUndo(InstanceGuid, PanelMinimized, minimized));
+            ApplyPanelMinimized(minimized);
+        }
+
+        private void ApplyPanelMinimized(bool minimized)
+        {
+            CanvasTextInput.CloseActive(this);
+            (Attributes as BetterPanelAttributes)?.ClosePresentationControls();
+            PanelMinimized = minimized;
+            Attributes.ExpireLayout();
+            OnPingDocument()?.Modified();
+            Instances.ActiveCanvas?.Invalidate();
+        }
+
+        private sealed class MinimizedUndo : GH_UndoAction
+        {
+            private readonly Guid _component;
+            private readonly bool _before, _after;
+            internal MinimizedUndo(Guid component, bool before, bool after)
+            { _component = component; _before = before; _after = after; }
+            public override bool ExpiresSolution => false;
+            public override bool ExpiresDisplay => false;
+            protected override void Internal_Undo(GH_Document doc) => Apply(doc, _before);
+            protected override void Internal_Redo(GH_Document doc) => Apply(doc, _after);
+            private void Apply(GH_Document doc, bool minimized) =>
+                (doc.FindObject(_component, false) as BetterPanelComponent)?.ApplyPanelMinimized(minimized);
         }
 
         internal void SetUnits(PanelUnitConversion conversion, int decimals)
@@ -498,6 +534,7 @@ namespace BetterGhPanel
         {
             base.AppendAdditionalComponentMenuItems(menu);
             Menu_AppendSeparator(menu);
+            Menu_AppendItem(menu, PanelMinimized ? "Restore panel" : "Minimize to capsule", (_, __) => SetPanelMinimized(!PanelMinimized));
             Menu_AppendItem(menu, "Reset panel", (_, __) => ResetPanel());
             Menu_AppendItem(menu, "Reset panel view", (_, __) => ResetPanelView());
             Menu_AppendItem(menu, "Reset tree tools", (_, __) => SetTreeOperations(0, false, false, false), HasTreeOperations);
@@ -530,6 +567,7 @@ namespace BetterGhPanel
             writer.SetSingle("PanelWidth", CanvasWidth);
             writer.SetSingle("PanelHeight", CanvasHeight);
             writer.SetInt32("PanelDisplay", (int)CanvasDisplay);
+            writer.SetBoolean("PanelMinimized", PanelMinimized);
             writer.SetInt32("PanelPreviewMode", (int)PreviewMode);
             writer.SetInt32("PanelTrimDepth", TrimDepth);
             writer.SetBoolean("PanelFlatten", FlattenTree);
@@ -570,6 +608,9 @@ namespace BetterGhPanel
             reader.TryGetInt32("PanelDisplay", ref display);
             CanvasDisplay = Enum.IsDefined(typeof(CanvasPanelDisplay), display)
                 ? (CanvasPanelDisplay)display : CanvasPanelDisplay.Full;
+            bool minimized = false;
+            reader.TryGetBoolean("PanelMinimized", ref minimized);
+            PanelMinimized = minimized;
             int previewMode = 0;
             reader.TryGetInt32("PanelPreviewMode", ref previewMode);
             PreviewMode = Enum.IsDefined(typeof(PanelPreviewMode), previewMode)
