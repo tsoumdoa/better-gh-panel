@@ -14,6 +14,8 @@ Created in [T3 Code](https://t3.codes).
 
 ## Native MVP
 
+Beta **`0.1.18-beta`** adds easier row deselection, larger panel move/resize handles, total and per-branch item counts, and a **Stats** menu with exact unique numeric/text values and frequencies. The header **×** minimizes the panel to a compact capsule; its restore arrow reopens the same view. **Preview → Show item order** adds optional viewport labels at point locations or geometry bounding-box centers, with selected labels taking priority where they overlap. These presentation controls preserve typed output and camera position. The sections below include native screenshots and interaction details.
+
 Find **Panel+** in **Params → Util** after installing the local Yak package. Connect any typed tree to **D**. The output applies **Simplify → Trim → Flatten → Reverse → unit conversion → filters**. Search, type, invalid and branch filters keep only matching typed items on the output wire. Sorting and decimal formatting affect the view; output retains its transformed tree order and full precision. With all operations and filters off, the output forwards the input unchanged.
 
 Beta **`0.1.17-beta`** adds Excel-style row numbers automatically in **Asc/Desc**. The large number is the position in the current filtered view, starting at 1; the smaller bracketed number is the original zero-based item index within its branch. Both share a fixed gutter sized from the complete input tree, so sorting, filtering and scrolling do not resize it. Row numbers, branch paths and values share a baseline; the small index sits 2 canvas units below it. Numeric values are right-aligned in a monospaced font, with aligned decimals when a fixed decimal setting is used. Rows stay 17 canvas units high and there is no extra toggle. Source order shows the original index alone and reserves the same gutter and path slot. Hover identifies the view row and full tree address. Sorting and numbering leave output order intact.
@@ -26,7 +28,7 @@ Panel+ hides old rows, counts, type summaries and statistics behind **Recomputin
 
 [See the native recomputing state](docs/images/panel-recomputing.png).
 
-The public Yak beta is **`better-gh-panel 0.1.17-beta`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.17-beta`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including sorted and filtered row numbering, row jumps, compact Half layout, preview scopes, selection without camera movement, explicit framing, filtered output, disabled-state recovery and fixed wire connections. Mac runtime validation is pending.
+The public Yak beta is **`better-gh-panel 0.1.18-beta`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.18-beta`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including sorted and filtered row numbering, row jumps, compact Half layout, preview scopes, selection without camera movement, explicit framing, filtered output, disabled-state recovery and fixed wire connections. Mac runtime validation is pending.
 
 Beta **`0.1.15-beta`** adds current-result loading states, resumable queries with a 120 ms time budget, and filters on typed output after tree tools and unit conversion. Whitespace-only regex patterns filter output correctly; internalised geometry preview respects filters.
 
@@ -94,7 +96,7 @@ dotnet run --project tests/BetterGhPanel.Core.Tests -c Release
 node scripts/package.mjs
 ```
 
-The beta artifact is `artifacts/better-gh-panel-0.1.17-beta/better-gh-panel-0.1.17-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The beta artifact is `artifacts/better-gh-panel-0.1.18-beta/better-gh-panel-0.1.18-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino.
 
