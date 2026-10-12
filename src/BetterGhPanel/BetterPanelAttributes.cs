@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
-using System.Globalization;
 using System.Linq;
 using System.Windows.Forms;
 using BetterGhPanel.Core;
@@ -186,7 +185,7 @@ namespace BetterGhPanel
             using (var font = new Font("Arial", 11f, FontStyle.Regular, GraphicsUnit.Pixel))
             using (var small = new Font("Arial", 10f, FontStyle.Regular, GraphicsUnit.Pixel))
             using (var bold = new Font("Arial", 11f, FontStyle.Bold, GraphicsUnit.Pixel))
-            using (var mono = new Font(FontFamily.GenericMonospace, 10f, FontStyle.Regular, GraphicsUnit.Pixel))
+            using (var mono = CanvasRowRenderer.MonospaceFont(10))
             using (var trim = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap, LineAlignment = StringAlignment.Center })
             {
                 Fill(graphics, Color.White, _panel);
@@ -275,10 +274,13 @@ namespace BetterGhPanel
             string? previousPath = null;
             // A half-height panel at the minimum saved size still has room for a
             // value, even when a separate branch heading would consume that row.
-            bool grouped = PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder &&
-                _list.Height >= BranchHeight + RowHeight;
+            bool sorted = PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder;
+            bool grouped = !sorted && _list.Height >= BranchHeight + RowHeight;
             bool showTypes = result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
-            using var typeFormat = new StringFormat(trim) { Alignment = StringAlignment.Far };
+            using var rowRenderer = new CanvasRowRenderer(g, result.Snapshot.Rows.Count);
+            // Keep the path slot in source order too, so toggling sort never moves values.
+            float pathWidth = Math.Min(80, Math.Max(0, _list.Width - rowRenderer.GutterWidth - (showTypes ? 70 : 12) - 40));
+            float valueStart = rowRenderer.GutterWidth + pathWidth;
             _offset = Math.Max(0, Math.Min(Math.Max(0, result.RowPositions.Count - 1), _offset));
             var clip = g.Save();
             try
@@ -300,23 +302,21 @@ namespace BetterGhPanel
                     }
                     if (y + RowHeight > _list.Bottom) break;
                     var bounds = new RectangleF(_list.X, y, _list.Width, RowHeight);
-                    Fill(g, _selection.Contains(sourcePosition) ? Color.FromArgb(216, 232, 219) : (_shown & 1) == 0 ? Color.White : Color.FromArgb(247, 249, 246), bounds);
+                    bool selected = _selection.Contains(sourcePosition);
+                    Fill(g, selected ? Color.FromArgb(216, 232, 219) : (_shown & 1) == 0 ? Color.White : Color.FromArgb(247, 249, 246), bounds);
+                    rowRenderer.DrawAddress(g, bounds, i + 1, row.OriginalIndex, sorted, selected);
                     if (!row.IsValid) Fill(g, Color.FromArgb(180, 106, 67), new RectangleF(bounds.X, bounds.Y + 3, 2, bounds.Height - 6));
-                    Text(g, row.OriginalIndex.ToString(CultureInfo.InvariantCulture), mono, Muted, new RectangleF(bounds.X + 6, y, 29, RowHeight), trim);
-                    float valueStart = 39;
                     if (!grouped)
-                    {
-                        Text(g, row.Path, mono, Accent, new RectangleF(bounds.X + 44, y, 68, RowHeight), trim);
-                        valueStart = 116;
-                    }
+                        rowRenderer.DrawCell(g, row.Path, mono, Accent,
+                            new RectangleF(bounds.X + rowRenderer.GutterWidth + 9, y, Math.Max(0, pathWidth - 12), RowHeight));
                     // Geometry summaries already name their type; reserve the extra
                     // label only for values whose text does not identify their type.
                     bool showRowType = showTypes && row.GeometryInfo == null;
-                    Text(g, PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition), font, Ink,
-                        new RectangleF(bounds.X + valueStart, y, bounds.Width - valueStart - (showRowType ? 70 : 4), RowHeight), trim);
+                    rowRenderer.DrawValue(g, PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition), font, Ink,
+                        new RectangleF(bounds.X + valueStart + 3, y, Math.Max(0, bounds.Width - valueStart - (showRowType ? 73 : 15)), RowHeight), row.NumericValue.HasValue);
                     if (showRowType)
-                        Text(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted, new RectangleF(bounds.Right - 64, y, 60, RowHeight), typeFormat);
-                    _rowHits.Add(new RowHit(bounds, sourcePosition));
+                        rowRenderer.DrawCell(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted, new RectangleF(bounds.Right - 64, y, 60, RowHeight), true);
+                    _rowHits.Add(new RowHit(bounds, sourcePosition, i + 1));
                     _shown++;
                     y += RowHeight;
                 }
@@ -922,7 +922,7 @@ namespace BetterGhPanel
             {
                 e.Title = "Jump to a row";
                 e.Text = "Position in the current filtered and sorted view";
-                e.Description = "Enter a row number starting at 1. The index beside each value remains its original index within its branch.";
+                e.Description = "Enter a row number starting at 1. In Asc/Desc, the large number is this view position and the smaller bracketed number is the original zero-based item index within its branch. Source order shows only the original index.";
             }
             else if (_resize.Contains(point))
             {
@@ -969,7 +969,7 @@ namespace BetterGhPanel
                 {
                     if (!hit.Bounds.Contains(point)) continue;
                     var row = PanelOwner.Session.Result.Snapshot.Rows[hit.SourcePosition];
-                    e.Title = row.Path + " [" + row.OriginalIndex + "]";
+                    e.Title = (PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder ? "" : "Row " + hit.ViewNumber + " · ") + row.Path + " [" + row.OriginalIndex + "]";
                     e.Text = (row.IsValid ? "" : "Invalid ") + row.TypeName;
                     var snapshot = PanelOwner.Session.Result.Snapshot;
                     var value = PanelOwner.DisplayValue(snapshot, row, hit.SourcePosition);
@@ -1051,9 +1051,10 @@ namespace BetterGhPanel
         private static string Short(string text, int maximum) => text.Length <= maximum ? text : text.Substring(0, maximum - 1) + "…";
         private readonly struct RowHit
         {
-            internal RowHit(RectangleF bounds, int sourcePosition) { Bounds = bounds; SourcePosition = sourcePosition; }
+            internal RowHit(RectangleF bounds, int sourcePosition, int viewNumber) { Bounds = bounds; SourcePosition = sourcePosition; ViewNumber = viewNumber; }
             internal RectangleF Bounds { get; }
             internal int SourcePosition { get; }
+            internal int ViewNumber { get; }
         }
 
         private readonly struct BranchHit

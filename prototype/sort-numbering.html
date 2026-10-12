@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panel+ · Refined row alignment</title>
+  <style>
+    :root { color-scheme: light; --ink: #313735; --muted: #727c76; --accent: #4d735e; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #f3f4ef; color: var(--ink); font-family: Arial, sans-serif; }
+    main { max-width: 1160px; margin: 0 auto; padding: 30px 28px 24px; }
+    .eyebrow { display: flex; justify-content: space-between; align-items: center; color: var(--accent); font-size: 11px; letter-spacing: 1.5px; }
+    .eyebrow span:last-child { color: var(--muted); letter-spacing: .3px; }
+    h1 { font-size: 35px; line-height: 1.12; letter-spacing: -1.1px; font-weight: 500; margin: 19px 0 10px; }
+    .intro { margin: 0; font-size: 14px; line-height: 1.55; color: #647068; }
+    .comparison { display: grid; grid-template-columns: 520px 1fr; gap: 40px; margin-top: 27px; }
+    .option { min-width: 0; }
+    .option-heading { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; }
+    h2 { font-size: 15px; font-weight: 500; margin: 0; }
+    .badge { background: #dfe8dd; color: #42634d; border-radius: 4px; padding: 5px 7px; font-size: 10px; }
+    .badge.neutral { background: #e6e8e1; color: #6b746c; }
+    .stage { height: 480px; display: grid; place-items: center; background-color: #ebeee7; background-image: linear-gradient(#dfe4db 1px, transparent 1px), linear-gradient(90deg, #dfe4db 1px, transparent 1px); background-size: 25px 25px; border: 1px solid #dce1d7; border-radius: 6px; overflow: hidden; }
+    .panel-wrap { width: 450px; height: 450px; }
+    .panel { position: relative; width: 360px; height: 360px; transform: scale(1.25); transform-origin: top left; background: #fff; border: 1px solid #a4aba4; color: var(--ink); font-size: 11px; }
+    .panel::before, .panel::after { content: ''; position: absolute; width: 7px; height: 7px; top: 185px; border: 1.5px solid #57665a; background: #f3f4ef; border-radius: 50%; }
+    .panel::before { left: -5px; } .panel::after { right: -5px; }
+    .panel-header { height: 22px; display: flex; align-items: center; gap: 7px; padding: 0 6px; border-left: 3px solid var(--accent); }
+    .brand { color: var(--accent); font-weight: 700; font-size: 11px; }
+    .count { color: #787f7b; font-size: 10px; flex: 1; white-space: nowrap; }
+    .preview { color: var(--accent); font-size: 10px; white-space: nowrap; }
+    .header-icons { display: flex; gap: 8px; color: #78837c; }
+    .header-icons svg { width: 12px; height: 12px; }
+    .controls { height: 21px; margin: 2px 5px 0; display: grid; grid-template-columns: 1fr 76px 43px 72px; gap: 3px; color: #787f7b; font-size: 10px; }
+    .control { padding: 4px 5px; border-bottom: 1px solid #d7ded5; display: flex; justify-content: space-between; gap: 5px; }
+    .chevron { width: 5px; height: 5px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg); margin: 2px 1px 0; }
+    select { border: 0; border-bottom: 1px solid #a8bda7; border-radius: 0; background: #e8f0e4; color: var(--accent); font: 11px Arial, sans-serif; cursor: pointer; padding: 0 4px; width: 43px; }
+    select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .rows { position: absolute; top: 51px; left: 4px; right: 10px; height: 255px; overflow: auto; scrollbar-width: thin; scrollbar-color: #99ae9c #e8ece5; }
+    .row { height: 17px; display: grid; grid-template-columns: var(--gutter, 54px) 80px minmax(0, 1fr); align-items: baseline; font-size: 11px; line-height: 17px; }
+    .row:nth-child(even) { background: #f7f9f6; }
+    .row.selected { background: #d8e8db; }
+    .row:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+    .address { height: 17px; display: inline-grid; grid-template-columns: minmax(0, 1fr) var(--secondary-width, 20px); column-gap: 4px; align-items: baseline; padding: 0 7px 0 6px; font-family: Consolas, 'Courier New', monospace; font-variant-numeric: tabular-nums; cursor: help; background: #eef2ec; border-right: 1px solid #dfe6dc; }
+    .row.selected .address { background: #d1e1d3; border-color: #c2d5c3; }
+    .primary { text-align: right; font: 11px/17px Consolas, 'Courier New', monospace; color: #4e5c52; }
+    .secondary { text-align: right; font: 8px/1 Consolas, 'Courier New', monospace; color: #6b786f; transform: translateY(2px); }
+    .source .secondary { visibility: hidden; }
+    .path { font: 10px/17px Consolas, 'Courier New', monospace; color: var(--accent); padding-left: 9px; }
+    .value { font: 11px/17px Consolas, 'Courier New', monospace; font-variant-numeric: tabular-nums; text-align: right; padding: 0 12px 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .branch { height: 15px; padding: 2px 6px; background: #ecf1eb; color: var(--accent); font: 10px Consolas, 'Courier New', monospace; }
+    .panel-footer { position: absolute; bottom: 4px; left: 6px; right: 6px; height: 32px; font-size: 10px; }
+    .stats { height: 12px; }
+    .footer-line { height: 20px; display: flex; align-items: center; color: #787f7b; }
+    .status { flex: 1; }
+    .tools { display: flex; gap: 6px; margin-right: 9px; }
+    .tools svg { width: 15px; height: 15px; fill: none; stroke: #787f7b; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+    .units { width: 68px; display: flex; justify-content: space-between; padding-right: 7px; }
+    .resize { position: absolute; bottom: 3px; right: 3px; width: 7px; height: 7px; background: repeating-linear-gradient(135deg, transparent 0 2px, #a5ada6 2px 3px, transparent 3px 4px); clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+    .detail-card { background: #fff; border: 1px solid #dce2d8; border-radius: 6px; padding: 24px 20px 21px; }
+    .detail-labels { width: 440px; display: grid; grid-template-columns: 108px 160px 1fr; margin-bottom: 13px; color: #68766b; font-size: 10px; }
+    .detail-labels span:nth-child(2) { padding-left: 18px; }
+    .detail-labels span:last-child { text-align: right; padding-right: 24px; }
+    .closeup-frame { width: 440px; height: 187px; overflow: hidden; }
+    .closeup { width: 220px; transform: scale(2); transform-origin: top left; }
+    .closeup .row { position: relative; }
+    .closeup .row::after { content: ''; position: absolute; bottom: 4px; left: 5px; right: 7px; border-bottom: .5px dashed #abc1a966; pointer-events: none; }
+    .closeup-caption { margin: 16px 0 0; font-size: 11px; color: #778178; line-height: 1.5; }
+    .changes { display: grid; gap: 18px; margin: 22px 1px 0; }
+    .change { display: grid; grid-template-columns: 22px 1fr; gap: 12px; }
+    .change > span { font: 12px/20px Consolas, monospace; color: #7e8b7a; }
+    .change h3 { font-size: 13px; font-weight: 500; margin: 0 0 5px; }
+    .change p { color: #6b766c; font-size: 12px; line-height: 1.55; margin: 0; }
+    .hint { margin: 14px 0 0; color: #6f786f; font-size: 11px; line-height: 1.6; }
+    .summary { margin: 22px 0 0; border-top: 1px solid #d9dfd3; padding-top: 15px; font-size: 12px; color: #526a58; }
+    @media (max-width: 1080px) { .comparison { grid-template-columns: 1fr; } .detail-card { max-width: 482px; } }
+    @media (max-width: 540px) { main { padding: 25px 12px; } .panel-wrap { width: 360px; height: 360px; } .panel { transform: none; } .stage { height: 394px; } h1 { font-size: 28px; } .eyebrow span:last-child { display: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow"><span>P+ / ALIGNMENT REFINEMENT</span><span>Interactive concept · sample data</span></div>
+    <h1>A steadier column of numbers.</h1>
+    <p class="intro">Row numbers share the value’s baseline. Smaller item indices sit just below it, in a slot of their own.</p>
+    <div class="comparison">
+      <section class="option" data-variant="row">
+        <div class="option-heading"><h2>Updated panel</h2><span class="badge">Row first · 125% view</span></div>
+        <div class="stage"><div class="panel-wrap"><div class="panel" aria-label="Row first numbering mockup"></div></div></div>
+        <p class="hint">Try ↑ / ↓ in the existing sort menu. The number slots stay put.<br>The green item keeps its selection as it moves.</p>
+      </section>
+      <section class="detail">
+        <div class="option-heading"><h2>Alignment close-up</h2><span class="badge neutral">200% · rows 8–12</span></div>
+        <div class="detail-card">
+          <div class="detail-labels"><span>Row + item</span><span>Branch</span><span>Value</span></div>
+          <div class="closeup-frame"><div class="closeup" aria-label="Enlarged alignment detail"></div></div>
+          <p class="closeup-caption">Faint guides mark the shared baseline in this close-up only.</p>
+        </div>
+        <div class="changes">
+          <div class="change"><span>01</span><div><h3>A clear edge for the row numbers</h3><p>Right-aligned digits keep 9, 10 and 11 on the same edge.<br>A subtle gutter separates numbering from the data.</p></div></div>
+          <div class="change"><span>02</span><div><h3>A consistent home for the small index</h3><p>[3] and [11] share a fixed right edge, 2px below the baseline.<br>Extra space keeps them clear of the branch path.</p></div></div>
+          <div class="change"><span>03</span><div><h3>The values line up too</h3><p>Numeric values align on their decimal places.<br>Row height and column widths stay fixed as you sort.</p></div></div>
+        </div>
+      </section>
+    </div>
+    <p class="summary">Still automatic in Asc / Desc. Still 17px rows. No extra toggle.</p>
+  </main>
+  <script>
+    const sample = [42,18.25,76.8,9.5,54.1,31.6,88.9,23.45,61.2,12.75,47.35,35.8,95.4,67.65,7.25,11.3,16.2,27.4,33.75,40.2,48.3,50.6,58.9,70.2,82.4,91.8,99.2,105.6];
+    const data = sample.map((value, position) => ({ value, position, index: position % 14, path: position < 14 ? '{0;2;4}' : '{0;2;5}' }));
+    const icon = (content) => `<svg viewBox="0 0 16 16" aria-hidden="true">${content}</svg>`;
+    const tools = [
+      '<path d="M2 2.5h2m3 0h2m3 0h2M8 5v8.5M3 5l5 4 5-4m-7.5 8.5h5"/>',
+      '<path d="M2.5 3h11L9 8v4l-2 1V8z"/>',
+      '<path d="M8 2.5V10M4 6.5l4 4 4-4m-9.5 7h11"/>',
+      '<path d="M4.5 13V3m-3 3 3-3 3 3m4-3v10m-3-3 3 3 3-3"/>'
+    ].map(icon).join('');
+    for (const panel of document.querySelectorAll('.panel')) {
+      panel.innerHTML = `
+        <div class="panel-header"><span class="brand">P+</span><span class="count">28 items · 2 branches</span><span class="preview">Preview: Selected⌄</span><span class="header-icons" aria-hidden="true">${icon('<path d="M3 11h10M8 2v7m-3-3 3 3 3-3" fill="none" stroke="currentColor"/>')}${icon('<path d="M12 4a5 5 0 1 0 1 6M12 1v4H8" fill="none" stroke="currentColor"/>')}${icon('<path d="m2 10 6-6 6 6" fill="none" stroke="currentColor"/>')}</span></div>
+        <div class="controls"><span class="control">Search…<i class="chevron"></i></span><span class="control">Num<i class="chevron"></i></span><select aria-label="${panel.closest('.option').dataset.variant === 'row' ? 'Row first' : 'Item first'} sort order" title="Sort this view"><option value="src">Src</option><option value="asc" aria-label="Ascending" selected>↑</option><option value="desc" aria-label="Descending">↓</option></select><span class="control">Paths<i class="chevron"></i></span></div>
+        <div class="rows" aria-label="Data rows"></div>
+        <div class="panel-footer"><div class="stats">min 7.25　 max 105.60　 avg ${(sample.reduce((a,b) => a + b) / sample.length).toFixed(2)}</div><div class="footer-line"><span class="status">1 selected · out: source</span><span class="tools" aria-hidden="true">${tools}</span><span class="units">Units · 2dp<i class="chevron"></i></span></div></div><span class="resize" aria-hidden="true"></span>`;
+    }
+
+    // Compute capacity from the complete input, never from the visible rows or current sort.
+    // Reserve both slots even when source order hides the secondary number.
+    const rowDigits = String(data.length).length;
+    const itemDigits = String(Math.max(...data.map(item => item.index))).length;
+    const primaryWidth = Math.ceil(Math.max(rowDigits, itemDigits) * 6.6);
+    const secondaryWidth = Math.ceil((itemDigits + 2) * 4.8);
+    const gutterWidth = Math.max(54, 18 + primaryWidth + secondaryWidth);
+    for (const panel of document.querySelectorAll('.panel, .closeup')) {
+      panel.style.setProperty('--gutter', `${gutterWidth}px`);
+      panel.style.setProperty('--secondary-width', `${secondaryWidth}px`);
+    }
+
+    let selectedPosition = 11;
+    let currentOrder = 'asc';
+    function render(order) {
+      currentOrder = order;
+      const sorted = [...data];
+      if (order !== 'src') sorted.sort((a,b) => (order === 'asc' ? a.value - b.value : b.value - a.value) || a.position - b.position);
+      for (const section of document.querySelectorAll('.option')) {
+        section.querySelector('select').value = order;
+        section.querySelector('.panel').classList.toggle('source', order === 'src');
+        let previousPath;
+        section.querySelector('.rows').innerHTML = sorted.map((item, index) => {
+          const position = index + 1;
+          const primary = order === 'src' ? item.index : position;
+          const secondary = `[${item.index}]`;
+          const label = `Row ${position} · ${item.path} [${item.index}] · value ${item.value.toFixed(2)}`;
+          const branch = order === 'src' && item.path !== previousPath ? `<div class="branch">${item.path}</div>` : '';
+          previousPath = item.path;
+          return `${branch}<div class="row${item.position === selectedPosition ? ' selected' : ''}" tabindex="0" data-position="${item.position}" aria-label="${label}"><span class="address" title="${label}"><span class="primary">${primary}</span><span class="secondary">${secondary}</span></span><span class="path">${order === 'src' ? '' : item.path}</span><span class="value">${item.value.toFixed(2)}</span></div>`;
+        }).join('');
+      }
+      const closeup = document.querySelector('.closeup');
+      closeup.classList.toggle('source', order === 'src');
+      closeup.replaceChildren(...[...document.querySelectorAll('.panel .row')].slice(7,12).map(row => {
+        const clone = row.cloneNode(true);
+        clone.removeAttribute('tabindex');
+        return clone;
+      }));
+    }
+    document.addEventListener('change', event => { if (event.target.matches('select')) render(event.target.value); });
+    document.addEventListener('click', event => {
+      const row = event.target.closest('.row');
+      if (row) { selectedPosition = Number(row.dataset.position); render(currentOrder); }
+    });
+    document.addEventListener('keydown', event => {
+      if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('.row')) {
+        event.preventDefault(); selectedPosition = Number(event.target.dataset.position); render(currentOrder);
+      }
+    });
+    render('asc');
+  </script>
+</body>
+</html>
