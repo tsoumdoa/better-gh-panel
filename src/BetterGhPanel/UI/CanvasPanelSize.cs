@@ -10,6 +10,8 @@ namespace BetterGhPanel.UI
         internal const float DefaultWidth = 360;
         internal const float DefaultHeight = 360;
         internal const float HeaderHeight = 22;
+        internal const float CapsuleWidth = 216;
+        internal const float CapsuleHeight = 32;
         internal static readonly string[] PresetNames = { "Small", "Medium", "Large" };
 
         internal static float Width(float value) => Clamp(value, DefaultWidth, 300);

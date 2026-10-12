@@ -141,6 +141,7 @@ internal static class Program
         var assembly = Assembly.LoadFrom(_plugin);
         PanelHandleChecks.Run(assembly);
         await RowNumberingChecks.Run(assembly);
+        await CapsuleChecks.Run(assembly);
         await RecomputeChecks.Run(assembly);
         await GeometryHintChecks.Run(assembly);
         await GeometryMeasurementBatchChecks.Run(assembly);
