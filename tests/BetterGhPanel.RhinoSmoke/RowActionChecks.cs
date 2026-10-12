@@ -80,6 +80,7 @@ internal static class RowActionChecks
             await VerifyCanvasAndQueryActions(component, session, rhino);
             await VerifyBranchHighlight(component, session, document, rhino);
             await VerifyGeometryClipboard(component, session, rhino, items.Length);
+            await VerifyCopyDuringDeselection(component, session);
             await VerifyCopyDuringDocumentSwitch(component, session, document);
             await VerifyFailuresAndCancellation(component, session);
 
@@ -477,7 +478,102 @@ internal static class RowActionChecks
         await WaitForQuery(session);
         Query(session, new PanelQueryOptions());
         await WaitForQuery(session);
+        VerifyDeselection(component, canvas, session, rhino);
         await VerifyMenuGestures(component, canvas, session, rhino);
+    }
+
+    private static void VerifyDeselection(GH_Component component, GH_Canvas canvas, object session, RhinoDoc rhino)
+    {
+        canvas.Document = component.OnPingDocument();
+        Paint(component, canvas);
+        var selection = Field<object>(component.Attributes, "_selection");
+        var highlight = Field<object>(component, "_highlight");
+        var result = Result(session);
+        var output = component.Params.Output[0].VolatileData;
+        var viewport = rhino.Views.ActiveView.ActiveViewport;
+        var camera = viewport.CameraLocation;
+        var target = viewport.CameraTarget;
+        var row = PanelTestAdapter.RowBounds(component, 4);
+        var rowPoint = new PointF(row.X + 45, row.Y + row.Height / 2);
+        Forms.Clipboard.SetText("keep deselection clipboard");
+
+        Select(selection, result, 4);
+        Select(selection, result, 5, toggle: true);
+        MouseDown(component, canvas, rowPoint, 1);
+        TrailingDoubleClick(component, canvas, rowPoint);
+        Check(Selected(selection, result).Count == 0 && Property<int>(highlight, "PreviewCount") == 0 &&
+            ClipboardText() == "keep deselection clipboard", "Double-click clears a multirow selection and its preview without copying values");
+
+        var list = PanelTestAdapter.Bounds(component, CanvasControl.List);
+        var branchPoint = new PointF(list.X + 45, list.Y + 4);
+        MouseDown(component, canvas, branchPoint, 1);
+        Check(Selected(selection, result).Count == result.RowPositions.Count, "Branch click still selects every matching row");
+        TrailingDoubleClick(component, canvas, branchPoint);
+        Check(Selected(selection, result).Count == 0, "Double-clicking a branch heading clears its selection");
+
+        Click(component, canvas, row);
+        var blankList = new PointF(list.X + 45, list.Bottom - 3);
+        MouseDown(component, canvas, blankList, 1);
+        Check(Selected(selection, result).Count == 0, "Clicking empty table space clears rows");
+        TrailingDoubleClick(component, canvas, blankList);
+        Check(!CanvasEditorAdapter.IsActive(component.GetType().Assembly), "Double-clicking empty table space does not open the search editor");
+
+        Click(component, canvas, row);
+        var panel = PanelTestAdapter.Bounds(component, CanvasControl.Panel);
+        MouseDown(component, canvas, new PointF(panel.Left + 2, list.Top + 4), 1);
+        Check(Selected(selection, result).Count == 0, "Clicking an empty panel margin clears rows");
+        Click(component, canvas, row);
+        var response = component.Attributes.RespondToMouseDown(canvas,
+            new GH_CanvasMouseEvent(DrawingPoint.Empty, new PointF(panel.Left + 12, panel.Top + 8), Forms.MouseButtons.Left, 1, 0));
+        Check(Selected(selection, result).Count == 0 && response == GH_ObjectResponse.Ignore,
+            "Clicking the panel title clears rows and leaves component dragging to Grasshopper");
+
+        Click(component, canvas, row);
+        Check(Field<GH_Canvas?>(component.Attributes, "_selectionCanvas") == canvas, "Row selection observes its owning canvas only while selected");
+        PanelTestAdapter.CanvasClick(canvas, new PointF(panel.Right + 80, panel.Bottom - 40), Forms.MouseButtons.Right);
+        Check(Selected(selection, result).Count == 1, "Panning on empty canvas keeps the row selection");
+        // Use an unrelated native object to prove this is background clearing,
+        // rather than observing every mouse event outside the panel rectangle.
+        var other = new Param_Number();
+        other.CreateAttributes();
+        other.Attributes.Pivot = new PointF(panel.Right + 70, panel.Top + 100);
+        canvas.Document.AddObject(other, false);
+        other.Attributes.PerformLayout();
+        var otherBounds = other.Attributes.Bounds;
+        PanelTestAdapter.CanvasClick(canvas, new PointF(otherBounds.X + otherBounds.Width / 2, otherBounds.Y + otherBounds.Height / 2));
+        Check(Selected(selection, result).Count == 1, "Clicking another Grasshopper object does not masquerade as empty canvas");
+        canvas.Document.RemoveObject(other, false);
+        PanelTestAdapter.CanvasClick(canvas, new PointF(panel.Right + 80, panel.Bottom - 40));
+        Check(Selected(selection, result).Count == 0 && Field<GH_Canvas?>(component.Attributes, "_selectionCanvas") == null,
+            "A host-dispatched blank-canvas click clears rows and detaches its observer");
+
+        Click(component, canvas, row);
+        Method(component.Attributes, "SuppressTrailingDoubleClick").Invoke(component.Attributes, Array.Empty<object>());
+        PanelTestAdapter.CanvasClick(canvas, new PointF(panel.Right + 80, panel.Bottom - 40), clicks: 2);
+        Check(Selected(selection, result).Count == 1,
+            "A dismissed control's trailing click cannot clear selection when it lands on newly exposed canvas");
+        PanelTestAdapter.CanvasClick(canvas, new PointF(panel.Right + 80, panel.Bottom - 40));
+        Check(Selected(selection, result).Count == 0, "A fresh blank-canvas click still clears selection during the prior gesture's interval");
+
+        PanelTestAdapter.PreviewMode(component, "FilteredResults");
+        Click(component, canvas, row);
+        int previewCount = Property<int>(highlight, "PreviewCount");
+        PanelTestAdapter.CanvasClick(canvas, new PointF(panel.Right + 80, panel.Bottom - 40));
+        Check(previewCount > 0 && Property<int>(highlight, "PreviewCount") == previewCount && Property<int>(highlight, "Count") == 0,
+            "Clearing rows retains the complete filtered-result preview without selected highlights");
+        PanelTestAdapter.PreviewMode(component, "Selected");
+
+        Click(component, canvas, row);
+        using (var otherDocument = new GH_Document())
+        {
+            canvas.Document = otherDocument;
+            Check(Selected(selection, result).Count == 0 && Field<GH_Canvas?>(component.Attributes, "_selectionCanvas") == null,
+                "Switching canvas documents clears selection and detaches the observer");
+            canvas.Document = component.OnPingDocument();
+        }
+        Check(ReferenceEquals(Result(session), result) && ReferenceEquals(component.Params.Output[0].VolatileData, output) &&
+            viewport.CameraLocation == camera && viewport.CameraTarget == target && ClipboardText() == "keep deselection clipboard",
+            "All deselection gestures preserve the query, typed output, camera and clipboard");
     }
 
     private static async Task VerifyMenuGestures(GH_Component component, GH_Canvas canvas, object session, RhinoDoc rhino)
@@ -531,9 +627,8 @@ internal static class RowActionChecks
         var numberPoint = new PointF(number.X + 45, number.Y + number.Height / 2);
         MouseDown(component, canvas, numberPoint, 1);
         TrailingDoubleClick(component, canvas, numberPoint);
-        await WaitUntil(() => !Field<bool>(component.Attributes, "_copyPending"));
-        Check(ClipboardText() == "1234.56789",
-            "A fresh intentional double-click immediately after display dismissal still copies its row");
+        Check(Selected(selection, Result(session)).Count == 0 && ClipboardText() == "keep menu gesture clipboard",
+            "A fresh intentional double-click immediately after display dismissal still clears its row selection");
 
         Click(component, canvas, number, Forms.MouseButtons.Right);
         var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
@@ -635,6 +730,46 @@ internal static class RowActionChecks
         Forms.Clipboard.SetText("keep failed measurement clipboard");
         await CopyValues(component, Snapshot(session), 0, 8);
         Check(ClipboardText() == "keep failed measurement clipboard", "Measurement failure cannot publish a partial multirow clipboard");
+    }
+
+    private static async Task VerifyCopyDuringDeselection(GH_Component component, object session)
+    {
+        component.ExpireSolution(true);
+        await WaitForQuery(session);
+        using var gate = new ManualResetEventSlim(false);
+        var resolver = Field<Func<int, Func<PanelGeometryInfo?>?>>(session, "_geometryDetailResolver");
+        Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
+        {
+            (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
+            {
+                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+                return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
+            })
+        });
+        try
+        {
+            using var canvas = new GH_Canvas { Size = new Size(1000, 1000) };
+            Paint(component, canvas);
+            Forms.Clipboard.SetText("keep cancelled selection clipboard");
+            var row = PanelTestAdapter.RowBounds(component, 8);
+            Click(component, canvas, row, Forms.MouseButtons.Right);
+            var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+            Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
+            await WaitUntil(() => Field<bool>(session, "_geometryRunning"));
+            Check(Field<bool>(component.Attributes, "_copyPending"), "Context-menu value copy is pending during geometry measurement");
+            var point = new PointF(row.X + 45, row.Y + row.Height / 2);
+            MouseDown(component, canvas, point, 1);
+            TrailingDoubleClick(component, canvas, point);
+            gate.Set();
+            await WaitUntil(() => !Field<bool>(session, "_geometryRunning"));
+            Check(!Field<bool>(component.Attributes, "_copyPending") && PanelTestAdapter.SelectedPosition(component) < 0 &&
+                ClipboardText() == "keep cancelled selection clipboard", "Deselecting cancels an in-flight value copy and rejects its late clipboard publication");
+        }
+        finally
+        {
+            gate.Set();
+            Method(session, "SetGeometryDetailResolver").Invoke(session, new object[] { resolver });
+        }
     }
 
     private static async Task VerifyCopyDuringDocumentSwitch(GH_Component component, object session, GH_Document document)
