@@ -713,6 +713,7 @@ namespace BetterGhPanel
                     SuppressTrailingDoubleClick();
                     PanelOwner.SetPanelMinimized(false);
                     PerformLayout();
+                    CanvasDoubleClickGuard.Start(sender, e);
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }
@@ -731,6 +732,7 @@ namespace BetterGhPanel
                 SuppressTrailingDoubleClick();
                 PanelOwner.SetPanelMinimized(true);
                 PerformLayout();
+                CanvasDoubleClickGuard.Start(sender, e);
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
@@ -743,6 +745,7 @@ namespace BetterGhPanel
                 CloseRowMenu();
                 PanelOwner.SetCanvasDisplay(CanvasPanelSize.NextDisplay(PanelOwner.CanvasDisplay));
                 PerformLayout();
+                CanvasDoubleClickGuard.Start(sender, e);
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
