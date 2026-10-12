@@ -14,6 +14,7 @@ internal static class Program
         var tests = new Action[]
         {
             StatisticsAndEmptyBranches,
+            StatisticsChecks.Run,
             SearchMatchesValuePathAndType,
             NumericComparisonsUseInvariantCulture,
             BranchSelectionPreservesTreeSemantics,

@@ -89,6 +89,7 @@ namespace BetterGhPanel
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
+                        (Attributes as BetterPanelAttributes)?.InvalidateStatistics();
                         CancelPendingCopy();
                         ClearHighlight();
                         if (!_restoringView)
