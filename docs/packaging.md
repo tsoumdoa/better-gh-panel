@@ -12,12 +12,12 @@ node scripts/package.mjs
 
 Packaging finds Yak in the standard Rhino 8 installation. On a machine without Rhino, `node scripts/package.mjs --stage-only` builds the same folder without creating an archive. Use `--yak <absolute path>` or `YAK_PATH` for a custom installation. Use `--skip-build` only after a successful Release build.
 
-The current beta patch is `0.1.16-beta`. The resulting `artifacts/better-gh-panel-0.1.16-beta/` contains `manifest.yml`, `icon.png`, and the two runtime folders. Yak builds a `better-gh-panel-0.1.16-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
+The current beta patch is `0.1.17-beta`. The resulting `artifacts/better-gh-panel-0.1.17-beta/` contains `manifest.yml`, `icon.png`, and the two runtime folders. Yak builds a `better-gh-panel-0.1.17-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
 ```text
-yak install --source artifacts/better-gh-panel-0.1.16-beta better-gh-panel 0.1.16-beta
+yak install --source artifacts/better-gh-panel-0.1.17-beta better-gh-panel 0.1.17-beta
 ```
 
 Replace `yak` with the full executable path if it is not on PATH. On Windows it is normally `C:\Program Files\Rhino 8\System\Yak.exe`; on Mac it is normally `/Applications/Rhino 8.app/Contents/Resources/bin/yak`. Restart Rhino and open Grasshopper afterward. Local install uses Yak's package directory and avoids copying a second `.gha` into the Grasshopper Libraries folder.
@@ -34,8 +34,10 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 Install the current public beta with:
 
 ```text
-yak install better-gh-panel 0.1.16-beta
+yak install better-gh-panel 0.1.17-beta
 ```
+
+Beta `0.1.17-beta` adds automatic one-based row positions in Asc/Desc beside smaller original item indices. The native renderer uses a fixed full-tree gutter, shared text baselines and right-aligned numeric values without adding a toggle or changing the row height. Host checks cover sort directions, selection retention, row jumps beyond the viewport, filtered numbering, fixed gutter capacity, source order, output invariance and the minimum Half layout.
 
 Beta `0.1.16-beta` adds Selected (default), Filtered results and Off preview modes, keeps the camera still on selection, and provides explicit Frame selection. It also fixes custom preview framing, pending copy status on document switches and row actions against disabled or stale results. Beta `0.1.15-beta` adds current-result loading states, a resumable 120 ms query budget, and filtered typed output after tree tools and unit conversion. It also fixes whitespace-regex output, internalised preview filtering and disabled-state animation. Beta `0.1.14-beta` is a version-only update of `0.1.13-beta.1` with no behavior changes. Beta `0.1.13-beta.1` refreshes the tree-tool icons and aligns the footer. Beta `0.1.12-beta.1` adds selected geometry highlighting, branch framing and measurement/regex filters. These and `0.1.11-beta.1` are the 2026-10-11 patches. Beta `0.1.10-beta.1` was published on 2026-10-10. Previous betas `0.1.9-beta.1`, `0.1.8-beta.1` and `0.1.7-beta.1` were published on 2026-10-09. Betas `0.1.6-beta.1`, `0.1.5-beta.1` and `0.1.4-beta.1` were published on 2026-10-08. Earlier betas, `0.1.3-beta.1` and `0.1.2-beta.1`, were published on 2026-10-06 and 2026-10-05 respectively.
 

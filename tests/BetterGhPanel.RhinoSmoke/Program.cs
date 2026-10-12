@@ -139,6 +139,7 @@ internal static class Program
     private static async Task<int> ExecuteSmoke()
     {
         var assembly = Assembly.LoadFrom(_plugin);
+        await RowNumberingChecks.Run(assembly);
         await RecomputeChecks.Run(assembly);
         await GeometryHintChecks.Run(assembly);
         await GeometryMeasurementBatchChecks.Run(assembly);
