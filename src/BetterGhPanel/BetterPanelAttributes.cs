@@ -35,6 +35,7 @@ namespace BetterGhPanel
         private PanelQueryResult? _rowMenuResult;
         private RectangleF _rowMenuBounds;
         private int _rowMenuHovered = -1;
+        private string[] _rowMenuLabels = Array.Empty<string>();
         private readonly CanvasMenu _menu = new CanvasMenu();
         private bool _resizing, _scrolling, _rowContextHandled;
         private PointF _dragStart;
@@ -107,7 +108,7 @@ namespace BetterGhPanel
             // selection gesture clears rows; wire, widget, pan and drag gestures do not.
             if (canvas.ActiveInteraction is not GH_WindowSelectInteraction) return;
             var modifiers = RowModifiers();
-            if (modifiers.Toggle || modifiers.Range || (System.Windows.Forms.Control.ModifierKeys & Keys.Alt) != 0) return;
+            if (modifiers.Toggle || modifiers.Range || modifiers.AcrossBranches) return;
             var point = canvas.Viewport.UnprojectPoint(e.Location);
             if (canvas.Document.RelevantObjectAtPoint(point) != null) return;
             ClearRowSelection(canvas);
@@ -574,12 +575,13 @@ namespace BetterGhPanel
 
         private bool RowsAreCurrent(PanelQueryResult result) =>
             ReferenceEquals(_lastResult, result) && ReferenceEquals(result, PanelOwner.Session.Result) &&
-            PanelOwner.Session.HasCurrentResult;
+            !PanelOwner.Locked && PanelOwner.Session.HasCurrentResult;
 
         private void CloseRowMenu()
         {
             _rowMenuResult = null;
             _rowMenuHovered = -1;
+            _rowMenuLabels = Array.Empty<string>();
         }
 
         private void SuppressTrailingDoubleClick() =>
@@ -589,7 +591,7 @@ namespace BetterGhPanel
         {
             Fill(g, Color.FromArgb(32, 49, 55, 53), new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + 2, _rowMenuBounds.Width, _rowMenuBounds.Height));
             Fill(g, Color.White, _rowMenuBounds);
-            var labels = new[] { "Frame selection in Rhino", _selection.Count == 1 ? "Copy value" : "Copy values", "Copy geometry for Rhino" };
+            var labels = _rowMenuLabels;
             for (int i = 0; i < labels.Length; i++)
             {
                 var bounds = new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + i * 20, _rowMenuBounds.Width - 2, 20);
@@ -628,10 +630,16 @@ namespace BetterGhPanel
                 PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
                 TrackSelectionCanvas(canvas);
                 _rowMenuResult = result;
-                float width = Math.Min(190, _panel.Width - 12);
+                var options = PanelOwner.Session.Options;
+                bool filtered = options.Search.Length > 0 || options.TypeName != null || options.OnlyInvalid || options.BranchPath != null;
+                _rowMenuLabels = new[] { "Frame selection in Rhino", _selection.Count == 1 ? "Copy value" : "Copy values",
+                    "Copy geometry for Rhino", "Select " + IndexLabel(_selection.Indices(result)).ToLowerInvariant() +
+                    (filtered ? " across filtered results" : " across branches") };
+                float width = Math.Min(300, _panel.Width - 12);
+                float height = _rowMenuLabels.Length * 20;
                 _rowMenuBounds = new RectangleF(
                     Math.Max(_panel.Left + 6, Math.Min(e.CanvasX, _panel.Right - width - 6)),
-                    Math.Max(_panel.Top + HeaderHeight, Math.Min(e.CanvasY, _panel.Bottom - 66)), width, 60);
+                    Math.Max(_panel.Top + HeaderHeight, Math.Min(e.CanvasY, _panel.Bottom - height - 6)), width, height);
                 canvas.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
@@ -649,13 +657,29 @@ namespace BetterGhPanel
                 _copiedUntil = DateTime.UtcNow.AddSeconds(5);
             }
             else if (action == 1) CopySelectedValues(result, canvas);
-            else
+            else if (action == 2)
             {
                 InvalidateCopyStatus();
                 PanelOwner.TryCopyGeometry(result.Snapshot, positions, out var status);
                 _actionStatus = status;
                 _copiedUntil = DateTime.UtcNow.AddSeconds(5);
             }
+            else if (action == 3) SelectAcrossBranches(result, _selection.Indices(result), canvas);
+        }
+
+        private static string IndexLabel(int[] indices) => indices.Length == 1 ? "Index " + indices[0] :
+            indices.Length <= 3 ? "Indices " + string.Join(", ", indices) : indices.Length.ToString("N0") + " indices";
+
+        private void SelectAcrossBranches(PanelQueryResult result, int[] indices, GH_Canvas canvas)
+        {
+            InvalidateCopyStatus();
+            _selection.SelectIndices(result, indices);
+            var positions = _selection.OrderedPositions(result);
+            PanelOwner.HighlightRows(result.Snapshot, positions);
+            TrackSelectionCanvas(canvas);
+            int branches = positions.Select(position => result.Snapshot.Rows[position].Path).Distinct().Count();
+            _actionStatus = $"{IndexLabel(indices)} · {_selection.Count:N0} selected · {branches:N0} branches";
+            _copiedUntil = DateTime.UtcNow.AddSeconds(5);
         }
 
         private void InvalidateCopyStatus()
@@ -690,7 +714,7 @@ namespace BetterGhPanel
             }));
         }
 
-        private static (bool Toggle, bool Range) RowModifiers()
+        private static (bool Toggle, bool Range, bool AcrossBranches) RowModifiers()
         {
             // Eto reports Command on Mac; WinForms supplies the fallback used by
             // Grasshopper hosts without an initialized Eto application.
@@ -698,10 +722,10 @@ namespace BetterGhPanel
             {
                 var keys = Eto.Forms.Keyboard.Modifiers;
                 return ((keys & (Eto.Forms.Keys.Control | Eto.Forms.Keys.Application)) != 0,
-                    (keys & Eto.Forms.Keys.Shift) != 0);
+                    (keys & Eto.Forms.Keys.Shift) != 0, (keys & Eto.Forms.Keys.Alt) != 0);
             }
             var modifiers = System.Windows.Forms.Control.ModifierKeys;
-            return ((modifiers & Keys.Control) != 0, (modifiers & Keys.Shift) != 0);
+            return ((modifiers & Keys.Control) != 0, (modifiers & Keys.Shift) != 0, (modifiers & Keys.Alt) != 0);
         }
 
         public override GH_ObjectResponse RespondToMouseDown(GH_Canvas sender, GH_CanvasMouseEvent e)
@@ -760,9 +784,10 @@ namespace BetterGhPanel
             {
                 var menuResult = _rowMenuResult;
                 int action = _rowMenuBounds.Contains(point) ? (int)((point.Y - _rowMenuBounds.Y) / 20) : -1;
+                int actionCount = _rowMenuLabels.Length;
                 CloseRowMenu();
                 SuppressTrailingDoubleClick();
-                if (RowsAreCurrent(menuResult) && action >= 0 && action < 3) ChooseRowAction(action, menuResult, sender);
+                if (RowsAreCurrent(menuResult) && action >= 0 && action < actionCount) ChooseRowAction(action, menuResult, sender);
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
@@ -857,6 +882,12 @@ namespace BetterGhPanel
                 if (hit.Bounds.Contains(point) && hit.SourcePosition >= 0 && hit.SourcePosition < currentResult.Snapshot.Rows.Count)
                 {
                     var modifiers = RowModifiers();
+                    if (modifiers.AcrossBranches)
+                    {
+                        SelectAcrossBranches(currentResult, new[] { currentResult.Snapshot.Rows[hit.SourcePosition].OriginalIndex }, sender);
+                        sender.Invalidate();
+                        return GH_ObjectResponse.Handled;
+                    }
                     InvalidateCopyStatus();
                     _selection.Select(currentResult, hit.SourcePosition, modifiers.Toggle, modifiers.Range, preserveSelected: true);
                     var positions = _selection.OrderedPositions(currentResult);
@@ -1085,11 +1116,13 @@ namespace BetterGhPanel
             if (_rowMenuResult != null && _rowMenuBounds.Contains(point))
             {
                 int action = (int)((point.Y - _rowMenuBounds.Y) / 20);
-                e.Title = action == 0 ? "Frame selection in Rhino" : action == 1 ? "Copy values" : "Copy geometry for Rhino";
+                if (action < 0 || action >= _rowMenuLabels.Length) return;
+                e.Title = _rowMenuLabels[action];
                 e.Text = $"{_selection.Count:N0} selected";
                 e.Description = action == 0 ? "Fit the selected geometry in Rhino's active viewport." :
                     action == 1 ? "Copy one value per line in the current displayed order. Geometry measurements such as length, area and volume copy as numbers, using the selected unit conversion and decimal formatting." :
-                    "Copy the selected supported geometry to the clipboard, then paste it into Rhino. Other rows are skipped. Model geometry keeps its original dimensions.";
+                    action == 2 ? "Copy the selected supported geometry to the clipboard, then paste it into Rhino. Other rows are skipped. Model geometry keeps its original dimensions." :
+                    "Select the same zero-based item indices in every branch of the filtered results, including offscreen rows. Uses the tree after tree tools, before filtering or sorting. Shorter branches are skipped. Alt/Option-click a row to select its index across branches.";
                 return;
             }
             if (_display.Contains(point))
@@ -1194,7 +1227,7 @@ namespace BetterGhPanel
                 }
                 e.Title = "Row selection and copy";
                 e.Text = _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus : $"{_selection.Count:N0} selected";
-                e.Description = "Click a row to select it without moving the camera. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Double-click a row or branch heading, or click empty table, panel or canvas space, to clear selection. Right-click to frame the selection or copy values or geometry.";
+                e.Description = "Click a row to select it without moving the camera. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Alt/Option-click selects the same index across filtered branches. Double-click a row or branch heading, or click empty table, panel or canvas space, to clear selection. Right-click to select indices across branches, frame the selection or copy values or geometry.";
             }
             else if (RowsAreCurrent(PanelOwner.Session.Result))
             {
@@ -1227,7 +1260,7 @@ namespace BetterGhPanel
                             details += "\nMeasurement unavailable.";
                     }
                     else details = value.Length > 1000 ? value.Substring(0, 997) + "…" : value;
-                    e.Description = details + "\n\nClick to select without moving the camera. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Double-click to clear selection. Right-click to frame the selection or copy values or geometry.";
+                    e.Description = details + "\n\nClick to select without moving the camera. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Alt/Option-click selects the same index across filtered branches. Double-click to clear selection. Right-click to select indices across branches, frame the selection or copy values or geometry.";
                     break;
                 }
             }

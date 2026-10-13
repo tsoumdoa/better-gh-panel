@@ -61,6 +61,54 @@ internal static class PanelRowSelectionChecks
         Expect(selection, solvedAgain, 3); // reset also discards the old range anchor
         selection.Select(solvedAgain, 3, toggle: true);
         Expect(selection, solvedAgain);
+
+        AcrossBranches();
+    }
+
+    private static void AcrossBranches()
+    {
+        var snapshot = Sample();
+        var source = Query(snapshot);
+        var selection = new PanelRowSelection();
+        selection.SelectIndices(source, new[] { 1 });
+        Expect(selection, source, 1, 4);
+        selection.SelectIndices(source, new[] { 2 });
+        Expect(selection, source, 2); // shorter and empty branches are skipped
+        selection.SelectIndices(source, new[] { 0, 1, 0 });
+        Expect(selection, source, 0, 1, 3, 4);
+        if (!selection.Indices(source).SequenceEqual(new[] { 0, 1 }))
+            throw new InvalidOperationException("Selected indices must be distinct and sorted.");
+
+        var ascending = Query(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending });
+        selection.SelectIndices(ascending, new[] { 0 });
+        Expect(selection, ascending, 3, 0); // item zero is not displayed row one
+        selection.Select(ascending, 1, toggle: true);
+        selection.SelectIndices(ascending, selection.Indices(ascending));
+        Expect(selection, ascending, 1, 3, 0, 4); // expand each selected index, in view order
+        var descending = Query(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
+        Expect(selection, descending, 4, 0, 3, 1);
+
+        var filtered = Query(snapshot, new PanelQueryOptions { Search = "> 15" });
+        selection.SelectIndices(filtered, new[] { 1 });
+        Expect(selection, filtered, 4);
+        Expect(selection, source, 4); // clearing a filter does not create new selections
+        var branch = Query(snapshot, new PanelQueryOptions { BranchPath = "{0}" });
+        selection.SelectIndices(branch, new[] { 1 });
+        Expect(selection, branch, 1);
+        var noMatches = Query(snapshot, new PanelQueryOptions { TypeName = "Point" });
+        selection.SelectIndices(noMatches, new[] { 0, 1 });
+        Expect(selection, noMatches);
+
+        selection.Select(source, 4);
+        selection.SelectIndices(ascending, new[] { 0 });
+        selection.Select(ascending, 2, range: true);
+        Expect(selection, ascending, 3, 2); // the expansion resets the old range anchor
+        selection.SelectIndices(source, Array.Empty<int>());
+        Expect(selection, source);
+        selection.SelectIndices(source, new[] { -1, 100 });
+        Expect(selection, source);
+        selection.SelectIndices(source, new[] { 1 });
+        Expect(selection, Query(Sample())); // new input invalidates the whole group
     }
 
     private static PanelSnapshot Sample()
@@ -68,7 +116,7 @@ internal static class PanelRowSelectionChecks
         var values = new[] { 40, 10, 30, 20, 50 };
         return new PanelSnapshot(values.Select((value, index) =>
             new PanelRow(index % 3, index < 3 ? "{0}" : "{1}", "Number", value.ToString(), value)).ToArray(),
-            new[] { new PanelBranch("{0}", 3), new PanelBranch("{1}", 2) });
+            new[] { new PanelBranch("{0}", 3), new PanelBranch("{1}", 2), new PanelBranch("{2}", 0) });
     }
 
     private static PanelQueryResult Query(PanelSnapshot snapshot, PanelQueryOptions? options = null) =>

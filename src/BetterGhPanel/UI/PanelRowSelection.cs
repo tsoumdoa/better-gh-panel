@@ -71,6 +71,26 @@ namespace BetterGhPanel.UI
             return _positions.Count == 0 ? Array.Empty<int>() : result.RowPositions.Where(_positions.Contains).ToArray();
         }
 
+        internal int[] Indices(PanelQueryResult result)
+        {
+            Synchronize(result);
+            return _positions.Select(position => result.Snapshot.Rows[position].OriginalIndex).Distinct().OrderBy(index => index).ToArray();
+        }
+
+        internal void SelectIndices(PanelQueryResult result, IEnumerable<int> indices)
+        {
+            Synchronize(result);
+            var wanted = new HashSet<int>(indices);
+            _positions.Clear();
+            _anchor = -1;
+            foreach (int position in result.RowPositions)
+            {
+                if (!wanted.Contains(result.Snapshot.Rows[position].OriginalIndex)) continue;
+                _positions.Add(position);
+                if (_anchor < 0) _anchor = position;
+            }
+        }
+
         internal void SelectAll(PanelQueryResult result, string? branchPath = null)
         {
             Synchronize(result);

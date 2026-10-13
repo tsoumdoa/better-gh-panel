@@ -149,6 +149,7 @@ internal static class Program
         }
         PanelHandleChecks.Run(assembly);
         await RowNumberingChecks.Run(assembly);
+        await IndexSelectionChecks.Run(assembly);
         await CapsuleChecks.Run(assembly);
         await RecomputeChecks.Run(assembly);
         await GeometryHintChecks.Run(assembly);
