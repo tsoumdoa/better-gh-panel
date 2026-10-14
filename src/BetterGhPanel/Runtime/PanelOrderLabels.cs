@@ -13,7 +13,7 @@ namespace BetterGhPanel.Runtime
     internal sealed class PanelOrderLabels : DisplayConduit
     {
         private PanelQueryResult? _result;
-        private readonly Dictionary<int, int> _viewNumbers = new Dictionary<int, int>();
+        private readonly Dictionary<int, int> _itemIndices = new Dictionary<int, int>();
         private readonly List<Label> _normal = new List<Label>();
         private readonly List<Label> _selected = new List<Label>();
         private bool _armed;
@@ -25,11 +25,11 @@ namespace BetterGhPanel.Runtime
         {
             if (ReferenceEquals(result, _result)) return;
             _result = result;
-            _viewNumbers.Clear();
+            _itemIndices.Clear();
             if (result == null) return;
             // Cache once per completed result, not once per selection or viewport redraw.
-            for (int index = 0; index < result.RowPositions.Count; index++)
-                _viewNumbers.Add(result.RowPositions[index], index + 1);
+            foreach (int position in result.RowPositions)
+                _itemIndices.Add(position, result.Snapshot.Rows[position].OriginalIndex);
         }
 
         internal void ClearEntries()
@@ -43,7 +43,7 @@ namespace BetterGhPanel.Runtime
 
         internal void Add(int sourcePosition, Point3d anchor, bool selected)
         {
-            if (!anchor.IsValid || !_viewNumbers.TryGetValue(sourcePosition, out int number)) return;
+            if (!anchor.IsValid || !_itemIndices.TryGetValue(sourcePosition, out int number)) return;
             (selected ? _selected : _normal).Add(new Label(number, anchor));
             Enabled = true;
         }

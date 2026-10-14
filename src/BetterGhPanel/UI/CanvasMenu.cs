@@ -13,8 +13,8 @@ namespace BetterGhPanel.UI
     internal sealed class CanvasMenu
     {
         internal const int ItemOrderIndex = 3;
-        internal const string ItemOrderDescription = "Show 1-based positions in the current filtered and sorted view, across all branches. " +
-            "All rows consume a number; selected subsets retain their view numbers. Points use their locations; other geometry uses bounding-box centers. " +
+        internal const string ItemOrderDescription = "Show zero-based item indices within each branch, after tree tools and before filtering or sorting. " +
+            "Each branch starts at 0; filters and selection preserve the original indices. Points use their locations; other geometry uses bounding-box centers. " +
             "Labels follow the Preview scope and remain active in a minimized panel. Overlapping labels are hidden, with selected rows taking priority; zoom in or select fewer items to separate them.";
         private static readonly string[] SortLabels = { "Source order", "Value ascending", "Value descending" };
         private static readonly string[] PreviewLabels = { "Selected", "Filtered results", "Off" };

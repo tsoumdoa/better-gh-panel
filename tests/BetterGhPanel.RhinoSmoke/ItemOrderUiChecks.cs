@@ -69,45 +69,63 @@ internal static class ItemOrderUiChecks
             Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Preview));
             var menu = PanelTestAdapter.MenuBounds(component);
             Click(component, canvas, new RectangleF(menu.X + 4, menu.Y + 60, menu.Width - 8, 20));
-            Check(PanelTestAdapter.ShowItemOrder(component) && Labels(component).Keys.SequenceEqual(new[] { "1", "6" }),
-                "Preview's order toggle labels selected rows using global view numbers with non-geometric gaps");
-            Check(Labels(component)["1"] == new Point3d(-8, 0, 0) && Labels(component)["6"] == new Point3d(13, 0, 0),
+            Check(PanelTestAdapter.ShowItemOrder(component) && Labels(component).Select(label => label.Text).SequenceEqual(new[] { "0", "0" }),
+                "Preview's order toggle starts each branch at zero, including selected subsets");
+            Check(Labels(component).Contains(("0", new Point3d(-8, 0, 0))) && Labels(component).Contains(("0", new Point3d(13, 0, 0))),
                 "Point labels use their locations and volume labels use existing bounds centers");
             Paint(component, canvas);
-            Check(PanelTestAdapter.Tooltip(component, canvas, 5).Title.StartsWith("View row 6 ·"),
-                "Source-order row tooltips identify the global number shown in Rhino");
+            Check(PanelTestAdapter.Tooltip(component, canvas, 5).Title == "{1} [0]",
+                "Row tooltips identify the branch and zero-based item index shown in Rhino");
             document.UndoServer.PerformUndo();
             Check(!PanelTestAdapter.ShowItemOrder(component) && Labels(component).Count == 0 && PanelTestAdapter.SelectedPosition(component) == 0,
                 "Undoing numbering preserves selected rows and removes labels");
             document.UndoServer.PerformRedo();
-            Check(PanelTestAdapter.ShowItemOrder(component) && Labels(component).Keys.SequenceEqual(new[] { "1", "6" }) &&
+            Check(PanelTestAdapter.ShowItemOrder(component) && Labels(component).Select(label => label.Text).SequenceEqual(new[] { "0", "0" }) &&
                 ReferenceEquals(result, Result(session)) && ReferenceEquals(output, component.Params.Output[0].VolatileData) && solutions == baselineSolutions,
                 "Redo restores numbering without recomputing, changing output or losing selection");
             VerifyArchive(component, document);
             PanelTestAdapter.Minimize(component, true);
             component.Attributes.PerformLayout();
-            Check(Labels(component).Keys.SequenceEqual(new[] { "1", "6" }), "Minimizing the panel retains active viewport labels");
+            Check(Labels(component).Select(label => label.Text).SequenceEqual(new[] { "0", "0" }), "Minimizing the panel retains active viewport labels");
             PanelTestAdapter.Minimize(component, false);
             component.Attributes.PerformLayout();
 
             PanelTestAdapter.PreviewMode(component, "FilteredResults");
             var labels = Labels(component);
-            Check(labels.Count == 6 && labels["3"] == new Point3d(2, 0, 0) && labels["5"] == new Point3d(8, 0, 0) &&
-                labels["7"] == new Point3d(-8, 6, 0) && !labels.ContainsKey("2") && !labels.ContainsKey("8"),
+            Check(labels.Count == 6 && labels.Contains(("2", new Point3d(2, 0, 0))) && labels.Contains(("4", new Point3d(8, 0, 0))) &&
+                labels.Contains(("1", new Point3d(-8, 6, 0))) && labels.Contains(("3", new Point3d(-8, 0, 0))),
                 "Filtered preview labels curves, surfaces and wrapped points while skipping scalar and invalid geometry");
             Query(session, new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
             await Wait(session);
-            int boxNumber = Result(session).RowPositions.ToList().IndexOf(5) + 1;
-            Check(Labels(component)[boxNumber.ToString()] == new Point3d(13, 0, 0), "Sorting refreshes viewport numbering from the new result order");
+            Check(Labels(component).Count == labels.Count && labels.All(Labels(component).Contains),
+                "Sorting preserves each geometry's original branch index, including repeated indices and coincident anchors");
+            Paint(component, canvas);
+            Check(PanelTestAdapter.Tooltip(component, canvas, 5).Title == "{1} [0]",
+                "Sorted tooltips retain the branch address when item-order labels are enabled");
             Query(session, new PanelQueryOptions { BranchPath = "{1}" });
             await Wait(session);
-            Check(Labels(component).Keys.OrderBy(value => value).SequenceEqual(new[] { "1", "2", "4" }),
-                "Filtering renumbers the result while unsupported rows still consume their positions");
+            Check(Labels(component).Select(label => label.Text).OrderBy(value => value).SequenceEqual(new[] { "0", "1", "3" }),
+                "Filtering retains branch indices and gaps for unsupported rows");
+            Query(session, new PanelQueryOptions { BranchPath = "{1}", TypeName = "Point" });
+            await Wait(session);
+            Check(Labels(component).Count > 0 && Labels(component).All(label => label.Text != "0") &&
+                Labels(component).Contains(("3", new Point3d(-8, 0, 0))),
+                "Filtering away the first item cannot renumber remaining branch items to zero");
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "[" });
             Check(Labels(component).Count == 0, "Starting a query immediately releases stale numbering");
             await Wait(session, allowError: true);
             Check(Labels(component).Count == 0, "Failed queries cannot restore stale labels");
             Query(session, new PanelQueryOptions());
+            await Wait(session);
+            PanelTestAdapter.TreeTools(component, 0, true, false, false);
+            await Wait(session);
+            Check(Labels(component).Contains(("5", new Point3d(13, 0, 0))),
+                "Flattened trees use the new single branch's zero-based indices");
+            PanelTestAdapter.TreeTools(component, 0, true, true, false);
+            await Wait(session);
+            Check(Labels(component).Contains(("3", new Point3d(13, 0, 0))),
+                "Reversed trees label the transformed branch indices");
+            PanelTestAdapter.TreeTools(component, 0, false, false, false);
             await Wait(session);
             component.DocumentContextChanged(document, GH_DocumentContext.Unloaded);
             Check(Labels(component).Count == 0, "Inactive documents clear labels");
@@ -245,11 +263,11 @@ internal static class ItemOrderUiChecks
         restored.RemovedFromDocument(document);
     }
 
-    private static Dictionary<string, Point3d> Labels(GH_Component component)
+    private static List<(string Text, Point3d Anchor)> Labels(GH_Component component)
     {
         var labels = Field<object>(Field<object>(component, "_highlight"), "_orderLabels");
         return new[] { "_selected", "_normal" }.SelectMany(name => Field<IEnumerable>(labels, name).Cast<object>())
-            .ToDictionary(label => Property<string>(label, "Text"), label => Property<Point3d>(label, "Anchor"));
+            .Select(label => (Property<string>(label, "Text"), Property<Point3d>(label, "Anchor"))).ToList();
     }
 
     private static void Select(GH_Component component, object session, params int[] positions)
