@@ -423,9 +423,9 @@ namespace BetterGhPanel
             bool sorted = PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder;
             bool grouped = !sorted && _list.Height >= BranchHeight + RowHeight;
             bool showTypes = result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
-            using var rowRenderer = new CanvasRowRenderer(g, result.Snapshot.Rows.Count);
-            // Keep the path slot in source order too, so toggling sort never moves values.
-            float pathWidth = Math.Min(80, Math.Max(0, _list.Width - rowRenderer.GutterWidth - (showTypes ? 70 : 12) - 40));
+            using var rowRenderer = new CanvasRowRenderer(g, result.Snapshot.Rows.Count, sorted);
+            // Grouped rows already show their path in the branch heading.
+            float pathWidth = grouped ? 0 : Math.Min(80, Math.Max(0, _list.Width - rowRenderer.GutterWidth - (showTypes ? 70 : 12) - 40));
             float valueStart = rowRenderer.GutterWidth + pathWidth;
             _offset = Math.Max(0, Math.Min(Math.Max(0, result.RowPositions.Count - 1), _offset));
             var clip = g.Save();

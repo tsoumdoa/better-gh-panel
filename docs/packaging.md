@@ -12,12 +12,12 @@ node scripts/package.mjs
 
 Packaging finds Yak in the standard Rhino 8 installation. On a machine without Rhino, `node scripts/package.mjs --stage-only` builds the same folder without creating an archive. Use `--yak <absolute path>` or `YAK_PATH` for a custom installation. Use `--skip-build` only after a successful Release build.
 
-The current beta patch is `0.1.19-beta`. The resulting `artifacts/better-gh-panel-0.1.19-beta/` contains `manifest.yml`, `icon.png`, and the two runtime folders. Yak builds a `better-gh-panel-0.1.19-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
+The current beta patch is `0.1.19-beta.1`. The resulting `artifacts/better-gh-panel-0.1.19-beta.1/` contains `manifest.yml`, `icon.png`, and the two runtime folders. Yak builds a `better-gh-panel-0.1.19-beta.1-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
 ```text
-yak install --source artifacts/better-gh-panel-0.1.19-beta better-gh-panel 0.1.19-beta
+yak install --source artifacts/better-gh-panel-0.1.19-beta.1 better-gh-panel 0.1.19-beta.1
 ```
 
 Replace `yak` with the full executable path if it is not on PATH. On Windows it is normally `C:\Program Files\Rhino 8\System\Yak.exe`; on Mac it is normally `/Applications/Rhino 8.app/Contents/Resources/bin/yak`. Restart Rhino and open Grasshopper afterward. Local install uses Yak's package directory and avoids copying a second `.gha` into the Grasshopper Libraries folder.
@@ -34,8 +34,10 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 Install the current public beta with:
 
 ```text
-yak install better-gh-panel 0.1.19-beta
+yak install better-gh-panel 0.1.19-beta.1
 ```
+
+Patch `0.1.19-beta.1` removes the unused inline-path column from grouped source-order rows and shrinks their numbering gutter to the original index alone. Sorted rows keep their view numbers and addresses; compact panels retain inline paths when branch headings do not fit. Validation includes the local checks, both runtime builds, managed Grasshopper tree checks, and both hidden Rhino host suites against the plugin extracted from the final Yak archive.
 
 Beta `0.1.19-beta` adds selection of the same zero-based item indices across branches through the row menu or Alt/Option-click. Managed checks cover distinct indices, short/empty branches, sorting, filter scope, range anchors and new-input cleanup. Windows host checks cover actual pointer dispatch and Alt state, offscreen geometry preview, unchanged camera and output, multi-index expansion, minimum Half menu bounds, trailing double-clicks and stale/disabled actions. The full suite runs against the plugin extracted from the final Yak archive; Mac and Windows .NET Framework host validation remain pending.
 

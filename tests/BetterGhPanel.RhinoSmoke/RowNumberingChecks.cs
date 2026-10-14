@@ -70,7 +70,7 @@ internal static class RowNumberingChecks
             "Filtered rows restart at one and retain their pre-filter item index");
         await Query(session, PanelSortMode.SourceOrder);
         using (var sourceOrder = Capture(component, canvas))
-            Check(GutterEdge(sourceOrder, component, 0) == gutterEdge, "Source order reserves the same numbering gutter");
+            Check(GutterEdge(sourceOrder, component, 0) < gutterEdge, "Source order only reserves space for the original item index");
         Check(PanelTestAdapter.Tooltip(component, canvas, 0).Title == "{0;2;4} [0]", "Source order keeps its original zero-based address");
 
         // Render the approved example through the real native component, not the HTML study.
@@ -118,7 +118,7 @@ internal static class RowNumberingChecks
         int color = Color.FromArgb(238, 242, 236).ToArgb();
         int x = left + 2;
         while (x < bitmap.Width && bitmap.GetPixel(x, y).ToArgb() == color) x++;
-        Check(x > left + 80 && x < left + 240, "Native numbering gutter paints without clipping its digits");
+        Check(x > left + 40 && x < left + 240, "Native numbering gutter paints without clipping its digits");
         return x - left;
     }
 

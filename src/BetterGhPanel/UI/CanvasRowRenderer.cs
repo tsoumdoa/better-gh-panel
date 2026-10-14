@@ -36,13 +36,13 @@ namespace BetterGhPanel.UI
             return FontFamily.GenericMonospace.Name;
         }
 
-        internal CanvasRowRenderer(Graphics graphics, int totalItems)
+        internal CanvasRowRenderer(Graphics graphics, int totalItems, bool sorted)
         {
             int digits = Math.Max(1, totalItems).ToString(CultureInfo.InvariantCulture).Length;
             string capacity = new string('0', digits);
             float numberWidth = (float)Math.Ceiling(graphics.MeasureString(capacity, _number, PointF.Empty, _format).Width);
-            _indexWidth = (float)Math.Ceiling(graphics.MeasureString("[" + capacity + "]", _index, PointF.Empty, _format).Width);
-            GutterWidth = Math.Max(54, 18 + numberWidth + _indexWidth);
+            _indexWidth = sorted ? (float)Math.Ceiling(graphics.MeasureString("[" + capacity + "]", _index, PointF.Empty, _format).Width) : 0;
+            GutterWidth = sorted ? Math.Max(54, 18 + numberWidth + _indexWidth) : Math.Max(24, 12 + numberWidth);
         }
 
         internal void DrawAddress(Graphics graphics, RectangleF row, int viewNumber, int originalIndex, bool sorted, bool selected)
@@ -54,7 +54,7 @@ namespace BetterGhPanel.UI
             float indexStart = row.X + GutterWidth - 8 - _indexWidth;
             DrawCell(graphics, (sorted ? viewNumber : originalIndex).ToString(CultureInfo.InvariantCulture),
                 _number, Color.FromArgb(78, 92, 82),
-                new RectangleF(row.X + 6, row.Y, indexStart - row.X - 10, row.Height), true);
+                new RectangleF(row.X + 6, row.Y, sorted ? indexStart - row.X - 10 : GutterWidth - 12, row.Height), true);
             if (sorted)
                 DrawCell(graphics, "[" + originalIndex.ToString(CultureInfo.InvariantCulture) + "]",
                     _index, Color.FromArgb(107, 120, 111),
