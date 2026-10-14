@@ -147,6 +147,7 @@ internal static class IndexSelectionChecks
                 component.Params.Output[0].VolatileData.AllData(true).Cast<GH_Point>().Select(point => point.Value)
                     .SequenceEqual(output.Cast<GH_Point>().Select(point => point.Value)),
                 "Index actions preserve upstream identities and output geometry values/order through recomputation");
+            await SelectAllChecks();
         }
         finally
         {
@@ -191,6 +192,97 @@ internal static class IndexSelectionChecks
         {
             using var bitmap = Capture();
             bitmap.Save(Path.Combine(Path.GetDirectoryName(assembly.Location)!, "rhino-smoke-" + name + ".png"));
+        }
+        async Task SelectAllChecks()
+        {
+            // Still in the minimum Half layout, with only one visible row.
+            var all = PanelTestAdapter.Bounds(component, CanvasControl.SelectAll);
+            Check(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Contains(all) &&
+                !all.IntersectsWith(PanelTestAdapter.Bounds(component, CanvasControl.Statistics)) &&
+                !all.IntersectsWith(PanelTestAdapter.Bounds(component, CanvasControl.Resize)),
+                "Select all fits minimum Half mode without overlapping Stats or resize");
+            var currentOutput = component.Params.Output[0].VolatileData;
+            Click(all);
+            Check(Selected().SequenceEqual(Enumerable.Range(0, 62)) &&
+                (int)Field<object>(component, "_highlight").GetType().GetProperty("Count", Instance)!.GetValue(Field<object>(component, "_highlight"))! == 62,
+                "One Select all click selects and previews every matching row, including offscreen branches");
+            Check(ReferenceEquals(currentOutput, component.Params.Output[0].VolatileData) &&
+                viewport.CameraLocation == camera && viewport.CameraTarget == target,
+                "Select all keeps output and the Rhino camera unchanged");
+            Save("select-all-half");
+            Click(all);
+            component.Attributes.RespondToMouseDoubleClick(canvas, new GH_CanvasMouseEvent(Point.Empty,
+                new PointF(all.X + all.Width / 2, all.Y + all.Height / 2), Forms.MouseButtons.Left, 2, 0));
+            Check(Selected().Length == 62, "Repeated and double-click Select all gestures retain the complete selection");
+
+            await Query(new PanelQueryOptions { BranchPath = "{1}", SortMode = PanelSortMode.ValueDescending });
+            Click(all);
+            Check(Selected().SequenceEqual(Result().RowPositions) && Selected().Length == 30 &&
+                Selected().All(position => position >= 30 && position < 60),
+                "Select all respects branch filters and the current sorted copy order");
+            await Query(new PanelQueryOptions { Search = "101", TypeName = "Point" });
+            Click(all);
+            Expect(1);
+            await Query(new PanelQueryOptions { OnlyInvalid = true });
+            Click(all);
+            Expect();
+            Check(Result().RowPositions.Count == 0, "Select all on empty invalid-only results is a no-op");
+
+            await Query(new PanelQueryOptions());
+            component.Locked = true;
+            Click(all);
+            Expect();
+            component.Locked = false;
+            component.ExpireSolution(true);
+            await Wait(session);
+            Paint();
+            Click(all);
+            Check(Selected().Length == 62, "Select all remains usable after a disabled-state guard");
+            session.GetType().GetMethod("UpdateQuery")!.Invoke(session, new object[] {
+                new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "[" } });
+            Click(all);
+            Check((int)Field<object>(component, "_highlight").GetType().GetProperty("Count", Instance)!.GetValue(Field<object>(component, "_highlight"))! == 0,
+                "Select all cannot restore stale preview during a pending query");
+            var timer = Stopwatch.StartNew();
+            while ((bool)session.GetType().GetProperty("IsBusy")!.GetValue(session)!)
+            {
+                if (timer.Elapsed.TotalSeconds > 20) throw new TimeoutException("Invalid query did not finish");
+                await Task.Delay(10);
+            }
+            Paint();
+            Click(all);
+            Expect();
+            Check(session.GetType().GetProperty("Error")!.GetValue(session) is string, "Select all is inert for a failed query");
+            await Query(new PanelQueryOptions());
+
+            // A completed but unpainted result must not use the prior frame's controls.
+            session.GetType().GetMethod("UpdateQuery")!.Invoke(session, new object[] { new PanelQueryOptions { BranchPath = "{0}" } });
+            await Wait(session);
+            Click(all);
+            Expect();
+            Paint();
+            Click(all);
+            Check(Selected().Length == 30, "Select all acts on the current result after its first paint");
+            await Query(new PanelQueryOptions());
+            Click(PanelTestAdapter.Bounds(component, CanvasControl.Display));
+            Paint();
+            all = PanelTestAdapter.Bounds(component, CanvasControl.SelectAll);
+            Click(all);
+            Save("select-all");
+            Check(Selected().Length == 62, "Select all works in Full mode");
+            PanelTestAdapter.Minimize(component, true);
+            component.Attributes.PerformLayout();
+            Check(PanelTestAdapter.Bounds(component, CanvasControl.SelectAll).IsEmpty,
+                "The minimized capsule has no hidden Select all target");
+            PanelTestAdapter.Minimize(component, false);
+            component.Attributes.PerformLayout();
+            Paint();
+            Check(Selected().Length == 62, "Capsule restoration retains Select all selection");
+            source.ExpireSolution(false);
+            document.NewSolution(false, GH_SolutionMode.Silent);
+            await Wait(session);
+            Paint();
+            Expect();
         }
     }
 

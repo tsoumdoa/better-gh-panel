@@ -24,7 +24,7 @@ namespace BetterGhPanel
         private static readonly Color Accent = Color.FromArgb(77, 115, 94);
         private RectangleF _panel, _search, _filter, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _footer;
         private RectangleF _trim, _simplify, _flatten, _reverse, _units;
-        private RectangleF _display, _preview, _move, _statistics, _close, _restore;
+        private RectangleF _display, _preview, _move, _statistics, _selectAll, _close, _restore;
         private readonly List<RowHit> _rowHits = new List<RowHit>();
         private readonly List<BranchHit> _branchHits = new List<BranchHit>();
         private PanelSearchMode _editingSearchMode;
@@ -181,7 +181,7 @@ namespace BetterGhPanel
                 m_innerBounds = _panel;
                 ClosePresentationControls();
                 _search = _filter = _type = _sort = _branch = _jump = _reset = _resize = _list = _track = _footer = RectangleF.Empty;
-                _trim = _simplify = _flatten = _reverse = _units = _display = _preview = _close = _move = _statistics = RectangleF.Empty;
+                _trim = _simplify = _flatten = _reverse = _units = _display = _preview = _close = _move = _statistics = _selectAll = RectangleF.Empty;
                 _restore = new RectangleF(_panel.Right - 26, _panel.Y + 5, 22, 22);
                 PositionPorts(Owner.Params.Input, true);
                 PositionPorts(Owner.Params.Output, false);
@@ -210,6 +210,7 @@ namespace BetterGhPanel
             // Reserve the corner for resizing rather than overlaying footer controls.
             _footer = new RectangleF(x + 2, _panel.Bottom - 38, _panel.Width - 34, 36);
             _statistics = new RectangleF(_footer.Right - 46, _footer.Y, 46, 16);
+            _selectAll = new RectangleF(_statistics.Left - 62, _footer.Y, 58, 16);
             // Share one row so status text, tool glyphs and Units have the same center.
             _units = new RectangleF(_footer.Right - 76, _footer.Y + 16, 76, 20);
             _trim = new RectangleF(_units.Left - 101, _units.Y, 22, _units.Height);
@@ -490,7 +491,8 @@ namespace BetterGhPanel
             bool current = !PanelOwner.Locked && session.HasCurrentResult;
             if (current)
                 Text(g, CanvasStatistics.Summary(result), small, Ink,
-                    new RectangleF(_footer.X, _footer.Y, _statistics.Left - _footer.X - 5, _statistics.Height), trim);
+                    new RectangleF(_footer.X, _footer.Y, _selectAll.Left - _footer.X - 5, _statistics.Height), trim);
+            Control(g, _selectAll, "Select all", small, trim, current && result.RowPositions.Count > 0 && _selection.Count == result.RowPositions.Count);
             Control(g, _statistics, "Stats", small, trim, current && _menu.Kind == CanvasMenuKind.Statistics);
             string output = result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count
                 ? "out: filtered" : PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None ? "out: tools" : "out: source";
@@ -837,6 +839,19 @@ namespace BetterGhPanel
                     _simplify.Contains(point) ? !PanelOwner.SimplifyTree : PanelOwner.SimplifyTree);
                 return GH_ObjectResponse.Handled;
             }
+            if (_selectAll.Contains(point))
+            {
+                var result = PanelOwner.Session.Result;
+                if (RowsAreCurrent(result))
+                {
+                    InvalidateCopyStatus();
+                    _selection.SelectAll(result);
+                    PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
+                    TrackSelectionCanvas(sender);
+                    sender.Invalidate();
+                }
+                return GH_ObjectResponse.Handled;
+            }
             if (_preview.Contains(point)) { OpenMenu(CanvasMenuKind.Preview, sender); return GH_ObjectResponse.Handled; }
             if (_statistics.Contains(point)) { OpenMenu(CanvasMenuKind.Statistics, sender); return GH_ObjectResponse.Handled; }
             if (_filter.Contains(point)) { OpenMenu(CanvasMenuKind.SearchMode, sender); return GH_ObjectResponse.Handled; }
@@ -1049,7 +1064,7 @@ namespace BetterGhPanel
         {
             if (e.Button != MouseButtons.Left) return base.RespondToMouseDoubleClick(sender, e);
             if (DateTime.UtcNow < _rowActionDismissedUntil) return GH_ObjectResponse.Handled;
-            if (PanelOwner.PanelMinimized || _close.Contains(e.CanvasLocation) || _display.Contains(e.CanvasLocation))
+            if (PanelOwner.PanelMinimized || _close.Contains(e.CanvasLocation) || _display.Contains(e.CanvasLocation) || _selectAll.Contains(e.CanvasLocation))
                 return GH_ObjectResponse.Handled;
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDoubleClick(sender, e);
             if (_rowMenuResult != null || _menu.Kind != CanvasMenuKind.None) return GH_ObjectResponse.Handled;
@@ -1130,6 +1145,15 @@ namespace BetterGhPanel
                 e.Title = PanelOwner.CanvasDisplay == CanvasPanelDisplay.Full ? "Show half panel" : "Show full panel";
                 e.Text = "Full ↔ Half";
                 e.Description = "Click to toggle panel sizes. Full restores your saved height. Half shows half that height. Wire connections and view settings are retained.";
+                return;
+            }
+            if (_selectAll.Contains(point))
+            {
+                e.Title = "Select all rows";
+                e.Text = !PanelOwner.Locked && PanelOwner.Session.HasCurrentResult
+                    ? $"{PanelOwner.Session.Result.RowPositions.Count:N0} matching items"
+                    : PanelOwner.Locked ? "Disabled" : PanelOwner.Session.IsBusy ? "Recomputing…" : "Selection unavailable";
+                e.Description = "Select every row in the current results across all branches, including offscreen rows. Search, type, invalid and Paths filters are respected. Selection keeps the camera and output unchanged.";
                 return;
             }
             if (_statistics.Contains(point) || _footer.Contains(point) && point.Y < _units.Y)
@@ -1243,8 +1267,8 @@ namespace BetterGhPanel
                 {
                     if (!hit.Bounds.Contains(point)) continue;
                     var row = PanelOwner.Session.Result.Snapshot.Rows[hit.SourcePosition];
-                    e.Title = (PanelOwner.ShowItemOrder ? "View row " + hit.ViewNumber + " · " :
-                        PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder ? "" : "Row " + hit.ViewNumber + " · ") + row.Path + " [" + row.OriginalIndex + "]";
+                    e.Title = (PanelOwner.ShowItemOrder || PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder
+                        ? "" : "Row " + hit.ViewNumber + " · ") + row.Path + " [" + row.OriginalIndex + "]";
                     e.Text = (row.IsValid ? "" : "Invalid ") + row.TypeName;
                     var snapshot = PanelOwner.Session.Result.Snapshot;
                     var value = PanelOwner.DisplayValue(snapshot, row, hit.SourcePosition);

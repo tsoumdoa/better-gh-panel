@@ -62,6 +62,19 @@ internal static class PanelRowSelectionChecks
         selection.Select(solvedAgain, 3, toggle: true);
         Expect(selection, solvedAgain);
 
+        selection.SelectAll(source);
+        Expect(selection, source, 0, 1, 2, 3, 4);
+        selection.SelectAll(filtered);
+        Expect(selection, filtered, 3, 2, 0, 4);
+        selection.Select(filtered, 0, range: true);
+        Expect(selection, filtered, 3, 2, 0); // Select all anchors ranges at the first displayed match
+        selection.SelectAll(filtered, "{0}");
+        Expect(selection, filtered, 2, 0); // branch selection still honors active filters
+        selection.SelectAll(empty);
+        Expect(selection, empty);
+        selection.SelectAll(source);
+        Expect(selection, Query(Sample())); // new input invalidates bulk selection too
+
         AcrossBranches();
     }
 
