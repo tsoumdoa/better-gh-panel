@@ -372,10 +372,14 @@ internal static class RowActionChecks
         await CopyValues(component, snapshot, 3, 2);
         Check(ClipboardText() == "full\ntext" + Environment.NewLine + "<null>",
             "Text and null values retain full content in a mixed selection");
-        await CopyValues(component, snapshot, 4, 11);
-        Check(ClipboardText() == PanelTestAdapter.DisplayValue(component, snapshot, 4) + Environment.NewLine +
-            PanelTestAdapter.DisplayValue(component, snapshot, 11),
-            "Point and vector value copies preserve the displayed coordinate text instead of switching to live goo formatting");
+        string coordinateCopy = await CopyValues(component, snapshot, 4, 11);
+        Check(coordinateCopy == "2 values copied", "Point/vector clipboard write completes: " + coordinateCopy);
+        string coordinateText = ClipboardText();
+        string coordinateExpected = PanelTestAdapter.DisplayValue(component, snapshot, 4) + Environment.NewLine +
+            PanelTestAdapter.DisplayValue(component, snapshot, 11);
+        Check(coordinateText == coordinateExpected,
+            "Point and vector value copies preserve the displayed coordinate text instead of switching to live goo formatting" +
+            $" (clipboard length {coordinateText.Length}, expected {coordinateExpected.Length})");
         await CopyValues(component, snapshot, 10);
         Check(ClipboardText() == PanelTestAdapter.DisplayValue(component, snapshot, 10) &&
             ClipboardText().StartsWith("Invalid ·", StringComparison.Ordinal),
