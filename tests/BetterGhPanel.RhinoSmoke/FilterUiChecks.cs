@@ -63,7 +63,7 @@ internal static class FilterUiChecks
 
         await VerifyPreviewModes(component, canvas, session, document);
         await VerifyFilters(component, canvas, assembly, session);
-        await VerifyBranches(component, canvas, session);
+        await VerifyBranches(component, canvas, assembly, session);
         await VerifyCompactErrors(component, canvas, assembly, session);
         await VerifyPersistence(component, canvas, assembly, session);
         document.NewSolution(false, GH_SolutionMode.Silent);
@@ -292,6 +292,13 @@ internal static class FilterUiChecks
         Check(Positions(session).SequenceEqual(new[] { 36 }), "Volume comparison includes the matching box");
         await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Value, 0, "20");
         Check(Positions(session).SequenceEqual(new[] { 39 }), "Numeric value mode excludes geometry measurements");
+        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.ListLength, 1, "34");
+        Check(Positions(session).SequenceEqual(Enumerable.Range(0, 34)),
+            "Per-branch list length selects all items of a qualifying branch through the canvas menu");
+        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.ListLength, 0, "<= 6");
+        Check(Options(session).Search == "<= 6" && Positions(session).SequenceEqual(Enumerable.Range(34, 6)),
+            "An explicit pasted comparison overrides the menu operator and selects the smaller branch");
+        SavePreview(component, canvas, "filter-list-length");
         await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Regex, 0, "^wall-[ab]$");
         Check(Positions(session).SequenceEqual(new[] { 37, 38 }), "Regex menu searches row text case-insensitively");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Search));
@@ -301,7 +308,7 @@ internal static class FilterUiChecks
             "Clearing the inline expression removes the filter while retaining its mode");
     }
 
-    private static async Task VerifyBranches(GH_Component component, GH_Canvas canvas, object session)
+    private static async Task VerifyBranches(GH_Component component, GH_Canvas canvas, Assembly assembly, object session)
     {
         var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
         var view = rhino.Views.ActiveView ?? rhino.Views.Add("Filter checks", Rhino.Display.DefinedViewportProjection.Perspective,
@@ -346,6 +353,39 @@ internal static class FilterUiChecks
             "Replacing a branch query never selects rows or moves the camera");
         Query(session, new PanelQueryOptions());
         await Wait(session);
+        EditPath(" 1 ");
+        await Wait(session);
+        Check(Options(session).BranchPath == "{1}" && Positions(session).SequenceEqual(Enumerable.Range(34, 6)),
+            "A bare branch path selects the same rows as its braced form and displays canonically");
+        EditPath(" 0; 0; 1 ");
+        await Wait(session);
+        Check(Options(session).BranchPath == "{0;0;1}" && Positions(session).Count == 0,
+            "A semicolon-delimited path without braces is accepted as an exact nested path");
+        EditPath("{0;0;1");
+        await Wait(session, allowError: true);
+        Paint(component, canvas);
+        Check(Property<string?>(session, "Error") != null &&
+            !Field<IEnumerable>(component.Attributes, "_rowHits").Cast<object>().Any(),
+            "Malformed branch paths expose an error and no stale row actions");
+        var branch = PanelTestAdapter.Bounds(component, CanvasControl.Branch);
+        var point = new PointF(branch.X + 5, branch.Y + 5);
+        var tooltip = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs), Instance,
+            null, new object[] { canvas, System.Drawing.Point.Round(point) }, null)!;
+        component.Attributes.SetupTooltip(point, tooltip);
+        Check(tooltip.Description.Contains(Property<string>(session, "Error")) && tooltip.Description.Contains("0;0;1"),
+            "The branch tooltip explains malformed input and the supported unbraced syntax");
+        EditPath("");
+        await Wait(session);
+        Check(Options(session).BranchPath == null && Positions(session).Count == 40,
+            "Clearing a malformed branch path restores all branches");
+
+        void EditPath(string path)
+        {
+            Paint(component, canvas);
+            Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Branch));
+            MenuRow(component, canvas, 1);
+            CanvasEditorAdapter.Active(assembly).Submit(path);
+        }
     }
 
     private static async Task VerifyCompactErrors(GH_Component component, GH_Canvas canvas, Assembly assembly, object session)
@@ -380,22 +420,37 @@ internal static class FilterUiChecks
         CanvasEditorAdapter.Active(assembly).Submit("Wall");
         await Wait(session);
         Check(Positions(session).Count == 2, "Editing a failed filter recovers normally");
+        Paint(component, canvas);
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Filter));
+        MenuRow(component, canvas, (int)PanelSearchMode.ListLength);
+        MenuRow(component, canvas, 0);
+        CanvasEditorAdapter.Active(assembly).Submit("not a count");
+        await Wait(session, allowError: true);
+        Paint(component, canvas);
+        Check(Property<string?>(session, "Error") != null && Options(session).SearchMode == PanelSearchMode.ListLength &&
+            !Field<IEnumerable>(component.Attributes, "_rowHits").Cast<object>().Any(),
+            "The seventh mode is reachable in Half view and invalid list counts expose no stale rows");
+        Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Search));
+        CanvasEditorAdapter.Active(assembly).Submit("<= 6");
+        await Wait(session);
+        Check(Positions(session).SequenceEqual(Enumerable.Range(34, 6)),
+            "Editing the list-length expression recovers from an invalid threshold in Half view");
     }
 
     private static async Task VerifyPersistence(GH_Component component, GH_Canvas canvas, Assembly assembly, object session)
     {
-        Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = ">= 12" });
+        Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = ">= 6" });
         await Wait(session);
         PanelTestAdapter.PreviewMode(component, "FilteredResults");
         var chunk = new GH_LooseChunk("Panel");
-        Check(component.Write(chunk), "Geometry filter settings serialize");
+        Check(component.Write(chunk), "List-length filter settings serialize");
         var restored = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
         restored.CreateAttributes();
         using var restoredDocument = new GH_Document();
         try
         {
-            Check(restored.Read(chunk) && Options(PanelTestAdapter.Session(restored)).SearchMode == PanelSearchMode.Area &&
-                Options(PanelTestAdapter.Session(restored)).Search == ">= 12", "Filter mode and comparison survive saved definitions");
+            Check(restored.Read(chunk) && Options(PanelTestAdapter.Session(restored)).SearchMode == PanelSearchMode.ListLength &&
+                Options(PanelTestAdapter.Session(restored)).Search == ">= 6", "List-length mode and comparison survive saved definitions");
             Check(PanelTestAdapter.PreviewMode(restored) == "FilteredResults", "Preview mode survives saved definitions");
             chunk.RemoveItem("PanelPreviewMode");
             Check(restored.Read(chunk) && PanelTestAdapter.PreviewMode(restored) == "Selected",

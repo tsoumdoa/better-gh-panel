@@ -4,7 +4,8 @@ namespace BetterGhPanel.Core
     public sealed class PanelGeometryInfo
     {
         public PanelGeometryInfo(string description, double? value = null, int power = 1, string units = "units",
-            string metricName = "Length", string metricLabel = "L", bool canMeasure = false, string? details = null)
+            string metricName = "Length", string metricLabel = "L", bool canMeasure = false, string? details = null,
+            bool measurementUnavailable = false)
         {
             Description = description;
             Value = value;
@@ -14,6 +15,7 @@ namespace BetterGhPanel.Core
             MetricLabel = metricLabel;
             CanMeasure = canMeasure;
             Details = details ?? description;
+            MeasurementUnavailable = measurementUnavailable;
         }
 
         public string Description { get; }
@@ -24,6 +26,12 @@ namespace BetterGhPanel.Core
         public string MetricLabel { get; }
         public bool CanMeasure { get; }
         public string Details { get; }
+        /// <summary>A completed measurement failed; unlike a pending status, this belongs to stable row presentation.</summary>
+        public bool MeasurementUnavailable { get; }
+
+        public PanelGeometryInfo WithUnavailableMeasurement() =>
+            new PanelGeometryInfo(Description, power: Power, units: Units, metricName: MetricName, metricLabel: MetricLabel,
+                details: Details, measurementUnavailable: true);
 
         public string FormatCompact(PanelUnitConversion conversion, int decimals) => Description +
             (Value.HasValue ? " · " + MetricLabel + " " + FormatValue(conversion, decimals) : "");

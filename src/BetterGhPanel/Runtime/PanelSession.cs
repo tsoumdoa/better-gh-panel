@@ -14,10 +14,13 @@ namespace BetterGhPanel.Runtime
         // Allow queries 120 ms to finish on the UI thread before handing off.
         // This is a soft deadline checked between operations.
         private static readonly TimeSpan ImmediateQueryBudget = TimeSpan.FromMilliseconds(120);
+        private static readonly PanelQueryResult EmptyResult =
+            PanelQueryEngine.Execute(PanelSnapshot.Empty, new PanelQueryOptions(), CancellationToken.None);
         private readonly Action _invalidate;
         private CancellationTokenSource? _queryCancellation;
         private PanelQueryOptions _options = new PanelQueryOptions();
         private Func<int, string?>? _detailResolver;
+        private Func<int>? _decimalPlacesResolver;
         private Func<int, Func<PanelGeometryInfo?>?>? _geometryDetailResolver;
         private readonly Dictionary<int, GeometryMeasurement> _geometryDetails = new Dictionary<int, GeometryMeasurement>();
         private readonly List<int> _visibleGeometry = new List<int>();
@@ -32,7 +35,7 @@ namespace BetterGhPanel.Runtime
         {
             _invalidate = invalidate;
             Snapshot = PanelSnapshot.Empty;
-            Result = PanelQueryEngine.Execute(Snapshot, _options, CancellationToken.None);
+            Result = EmptyResult;
         }
 
         public PanelSnapshot Snapshot { get; private set; }
@@ -75,6 +78,7 @@ namespace BetterGhPanel.Runtime
             _visibleGeometry.Clear();
             if (!retainMeasurements) _geometryDetails.Clear();
             Snapshot = PanelSnapshot.Empty;
+            Result = EmptyResult;
             _awaitingSnapshot = true;
             _inputSuspended = suspended;
             IsBusy = !suspended;
@@ -100,6 +104,8 @@ namespace BetterGhPanel.Runtime
         }
 
         public void SetDetailResolver(Func<int, string?> resolver) => _detailResolver = resolver;
+
+        internal void SetDecimalPlacesResolver(Func<int> resolver) => _decimalPlacesResolver = resolver;
 
         internal void SetGeometryDetailResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) => _geometryDetailResolver = resolver;
 
@@ -334,10 +340,19 @@ namespace BetterGhPanel.Runtime
         {
             if (_disposed) return;
             var next = (options ?? new PanelQueryOptions()).Clone();
+            // A component owns its formatting setting. Direct query updates and
+            // ResetView cannot silently revert the filter's presentation precision.
+            if (_decimalPlacesResolver != null) next.DecimalPlaces = _decimalPlacesResolver();
+            next.DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, next.DecimalPlaces));
+            // Canonical paths keep direct input, saved options and menu checkmarks
+            // consistent. Malformed input stays in the query so it reports the same
+            // error state as any other invalid filter, without throwing from UI edits.
+            try { next.BranchPath = PanelQueryEngine.NormalizeBranchPath(next.BranchPath); }
+            catch (ArgumentException) { }
             var changed = _options.Search != next.Search || _options.TypeName != next.TypeName ||
                 _options.BranchPath != next.BranchPath || _options.BranchPrefix != next.BranchPrefix ||
                 _options.OnlyInvalid != next.OnlyInvalid || _options.SortMode != next.SortMode ||
-                _options.SearchMode != next.SearchMode;
+                _options.SearchMode != next.SearchMode || _options.DecimalPlaces != next.DecimalPlaces;
             _options = next;
             if (changed)
             {
@@ -358,6 +373,7 @@ namespace BetterGhPanel.Runtime
             var token = cancellation.Token;
             var snapshot = Snapshot;
             var options = _options.Clone();
+            bool measureGeometry = snapshot.HasMeasurableGeometry && PanelQueryEngine.RequiresGeometryMeasurements(options);
             var request = ++_request;
             IsBusy = !_inputSuspended;
             Error = null;
@@ -366,7 +382,7 @@ namespace BetterGhPanel.Runtime
             PanelQueryWork? work = null;
             // Regex and native calls cannot yield midway through one operation.
             // All other queries get the same time budget regardless of tree size.
-            if (options.SearchMode != PanelSearchMode.Regex && !PanelQueryEngine.RequiresGeometryMeasurements(options))
+            if (options.SearchMode != PanelSearchMode.Regex && !measureGeometry)
             {
                 try
                 {
@@ -391,7 +407,7 @@ namespace BetterGhPanel.Runtime
                 try
                 {
                     IReadOnlyDictionary<int, PanelGeometryInfo>? measurements = null;
-                    if (PanelQueryEngine.RequiresGeometryMeasurements(options))
+                    if (measureGeometry)
                     {
                         // Validate and narrow by branch/type before preparing any native
                         // geometry. Filters include offscreen rows through the same bounded
@@ -449,7 +465,11 @@ namespace BetterGhPanel.Runtime
                 // own immutable projection, never the live cache or live Rhino objects.
                 var values = new Dictionary<int, PanelGeometryInfo>();
                 foreach (var entry in _geometryDetails)
-                    if (entry.Value.Complete && entry.Value.Details != null) values.Add(entry.Key, entry.Value.Details);
+                {
+                    if (!entry.Value.Complete) continue;
+                    var geometry = entry.Value.Details ?? snapshot.Rows[entry.Key].GeometryInfo?.WithUnavailableMeasurement();
+                    if (geometry != null) values.Add(entry.Key, geometry);
+                }
                 completion.TrySetResult(new ReadOnlyDictionary<int, PanelGeometryInfo>(values));
             }));
             return completion.Task;
@@ -478,10 +498,12 @@ namespace BetterGhPanel.Runtime
             QueryChanged = null;
             ResultChanged = null;
             _detailResolver = null;
+            _decimalPlacesResolver = null;
             _geometryDetailResolver = null;
             _geometryDetails.Clear();
             _visibleGeometry.Clear();
             Snapshot = PanelSnapshot.Empty;
+            Result = EmptyResult;
         }
     }
 }

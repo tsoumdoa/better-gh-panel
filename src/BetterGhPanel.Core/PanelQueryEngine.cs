@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Threading;
 
 namespace BetterGhPanel.Core
@@ -22,19 +23,22 @@ namespace BetterGhPanel.Core
             cancellationToken.ThrowIfCancellationRequested();
             // Capture options now, before either execution or handoff can be deferred.
             var query = options.Clone();
-            return new PanelQueryWork(work => ExecuteSteps(snapshot, query, cancellationToken, measuredGeometry, work).GetEnumerator());
+            var culture = CultureInfo.ReadOnly((CultureInfo)CultureInfo.CurrentCulture.Clone());
+            return new PanelQueryWork(work => ExecuteSteps(snapshot, query, cancellationToken, measuredGeometry, culture, work).GetEnumerator());
         }
 
         private static IEnumerable<PanelQueryResult?> ExecuteSteps(PanelSnapshot snapshot, PanelQueryOptions query,
-            CancellationToken cancellationToken, IReadOnlyDictionary<int, PanelGeometryInfo>? measuredGeometry, PanelQueryWork work)
+            CancellationToken cancellationToken, IReadOnlyDictionary<int, PanelGeometryInfo>? measuredGeometry,
+            IFormatProvider culture, PanelQueryWork work)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var search = new PanelSearchFilter(query);
-            var selectedBranch = string.IsNullOrWhiteSpace(query.BranchPath) ? null : query.BranchPath!.Trim();
+            var search = new PanelSearchFilter(query, culture);
+            var selectedBranch = NormalizeBranchPath(query.BranchPath);
             var branchPrefix = BranchPrefix(query, selectedBranch);
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
+            var sortText = query.SortMode == PanelSortMode.SourceOrder ? null : new Dictionary<int, string>();
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var branchCounts = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -42,7 +46,7 @@ namespace BetterGhPanel.Core
             var stringValues = new Dictionary<string, ValueCount>(StringComparer.Ordinal);
             var uniqueValues = new List<ValueCount>();
             var scalarCount = 0;
-            var hasItemFilter = search.HasFilter || query.TypeName != null || query.OnlyInvalid;
+            var hasItemFilter = search.HasFilter && !search.IsBranchFilter || query.TypeName != null || query.OnlyInvalid;
 
             // Empty branches remain visible when browsing the tree, but not in item-filter results.
             if (!hasItemFilter)
@@ -52,7 +56,7 @@ namespace BetterGhPanel.Core
                     if (work.ShouldYield()) yield return null;
                     CheckCancellation(i, cancellationToken);
                     var branch = snapshot.Branches[i];
-                    if (MatchesBranch(branch.Path, selectedBranch, branchPrefix))
+                    if (MatchesBranch(branch.Path, selectedBranch, branchPrefix) && search.MatchesBranchCount(branch.ItemCount))
                     {
                         branches.Add(branch.Path);
                         branchCounts[branch.Path] = 0;
@@ -72,6 +76,9 @@ namespace BetterGhPanel.Core
                 CheckCancellation(i, cancellationToken);
                 var row = snapshot.Rows[i];
                 if (!MatchesBranch(row.Path, selectedBranch, branchPrefix)) continue;
+                // Counts describe each transformed branch before any per-item restrictions.
+                if (search.IsBranchFilter && search.HasFilter &&
+                    (!snapshot.BranchItemCounts.TryGetValue(row.Path, out var itemCount) || !search.MatchesBranchCount(itemCount))) continue;
                 if (query.TypeName != null && !string.Equals(row.TypeName, query.TypeName, StringComparison.OrdinalIgnoreCase)) continue;
                 if (query.OnlyInvalid && row.IsValid) continue;
                 PanelGeometryInfo? measured = null;
@@ -79,6 +86,8 @@ namespace BetterGhPanel.Core
                 if (!search.Matches(row, snapshot.UnitConversion, measured, cancellationToken)) continue;
 
                 rowPositions.Add(i);
+                if (sortText != null && !row.IsNull && !HasFiniteNumber(row))
+                    sortText.Add(i, PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture));
                 branches.Add(row.Path);
                 Increment(typeCounts, row.TypeName);
                 Increment(branchCounts, row.Path);
@@ -127,7 +136,7 @@ namespace BetterGhPanel.Core
             cancellationToken.ThrowIfCancellationRequested();
             var positions = rowPositions.ToArray();
             if (query.SortMode != PanelSortMode.SourceOrder)
-                foreach (var step in StableSort(positions, snapshot.Rows, query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work))
+                foreach (var step in StableSort(positions, snapshot.Rows, sortText!, query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work))
                     yield return step;
             if (work.ShouldYield()) yield return null;
             cancellationToken.ThrowIfCancellationRequested();
@@ -151,11 +160,27 @@ namespace BetterGhPanel.Core
         public static bool RequiresGeometryMeasurements(PanelQueryOptions options)
         {
             if (options == null) throw new ArgumentNullException(nameof(options));
-            return !string.IsNullOrWhiteSpace(options.Search) && (options.SearchMode == PanelSearchMode.Length ||
-                options.SearchMode == PanelSearchMode.Area || options.SearchMode == PanelSearchMode.Volume);
+            if (UsesDisplayedText(options)) return true;
+            bool hasSearch = !string.IsNullOrWhiteSpace(options.Search);
+            if (hasSearch && (options.SearchMode == PanelSearchMode.Length ||
+                options.SearchMode == PanelSearchMode.Area || options.SearchMode == PanelSearchMode.Volume)) return true;
+            // Active scalar comparisons cannot return geometry or need geometry sort keys.
+            return options.SortMode != PanelSortMode.SourceOrder &&
+                (!hasSearch || options.SearchMode != PanelSearchMode.Value && options.SearchMode != PanelSearchMode.Text);
         }
 
-        /// <summary>Finds offscreen measurements needed by a geometry query, after cheap tree filters.</summary>
+        /// <summary>Whether row presentation can affect membership (including significant regex whitespace).</summary>
+        public static bool UsesDisplayedText(PanelQueryOptions options)
+        {
+            if (options == null) throw new ArgumentNullException(nameof(options));
+            // Regex whitespace is significant, unlike the other search modes.
+            if (options.SearchMode == PanelSearchMode.Regex) return !string.IsNullOrEmpty(options.Search);
+            if (options.SearchMode == PanelSearchMode.Text)
+                return !string.IsNullOrWhiteSpace(options.Search) && !PanelSearchFilter.IsNumericComparison(options.Search);
+            return false;
+        }
+
+        /// <summary>Finds offscreen measurements needed by a query or display-text sort, after cheap tree filters.</summary>
         public static IReadOnlyList<int> GeometryCandidates(PanelSnapshot snapshot, PanelQueryOptions options,
             CancellationToken cancellationToken = default)
         {
@@ -164,8 +189,9 @@ namespace BetterGhPanel.Core
             cancellationToken.ThrowIfCancellationRequested();
             var query = options.Clone();
             var filter = new PanelSearchFilter(query);
-            if (!filter.HasFilter || !filter.IsGeometry) return Array.Empty<int>();
-            var selected = string.IsNullOrWhiteSpace(query.BranchPath) ? null : query.BranchPath!.Trim();
+            var sorting = query.SortMode != PanelSortMode.SourceOrder;
+            if (!sorting && (!filter.HasFilter || !filter.IsGeometry && !filter.UsesDisplayText)) return Array.Empty<int>();
+            var selected = NormalizeBranchPath(query.BranchPath);
             var prefix = BranchPrefix(query, selected);
             var candidates = new List<int>();
             for (int index = 0; index < snapshot.Rows.Count; index++)
@@ -174,11 +200,30 @@ namespace BetterGhPanel.Core
                 var row = snapshot.Rows[index];
                 if (!MatchesBranch(row.Path, selected, prefix) ||
                     query.TypeName != null && !string.Equals(row.TypeName, query.TypeName, StringComparison.OrdinalIgnoreCase) ||
-                    query.OnlyInvalid && row.IsValid || !filter.CanMeasure(row)) continue;
+                    query.OnlyInvalid && row.IsValid || !filter.CanMeasure(row, sorting)) continue;
+                if (filter.IsBranchFilter && filter.HasFilter &&
+                    (!snapshot.BranchItemCounts.TryGetValue(row.Path, out var itemCount) || !filter.MatchesBranchCount(itemCount))) continue;
                 candidates.Add(index);
             }
             cancellationToken.ThrowIfCancellationRequested();
             return candidates.AsReadOnly();
+        }
+
+        /// <summary>Accepts a semicolon-separated path with or without braces. Blank means all branches.</summary>
+        public static string? NormalizeBranchPath(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return null;
+            string text = path!.Trim();
+            if (text.StartsWith("{", StringComparison.Ordinal) && text.EndsWith("}", StringComparison.Ordinal))
+                text = text.Substring(1, text.Length - 2);
+            var parts = text.Split(';');
+            for (int index = 0; index < parts.Length; index++)
+            {
+                if (!int.TryParse(parts[index].Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var value))
+                    throw new ArgumentException("Enter a branch path such as 0;0;1 or {0;0;1}, using nonnegative integers separated by semicolons.");
+                parts[index] = value.ToString(CultureInfo.InvariantCulture);
+            }
+            return "{" + string.Join(";", parts) + "}";
         }
 
         private static string? BranchPrefix(PanelQueryOptions query, string? selected) => query.BranchPrefix && selected != null
@@ -199,7 +244,7 @@ namespace BetterGhPanel.Core
             counts[key] = count + 1;
         }
 
-        private static bool HasFiniteNumber(PanelRow row) => !row.IsNull && row.NumericValue.HasValue &&
+        private static bool HasFiniteNumber(PanelRow row) => !row.IsNull && row.IsValid && row.NumericValue.HasValue &&
             !double.IsNaN(row.NumericValue.Value) && !double.IsInfinity(row.NumericValue.Value);
 
         private sealed class ValueCount
@@ -216,7 +261,8 @@ namespace BetterGhPanel.Core
         }
 
         // Own merge sort keeps cancellation exceptions unwrapped and never mutates snapshot data.
-        private static IEnumerable<PanelQueryResult?> StableSort(int[] ids, IReadOnlyList<PanelRow> rows, bool descending,
+        private static IEnumerable<PanelQueryResult?> StableSort(int[] ids, IReadOnlyList<PanelRow> rows,
+            IReadOnlyDictionary<int, string> sortText, bool descending,
             CancellationToken token, PanelQueryWork work)
         {
             if (ids.Length < 2) yield break;
@@ -238,7 +284,7 @@ namespace BetterGhPanel.Core
                         if (work.ShouldYield()) yield return null;
                         CheckCancellation(output, token);
                         destination[output] = left < middle && (right >= end ||
-                            Compare(source[left], source[right], rows, descending) <= 0)
+                            Compare(source[left], source[right], rows, sortText, descending) <= 0)
                             ? source[left++] : source[right++];
                     }
                     start = end;
@@ -252,7 +298,8 @@ namespace BetterGhPanel.Core
             if (!ReferenceEquals(source, ids)) Array.Copy(source, ids, ids.Length);
         }
 
-        private static int Compare(int leftId, int rightId, IReadOnlyList<PanelRow> rows, bool descending)
+        private static int Compare(int leftId, int rightId, IReadOnlyList<PanelRow> rows,
+            IReadOnlyDictionary<int, string> sortText, bool descending)
         {
             var left = rows[leftId];
             var right = rows[rightId];
@@ -267,7 +314,7 @@ namespace BetterGhPanel.Core
             {
                 comparison = StringComparer.OrdinalIgnoreCase.Compare(left.TypeName, right.TypeName);
                 if (comparison != 0) return comparison;
-                comparison = StringComparer.OrdinalIgnoreCase.Compare(left.DisplayValue, right.DisplayValue);
+                comparison = StringComparer.OrdinalIgnoreCase.Compare(sortText[leftId], sortText[rightId]);
             }
             if (comparison != 0) return descending ? -comparison : comparison;
             return leftId.CompareTo(rightId);

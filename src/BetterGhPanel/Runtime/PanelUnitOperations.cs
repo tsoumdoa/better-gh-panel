@@ -17,8 +17,10 @@ namespace BetterGhPanel.Runtime
                 foreach (var item in source.Branches[b])
                 {
                     IGH_Goo converted = item;
-                    if (item is GH_Number number) converted = new GH_Number(PanelUnits.Convert(number.Value, conversion));
-                    else if (item is GH_Integer integer) converted = new GH_Number(PanelUnits.Convert(integer.Value, conversion));
+                    // Invalid scalar goo can contain finite unset sentinels. Scaling
+                    // those would turn an invalid input into an ordinary valid number.
+                    if (item is GH_Number number && number.IsValid) converted = new GH_Number(PanelUnits.Convert(number.Value, conversion));
+                    else if (item is GH_Integer integer && integer.IsValid) converted = new GH_Number(PanelUnits.Convert(integer.Value, conversion));
                     result.Append(converted, path);
                 }
             }

@@ -1,6 +1,8 @@
 # Panel+ implementation proposal
 
-Target: Grasshopper 1 in Rhino 8, Windows and macOS. This document records the original design proposal. The repository now implements the native canvas + Eto inspector MVP in `src/`, with a pure C# query core and HopperWire-style Yak packaging. The HTML prototype remains a separate UI study. See the README for implemented features and current validation; production Rhino performance has not yet been benchmarked.
+Target: Grasshopper 1 in Rhino 8, Windows and macOS. This document records the original design proposal. The repository now implements the native canvas MVP in `src/`, with a pure C# query core and HopperWire-style Yak packaging; the popup inspector has been removed. The HTML prototype remains a separate UI study. See the README for implemented features and current validation; production Rhino performance has not yet been benchmarked.
+
+Current output behavior supersedes the original view-only filter proposal below: tree tools and numeric unit conversion run before filters, and the resulting typed tree contains only current matches. List-length predicates count each transformed branch before item filtering. Text and regex predicates share the canvas value formatter, including decimal settings and converted geometry measurements; numeric predicates use full precision. Query completion updates downstream output, while pending or failed filters expose an empty tree. Sorting remains presentation-only. Copy uses current matching rows in view order, and rejects stale queries. The proposal below is retained as historical context.
 
 ## Product behavior
 
