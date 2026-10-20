@@ -6,6 +6,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
@@ -372,14 +374,16 @@ internal static class RowActionChecks
         await CopyValues(component, snapshot, 3, 2);
         Check(ClipboardText() == "full\ntext" + Environment.NewLine + "<null>",
             "Text and null values retain full content in a mixed selection");
-        string coordinateCopy = await CopyValues(component, snapshot, 4, 11);
-        Check(coordinateCopy == "2 values copied", "Point/vector clipboard write completes: " + coordinateCopy);
-        string coordinateText = ClipboardText();
         string coordinateExpected = PanelTestAdapter.DisplayValue(component, snapshot, 4) + Environment.NewLine +
             PanelTestAdapter.DisplayValue(component, snapshot, 11);
+        string coordinateCopy = await CopyValues(component, snapshot, 4, 11);
+        string afterCopyState = ClipboardState();
+        Check(coordinateCopy == "2 values copied", "Point/vector clipboard write completes: " + coordinateCopy);
+        string coordinateText = ClipboardText();
         Check(coordinateText == coordinateExpected,
             "Point and vector value copies preserve the displayed coordinate text instead of switching to live goo formatting" +
-            $" (clipboard length {coordinateText.Length}, expected {coordinateExpected.Length})");
+            $" (clipboard length {coordinateText.Length}, expected {coordinateExpected.Length}; " +
+            $"after copy {afterCopyState}; read {ClipboardState()})");
         await CopyValues(component, snapshot, 10);
         Check(ClipboardText() == PanelTestAdapter.DisplayValue(component, snapshot, 10) &&
             ClipboardText().StartsWith("Invalid ·", StringComparison.Ordinal),
@@ -717,11 +721,29 @@ internal static class RowActionChecks
             var pending = CopyValues(component, snapshot, 8);
             await WaitUntil(() => Volatile.Read(ref measurements) == 1);
             Check(CopyGeometry(component, snapshot, new[] { 4 }, out _), "A new geometry copy can replace an in-flight measurement copy");
-            var expectedClipboard = ReadClipboardBytes();
+            var expectedClipboard = ReadClipboardBytes(out var expectedTransport);
+            Check(IsExpectedClipboardPoint(expectedClipboard),
+                "The new geometry clipboard contains the expected point with source model units: " + expectedTransport);
             gate.Set();
-            await pending;
-            Check(expectedClipboard.SequenceEqual(ReadClipboardBytes()),
+            string pendingStatus = await pending;
+            Check(pendingStatus == "Copy cancelled", "Superseded value copy reports cancellation: " + pendingStatus);
+            // Cancelling the copy can complete before its measurement worker.
+            // Inspect the clipboard only after the late UI callback has run.
+            await WaitUntil(() => !Field<bool>(session, "_geometryRunning"));
+            var currentClipboard = ReadClipboardBytes(out var currentTransport);
+            if (!expectedClipboard.SequenceEqual(currentClipboard))
+            {
+                int commonPrefix = expectedClipboard.Zip(currentClipboard).TakeWhile(pair => pair.First == pair.Second).Count();
+                bool extraZeros = expectedClipboard.Skip(commonPrefix).All(value => value == 0) &&
+                    currentClipboard.Skip(commonPrefix).All(value => value == 0);
+                Console.WriteLine($"Geometry payload representation changed: before [{expectedTransport}], after [{currentTransport}]; " +
+                    $"common prefix {commonPrefix}, remaining bytes all zero={extraZeros}; " +
+                    $"expected point before={IsExpectedClipboardPoint(expectedClipboard)}, after={IsExpectedClipboardPoint(currentClipboard)}.");
+            }
+            Check(expectedClipboard.SequenceEqual(currentClipboard),
                 "An obsolete asynchronous value copy cannot overwrite the newer geometry clipboard");
+            Check(!Forms.Clipboard.ContainsText() && IsExpectedClipboardPoint(currentClipboard),
+                "The superseding clipboard contains only the expected point with source model units");
             var rhino = RhinoDoc.ActiveDoc;
             var beforePaste = rhino.Objects.Select(item => item.Id).ToHashSet();
             Check(RhinoApp.RunScript(rhino.RuntimeSerialNumber, "_Paste", false), "Rhino accepts the superseding single-point geometry clipboard");
@@ -731,7 +753,11 @@ internal static class RowActionChecks
                 "The superseding clipboard still pastes exactly the requested point at its source coordinates");
             foreach (var item in pasted) rhino.Objects.Delete(item.Id, true);
         }
-        finally { gate.Set(); }
+        finally
+        {
+            gate.Set();
+            await WaitUntil(() => !Field<bool>(session, "_geometryRunning"));
+        }
 
         component.ExpireSolution(true);
         await WaitForQuery(session);
@@ -842,7 +868,19 @@ internal static class RowActionChecks
     private static File3dm ReadClipboardArchive() =>
         File3dm.FromByteArray(ReadClipboardBytes()) ?? throw new InvalidOperationException("Invalid geometry clipboard archive");
 
-    private static byte[] ReadClipboardBytes()
+    private static bool IsExpectedClipboardPoint(byte[] bytes)
+    {
+        using var file = File3dm.FromByteArray(bytes);
+        if (file == null || file.Objects.Count != 1 || file.Settings.ModelUnitSystem != UnitSystem.Millimeters) return false;
+        // Enumerate the table: Rhino 8's IList indexer uses component indices
+        // that object tables do not have. LINQ Single's IList fast path returns null.
+        return file.Objects.Select(item => item.Geometry).Single() is Rhino.Geometry.Point point &&
+            point.Location == new Point3d(20, 30, 40);
+    }
+
+    private static byte[] ReadClipboardBytes() => ReadClipboardBytes(out _);
+
+    private static byte[] ReadClipboardBytes(out string transport)
     {
         var data = Forms.Clipboard.GetData(GeometryFormat);
         // An in-process WPF/Eto data object can expose its original byte array;
@@ -857,9 +895,25 @@ internal static class RowActionChecks
             bytes = output.ToArray();
         }
         else throw new InvalidOperationException("Unexpected Rhino clipboard payload: " + (data?.GetType().FullName ?? "null"));
+        int header = Encoding.ASCII.GetString(bytes).IndexOf("3D Geometry File Format ", StringComparison.Ordinal);
+        transport = $"{data.GetType().Name}, {bytes.Length} bytes, 3DM header at {header}, {ClipboardState()}";
         Check(bytes.Length > 0, "Clipboard exposes a binary native Rhino geometry payload");
         return bytes;
     }
+
+    private static string ClipboardState()
+    {
+        IntPtr owner = GetClipboardOwner();
+        GetWindowThreadProcessId(owner, out uint processId);
+        return $"sequence {GetClipboardSequenceNumber()}, owner PID {processId}";
+    }
+
+    [DllImport("user32.dll")]
+    private static extern uint GetClipboardSequenceNumber();
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetClipboardOwner();
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
 
     private static string ClipboardText() => Forms.Clipboard.GetText();
     private static PanelSnapshot Snapshot(object session) => Property<PanelSnapshot>(session, "Snapshot");
