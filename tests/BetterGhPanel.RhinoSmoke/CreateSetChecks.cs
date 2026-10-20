@@ -117,7 +117,7 @@ internal static class CreateSetChecks
         var mixedInputs = source.Branches.SelectMany((branch, b) => branch.Select((item, i) =>
             (Address: (source.Paths[b].ToString(), i), Item: item))).ToDictionary(entry => entry.Address, entry => entry.Item);
         arguments = new object?[] { source, 1, true, true, true, true, null };
-        var mixedSet = ((GH_Structure<IGH_Goo>)tracked.Invoke(null, arguments)!).AllData(true).ToArray();
+        var mixedSet = ((GH_Structure<IGH_Goo>)tracked.Invoke(null, arguments)!).AllData(skipNulls: false).ToArray();
         groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
         var mixedLocations = groups.SelectMany(group => group.Locations).Select(address => (address.Path, address.ItemIndex)).ToArray();
         Check(mixedLocations.Length == source.DataCount && mixedLocations.ToHashSet().SetEquals(mixedInputs.Keys) &&
