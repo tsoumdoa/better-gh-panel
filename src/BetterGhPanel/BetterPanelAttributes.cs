@@ -19,6 +19,7 @@ namespace BetterGhPanel
     internal sealed partial class BetterPanelAttributes : GH_ComponentAttributes
     {
         private const float RowHeight = 17, BranchHeight = 15, HeaderHeight = CanvasPanelSize.HeaderHeight;
+        private const float TypeColumnWidth = 44, CellGap = 10;
         private static readonly Color Ink = Color.FromArgb(49, 55, 53);
         private static readonly Color Muted = Color.FromArgb(120, 127, 123);
         private static readonly Color Accent = Color.FromArgb(77, 115, 94);
@@ -55,6 +56,7 @@ namespace BetterGhPanel
         {
             _setDetails.Close();
             _setHits.Clear();
+            _setCountSnapshot = null;
             _setControlsVisible = false;
             LayoutSetDetails();
             _offset = 0;
@@ -438,9 +440,11 @@ namespace BetterGhPanel
             bool grouped = !sorted && _list.Height >= BranchHeight + RowHeight;
             bool showTypes = result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
             using var rowRenderer = new CanvasRowRenderer(g, result.Snapshot.Rows.Count, sorted);
+            if (PanelOwner.CreateSetTree) SizeSetColumn(g, rowRenderer, result.Snapshot);
+            float setWidth = PanelOwner.CreateSetTree ? _setCountWidth : 0;
             // Grouped rows already show their path in the branch heading.
             float pathWidth = grouped ? 0 : Math.Min(80, Math.Max(0, _list.Width - rowRenderer.GutterWidth -
-                (showTypes ? 70 : 12) - 40 - (PanelOwner.CreateSetTree ? SetCountWidth : 0)));
+                (showTypes ? TypeColumnWidth + CellGap : 12) - 40 - setWidth));
             float valueStart = rowRenderer.GutterWidth + pathWidth;
             _offset = Math.Max(0, Math.Min(Math.Max(0, result.RowPositions.Count - 1), _offset));
             var clip = g.Save();
@@ -476,11 +480,12 @@ namespace BetterGhPanel
                     // Geometry summaries already name their type; reserve the extra
                     // label only for values whose text does not identify their type.
                     bool showRowType = showTypes && row.GeometryInfo == null;
-                    float setWidth = row.SetOccurrences == null ? 0 : SetCountWidth;
+                    float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
                     rowRenderer.DrawValue(g, PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition), font, Ink,
-                        new RectangleF(bounds.X + valueStart + 3, y, Math.Max(0, bounds.Width - valueStart - (showRowType ? 73 : 15) - setWidth), RowHeight), row.NumericValue.HasValue);
+                        new RectangleF(bounds.X + valueStart + 3, y, Math.Max(0, valueRight - bounds.X - valueStart - 3), RowHeight), row.NumericValue.HasValue);
                     if (showRowType)
-                        rowRenderer.DrawCell(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted, new RectangleF(bounds.Right - 64 - setWidth, y, 60, RowHeight), true);
+                        rowRenderer.DrawCell(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted,
+                            new RectangleF(bounds.Right - setWidth - TypeColumnWidth, y, TypeColumnWidth - CellGap, RowHeight), true);
                     DrawSetCount(g, rowRenderer, row, bounds, sourcePosition, i + 1, small);
                     _rowHits.Add(new RowHit(bounds, sourcePosition, i + 1));
                     _shown++;

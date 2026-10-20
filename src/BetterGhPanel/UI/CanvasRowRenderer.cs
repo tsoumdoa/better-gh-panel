@@ -64,6 +64,9 @@ namespace BetterGhPanel.UI
         internal void DrawValue(Graphics graphics, string value, Font textFont, Color color, RectangleF bounds, bool numeric) =>
             DrawCell(graphics, value, numeric ? _number : textFont, color, bounds, numeric);
 
+        internal float MeasureNumber(Graphics graphics, string value) =>
+            (float)Math.Ceiling(graphics.MeasureString(value, _number, PointF.Empty, _format).Width);
+
         internal void DrawCell(Graphics graphics, string value, Font font, Color color, RectangleF bounds,
             bool rightAligned = false, float baselineOffset = 0)
         {

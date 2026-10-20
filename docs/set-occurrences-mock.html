@@ -11,7 +11,7 @@
   button:disabled { cursor: default; opacity: .4; }
   .intro { margin: 0 0 12px; color: var(--muted-foreground, #647063); font-size: 13px; }
   .canvas { padding: 24px; border-radius: var(--radius, 12px); background: #eef0ec; background-image: radial-gradient(#d2d8ce .7px, transparent .7px); background-size: 12px 12px; }
-  .component { width: 440px; max-width: 100%; margin: auto; color: #30392f; font: 12px/1.4 Arial, sans-serif; }
+  .component { --type-width: 44px; --count-width: 44px; --cell-gap: 10px; width: 440px; max-width: 100%; margin: auto; color: #30392f; font: 12px/1.4 Arial, sans-serif; }
   .panel { border: 1px solid #9aa494; background: white; box-shadow: 0 2px 7px #273a1810; }
   .head { height: 29px; display: flex; align-items: center; gap: 8px; padding: 0 9px; border-left: 3px solid #4c7041; border-bottom: 1px solid #e4e8e0; }
   .drag { color: #9da598; letter-spacing: 1px; }
@@ -23,14 +23,16 @@
   .rows { padding: 3px 7px 9px; min-height: 171px; max-height: 330px; overflow: auto; }
   .branch { display: flex; justify-content: space-between; color: #647856; padding: 5px 3px 3px; font-size: 10px; }
   code { font-family: var(--font-mono, Consolas, monospace); }
-  .row { display: grid; grid-template-columns: 25px minmax(0,1fr) 45px 65px; min-height: 23px; align-items: center; }
+  .row { display: grid; grid-template-columns: 25px minmax(0,1fr) var(--type-width) var(--count-width); min-height: 23px; align-items: baseline; }
   .row:nth-child(even) { background: #f5f7f3; }
-  .row.plain { grid-template-columns: 25px minmax(0,1fr) 45px; }
-  .index { color: #9aa18f; font: 10px Consolas, monospace; padding-left: 3px; }
-  .value { padding: 0 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .numeric { text-align: right; }
-  .type { text-align: right; color: #909789; font-size: 10px; padding-right: 8px; }
-  .count { height: 23px; border: 0; background: #eff4eb; color: #48653d; display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 0 6px; font-size: 11px; }
+  .row.plain { grid-template-columns: 25px minmax(0,1fr) var(--type-width); }
+  .index { color: #9aa18f; font: 10px/23px Consolas, monospace; padding-left: 3px; }
+  .value { padding: 0 var(--cell-gap) 0 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; line-height: 23px; }
+  .numeric { text-align: right; font-family: Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .type { text-align: right; color: #909789; font-size: 10px; line-height: 23px; padding-right: var(--cell-gap); }
+  .count { height: 23px; border: 0; background: #eff4eb; color: #48653d; position: relative; text-align: right; padding: 0 16px 0 6px; font: 11px/23px Consolas, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .count .chevron { position: absolute; right: 5px; top: 10px; margin: 0; }
+  .count[aria-expanded="true"] .chevron { top: 7px; margin: 0; }
   .count:hover { background: #e4eddd; }
   .count[aria-expanded="true"] { background: #dfead8; }
   .chevron { display: inline-block; width: 6px; height: 6px; border-right: 1.4px solid currentColor; border-bottom: 1.4px solid currentColor; transform: rotate(45deg); margin-top: -3px; }
@@ -101,12 +103,16 @@
   }
   function drawRows() {
     groups = compute();
+    const widestCount = Math.max(...groups.flatMap(branch => branch.values.map(item => item.locations.length)));
+    const measure = document.createElement('canvas').getContext('2d');
+    measure.font = '11px Consolas, monospace';
+    document.querySelector('.component').style.setProperty('--count-width', Math.max(44, Math.ceil(measure.measureText(widestCount.toLocaleString() + '×').width) + 22) + 'px');
     $('rows').innerHTML = groups.map(branch =>
       '<div class="branch"><code>' + branch.path + '</code><span>' + branch.values.length + ' items</span></div>' +
       branch.values.map((item, index) => '<div class="row ' + (createSet ? '' : 'plain') + '">' +
         '<span class="index">' + index + '</span><span class="value ' + (typeof item.value === 'number' ? 'numeric' : '') + '">' + item.value + '</span>' +
         '<span class="type">' + (typeof item.value === 'number' ? 'Num' : 'Text') + '</span>' +
-        (createSet ? '<button class="count" data-id="' + item.id + '" aria-expanded="' + (selected === item.id) + '" aria-label="Inspect ' + item.locations.length + ' occurrences of ' + item.value + '" title="' + (item.locations.length - 1) + ' duplicates removed">' + item.locations.length + '×<span class="chevron"></span></button>' : '') + '</div>').join('')
+        (createSet ? '<button class="count" data-id="' + item.id + '" aria-expanded="' + (selected === item.id) + '" aria-label="Inspect ' + item.locations.length + ' occurrences of ' + item.value + '" title="' + (item.locations.length - 1) + ' duplicates removed">' + item.locations.length.toLocaleString() + '×<span class="chevron"></span></button>' : '') + '</div>').join('')
     ).join('');
     $('output').textContent = groups.reduce((n, branch) => n + branch.values.length, 0) + ' items · ' + groups.length + (groups.length === 1 ? ' branch' : ' branches');
     for (const [id, state] of [['flatten', flatten], ['reverse', reverse], ['set', createSet]]) $(id).setAttribute('aria-pressed', state);

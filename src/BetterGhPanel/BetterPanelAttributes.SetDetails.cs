@@ -11,10 +11,22 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
-        private const float SetCountWidth = 64;
+        private float _setCountWidth = 44;
+        private PanelSnapshot? _setCountSnapshot;
         private readonly CanvasSetDetails _setDetails = new CanvasSetDetails();
         private readonly List<RowHit> _setHits = new List<RowHit>();
         private bool _setControlsVisible;
+
+        private void SizeSetColumn(Graphics graphics, CanvasRowRenderer renderer, PanelSnapshot snapshot)
+        {
+            if (ReferenceEquals(_setCountSnapshot, snapshot)) return;
+            _setCountSnapshot = snapshot;
+            int largest = 1;
+            foreach (var row in snapshot.Rows)
+                if (row.SetOccurrences != null && row.SetOccurrences.Count > largest) largest = row.SetOccurrences.Count;
+            // Measure the whole snapshot once so filtering and scrolling never shift columns.
+            _setCountWidth = System.Math.Max(44, renderer.MeasureNumber(graphics, $"{largest:N0}×") + 22);
+        }
 
         private bool SetControlAt(PointF point) => _setControlsVisible && _menu.Kind == CanvasMenuKind.None && _rowMenuResult == null &&
             !PanelOwner.Locked && RowsAreCurrent(PanelOwner.Session.Result) &&
@@ -39,11 +51,11 @@ namespace BetterGhPanel
             int sourcePosition, int viewNumber, Font small)
         {
             if (row.SetOccurrences == null) return;
-            var countBounds = new RectangleF(bounds.Right - SetCountWidth, bounds.Y, SetCountWidth, bounds.Height);
+            var countBounds = new RectangleF(bounds.Right - _setCountWidth, bounds.Y, _setCountWidth, bounds.Height);
             bool expanded = _setDetails.SourcePosition == sourcePosition && _setDetails.IsOpen;
             Fill(g, expanded ? Color.FromArgb(227, 237, 223) : Color.FromArgb(240, 245, 238), countBounds);
-            renderer.DrawCell(g, $"{row.SetOccurrences.Count:N0}×", small, Accent,
-                new RectangleF(countBounds.X + 3, bounds.Y, countBounds.Width - 18, bounds.Height), true);
+            renderer.DrawValue(g, $"{row.SetOccurrences.Count:N0}×", small, Accent,
+                new RectangleF(countBounds.X + 6, bounds.Y, countBounds.Width - 22, bounds.Height), true);
             DrawSetChevron(g, new RectangleF(countBounds.Right - 14, bounds.Y, 12, bounds.Height), expanded);
             _setHits.Add(new RowHit(countBounds, sourcePosition, viewNumber));
         }
