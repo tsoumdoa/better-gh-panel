@@ -80,6 +80,80 @@ internal static class CreateSetChecks
         var unique = Apply(large);
         Check(unique.DataCount == 1000 && ((GH_Integer)unique.Branches[0][999]).Value == 999 && large.DataCount == 100000,
             "Large lists produce a stable set without changing the input");
+
+        var distinct = new GH_Structure<IGH_Goo>();
+        distinct.AppendRange(Enumerable.Range(0, 100000).Select(i => (IGH_Goo)new GH_Integer(i)), new GH_Path(0));
+        var distinctSet = Apply(distinct);
+        Check(distinctSet.DataCount == distinct.DataCount && distinctSet.Branches[0].SequenceEqual(distinct.Branches[0]),
+            "A large all-unique branch retains every typed value in order");
+
+        var tracked = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!
+            .GetMethod("ApplyWithOccurrences", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var arguments = new object?[] { simple, 0, false, true, true, true, null };
+        var trackedTree = (GH_Structure<IGH_Goo>)tracked.Invoke(null, arguments)!;
+        var groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+        Check(groups.Select(group => group.Count).SequenceEqual(new[] { 1, 2, 2 }) &&
+            groups[1].Locations.Select(address => address.Path + "[" + address.ItemIndex + "]")
+                .SequenceEqual(new[] { "{7;1}[0]", "{7;0}[1]" }) && groups[1].BranchCount == 2 &&
+            groups[2].Locations.Select(address => address.ItemIndex).SequenceEqual(new[] { 2, 0 }),
+            "Flatten and Reverse preserve exact original addresses for every occurrence, including the first item");
+        var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!
+            .GetMethod("CaptureWithOccurrences", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var captured = (PanelSnapshot)capture.Invoke(null, new object?[] { trackedTree, null, PanelUnitConversion.None, "mm", groups })!;
+        Check(captured.Rows[1].SetOccurrences == groups[1] && captured.Rows[1].NumericValue == 1,
+            "Captured counts remain aligned with the retained typed rows");
+        arguments = new object?[] { simple, 1, true, false, false, true, null };
+        tracked.Invoke(null, arguments);
+        groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+        Check(groups.Select(group => group.Count).SequenceEqual(new[] { 2, 2, 1 }) &&
+            groups[1].Locations[0].Path == "{7;0}" && groups[1].Locations[1].Path == "{7;1}",
+            "Simplify and Trim preserve original locations when output paths merge");
+        arguments = new object?[] { source, 0, false, false, false, true, null };
+        tracked.Invoke(null, arguments);
+        groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+        Check(groups[0].Count == 2 && groups[0].BranchCount == 1 && groups[10].Count == 2 &&
+            groups[11].Count == 1 && groups[12].Count == 1 && groups[13].Count == 1 && groups[14].Count == 1 && groups[15].Count == 2,
+            "Per-branch counts follow exact equality, null grouping and invalid/custom pass-through semantics");
+        var mixedInputs = source.Branches.SelectMany((branch, b) => branch.Select((item, i) =>
+            (Address: (source.Paths[b].ToString(), i), Item: item))).ToDictionary(entry => entry.Address, entry => entry.Item);
+        arguments = new object?[] { source, 1, true, true, true, true, null };
+        var mixedSet = ((GH_Structure<IGH_Goo>)tracked.Invoke(null, arguments)!).AllData(skipNulls: false).ToArray();
+        groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+        var mixedLocations = groups.SelectMany(group => group.Locations).Select(address => (address.Path, address.ItemIndex)).ToArray();
+        Check(mixedLocations.Length == source.DataCount && mixedLocations.ToHashSet().SetEquals(mixedInputs.Keys) &&
+            groups.Count == mixedSet.Length && groups.Select((group, i) =>
+                ReferenceEquals(mixedSet[i], mixedInputs[(group.Locations[0].Path, group.Locations[0].ItemIndex)])).All(valid => valid) &&
+            mixedSet.Count(item => item == null) == 1 && mixedSet.Count(item => ReferenceEquals(item, unknown)) == 2 &&
+            mixedSet.Count(item => ReferenceEquals(item, invalid)) == 2,
+            "Combined tools preserve exact source identities and every occurrence for mixed/null/invalid/custom values");
+        arguments = new object?[] { source, 0, false, false, false, false, null };
+        Check(ReferenceEquals(tracked.Invoke(null, arguments), source) && arguments[6] == null,
+            "Disabled Create set retains passthrough and does not allocate occurrence metadata");
+
+        var mixed = new GH_Structure<IGH_Goo>();
+        var mixedPaths = new[] { new GH_Path(2, 3), new GH_Path(2, 3, 0), new GH_Path(2, 4, 0), new GH_Path(9), new GH_Path(9, 0) };
+        for (int b = 0; b < mixedPaths.Length; b++)
+        {
+            mixed.EnsurePath(mixedPaths[b]);
+            mixed.AppendRange(Enumerable.Range(0, b == 2 ? 0 : 11).Select(i => (IGH_Goo)new GH_Integer(i % 3)), mixedPaths[b]);
+        }
+        var originalByAddress = mixed.Branches.SelectMany((branch, b) => branch.Select((item, i) =>
+            (Address: (mixed.Paths[b].ToString(), i), Item: item))).ToDictionary(entry => entry.Address, entry => entry.Item);
+        foreach (int trim in new[] { 0, 1, 2, 5 })
+        for (int flags = 0; flags < 8; flags++)
+        {
+            arguments = new object?[] { mixed, trim, (flags & 1) != 0, (flags & 2) != 0, (flags & 4) != 0, true, null };
+            var transformed = (GH_Structure<IGH_Goo>)tracked.Invoke(null, arguments)!;
+            groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+            var retained = transformed.AllData(true).ToArray();
+            var allLocations = groups.SelectMany(group => group.Locations).Select(address => (address.Path, address.ItemIndex)).ToArray();
+            Check(groups.Count == retained.Length && allLocations.Length == mixed.DataCount &&
+                allLocations.Distinct().Count() == mixed.DataCount && groups.Select((group, i) =>
+                    ReferenceEquals(retained[i], originalByAddress[(group.Locations[0].Path, group.Locations[0].ItemIndex)]) &&
+                    group.Locations.All(address => ((GH_Integer)originalByAddress[(address.Path, address.ItemIndex)]).Value ==
+                        ((GH_Integer)retained[i]).Value)).All(valid => valid),
+                $"Mixed-depth paths and empty branches retain every input address exactly once (trim {trim}, flags {flags})");
+        }
     }
 
     internal static async Task Run(Assembly assembly)

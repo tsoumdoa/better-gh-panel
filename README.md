@@ -14,6 +14,10 @@ Created in [T3 Code](https://t3.codes).
 
 ## Native MVP
 
+**Patch `0.1.20-beta.1` — set occurrence details:** Create set rows show an occurrence badge such as **9×**, with aligned columns and a separate expand arrow. Click the count or chevron to expand a small table below the panel; click it again, or the table's top-right chevron, to collapse. The compact summary shows occurrences and original input branches; the count's tooltip also shows duplicates removed. The table lists every occurrence's **input branch path** and **zero-based item index**, including the retained item. Previous/Next appears only for lists longer than four locations, including in minimum Half layout. [Interactive mock](docs/set-occurrences-mock.html).
+
+Counts describe the items grouped into that set row before output filters. They are separate per output branch unless tree tools merge branches. Original locations survive Simplify, Trim, Flatten and Reverse, and remain attached to the correct value when sorting, filtering, converting units or formatting decimals. Expansion and paging preserve selection, camera, output, panel size and wire grips. The table hides while zoomed out, recomputing, disabled or failed; filtering out its value or receiving new input closes it. Expansion is temporary view state. [Full view](docs/images/panel-set-occurrences.png) · [Minimum Half view](docs/images/panel-set-occurrences-half.png).
+
 Beta **`0.1.20-beta`** publishes the Create set feature under the next beta version. Behavior is unchanged from `0.1.19-beta.3`: duplicates are removed within each branch, with Flatten available for one set across the whole tree.
 
 Patch **`0.1.19-beta.3`** adds **Create set** beside Reverse in the footer. One click keeps the first occurrence of each exact value per branch on the typed output; click again to restore duplicates. Enable **Flatten** too for one set across the entire tree. The toggle works in Full and Half layouts, saves with the definition, and supports Undo and Reset.
@@ -44,7 +48,7 @@ Panel+ hides old rows, counts, type summaries and statistics behind **Recomputin
 
 [See the native recomputing state](docs/images/panel-recomputing.png).
 
-The public Yak beta is **`better-gh-panel 0.1.20-beta`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.20-beta`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including sorted and filtered row numbering, row jumps, compact Half layout, preview scopes, selection without camera movement, explicit framing, filtered output, disabled-state recovery and fixed wire connections. Mac runtime validation is pending.
+The public Yak beta is **`better-gh-panel 0.1.20-beta.1`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.20-beta.1`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including sorted and filtered row numbering, row jumps, compact Half layout, preview scopes, selection without camera movement, explicit framing, filtered output, disabled-state recovery and fixed wire connections. Mac runtime validation is pending.
 
 Beta **`0.1.15-beta`** adds current-result loading states, resumable queries with a 120 ms time budget, and filters on typed output after tree tools and unit conversion. Whitespace-only regex patterns filter output correctly; internalised geometry preview respects filters.
 
@@ -112,7 +116,7 @@ dotnet run --project tests/BetterGhPanel.Core.Tests -c Release
 node scripts/package.mjs
 ```
 
-The beta artifact is `artifacts/better-gh-panel-0.1.20-beta/better-gh-panel-0.1.20-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The beta artifact is `artifacts/better-gh-panel-0.1.20-beta.1/better-gh-panel-0.1.20-beta.1-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino.
 

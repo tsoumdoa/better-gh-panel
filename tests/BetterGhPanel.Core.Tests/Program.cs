@@ -15,6 +15,7 @@ internal static class Program
         {
             StatisticsAndEmptyBranches,
             StatisticsChecks.Run,
+            SetOccurrencesChecks.Run,
             ItemOrderChecks.Run,
             SearchMatchesValuePathAndType,
             NumericComparisonsUseInvariantCulture,
