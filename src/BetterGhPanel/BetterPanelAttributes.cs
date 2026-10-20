@@ -426,7 +426,7 @@ namespace BetterGhPanel
             }
             if (PanelOwner.Session.Error != null)
             {
-                Text(g, "Filter needs attention. Edit search or Reset.", small, Muted,
+                Text(g, "Filter needs attention. Edit filter or Reset.", small, Muted,
                     new RectangleF(_list.X + 6, _list.Y, _list.Width - 12, 22), trim);
                 PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, Array.Empty<int>());
                 return;
@@ -493,7 +493,9 @@ namespace BetterGhPanel
                 }
                 if (result.RowPositions.Count == 0)
                 {
-                    Text(g, result.Snapshot.Rows.Count == 0 ? "Connect a tree to start exploring." : "No matching items. Clear a filter or Reset.", small, Muted, new RectangleF(_list.X + 6, _list.Y + 12, _list.Width - 12, 22), trim);
+                    Text(g, result.BranchPaths.Count > 0 ? "Matching branches are empty." :
+                        result.Snapshot.Branches.Count == 0 ? "Connect a tree to start exploring." : "No matching items. Clear a filter or Reset.",
+                        small, Muted, new RectangleF(_list.X + 6, _list.Y + 12, _list.Width - 12, 22), trim);
                 }
             }
             finally { g.Restore(clip); }
@@ -1001,7 +1003,7 @@ namespace BetterGhPanel
                 {
                     var query = PanelOwner.Session.Options;
                     query.SearchMode = mode;
-                    query.Search = string.IsNullOrWhiteSpace(text) ? string.Empty : comparison + " " + text.Trim();
+                    query.Search = CanvasMenu.ApplyComparison(text, comparison);
                     PanelOwner.Session.UpdateQuery(query);
                 });
                 return;
@@ -1169,7 +1171,7 @@ namespace BetterGhPanel
                 e.Title = _rowMenuLabels[action];
                 e.Text = $"{_selection.Count:N0} selected";
                 e.Description = action == 0 ? "Fit the selected geometry in Rhino's active viewport." :
-                    action == 1 ? "Copy one value per line in the current displayed order. Geometry measurements such as length, area and volume copy as numbers, using the selected unit conversion and decimal formatting." :
+                    action == 1 ? "Copy one value per line in the current displayed order, using the selected unit conversion and decimal formatting. Geometry measurements such as length, area and volume copy as numbers without unit suffixes. Copied numbers use a decimal point for pasting." :
                     action == 2 ? "Copy the selected supported geometry to the clipboard, then paste it into Rhino. Other rows are skipped. Model geometry keeps its original dimensions." :
                     "Select the same zero-based item indices in every branch of the filtered results, including offscreen rows. Uses the tree after tree tools, before filtering or sorting. Shorter branches are skipped. Alt/Option-click a row to select its index across branches.";
                 return;
@@ -1233,7 +1235,10 @@ namespace BetterGhPanel
                     e.Description = (PanelOwner.Session.Result.RowPositions.Count > 0 ? "Visible types: " : "Source types: ") +
                         CanvasMenu.TypeDetails(PanelOwner.Session.Result) + "\n\n" + e.Description;
                 else if (_branch.Contains(point))
-                    e.Description = "Choose a branch to filter the rows without moving the camera. Click a branch heading to select its matching rows.\n\n" + e.Description;
+                {
+                    e.Description = "Choose a branch to filter the rows without moving the camera. Jump to an exact path using 0;0;1 or {0;0;1}; leave it empty for all branches. Click a branch heading to select its matching rows.\n\n" + e.Description;
+                    if (PanelOwner.Session.Error != null) e.Description = PanelOwner.Session.Error + "\n\n" + e.Description;
+                }
             }
             else if (_reset.Contains(point))
             {
@@ -1246,9 +1251,11 @@ namespace BetterGhPanel
                 e.Title = CanvasMenu.SearchModeLabel(options.SearchMode);
                 e.Text = string.IsNullOrEmpty(options.Search) ? "Press Enter to apply · arrow chooses filter mode" : options.Search;
                 e.Description = options.SearchMode == PanelSearchMode.Text
-                    ? "Search values, paths and types, or use numeric comparisons such as > 800 or <= 25. Use the arrow for text regex or measured geometry filters."
+                    ? "Search displayed values, paths and types. Text matches use the selected units and decimal formatting; numeric comparisons such as > 800 or <= 25 use full precision. Use the arrow for text regex, measured geometry or per-branch list length filters."
                     : options.SearchMode == PanelSearchMode.Regex
-                    ? "Match row text with a case-insensitive regular expression, such as ^Wall or beam-[0-9]+. Empty text clears the filter."
+                    ? "Match displayed row text with a case-insensitive regular expression, such as ^Wall or beam-[0-9]+. Matches use the selected units and decimal formatting. Empty text clears the filter."
+                    : options.SearchMode == PanelSearchMode.ListLength
+                    ? "Compare the number of items in each branch using >, >=, <, <=, = or !=. A number alone means equal. Counts include all items after tree tools and before type or invalid-only filters. Matching branches keep their items subject to those filters; = 0 keeps empty branches when no item filters are active. Empty text clears the filter."
                     : "Compare full-precision values using >, >=, <, <=, = or !=. A number alone means equal. Geometry uses the selected display units. Length: curves, including circle circumference. Area: rectangles, surfaces and open Breps. Volume: boxes and closed Breps. Rows without that measurement are excluded. Empty text clears the filter.";
                 if (PanelOwner.Session.Error != null) e.Description = PanelOwner.Session.Error + "\n\n" + e.Description;
             }
@@ -1282,7 +1289,7 @@ namespace BetterGhPanel
                 {
                     e.Title = "Filter needs attention";
                     e.Text = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode);
-                    e.Description = PanelOwner.Session.Error + "\n\nEdit the search or use Reset to clear the filter.";
+                    e.Description = PanelOwner.Session.Error + "\n\nEdit the filter or use Reset to clear it.";
                     return;
                 }
                 e.Title = "Row selection and copy";

@@ -40,7 +40,7 @@ internal static class FilterCanvasChecks
         foreach (var kind in new[] { CanvasMenuKind.SearchMode, CanvasMenuKind.Comparison })
         {
             var menu = new CanvasMenu();
-            var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Volume, Search = "!= 10" };
+            var options = new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = "!= 10" };
             menu.Toggle(kind, PanelSnapshot.Empty, options);
             menu.Layout(panel, search, search, search, search, search);
             Require(panel.Contains(menu.Bounds), "Compact filter menus stay inside the panel");
@@ -55,15 +55,31 @@ internal static class FilterCanvasChecks
                 }
                 menu.TrySelect(new PointF(menu.Bounds.Right - 10, menu.Bounds.Bottom - 5), out _);
             }
-            Require(reachable.Count == 6 && menu.Label(5).Length > 0, "Every filter and comparison remains reachable through compact paging");
-            Require(menu.IsSelected(5, options, PanelUnitConversion.None, -1), "Saved mode and comparison remain visibly checked");
+            int count = kind == CanvasMenuKind.SearchMode ? 7 : 6;
+            Require(reachable.Count == count && menu.Label(count - 1).Length > 0, "Every filter and comparison remains reachable through compact paging");
+            Require(menu.IsSelected(count - 1, options, PanelUnitConversion.None, -1), "Saved mode and comparison remain visibly checked");
+            if (kind == CanvasMenuKind.Comparison)
+            {
+                options.Search = "5";
+                Require(menu.IsSelected(4, options, PanelUnitConversion.None, -1),
+                    "A bare list-length threshold visibly checks implicit equality");
+                options.SearchMode = PanelSearchMode.Text;
+                Require(!menu.IsSelected(4, options, PanelUnitConversion.None, -1),
+                    "A literal numeric text search is not marked as an equality comparison");
+            }
         }
         Require(CanvasMenu.WithComparison("== 12.5", 0) == "> 12.5" &&
             CanvasMenu.WithComparison("<= -1e3", 5) == "!= -1e3", "Changing operators preserves a finite numeric threshold");
         Require(CanvasMenu.WithComparison("Wall.*", 1) == ">= " && CanvasMenu.WithComparison("NaN", 0) == "> ",
             "Switching from text or nonfinite input starts with a clean numeric threshold");
+        Require(CanvasMenu.ApplyComparison(" 5 ", ">") == "> 5" &&
+            CanvasMenu.ApplyComparison(" <= 6 ", ">") == "<= 6" &&
+            CanvasMenu.ApplyComparison("== 2", ">") == "== 2" &&
+            CanvasMenu.ApplyComparison(" ", ">") == "",
+            "The threshold editor preserves explicit pasted comparisons and clears blank input");
         Require(CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 12" }) == "Area > 12" &&
-            CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "Wall" }) == ".* Wall",
+            CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "Wall" }) == ".* Wall" &&
+            CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = ">= 2" }) == "List >= 2",
             "Active filter mode is visible in the compact search control");
     }
 

@@ -54,7 +54,7 @@ namespace BetterGhPanel
         internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
 
         public BetterPanelComponent() : base("Panel+", "Panel+",
-            "Inspect and manipulate typed data trees on the canvas. Tree tools, unit conversion and filters change the output; sorting and decimal formatting affect the view.",
+            "Inspect and manipulate typed data trees on the canvas. Tree tools, unit conversion and filters change the output. Sorting changes view order; decimal formatting never rounds wire values, and text/regex filters use the displayed formatting.",
             "Params", "Util") { }
 
         public override Guid ComponentGuid => new Guid("51DC646E-5F72-496A-8B40-628478541F44");
@@ -86,10 +86,12 @@ namespace BetterGhPanel
                 if (_session == null)
                 {
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
+                    _session.SetDecimalPlacesResolver(() => DecimalPlaces);
                     if (Locked) _session.InvalidateInput(false, suspended: true);
                     _session.SetDetailResolver(position => position < _sourceItems.Length ? _sourceItems[position]?.ToString() ?? "<null>" : null);
                     _session.SetGeometryDetailResolver(position => position < _sourceItems.Length
                         ? GeometryHints.PrepareMeasurement(_sourceItems[position], _geometryUnits) : null);
+                    _savedOptions.DecimalPlaces = DecimalPlaces;
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
@@ -121,7 +123,7 @@ namespace BetterGhPanel
             CanvasTextInput.CloseActive(this);
             (Attributes as BetterPanelAttributes)?.ResetViewState();
             var previousResult = Session.Result;
-            Session.ResetView();
+            Session.UpdateQuery(new PanelQueryOptions { DecimalPlaces = DecimalPlaces });
             if (ReferenceEquals(previousResult, Session.Result)) (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
         }
 
@@ -277,19 +279,25 @@ namespace BetterGhPanel
                 try { ExpireSolution(true); }
                 finally { _retainGeometryMeasurements = false; }
             }
+            else
+            {
+                var options = Session.Options;
+                options.DecimalPlaces = DecimalPlaces;
+                Session.UpdateQuery(options);
+            }
             Instances.ActiveCanvas?.Invalidate();
         }
 
         internal string DisplayValue(PanelSnapshot snapshot, PanelRow row, int sourcePosition = -1)
         {
-            if (!row.IsValid) return "Invalid · " + row.DisplayValue;
-            var geometry = Session.GetGeometryDetails(snapshot, sourcePosition) ?? row.GeometryInfo;
-            if (geometry != null)
-                return geometry.FormatCompact(snapshot.UnitConversion, DecimalPlaces) +
-                    (Session.HasGeometryMeasurement(snapshot, sourcePosition) && Session.GetGeometryDetails(snapshot, sourcePosition) == null
-                        ? " · measurement unavailable" : Session.IsGeometryPending(snapshot, sourcePosition) ? " · measuring…" : "");
-            return row.NumericValue.HasValue && (snapshot.UnitConversion != PanelUnitConversion.None || DecimalPlaces >= 0)
-                ? PanelUnits.Format(row.NumericValue.Value, snapshot.UnitConversion, DecimalPlaces) : row.DisplayValue;
+            var geometry = Session.GetGeometryDetails(snapshot, sourcePosition);
+            if (geometry == null)
+                geometry = Session.HasGeometryMeasurement(snapshot, sourcePosition)
+                    ? row.GeometryInfo?.WithUnavailableMeasurement() : row.GeometryInfo;
+            var display = PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry);
+            if (row.IsValid && geometry != null)
+                return display + (Session.IsGeometryPending(snapshot, sourcePosition) ? " · measuring…" : "");
+            return display;
         }
 
         internal string CopyValue(PanelSnapshot snapshot, int position)
@@ -297,6 +305,8 @@ namespace BetterGhPanel
             if (!ReferenceEquals(snapshot, Session.Snapshot) || position < 0 || position >= snapshot.Rows.Count)
                 throw new InvalidOperationException("The selected data has changed. Select the rows again.");
             var row = snapshot.Rows[position];
+            if (!row.IsValid)
+                return PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces);
             if (row.NumericValue.HasValue)
                 return PanelUnits.Format(row.NumericValue.Value, PanelUnitConversion.None, DecimalPlaces, CultureInfo.InvariantCulture);
             var geometry = Session.GetGeometryDetails(snapshot, position) ?? row.GeometryInfo;
@@ -309,7 +319,7 @@ namespace BetterGhPanel
             }
             if (row.IsValid && geometry?.CanMeasure == true)
                 throw new InvalidOperationException("A selected measurement is unavailable.");
-            return Session.GetDisplayValue(snapshot, position);
+            return PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry);
         }
 
         internal void CancelPendingCopy()
@@ -426,7 +436,7 @@ namespace BetterGhPanel
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p) =>
-            p.AddGenericParameter("Data", "D", "Matching typed items after Simplify → Trim → Flatten → Reverse → Create set → unit conversion → filters. Sorting and decimal formatting affect only the view.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Data", "D", "Matching typed items after Simplify → Trim → Flatten → Reverse → Create set → unit conversion → filters. Output keeps tree order and full numeric precision. Text/regex filters use displayed formatting; sorting changes only view order.", GH_ParamAccess.tree);
 
         private void ScheduleOutput()
         {
@@ -452,7 +462,8 @@ namespace BetterGhPanel
 
         private static bool SameOutputFilter(PanelQueryOptions left, PanelQueryOptions right) =>
             left.Search == right.Search && left.SearchMode == right.SearchMode && left.TypeName == right.TypeName &&
-            left.OnlyInvalid == right.OnlyInvalid && left.BranchPath == right.BranchPath && left.BranchPrefix == right.BranchPrefix;
+            left.OnlyInvalid == right.OnlyInvalid && left.BranchPath == right.BranchPath && left.BranchPrefix == right.BranchPrefix &&
+            (left.DecimalPlaces == right.DecimalPlaces || !PanelQueryEngine.UsesDisplayedText(right));
 
         private static bool HasOutputFilter(PanelQueryOptions options) =>
             (options.SearchMode == PanelSearchMode.Regex ? !string.IsNullOrEmpty(options.Search) : !string.IsNullOrWhiteSpace(options.Search)) ||
@@ -466,6 +477,7 @@ namespace BetterGhPanel
             {
                 ++_outputRequest;
                 _queryTree = null;
+                if (!_retainGeometryMeasurements) _sourceItems = Array.Empty<IGH_Goo?>();
                 _reuseQuery = false;
                 CancelPendingCopy();
                 ClearHighlight();
@@ -490,6 +502,12 @@ namespace BetterGhPanel
                 {
                     CancelPendingCopy();
                     ClearHighlight();
+                    var options = Session.Options;
+                    if (options.DecimalPlaces != DecimalPlaces)
+                    {
+                        options.DecimalPlaces = DecimalPlaces;
+                        Session.UpdateQuery(options);
+                    }
                     tree = PanelTreeOperations.ApplyWithOccurrences(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, CreateSetTree,
                         out var setOccurrences);
                     _queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.Apply(tree, UnitConversion));
@@ -673,6 +691,7 @@ namespace BetterGhPanel
             UnitConversion = Enum.IsDefined(typeof(PanelUnitConversion), conversion)
                 ? (PanelUnitConversion)conversion : PanelUnitConversion.None;
             DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, decimals));
+            _savedOptions.DecimalPlaces = DecimalPlaces;
             _restoringView = true;
             try { _session?.UpdateQuery(_savedOptions); }
             finally { _restoringView = false; }

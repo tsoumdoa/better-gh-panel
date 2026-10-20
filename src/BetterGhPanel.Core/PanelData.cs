@@ -65,12 +65,14 @@ namespace BetterGhPanel.Core
             if (branches == null) throw new ArgumentNullException(nameof(branches));
             var rowCopy = new PanelRow[rows.Count];
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            bool hasMeasurableGeometry = false;
             for (var i = 0; i < rowCopy.Length; i++)
             {
                 var row = rows[i] ?? throw new ArgumentException("Rows must not contain null records.", nameof(rows));
                 rowCopy[i] = row;
                 typeCounts.TryGetValue(row.TypeName, out var count);
                 typeCounts[row.TypeName] = count + 1;
+                if (row.IsValid && !row.IsNull && row.GeometryInfo?.CanMeasure == true) hasMeasurableGeometry = true;
             }
             var branchCopy = new PanelBranch[branches.Count];
             var branchCounts = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -81,6 +83,7 @@ namespace BetterGhPanel.Core
                 branchCounts[branch.Path] = branch.ItemCount;
             }
             UnitConversion = unitConversion;
+            HasMeasurableGeometry = hasMeasurableGeometry;
             Rows = Array.AsReadOnly(rowCopy);
             Branches = Array.AsReadOnly(branchCopy);
             TypeCounts = new ReadOnlyDictionary<string, int>(typeCounts);
@@ -88,6 +91,8 @@ namespace BetterGhPanel.Core
         }
 
         public PanelUnitConversion UnitConversion { get; }
+        /// <summary>Whether any valid captured row can require a deferred geometry measurement.</summary>
+        public bool HasMeasurableGeometry { get; }
         public IReadOnlyList<PanelRow> Rows { get; }
         public IReadOnlyList<PanelBranch> Branches { get; }
         /// <summary>Source type counts for populating filters without another full-tree scan.</summary>
@@ -109,13 +114,17 @@ namespace BetterGhPanel.Core
         Value,
         Length,
         Area,
-        Volume
+        Volume,
+        // Append modes so saved definitions retain their existing values.
+        ListLength
     }
 
     public sealed class PanelQueryOptions
     {
         public string Search { get; set; } = string.Empty;
         public PanelSearchMode SearchMode { get; set; } = PanelSearchMode.Text;
+        /// <summary>Presentation precision for text/regex matching; numeric predicates retain full precision.</summary>
+        public int DecimalPlaces { get; set; } = PanelUnits.AutomaticDecimals;
         public string? TypeName { get; set; }
         public string? BranchPath { get; set; }
         public bool BranchPrefix { get; set; }
@@ -126,6 +135,7 @@ namespace BetterGhPanel.Core
         {
             Search = Search,
             SearchMode = SearchMode,
+            DecimalPlaces = DecimalPlaces,
             TypeName = TypeName,
             BranchPath = BranchPath,
             BranchPrefix = BranchPrefix,

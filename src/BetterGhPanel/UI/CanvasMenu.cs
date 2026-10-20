@@ -18,7 +18,7 @@ namespace BetterGhPanel.UI
             "Labels follow the Preview scope and remain active in a minimized panel. Overlapping labels are hidden, with selected rows taking priority; zoom in or select fewer items to separate them.";
         private static readonly string[] SortLabels = { "Source order", "Value ascending", "Value descending" };
         private static readonly string[] PreviewLabels = { "Selected", "Filtered results", "Off" };
-        private static readonly string[] SearchLabels = { "Text search", "Text · regular expression", "Numeric value", "Geometry · length", "Geometry · area", "Geometry · volume" };
+        private static readonly string[] SearchLabels = { "Text search", "Text · regular expression", "Numeric value", "Geometry · length", "Geometry · area", "Geometry · volume", "List length · per branch" };
         private static readonly string[] ComparisonLabels = { "Greater than  >", "At least  ≥", "Less than  <", "At most  ≤", "Equal to  =", "Not equal to  ≠" };
         private static readonly string[] Comparisons = { ">", ">=", "<", "<=", "=", "!=" };
         private PanelSnapshot _snapshot = PanelSnapshot.Empty;
@@ -159,7 +159,13 @@ namespace BetterGhPanel.UI
                     index == PanelUnits.ConversionCount ? decimals < 0 : decimals >= 0;
             if (Kind == CanvasMenuKind.Sort) return index == (int)options.SortMode;
             if (Kind == CanvasMenuKind.SearchMode) return index == (int)options.SearchMode;
-            if (Kind == CanvasMenuKind.Comparison) return ComparisonAt(index) == ComparisonPrefix(options.Search);
+            if (Kind == CanvasMenuKind.Comparison)
+            {
+                string comparison = ComparisonPrefix(options.Search);
+                if (comparison.Length == 0 && options.SearchMode >= PanelSearchMode.Value && IsFiniteNumber(options.Search))
+                    comparison = "=";
+                return ComparisonAt(index) == comparison;
+            }
             if (Kind == CanvasMenuKind.Type) return index == 0 ? options.TypeName == null && !options.OnlyInvalid :
                 index == 1 ? options.OnlyInvalid : TypeNameAt(index) == options.TypeName;
             return index == 0 ? options.BranchPath == null : index >= 2 && BranchPathAt(index) == options.BranchPath;
@@ -173,7 +179,8 @@ namespace BetterGhPanel.UI
         internal static string SearchHint(PanelQueryOptions options)
         {
             string prefix = options.SearchMode == PanelSearchMode.Regex ? ".* " :
-                options.SearchMode == PanelSearchMode.Text ? "" : options.SearchMode + " ";
+                options.SearchMode == PanelSearchMode.Text ? "" :
+                options.SearchMode == PanelSearchMode.ListLength ? "List " : options.SearchMode + " ";
             return prefix + (string.IsNullOrEmpty(options.Search) ?
                 options.SearchMode == PanelSearchMode.Text ? "Search…" : options.SearchMode == PanelSearchMode.Regex ? "Pattern…" : "filter…" : options.Search);
         }
@@ -185,10 +192,22 @@ namespace BetterGhPanel.UI
             if (prefix.Length > 0) value = value.Substring(value.StartsWith("==", StringComparison.Ordinal) ? 2 : prefix.Length).Trim();
             // Switching from text or regex starts with an empty threshold; an
             // existing numeric threshold survives an operator change.
-            if (!double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double number) ||
-                double.IsNaN(number) || double.IsInfinity(number)) value = "";
+            if (!IsFiniteNumber(value)) value = "";
             return ComparisonAt(index) + " " + value;
         }
+
+        internal static string ApplyComparison(string text, string comparison)
+        {
+            string value = (text ?? "").Trim();
+            // The editor initially shows only the threshold. Accept an explicit
+            // operator too, so pasted comparisons mean exactly what they say.
+            return value.Length == 0 ? string.Empty :
+                ComparisonPrefix(value).Length > 0 ? value : comparison + " " + value;
+        }
+
+        private static bool IsFiniteNumber(string value) =>
+            double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double number) &&
+            !double.IsNaN(number) && !double.IsInfinity(number);
 
         private static string ComparisonPrefix(string search)
         {
