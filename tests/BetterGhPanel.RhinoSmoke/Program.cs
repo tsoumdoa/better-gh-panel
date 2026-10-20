@@ -142,6 +142,9 @@ internal static class Program
     private static async Task<int> ExecuteSmoke()
     {
         var assembly = Assembly.LoadFrom(_plugin);
+        Assert(string.Equals(Path.GetFullPath(assembly.Location), _plugin, StringComparison.OrdinalIgnoreCase),
+            "Native checks load the exact requested plugin: " + assembly.Location);
+        Console.WriteLine("Plugin version: " + assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion);
         if (_itemOrderCaptureOnly)
         {
             await ItemOrderUiChecks.CaptureViewport(assembly);
