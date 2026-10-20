@@ -9,7 +9,8 @@ namespace BetterGhPanel.Core
     {
         public PanelRow(int originalIndex, string path, string typeName,
             string displayValue, double? numericValue, bool isNull = false, bool isValid = true,
-            PanelGeometryInfo? geometryInfo = null, string invalidReason = "", string? stringValue = null)
+            PanelGeometryInfo? geometryInfo = null, string invalidReason = "", string? stringValue = null,
+            PanelSetOccurrences? setOccurrences = null)
         {
             OriginalIndex = originalIndex;
             Path = path ?? string.Empty;
@@ -21,6 +22,7 @@ namespace BetterGhPanel.Core
             GeometryInfo = geometryInfo;
             InvalidReason = invalidReason;
             StringValue = stringValue;
+            SetOccurrences = setOccurrences;
         }
 
         public int OriginalIndex { get; }
@@ -34,6 +36,7 @@ namespace BetterGhPanel.Core
         public string InvalidReason { get; }
         /// <summary>The exact captured string scalar, not an arbitrary goo's display summary.</summary>
         public string? StringValue { get; }
+        public PanelSetOccurrences? SetOccurrences { get; }
     }
 
     public sealed class PanelBranch

@@ -80,6 +80,37 @@ internal static class CreateSetChecks
         var unique = Apply(large);
         Check(unique.DataCount == 1000 && ((GH_Integer)unique.Branches[0][999]).Value == 999 && large.DataCount == 100000,
             "Large lists produce a stable set without changing the input");
+
+        var tracked = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!
+            .GetMethod("ApplyWithOccurrences", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var arguments = new object?[] { simple, 0, false, true, true, true, null };
+        var trackedTree = (GH_Structure<IGH_Goo>)tracked.Invoke(null, arguments)!;
+        var groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+        Check(groups.Select(group => group.Count).SequenceEqual(new[] { 1, 2, 2 }) &&
+            groups[1].Locations.Select(address => address.Path + "[" + address.ItemIndex + "]")
+                .SequenceEqual(new[] { "{7;1}[0]", "{7;0}[1]" }) && groups[1].BranchCount == 2 &&
+            groups[2].Locations.Select(address => address.ItemIndex).SequenceEqual(new[] { 2, 0 }),
+            "Flatten and Reverse preserve exact original addresses for every occurrence, including the first item");
+        var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!
+            .GetMethod("CaptureWithOccurrences", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var captured = (PanelSnapshot)capture.Invoke(null, new object?[] { trackedTree, null, PanelUnitConversion.None, "mm", groups })!;
+        Check(captured.Rows[1].SetOccurrences == groups[1] && captured.Rows[1].NumericValue == 1,
+            "Captured counts remain aligned with the retained typed rows");
+        arguments = new object?[] { simple, 1, true, false, false, true, null };
+        tracked.Invoke(null, arguments);
+        groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+        Check(groups.Select(group => group.Count).SequenceEqual(new[] { 2, 2, 1 }) &&
+            groups[1].Locations[0].Path == "{7;0}" && groups[1].Locations[1].Path == "{7;1}",
+            "Simplify and Trim preserve original locations when output paths merge");
+        arguments = new object?[] { source, 0, false, false, false, true, null };
+        tracked.Invoke(null, arguments);
+        groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+        Check(groups[0].Count == 2 && groups[0].BranchCount == 1 && groups[10].Count == 2 &&
+            groups[11].Count == 1 && groups[12].Count == 1 && groups[13].Count == 1 && groups[14].Count == 1 && groups[15].Count == 2,
+            "Per-branch counts follow exact equality, null grouping and invalid/custom pass-through semantics");
+        arguments = new object?[] { source, 0, false, false, false, false, null };
+        Check(ReferenceEquals(tracked.Invoke(null, arguments), source) && arguments[6] == null,
+            "Disabled Create set retains passthrough and does not allocate occurrence metadata");
     }
 
     internal static async Task Run(Assembly assembly)

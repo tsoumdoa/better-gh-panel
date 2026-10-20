@@ -160,6 +160,7 @@ internal static class Program
         await FilterUiChecks.Run(assembly);
         await StatisticsUiChecks.Run(assembly);
         await CreateSetChecks.Run(assembly);
+        await SetDetailsChecks.Run(assembly);
         await ItemOrderUiChecks.Run(assembly);
         var componentType = assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!;
         var component = (GH_Component)Activator.CreateInstance(componentType)!;

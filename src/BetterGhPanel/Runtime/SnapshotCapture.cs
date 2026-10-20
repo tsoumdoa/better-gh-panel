@@ -10,8 +10,14 @@ namespace BetterGhPanel.Runtime
     internal static class SnapshotCapture
     {
         public static PanelSnapshot Capture(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
-            PanelUnitConversion conversion = PanelUnitConversion.None, string geometryUnits = "units")
+            PanelUnitConversion conversion = PanelUnitConversion.None, string geometryUnits = "units") =>
+            CaptureWithOccurrences(tree, out sourceItems, conversion, geometryUnits, null);
+
+        internal static PanelSnapshot CaptureWithOccurrences(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
+            PanelUnitConversion conversion, string geometryUnits, IReadOnlyList<PanelSetOccurrences>? setOccurrences)
         {
+            if (setOccurrences != null && setOccurrences.Count != tree.DataCount)
+                throw new ArgumentException("Set occurrences must match the captured tree.", nameof(setOccurrences));
             var rows = new List<PanelRow>(tree.DataCount);
             var branches = new List<PanelBranch>(tree.PathCount);
             var source = new List<IGH_Goo?>(tree.DataCount);
@@ -53,7 +59,7 @@ namespace BetterGhPanel.Runtime
                         invalidReason = "Value could not be read.";
                     }
                     rows.Add(new PanelRow(i, path, type, display, number, item == null, valid, geometry, invalidReason,
-                        item is GH_String text ? text.Value : null));
+                        item is GH_String text ? text.Value : null, setOccurrences?[rows.Count]));
                     source.Add(item);
                 }
             }

@@ -16,7 +16,7 @@ using Grasshopper.Kernel.Attributes;
 #pragma warning disable CA1416
 namespace BetterGhPanel
 {
-    internal sealed class BetterPanelAttributes : GH_ComponentAttributes
+    internal sealed partial class BetterPanelAttributes : GH_ComponentAttributes
     {
         private const float RowHeight = 17, BranchHeight = 15, HeaderHeight = CanvasPanelSize.HeaderHeight;
         private static readonly Color Ink = Color.FromArgb(49, 55, 53);
@@ -53,6 +53,10 @@ namespace BetterGhPanel
 
         internal void ResetViewState()
         {
+            _setDetails.Close();
+            _setHits.Clear();
+            _setControlsVisible = false;
+            LayoutSetDetails();
             _offset = 0;
             ClearRowSelection();
             PanelOwner.ClearHighlight();
@@ -129,6 +133,7 @@ namespace BetterGhPanel
 
         internal void ClosePresentationControls()
         {
+            _setHits.Clear();
             _menu.Close();
             CloseRowMenu();
             _resizing = _scrolling = _rowContextHandled = false;
@@ -138,6 +143,7 @@ namespace BetterGhPanel
 
         internal void OnQueryCompleted()
         {
+            LayoutSetDetails();
             var session = PanelOwner.Session;
             if (!StatisticsAreCurrent()) InvalidateStatistics();
             if (session.IsBusy) { PanelOwner.ClearHighlight(); return; }
@@ -186,6 +192,7 @@ namespace BetterGhPanel
                 PositionPorts(Owner.Params.Input, true);
                 PositionPorts(Owner.Params.Output, false);
                 Bounds = new RectangleF(_panel.X - 6, _panel.Y, _panel.Width + 12, _panel.Height);
+                LayoutSetDetails();
                 return;
             }
             _restore = RectangleF.Empty;
@@ -225,7 +232,7 @@ namespace BetterGhPanel
             // expose actual wire grips at our rectangle instead of a hidden default capsule.
             PositionPorts(Owner.Params.Input, true);
             PositionPorts(Owner.Params.Output, false);
-            Bounds = new RectangleF(_panel.X - 6, _panel.Y, _panel.Width + 12, _panel.Height);
+            LayoutSetDetails();
             LayoutMenu();
         }
 
@@ -252,6 +259,9 @@ namespace BetterGhPanel
         {
             if (channel == GH_CanvasChannel.Wires) { base.Render(canvas, graphics, channel); return; }
             if (channel != GH_CanvasChannel.Objects) return;
+            _setControlsVisible = false;
+            _setHits.Clear();
+            LayoutSetDetails();
             CanvasTextInput.Maintain(canvas);
             var session = PanelOwner.Session;
             var visibleRegion = canvas.Viewport.VisibleRegion;
@@ -321,7 +331,9 @@ namespace BetterGhPanel
                     DrawViewAction(graphics, _jump, false);
                     DrawViewAction(graphics, _reset, true);
                     RenderRows(graphics, result, visibleRegion, font, small, mono, trim);
+                    _setControlsVisible = !PanelOwner.Locked && session.HasCurrentResult;
                     RenderFooter(graphics, result, small, trim);
+                    RenderSetDetails(graphics, result, small, mono, trim);
                     if (_menu.Kind != CanvasMenuKind.None) RenderMenu(graphics, small, mono, trim);
                     if (_rowMenuResult != null) RenderRowMenu(graphics, small, trim);
                     using (var gripPen = new Pen(Color.FromArgb(165, 173, 166), 1))
@@ -385,6 +397,7 @@ namespace BetterGhPanel
 
         private void RenderRows(Graphics g, PanelQueryResult result, RectangleF visibleRegion, Font font, Font small, Font mono, StringFormat trim)
         {
+            _setHits.Clear();
             _rowHits.Clear();
             _branchHits.Clear();
             _shown = 0;
@@ -427,7 +440,8 @@ namespace BetterGhPanel
             bool showTypes = result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
             using var rowRenderer = new CanvasRowRenderer(g, result.Snapshot.Rows.Count, sorted);
             // Grouped rows already show their path in the branch heading.
-            float pathWidth = grouped ? 0 : Math.Min(80, Math.Max(0, _list.Width - rowRenderer.GutterWidth - (showTypes ? 70 : 12) - 40));
+            float pathWidth = grouped ? 0 : Math.Min(80, Math.Max(0, _list.Width - rowRenderer.GutterWidth -
+                (showTypes ? 70 : 12) - 40 - (PanelOwner.CreateSetTree ? SetCountWidth : 0)));
             float valueStart = rowRenderer.GutterWidth + pathWidth;
             _offset = Math.Max(0, Math.Min(Math.Max(0, result.RowPositions.Count - 1), _offset));
             var clip = g.Save();
@@ -463,10 +477,12 @@ namespace BetterGhPanel
                     // Geometry summaries already name their type; reserve the extra
                     // label only for values whose text does not identify their type.
                     bool showRowType = showTypes && row.GeometryInfo == null;
+                    float setWidth = row.SetOccurrences == null ? 0 : SetCountWidth;
                     rowRenderer.DrawValue(g, PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition), font, Ink,
-                        new RectangleF(bounds.X + valueStart + 3, y, Math.Max(0, bounds.Width - valueStart - (showRowType ? 73 : 15)), RowHeight), row.NumericValue.HasValue);
+                        new RectangleF(bounds.X + valueStart + 3, y, Math.Max(0, bounds.Width - valueStart - (showRowType ? 73 : 15) - setWidth), RowHeight), row.NumericValue.HasValue);
                     if (showRowType)
-                        rowRenderer.DrawCell(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted, new RectangleF(bounds.Right - 64, y, 60, RowHeight), true);
+                        rowRenderer.DrawCell(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted, new RectangleF(bounds.Right - 64 - setWidth, y, 60, RowHeight), true);
+                    DrawSetCount(g, rowRenderer, row, bounds, sourcePosition, i + 1, small);
                     _rowHits.Add(new RowHit(bounds, sourcePosition, i + 1));
                     _shown++;
                     y += RowHeight;
@@ -749,6 +765,12 @@ namespace BetterGhPanel
                 return base.RespondToMouseDown(sender, e);
             }
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDown(sender, e);
+            LayoutSetDetails();
+            if (e.Button == MouseButtons.Right && _setDetails.Bounds.Contains(e.CanvasLocation))
+            {
+                _rowContextHandled = true;
+                return GH_ObjectResponse.Handled;
+            }
             if (e.Button == MouseButtons.Right) return RespondToRowContextMenu(sender, e);
             if (e.Button != MouseButtons.Left) return base.RespondToMouseDown(sender, e);
             var point = e.CanvasLocation;
@@ -811,6 +833,7 @@ namespace BetterGhPanel
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
+            if (HandleSetDetailsClick(sender, e)) return GH_ObjectResponse.Handled;
             if (_resize.Contains(point))
             {
                 PanelOwner.RecordUndoEvent("Resize Panel+");
@@ -1023,8 +1046,9 @@ namespace BetterGhPanel
             // cannot act on. An already captured gesture still needs its moves.
             if (!_resizing && !_scrolling && sender.Viewport.Zoom < 0.5f)
                 return base.RespondToMouseMove(sender, e);
+            bool setControl = SetControlAt(e.CanvasLocation);
             sender.Cursor = _resizing || _resize.Contains(e.CanvasLocation) ? Cursors.SizeNWSE :
-                _move.Contains(e.CanvasLocation) ? Cursors.SizeAll : Cursors.Default;
+                _move.Contains(e.CanvasLocation) ? Cursors.SizeAll : setControl ? Cursors.Hand : Cursors.Default;
             if (_menu.Hover(e.CanvasLocation)) sender.Invalidate();
             int rowMenuHovered = _rowMenuResult != null && _rowMenuBounds.Contains(e.CanvasLocation)
                 ? (int)((e.CanvasY - _rowMenuBounds.Y) / 20) : -1;
@@ -1048,7 +1072,7 @@ namespace BetterGhPanel
                 return GH_ObjectResponse.Capture;
             }
             // Grasshopper replaces the cursor after an ignored move event.
-            if (_move.Contains(e.CanvasLocation) || _resize.Contains(e.CanvasLocation)) return GH_ObjectResponse.Handled;
+            if (_move.Contains(e.CanvasLocation) || _resize.Contains(e.CanvasLocation) || setControl) return GH_ObjectResponse.Handled;
             return base.RespondToMouseMove(sender, e);
         }
 
@@ -1071,6 +1095,8 @@ namespace BetterGhPanel
                 return GH_ObjectResponse.Handled;
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDoubleClick(sender, e);
             if (_rowMenuResult != null || _menu.Kind != CanvasMenuKind.None) return GH_ObjectResponse.Handled;
+            if (_setDetails.Bounds.Contains(e.CanvasLocation) || _setHits.Any(hit => hit.Bounds.Contains(e.CanvasLocation)))
+                return GH_ObjectResponse.Handled;
             if (_list.Contains(e.CanvasLocation))
             {
                 ClearRowSelection(sender);
@@ -1084,6 +1110,7 @@ namespace BetterGhPanel
         public override void SetupTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             base.SetupTooltip(point, e);
+            if (!PanelOwner.PanelMinimized && _menu.Kind == CanvasMenuKind.None && _rowMenuResult == null && SetDetailsTooltip(point, e)) return;
             if (_menu.Kind == CanvasMenuKind.Preview && _menu.Bounds.Contains(point))
             {
                 int row = (int)((point.Y - _menu.Bounds.Y) / 20);

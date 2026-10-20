@@ -43,8 +43,66 @@ namespace BetterGhPanel.Runtime
 
         internal static GH_Structure<IGH_Goo> Apply(GH_Structure<IGH_Goo> source,
             int trimDepth, bool simplify, bool flatten, bool reverse, bool createSet)
+            => ApplyWithOccurrences(source, trimDepth, simplify, flatten, reverse, createSet, out _);
+
+        internal static GH_Structure<IGH_Goo> ApplyWithOccurrences(GH_Structure<IGH_Goo> source,
+            int trimDepth, bool simplify, bool flatten, bool reverse, bool createSet,
+            out IReadOnlyList<PanelSetOccurrences>? occurrences)
         {
-            if (trimDepth == 0 && !simplify && !flatten && !reverse && !createSet) return source;
+            occurrences = null;
+            var result = Transform(source, trimDepth, simplify, flatten, reverse);
+            if (!createSet) return result;
+            if (ReferenceEquals(result, source)) result = CopyStructure(source);
+
+            // Transform source-position markers with exactly the same path/list operations.
+            // This retains original input addresses even after branches merge or reverse.
+            var markers = new GH_Structure<IGH_Goo>();
+            var addresses = new List<PanelSourceAddress>(source.DataCount);
+            for (int b = 0; b < source.PathCount; b++)
+            {
+                var path = new GH_Path(source.Paths[b]);
+                var pathText = path.ToString();
+                markers.EnsurePath(path);
+                for (int i = 0; i < source.Branches[b].Count; i++)
+                {
+                    markers.Append(new GH_Integer(addresses.Count), path);
+                    addresses.Add(new PanelSourceAddress(pathText, i));
+                }
+            }
+            markers = Transform(markers, trimDepth, simplify, flatten, reverse);
+            var groups = new List<PanelSetOccurrences>();
+            var nullKey = new object();
+            for (int b = 0; b < result.PathCount; b++)
+            {
+                var branch = result.Branches[b];
+                var seen = new Dictionary<object, int>();
+                var locations = new List<List<PanelSourceAddress>>();
+                int count = 0;
+                for (int i = 0; i < branch.Count; i++)
+                {
+                    var item = branch[i];
+                    var address = addresses[((GH_Integer)markers.Branches[b][i]).Value];
+                    var key = item == null ? nullKey : SetKey(item);
+                    if (key != null && seen.TryGetValue(key, out int group))
+                    {
+                        locations[group].Add(address);
+                        continue;
+                    }
+                    if (key != null) seen.Add(key, count);
+                    locations.Add(new List<PanelSourceAddress> { address });
+                    branch[count++] = item!;
+                }
+                branch.RemoveRange(count, branch.Count - count);
+                foreach (var location in locations) groups.Add(new PanelSetOccurrences(location));
+            }
+            occurrences = groups.AsReadOnly();
+            return result;
+        }
+
+        private static GH_Structure<IGH_Goo> Transform(GH_Structure<IGH_Goo> source,
+            int trimDepth, bool simplify, bool flatten, bool reverse)
+        {
+            if (trimDepth == 0 && !simplify && !flatten && !reverse) return source;
             var result = source;
             // Trim creates its own structure; in-place tools need a copy first.
             if (simplify || trimDepth == 0)
@@ -67,31 +125,6 @@ namespace BetterGhPanel.Runtime
             }
             if (flatten) result.Flatten(new GH_Path(0));
             if (reverse) result.Reverse();
-            if (createSet)
-            {
-                foreach (var branch in result.Branches)
-                {
-                    var seen = new HashSet<object>();
-                    bool seenNull = false;
-                    int count = 0;
-                    for (int i = 0; i < branch.Count; i++)
-                    {
-                        var item = branch[i];
-                        if (item == null)
-                        {
-                            if (seenNull) continue;
-                            seenNull = true;
-                        }
-                        else
-                        {
-                            var key = SetKey(item);
-                            if (key != null && !seen.Add(key)) continue;
-                        }
-                        branch[count++] = item!;
-                    }
-                    branch.RemoveRange(count, branch.Count - count);
-                }
-            }
             return result;
         }
 

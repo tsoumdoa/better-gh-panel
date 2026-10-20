@@ -490,7 +490,8 @@ namespace BetterGhPanel
                 {
                     CancelPendingCopy();
                     ClearHighlight();
-                    tree = PanelTreeOperations.Apply(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, CreateSetTree);
+                    tree = PanelTreeOperations.ApplyWithOccurrences(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, CreateSetTree,
+                        out var setOccurrences);
                     _queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.Apply(tree, UnitConversion));
                     var previousSources = _sourceItems;
                     var previousUnits = _geometryUnits;
@@ -500,7 +501,7 @@ namespace BetterGhPanel
                     _geometryUnits = rhinoDocument == null || rhinoDocument.ModelUnitSystem == Rhino.UnitSystem.None
                         ? "units" : rhinoDocument.GetUnitSystemName(true, false, false, true);
                     if (string.IsNullOrWhiteSpace(_geometryUnits)) _geometryUnits = "units";
-                    var snapshot = SnapshotCapture.Capture(_queryTree, out _sourceItems, UnitConversion, _geometryUnits);
+                    var snapshot = SnapshotCapture.CaptureWithOccurrences(_queryTree, out _sourceItems, UnitConversion, _geometryUnits, setOccurrences);
                     if (_retainGeometryMeasurements && previousUnits == _geometryUnits)
                         Session.AttachConvertedSnapshot(snapshot, position => position < previousSources.Length &&
                             position < _sourceItems.Length && ReferenceEquals(previousSources[position], _sourceItems[position]));
