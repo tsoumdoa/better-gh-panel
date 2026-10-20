@@ -50,53 +50,52 @@ namespace BetterGhPanel.Runtime
             out IReadOnlyList<PanelSetOccurrences>? occurrences)
         {
             occurrences = null;
-            var result = Transform(source, trimDepth, simplify, flatten, reverse);
-            if (!createSet) return result;
-            if (ReferenceEquals(result, source)) result = CopyStructure(source);
+            if (!createSet) return Transform(source, trimDepth, simplify, flatten, reverse);
 
-            // Transform source-position markers with exactly the same path/list operations.
-            // This retains original input addresses even after branches merge or reverse.
+            // Transform only positions; each position carries its typed value and original
+            // address together, so merging or reversing cannot separate them.
             var markers = new GH_Structure<IGH_Goo>();
-            var addresses = new List<PanelSourceAddress>(source.DataCount);
+            var inputs = new List<(IGH_Goo Item, PanelSourceAddress Address)>(source.DataCount);
             for (int b = 0; b < source.PathCount; b++)
             {
                 var path = new GH_Path(source.Paths[b]);
                 var pathText = path.ToString();
-                markers.EnsurePath(path);
+                var positions = markers.EnsurePath(path);
+                positions.Capacity = source.Branches[b].Count;
                 for (int i = 0; i < source.Branches[b].Count; i++)
                 {
-                    markers.Append(new GH_Integer(addresses.Count), path);
-                    addresses.Add(new PanelSourceAddress(pathText, i));
+                    positions.Add(new GH_Integer(inputs.Count));
+                    inputs.Add((source.Branches[b][i], new PanelSourceAddress(pathText, i)));
                 }
             }
             markers = Transform(markers, trimDepth, simplify, flatten, reverse);
             var groups = new List<PanelSetOccurrences>();
             var nullKey = new object();
-            for (int b = 0; b < result.PathCount; b++)
+            // Replace positions with retained values in the same owned tree.
+            for (int b = 0; b < markers.PathCount; b++)
             {
-                var branch = result.Branches[b];
+                var branch = markers.Branches[b];
                 var seen = new Dictionary<object, int>();
                 var locations = new List<List<PanelSourceAddress>>();
                 int count = 0;
                 for (int i = 0; i < branch.Count; i++)
                 {
-                    var item = branch[i];
-                    var address = addresses[((GH_Integer)markers.Branches[b][i]).Value];
+                    var (item, address) = inputs[((GH_Integer)branch[i]).Value];
                     var key = item == null ? nullKey : SetKey(item);
                     if (key != null && seen.TryGetValue(key, out int group))
                     {
                         locations[group].Add(address);
                         continue;
                     }
-                    if (key != null) seen.Add(key, count);
-                    locations.Add(new List<PanelSourceAddress> { address });
+                    if (key != null) seen.Add(key, locations.Count);
+                    locations.Add(new List<PanelSourceAddress>(1) { address });
                     branch[count++] = item!;
                 }
                 branch.RemoveRange(count, branch.Count - count);
                 foreach (var location in locations) groups.Add(new PanelSetOccurrences(location));
             }
             occurrences = groups.AsReadOnly();
-            return result;
+            return markers;
         }
 
         private static GH_Structure<IGH_Goo> Transform(GH_Structure<IGH_Goo> source,

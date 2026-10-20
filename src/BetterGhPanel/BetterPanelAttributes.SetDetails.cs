@@ -30,7 +30,7 @@ namespace BetterGhPanel
         }
 
         private bool SetControlAt(PointF point) => _setControlsVisible && _menu.Kind == CanvasMenuKind.None && _rowMenuResult == null &&
-            !PanelOwner.Locked && RowsAreCurrent(PanelOwner.Session.Result) &&
+            RowsAreCurrent(PanelOwner.Session.Result) &&
             (_setHits.Any(hit => hit.Bounds.Contains(point)) || _setDetails.Collapse.Contains(point) ||
             _setDetails.CanPrevious && _setDetails.Previous.Contains(point) || _setDetails.CanNext && _setDetails.Next.Contains(point));
 

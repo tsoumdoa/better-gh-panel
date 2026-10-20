@@ -81,6 +81,12 @@ internal static class CreateSetChecks
         Check(unique.DataCount == 1000 && ((GH_Integer)unique.Branches[0][999]).Value == 999 && large.DataCount == 100000,
             "Large lists produce a stable set without changing the input");
 
+        var distinct = new GH_Structure<IGH_Goo>();
+        distinct.AppendRange(Enumerable.Range(0, 100000).Select(i => (IGH_Goo)new GH_Integer(i)), new GH_Path(0));
+        var distinctSet = Apply(distinct);
+        Check(distinctSet.DataCount == distinct.DataCount && distinctSet.Branches[0].SequenceEqual(distinct.Branches[0]),
+            "A large all-unique branch retains every typed value in order");
+
         var tracked = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!
             .GetMethod("ApplyWithOccurrences", BindingFlags.Static | BindingFlags.NonPublic)!;
         var arguments = new object?[] { simple, 0, false, true, true, true, null };
@@ -108,6 +114,18 @@ internal static class CreateSetChecks
         Check(groups[0].Count == 2 && groups[0].BranchCount == 1 && groups[10].Count == 2 &&
             groups[11].Count == 1 && groups[12].Count == 1 && groups[13].Count == 1 && groups[14].Count == 1 && groups[15].Count == 2,
             "Per-branch counts follow exact equality, null grouping and invalid/custom pass-through semantics");
+        var mixedInputs = source.Branches.SelectMany((branch, b) => branch.Select((item, i) =>
+            (Address: (source.Paths[b].ToString(), i), Item: item))).ToDictionary(entry => entry.Address, entry => entry.Item);
+        arguments = new object?[] { source, 1, true, true, true, true, null };
+        var mixedSet = ((GH_Structure<IGH_Goo>)tracked.Invoke(null, arguments)!).AllData(true).ToArray();
+        groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+        var mixedLocations = groups.SelectMany(group => group.Locations).Select(address => (address.Path, address.ItemIndex)).ToArray();
+        Check(mixedLocations.Length == source.DataCount && mixedLocations.ToHashSet().SetEquals(mixedInputs.Keys) &&
+            groups.Count == mixedSet.Length && groups.Select((group, i) =>
+                ReferenceEquals(mixedSet[i], mixedInputs[(group.Locations[0].Path, group.Locations[0].ItemIndex)])).All(valid => valid) &&
+            mixedSet.Count(item => item == null) == 1 && mixedSet.Count(item => ReferenceEquals(item, unknown)) == 2 &&
+            mixedSet.Count(item => ReferenceEquals(item, invalid)) == 2,
+            "Combined tools preserve exact source identities and every occurrence for mixed/null/invalid/custom values");
         arguments = new object?[] { source, 0, false, false, false, false, null };
         Check(ReferenceEquals(tracked.Invoke(null, arguments), source) && arguments[6] == null,
             "Disabled Create set retains passthrough and does not allocate occurrence metadata");
