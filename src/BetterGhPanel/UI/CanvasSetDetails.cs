@@ -19,6 +19,7 @@ namespace BetterGhPanel.UI
         internal PanelSetOccurrences? Occurrences => IsOpen ? _snapshot!.Rows[SourcePosition].SetOccurrences : null;
         internal bool IsOpen => _snapshot != null && SourcePosition >= 0;
         internal int Visible => Math.Min(PageSize, (Occurrences?.Count ?? 0) - Offset);
+        internal bool HasPages => Occurrences?.Count > PageSize;
         internal bool CanPrevious => Offset > 0;
         internal bool CanNext => Offset + Visible < (Occurrences?.Count ?? 0);
         internal RectangleF Bounds { get; private set; }
@@ -26,9 +27,9 @@ namespace BetterGhPanel.UI
         internal RectangleF Previous { get; private set; }
         internal RectangleF Next { get; private set; }
         internal RectangleF Table { get; private set; }
-        internal string Summary => Occurrences == null ? "" :
-            $"{Occurrences.Count:N0}× · {Occurrences.DuplicatesRemoved:N0} duplicates removed · {Occurrences.BranchCount:N0} input " +
-            (Occurrences.BranchCount == 1 ? "branch" : "branches");
+        internal static string Summary(PanelSetOccurrences occurrences) =>
+            $"{occurrences.Count:N0} " + (occurrences.Count == 1 ? "occurrence" : "occurrences") +
+            $" · {occurrences.BranchCount:N0} input " + (occurrences.BranchCount == 1 ? "branch" : "branches");
 
         internal void Toggle(PanelSnapshot snapshot, int position)
         {
@@ -73,11 +74,11 @@ namespace BetterGhPanel.UI
             }
             // Keep the drawer's height stable while paging, even on its last page.
             int rows = Math.Min(PageSize, Occurrences!.Count);
-            Bounds = new RectangleF(panel.X, panel.Bottom + 4, panel.Width, 76 + rows * 17);
+            Bounds = new RectangleF(panel.X, panel.Bottom + 4, panel.Width, 57 + rows * 17 + (HasPages ? 19 : 0));
             Collapse = new RectangleF(Bounds.Right - 24, Bounds.Y + 2, 20, 20);
             Table = new RectangleF(Bounds.X + 6, Bounds.Y + 53, Bounds.Width - 12, rows * 17);
-            Previous = new RectangleF(Bounds.Right - 113, Bounds.Bottom - 21, 52, 18);
-            Next = new RectangleF(Bounds.Right - 59, Bounds.Bottom - 21, 52, 18);
+            Previous = HasPages ? new RectangleF(Bounds.Right - 113, Bounds.Bottom - 21, 52, 18) : RectangleF.Empty;
+            Next = HasPages ? new RectangleF(Bounds.Right - 59, Bounds.Bottom - 21, 52, 18) : RectangleF.Empty;
         }
 
         internal PanelSourceAddress? LocationAt(PointF point)

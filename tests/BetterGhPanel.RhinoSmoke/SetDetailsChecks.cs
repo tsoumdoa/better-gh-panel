@@ -89,6 +89,10 @@ internal static class SetDetailsChecks
             Click(CountBounds(0));
             Check(!Property<bool>(details, "IsOpen"), "Clicking the same count badge again collapses the mini table");
 
+            Click(CountBounds(1));
+            Check(Bounds("Previous").IsEmpty && Bounds("Next").IsEmpty && Bounds("Bounds").Bottom - Bounds("Table").Bottom == 4,
+                "Singleton occurrences show their original address without an empty paging footer");
+            Click(Bounds("Collapse"));
             Click(CountBounds(0));
             await Query(new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending });
             Check(Property<int>(details, "SourcePosition") == 0 && !Bounds("Bounds").IsEmpty,
@@ -125,9 +129,12 @@ internal static class SetDetailsChecks
             Paint();
             Check(((ICollection)Field<object>(component.Attributes, "_setHits")).Count == 0,
                 "Low zoom clears hidden set count hit targets");
+            Check(Bounds("Bounds").IsEmpty && component.Attributes.Bounds.Bottom == PanelTestAdapter.Bounds(component, CanvasControl.Panel).Bottom,
+                "Low zoom removes the invisible drawer from component hit testing");
             canvas.Viewport.Zoom = 1;
             canvas.Viewport.ComputeProjection();
             Paint();
+            Check(!Bounds("Bounds").IsEmpty, "Zooming back in restores the inspected occurrence table");
             Click(PanelTestAdapter.Bounds(component, CanvasControl.Close));
             Check(Bounds("Bounds").IsEmpty && Property<bool>(details, "IsOpen"), "Minimizing hides and retains the inspected value");
             Click(PanelTestAdapter.Bounds(component, CanvasControl.Restore));

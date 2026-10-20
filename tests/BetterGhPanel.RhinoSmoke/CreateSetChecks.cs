@@ -111,6 +111,31 @@ internal static class CreateSetChecks
         arguments = new object?[] { source, 0, false, false, false, false, null };
         Check(ReferenceEquals(tracked.Invoke(null, arguments), source) && arguments[6] == null,
             "Disabled Create set retains passthrough and does not allocate occurrence metadata");
+
+        var mixed = new GH_Structure<IGH_Goo>();
+        var mixedPaths = new[] { new GH_Path(2, 3), new GH_Path(2, 3, 0), new GH_Path(2, 4, 0), new GH_Path(9), new GH_Path(9, 0) };
+        for (int b = 0; b < mixedPaths.Length; b++)
+        {
+            mixed.EnsurePath(mixedPaths[b]);
+            mixed.AppendRange(Enumerable.Range(0, b == 2 ? 0 : 11).Select(i => (IGH_Goo)new GH_Integer(i % 3)), mixedPaths[b]);
+        }
+        var originalByAddress = mixed.Branches.SelectMany((branch, b) => branch.Select((item, i) =>
+            (Address: (mixed.Paths[b].ToString(), i), Item: item))).ToDictionary(entry => entry.Address, entry => entry.Item);
+        foreach (int trim in new[] { 0, 1, 2, 5 })
+        for (int flags = 0; flags < 8; flags++)
+        {
+            arguments = new object?[] { mixed, trim, (flags & 1) != 0, (flags & 2) != 0, (flags & 4) != 0, true, null };
+            var transformed = (GH_Structure<IGH_Goo>)tracked.Invoke(null, arguments)!;
+            groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+            var retained = transformed.AllData(true).ToArray();
+            var allLocations = groups.SelectMany(group => group.Locations).Select(address => (address.Path, address.ItemIndex)).ToArray();
+            Check(groups.Count == retained.Length && allLocations.Length == mixed.DataCount &&
+                allLocations.Distinct().Count() == mixed.DataCount && groups.Select((group, i) =>
+                    ReferenceEquals(retained[i], originalByAddress[(group.Locations[0].Path, group.Locations[0].ItemIndex)]) &&
+                    group.Locations.All(address => ((GH_Integer)originalByAddress[(address.Path, address.ItemIndex)]).Value ==
+                        ((GH_Integer)retained[i]).Value)).All(valid => valid),
+                $"Mixed-depth paths and empty branches retain every input address exactly once (trim {trim}, flags {flags})");
+        }
     }
 
     internal static async Task Run(Assembly assembly)

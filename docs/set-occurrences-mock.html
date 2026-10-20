@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel+ set occurrence mock</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--foreground, #263126); font: 14px/1.5 var(--font-sans, system-ui, sans-serif); }
+  button { font: inherit; cursor: pointer; }
+  button:focus-visible { outline: 2px solid #4a7741; outline-offset: 2px; }
+  button:disabled { cursor: default; opacity: .4; }
+  .intro { margin: 0 0 12px; color: var(--muted-foreground, #647063); font-size: 13px; }
+  .canvas { padding: 24px; border-radius: var(--radius, 12px); background: #eef0ec; background-image: radial-gradient(#d2d8ce .7px, transparent .7px); background-size: 12px 12px; }
+  .component { width: 440px; max-width: 100%; margin: auto; color: #30392f; font: 12px/1.4 Arial, sans-serif; }
+  .panel { border: 1px solid #9aa494; background: white; box-shadow: 0 2px 7px #273a1810; }
+  .head { height: 29px; display: flex; align-items: center; gap: 8px; padding: 0 9px; border-left: 3px solid #4c7041; border-bottom: 1px solid #e4e8e0; }
+  .drag { color: #9da598; letter-spacing: 1px; }
+  .head strong { color: #48613c; }
+  .view { margin-left: auto; font-size: 10px; color: #7c8577; }
+  .filters { display: flex; gap: 4px; padding: 7px 7px 4px; color: #81897b; font-size: 10px; }
+  .filters span { border: 1px solid #e2e6de; border-radius: 2px; padding: 2px 5px; }
+  .filters span:nth-child(2) { flex: 1; }
+  .rows { padding: 3px 7px 9px; min-height: 171px; max-height: 330px; overflow: auto; }
+  .branch { display: flex; justify-content: space-between; color: #647856; padding: 5px 3px 3px; font-size: 10px; }
+  code { font-family: var(--font-mono, Consolas, monospace); }
+  .row { display: grid; grid-template-columns: 25px minmax(0,1fr) 45px 65px; min-height: 23px; align-items: center; }
+  .row:nth-child(even) { background: #f5f7f3; }
+  .row.plain { grid-template-columns: 25px minmax(0,1fr) 45px; }
+  .index { color: #9aa18f; font: 10px Consolas, monospace; padding-left: 3px; }
+  .value { padding: 0 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .numeric { text-align: right; }
+  .type { text-align: right; color: #909789; font-size: 10px; padding-right: 8px; }
+  .count { height: 23px; border: 0; background: #eff4eb; color: #48653d; display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 0 6px; font-size: 11px; }
+  .count:hover { background: #e4eddd; }
+  .count[aria-expanded="true"] { background: #dfead8; }
+  .chevron { display: inline-block; width: 6px; height: 6px; border-right: 1.4px solid currentColor; border-bottom: 1.4px solid currentColor; transform: rotate(45deg); margin-top: -3px; }
+  [aria-expanded="true"] .chevron, .collapse .chevron { transform: rotate(225deg); margin-top: 3px; }
+  .footer { border-top: 1px solid #e4e8e0; padding: 6px 8px; font-size: 10px; color: #6f7967; }
+  .tools { display: flex; gap: 4px; align-items: center; margin-top: 5px; }
+  .tools .label { color: #9aa18f; margin-right: auto; }
+  .tools button { padding: 3px 7px; border: 1px solid #dfe5d8; background: #fff; color: #65765b; border-radius: 2px; font-size: 10px; }
+  .tools button[aria-pressed="true"] { background: #e4eddd; border-color: #a7ba99; color: #3d5f30; }
+  .drawer { margin-top: 4px; background: white; border: 1px solid #9aa494; }
+  [hidden] { display: none !important; }
+  .drawer-head { display: flex; align-items: center; background: #ecf1e9; min-height: 27px; padding-left: 8px; }
+  .drawer-head strong { font-size: 11px; font-weight: 500; }
+  .collapse { margin-left: auto; width: 29px; height: 27px; background: transparent; border: 0; color: #49653d; }
+  .summary { color: #7a8471; padding: 3px 8px 1px; font-size: 10px; }
+  .locations { width: calc(100% - 12px); margin: 0 6px 5px; border-collapse: collapse; table-layout: fixed; font-size: 11px; }
+  .locations th { font-weight: 400; color: #657b55; font-size: 10px; text-align: left; height: 21px; }
+  .locations th:last-child { width: 100px; }
+  .locations td { height: 22px; padding: 0 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: Consolas, monospace; }
+  .locations tbody tr:nth-child(odd) { background: #f5f7f3; }
+  .paging { display: flex; align-items: center; padding: 0 7px 5px; gap: 9px; color: #7a8471; font-size: 10px; }
+  .paging span { margin-right: auto; }
+  .paging button { color: #49653d; border: 0; padding: 2px; background: transparent; font-size: 10px; }
+  .note { margin: 12px 0 0; color: var(--muted-foreground, #647063); font-size: 12px; }
+  @media (max-width: 400px) { .canvas { padding: 16px; } .tools { gap: 3px; } .tools button { padding: 3px 5px; } }
+</style>
+<p class="intro">Interactive mock · Click a count to open or close its original locations.</p>
+<div class="canvas">
+  <div class="component">
+    <div class="panel">
+      <div class="head"><span class="drag">⠿</span><strong>P+</strong><span class="view">Full</span></div>
+      <div class="filters" aria-hidden="true"><span>Preview: Off</span><span>Search…</span><span>Types⌄</span><span>Src⌄</span><span>Paths⌄</span></div>
+      <div class="rows" id="rows"></div>
+      <div class="footer">
+        <span id="output"></span>
+        <div class="tools"><span class="label">Tree tools</span><button id="flatten" aria-pressed="false">Flatten</button><button id="reverse" aria-pressed="false">Reverse</button><button id="set" aria-pressed="true">Create set</button></div>
+      </div>
+    </div>
+    <section class="drawer" id="drawer" aria-label="Original occurrences">
+      <div class="drawer-head"><strong id="heading"></strong><button class="collapse" id="collapse" aria-label="Collapse occurrences"><span class="chevron"></span></button></div>
+      <div class="summary" id="summary"></div>
+      <table class="locations"><thead><tr><th>Input branch</th><th>Index (0-based)</th></tr></thead><tbody id="locations"></tbody></table>
+      <div class="paging" id="paging"><span id="range"></span><button id="previous">‹ Previous</button><button id="next">Next ›</button></div>
+    </section>
+  </div>
+</div>
+<p class="note">Counts include the retained item. Locations refer to the original input, before tree tools. Flatten combines the branches; paging only inspects them.</p>
+<script>
+  const $ = id => document.getElementById(id);
+  const source = [
+    Array.from({length:10}, (_, index) => ({ value: index === 2 ? 'alpha' : 9, path:'{4;0}', index })),
+    [9,3,9].map((value, index) => ({ value, path:'{4;1}', index }))
+  ];
+  let flatten = false, reverse = false, createSet = true, selected = '0:0', offset = 0, groups = [];
+  function compute() {
+    const branches = flatten ? [source.flat()] : source;
+    return branches.map((branch, b) => {
+      const order = reverse ? [...branch].reverse() : branch;
+      const values = [], seen = new Map();
+      for (const item of order) {
+        let group = createSet ? seen.get(item.value) : null;
+        if (group) { group.locations.push(item); continue; }
+        group = { id: b + ':' + values.length, value:item.value, locations:[item] };
+        values.push(group); seen.set(item.value, group);
+      }
+      return { path: flatten ? '{0}' : branch[0].path, values };
+    });
+  }
+  function drawRows() {
+    groups = compute();
+    $('rows').innerHTML = groups.map(branch =>
+      '<div class="branch"><code>' + branch.path + '</code><span>' + branch.values.length + ' items</span></div>' +
+      branch.values.map((item, index) => '<div class="row ' + (createSet ? '' : 'plain') + '">' +
+        '<span class="index">' + index + '</span><span class="value ' + (typeof item.value === 'number' ? 'numeric' : '') + '">' + item.value + '</span>' +
+        '<span class="type">' + (typeof item.value === 'number' ? 'Num' : 'Text') + '</span>' +
+        (createSet ? '<button class="count" data-id="' + item.id + '" aria-expanded="' + (selected === item.id) + '" aria-label="Inspect ' + item.locations.length + ' occurrences of ' + item.value + '" title="' + (item.locations.length - 1) + ' duplicates removed">' + item.locations.length + '×<span class="chevron"></span></button>' : '') + '</div>').join('')
+    ).join('');
+    $('output').textContent = groups.reduce((n, branch) => n + branch.values.length, 0) + ' items · ' + groups.length + (groups.length === 1 ? ' branch' : ' branches');
+    for (const [id, state] of [['flatten', flatten], ['reverse', reverse], ['set', createSet]]) $(id).setAttribute('aria-pressed', state);
+    drawDetails();
+  }
+  function drawDetails() {
+    const group = groups.flatMap(b => b.values).find(item => item.id === selected);
+    $('drawer').hidden = !createSet || !group;
+    if (!group || !createSet) return;
+    const count = group.locations.length, branches = new Set(group.locations.map(item => item.path)).size;
+    $('heading').textContent = 'Occurrences: ' + group.value;
+    $('summary').textContent = count + (count === 1 ? ' occurrence' : ' occurrences') + ' · ' + branches + (branches === 1 ? ' input branch' : ' input branches');
+    const page = group.locations.slice(offset, offset + 4);
+    $('locations').innerHTML = page.map(item => '<tr><td title="' + item.path + '">' + item.path + '</td><td>' + item.index + '</td></tr>').join('') +
+      '<tr aria-hidden="true"><td></td><td></td></tr>'.repeat(Math.min(4, count) - page.length);
+    $('paging').hidden = count <= 4;
+    $('range').textContent = (offset + 1) + '–' + (offset + page.length) + ' of ' + count;
+    $('previous').disabled = offset === 0;
+    $('next').disabled = offset + 4 >= count;
+  }
+  $('rows').onclick = event => {
+    const button = event.target.closest('[data-id]');
+    if (!button) return;
+    selected = selected === button.dataset.id ? null : button.dataset.id; offset = 0;
+    drawRows();
+    const replacement = document.querySelector('[data-id="' + button.dataset.id + '"]');
+    if (replacement) replacement.focus({preventScroll:true});
+  };
+  $('collapse').onclick = () => {
+    const prior = selected; selected = null; drawRows();
+    document.querySelector('[data-id="' + prior + '"]')?.focus({preventScroll:true});
+  };
+  $('previous').onclick = () => { offset -= 4; drawDetails(); };
+  $('next').onclick = () => { offset += 4; drawDetails(); };
+  for (const id of ['flatten','reverse','set']) $(id).onclick = () => {
+    if (id === 'flatten') flatten = !flatten;
+    if (id === 'reverse') reverse = !reverse;
+    if (id === 'set') createSet = !createSet;
+    selected = null; offset = 0; drawRows();
+  };
+  drawRows();
+</script>
+</html>

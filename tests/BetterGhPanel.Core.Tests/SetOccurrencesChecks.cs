@@ -48,11 +48,25 @@ internal static class SetOccurrencesChecks
         Check(!details.IsOpen && details.Bounds.IsEmpty, "Filtering out the inspected value closes its drawer");
         details.Toggle(snapshot, 1);
         Check(details.Occurrences!.Count == 1 && details.Offset == 0, "Single occurrences remain inspectable");
+        details.Layout(panel, true);
+        Check(!details.HasPages && details.Previous.IsEmpty && details.Next.IsEmpty &&
+            details.Bounds.Bottom - details.Table.Bottom == 4,
+            "Short occurrence lists use no pager or reserved footer space");
         details.Toggle(snapshot, 1);
         Check(!details.IsOpen, "The same row toggles closed");
         details.Toggle(snapshot, 0);
         details.Synchronize(new PanelSnapshot(rows, snapshot.Branches), null);
         Check(!details.IsOpen, "New input invalidates all old locations even if the rows look identical");
+
+        foreach (int count in new[] { 4, 5 })
+        {
+            var boundary = new PanelSnapshot(new[] { new PanelRow(0, "{0}", "Number", "2", 2,
+                setOccurrences: new PanelSetOccurrences(occurrences.Locations.Take(count).ToArray())) }, snapshot.Branches);
+            details.Toggle(boundary, 0);
+            details.Layout(panel, true);
+            Check(details.HasPages == (count > 4) && details.Next.IsEmpty == (count <= 4),
+                "Paging starts only when the table needs a second page");
+        }
     }
 
     private static void Check(bool condition, string message)

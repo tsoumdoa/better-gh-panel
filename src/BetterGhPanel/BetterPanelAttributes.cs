@@ -259,7 +259,7 @@ namespace BetterGhPanel
         {
             if (channel == GH_CanvasChannel.Wires) { base.Render(canvas, graphics, channel); return; }
             if (channel != GH_CanvasChannel.Objects) return;
-            _setControlsVisible = false;
+            _setControlsVisible = canvas.Viewport.Zoom >= 0.5f;
             _setHits.Clear();
             LayoutSetDetails();
             CanvasTextInput.Maintain(canvas);
@@ -331,7 +331,6 @@ namespace BetterGhPanel
                     DrawViewAction(graphics, _jump, false);
                     DrawViewAction(graphics, _reset, true);
                     RenderRows(graphics, result, visibleRegion, font, small, mono, trim);
-                    _setControlsVisible = !PanelOwner.Locked && session.HasCurrentResult;
                     RenderFooter(graphics, result, small, trim);
                     RenderSetDetails(graphics, result, small, mono, trim);
                     if (_menu.Kind != CanvasMenuKind.None) RenderMenu(graphics, small, mono, trim);

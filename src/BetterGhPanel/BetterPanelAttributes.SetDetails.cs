@@ -30,7 +30,7 @@ namespace BetterGhPanel
                 current = !PanelOwner.Locked && session.HasCurrentResult;
                 _setDetails.Synchronize(session.Snapshot, current ? session.Result : null);
             }
-            _setDetails.Layout(_panel, current && !PanelOwner.PanelMinimized);
+            _setDetails.Layout(_panel, _setControlsVisible && current && !PanelOwner.PanelMinimized);
             m_innerBounds = _setDetails.Bounds.IsEmpty ? _panel : RectangleF.Union(_panel, _setDetails.Bounds);
             Bounds = new RectangleF(m_innerBounds.X - 6, m_innerBounds.Y, m_innerBounds.Width + 12, m_innerBounds.Height);
         }
@@ -59,7 +59,7 @@ namespace BetterGhPanel
             Text(g, "Occurrences: " + PanelOwner.DisplayValue(result.Snapshot, row, _setDetails.SourcePosition), small, Ink,
                 new RectangleF(bounds.X + 7, bounds.Y + 1, bounds.Width - 34, 21), trim);
             DrawSetChevron(g, _setDetails.Collapse, true);
-            Text(g, _setDetails.Summary, small, Muted, new RectangleF(bounds.X + 7, bounds.Y + 23, bounds.Width - 14, 16), trim);
+            Text(g, CanvasSetDetails.Summary(occurrences), small, Muted, new RectangleF(bounds.X + 7, bounds.Y + 23, bounds.Width - 14, 16), trim);
             float indexWidth = 94;
             Text(g, "Input branch", small, Accent, new RectangleF(bounds.X + 9, bounds.Y + 38, bounds.Width - indexWidth - 20, 15), trim);
             Text(g, "Index (0-based)", small, Accent, new RectangleF(bounds.Right - indexWidth - 7, bounds.Y + 38, indexWidth, 15), trim);
@@ -71,10 +71,13 @@ namespace BetterGhPanel
                 Text(g, address.Path, mono, Ink, new RectangleF(line.X + 3, line.Y, line.Width - indexWidth - 9, line.Height), trim);
                 Text(g, address.ItemIndex.ToString(), mono, Ink, new RectangleF(line.Right - indexWidth, line.Y, indexWidth - 3, line.Height), trim);
             }
-            Text(g, $"{_setDetails.Offset + 1:N0}–{_setDetails.Offset + _setDetails.Visible:N0} of {occurrences.Count:N0}", small, Muted,
-                new RectangleF(bounds.X + 8, bounds.Bottom - 21, bounds.Width - 128, 18), trim);
-            Text(g, "‹ Previous", small, _setDetails.CanPrevious ? Accent : Color.LightGray, _setDetails.Previous, trim);
-            Text(g, "Next ›", small, _setDetails.CanNext ? Accent : Color.LightGray, _setDetails.Next, trim);
+            if (_setDetails.HasPages)
+            {
+                Text(g, $"{_setDetails.Offset + 1:N0}–{_setDetails.Offset + _setDetails.Visible:N0} of {occurrences.Count:N0}", small, Muted,
+                    new RectangleF(bounds.X + 8, bounds.Bottom - 21, bounds.Width - 128, 18), trim);
+                Text(g, "‹ Previous", small, _setDetails.CanPrevious ? Accent : Color.LightGray, _setDetails.Previous, trim);
+                Text(g, "Next ›", small, _setDetails.CanNext ? Accent : Color.LightGray, _setDetails.Next, trim);
+            }
             using var border = new Pen(Color.FromArgb(164, 171, 164));
             g.DrawRectangle(border, bounds.X, bounds.Y, bounds.Width, bounds.Height);
         }
@@ -124,7 +127,7 @@ namespace BetterGhPanel
             {
                 var location = _setDetails.LocationAt(point);
                 e.Title = _setDetails.Collapse.Contains(point) ? "Collapse occurrences" : "Original input locations";
-                e.Text = location.HasValue ? location.Value.Path + " [" + location.Value.ItemIndex + "]" : _setDetails.Summary;
+                e.Text = location.HasValue ? location.Value.Path + " [" + location.Value.ItemIndex + "]" : CanvasSetDetails.Summary(_setDetails.Occurrences!);
                 e.Description = CanvasSetDetails.Scope;
                 return true;
             }
@@ -134,7 +137,8 @@ namespace BetterGhPanel
                 if (!hit.Bounds.Contains(point)) continue;
                 var occurrences = PanelOwner.Session.Snapshot.Rows[hit.SourcePosition].SetOccurrences!;
                 e.Title = _setDetails.IsOpen && _setDetails.SourcePosition == hit.SourcePosition ? "Collapse occurrences" : "Expand occurrences";
-                e.Text = $"{occurrences.Count:N0} occurrences · {occurrences.DuplicatesRemoved:N0} duplicates removed · {occurrences.BranchCount:N0} input branches";
+                e.Text = CanvasSetDetails.Summary(occurrences) + $". {occurrences.DuplicatesRemoved:N0} " +
+                    (occurrences.DuplicatesRemoved == 1 ? "duplicate removed." : "duplicates removed.");
                 e.Description = CanvasSetDetails.Scope;
                 return true;
             }
