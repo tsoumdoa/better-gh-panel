@@ -23,7 +23,7 @@ namespace BetterGhPanel
         private static readonly Color Muted = Color.FromArgb(120, 127, 123);
         private static readonly Color Accent = Color.FromArgb(77, 115, 94);
         private RectangleF _panel, _search, _filter, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _footer;
-        private RectangleF _trim, _simplify, _flatten, _reverse, _units;
+        private RectangleF _trim, _simplify, _flatten, _reverse, _createSet, _units;
         private RectangleF _display, _preview, _move, _statistics, _selectAll, _close, _restore;
         private readonly List<RowHit> _rowHits = new List<RowHit>();
         private readonly List<BranchHit> _branchHits = new List<BranchHit>();
@@ -181,7 +181,7 @@ namespace BetterGhPanel
                 m_innerBounds = _panel;
                 ClosePresentationControls();
                 _search = _filter = _type = _sort = _branch = _jump = _reset = _resize = _list = _track = _footer = RectangleF.Empty;
-                _trim = _simplify = _flatten = _reverse = _units = _display = _preview = _close = _move = _statistics = _selectAll = RectangleF.Empty;
+                _trim = _simplify = _flatten = _reverse = _createSet = _units = _display = _preview = _close = _move = _statistics = _selectAll = RectangleF.Empty;
                 _restore = new RectangleF(_panel.Right - 26, _panel.Y + 5, 22, 22);
                 PositionPorts(Owner.Params.Input, true);
                 PositionPorts(Owner.Params.Output, false);
@@ -213,10 +213,11 @@ namespace BetterGhPanel
             _selectAll = new RectangleF(_statistics.Left - 62, _footer.Y, 58, 16);
             // Share one row so status text, tool glyphs and Units have the same center.
             _units = new RectangleF(_footer.Right - 76, _footer.Y + 16, 76, 20);
-            _trim = new RectangleF(_units.Left - 101, _units.Y, 22, _units.Height);
+            _trim = new RectangleF(_units.Left - 125, _units.Y, 22, _units.Height);
             _simplify = new RectangleF(_trim.Right + 2, _trim.Y, 22, 20);
             _flatten = new RectangleF(_simplify.Right + 2, _trim.Y, 22, 20);
             _reverse = new RectangleF(_flatten.Right + 2, _trim.Y, 22, 20);
+            _createSet = new RectangleF(_reverse.Right + 2, _trim.Y, 22, 20);
             _list = new RectangleF(x, _panel.Y + 52, _panel.Width - 15, Math.Max(RowHeight, _panel.Height - 92));
             _track = new RectangleF(_panel.Right - 8, _list.Y, 4, _list.Height);
             _resize = new RectangleF(_panel.Right - 24, _panel.Bottom - 24, 24, 24);
@@ -505,6 +506,7 @@ namespace BetterGhPanel
             TreeToolIcons.Draw(g, _simplify, TreeToolIcon.Simplify, PanelOwner.SimplifyTree);
             TreeToolIcons.Draw(g, _flatten, TreeToolIcon.Flatten, PanelOwner.FlattenTree);
             TreeToolIcons.Draw(g, _reverse, TreeToolIcon.Reverse, PanelOwner.ReverseTree);
+            TreeToolIcons.Draw(g, _createSet, TreeToolIcon.CreateSet, PanelOwner.CreateSetTree);
             string unitLabel = PanelOwner.UnitConversion == PanelUnitConversion.None ? "Units" : PanelUnits.Label(PanelOwner.UnitConversion).Replace(" → ", "→");
             string precision = PanelOwner.DecimalPlaces < 0 ? "" : $" · {PanelOwner.DecimalPlaces}dp";
             DropdownControl(g, _units, unitLabel + precision, small, trim,
@@ -827,16 +829,17 @@ namespace BetterGhPanel
                 CanvasTextInput.Show(sender, PanelOwner, _trim, PanelOwner.TrimDepth.ToString(), text =>
                 {
                     if (int.TryParse(text, out var depth) && depth >= 0)
-                        PanelOwner.SetTreeOperations(depth, PanelOwner.FlattenTree, PanelOwner.ReverseTree, PanelOwner.SimplifyTree);
+                        PanelOwner.SetTreeOperations(depth, PanelOwner.FlattenTree, PanelOwner.ReverseTree, PanelOwner.SimplifyTree, PanelOwner.CreateSetTree);
                 });
                 return GH_ObjectResponse.Handled;
             }
-            if (_simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point))
+            if (_simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point) || _createSet.Contains(point))
             {
                 PanelOwner.SetTreeOperations(PanelOwner.TrimDepth,
                     _flatten.Contains(point) ? !PanelOwner.FlattenTree : PanelOwner.FlattenTree,
                     _reverse.Contains(point) ? !PanelOwner.ReverseTree : PanelOwner.ReverseTree,
-                    _simplify.Contains(point) ? !PanelOwner.SimplifyTree : PanelOwner.SimplifyTree);
+                    _simplify.Contains(point) ? !PanelOwner.SimplifyTree : PanelOwner.SimplifyTree,
+                    _createSet.Contains(point) ? !PanelOwner.CreateSetTree : PanelOwner.CreateSetTree);
                 return GH_ObjectResponse.Handled;
             }
             if (_selectAll.Contains(point))
@@ -1178,13 +1181,15 @@ namespace BetterGhPanel
                 e.Text = "Numeric output conversion · geometry metric display";
                 e.Description = "Choose length (mm ↔ m), area (mm² ↔ m²), volume (mm³ ↔ m³), or angle (rad ↔ deg). Geometry metrics convert only matching model units and dimensions; the geometry itself is unchanged. Decimal places (0–12 or automatic) format metrics, numeric rows, copied numeric values and statistics without changing output precision.";
             }
-            else if (_trim.Contains(point) || _simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point))
+            else if (_trim.Contains(point) || _simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point) || _createSet.Contains(point))
             {
-                e.Title = _trim.Contains(point) ? "Trim tree" : _simplify.Contains(point) ? "Simplify tree" : _flatten.Contains(point) ? "Flatten tree" : "Reverse tree";
-                e.Text = (_trim.Contains(point) ? "Depth: " + PanelOwner.TrimDepth + " · " : "") + "Changes output · Simplify → Trim → Flatten → Reverse";
+                e.Title = _trim.Contains(point) ? "Trim tree" : _simplify.Contains(point) ? "Simplify tree" : _flatten.Contains(point) ? "Flatten tree" : _reverse.Contains(point) ? "Reverse tree" : "Create set";
+                e.Text = (_trim.Contains(point) ? "Depth: " + PanelOwner.TrimDepth + " · " : "") + "Changes output · Simplify → Trim → Flatten → Reverse → Create set";
                 e.Description = _trim.Contains(point) ? "Enter the number of trailing path levels to remove. Matching branches merge in source order. Fully trimmed paths become {0}. Enter 0 to disable." :
                     _simplify.Contains(point) ? "Toggle removal of path indices shared by all branches." :
-                    _flatten.Contains(point) ? "Toggle merging all branches into {0}." : "Toggle reversing items within each output branch.";
+                    _flatten.Contains(point) ? "Toggle merging all branches into {0}." :
+                    _reverse.Contains(point) ? "Toggle reversing items within each output branch." :
+                    "Keep the first of each exact number, text or primitive value per branch. Use Flatten for one set across the tree. Text is case-sensitive; decimal formatting is ignored. Repeated nulls become one; invalid values, complex geometry and custom data pass through unchanged.";
             }
             else if (_type.Contains(point) || _sort.Contains(point) || _branch.Contains(point))
             {

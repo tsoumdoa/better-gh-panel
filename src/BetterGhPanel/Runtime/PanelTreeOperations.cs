@@ -42,9 +42,9 @@ namespace BetterGhPanel.Runtime
         }
 
         internal static GH_Structure<IGH_Goo> Apply(GH_Structure<IGH_Goo> source,
-            int trimDepth, bool simplify, bool flatten, bool reverse)
+            int trimDepth, bool simplify, bool flatten, bool reverse, bool createSet)
         {
-            if (trimDepth == 0 && !simplify && !flatten && !reverse) return source;
+            if (trimDepth == 0 && !simplify && !flatten && !reverse && !createSet) return source;
             var result = source;
             // Trim creates its own structure; in-place tools need a copy first.
             if (simplify || trimDepth == 0)
@@ -67,7 +67,62 @@ namespace BetterGhPanel.Runtime
             }
             if (flatten) result.Flatten(new GH_Path(0));
             if (reverse) result.Reverse();
+            if (createSet)
+            {
+                foreach (var branch in result.Branches)
+                {
+                    var seen = new HashSet<object>();
+                    bool seenNull = false;
+                    int count = 0;
+                    for (int i = 0; i < branch.Count; i++)
+                    {
+                        var item = branch[i];
+                        if (item == null)
+                        {
+                            if (seenNull) continue;
+                            seenNull = true;
+                        }
+                        else
+                        {
+                            var key = SetKey(item);
+                            if (key != null && !seen.Add(key)) continue;
+                        }
+                        branch[count++] = item!;
+                    }
+                    branch.RemoveRange(count, branch.Count - count);
+                }
+            }
             return result;
+        }
+
+        // Only compare exact, supported values. Summaries are never equality keys:
+        // different curves or third-party goo can have identical display text.
+        private static object? SetKey(IGH_Goo item)
+        {
+            object? key = item switch
+            {
+                GH_Number number => number.Value,
+                GH_Integer integer => (double)integer.Value,
+                GH_String text => text.Value,
+                GH_Boolean boolean => boolean.Value,
+                GH_Colour colour => colour.Value.ToArgb(),
+                GH_ComplexNumber complex => complex.Value,
+                GH_Interval interval => interval.Value,
+                GH_Interval2D interval => interval.Value,
+                GH_Point point => point.Value,
+                GH_Vector vector => vector.Value,
+                GH_Line line => line.Value,
+                GH_Plane plane => plane.Value,
+                GH_Rectangle rectangle => rectangle.Value,
+                GH_Box box => box.Value,
+                GH_Arc arc => arc.Value,
+                GH_Circle circle => circle.Value,
+                GH_Transform transform => transform.Value,
+                GH_Guid guid => guid.Value,
+                GH_Time time => time.Value,
+                _ => null
+            };
+            return key != null && item.IsValid ? key : null;
         }
     }
 }

@@ -59,6 +59,7 @@ internal static class Program
             try
             {
                 VerifyTreeOperations(Assembly.LoadFrom(_plugin));
+                CreateSetChecks.VerifyTree(Assembly.LoadFrom(_plugin));
                 Console.WriteLine("PASS: Managed Grasshopper tree operation checks completed (Rhino host not started).");
                 return 0;
             }
@@ -158,6 +159,7 @@ internal static class Program
         await FilterChecks.Run(assembly);
         await FilterUiChecks.Run(assembly);
         await StatisticsUiChecks.Run(assembly);
+        await CreateSetChecks.Run(assembly);
         await ItemOrderUiChecks.Run(assembly);
         var componentType = assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!;
         var component = (GH_Component)Activator.CreateInstance(componentType)!;
@@ -576,7 +578,7 @@ internal static class Program
         var apply = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!
             .GetMethod("Apply", BindingFlags.Static | BindingFlags.NonPublic)!;
         GH_Structure<IGH_Goo> Transform(int depth = 0, bool simplify = false, bool flatten = false, bool reverse = false) =>
-            (GH_Structure<IGH_Goo>)apply.Invoke(null, new object[] { source, depth, simplify, flatten, reverse })!;
+            (GH_Structure<IGH_Goo>)apply.Invoke(null, new object[] { source, depth, simplify, flatten, reverse, false })!;
 
         Assert(ReferenceEquals(source, Transform()), "Disabled tools pass through the original typed tree");
         var trimmed = Transform(1);
@@ -600,7 +602,7 @@ internal static class Program
         sharedSuffix.Append(text, new GH_Path(7, 1, 9));
         sharedSuffix.EnsurePath(new GH_Path(7, 2, 9));
         var simplifiedThenTrimmed = (GH_Structure<IGH_Goo>)apply.Invoke(null,
-            new object[] { sharedSuffix, 1, true, false, false })!;
+            new object[] { sharedSuffix, 1, true, false, false, false })!;
         Assert(simplifiedThenTrimmed.PathCount == 1 && simplifiedThenTrimmed.Paths[0].ToString() == "{0}" &&
             simplifiedThenTrimmed.Branches.Single().SequenceEqual(new IGH_Goo[] { number, null!, text }),
             "Simplify removes shared prefix and suffix before Trim merges the remaining path levels");
@@ -622,7 +624,7 @@ internal static class Program
             source.Branches[0].SequenceEqual(new IGH_Goo[] { number, null! }) && source.Branches[2].Count == 0,
             "Every tool leaves upstream paths, branch lists and values untouched");
         var empty = new GH_Structure<IGH_Goo>();
-        var emptyResult = (GH_Structure<IGH_Goo>)apply.Invoke(null, new object[] { empty, 3, true, true, true })!;
+        var emptyResult = (GH_Structure<IGH_Goo>)apply.Invoke(null, new object[] { empty, 3, true, true, true, false })!;
         Assert(emptyResult.DataCount == 0 && empty.DataCount == 0, "All tools safely handle empty input");
     }
 

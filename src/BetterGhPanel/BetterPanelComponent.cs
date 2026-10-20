@@ -48,7 +48,8 @@ namespace BetterGhPanel
         internal bool FlattenTree { get; private set; }
         internal bool ReverseTree { get; private set; }
         internal bool SimplifyTree { get; private set; }
-        internal bool HasTreeOperations => TrimDepth > 0 || FlattenTree || ReverseTree || SimplifyTree;
+        internal bool CreateSetTree { get; private set; }
+        internal bool HasTreeOperations => TrimDepth > 0 || FlattenTree || ReverseTree || SimplifyTree || CreateSetTree;
         internal PanelUnitConversion UnitConversion { get; private set; }
         internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
 
@@ -172,7 +173,7 @@ namespace BetterGhPanel
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
             if (settingsChanged) RecordUndoEvent("Reset Panel+");
             TrimDepth = 0;
-            FlattenTree = ReverseTree = SimplifyTree = false;
+            FlattenTree = ReverseTree = SimplifyTree = CreateSetTree = false;
             UnitConversion = PanelUnitConversion.None;
             DecimalPlaces = PanelUnits.AutomaticDecimals;
             ResetPanelView();
@@ -190,19 +191,20 @@ namespace BetterGhPanel
             Instances.ActiveCanvas?.Invalidate();
         }
 
-        internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify)
+        internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet)
         {
             trimDepth = Math.Max(0, trimDepth);
-            if (TrimDepth == trimDepth && FlattenTree == flatten && ReverseTree == reverse && SimplifyTree == simplify) return;
+            if (TrimDepth == trimDepth && FlattenTree == flatten && ReverseTree == reverse && SimplifyTree == simplify && CreateSetTree == createSet) return;
             bool pathsChanged = TrimDepth != trimDepth || FlattenTree != flatten || SimplifyTree != simplify;
             RecordUndoEvent("Panel+ tree tools");
             TrimDepth = trimDepth;
             FlattenTree = flatten;
             ReverseTree = reverse;
             SimplifyTree = simplify;
+            CreateSetTree = createSet;
             if (pathsChanged)
             {
-                // Reverse only changes item order, so its branch selection stays valid.
+                // Reverse and Create set preserve paths, so branch selection stays valid.
                 var options = Session.Options;
                 options.BranchPath = null;
                 options.BranchPrefix = false;
@@ -424,7 +426,7 @@ namespace BetterGhPanel
         }
 
         protected override void RegisterOutputParams(GH_OutputParamManager p) =>
-            p.AddGenericParameter("Data", "D", "Matching typed items after Simplify → Trim → Flatten → Reverse → unit conversion → filters. Sorting and decimal formatting affect only the view.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Data", "D", "Matching typed items after Simplify → Trim → Flatten → Reverse → Create set → unit conversion → filters. Sorting and decimal formatting affect only the view.", GH_ParamAccess.tree);
 
         private void ScheduleOutput()
         {
@@ -488,7 +490,7 @@ namespace BetterGhPanel
                 {
                     CancelPendingCopy();
                     ClearHighlight();
-                    tree = PanelTreeOperations.Apply(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree);
+                    tree = PanelTreeOperations.Apply(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, CreateSetTree);
                     _queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.Apply(tree, UnitConversion));
                     var previousSources = _sourceItems;
                     var previousUnits = _geometryUnits;
@@ -569,7 +571,7 @@ namespace BetterGhPanel
             Menu_AppendItem(menu, PanelMinimized ? "Restore panel" : "Minimize to capsule", (_, __) => SetPanelMinimized(!PanelMinimized));
             Menu_AppendItem(menu, "Reset panel", (_, __) => ResetPanel());
             Menu_AppendItem(menu, "Reset panel view", (_, __) => ResetPanelView());
-            Menu_AppendItem(menu, "Reset tree tools", (_, __) => SetTreeOperations(0, false, false, false), HasTreeOperations);
+            Menu_AppendItem(menu, "Reset tree tools", (_, __) => SetTreeOperations(0, false, false, false, false), HasTreeOperations);
             var sizeMenu = Menu_AppendItem(menu, "Canvas panel size");
             var names = CanvasPanelSize.PresetNames;
             for (var i = 0; i < names.Length; i++)
@@ -606,6 +608,7 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelFlatten", FlattenTree);
             writer.SetBoolean("PanelReverse", ReverseTree);
             writer.SetBoolean("PanelSimplify", SimplifyTree);
+            writer.SetBoolean("PanelCreateSet", CreateSetTree);
             writer.SetInt32("PanelUnitConversion", (int)UnitConversion);
             writer.SetInt32("PanelDecimalPlaces", DecimalPlaces);
             return base.Write(writer);
@@ -652,15 +655,17 @@ namespace BetterGhPanel
             reader.TryGetBoolean("PanelShowItemOrder", ref showOrder);
             ShowItemOrder = showOrder;
             int trimDepth = 0;
-            bool flatten = false, reverse = false, simplify = false;
+            bool flatten = false, reverse = false, simplify = false, createSet = false;
             reader.TryGetInt32("PanelTrimDepth", ref trimDepth);
             reader.TryGetBoolean("PanelFlatten", ref flatten);
             reader.TryGetBoolean("PanelReverse", ref reverse);
             reader.TryGetBoolean("PanelSimplify", ref simplify);
+            reader.TryGetBoolean("PanelCreateSet", ref createSet);
             TrimDepth = Math.Max(0, trimDepth);
             FlattenTree = flatten;
             ReverseTree = reverse;
             SimplifyTree = simplify;
+            CreateSetTree = createSet;
             int conversion = 0, decimals = PanelUnits.AutomaticDecimals;
             reader.TryGetInt32("PanelUnitConversion", ref conversion);
             reader.TryGetInt32("PanelDecimalPlaces", ref decimals);

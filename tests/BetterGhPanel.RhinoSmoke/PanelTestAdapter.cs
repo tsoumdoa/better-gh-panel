@@ -6,7 +6,7 @@ using Grasshopper.GUI;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 
-internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Filter, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify, Units, Display, Preview, Move, Statistics, SelectAll, Close, Restore }
+internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Filter, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify, CreateSet, Units, Display, Preview, Move, Statistics, SelectAll, Close, Restore }
 
 // The .gha is loaded separately. Keep plugin-owned reflection in this adapter.
 internal static class PanelTestAdapter
@@ -33,8 +33,8 @@ internal static class PanelTestAdapter
     internal static int Hits(GH_Component component, string field) => ((ICollection)Field<object>(component.Attributes, field)).Count;
     internal static int TrimDepth(GH_Component component) => Property<int>(component, "TrimDepth");
     internal static bool TreeFlag(GH_Component component, string name) => Property<bool>(component, name + "Tree");
-    internal static void TreeTools(GH_Component component, int depth, bool flatten, bool reverse, bool simplify) =>
-        component.GetType().GetMethod("SetTreeOperations", PrivateInstance)!.Invoke(component, new object[] { depth, flatten, reverse, simplify });
+    internal static void TreeTools(GH_Component component, int depth, bool flatten, bool reverse, bool simplify, bool createSet = false) =>
+        component.GetType().GetMethod("SetTreeOperations", PrivateInstance)!.Invoke(component, new object[] { depth, flatten, reverse, simplify, createSet });
     internal static BetterGhPanel.Core.PanelUnitConversion Conversion(GH_Component component) => Property<BetterGhPanel.Core.PanelUnitConversion>(component, "UnitConversion");
     internal static int Decimals(GH_Component component) => Property<int>(component, "DecimalPlaces");
     internal static int Offset(GH_Component component) => Field<int>(component.Attributes, "_offset");

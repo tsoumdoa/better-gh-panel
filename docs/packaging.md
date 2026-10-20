@@ -12,12 +12,12 @@ node scripts/package.mjs
 
 Packaging finds Yak in the standard Rhino 8 installation. On a machine without Rhino, `node scripts/package.mjs --stage-only` builds the same folder without creating an archive. Use `--yak <absolute path>` or `YAK_PATH` for a custom installation. Use `--skip-build` only after a successful Release build.
 
-The current beta patch is `0.1.19-beta.2`. The resulting `artifacts/better-gh-panel-0.1.19-beta.2/` contains `manifest.yml`, `icon.png`, and the two runtime folders. Yak builds a `better-gh-panel-0.1.19-beta.2-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
+The current beta patch is `0.1.19-beta.3`. The resulting `artifacts/better-gh-panel-0.1.19-beta.3/` contains `manifest.yml`, `icon.png`, and the two runtime folders. Yak builds a `better-gh-panel-0.1.19-beta.3-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
 ```text
-yak install --source artifacts/better-gh-panel-0.1.19-beta.2 better-gh-panel 0.1.19-beta.2
+yak install --source artifacts/better-gh-panel-0.1.19-beta.3 better-gh-panel 0.1.19-beta.3
 ```
 
 Replace `yak` with the full executable path if it is not on PATH. On Windows it is normally `C:\Program Files\Rhino 8\System\Yak.exe`; on Mac it is normally `/Applications/Rhino 8.app/Contents/Resources/bin/yak`. Restart Rhino and open Grasshopper afterward. Local install uses Yak's package directory and avoids copying a second `.gha` into the Grasshopper Libraries folder.
@@ -34,8 +34,10 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 Install the current public beta with:
 
 ```text
-yak install better-gh-panel 0.1.19-beta.2
+yak install better-gh-panel 0.1.19-beta.3
 ```
+
+Patch `0.1.19-beta.3` adds a Create set tree tool beside Reverse. Managed tree checks cover exact numeric/text/primitive equality, stable first occurrences, nulls, invalid and unsupported data, empty branches, combinations with other tools and a 100,000-item list. Native checks cover typed output, branch filters, save/load, legacy defaults, Undo/Redo, Reset, and Full/minimum Half controls. Release validation runs both hidden Rhino host suites against the plugin extracted from the final Yak archive.
 
 Patch `0.1.19-beta.2` uses zero-based item-order labels within each branch and adds a visible Select all button for all current matching rows. Native checks cover duplicate branch indices, filtering and sorting without renumbering, transformed-tree indices, offscreen selection, stale/disabled/failed query guards, Full/Half/capsule interactions, and unchanged output and camera.
 

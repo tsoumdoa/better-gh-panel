@@ -6,7 +6,7 @@ using System.Drawing.Drawing2D;
 #pragma warning disable CA1416
 namespace BetterGhPanel.UI
 {
-    internal enum TreeToolIcon { Trim, Simplify, Flatten, Reverse }
+    internal enum TreeToolIcon { Trim, Simplify, Flatten, Reverse, CreateSet }
 
     // Draw in canvas units so the glyphs stay crisp at every zoom and host DPI.
     internal static class TreeToolIcons
@@ -39,6 +39,14 @@ namespace BetterGhPanel.UI
                 {
                     switch (icon)
                     {
+                        case TreeToolIcon.CreateSet:
+                            // Braces around a single member identify a set.
+                            g.DrawLines(pen, new[] { new PointF(5, 2), new PointF(3.5f, 2), new PointF(3.5f, 6),
+                                new PointF(2, 8), new PointF(3.5f, 10), new PointF(3.5f, 14), new PointF(5, 14) });
+                            g.DrawLines(pen, new[] { new PointF(11, 2), new PointF(12.5f, 2), new PointF(12.5f, 6),
+                                new PointF(14, 8), new PointF(12.5f, 10), new PointF(12.5f, 14), new PointF(11, 14) });
+                            g.DrawEllipse(pen, 6.5f, 6.5f, 3, 3);
+                            break;
                         case TreeToolIcon.Trim:
                             // A pruned tree, with a broken cut line above its branches.
                             g.DrawLine(pen, 2, 2.5f, 4, 2.5f);

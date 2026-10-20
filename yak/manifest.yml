@@ -5,7 +5,7 @@ authors:
   - aectooling by tomoS
 description: >
   Panel+ beta is a fast, resizable Grasshopper data panel for Rhino 8.
-  Trim, simplify, flatten, or reverse typed data trees directly on the
+  Trim, simplify, flatten, reverse, or create sets of unique values in typed data trees directly on the
   canvas. Search, filter, sort, jump to branches and rows, and inspect
   item and branch counts, numeric statistics, and unique values with frequencies.
   One header chevron toggles full and half views; the close button minimizes
