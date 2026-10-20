@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using BetterGhPanel.Core;
 using BetterGhPanel.UI;
@@ -25,7 +26,7 @@ namespace BetterGhPanel
             foreach (var row in snapshot.Rows)
                 if (row.SetOccurrences != null && row.SetOccurrences.Count > largest) largest = row.SetOccurrences.Count;
             // Measure the whole snapshot once so filtering and scrolling never shift columns.
-            _setCountWidth = System.Math.Max(44, renderer.MeasureNumber(graphics, $"{largest:N0}×") + 22);
+            _setCountWidth = System.Math.Max(44, renderer.MeasureNumber(graphics, $"{largest:N0}") + 36);
         }
 
         private bool SetControlAt(PointF point) => _setControlsVisible && _menu.Kind == CanvasMenuKind.None && _rowMenuResult == null &&
@@ -53,11 +54,38 @@ namespace BetterGhPanel
             if (row.SetOccurrences == null) return;
             var countBounds = new RectangleF(bounds.Right - _setCountWidth, bounds.Y, _setCountWidth, bounds.Height);
             bool expanded = _setDetails.SourcePosition == sourcePosition && _setDetails.IsOpen;
-            Fill(g, expanded ? Color.FromArgb(227, 237, 223) : Color.FromArgb(240, 245, 238), countBounds);
-            renderer.DrawValue(g, $"{row.SetOccurrences.Count:N0}×", small, Accent,
-                new RectangleF(countBounds.X + 6, bounds.Y, countBounds.Width - 22, bounds.Height), true);
-            DrawSetChevron(g, new RectangleF(countBounds.Right - 14, bounds.Y, 12, bounds.Height), expanded);
+            bool repeated = row.SetOccurrences.Count > 1;
+            DrawSetBadge(g, new RectangleF(countBounds.X + 2, bounds.Y + 1.5f, countBounds.Width - 18, bounds.Height - 3), repeated, expanded);
+            renderer.DrawValue(g, $"{row.SetOccurrences.Count:N0}", small, expanded || repeated ? Accent : Color.FromArgb(139, 148, 132),
+                new RectangleF(countBounds.X + 6, bounds.Y, countBounds.Width - 36, bounds.Height), true);
+            renderer.DrawCell(g, "×", small, expanded ? Accent : repeated ? Color.FromArgb(130, 149, 117) : Color.FromArgb(161, 171, 153),
+                new RectangleF(countBounds.Right - 28, bounds.Y, 8, bounds.Height));
+            DrawSetChevron(g, new RectangleF(countBounds.Right - 12, bounds.Y, 10, bounds.Height), expanded,
+                expanded ? Accent : Color.FromArgb(152, 167, 141));
             _setHits.Add(new RowHit(countBounds, sourcePosition, viewNumber));
+        }
+
+        private static void DrawSetBadge(Graphics g, RectangleF bounds, bool repeated, bool expanded)
+        {
+            const float corner = 6;
+            using var shape = new GraphicsPath();
+            shape.AddArc(bounds.X, bounds.Y, corner, corner, 180, 90);
+            shape.AddArc(bounds.Right - corner, bounds.Y, corner, corner, 270, 90);
+            shape.AddArc(bounds.Right - corner, bounds.Bottom - corner, corner, corner, 0, 90);
+            shape.AddArc(bounds.X, bounds.Bottom - corner, corner, corner, 90, 90);
+            shape.CloseFigure();
+            using var fill = new SolidBrush(expanded ? Color.FromArgb(220, 233, 210) :
+                repeated ? Color.FromArgb(237, 243, 232) : Color.FromArgb(250, 251, 249));
+            using var border = new Pen(expanded ? Color.FromArgb(158, 182, 141) :
+                repeated ? Color.FromArgb(210, 223, 203) : Color.FromArgb(228, 233, 223));
+            var state = g.Save();
+            try
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.FillPath(fill, shape);
+                g.DrawPath(border, shape);
+            }
+            finally { g.Restore(state); }
         }
 
         private void RenderSetDetails(Graphics g, PanelQueryResult result, Font small, Font mono, StringFormat trim)
@@ -94,10 +122,10 @@ namespace BetterGhPanel
             g.DrawRectangle(border, bounds.X, bounds.Y, bounds.Width, bounds.Height);
         }
 
-        private static void DrawSetChevron(Graphics g, RectangleF bounds, bool expanded)
+        private static void DrawSetChevron(Graphics g, RectangleF bounds, bool expanded, Color? color = null)
         {
             float x = bounds.X + (bounds.Width - 6) / 2, y = bounds.Y + (bounds.Height - 6) / 2;
-            using var pen = new Pen(Accent, 1.1f);
+            using var pen = new Pen(color ?? Accent, 1.1f);
             g.DrawLines(pen, expanded
                 ? new[] { new PointF(x, y + 4), new PointF(x + 3, y + 1), new PointF(x + 6, y + 4) }
                 : new[] { new PointF(x, y + 1), new PointF(x + 3, y + 4), new PointF(x + 6, y + 1) });

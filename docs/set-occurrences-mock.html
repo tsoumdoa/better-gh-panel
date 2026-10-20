@@ -30,11 +30,17 @@
   .value { padding: 0 var(--cell-gap) 0 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; line-height: 23px; }
   .numeric { text-align: right; font-family: Consolas, monospace; font-variant-numeric: tabular-nums; }
   .type { text-align: right; color: #909789; font-size: 10px; line-height: 23px; padding-right: var(--cell-gap); }
-  .count { height: 23px; border: 0; background: #eff4eb; color: #48653d; position: relative; text-align: right; padding: 0 16px 0 6px; font: 11px/23px Consolas, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .count .chevron { position: absolute; right: 5px; top: 10px; margin: 0; }
+  .count { height: 23px; border: 0; background: transparent; color: #48653d; position: relative; text-align: right; padding: 0 20px 0 6px; font: 11px/23px Consolas, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; isolation: isolate; }
+  .count::before { content: ""; position: absolute; z-index: -1; inset: 3px 16px 3px 2px; border: 1px solid #d2dfcb; border-radius: 4px; background: #edf3e8; }
+  .count .times { display: inline-block; width: 8px; margin-left: 2px; font: 10px/23px Arial, sans-serif; text-align: left; color: #829575; }
+  .count .chevron { position: absolute; right: 4px; top: 10px; margin: 0; color: #98a78d; }
   .count[aria-expanded="true"] .chevron { top: 7px; margin: 0; }
-  .count:hover { background: #e4eddd; }
-  .count[aria-expanded="true"] { background: #dfead8; }
+  .count.single { color: #8b9484; }
+  .count.single::before { background: #fafbf9; border-color: #e4e9df; }
+  .count.single .times { color: #a1ab99; }
+  .count:hover::before { background: #e2ecd9; border-color: #b4c7a7; }
+  .count[aria-expanded="true"]::before { background: #dce9d2; border-color: #9eb68d; }
+  .count[aria-expanded="true"], .count[aria-expanded="true"] .times, .count[aria-expanded="true"] .chevron { color: #48653d; }
   .chevron { display: inline-block; width: 6px; height: 6px; border-right: 1.4px solid currentColor; border-bottom: 1.4px solid currentColor; transform: rotate(45deg); margin-top: -3px; }
   [aria-expanded="true"] .chevron, .collapse .chevron { transform: rotate(225deg); margin-top: 3px; }
   .footer { border-top: 1px solid #e4e8e0; padding: 6px 8px; font-size: 10px; color: #6f7967; }
@@ -86,7 +92,7 @@
     Array.from({length:10}, (_, index) => ({ value: index === 2 ? 'alpha' : 9, path:'{4;0}', index })),
     [9,3,9].map((value, index) => ({ value, path:'{4;1}', index }))
   ];
-  let flatten = false, reverse = false, createSet = true, selected = '0:0', offset = 0, groups = [];
+  let flatten = false, reverse = false, createSet = true, selected = '1:0', offset = 0, groups = [];
   function compute() {
     const branches = flatten ? [source.flat()] : source;
     return branches.map((branch, b) => {
@@ -106,13 +112,13 @@
     const widestCount = Math.max(...groups.flatMap(branch => branch.values.map(item => item.locations.length)));
     const measure = document.createElement('canvas').getContext('2d');
     measure.font = '11px Consolas, monospace';
-    document.querySelector('.component').style.setProperty('--count-width', Math.max(44, Math.ceil(measure.measureText(widestCount.toLocaleString() + '×').width) + 22) + 'px');
+    document.querySelector('.component').style.setProperty('--count-width', Math.max(44, Math.ceil(measure.measureText(widestCount.toLocaleString()).width) + 36) + 'px');
     $('rows').innerHTML = groups.map(branch =>
       '<div class="branch"><code>' + branch.path + '</code><span>' + branch.values.length + ' items</span></div>' +
       branch.values.map((item, index) => '<div class="row ' + (createSet ? '' : 'plain') + '">' +
         '<span class="index">' + index + '</span><span class="value ' + (typeof item.value === 'number' ? 'numeric' : '') + '">' + item.value + '</span>' +
         '<span class="type">' + (typeof item.value === 'number' ? 'Num' : 'Text') + '</span>' +
-        (createSet ? '<button class="count" data-id="' + item.id + '" aria-expanded="' + (selected === item.id) + '" aria-label="Inspect ' + item.locations.length + ' occurrences of ' + item.value + '" title="' + (item.locations.length - 1) + ' duplicates removed">' + item.locations.length.toLocaleString() + '×<span class="chevron"></span></button>' : '') + '</div>').join('')
+        (createSet ? '<button class="count' + (item.locations.length === 1 ? ' single' : '') + '" data-id="' + item.id + '" aria-expanded="' + (selected === item.id) + '" aria-label="Inspect ' + item.locations.length + ' occurrences of ' + item.value + '" title="' + (item.locations.length - 1) + ' duplicates removed"><span class="frequency">' + item.locations.length.toLocaleString() + '</span><span class="times" aria-hidden="true">×</span><span class="chevron"></span></button>' : '') + '</div>').join('')
     ).join('');
     $('output').textContent = groups.reduce((n, branch) => n + branch.values.length, 0) + ' items · ' + groups.length + (groups.length === 1 ? ' branch' : ' branches');
     for (const [id, state] of [['flatten', flatten], ['reverse', reverse], ['set', createSet]]) $(id).setAttribute('aria-pressed', state);
