@@ -17,7 +17,8 @@ description: >
   Optionally show item-order labels at points and geometry centers in the viewport.
   Select rows or branches without moving the camera; use Frame selection to zoom explicitly.
   Select matching item indices across filtered branches from the row menu or with Alt/Option-click.
-  Filter values, length, area or volume with comparisons, or match text with regular expressions.
+  Filter values, geometry length, area, volume, or per-branch list length with comparisons.
+  Branch paths accept optional braces. Text and regular expressions match displayed units and decimals.
   Filters apply to typed output after tree tools and unit conversion.
   Pending results show a recomputing state instead of stale rows and statistics.
   Copy converted numeric values from selected rows.
