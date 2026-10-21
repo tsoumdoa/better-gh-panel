@@ -11,6 +11,28 @@ internal static class FilterCanvasChecks
         VerifyCompactMenus();
         VerifyBranchSelection();
         VerifyPreviewMenu();
+        VerifyRowActions();
+    }
+
+    private static void VerifyRowActions()
+    {
+        var single = CanvasRowActions.Create(1, new[] { 7 }, false);
+        Require(single.Select(choice => choice.Action).Distinct().Count() == single.Length,
+            "Row menu choices have distinct action identities");
+        Require(single.Single(choice => choice.Action == PanelRowAction.CopyValues).Label == "Copy value" &&
+            single.Single(choice => choice.Action == PanelRowAction.SelectIndices).Label == "Select index 7 across branches",
+            "Single-row action labels describe the selected item and its branch index");
+
+        var multiple = CanvasRowActions.Create(6, new[] { 1, 3 }, true);
+        Require(multiple.Single(choice => choice.Action == PanelRowAction.CopyValues).Label == "Copy values" &&
+            multiple.Single(choice => choice.Action == PanelRowAction.SelectIndices).Label == "Select indices 1, 3 across filtered results",
+            "Multi-row action labels preserve distinct indices and filtered scope");
+        var manyIndices = CanvasRowActions.Create(8, new[] { 1, 3, 5, 7 }, false);
+        Require(manyIndices.Single(choice => choice.Action == PanelRowAction.SelectIndices).Label == "Select 4 indices across branches",
+            "Long index selections use a bounded count label");
+        foreach (var choice in single)
+            Require(choice.Description.Length > 0 && choice.Description == multiple.Single(other => other.Action == choice.Action).Description,
+                "Row action explanations stay with the action across selection changes");
     }
 
     private static void VerifyPreviewMenu()

@@ -72,6 +72,25 @@ internal static class IndexSelectionChecks
             Check(viewport.CameraLocation == camera && viewport.CameraTarget == target, "Index selection keeps the Rhino camera still");
             Save("index-selection");
 
+            // A menu feature can move without changing its tooltip or dispatched action.
+            Open(2);
+            PanelTestAdapter.SwapRowMenuActions(component, 0, 3);
+            var reorderedMenu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+            var reorderedPoint = new PointF(reorderedMenu.X + 10, reorderedMenu.Y + 10);
+            var reorderedTooltip = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(reorderedPoint) }, null)!;
+            component.Attributes.SetupTooltip(reorderedPoint, reorderedTooltip);
+            Check(reorderedTooltip.Title == "Select index 2 across branches" &&
+                reorderedTooltip.Description.StartsWith("Select the same zero-based item indices", StringComparison.Ordinal),
+                "Reordered row actions retain their labels and explanations");
+            Click(new RectangleF(reorderedMenu.X, reorderedMenu.Y, reorderedMenu.Width, 20));
+            Expect(2, 32);
+            Check(viewport.CameraLocation == camera && viewport.CameraTarget == target,
+                "A moved index-selection action dispatches by identity instead of framing the selection");
+            Open(1);
+            Choose();
+            Expect(1, 31, 61);
+
             // Alt state is local to this test thread; it never injects a key into another app.
             var keyboard = new byte[256];
             Check(GetKeyboardState(keyboard), "Read thread keyboard state for shortcut check");
@@ -161,7 +180,7 @@ internal static class IndexSelectionChecks
         PanelQueryResult Result() => (PanelQueryResult)session.GetType().GetProperty("Result")!.GetValue(session)!;
         int[] Selected() => ((IReadOnlyList<int>)selection.GetType().GetMethod("OrderedPositions", Instance)!.Invoke(selection, new object[] { Result() })!).ToArray();
         void Expect(params int[] expected) => Check(Selected().SequenceEqual(expected), "Cross-branch positions: [" + string.Join(",", expected) + "]");
-        string Label() => Field<string[]>(component.Attributes, "_rowMenuLabels")[3];
+        string Label() => PanelTestAdapter.RowMenuLabel(component, 3);
         void Open(int position) => Click(PanelTestAdapter.RowBounds(component, position), Forms.MouseButtons.Right);
         void Choose()
         {

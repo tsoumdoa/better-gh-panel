@@ -33,19 +33,10 @@ namespace BetterGhPanel
         private PanelQueryResult? _lastResult;
         private readonly PanelRowSelection _selection = new PanelRowSelection();
         private GH_Canvas? _selectionCanvas;
-        private PanelQueryResult? _rowMenuResult;
-        private RectangleF _rowMenuBounds;
-        private int _rowMenuHovered = -1;
-        private string[] _rowMenuLabels = Array.Empty<string>();
         private readonly CanvasMenu _menu = new CanvasMenu();
-        private bool _resizing, _scrolling, _rowContextHandled;
+        private bool _resizing, _scrolling;
         private PointF _dragStart;
         private float _startWidth, _startHeight, _thumbGrab;
-        private DateTime _copiedUntil;
-        private DateTime _rowActionDismissedUntil;
-        private string _actionStatus = string.Empty;
-        private bool _copyPending;
-        private long _actionGeneration;
         private BetterPanelComponent PanelOwner => (BetterPanelComponent)Owner;
         private int Count => PanelOwner.Session.HasCurrentResult ? PanelOwner.Session.Result.RowPositions.Count : 0;
         private int MaximumOffset => Math.Max(0, Count - Math.Max(1, _shown));
@@ -604,143 +595,6 @@ namespace BetterGhPanel
             ReferenceEquals(_lastResult, result) && ReferenceEquals(result, PanelOwner.Session.Result) &&
             !PanelOwner.Locked && PanelOwner.Session.HasCurrentResult;
 
-        private void CloseRowMenu()
-        {
-            _rowMenuResult = null;
-            _rowMenuHovered = -1;
-            _rowMenuLabels = Array.Empty<string>();
-        }
-
-        private void SuppressTrailingDoubleClick() =>
-            _rowActionDismissedUntil = DateTime.UtcNow.AddMilliseconds(SystemInformation.DoubleClickTime);
-
-        private void RenderRowMenu(Graphics g, Font font, StringFormat trim)
-        {
-            Fill(g, Color.FromArgb(32, 49, 55, 53), new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + 2, _rowMenuBounds.Width, _rowMenuBounds.Height));
-            Fill(g, Color.White, _rowMenuBounds);
-            var labels = _rowMenuLabels;
-            for (int i = 0; i < labels.Length; i++)
-            {
-                var bounds = new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + i * 20, _rowMenuBounds.Width - 2, 20);
-                if (i == _rowMenuHovered) Fill(g, Color.FromArgb(226, 236, 226), bounds);
-                Text(g, labels[i], font, Ink, new RectangleF(bounds.X + 8, bounds.Y, bounds.Width - 16, bounds.Height), trim);
-            }
-            using (var pen = new Pen(Color.FromArgb(194, 205, 194)))
-                g.DrawRectangle(pen, _rowMenuBounds.X, _rowMenuBounds.Y, _rowMenuBounds.Width, _rowMenuBounds.Height);
-        }
-
-        private GH_ObjectResponse RespondToRowContextMenu(GH_Canvas canvas, GH_CanvasMouseEvent e)
-        {
-            _rowContextHandled = false;
-            if (_rowMenuResult != null || _menu.Kind != CanvasMenuKind.None)
-            {
-                _rowContextHandled = true;
-                CloseRowMenu();
-                _menu.Close();
-                canvas.Invalidate();
-                return GH_ObjectResponse.Handled;
-            }
-            var result = PanelOwner.Session.Result;
-            if (_list.Contains(e.CanvasLocation) && !RowsAreCurrent(result))
-            {
-                _rowContextHandled = true;
-                _rowHits.Clear();
-                canvas.Invalidate();
-                return GH_ObjectResponse.Handled;
-            }
-            foreach (var hit in _rowHits)
-            {
-                if (!hit.Bounds.Contains(e.CanvasLocation)) continue;
-                _rowContextHandled = true;
-                InvalidateCopyStatus();
-                _selection.Select(result, hit.SourcePosition, preserveSelected: true);
-                PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
-                TrackSelectionCanvas(canvas);
-                _rowMenuResult = result;
-                var options = PanelOwner.Session.Options;
-                bool filtered = options.Search.Length > 0 || options.TypeName != null || options.OnlyInvalid || options.BranchPath != null;
-                _rowMenuLabels = new[] { "Frame selection in Rhino", _selection.Count == 1 ? "Copy value" : "Copy values",
-                    "Copy geometry for Rhino", "Select " + IndexLabel(_selection.Indices(result)).ToLowerInvariant() +
-                    (filtered ? " across filtered results" : " across branches") };
-                float width = Math.Min(300, _panel.Width - 12);
-                float height = _rowMenuLabels.Length * 20;
-                _rowMenuBounds = new RectangleF(
-                    Math.Max(_panel.Left + 6, Math.Min(e.CanvasX, _panel.Right - width - 6)),
-                    Math.Max(_panel.Top + HeaderHeight, Math.Min(e.CanvasY, _panel.Bottom - height - 6)), width, height);
-                canvas.Invalidate();
-                return GH_ObjectResponse.Handled;
-            }
-            return base.RespondToMouseDown(canvas, e);
-        }
-
-        private void ChooseRowAction(int action, PanelQueryResult result, GH_Canvas canvas)
-        {
-            var positions = _selection.OrderedPositions(result);
-            if (positions.Count == 0) return;
-            if (action == 0)
-            {
-                InvalidateCopyStatus();
-                _actionStatus = PanelOwner.FrameRows(result.Snapshot, positions) ?? "Selection framed";
-                _copiedUntil = DateTime.UtcNow.AddSeconds(5);
-            }
-            else if (action == 1) CopySelectedValues(result, canvas);
-            else if (action == 2)
-            {
-                InvalidateCopyStatus();
-                PanelOwner.TryCopyGeometry(result.Snapshot, positions, out var status);
-                _actionStatus = status;
-                _copiedUntil = DateTime.UtcNow.AddSeconds(5);
-            }
-            else if (action == 3) SelectAcrossBranches(result, _selection.Indices(result), canvas);
-        }
-
-        private static string IndexLabel(int[] indices) => indices.Length == 1 ? "Index " + indices[0] :
-            indices.Length <= 3 ? "Indices " + string.Join(", ", indices) : indices.Length.ToString("N0") + " indices";
-
-        private void SelectAcrossBranches(PanelQueryResult result, int[] indices, GH_Canvas canvas)
-        {
-            InvalidateCopyStatus();
-            _selection.SelectIndices(result, indices);
-            var positions = _selection.OrderedPositions(result);
-            PanelOwner.HighlightRows(result.Snapshot, positions);
-            TrackSelectionCanvas(canvas);
-            int branches = positions.Select(position => result.Snapshot.Rows[position].Path).Distinct().Count();
-            _actionStatus = $"{IndexLabel(indices)} · {_selection.Count:N0} selected · {branches:N0} branches";
-            _copiedUntil = DateTime.UtcNow.AddSeconds(5);
-        }
-
-        private void InvalidateCopyStatus()
-        {
-            _actionGeneration++;
-            PanelOwner.CancelPendingCopy();
-            _copyPending = false;
-            _copiedUntil = default;
-            _actionStatus = string.Empty;
-        }
-
-        private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas)
-        {
-            var positions = _selection.OrderedPositions(result);
-            if (positions.Count == 0) return;
-            InvalidateCopyStatus();
-            long generation = _actionGeneration;
-            _copyPending = true;
-            _actionStatus = "Copying values…";
-            canvas.Invalidate();
-            string status;
-            try { status = await PanelOwner.CopyValuesAsync(result.Snapshot, positions); }
-            catch (Exception) { status = "Could not copy values. Try again."; }
-            Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
-            {
-                if (generation != _actionGeneration || canvas.IsDisposed || !RowsAreCurrent(result) ||
-                    !positions.SequenceEqual(_selection.OrderedPositions(result))) return;
-                _copyPending = false;
-                _actionStatus = status;
-                _copiedUntil = DateTime.UtcNow.AddSeconds(5);
-                canvas.Invalidate();
-            }));
-        }
-
         private static (bool Toggle, bool Range, bool AcrossBranches) RowModifiers()
         {
             // Eto reports Command on Mac; WinForms supplies the fallback used by
@@ -816,11 +670,12 @@ namespace BetterGhPanel
             if (_rowMenuResult != null)
             {
                 var menuResult = _rowMenuResult;
-                int action = _rowMenuBounds.Contains(point) ? (int)((point.Y - _rowMenuBounds.Y) / 20) : -1;
-                int actionCount = _rowMenuLabels.Length;
+                int index = _rowMenuBounds.Contains(point) ? (int)((point.Y - _rowMenuBounds.Y) / 20) : -1;
+                // Capture identity before closing releases the menu choices.
+                PanelRowAction? action = index >= 0 && index < _rowMenuActions.Length ? _rowMenuActions[index].Action : (PanelRowAction?)null;
                 CloseRowMenu();
                 SuppressTrailingDoubleClick();
-                if (RowsAreCurrent(menuResult) && action >= 0 && action < actionCount) ChooseRowAction(action, menuResult, sender);
+                if (RowsAreCurrent(menuResult) && action.HasValue) ChooseRowAction(action.Value, menuResult, sender);
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
@@ -1168,18 +1023,7 @@ namespace BetterGhPanel
                 e.Description = "The dotted grip and the space beside Panel+ move the component on the Grasshopper canvas.";
                 return;
             }
-            if (_rowMenuResult != null && _rowMenuBounds.Contains(point))
-            {
-                int action = (int)((point.Y - _rowMenuBounds.Y) / 20);
-                if (action < 0 || action >= _rowMenuLabels.Length) return;
-                e.Title = _rowMenuLabels[action];
-                e.Text = $"{_selection.Count:N0} selected";
-                e.Description = action == 0 ? "Fit the selected geometry in Rhino's active viewport." :
-                    action == 1 ? "Copy one value per line in the current displayed order, using the selected unit conversion and decimal formatting. Geometry measurements such as length, area and volume copy as numbers without unit suffixes. Copied numbers use a decimal point for pasting." :
-                    action == 2 ? "Copy the selected supported geometry to the clipboard, then paste it into Rhino. Other rows are skipped. Model geometry keeps its original dimensions." :
-                    "Select the same zero-based item indices in every branch of the filtered results, including offscreen rows. Uses the tree after tree tools, before filtering or sorting. Shorter branches are skipped. Alt/Option-click a row to select its index across branches.";
-                return;
-            }
+            if (RowActionTooltip(point, e)) return;
             if (_display.Contains(point))
             {
                 e.Title = PanelOwner.CanvasDisplay == CanvasPanelDisplay.Full ? "Show half panel" : "Show full panel";

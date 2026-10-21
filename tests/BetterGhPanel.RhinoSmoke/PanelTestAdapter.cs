@@ -58,6 +58,15 @@ internal static class PanelTestAdapter
     internal static RectangleF Bounds(GH_Component component, CanvasControl control) =>
         Field<RectangleF>(component.Attributes, "_" + char.ToLowerInvariant(control.ToString()[0]) + control.ToString().Substring(1));
     internal static RectangleF MenuBounds(GH_Component component) => Property<RectangleF>(Field<object>(component.Attributes, "_menu"), "Bounds");
+    internal static string RowMenuLabel(GH_Component component, int index) =>
+        Property<string>(Field<Array>(component.Attributes, "_rowMenuActions").GetValue(index)!, "Label");
+    internal static void SwapRowMenuActions(GH_Component component, int first, int second)
+    {
+        var actions = Field<Array>(component.Attributes, "_rowMenuActions");
+        var saved = actions.GetValue(first);
+        actions.SetValue(actions.GetValue(second), first);
+        actions.SetValue(saved, second);
+    }
 
     internal static void Render(GH_Component component, GH_Canvas canvas, Graphics graphics) =>
         component.Attributes.GetType().GetMethod("Render", PrivateInstance)!

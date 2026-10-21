@@ -1,5 +1,7 @@
 # Current architecture
 
+The [maintainability audit and feature guide](maintainability.md) maps extension points and records deferred simplifications. `PanelUnits` owns conversion definitions in one catalog; `PanelQueryScope` shares cheap restrictions between final queries and geometry preparation; named row actions keep menu presentation and dispatch aligned in the row-action feature partial.
+
 `PanelOrderLabels` maps current result positions to each captured row's zero-based `OriginalIndex`, which is local to its branch after tree tools. Filtering, sorting and selection do not renumber labels. Repeated indices across branches and coincident anchors are valid; the existing selected-first collision handling decides visibility. Label caches are still discarded for obsolete results and inactive preview scopes. With item order enabled, row tooltips show the matching branch path and index.
 
 The footer's **Select all** button uses `PanelRowSelection.SelectAll` over the current query result, including offscreen rows. It shares row-action currency guards, pending-copy cancellation, highlighting and selection cleanup. Full and minimum Half layouts reserve space beside Stats, and capsule layout clears the control's hit target. Repeated clicks preserve the full selection; selection never changes typed output or frames the camera.
