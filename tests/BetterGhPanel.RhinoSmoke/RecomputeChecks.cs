@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
+using Grasshopper.GUI;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
@@ -83,6 +84,10 @@ internal static class RecomputeChecks
             Check(timer.Enabled, "The visible recomputing spinner has an active animation timer");
             // Expiration must reject the old worker before replacement input exists.
             fixture.Component.ClearData();
+            Check(ReferenceEquals(Property<PanelSnapshot>(session, "Snapshot"), PanelSnapshot.Empty) &&
+                ReferenceEquals(Result(session).Snapshot, PanelSnapshot.Empty) &&
+                Field<PanelQueryResult?>(fixture.Component.Attributes, "_lastResult") == null,
+                "Expired input releases the old snapshot and painted result before another render");
             Query(session, new PanelQueryOptions());
             Check(Property<bool>(session, "IsBusy") && !Current(session), "Changing a filter cannot revive expired input while awaiting the next solution");
             Invoke(session, "AttachSnapshot", small);
@@ -256,6 +261,19 @@ internal static class RecomputeChecks
         fixture.Source.PersistentData.Append(new GH_Surface(new Rhino.Geometry.PlaneSurface(Rhino.Geometry.Plane.WorldXY,
             new Rhino.Geometry.Interval(0, 10), new Rhino.Geometry.Interval(0, 10)).ToBrep()), new GH_Path(0));
         fixture.Solve();
+        await Wait(() => Current(session));
+        Paint(component, canvas);
+        var snapshot = Property<PanelSnapshot>(session, "Snapshot");
+        var branch = PanelTestAdapter.Bounds(component, CanvasControl.Branch);
+        var mouse = new GH_CanvasMouseEvent(Point.Empty, new PointF(branch.X + branch.Width / 2, branch.Y + branch.Height / 2),
+            System.Windows.Forms.MouseButtons.Left, 1, 0);
+        component.Attributes.RespondToMouseDown(canvas, mouse);
+        component.Attributes.RespondToMouseUp(canvas, mouse);
+        var menu = Field<object>(component.Attributes, "_menu");
+        Check(Field<IGH_Goo?[]>(component, "_sourceItems").Length == 1 &&
+            ReferenceEquals(Field<PanelQueryResult?>(component.Attributes, "_lastResult")?.Snapshot, snapshot) &&
+            ReferenceEquals(Field<PanelSnapshot>(menu, "_snapshot"), snapshot),
+            "Release regression starts with borrowed geometry and populated result/menu caches");
         int started = 0;
         Invoke(session, "SetGeometryDetailResolver", (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
         {
@@ -272,6 +290,12 @@ internal static class RecomputeChecks
             Check(timer.Enabled, "Pending query animates before disabling the component");
             component.Locked = true;
             component.ExpireSolution(true);
+            Check(Field<IGH_Goo?[]>(component, "_sourceItems").Length == 0 &&
+                ReferenceEquals(Property<PanelSnapshot>(session, "Snapshot"), PanelSnapshot.Empty) &&
+                ReferenceEquals(Result(session).Snapshot, PanelSnapshot.Empty) &&
+                Field<PanelQueryResult?>(component.Attributes, "_lastResult") == null &&
+                ReferenceEquals(Field<PanelSnapshot>(menu, "_snapshot"), PanelSnapshot.Empty),
+                "Disabling releases borrowed geometry and every cached snapshot before another render");
             Paint(component, canvas);
             Check(!Property<bool>(session, "IsBusy") && !Current(session) && !timer.Enabled && Hits(component, "_rowHits") == 0,
                 "Disabling cancels the query, hides stale rows and stops animation");
@@ -289,9 +313,19 @@ internal static class RecomputeChecks
             component.Locked = false;
             component.ExpireSolution(true);
             await Wait(() => Current(session) && fixture.Sink.VolatileData.DataCount == 1);
-            Check(!timer.Enabled, "Re-enabling recomputes current input and publishes output");
+            Check(!timer.Enabled && Field<IGH_Goo?[]>(component, "_sourceItems").Length == 1,
+                "Re-enabling recollects current geometry and publishes output");
         }
         finally { gate.Set(); }
+
+        Paint(component, canvas);
+        component.DocumentContextChanged(fixture.Document, GH_DocumentContext.Close);
+        Check(!PanelTestAdapter.HasSession(component) && Field<IGH_Goo?[]>(component, "_sourceItems").Length == 0 &&
+            ReferenceEquals(Property<PanelSnapshot>(session, "Snapshot"), PanelSnapshot.Empty) &&
+            ReferenceEquals(Result(session).Snapshot, PanelSnapshot.Empty) &&
+            Field<PanelQueryResult?>(component.Attributes, "_lastResult") == null &&
+            ReferenceEquals(Field<PanelSnapshot>(menu, "_snapshot"), PanelSnapshot.Empty),
+            "Closing releases the component caches and the result of a retained disposed session");
 
         using var initiallyDisabled = new Fixture(assembly);
         initiallyDisabled.Component.Locked = true;

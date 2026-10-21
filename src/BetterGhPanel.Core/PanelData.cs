@@ -129,6 +129,7 @@ namespace BetterGhPanel.Core
         public string? BranchPath { get; set; }
         public bool BranchPrefix { get; set; }
         public bool OnlyInvalid { get; set; }
+        /// <summary>Value modes sort within each branch while preserving the snapshot's branch order.</summary>
         public PanelSortMode SortMode { get; set; } = PanelSortMode.SourceOrder;
 
         public PanelQueryOptions Clone() => new PanelQueryOptions

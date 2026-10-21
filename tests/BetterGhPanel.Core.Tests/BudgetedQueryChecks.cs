@@ -13,6 +13,7 @@ internal static class BudgetedQueryChecks
         NoRowOrBranchCutoff();
         ResumeScanOnWorker();
         YieldThroughSorting();
+        YieldAndCancelThroughBranchSorting();
         CancellationAndDisposal();
     }
 
@@ -95,6 +96,53 @@ internal static class BudgetedQueryChecks
         disposed.Dispose();
         try { disposed.Complete(); throw new InvalidOperationException("Disposed work completed"); }
         catch (ObjectDisposedException) { }
+    }
+
+    private static void YieldAndCancelThroughBranchSorting()
+    {
+        var snapshot = new PanelSnapshot(Enumerable.Range(0, 96).Select(index =>
+            new PanelRow(index, "{" + index % 4 + "}", "Number", (index % 7).ToString(), index % 7)).ToArray(),
+            new[] { 2, 0, 3, 1, 9 }.Select(index => new PanelBranch("{" + index + "}", index == 9 ? 0 : 24)).ToArray());
+        foreach (var direction in new[] { PanelSortMode.ValueAscending, PanelSortMode.ValueDescending })
+        {
+            using var work = PanelQueryEngine.Start(snapshot, new PanelQueryOptions { SortMode = direction });
+            var slices = 0;
+            while (true)
+            {
+                int checks = 0;
+                if (work.TryComplete(() => ++checks > 1)) break;
+                Check(work.Result == null, "Branch grouping and merge slices never publish partial results");
+                Check(++slices < 3000, "Branch sorting advances across tiny cooperative budgets");
+            }
+            var expected = snapshot.Branches.SelectMany(branch =>
+            {
+                var positions = Enumerable.Range(0, snapshot.Rows.Count).Where(index => snapshot.Rows[index].Path == branch.Path);
+                return direction == PanelSortMode.ValueAscending
+                    ? positions.OrderBy(index => snapshot.Rows[index].NumericValue)
+                    : positions.OrderByDescending(index => snapshot.Rows[index].NumericValue);
+            });
+            Check(work.Result!.RowPositions.SequenceEqual(expected) && work.Result.Statistics.BranchCount == 5 &&
+                work.Result.Statistics.ItemCount == 96, "Yielded sorting preserves tree order, branch-local stability and empty branches");
+        }
+
+        // Suspend after filtering at successively later points, exercising metadata
+        // ordering, grouping, merge passes and copy-back rather than just the scan.
+        foreach (int laterChecks in new[] { 2, 20, 150, 300, 700 })
+        {
+            using var cancellation = new CancellationTokenSource();
+            var reads = new MeasurementReads(snapshot.Rows.Count);
+            using var work = PanelQueryEngine.Start(snapshot,
+                new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending }, cancellation.Token, reads);
+            int checks = 0;
+            Check(!work.TryComplete(() => reads.Reads.All(count => count == 1) && ++checks > laterChecks),
+                "Cancellation fixture suspends after the complete item scan");
+            cancellation.Cancel();
+            try { work.Complete(); throw new InvalidOperationException("Canceled branch sort completed"); }
+            catch (OperationCanceledException) { }
+            Check(work.Result == null, "Cancellation during branch sorting cannot publish a partial result");
+        }
+        Check(PanelQueryEngine.Execute(snapshot, new PanelQueryOptions()).RowPositions.SequenceEqual(Enumerable.Range(0, 96)),
+            "Canceled branch sorting never changes source order");
     }
 
     private static PanelSnapshot Numbers(int count) => new PanelSnapshot(
