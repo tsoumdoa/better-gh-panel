@@ -166,6 +166,9 @@ internal static class RowNumberingChecks
                 "Select all follows the per-branch displayed order, including filtered subsets");
             Click(component, canvas, PanelTestAdapter.RowBounds(component, expectedPositions[0]), Forms.MouseButtons.Right);
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+            Check(!menu.IsEmpty && ReferenceEquals(Field<object>(component.Attributes, "_rowMenuResult"), result),
+                "Sorted value copy opens a context menu for the current query");
+            string beforeCopy = RowActionChecks.ClipboardState();
             Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
             var timer = Stopwatch.StartNew();
             while (Field<bool>(component.Attributes, "_copyPending"))
@@ -173,9 +176,14 @@ internal static class RowNumberingChecks
                 if (timer.Elapsed.TotalSeconds > 20) throw new TimeoutException("Sorted value copy did not finish");
                 await Task.Delay(10);
             }
-            Check(Field<string>(component.Attributes, "_actionStatus") == expectedPositions.Length + " values copied" &&
-                Forms.Clipboard.GetText() == string.Join(Environment.NewLine, expectedValues),
-                "Native Copy values follows exactly the selected per-branch display order");
+            string status = Field<string>(component.Attributes, "_actionStatus");
+            string afterCopy = RowActionChecks.ClipboardState();
+            Check(status == expectedPositions.Length + " values copied",
+                $"Sorted value copy completes ({sort}, filter '{filter}', status '{status}', host PID {Environment.ProcessId}; before {beforeCopy}; after {afterCopy})");
+            string actual = Forms.Clipboard.GetText();
+            string expected = string.Join(Environment.NewLine, expectedValues);
+            Check(actual == expected,
+                $"Native Copy values follows exactly the selected per-branch display order ({sort}, filter '{filter}', actual length {actual.Length}, expected {expected.Length}; after copy {afterCopy}; after read {RowActionChecks.ClipboardState()})");
         }
     }
 

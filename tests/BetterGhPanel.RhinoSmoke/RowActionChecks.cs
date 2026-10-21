@@ -365,9 +365,15 @@ internal static class RowActionChecks
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-            await CopyValues(component, snapshot, 1, 0, 1);
-            Check(ClipboardText() == "1234.56789" + Environment.NewLine + "42",
-                "Copy values uses invariant numeric text in query order and deduplicates selected positions");
+            string beforeNumeric = ClipboardState();
+            string numericStatus = await CopyValues(component, snapshot, 1, 0, 1);
+            string afterNumeric = ClipboardState();
+            Check(numericStatus == "2 values copied",
+                $"Invariant numeric copy completes: {numericStatus}; host PID {Environment.ProcessId}; before {beforeNumeric}; after {afterNumeric}");
+            string numericText = ClipboardText();
+            string expectedNumeric = "1234.56789" + Environment.NewLine + "42";
+            Check(numericText == expectedNumeric,
+                $"Copy values uses invariant numeric text in query order and deduplicates selected positions (actual length {numericText.Length}, expected {expectedNumeric.Length}; after copy {afterNumeric}; after read {ClipboardState()})");
         }
         finally { CultureInfo.CurrentCulture = culture; }
 
@@ -901,7 +907,7 @@ internal static class RowActionChecks
         return bytes;
     }
 
-    private static string ClipboardState()
+    internal static string ClipboardState()
     {
         IntPtr owner = GetClipboardOwner();
         GetWindowThreadProcessId(owner, out uint processId);
