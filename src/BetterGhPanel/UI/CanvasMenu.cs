@@ -83,7 +83,14 @@ namespace BetterGhPanel.UI
             _ => name
         };
 
-        internal void Close() { Kind = CanvasMenuKind.None; HoveredIndex = -1; _statisticsResult = null; }
+        internal void Close()
+        {
+            Kind = CanvasMenuKind.None;
+            HoveredIndex = -1;
+            _statisticsResult = null;
+            _snapshot = PanelSnapshot.Empty;
+            _types = Array.Empty<string>();
+        }
         internal bool IsCurrent(PanelSnapshot snapshot) => ReferenceEquals(_snapshot, snapshot);
         internal bool IsCurrent(PanelQueryResult result) => Kind != CanvasMenuKind.Statistics || ReferenceEquals(_statisticsResult, result);
 
@@ -102,6 +109,7 @@ namespace BetterGhPanel.UI
                 _types = keys.Concat(active != null && !keys.Contains(active) ? new[] { active } : Array.Empty<string>())
                     .OrderBy(x => x, StringComparer.Ordinal).ToArray();
             }
+            if (Kind == CanvasMenuKind.None) Close();
         }
 
         internal void Layout(RectangleF panel, RectangleF type, RectangleF sort, RectangleF branch, RectangleF units = default, RectangleF search = default, RectangleF preview = default, RectangleF statistics = default)

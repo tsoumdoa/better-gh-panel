@@ -88,9 +88,12 @@ internal static class IndexSelectionChecks
                 "Index selection alone leaves output identities and order unchanged");
 
             await Query(new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
+            Click(PanelTestAdapter.Bounds(component, CanvasControl.Jump));
+            CanvasEditorAdapter.Active(assembly).Submit("61");
+            Paint();
             Open(61);
             Choose();
-            Expect(61, 31, 1); // first display row is item index one, not zero
+            Expect(1, 31, 61); // selected items retain branch order even in Desc
             await Query(new PanelQueryOptions());
             selection.GetType().GetMethod("Select", Instance)!.Invoke(selection, new object[] { Result(), 0, true, false, false });
             Open(1);

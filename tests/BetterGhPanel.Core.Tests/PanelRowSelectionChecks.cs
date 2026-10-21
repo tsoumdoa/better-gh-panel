@@ -36,10 +36,10 @@ internal static class PanelRowSelectionChecks
         var ascending = Query(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending });
         Expect(selection, ascending, 1, 0); // copy order is display order, independent of click order
         selection.Select(ascending, 0, range: true);
-        Expect(selection, ascending, 1, 3, 2, 0);
+        Expect(selection, ascending, 1, 2, 0);
 
         var filtered = Query(snapshot, new PanelQueryOptions { Search = "> 15", SortMode = PanelSortMode.ValueAscending });
-        Expect(selection, filtered, 3, 2, 0); // hidden rows are pruned
+        Expect(selection, filtered, 2, 0); // hidden rows are pruned
         selection.Select(filtered, 4, range: true);
         Expect(selection, filtered, 4); // a filtered-out anchor cannot select an unintended range
         Expect(selection, source, 4); // removing the filter never resurrects discarded rows
@@ -65,9 +65,9 @@ internal static class PanelRowSelectionChecks
         selection.SelectAll(source);
         Expect(selection, source, 0, 1, 2, 3, 4);
         selection.SelectAll(filtered);
-        Expect(selection, filtered, 3, 2, 0, 4);
+        Expect(selection, filtered, 2, 0, 3, 4);
         selection.Select(filtered, 0, range: true);
-        Expect(selection, filtered, 3, 2, 0); // Select all anchors ranges at the first displayed match
+        Expect(selection, filtered, 2, 0); // Select all anchors ranges at the first displayed match
         selection.SelectAll(filtered, "{0}");
         Expect(selection, filtered, 2, 0); // branch selection still honors active filters
         selection.SelectAll(empty);
@@ -94,12 +94,12 @@ internal static class PanelRowSelectionChecks
 
         var ascending = Query(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending });
         selection.SelectIndices(ascending, new[] { 0 });
-        Expect(selection, ascending, 3, 0); // item zero is not displayed row one
+        Expect(selection, ascending, 0, 3); // item zero is not displayed row one
         selection.Select(ascending, 1, toggle: true);
         selection.SelectIndices(ascending, selection.Indices(ascending));
-        Expect(selection, ascending, 1, 3, 0, 4); // expand each selected index, in view order
+        Expect(selection, ascending, 1, 0, 3, 4); // expand each selected index, in view order
         var descending = Query(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
-        Expect(selection, descending, 4, 0, 3, 1);
+        Expect(selection, descending, 0, 1, 4, 3);
 
         var filtered = Query(snapshot, new PanelQueryOptions { Search = "> 15" });
         selection.SelectIndices(filtered, new[] { 1 });
@@ -115,7 +115,7 @@ internal static class PanelRowSelectionChecks
         selection.Select(source, 4);
         selection.SelectIndices(ascending, new[] { 0 });
         selection.Select(ascending, 2, range: true);
-        Expect(selection, ascending, 3, 2); // the expansion resets the old range anchor
+        Expect(selection, ascending, 2, 0); // the expansion resets the old range anchor
         selection.SelectIndices(source, Array.Empty<int>());
         Expect(selection, source);
         selection.SelectIndices(source, new[] { -1, 100 });

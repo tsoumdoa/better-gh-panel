@@ -60,6 +60,7 @@ namespace BetterGhPanel
             _setControlsVisible = false;
             LayoutSetDetails();
             _offset = 0;
+            _lastResult = null;
             ClearRowSelection();
             PanelOwner.ClearHighlight();
             _scrolling = false;
@@ -437,7 +438,7 @@ namespace BetterGhPanel
             // A half-height panel at the minimum saved size still has room for a
             // value, even when a separate branch heading would consume that row.
             bool sorted = PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder;
-            bool grouped = !sorted && _list.Height >= BranchHeight + RowHeight;
+            bool grouped = _list.Height >= BranchHeight + RowHeight;
             bool showTypes = result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
             using var rowRenderer = new CanvasRowRenderer(g, result.Snapshot.Rows.Count, sorted);
             if (PanelOwner.CreateSetTree) SizeSetColumn(g, rowRenderer, result.Snapshot);
@@ -960,6 +961,9 @@ namespace BetterGhPanel
             var kind = _menu.Kind;
             // Statistics are inspection only. A click must not select rows or change the output.
             if (kind == CanvasMenuKind.Statistics) return;
+            // Resolve choices before closing releases the captured menu data.
+            var selectedType = kind == CanvasMenuKind.Type && index > 1 ? _menu.TypeNameAt(index) : null;
+            var selectedPath = kind == CanvasMenuKind.Branch && index > 1 ? _menu.BranchPathAt(index) : null;
             _menu.Close();
             if (kind == CanvasMenuKind.Preview)
             {
@@ -1011,7 +1015,7 @@ namespace BetterGhPanel
             if (kind == CanvasMenuKind.Type)
             {
                 if (index == 1) options.OnlyInvalid = !options.OnlyInvalid;
-                else { options.TypeName = index == 0 ? null : _menu.TypeNameAt(index); if (index == 0) options.OnlyInvalid = false; }
+                else { options.TypeName = selectedType; if (index == 0) options.OnlyInvalid = false; }
             }
             else if (kind == CanvasMenuKind.Sort) options.SortMode = (PanelSortMode)index;
             else if (index == 1)
@@ -1022,7 +1026,7 @@ namespace BetterGhPanel
             }
             else
             {
-                SetBranchFilter(index == 0 ? null : _menu.BranchPathAt(index));
+                SetBranchFilter(selectedPath);
                 canvas.Invalidate();
                 return;
             }
@@ -1230,7 +1234,7 @@ namespace BetterGhPanel
                 e.Title = _type.Contains(point) ? "Filter by type" : _sort.Contains(point) ? "Sort this view" : "Filter by branch";
                 e.Text = _type.Contains(point) ? PanelOwner.Session.HasCurrentResult ? CanvasMenu.TypeHint(PanelOwner.Session.Result, options) : "Types" :
                     _sort.Contains(point) ? options.SortMode.ToString() : options.BranchPath ?? "All branches";
-                e.Description = "Filters keep matching items on the output wire after tree tools and unit conversion. Sorting changes only the view; output keeps its tree order.";
+                e.Description = "Filters keep matching items on the output wire after tree tools and unit conversion. Asc/Desc sorts items within each branch, keeping branch order. Sorting changes only the view; output keeps its tree order.";
                 if (_type.Contains(point) && PanelOwner.Session.HasCurrentResult)
                     e.Description = (PanelOwner.Session.Result.RowPositions.Count > 0 ? "Visible types: " : "Source types: ") +
                         CanvasMenu.TypeDetails(PanelOwner.Session.Result) + "\n\n" + e.Description;
@@ -1263,7 +1267,7 @@ namespace BetterGhPanel
             {
                 e.Title = "Jump to a row";
                 e.Text = "Position in the current filtered and sorted view";
-                e.Description = "Enter a row number starting at 1. In Asc/Desc, the large number is this view position and the smaller bracketed number is the original zero-based item index within its branch. Source order shows only the original index.";
+                e.Description = "Enter a row number starting at 1 across the complete filtered view. In Asc/Desc, branches retain their order and items sort within each branch. The large number is the continuous view position across branches; the smaller bracketed number is the original zero-based item index within its branch. Source order shows only the original index.";
             }
             else if (_resize.Contains(point))
             {

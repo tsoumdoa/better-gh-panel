@@ -23,8 +23,10 @@ internal static class Program
             TypeAndInvalidFilters,
             StableMixedSorting,
             OddLengthSorting,
+            BranchSortingChecks.Run,
             ImmutableSnapshotAndView,
             EmptyAndNonfiniteNumbers,
+            InvalidFiniteNumbers,
             ExtremeNumericStatistics,
             Cancellation,
             BudgetedQueryChecks.Run,
@@ -144,9 +146,9 @@ internal static class Program
     private static void StableMixedSorting()
     {
         var ascending = Query(new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending });
-        Sequence(new[] { 1, 0, 3, 2, 5, 4 }, ascending.RowPositions);
+        Sequence(new[] { 1, 0, 2, 3, 5, 4 }, ascending.RowPositions);
         var descending = Query(new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
-        Sequence(new[] { 0, 3, 1, 5, 2, 4 }, descending.RowPositions);
+        Sequence(new[] { 0, 1, 2, 3, 5, 4 }, descending.RowPositions);
         var first = descending.Snapshot.Rows[descending.RowPositions[0]];
         Equal(0, first.OriginalIndex);
         Equal("{0;1}", first.Path);
@@ -215,6 +217,46 @@ internal static class Program
         Sequence(new[] { 3, 4 }, PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = ">0" }).RowPositions);
     }
 
+    private static void InvalidFiniteNumbers()
+    {
+        // RhinoMath.UnsetValue is finite, but a native GH_Number carrying it is invalid.
+        const double unsetValue = -1.23432101234321e308;
+        var snapshot = new PanelSnapshot(new[]
+        {
+            new PanelRow(0, "{0}", "Number", "-1.23432101234E+308", unsetValue, isValid: false),
+            new PanelRow(1, "{0}", "Number", "10", 10),
+            new PanelRow(2, "{0}", "Number", "42", 42, isValid: false)
+        }, new[] { new PanelBranch("{0}", 3) });
+        var all = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
+        Sequence(new[] { 0, 1, 2 }, all.RowPositions);
+        Equal(2, all.Statistics.InvalidCount);
+        Equal(1, all.Statistics.NumericCount);
+        Equal<double?>(10, all.Statistics.Minimum);
+        Equal<double?>(10, all.Statistics.Maximum);
+        Equal<double?>(10, all.Statistics.Mean);
+        Equal(1, all.Statistics.ScalarCount);
+        Equal(2, all.Statistics.UniqueExcludedCount);
+
+        foreach (var mode in new[] { PanelSearchMode.Text, PanelSearchMode.Value })
+        {
+            Equal(0, PanelQueryEngine.Execute(snapshot,
+                new PanelQueryOptions { SearchMode = mode, Search = "< 0" }).RowPositions.Count);
+            Equal(0, PanelQueryEngine.Execute(snapshot,
+                new PanelQueryOptions { SearchMode = mode, Search = "> 20" }).RowPositions.Count);
+            Sequence(new[] { 1 }, PanelQueryEngine.Execute(snapshot,
+                new PanelQueryOptions { SearchMode = mode, Search = "< 20" }).RowPositions);
+        }
+
+        var invalid = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { OnlyInvalid = true });
+        Sequence(new[] { 0, 2 }, invalid.RowPositions);
+        Equal(0, invalid.Statistics.NumericCount);
+        Equal<double?>(null, invalid.Statistics.Mean);
+        Sequence(new[] { 1, 0, 2 }, PanelQueryEngine.Execute(snapshot,
+            new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending }).RowPositions);
+        Sequence(new[] { 1, 2, 0 }, PanelQueryEngine.Execute(snapshot,
+            new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending }).RowPositions);
+    }
+
     private static void ExtremeNumericStatistics()
     {
         var snapshot = new PanelSnapshot(new[]
@@ -258,8 +300,8 @@ internal static class Program
         Equal(count, result.Statistics.ItemCount);
         Equal(count / branchSize, result.Statistics.BranchCount);
         Near((count - 1) / 2.0, result.Statistics.Mean!.Value);
-        Equal(count - 1, result.RowPositions[0]);
-        Equal(0, result.RowPositions[count - 1]);
+        Sequence(Enumerable.Range(0, branches.Length).SelectMany(branch =>
+            Enumerable.Range(branch * branchSize, branchSize).Reverse()), result.RowPositions);
         Console.WriteLine($"  {count:N0} rows filtered, aggregated and sorted in {watch.ElapsedMilliseconds} ms (local measurement).");
     }
 

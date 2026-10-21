@@ -48,9 +48,23 @@ try {
     }
     return { framework, source, names };
   });
+  for (const asset of ['assets/icon.png', 'LICENSE']) {
+    const file = join(root, asset);
+    if (!existsSync(file) || !statSync(file).isFile() || statSync(file).size === 0)
+      throw new Error(`Missing packaging asset: ${file}`);
+  }
+  // Yak packages every file in its working directory. Reject unexpected root
+  // entries before modifying a previous stage instead of shipping them silently.
+  if (existsSync(stage)) {
+    const allowed = new Set(['manifest.yml', 'icon.png', 'LICENSE', ...outputs.map(output => output.framework)]);
+    const unexpected = readdirSync(stage).filter(name => !allowed.has(name) &&
+      !(name.startsWith(`better-gh-panel-${version}-`) && name.endsWith('.yak') && statSync(join(stage, name)).isFile()));
+    if (unexpected.length) throw new Error(`Unexpected staging entries: ${unexpected.join(', ')}. Move them out of ${stage} before packaging.`);
+  }
   mkdirSync(stage, { recursive: true });
   writeFileSync(join(stage, 'manifest.yml'), manifest);
   copyFileSync(join(root, 'assets', 'icon.png'), join(stage, 'icon.png'));
+  copyFileSync(join(root, 'LICENSE'), join(stage, 'LICENSE'));
   for (const { framework, source, names } of outputs) {
     const folder = resolve(stage, framework);
     if (!folder.startsWith(resolve(root, 'artifacts') + sep)) throw new Error(`Invalid staging directory: ${folder}`);

@@ -58,9 +58,11 @@ internal static class Program
         {
             try
             {
-                VerifyTreeOperations(Assembly.LoadFrom(_plugin));
-                CreateSetChecks.VerifyTree(Assembly.LoadFrom(_plugin));
-                Console.WriteLine("PASS: Managed Grasshopper tree operation checks completed (Rhino host not started).");
+                var assembly = Assembly.LoadFrom(_plugin);
+                VerifyTreeOperations(assembly);
+                CreateSetChecks.VerifyTree(assembly);
+                VerifyUnitOperations(assembly);
+                Console.WriteLine("PASS: Managed Grasshopper tree and unit operation checks completed (Rhino host not started).");
                 return 0;
             }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
@@ -772,6 +774,36 @@ internal static class Program
             "Unit conversion leaves upstream numeric values untouched");
         Assert(ReferenceEquals(source, method.Invoke(null, new object[] { source, PanelUnitConversion.None })),
             "Disabled conversion preserves original types and tree identity");
+
+        var unset = new GH_Number(Rhino.RhinoMath.UnsetValue);
+        var invalidSource = new GH_Structure<IGH_Goo>();
+        invalidSource.AppendRange(new IGH_Goo[] { unset, new GH_Number(10) }, new GH_Path(0));
+        Assert(!unset.IsValid && !double.IsNaN(unset.Value) && !double.IsInfinity(unset.Value),
+            "Native unset numbers are invalid despite carrying a finite double");
+        foreach (PanelUnitConversion conversion in Enum.GetValues(typeof(PanelUnitConversion)))
+        {
+            var result = (GH_Structure<IGH_Goo>)method.Invoke(null, new object[] { invalidSource, conversion })!;
+            Assert(ReferenceEquals(result.Branches[0][0], unset) && !result.Branches[0][0].IsValid &&
+                unset.Value == Rhino.RhinoMath.UnsetValue,
+                "Every unit mode preserves invalid numeric goo without turning unset into a valid scalar");
+            Assert(((GH_Number)result.Branches[0][1]).Value == PanelUnits.Convert(10, conversion),
+                "Valid numeric values still convert alongside invalid items");
+        }
+
+        var convertedInvalid = (GH_Structure<IGH_Goo>)method.Invoke(null,
+            new object[] { invalidSource, PanelUnitConversion.MillimetersToMeters })!;
+        var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!
+            .GetMethod("Capture", BindingFlags.Public | BindingFlags.Static)!;
+        var snapshot = (PanelSnapshot)capture.Invoke(null,
+            new object?[] { convertedInvalid, null, PanelUnitConversion.MillimetersToMeters, "mm" })!;
+        var query = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
+        Assert(query.Statistics.InvalidCount == 1 && query.Statistics.NumericCount == 1 &&
+            query.Statistics.Minimum == 0.01 && query.Statistics.Maximum == 0.01 && query.Statistics.Mean == 0.01,
+            "Converted native unset values remain invalid and never distort numeric statistics");
+        Assert(PanelQueryEngine.Execute(snapshot,
+            new PanelQueryOptions { SearchMode = PanelSearchMode.Value, Search = "< 0" }).RowPositions.Count == 0 &&
+            PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { OnlyInvalid = true }).RowPositions.SequenceEqual(new[] { 0 }),
+            "Converted unset values remain available to invalid-only inspection while numeric filters exclude them");
     }
 
     private static async Task VerifyCanvasUnits(GH_Component component, GH_Canvas canvas,

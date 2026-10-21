@@ -136,7 +136,8 @@ namespace BetterGhPanel.Core
             cancellationToken.ThrowIfCancellationRequested();
             var positions = rowPositions.ToArray();
             if (query.SortMode != PanelSortMode.SourceOrder)
-                foreach (var step in StableSort(positions, snapshot.Rows, sortText!, query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work))
+                foreach (var step in SortBranches(positions, snapshot, branchCounts, sortText!,
+                    query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work))
                     yield return step;
             if (work.ShouldYield()) yield return null;
             cancellationToken.ThrowIfCancellationRequested();
@@ -260,23 +261,94 @@ namespace BetterGhPanel.Core
             if ((index & 255) == 0) token.ThrowIfCancellationRequested();
         }
 
+        private sealed class BranchSortRange
+        {
+            internal BranchSortRange(int start, int count) { Start = start; Count = count; Next = start; }
+            internal int Start { get; }
+            internal int Count { get; }
+            internal int Next { get; set; }
+        }
+
+        // Group stably in transformed-tree order, even if snapshot rows are interleaved.
+        // Only values in the same branch compete; path text never determines branch order.
+        private static IEnumerable<PanelQueryResult?> SortBranches(int[] ids, PanelSnapshot snapshot,
+            IReadOnlyDictionary<string, int> branchCounts, IReadOnlyDictionary<int, string> sortText,
+            bool descending, CancellationToken token, PanelQueryWork work)
+        {
+            if (ids.Length < 2) yield break;
+            var byPath = new Dictionary<string, BranchSortRange>(StringComparer.Ordinal);
+            var ranges = new List<BranchSortRange>();
+            var offset = 0;
+            for (var index = 0; index < snapshot.Branches.Count; index++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, token);
+                var path = snapshot.Branches[index].Path;
+                if (!branchCounts.TryGetValue(path, out var count) || count == 0 || byPath.ContainsKey(path)) continue;
+                var range = new BranchSortRange(offset, count);
+                byPath.Add(path, range);
+                ranges.Add(range);
+                offset += count;
+            }
+            // Snapshots permit rows without matching branch metadata. Retain these
+            // paths after declared branches, in order of their first matching row.
+            for (var index = 0; index < ids.Length; index++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, token);
+                var path = snapshot.Rows[ids[index]].Path;
+                if (byPath.ContainsKey(path)) continue;
+                var range = new BranchSortRange(offset, branchCounts[path]);
+                byPath.Add(path, range);
+                ranges.Add(range);
+                offset += range.Count;
+            }
+            if (work.ShouldYield()) yield return null;
+            token.ThrowIfCancellationRequested();
+            var grouped = new int[ids.Length];
+            for (var index = 0; index < ids.Length; index++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, token);
+                var range = byPath[snapshot.Rows[ids[index]].Path];
+                grouped[range.Next++] = ids[index];
+            }
+            for (var index = 0; index < ranges.Count; index++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, token);
+                var range = ranges[index];
+                // The original positions are no longer needed, so reuse that array
+                // as merge workspace instead of allocating once for every branch.
+                foreach (var step in StableSort(grouped, ids, range.Start, range.Count,
+                    snapshot.Rows, sortText, descending, token, work)) yield return step;
+            }
+            for (var index = 0; index < ids.Length; index++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, token);
+                ids[index] = grouped[index];
+            }
+            token.ThrowIfCancellationRequested();
+        }
+
         // Own merge sort keeps cancellation exceptions unwrapped and never mutates snapshot data.
-        private static IEnumerable<PanelQueryResult?> StableSort(int[] ids, IReadOnlyList<PanelRow> rows,
+        private static IEnumerable<PanelQueryResult?> StableSort(int[] ids, int[] buffer, int offset, int count,
+            IReadOnlyList<PanelRow> rows,
             IReadOnlyDictionary<int, string> sortText, bool descending,
             CancellationToken token, PanelQueryWork work)
         {
-            if (ids.Length < 2) yield break;
-            if (work.ShouldYield()) yield return null;
-            var buffer = new int[ids.Length];
+            if (count < 2) yield break;
+            var limit = offset + count;
             var source = ids;
             var destination = buffer;
-            for (var width = 1; width < ids.Length; width = width > ids.Length / 2 ? ids.Length : width * 2)
+            for (var width = 1; width < count; width = width > count / 2 ? count : width * 2)
             {
                 token.ThrowIfCancellationRequested();
-                for (var start = 0; start < ids.Length;)
+                for (var start = offset; start < limit;)
                 {
-                    var middle = (int)Math.Min((long)start + width, ids.Length);
-                    var end = (int)Math.Min((long)middle + width, ids.Length);
+                    var middle = (int)Math.Min((long)start + width, limit);
+                    var end = (int)Math.Min((long)middle + width, limit);
                     var left = start;
                     var right = middle;
                     for (var output = start; output < end; output++)
@@ -295,7 +367,15 @@ namespace BetterGhPanel.Core
             }
             if (work.ShouldYield()) yield return null;
             token.ThrowIfCancellationRequested();
-            if (!ReferenceEquals(source, ids)) Array.Copy(source, ids, ids.Length);
+            if (!ReferenceEquals(source, ids))
+            {
+                for (var index = offset; index < limit; index++)
+                {
+                    if (work.ShouldYield()) yield return null;
+                    CheckCancellation(index, token);
+                    ids[index] = source[index];
+                }
+            }
         }
 
         private static int Compare(int leftId, int rightId, IReadOnlyList<PanelRow> rows,

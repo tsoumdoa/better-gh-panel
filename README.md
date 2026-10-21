@@ -14,6 +14,8 @@ Created in [T3 Code](https://t3.codes).
 
 ## Native MVP
 
+**Patch `0.1.20-beta.3` — sorting within branches:** Asc/Desc sorts each branch independently and keeps branches in tree order. Branch headings remain visible when space permits. Copy follows the displayed order; output retains the transformed tree order and full precision. Sorted view numbers remain global for unambiguous row jumps, alongside each item's original branch index.
+
 **Patch `0.1.20-beta.2` — consistent filters and values:** choose **List length · per branch** in the search menu to compare each branch's item count (`>= 3`, `= 0`, or `!= 1`). Counts describe the tree after Simplify, Trim, Flatten, Reverse and Create set, before item filters. Matching empty branches remain on the output unless a type or invalid-item filter excludes them. Paths accepts both `0;0;1` and `{0;0;1}`, including descendant selection.
 
 Text and regex searches use the same converted, decimal-formatted value shown in the panel, including geometry measurements. Geometry searches also measure eligible offscreen rows before publishing results. Numeric and geometry comparisons use full precision. The output contains the matching typed, converted values in transformed tree order; Asc/Desc is a view order, and decimal formatting does not round the output wire. **Copy values** follows the current view order and decimal setting; numeric values and geometry measurements omit unit labels and use a decimal point for pasting. **Copy geometry** retains the actual geometry.
@@ -52,7 +54,7 @@ Panel+ hides old rows, counts, type summaries and statistics behind **Recomputin
 
 [See the native recomputing state](docs/images/panel-recomputing.png).
 
-The public Yak beta is **`better-gh-panel 0.1.20-beta.2`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.20-beta.2`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including per-branch list-length filters, branch input with optional braces, converted and rounded text filtering, downstream precision, copy consistency, compact Half layout, saved settings and stale-result rejection. Mac and Windows .NET Framework host validation remain pending.
+The public Yak beta is **`better-gh-panel 0.1.20-beta.3`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.20-beta.3`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including per-branch list-length filters, branch input with optional braces, converted and rounded text filtering, downstream precision, copy consistency, compact Half layout, saved settings and stale-result rejection. Mac and Windows .NET Framework host validation remain pending.
 
 Beta **`0.1.15-beta`** adds current-result loading states, resumable queries with a 120 ms time budget, and filters on typed output after tree tools and unit conversion. Whitespace-only regex patterns filter output correctly; internalised geometry preview respects filters.
 
@@ -120,7 +122,7 @@ dotnet run --project tests/BetterGhPanel.Core.Tests -c Release
 node scripts/package.mjs
 ```
 
-The beta artifact is `artifacts/better-gh-panel-0.1.20-beta.2/better-gh-panel-0.1.20-beta.2-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The beta artifact is `artifacts/better-gh-panel-0.1.20-beta.3/better-gh-panel-0.1.20-beta.3-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino.
 
@@ -141,3 +143,7 @@ Run `npm start`, then open http://localhost:5173. No dependency installation is 
 Try searching `> 800`, filtering **Nulls**, sorting numbers, or entering `{0;2;4}` in the branch search and pressing Enter. The sample size menu switches between 65,536 and 262,144 generated items. `/` focuses search, `G` focuses branch search, and Escape resets the view. Select a row to inspect and copy its value. Filters and sorting only affect the view.
 
 The files in `prototype/` are a preserved visual reference using generated data independently of Rhino. Its query behavior is illustrative; the C# core defines native behavior. See [the current architecture](docs/current-architecture.md) and [the original proposal](docs/architecture.md).
+
+## License
+
+[MIT](LICENSE). The license is also included in locally generated Yak packages.
