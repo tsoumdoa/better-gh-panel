@@ -5,70 +5,71 @@ namespace BetterGhPanel.Core
 {
     public enum PanelUnitConversion
     {
-        None,
-        MillimetersToMeters,
-        MetersToMillimeters,
-        SquareMillimetersToSquareMeters,
-        SquareMetersToSquareMillimeters,
-        RadiansToDegrees,
-        DegreesToRadians,
+        None = 0,
+        MillimetersToMeters = 1,
+        MetersToMillimeters = 2,
+        SquareMillimetersToSquareMeters = 3,
+        SquareMetersToSquareMillimeters = 4,
+        RadiansToDegrees = 5,
+        DegreesToRadians = 6,
         // Append new modes so existing saved definitions retain their enum values.
-        CubicMillimetersToCubicMeters,
-        CubicMetersToCubicMillimeters
+        CubicMillimetersToCubicMeters = 7,
+        CubicMetersToCubicMillimeters = 8
     }
 
     public static class PanelUnits
     {
         public const int AutomaticDecimals = -1;
         public const int MaximumDecimals = 12;
-        public static int ConversionCount => 9;
+        // Indexed by the persisted enum values. Each conversion's arithmetic,
+        // presentation and optional geometry applicability live in one place.
+        private static readonly Conversion[] Conversions =
+        {
+            new Conversion("No conversion", "", 1),
+            new Conversion("mm → m", "m", 1000, divide: true, sourceUnits: "mm", power: 1),
+            new Conversion("m → mm", "mm", 1000, sourceUnits: "m", power: 1),
+            new Conversion("mm² → m²", "m²", 1000000, divide: true, sourceUnits: "mm", power: 2),
+            new Conversion("m² → mm²", "mm²", 1000000, sourceUnits: "m", power: 2),
+            new Conversion("rad → deg", "°", 180 / Math.PI),
+            new Conversion("deg → rad", "rad", Math.PI / 180),
+            new Conversion("mm³ → m³", "m³", 1000000000, divide: true, sourceUnits: "mm", power: 3),
+            new Conversion("m³ → mm³", "mm³", 1000000000, sourceUnits: "m", power: 3)
+        };
+
+        public static int ConversionCount => Conversions.Length;
 
         public static double Convert(double value, PanelUnitConversion conversion)
         {
-            switch (conversion)
-            {
-                case PanelUnitConversion.MillimetersToMeters: return value / 1000;
-                case PanelUnitConversion.MetersToMillimeters: return value * 1000;
-                case PanelUnitConversion.SquareMillimetersToSquareMeters: return value / 1000000;
-                case PanelUnitConversion.SquareMetersToSquareMillimeters: return value * 1000000;
-                case PanelUnitConversion.CubicMillimetersToCubicMeters: return value / 1000000000;
-                case PanelUnitConversion.CubicMetersToCubicMillimeters: return value * 1000000000;
-                case PanelUnitConversion.RadiansToDegrees: return value * (180 / Math.PI);
-                case PanelUnitConversion.DegreesToRadians: return value * (Math.PI / 180);
-                default: return value;
-            }
+            var definition = Definition(conversion);
+            // Keep division explicit: multiplying by its reciprocal can change
+            // floating-point values carried by the output wire.
+            return definition.Scale == 1 ? value : definition.Divide ? value / definition.Scale : value * definition.Scale;
         }
 
-        public static string Label(PanelUnitConversion conversion)
-        {
-            switch (conversion)
-            {
-                case PanelUnitConversion.MillimetersToMeters: return "mm → m";
-                case PanelUnitConversion.MetersToMillimeters: return "m → mm";
-                case PanelUnitConversion.SquareMillimetersToSquareMeters: return "mm² → m²";
-                case PanelUnitConversion.SquareMetersToSquareMillimeters: return "m² → mm²";
-                case PanelUnitConversion.CubicMillimetersToCubicMeters: return "mm³ → m³";
-                case PanelUnitConversion.CubicMetersToCubicMillimeters: return "m³ → mm³";
-                case PanelUnitConversion.RadiansToDegrees: return "rad → deg";
-                case PanelUnitConversion.DegreesToRadians: return "deg → rad";
-                default: return "No conversion";
-            }
-        }
+        public static string Label(PanelUnitConversion conversion) => Definition(conversion).Label;
 
-        public static string Symbol(PanelUnitConversion conversion)
+        public static string Symbol(PanelUnitConversion conversion) => Definition(conversion).Symbol;
+
+        private static Conversion Definition(PanelUnitConversion conversion) =>
+            Conversions[(uint)conversion < (uint)Conversions.Length ? (int)conversion : 0];
+
+        private sealed class Conversion
         {
-            switch (conversion)
+            internal Conversion(string label, string symbol, double scale, bool divide = false, string? sourceUnits = null, int power = 0)
             {
-                case PanelUnitConversion.MillimetersToMeters: return "m";
-                case PanelUnitConversion.MetersToMillimeters: return "mm";
-                case PanelUnitConversion.SquareMillimetersToSquareMeters: return "m²";
-                case PanelUnitConversion.SquareMetersToSquareMillimeters: return "mm²";
-                case PanelUnitConversion.CubicMillimetersToCubicMeters: return "m³";
-                case PanelUnitConversion.CubicMetersToCubicMillimeters: return "mm³";
-                case PanelUnitConversion.RadiansToDegrees: return "°";
-                case PanelUnitConversion.DegreesToRadians: return "rad";
-                default: return string.Empty;
+                Label = label;
+                Symbol = symbol;
+                Scale = scale;
+                Divide = divide;
+                SourceUnits = sourceUnits;
+                Power = power;
             }
+
+            internal readonly string Label, Symbol;
+            internal readonly double Scale;
+            internal readonly bool Divide;
+            internal readonly string? SourceUnits;
+            internal readonly int Power;
         }
 
         // Geometry retains its model units. Convert only a matching source unit and
@@ -94,13 +95,9 @@ namespace BetterGhPanel.Core
 
         private static PanelUnitConversion GeometryConversion(int power, string units, PanelUnitConversion conversion)
         {
-            bool toMeters = units == "mm" && (power == 1 && conversion == PanelUnitConversion.MillimetersToMeters ||
-                power == 2 && conversion == PanelUnitConversion.SquareMillimetersToSquareMeters ||
-                power == 3 && conversion == PanelUnitConversion.CubicMillimetersToCubicMeters);
-            bool toMillimeters = units == "m" && (power == 1 && conversion == PanelUnitConversion.MetersToMillimeters ||
-                power == 2 && conversion == PanelUnitConversion.SquareMetersToSquareMillimeters ||
-                power == 3 && conversion == PanelUnitConversion.CubicMetersToCubicMillimeters);
-            return toMeters || toMillimeters ? conversion : PanelUnitConversion.None;
+            var definition = Definition(conversion);
+            return definition.SourceUnits != null && definition.SourceUnits == units && definition.Power == power
+                ? conversion : PanelUnitConversion.None;
         }
 
         // Formatting never rounds the value carried by the output wire.

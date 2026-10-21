@@ -19,8 +19,59 @@ internal static class FilterQueryChecks
         DisplayedSorting();
         GeometryMetricsAndUnits();
         MeasurementCandidates();
+        SharedQueryScope();
         RegularExpressions();
         InvalidExpressions();
+    }
+
+    private static void SharedQueryScope()
+    {
+        var geometry = new PanelGeometryInfo("shape", units: "mm", metricName: "Length", canMeasure: true);
+        var rows = new[]
+        {
+            new PanelRow(0, "{0;1}", "Curve", "shape", null, geometryInfo: geometry),
+            new PanelRow(1, "{0;1}", "Surface", "shape", null, geometryInfo: geometry),
+            new PanelRow(0, "{0;1;2}", "Curve", "shape", null, geometryInfo: geometry),
+            new PanelRow(0, "{0;10}", "Curve", "shape", null, geometryInfo: geometry),
+            new PanelRow(2, "{0;1}", "Curve", "shape", null, isValid: false, geometryInfo: geometry),
+            new PanelRow(0, "{7}", "Curve", "shape", null, geometryInfo: geometry)
+        };
+        var snapshot = new PanelSnapshot(rows, new[]
+        {
+            new PanelBranch("{0;1}", 3), new PanelBranch("{0;1;2}", 1),
+            new PanelBranch("{0;10}", 1), new PanelBranch("{9}", 0)
+        });
+        var query = new PanelQueryOptions { BranchPath = "0;1", BranchPrefix = true, TypeName = "curve",
+            SortMode = PanelSortMode.ValueAscending };
+        Verify(new[] { 0, 2, 4 }, new[] { 0, 2 });
+        query.BranchPrefix = false;
+        Verify(new[] { 0, 4 }, new[] { 0 });
+        query.OnlyInvalid = true;
+        Verify(new[] { 4 }, Array.Empty<int>());
+        query.OnlyInvalid = false;
+        query.BranchPath = null;
+        query.SearchMode = PanelSearchMode.ListLength;
+        query.Search = ">= 2";
+        Verify(new[] { 0, 4 }, new[] { 0 });
+        query.Search = "= 0";
+        query.TypeName = null;
+        Verify(Array.Empty<int>(), Array.Empty<int>());
+        Check(PanelQueryEngine.Execute(snapshot, query).BranchPaths.SequenceEqual(new[] { "{9}" }),
+            "A branch-only predicate retains matching empty branches");
+        query.Search = "";
+        query.BranchPath = "7";
+        Verify(new[] { 5 }, new[] { 5 });
+        query.Search = ">= 0";
+        Verify(Array.Empty<int>(), Array.Empty<int>());
+
+        void Verify(int[] expectedRows, int[] expectedMeasurements)
+        {
+            // Compare explicit memberships, independent of the final display ordering.
+            Check(PanelQueryEngine.Execute(snapshot, query).RowPositions.OrderBy(position => position).SequenceEqual(expectedRows),
+                "Final queries preserve branch, type, invalid-only and list-length scope");
+            Check(PanelQueryEngine.GeometryCandidates(snapshot, query).SequenceEqual(expectedMeasurements),
+                "Measurement preparation shares query scope and never measures invalid or excluded rows");
+        }
     }
 
     private static void FailedMeasurementPresentation()

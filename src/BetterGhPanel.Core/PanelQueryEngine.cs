@@ -33,8 +33,7 @@ namespace BetterGhPanel.Core
         {
             cancellationToken.ThrowIfCancellationRequested();
             var search = new PanelSearchFilter(query, culture);
-            var selectedBranch = NormalizeBranchPath(query.BranchPath);
-            var branchPrefix = BranchPrefix(query, selectedBranch);
+            var scope = new PanelQueryScope(snapshot, query, search);
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
@@ -46,17 +45,16 @@ namespace BetterGhPanel.Core
             var stringValues = new Dictionary<string, ValueCount>(StringComparer.Ordinal);
             var uniqueValues = new List<ValueCount>();
             var scalarCount = 0;
-            var hasItemFilter = search.HasFilter && !search.IsBranchFilter || query.TypeName != null || query.OnlyInvalid;
 
             // Empty branches remain visible when browsing the tree, but not in item-filter results.
-            if (!hasItemFilter)
+            if (!scope.HasItemFilter)
             {
                 for (var i = 0; i < snapshot.Branches.Count; i++)
                 {
                     if (work.ShouldYield()) yield return null;
                     CheckCancellation(i, cancellationToken);
                     var branch = snapshot.Branches[i];
-                    if (MatchesBranch(branch.Path, selectedBranch, branchPrefix) && search.MatchesBranchCount(branch.ItemCount))
+                    if (scope.MatchesBranch(branch))
                     {
                         branches.Add(branch.Path);
                         branchCounts[branch.Path] = 0;
@@ -75,12 +73,7 @@ namespace BetterGhPanel.Core
                 if (work.ShouldYield()) yield return null;
                 CheckCancellation(i, cancellationToken);
                 var row = snapshot.Rows[i];
-                if (!MatchesBranch(row.Path, selectedBranch, branchPrefix)) continue;
-                // Counts describe each transformed branch before any per-item restrictions.
-                if (search.IsBranchFilter && search.HasFilter &&
-                    (!snapshot.BranchItemCounts.TryGetValue(row.Path, out var itemCount) || !search.MatchesBranchCount(itemCount))) continue;
-                if (query.TypeName != null && !string.Equals(row.TypeName, query.TypeName, StringComparison.OrdinalIgnoreCase)) continue;
-                if (query.OnlyInvalid && row.IsValid) continue;
+                if (!scope.MatchesRow(row)) continue;
                 PanelGeometryInfo? measured = null;
                 measuredGeometry?.TryGetValue(i, out measured);
                 if (!search.Matches(row, snapshot.UnitConversion, measured, cancellationToken)) continue;
@@ -192,18 +185,13 @@ namespace BetterGhPanel.Core
             var filter = new PanelSearchFilter(query);
             var sorting = query.SortMode != PanelSortMode.SourceOrder;
             if (!sorting && (!filter.HasFilter || !filter.IsGeometry && !filter.UsesDisplayText)) return Array.Empty<int>();
-            var selected = NormalizeBranchPath(query.BranchPath);
-            var prefix = BranchPrefix(query, selected);
+            var scope = new PanelQueryScope(snapshot, query, filter);
             var candidates = new List<int>();
             for (int index = 0; index < snapshot.Rows.Count; index++)
             {
                 CheckCancellation(index, cancellationToken);
                 var row = snapshot.Rows[index];
-                if (!MatchesBranch(row.Path, selected, prefix) ||
-                    query.TypeName != null && !string.Equals(row.TypeName, query.TypeName, StringComparison.OrdinalIgnoreCase) ||
-                    query.OnlyInvalid && row.IsValid || !filter.CanMeasure(row, sorting)) continue;
-                if (filter.IsBranchFilter && filter.HasFilter &&
-                    (!snapshot.BranchItemCounts.TryGetValue(row.Path, out var itemCount) || !filter.MatchesBranchCount(itemCount))) continue;
+                if (!scope.MatchesRow(row) || !filter.CanMeasure(row, sorting)) continue;
                 candidates.Add(index);
             }
             cancellationToken.ThrowIfCancellationRequested();
@@ -225,18 +213,6 @@ namespace BetterGhPanel.Core
                 parts[index] = value.ToString(CultureInfo.InvariantCulture);
             }
             return "{" + string.Join(";", parts) + "}";
-        }
-
-        private static string? BranchPrefix(PanelQueryOptions query, string? selected) => query.BranchPrefix && selected != null
-            ? selected.EndsWith("}", StringComparison.Ordinal) ? selected.Substring(0, selected.Length - 1) + ";" : selected + ";"
-            : null;
-
-        private static bool MatchesBranch(string path, string? selected, string? prefix)
-        {
-            if (selected == null) return true;
-            if (string.Equals(path, selected, StringComparison.Ordinal)) return true;
-            // Prefix selection means descendants of {0;1}, not siblings like {0;10}.
-            return prefix != null && path.StartsWith(prefix, StringComparison.Ordinal);
         }
 
         private static void Increment(Dictionary<string, int> counts, string key)

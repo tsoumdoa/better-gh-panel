@@ -36,6 +36,7 @@ internal static class Program
             PanelRowSelectionChecks.Run,
             FilterCanvasChecks.Run,
             UnitConversionsAndFormatting,
+            UnitConversionChecks.Run,
             UnitMenuLayout,
             GeometryMetricConversions,
             FilterQueryChecks.Run
