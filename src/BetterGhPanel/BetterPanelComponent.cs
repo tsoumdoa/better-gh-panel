@@ -95,7 +95,6 @@ namespace BetterGhPanel
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
                     _session.SetDecimalPlacesResolver(() => DecimalPlaces);
                     if (Locked) _session.InvalidateInput(false, suspended: true);
-                    _session.SetDetailResolver(position => position < _sourceItems.Length ? _sourceItems[position]?.ToString() ?? "<null>" : null);
                     _session.SetGeometryDetailResolver(position => position < _sourceItems.Length
                         ? GeometryHints.PrepareMeasurement(_sourceItems[position], _geometryUnits) : null);
                     _savedOptions.DecimalPlaces = DecimalPlaces;

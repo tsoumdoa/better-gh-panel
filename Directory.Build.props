@@ -8,5 +8,7 @@
     <Authors>aectooling by tomoS</Authors>
     <RepositoryUrl>https://github.com/tsoumdoa/better-gh-panel</RepositoryUrl>
     <Deterministic>true</Deterministic>
+    <!-- Keep local checkout and user paths out of assembly debug records and PDBs. -->
+    <PathMap>$(MSBuildThisFileDirectory)=/_/</PathMap>
   </PropertyGroup>
 </Project>

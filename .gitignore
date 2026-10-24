@@ -5,6 +5,8 @@
 *.user
 *.suo
 *.rsuser
+*.dll
+*.gha
 *.pdb
 *.binlog
 
@@ -14,3 +16,13 @@ artifacts/
 node_modules/
 *.log
 .DS_Store
+
+# Local credentials and signing material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.snk

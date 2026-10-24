@@ -246,11 +246,13 @@ internal static class Program
         var independentSnapshot = new PanelSnapshot(independentRows, snapshot.Branches);
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { independentSnapshot });
         await WaitForQuery(session);
-        var fullValue = (string)session.GetType().GetMethod("GetDisplayValue")!.Invoke(session, new object[] { independentSnapshot, 0 })!;
-        Assert(fullValue == "10", "Full-value lookup resolves live goo by source position");
+        Assert(PanelTestAdapter.DisplayValue(component, independentSnapshot, 0) == "cached summary",
+            "Canvas presentation uses captured summaries instead of live goo formatting");
+        Assert(PanelTestAdapter.CopyValue(component, independentSnapshot, 0) == "10",
+            "Value copying uses captured full-precision numeric data");
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { snapshot });
-        var staleValue = (string)session.GetType().GetMethod("GetDisplayValue")!.Invoke(session, new object[] { independentSnapshot, 0 })!;
-        Assert(staleValue == "cached summary", "Obsolete snapshots never resolve full values from a newer solution");
+        Assert(PanelTestAdapter.DisplayValue(component, independentSnapshot, 0) == "cached summary",
+            "Obsolete snapshots never resolve display values from a newer solution");
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(session);
         UpdateQuery(session, new PanelQueryOptions { Search = "alpha", BranchPath = "{0;2}", SortMode = PanelSortMode.ValueDescending });

@@ -32,6 +32,6 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(404).end("Not found");
   }
-}).listen(5173, "0.0.0.0", () =>
+}).listen(5173, "127.0.0.1", () =>
   console.log("Panel+ prototype: http://localhost:5173"),
 );

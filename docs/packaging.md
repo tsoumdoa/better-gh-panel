@@ -12,6 +12,10 @@ node scripts/package.mjs
 
 Packaging finds Yak in the standard Rhino 8 installation. On a machine without Rhino, `node scripts/package.mjs --stage-only` builds the same folder without creating an archive. Use `--yak <absolute path>` or `YAK_PATH` for a custom installation. Use `--skip-build` only after a successful Release build.
 
+`Directory.Build.props` maps the checkout root to `/_/` in debug records, keeping local usernames and checkout paths out of newly built assemblies and PDBs. Rebuild before packaging. On 2026-10-24, all 25 existing GitHub release downloads were refreshed to remove local paths from CodeView records; their executable code and versions are unchanged, and published checksums were updated.
+
+McNeel's separate public Yak registry still serves the original packages. Published registry versions cannot be overwritten; yanking hides them from searches but retains direct installation. Removing those stored copies requires McNeel support. See the [public-repository cleanup notes](maintainability.md#public-repository-cleanup).
+
 The current beta patch is `0.1.20-beta.5`. The resulting `artifacts/better-gh-panel-0.1.20-beta.5/` contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `better-gh-panel-0.1.20-beta.5-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:

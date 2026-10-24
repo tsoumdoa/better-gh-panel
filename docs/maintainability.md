@@ -20,9 +20,22 @@ This pass reduces duplicated feature definitions while keeping saved settings, t
 - `BetterPanelComponent.Serialization` upgrades only the known unversioned one-input/one-output archive before the host reads its parameters. It preserves D chunks/GUIDs and the original archive owner for relative paths and diagnostics, supplies defaults for the added ports, and leaves the source archive unchanged. New saves carry `PanelOutputSchema`; genuine missing chunks still report errors.
 - Native wire picking uses a 12-unit radius and reverse parameter order, beyond the custom rectangle bounds. Port spacing must keep neighbouring grips outside that radius at each target edge and leave the Half resize corner clear. Presentation controls, rows, scroll tracks and menus stay at least 14 units inside the relevant side. The 96-high capsule gives its four outputs 24-unit spacing.
 
+## Public-repository cleanup
+
+Removed the unused `PanelSession.GetDisplayValue` / `SetDetailResolver` API and its live-goo callback. No production code called the lookup; the smoke assertions now exercise the canvas and copy paths used by the plug-in. This removes two public beta runtime members; consumers of those undocumented members must use captured row presentation instead. Saved Grasshopper definitions are unaffected.
+
+Builds map the checkout root to `/_/` so assemblies and PDBs do not embed local user paths. Plug-in binaries, local environment files and signing keys are ignored. The archived prototype server now listens on loopback.
+
+The 2026-10-24 audit found no credentials with Gitleaks in the tracked tree, reachable local/remote Git history, GitHub PR/release text, 25 extracted release packages, 47 historical CI logs, or 91 CI artifacts, including extracted binary strings. Commit email addresses use GitHub/no-reply domains; inspected documentation images and media metadata contain no personal data. The initial audit found local user paths in assembly debug records in all 25 release packages.
+
+The release cleanup replaced all 25 GitHub downloads with copies containing only PDB basenames in their CodeView records, and refreshed published checksums. Validation compared all 100 assemblies and 24,876 method bodies: CLI metadata, executable instructions and versions are unchanged. Fresh downloads were checked for local user paths. The affected binaries were never tracked in Git, so no Git history rewrite was needed. GitHub Actions is disabled at repository level; validation remains local.
+
+Separate public copies of 27 versions remain on McNeel's Yak registry, including two earlier versions without GitHub releases. Registry downloads confirmed local user paths in all 27; 25 archives exactly match the original GitHub assets. Replacing GitHub downloads does not update the registry. Its [CLI reference](https://developer.rhino3d.com/guides/yak/yak-cli-reference/#yank) says published versions cannot be overwritten, and yanking only hides versions from searches while retaining exact-version downloads. Removing stored registry copies requires McNeel support.
+
+`npm run check`, both runtime builds, the dependency vulnerability query, and managed Grasshopper tree checks passed. The full Windows Rhino 8.35 smoke run crashed in `CRhinoDisplayPipeline_DrawShadedMeshes` during `RowActionChecks.VerifyNativePreviewOverlap`, called through `DrawToBitmap`. The same crash reproduced against the unchanged published `v0.1.20-beta.5` package with the current harness, so the full native suite is not currently green. This reproduces in the hidden test host; normal interactive Rhino behavior has not been established by this audit.
+
 ## Deferred findings
 
-- `PanelSession.GetDisplayValue` and its live detail resolver have no current production caller; only old smoke assertions exercise them. They are public members, so removal needs an explicit compatibility decision and replacement of the obsolete assertions. Current canvas and copy behavior uses captured presentation instead.
 - Query option cloning and equality enumerate settings in multiple places. Centralizing this may help future additions, but output-filter equality intentionally ignores sorting and sometimes decimal precision. Preserve those distinctions.
 - Geometry scheduling could move out of `PanelSession`, but a useful extraction needs to preserve UI dispatch, in-flight measurement identity, cache retention across unit changes and cancellation. A file move alone does not improve those ownership boundaries.
 - Selection gestures repeat cancellation, highlighting and repaint side effects. Consolidate only after distinguishing gesture updates from query-completion synchronization and document changes.

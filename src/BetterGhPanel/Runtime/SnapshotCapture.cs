@@ -87,8 +87,8 @@ namespace BetterGhPanel.Runtime
                 return string.Format(CultureInfo.InvariantCulture, "({0:G8}, {1:G8}, {2:G8})", point.Value.X, point.Value.Y, point.Value.Z);
             if (goo is GH_Vector vector)
                 return string.Format(CultureInfo.InvariantCulture, "<{0:G8}, {1:G8}, {2:G8}>", vector.Value.X, vector.Value.Y, vector.Value.Z);
-            // Geometry and third-party goo stay in Rhino. Their potentially expensive
-            // ToString is requested on the UI thread only when a user inspects a row.
+            // Keep third-party ToString implementations off the display and query
+            // paths; geometry uses captured descriptions and owned measurements.
             return "<" + goo.TypeName + ">";
         }
     }

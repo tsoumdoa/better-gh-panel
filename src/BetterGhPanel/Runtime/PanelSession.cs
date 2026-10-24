@@ -19,7 +19,6 @@ namespace BetterGhPanel.Runtime
         private readonly Action _invalidate;
         private CancellationTokenSource? _queryCancellation;
         private PanelQueryOptions _options = new PanelQueryOptions();
-        private Func<int, string?>? _detailResolver;
         private Func<int>? _decimalPlacesResolver;
         private Func<int, Func<PanelGeometryInfo?>?>? _geometryDetailResolver;
         private readonly Dictionary<int, GeometryMeasurement> _geometryDetails = new Dictionary<int, GeometryMeasurement>();
@@ -102,8 +101,6 @@ namespace BetterGhPanel.Runtime
             }
             _busyAnimation.Start();
         }
-
-        public void SetDetailResolver(Func<int, string?> resolver) => _detailResolver = resolver;
 
         internal void SetDecimalPlacesResolver(Func<int> resolver) => _decimalPlacesResolver = resolver;
 
@@ -326,16 +323,6 @@ namespace BetterGhPanel.Runtime
             internal CancellationTokenRegistration Registration;
         }
 
-        public string GetDisplayValue(PanelSnapshot snapshot, int sourcePosition)
-        {
-            if (sourcePosition < 0 || sourcePosition >= snapshot.Rows.Count) return string.Empty;
-            var row = snapshot.Rows[sourcePosition];
-            // Never resolve a saved address against another solution's live sources.
-            if (!ReferenceEquals(snapshot, Snapshot)) return row.DisplayValue;
-            try { return _detailResolver?.Invoke(sourcePosition) ?? row.DisplayValue; }
-            catch (Exception ex) { return row.DisplayValue + "\nValue formatting failed: " + ex.Message; }
-        }
-
         public void UpdateQuery(PanelQueryOptions options)
         {
             if (_disposed) return;
@@ -497,7 +484,6 @@ namespace BetterGhPanel.Runtime
             _queryCancellation = null;
             QueryChanged = null;
             ResultChanged = null;
-            _detailResolver = null;
             _decimalPlacesResolver = null;
             _geometryDetailResolver = null;
             _geometryDetails.Clear();
