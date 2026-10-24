@@ -31,7 +31,7 @@ namespace BetterGhPanel
         private PanelSearchMode _editingSearchMode;
         private int _offset, _shown;
         private PanelQueryResult? _lastResult;
-        private readonly PanelRowSelection _selection = new PanelRowSelection();
+        private readonly PanelRowSelection _selection;
         private GH_Canvas? _selectionCanvas;
         private readonly CanvasMenu _menu = new CanvasMenu();
         private bool _resizing, _scrolling;
@@ -41,7 +41,7 @@ namespace BetterGhPanel
         private int Count => PanelOwner.Session.HasCurrentResult ? PanelOwner.Session.Result.RowPositions.Count : 0;
         private int MaximumOffset => Math.Max(0, Count - Math.Max(1, _shown));
 
-        internal BetterPanelAttributes(BetterPanelComponent owner) : base(owner) { }
+        internal BetterPanelAttributes(BetterPanelComponent owner) : base(owner) { _selection = owner.RowSelection; }
 
         internal void ResetViewState()
         {
@@ -182,10 +182,10 @@ namespace BetterGhPanel
                 ClosePresentationControls();
                 _search = _filter = _type = _sort = _branch = _jump = _reset = _resize = _list = _track = _footer = RectangleF.Empty;
                 _trim = _simplify = _flatten = _reverse = _createSet = _units = _display = _preview = _close = _move = _statistics = _selectAll = RectangleF.Empty;
-                _restore = new RectangleF(_panel.Right - 26, _panel.Y + 5, 22, 22);
+                _restore = new RectangleF(_panel.Right - 36, _panel.Y + (_panel.Height - 22) / 2, 22, 22);
                 PositionPorts(Owner.Params.Input, true);
                 PositionPorts(Owner.Params.Output, false);
-                Bounds = new RectangleF(_panel.X - 6, _panel.Y, _panel.Width + 12, _panel.Height);
+                Bounds = new RectangleF(_panel.X - 22, _panel.Y, _panel.Width + 44, _panel.Height);
                 LayoutSetDetails();
                 return;
             }
@@ -201,13 +201,13 @@ namespace BetterGhPanel
             _filter = new RectangleF(_search.Right - 18, _search.Y, 18, _search.Height);
             _type = new RectangleF(_search.Right + 3, _search.Y, 76, 21);
             _sort = new RectangleF(_type.Right + 3, _search.Y, 43, 21);
-            _branch = new RectangleF(_sort.Right + 3, _search.Y, 72, 21);
-            _close = new RectangleF(_panel.Right - 26, _panel.Y + 2, 20, 18);
+            _branch = new RectangleF(_sort.Right + 3, _search.Y, 64, 21);
+            _close = new RectangleF(_panel.Right - 34, _panel.Y + 2, 20, 18);
             _display = new RectangleF(_close.Left - 22, _close.Y, 20, 18);
             _jump = new RectangleF(_display.Left - 48, _panel.Y + 2, 20, 18);
             _reset = new RectangleF(_jump.Right + 4, _jump.Y, 20, 18);
-            _preview = new RectangleF(_jump.Left - 116, _jump.Y, 112, 18);
-            _move = new RectangleF(_panel.X + 4, _panel.Y + 1, _preview.Left - _panel.X - 8, 23);
+            _preview = new RectangleF(_jump.Left - 108, _jump.Y, 104, 18);
+            _move = new RectangleF(_panel.X + 14, _panel.Y + 1, _preview.Left - _panel.X - 18, 23);
             // Reserve the corner for resizing rather than overlaying footer controls.
             _footer = new RectangleF(x + 2, _panel.Bottom - 38, _panel.Width - 34, 36);
             _statistics = new RectangleF(_footer.Right - 46, _footer.Y, 46, 16);
@@ -219,8 +219,10 @@ namespace BetterGhPanel
             _flatten = new RectangleF(_simplify.Right + 2, _trim.Y, 22, 20);
             _reverse = new RectangleF(_flatten.Right + 2, _trim.Y, 22, 20);
             _createSet = new RectangleF(_reverse.Right + 2, _trim.Y, 22, 20);
-            _list = new RectangleF(x, _panel.Y + 52, _panel.Width - 15, Math.Max(RowHeight, _panel.Height - 92));
-            _track = new RectangleF(_panel.Right - 8, _list.Y, 4, _list.Height);
+            // Keep interactive content beyond native grip picking's 12-unit
+            // radius on both edges, including rows and the scroll track.
+            _list = new RectangleF(_panel.X + 14, _panel.Y + 52, _panel.Width - 33, Math.Max(RowHeight, _panel.Height - 92));
+            _track = new RectangleF(_panel.Right - 18, _list.Y, 4, _list.Height);
             _resize = new RectangleF(_panel.Right - 24, _panel.Bottom - 24, 24, 24);
             // Linked parameter attributes keep Grasshopper's wire/tooltip behavior, but
             // expose actual wire grips at our rectangle instead of a hidden default capsule.
@@ -240,11 +242,15 @@ namespace BetterGhPanel
                     port = new PanelPortAttributes(parameters[i], this, input);
                     parameters[i].Attributes = port;
                 }
-                // Full/Half retain canonical grips. A capsule owns only its
-                // compact bounds, so its grips move to the visible edges.
-                var point = new PointF(input ? _panel.Left : _panel.Right,
-                    PanelOwner.PanelMinimized ? _panel.Y + _panel.Height * (i + 1) / (parameters.Count + 1) :
-                    Pivot.Y + HeaderHeight + (PanelOwner.CanvasHeight - HeaderHeight) * (i + 1) / (parameters.Count + 1));
+                // Canonical Full/Half grips all fit inside the Half rectangle.
+                // A capsule has enough height for four distinct output targets.
+                float top = PanelOwner.PanelMinimized ? _panel.Top + 12 : Pivot.Y + PanelOwner.CanvasHeight / 4 + 12;
+                float span = PanelOwner.PanelMinimized ? _panel.Height - 24 : PanelOwner.CanvasHeight / 2 - 48;
+                // Native wire picking searches within 12 canvas units in reverse
+                // parameter order. Keep neighbours beyond that radius even at
+                // the vertical edge of a grip's target; reserve the resize corner.
+                float offset = parameters.Count == 1 ? span / 2 : span * i / (parameters.Count - 1);
+                var point = new PointF(input ? _panel.Left : _panel.Right, top + offset);
                 port.Place(point);
             }
         }
@@ -342,10 +348,7 @@ namespace BetterGhPanel
                 }
                 using (var border = new Pen(Selected ? Accent : Color.FromArgb(164, 171, 164), Selected ? 1.5f : 1))
                     graphics.DrawRectangle(border, _panel.X, _panel.Y, _panel.Width, _panel.Height);
-                foreach (var parameter in Owner.Params.Input)
-                    GH_CapsuleRenderEngine.RenderInputGrip(graphics, canvas.Viewport.Zoom, parameter.Attributes.InputGrip, false);
-                foreach (var parameter in Owner.Params.Output)
-                    GH_CapsuleRenderEngine.RenderOutputGrip(graphics, canvas.Viewport.Zoom, parameter.Attributes.OutputGrip, false);
+                RenderPorts(graphics, canvas, small, trim);
             }
         }
 
@@ -372,9 +375,10 @@ namespace BetterGhPanel
                 g.FillPath(fill, shape);
                 g.DrawPath(border, shape);
             }
-            Text(g, "P+", bold, Accent, new RectangleF(_panel.X + 8, _panel.Y + 5, 27, 22), trim);
+            float textTop = _panel.Y + (_panel.Height - 22) / 2;
+            Text(g, "P+", bold, Accent, new RectangleF(_panel.X + 8, textTop, 27, 22), trim);
             Text(g, CapsuleSummary(), small, Muted,
-                new RectangleF(_panel.X + 36, _panel.Y + 5, _restore.Left - _panel.X - 40, 22), trim);
+                new RectangleF(_panel.X + 36, textTop, _restore.Left - _panel.X - 40, 22), trim);
             using (var pen = new Pen(Accent, 1.2f))
             {
                 float x = _restore.X + 5, y = _restore.Y + 5;
@@ -382,10 +386,25 @@ namespace BetterGhPanel
                 g.DrawLine(pen, x + 5, y + 6, x + 11, y);
                 g.DrawLines(pen, new[] { new PointF(x + 6, y), new PointF(x + 11, y), new PointF(x + 11, y + 5) });
             }
+            RenderPorts(g, canvas, small, trim);
+        }
+
+        private void RenderPorts(Graphics g, GH_Canvas canvas, Font font, StringFormat trim)
+        {
             foreach (var parameter in Owner.Params.Input)
-                GH_CapsuleRenderEngine.RenderInputGrip(g, canvas.Viewport.Zoom, parameter.Attributes.InputGrip, false);
+            {
+                var grip = parameter.Attributes.InputGrip;
+                GH_CapsuleRenderEngine.RenderInputGrip(g, canvas.Viewport.Zoom, grip, false);
+                if (canvas.Viewport.Zoom >= 0.5f)
+                    Text(g, parameter.NickName, font, Muted, new RectangleF(grip.X - 20, grip.Y - 8, 12, 16), trim);
+            }
             foreach (var parameter in Owner.Params.Output)
-                GH_CapsuleRenderEngine.RenderOutputGrip(g, canvas.Viewport.Zoom, parameter.Attributes.OutputGrip, false);
+            {
+                var grip = parameter.Attributes.OutputGrip;
+                GH_CapsuleRenderEngine.RenderOutputGrip(g, canvas.Viewport.Zoom, grip, false);
+                if (canvas.Viewport.Zoom >= 0.5f)
+                    Text(g, parameter.NickName, font, Muted, new RectangleF(grip.X + 8, grip.Y - 8, 12, 16), trim);
+            }
         }
 
         private void RenderRows(Graphics g, PanelQueryResult result, RectangleF visibleRegion, Font font, Font small, Font mono, StringFormat trim)
@@ -1267,8 +1286,8 @@ namespace BetterGhPanel
             private PointF _grip;
             private readonly bool _input;
             internal PanelPortAttributes(IGH_Param owner, IGH_Attributes parent, bool input) : base(owner, parent) { _input = input; }
-            internal void Place(PointF grip) { _grip = grip; Pivot = grip; Bounds = new RectangleF(grip.X - 6, grip.Y - 9, 12, 18); }
-            protected override void Layout() => Bounds = new RectangleF(_grip.X - 6, _grip.Y - 9, 12, 18);
+            internal void Place(PointF grip) { _grip = grip; Pivot = grip; Layout(); }
+            protected override void Layout() => Bounds = new RectangleF(_grip.X - (_input ? 22 : 6), _grip.Y - 7, 28, 14);
             public override PointF InputGrip => _input ? _grip : base.InputGrip;
             public override PointF OutputGrip => !_input ? _grip : base.OutputGrip;
         }

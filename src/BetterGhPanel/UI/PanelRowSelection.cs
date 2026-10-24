@@ -14,17 +14,21 @@ namespace BetterGhPanel.UI
 
         internal int Count => _positions.Count;
         internal bool Contains(int position) => _positions.Contains(position);
+        internal event EventHandler? Changed;
 
         internal void Clear()
         {
+            bool changed = _positions.Count > 0;
             _positions.Clear();
             _anchor = -1;
             _result = null;
+            if (changed) Changed?.Invoke(this, EventArgs.Empty);
         }
 
         internal void Synchronize(PanelQueryResult result)
         {
             if (ReferenceEquals(_result, result)) return;
+            int previousCount = _positions.Count;
             if (_result == null || !ReferenceEquals(_result.Snapshot, result.Snapshot))
             {
                 _positions.Clear();
@@ -37,6 +41,7 @@ namespace BetterGhPanel.UI
                 if (!visible.Contains(_anchor)) _anchor = -1;
             }
             _result = result;
+            if (_positions.Count != previousCount) Changed?.Invoke(this, EventArgs.Empty);
         }
 
         internal void Select(PanelQueryResult result, int position, bool toggle = false,
@@ -48,21 +53,34 @@ namespace BetterGhPanel.UI
             int anchorIndex = range ? IndexOf(result.RowPositions, _anchor) : -1;
             if (range && anchorIndex >= 0)
             {
-                if (!toggle) _positions.Clear();
+                if (toggle)
+                {
+                    bool added = false;
+                    for (int i = Math.Min(index, anchorIndex); i <= Math.Max(index, anchorIndex); i++)
+                        added |= _positions.Add(result.RowPositions[i]);
+                    if (added) Changed?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+                var next = new HashSet<int>();
                 for (int i = Math.Min(index, anchorIndex); i <= Math.Max(index, anchorIndex); i++)
-                    _positions.Add(result.RowPositions[i]);
+                    next.Add(result.RowPositions[i]);
+                Replace(next, _anchor);
                 return;
             }
+            bool changed = false;
             if (toggle)
             {
                 if (!_positions.Remove(position)) _positions.Add(position);
+                changed = true;
             }
             else if (!preserveSelected || !_positions.Contains(position))
             {
+                changed = _positions.Count != 1 || !_positions.Contains(position);
                 _positions.Clear();
                 _positions.Add(position);
             }
             _anchor = position;
+            if (changed) Changed?.Invoke(this, EventArgs.Empty);
         }
 
         internal IReadOnlyList<int> OrderedPositions(PanelQueryResult result)
@@ -81,27 +99,41 @@ namespace BetterGhPanel.UI
         {
             Synchronize(result);
             var wanted = new HashSet<int>(indices);
-            _positions.Clear();
-            _anchor = -1;
+            var next = new HashSet<int>();
+            int anchor = -1;
             foreach (int position in result.RowPositions)
             {
                 if (!wanted.Contains(result.Snapshot.Rows[position].OriginalIndex)) continue;
-                _positions.Add(position);
-                if (_anchor < 0) _anchor = position;
+                next.Add(position);
+                if (anchor < 0) anchor = position;
             }
+            Replace(next, anchor);
         }
 
         internal void SelectAll(PanelQueryResult result, string? branchPath = null)
         {
             Synchronize(result);
-            _positions.Clear();
-            _anchor = -1;
+            var next = new HashSet<int>();
+            int anchor = -1;
             foreach (int position in result.RowPositions)
             {
                 if (branchPath != null && result.Snapshot.Rows[position].Path != branchPath) continue;
-                _positions.Add(position);
-                if (_anchor < 0) _anchor = position;
+                next.Add(position);
+                if (anchor < 0) anchor = position;
             }
+            Replace(next, anchor);
+        }
+
+        private void Replace(HashSet<int> next, int anchor)
+        {
+            bool changed = !_positions.SetEquals(next);
+            if (changed)
+            {
+                _positions.Clear();
+                _positions.UnionWith(next);
+            }
+            _anchor = anchor;
+            if (changed) Changed?.Invoke(this, EventArgs.Empty);
         }
 
         private static int IndexOf(IReadOnlyList<int> positions, int position)

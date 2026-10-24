@@ -24,14 +24,22 @@ namespace BetterGhPanel.Runtime
         internal static GH_Structure<IGH_Goo> Filter(GH_Structure<IGH_Goo> source, PanelQueryResult query)
         {
             if (query.RowPositions.Count == source.DataCount && query.BranchPaths.Count == source.PathCount) return source;
-            var positions = new HashSet<int>(query.RowPositions);
-            var paths = new HashSet<string>(query.BranchPaths);
+            return FilterRows(source, new HashSet<int>(query.RowPositions), new HashSet<string>(query.BranchPaths));
+        }
+
+        internal static GH_Structure<IGH_Goo> Select(GH_Structure<IGH_Goo> source, IReadOnlyList<int> positions) =>
+            positions.Count == 0 ? new GH_Structure<IGH_Goo>() : FilterRows(source, new HashSet<int>(positions), null);
+
+        // Filter retains matching empty paths; selection emits only selected rows.
+        // Both traverse the tree rather than the view/selection order.
+        private static GH_Structure<IGH_Goo> FilterRows(GH_Structure<IGH_Goo> source, HashSet<int> positions, HashSet<string>? paths)
+        {
             var result = new GH_Structure<IGH_Goo>();
             int position = 0;
             for (int b = 0; b < source.PathCount; b++)
             {
                 var path = new GH_Path(source.Paths[b]);
-                if (paths.Contains(path.ToString())) result.EnsurePath(path);
+                if (paths?.Contains(path.ToString()) == true) result.EnsurePath(path);
                 foreach (var item in source.Branches[b])
                 {
                     if (positions.Contains(position)) result.Append(item, path);
@@ -41,16 +49,23 @@ namespace BetterGhPanel.Runtime
             return result;
         }
 
-        internal static GH_Structure<IGH_Goo> Apply(GH_Structure<IGH_Goo> source,
-            int trimDepth, bool simplify, bool flatten, bool reverse, bool createSet)
-            => ApplyWithOccurrences(source, trimDepth, simplify, flatten, reverse, createSet, out _);
-
-        internal static GH_Structure<IGH_Goo> ApplyWithOccurrences(GH_Structure<IGH_Goo> source,
+        internal static GH_Structure<IGH_Goo> ApplyWithSources(GH_Structure<IGH_Goo> source,
             int trimDepth, bool simplify, bool flatten, bool reverse, bool createSet,
-            out IReadOnlyList<PanelSetOccurrences>? occurrences)
+            out IReadOnlyList<PanelSourceAddress> retainedSources, out IReadOnlyList<PanelSetOccurrences>? occurrences)
         {
             occurrences = null;
-            if (!createSet) return Transform(source, trimDepth, simplify, flatten, reverse);
+            var retained = new List<PanelSourceAddress>(source.DataCount);
+            if (trimDepth == 0 && !simplify && !flatten && !reverse && !createSet)
+            {
+                for (int b = 0; b < source.PathCount; b++)
+                {
+                    string path = source.Paths[b].ToString();
+                    for (int i = 0; i < source.Branches[b].Count; i++)
+                        retained.Add(new PanelSourceAddress(path, i));
+                }
+                retainedSources = retained.AsReadOnly();
+                return source;
+            }
 
             // Transform only positions; each position carries its typed value and original
             // address together, so merging or reversing cannot separate them.
@@ -69,6 +84,18 @@ namespace BetterGhPanel.Runtime
                 }
             }
             markers = Transform(markers, trimDepth, simplify, flatten, reverse);
+            if (!createSet)
+            {
+                foreach (var branch in markers.Branches)
+                    for (int i = 0; i < branch.Count; i++)
+                    {
+                        var (item, address) = inputs[((GH_Integer)branch[i]).Value];
+                        branch[i] = item;
+                        retained.Add(address);
+                    }
+                retainedSources = retained.AsReadOnly();
+                return markers;
+            }
             var groups = new List<PanelSetOccurrences>();
             var nullKey = new object();
             // Replace positions with retained values in the same owned tree.
@@ -90,11 +117,13 @@ namespace BetterGhPanel.Runtime
                     if (key != null) seen.Add(key, locations.Count);
                     locations.Add(new List<PanelSourceAddress>(1) { address });
                     branch[count++] = item!;
+                    retained.Add(address);
                 }
                 branch.RemoveRange(count, branch.Count - count);
                 foreach (var location in locations) groups.Add(new PanelSetOccurrences(location));
             }
             occurrences = groups.AsReadOnly();
+            retainedSources = retained.AsReadOnly();
             return markers;
         }
 

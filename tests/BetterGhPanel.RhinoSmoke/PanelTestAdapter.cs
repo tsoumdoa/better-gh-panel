@@ -6,7 +6,7 @@ using Grasshopper.GUI;
 using Grasshopper.GUI.Canvas;
 using Grasshopper.Kernel;
 
-internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Filter, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify, CreateSet, Units, Display, Preview, Move, Statistics, SelectAll, Close, Restore }
+internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Filter, Jump, Reset, Resize, List, Trim, Flatten, Reverse, Simplify, CreateSet, Units, Display, Preview, Move, Statistics, SelectAll, Close, Restore, Track }
 
 // The .gha is loaded separately. Keep plugin-owned reflection in this adapter.
 internal static class PanelTestAdapter
