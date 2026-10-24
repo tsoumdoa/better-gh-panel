@@ -23,10 +23,10 @@ internal static class CreateSetChecks
     internal static void VerifyTree(Assembly assembly)
     {
         var apply = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!
-            .GetMethod("Apply", BindingFlags.Static | BindingFlags.NonPublic)!;
+            .GetMethod("ApplyWithSources", BindingFlags.Static | BindingFlags.NonPublic)!;
         GH_Structure<IGH_Goo> Apply(GH_Structure<IGH_Goo> tree, bool set = true, bool flatten = false,
             bool reverse = false, int trim = 0, bool simplify = false) =>
-            (GH_Structure<IGH_Goo>)apply.Invoke(null, new object[] { tree, trim, simplify, flatten, reverse, set })!;
+            (GH_Structure<IGH_Goo>)apply.Invoke(null, new object?[] { tree, trim, simplify, flatten, reverse, set, null, null })!;
 
         var source = new GH_Structure<IGH_Goo>();
         var number = new GH_Number(1);
@@ -87,11 +87,10 @@ internal static class CreateSetChecks
         Check(distinctSet.DataCount == distinct.DataCount && distinctSet.Branches[0].SequenceEqual(distinct.Branches[0]),
             "A large all-unique branch retains every typed value in order");
 
-        var tracked = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!
-            .GetMethod("ApplyWithOccurrences", BindingFlags.Static | BindingFlags.NonPublic)!;
-        var arguments = new object?[] { simple, 0, false, true, true, true, null };
+        var tracked = apply;
+        var arguments = new object?[] { simple, 0, false, true, true, true, null, null };
         var trackedTree = (GH_Structure<IGH_Goo>)tracked.Invoke(null, arguments)!;
-        var groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+        var groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[7]!;
         Check(groups.Select(group => group.Count).SequenceEqual(new[] { 1, 2, 2 }) &&
             groups[1].Locations.Select(address => address.Path + "[" + address.ItemIndex + "]")
                 .SequenceEqual(new[] { "{7;1}[0]", "{7;0}[1]" }) && groups[1].BranchCount == 2 &&
@@ -102,23 +101,23 @@ internal static class CreateSetChecks
         var captured = (PanelSnapshot)capture.Invoke(null, new object?[] { trackedTree, null, PanelUnitConversion.None, "mm", groups })!;
         Check(captured.Rows[1].SetOccurrences == groups[1] && captured.Rows[1].NumericValue == 1,
             "Captured counts remain aligned with the retained typed rows");
-        arguments = new object?[] { simple, 1, true, false, false, true, null };
+        arguments = new object?[] { simple, 1, true, false, false, true, null, null };
         tracked.Invoke(null, arguments);
-        groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+        groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[7]!;
         Check(groups.Select(group => group.Count).SequenceEqual(new[] { 2, 2, 1 }) &&
             groups[1].Locations[0].Path == "{7;0}" && groups[1].Locations[1].Path == "{7;1}",
             "Simplify and Trim preserve original locations when output paths merge");
-        arguments = new object?[] { source, 0, false, false, false, true, null };
+        arguments = new object?[] { source, 0, false, false, false, true, null, null };
         tracked.Invoke(null, arguments);
-        groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+        groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[7]!;
         Check(groups[0].Count == 2 && groups[0].BranchCount == 1 && groups[10].Count == 2 &&
             groups[11].Count == 1 && groups[12].Count == 1 && groups[13].Count == 1 && groups[14].Count == 1 && groups[15].Count == 2,
             "Per-branch counts follow exact equality, null grouping and invalid/custom pass-through semantics");
         var mixedInputs = source.Branches.SelectMany((branch, b) => branch.Select((item, i) =>
             (Address: (source.Paths[b].ToString(), i), Item: item))).ToDictionary(entry => entry.Address, entry => entry.Item);
-        arguments = new object?[] { source, 1, true, true, true, true, null };
+        arguments = new object?[] { source, 1, true, true, true, true, null, null };
         var mixedSet = ((GH_Structure<IGH_Goo>)tracked.Invoke(null, arguments)!).AllData(skipNulls: false).ToArray();
-        groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+        groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[7]!;
         var mixedLocations = groups.SelectMany(group => group.Locations).Select(address => (address.Path, address.ItemIndex)).ToArray();
         Check(mixedLocations.Length == source.DataCount && mixedLocations.ToHashSet().SetEquals(mixedInputs.Keys) &&
             groups.Count == mixedSet.Length && groups.Select((group, i) =>
@@ -126,8 +125,8 @@ internal static class CreateSetChecks
             mixedSet.Count(item => item == null) == 1 && mixedSet.Count(item => ReferenceEquals(item, unknown)) == 2 &&
             mixedSet.Count(item => ReferenceEquals(item, invalid)) == 2,
             "Combined tools preserve exact source identities and every occurrence for mixed/null/invalid/custom values");
-        arguments = new object?[] { source, 0, false, false, false, false, null };
-        Check(ReferenceEquals(tracked.Invoke(null, arguments), source) && arguments[6] == null,
+        arguments = new object?[] { source, 0, false, false, false, false, null, null };
+        Check(ReferenceEquals(tracked.Invoke(null, arguments), source) && arguments[7] == null,
             "Disabled Create set retains passthrough and does not allocate occurrence metadata");
 
         var mixed = new GH_Structure<IGH_Goo>();
@@ -142,9 +141,9 @@ internal static class CreateSetChecks
         foreach (int trim in new[] { 0, 1, 2, 5 })
         for (int flags = 0; flags < 8; flags++)
         {
-            arguments = new object?[] { mixed, trim, (flags & 1) != 0, (flags & 2) != 0, (flags & 4) != 0, true, null };
+            arguments = new object?[] { mixed, trim, (flags & 1) != 0, (flags & 2) != 0, (flags & 4) != 0, true, null, null };
             var transformed = (GH_Structure<IGH_Goo>)tracked.Invoke(null, arguments)!;
-            groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[6]!;
+            groups = (System.Collections.Generic.IReadOnlyList<PanelSetOccurrences>)arguments[7]!;
             var retained = transformed.AllData(true).ToArray();
             var allLocations = groups.SelectMany(group => group.Locations).Select(address => (address.Path, address.ItemIndex)).ToArray();
             Check(groups.Count == retained.Length && allLocations.Length == mixed.DataCount &&
@@ -253,8 +252,8 @@ internal static class CreateSetChecks
             var curves = new GH_Structure<IGH_Goo>();
             curves.Append(new GH_Curve(new LineCurve(Point3d.Origin, new Point3d(1, 0, 0))), new GH_Path(0));
             curves.Append(new GH_Curve(new LineCurve(Point3d.Origin, new Point3d(2, 0, 0))), new GH_Path(0));
-            var apply = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!.GetMethod("Apply", BindingFlags.Static | BindingFlags.NonPublic)!;
-            var retained = (GH_Structure<IGH_Goo>)apply.Invoke(null, new object[] { curves, 0, false, false, false, true })!;
+            var apply = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!.GetMethod("ApplyWithSources", BindingFlags.Static | BindingFlags.NonPublic)!;
+            var retained = (GH_Structure<IGH_Goo>)apply.Invoke(null, new object?[] { curves, 0, false, false, false, true, null, null })!;
             Check(retained.DataCount == 2 && retained.Branches[0].SequenceEqual(curves.Branches[0]),
                 "Different curves with matching display summaries are retained unchanged");
 
@@ -265,7 +264,7 @@ internal static class CreateSetChecks
                 new GH_Transform(Transform.Identity), new GH_Guid(Guid.NewGuid()), new GH_Time(new DateTime(2026, 10, 20)) };
             var primitiveTree = new GH_Structure<IGH_Goo>();
             primitiveTree.AppendRange(primitives.SelectMany(value => new[] { value, value.Duplicate() }), new GH_Path(0));
-            var primitiveSet = (GH_Structure<IGH_Goo>)apply.Invoke(null, new object[] { primitiveTree, 0, false, false, false, true })!;
+            var primitiveSet = (GH_Structure<IGH_Goo>)apply.Invoke(null, new object?[] { primitiveTree, 0, false, false, false, true, null, null })!;
             Check(primitiveSet.Branches[0].SequenceEqual(primitives), "Standard primitive values deduplicate while retaining the first typed item");
         }
         finally { component.DocumentContextChanged(document, GH_DocumentContext.Close); }

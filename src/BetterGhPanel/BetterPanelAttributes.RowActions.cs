@@ -79,10 +79,10 @@ namespace BetterGhPanel
                 var options = PanelOwner.Session.Options;
                 bool filtered = options.Search.Length > 0 || options.TypeName != null || options.OnlyInvalid || options.BranchPath != null;
                 _rowMenuActions = CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered);
-                float width = Math.Min(300, _panel.Width - 12);
+                float width = Math.Min(300, _panel.Width - 28);
                 float height = _rowMenuActions.Length * 20;
                 _rowMenuBounds = new RectangleF(
-                    Math.Max(_panel.Left + 6, Math.Min(e.CanvasX, _panel.Right - width - 6)),
+                    Math.Max(_panel.Left + 14, Math.Min(e.CanvasX, _panel.Right - width - 14)),
                     Math.Max(_panel.Top + HeaderHeight, Math.Min(e.CanvasY, _panel.Bottom - height - 6)), width, height);
                 canvas.Invalidate();
                 return GH_ObjectResponse.Handled;

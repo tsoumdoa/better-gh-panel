@@ -46,6 +46,21 @@ Beta **`0.1.18-beta`** adds easier row deselection, larger panel move/resize han
 
 Find **Panel+** in **Params → Util** after installing the local Yak package. Connect any typed tree to **D**. The output applies **Simplify → Trim → Flatten → Reverse → Create set → unit conversion → filters**. Search, type, invalid and branch filters keep only matching typed items on the output wire. Sorting and decimal formatting affect the view; output retains its transformed tree order and full precision. With all operations and filters off, the output forwards the input unchanged.
 
+The workspace implementation adds **S**, **B**, and **F** outputs alongside **D**, plus an optional **F** input:
+
+| Port | Behavior |
+| --- | --- |
+| D output | All matching primary data after tree tools, unit conversion and filters. |
+| S output | The selected subset of matching rows, in transformed tree order. No selection produces an empty tree. |
+| B output | A Boolean membership tree with the original D input paths and item counts. True means the original item survives the chosen scope. |
+| F input/output | Optional paired data, matched to the original D input by exact branch path and zero-based item index, then emitted in the primary transformed tree order. |
+
+Right-click the component and choose **B + F source → Filtered results** (the default) or **Selected rows**. Filtered pairs F with D; Selected pairs F with S. In Selected mode, clearing the selection produces an all-False B and empty S/F. The scope saves with the definition and supports Undo/Redo without clearing the current selection; the selection itself is temporary. Reset restores Filtered scope. Sorting and click order never reorder wire outputs.
+
+Paired F must have exactly the same paths and branch lengths as the original D input, including empty branches. A mismatch empties F and reports a warning while D, S and B remain available; leaving F disconnected needs no warning. Tree tools determine the paired output's paths and retained items. **Create set** keeps the partner of the retained primary occurrence, and B marks only that occurrence True. Unit conversion changes primary D/S values; paired F keeps its own types and values. B carries membership only, so using it on a separate stream does not reproduce transformed paths or ordering. Pending or failed output filters publish no stale masks, selections or paired results.
+
+Port labels identify both inputs and all four outputs. Full/Half layouts share fixed grip positions, and the compact capsule has enough height for distinct output wire targets.
+
 Beta **`0.1.17-beta`** adds Excel-style row numbers automatically in **Asc/Desc**. The large number is the position in the current filtered view, starting at 1; the smaller bracketed number is the original zero-based item index within its branch. Both share a gutter sized from the complete input tree, so filtering, scrolling and switching between Asc/Desc do not resize it. Row numbers, branch paths and values share a baseline; the small index sits 2 canvas units below it. Numeric values are right-aligned in a monospaced font, with aligned decimals when a fixed decimal setting is used. Rows stay 17 canvas units high and there is no extra toggle. Source order shows the original index in a compact gutter, with values directly beside it when paths are shown in branch headings. Inline paths remain visible when the panel is too short for headings. Hover identifies the view row and full tree address. Sorting and numbering leave output order intact.
 
 [See the native sorted numbering](docs/images/panel-row-numbering.png) and [the compact Half layout](docs/images/panel-row-numbering-half.png). The [interactive alignment study](prototype/sort-numbering.html) shows the approved layout with sample data.

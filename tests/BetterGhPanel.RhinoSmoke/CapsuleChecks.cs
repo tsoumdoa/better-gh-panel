@@ -67,12 +67,16 @@ internal static class CapsuleChecks
             Click(component, canvas, CanvasControl.Close);
             Paint(component, canvas, half ? "capsule-from-half" : "capsule");
             var capsule = PanelTestAdapter.Bounds(component, CanvasControl.Panel);
-            Check(PanelTestAdapter.Minimized(component) && capsule.Size == new SizeF(216, 32), "Close shrinks both dimensions to a capsule");
+            Check(PanelTestAdapter.Minimized(component) && capsule.Size == new SizeF(216, 96), "Close shrinks both dimensions to a capsule with room for distinct output grips");
             Check(component.Attributes.Pivot == pivot && PanelTestAdapter.Size(component) == new SizeF(380, 420), "Capsule retains canonical pivot and saved dimensions");
-            Check(component.Attributes.Bounds.Width == capsule.Width + 12 && component.Attributes.Bounds.Height == capsule.Height,
+            Check(component.Attributes.Bounds.Width == capsule.Width + 44 && component.Attributes.Bounds.Height == capsule.Height,
                 "Capsule has no invisible full-panel bounds");
-            Check(component.Params.Input[0].Attributes.InputGrip == new PointF(capsule.Left, capsule.Top + 16) &&
-                component.Params.Output[0].Attributes.OutputGrip == new PointF(capsule.Right, capsule.Top + 16), "Native wire grips lie on capsule edges");
+            Check(component.Params.Input.All(parameter => parameter.Attributes.InputGrip.X == capsule.Left &&
+                    parameter.Attributes.InputGrip.Y > capsule.Top && parameter.Attributes.InputGrip.Y < capsule.Bottom) &&
+                component.Params.Output.All(parameter => parameter.Attributes.OutputGrip.X == capsule.Right &&
+                    parameter.Attributes.OutputGrip.Y > capsule.Top && parameter.Attributes.OutputGrip.Y < capsule.Bottom) &&
+                component.Params.Output.Zip(component.Params.Output.Skip(1), (a, b) => !a.Attributes.Bounds.IntersectsWith(b.Attributes.Bounds)).All(separate => separate),
+                "Every native wire grip lies on a capsule edge with distinct output targets");
             Check(!PanelTestAdapter.MenuOpen(component) && PanelTestAdapter.Hits(component, "_rowHits") == 0 && PanelTestAdapter.Hits(component, "_branchHits") == 0,
                 "Capsule closes menus and clears hidden row and branch targets");
             foreach (CanvasControl control in Enum.GetValues(typeof(CanvasControl)))

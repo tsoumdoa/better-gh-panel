@@ -117,19 +117,20 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.None) return;
             var anchor = Kind == CanvasMenuKind.Statistics ? statistics : Kind == CanvasMenuKind.Preview ? preview : Kind == CanvasMenuKind.Type ? type : Kind == CanvasMenuKind.Sort ? sort : Kind == CanvasMenuKind.Units ? units :
                 Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? search : branch;
-            float width = Math.Min(panel.Width - 18, Kind == CanvasMenuKind.Statistics ? 360 : Kind == CanvasMenuKind.Sort ? 138 :
+            float width = Math.Min(panel.Width - 28, Kind == CanvasMenuKind.Statistics ? 360 : Kind == CanvasMenuKind.Sort ? 138 :
                 Kind == CanvasMenuKind.Units || Kind == CanvasMenuKind.Preview ? 156 : Kind == CanvasMenuKind.Type || Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? 180 : 235);
             if (Kind == CanvasMenuKind.Units || Kind == CanvasMenuKind.Statistics)
             {
                 int rows = Math.Max(2, Math.Min(Count, (int)((anchor.Top - panel.Top - 31) / 20)));
                 int height = rows * 20;
-                float right = Kind == CanvasMenuKind.Statistics ? panel.Right - 9 : Math.Min(anchor.Right, panel.Right - 9);
+                float right = Kind == CanvasMenuKind.Statistics ? panel.Right - 14 : Math.Min(anchor.Right, panel.Right - 14);
+                right = Math.Max(panel.Left + 14 + width, right);
                 Bounds = new RectangleF(right - width, anchor.Top - height - 3, width, height);
                 Offset = Math.Max(0, Math.Min(Math.Max(0, Count - Visible), Offset));
                 return;
             }
             int visible = Math.Max(2, Math.Min(8, (int)((panel.Bottom - 9 - anchor.Bottom - 19) / 20)));
-            Bounds = new RectangleF(Math.Min(anchor.X, panel.Right - width - 9), anchor.Bottom + 2, width,
+            Bounds = new RectangleF(Math.Max(panel.Left + 14, Math.Min(anchor.X, panel.Right - width - 14)), anchor.Bottom + 2, width,
                 Math.Min(visible, Count) * 20 + (Count > visible ? 20 : 0));
             Offset = Math.Max(0, Math.Min(Math.Max(0, Count - Visible), Offset));
         }

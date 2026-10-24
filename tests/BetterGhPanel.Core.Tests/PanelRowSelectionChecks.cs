@@ -76,6 +76,41 @@ internal static class PanelRowSelectionChecks
         Expect(selection, Query(Sample())); // new input invalidates bulk selection too
 
         AcrossBranches();
+        OutputNotifications();
+    }
+
+    private static void OutputNotifications()
+    {
+        var selection = new PanelRowSelection();
+        var snapshot = Sample();
+        var source = Query(snapshot);
+        int notifications = 0;
+        selection.Changed += (_, __) => notifications++;
+        selection.Select(source, 0);
+        int beforePaint = notifications;
+        selection.OrderedPositions(source);
+        selection.Synchronize(source);
+        if (notifications != beforePaint || beforePaint == 0)
+            throw new InvalidOperationException("Selection changes notify outputs; reading/painting the same selection must not schedule more solutions.");
+        selection.Select(source, 0, preserveSelected: true);
+        selection.Select(source, 0);
+        if (notifications != beforePaint) throw new InvalidOperationException("Clicking or opening a menu on an unchanged selection must not recompute downstream data.");
+        selection.SelectAll(source);
+        int beforeRepeatedBulk = notifications;
+        selection.SelectAll(source);
+        selection.SelectIndices(source, new[] { 0, 1, 2 });
+        if (notifications != beforeRepeatedBulk) throw new InvalidOperationException("Repeating a bulk selection with identical membership must not notify outputs.");
+        beforePaint = notifications;
+        selection.OrderedPositions(Query(snapshot, new PanelQueryOptions { Search = "> 100" }));
+        if (notifications <= beforePaint || selection.Count != 0)
+            throw new InvalidOperationException("Filter pruning must notify downstream outputs even without another selection gesture.");
+        selection.Select(source, 1);
+        int beforeClear = notifications;
+        selection.Clear();
+        if (notifications <= beforeClear) throw new InvalidOperationException("Clearing selection must update downstream outputs.");
+        beforeClear = notifications;
+        selection.Clear();
+        if (notifications != beforeClear) throw new InvalidOperationException("Clearing an already-empty selection must not schedule an output loop.");
     }
 
     private static void AcrossBranches()

@@ -545,8 +545,9 @@ internal static class RowActionChecks
         MouseDown(component, canvas, new PointF(panel.Left + 2, list.Top + 4), 1);
         Check(Selected(selection, result).Count == 0, "Clicking an empty panel margin clears rows");
         Click(component, canvas, row);
+        var move = PanelTestAdapter.Bounds(component, CanvasControl.Move);
         var response = component.Attributes.RespondToMouseDown(canvas,
-            new GH_CanvasMouseEvent(DrawingPoint.Empty, new PointF(panel.Left + 12, panel.Top + 8), Forms.MouseButtons.Left, 1, 0));
+            new GH_CanvasMouseEvent(DrawingPoint.Empty, new PointF(move.Left + 2, move.Top + 7), Forms.MouseButtons.Left, 1, 0));
         Check(Selected(selection, result).Count == 1 && response == GH_ObjectResponse.Ignore,
             "The dedicated move handle preserves rows and leaves component dragging to Grasshopper");
 

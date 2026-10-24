@@ -18,7 +18,7 @@ using Grasshopper.Kernel.Undo;
 
 namespace BetterGhPanel
 {
-    public sealed class BetterPanelComponent : GH_Component
+    public sealed partial class BetterPanelComponent : GH_Component
     {
         private PanelSession? _session;
         private readonly PanelGeometryHighlight _highlight = new PanelGeometryHighlight();
@@ -55,7 +55,14 @@ namespace BetterGhPanel
 
         public BetterPanelComponent() : base("Panel+", "Panel+",
             "Inspect and manipulate typed data trees on the canvas. Tree tools, unit conversion and filters change the output. Sorting changes view order; decimal formatting never rounds wire values, and text/regex filters use the displayed formatting.",
-            "Params", "Util") { }
+            "Params", "Util")
+        {
+            RowSelection.Changed += (_, __) =>
+            {
+                ++_selectionVersion;
+                ScheduleOutput();
+            };
+        }
 
         public override Guid ComponentGuid => new Guid("51DC646E-5F72-496A-8B40-628478541F44");
         protected override Bitmap Icon => PanelIcon.Create();
@@ -122,6 +129,7 @@ namespace BetterGhPanel
             CancelPendingCopy();
             CanvasTextInput.CloseActive(this);
             (Attributes as BetterPanelAttributes)?.ResetViewState();
+            RowSelection.Clear();
             var previousResult = Session.Result;
             Session.UpdateQuery(new PanelQueryOptions { DecimalPlaces = DecimalPlaces });
             if (ReferenceEquals(previousResult, Session.Result)) (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
@@ -170,7 +178,7 @@ namespace BetterGhPanel
         {
             var options = Session.Options;
             bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None;
-            bool settingsChanged = outputChanged || DecimalPlaces != PanelUnits.AutomaticDecimals ||
+            bool settingsChanged = outputChanged || OutputScope != PanelOutputScope.Filtered || DecimalPlaces != PanelUnits.AutomaticDecimals ||
                 !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.TypeName != null || options.BranchPath != null ||
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
             if (settingsChanged) RecordUndoEvent("Reset Panel+");
@@ -178,9 +186,11 @@ namespace BetterGhPanel
             FlattenTree = ReverseTree = SimplifyTree = CreateSetTree = false;
             UnitConversion = PanelUnitConversion.None;
             DecimalPlaces = PanelUnits.AutomaticDecimals;
+            OutputScope = PanelOutputScope.Filtered;
             ResetPanelView();
             if (settingsChanged) OnPingDocument()?.Modified();
             if (outputChanged) ExpireSolution(true);
+            else ScheduleOutput();
             Instances.ActiveCanvas?.Invalidate();
         }
 
@@ -433,18 +443,26 @@ namespace BetterGhPanel
         {
             p.AddGenericParameter("Data", "D", "Any typed data tree to inspect", GH_ParamAccess.tree);
             p[0].Optional = true;
+            p.AddGenericParameter("Paired data", "F", "Optional data paired with D by original path and item index. Paths and branch lengths must match exactly. F follows the primary tree tools and membership; its values are not converted.", GH_ParamAccess.tree);
+            p[1].Optional = true;
         }
 
-        protected override void RegisterOutputParams(GH_OutputParamManager p) =>
+        protected override void RegisterOutputParams(GH_OutputParamManager p)
+        {
             p.AddGenericParameter("Data", "D", "Matching typed items after Simplify → Trim → Flatten → Reverse → Create set → unit conversion → filters. Output keeps tree order and full numeric precision. Text/regex filters use displayed formatting; sorting changes only view order.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Selected data", "S", "Selected rows within the current filtered results, in transformed tree order. Empty when no rows are selected.", GH_ParamAccess.tree);
+            p.AddBooleanParameter("Membership mask", "B", "True at original D input positions retained by the B + F source setting (Filtered by default, or Selected). Preserves original paths and item counts. Removed set duplicates are False. This mask conveys membership, not transformed ordering.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Paired results", "F", "Paired input values corresponding to the B + F source setting (Filtered by default, or Selected), in the primary transformed tree order. F retains its original values and types.", GH_ParamAccess.tree);
+        }
 
         private void ScheduleOutput()
         {
             var document = OnPingDocument();
             var session = _session;
-            if (document == null || session == null || _queryTree == null) return;
+            if (_solving || _restoringView || Locked || document == null || session == null || _queryTree == null) return;
             var options = session.Options;
-            if (!_outputPending && _outputOptions != null && SameOutputFilter(_outputOptions, options)) return;
+            if (!_outputPending && _outputOptions != null && SameOutputFilter(_outputOptions, options) &&
+                _publishedSelectionVersion == _selectionVersion && _publishedScope == OutputScope) return;
             var snapshot = session.Snapshot;
             long request = ++_outputRequest;
             // Never solve recursively from a query callback. Publish through a
@@ -477,11 +495,13 @@ namespace BetterGhPanel
             {
                 ++_outputRequest;
                 _queryTree = null;
+                ClearOutputSources();
                 if (!_retainGeometryMeasurements) _sourceItems = Array.Empty<IGH_Goo?>();
                 _reuseQuery = false;
                 CancelPendingCopy();
                 ClearHighlight();
                 (Attributes as BetterPanelAttributes)?.ResetViewState();
+                RowSelection.Clear();
                 _session?.InvalidateInput(_retainGeometryMeasurements, suspended: Locked);
             }
             base.ClearData();
@@ -508,9 +528,11 @@ namespace BetterGhPanel
                         options.DecimalPlaces = DecimalPlaces;
                         Session.UpdateQuery(options);
                     }
-                    tree = PanelTreeOperations.ApplyWithOccurrences(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, CreateSetTree,
-                        out var setOccurrences);
+                    _inputTree = PanelTreeOperations.CopyStructure(tree);
+                    tree = PanelTreeOperations.ApplyWithSources(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, CreateSetTree,
+                        out _retainedSources, out var setOccurrences);
                     _queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.Apply(tree, UnitConversion));
+                    CapturePairedInput(da);
                     var previousSources = _sourceItems;
                     var previousUnits = _geometryUnits;
                     var rhinoDocument = Rhino.RhinoDoc.ActiveDoc;
@@ -527,11 +549,7 @@ namespace BetterGhPanel
                 }
                 // Pending/failed filters expose no stale or unfiltered items. The
                 // completed query schedules another solution using this same tree.
-                _outputOptions = Session.Options;
-                bool filtering = HasOutputFilter(_outputOptions);
-                _outputPending = filtering && Session.IsBusy;
-                da.SetDataTree(0, _queryTree == null ? new GH_Structure<IGH_Goo>() : !filtering ? _queryTree :
-                    Session.HasCurrentResult ? PanelTreeOperations.Filter(_queryTree, Session.Result) : new GH_Structure<IGH_Goo>());
+                PublishOutputs(da);
                 if (Session.Error != null) AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Filter: " + Session.Error);
             }
             finally { _solving = false; }
@@ -572,10 +590,12 @@ namespace BetterGhPanel
         {
             ++_outputRequest;
             _queryTree = null;
+            ClearOutputSources();
             _reuseQuery = false;
             CancelPendingCopy();
             ClearHighlight();
             (Attributes as BetterPanelAttributes)?.ResetViewState();
+            RowSelection.Clear();
             CanvasTextInput.CloseActive();
             if (_session != null) _savedOptions = _session.Options;
             _session?.Dispose();
@@ -591,6 +611,9 @@ namespace BetterGhPanel
             Menu_AppendItem(menu, "Reset panel", (_, __) => ResetPanel());
             Menu_AppendItem(menu, "Reset panel view", (_, __) => ResetPanelView());
             Menu_AppendItem(menu, "Reset tree tools", (_, __) => SetTreeOperations(0, false, false, false, false), HasTreeOperations);
+            var outputMenu = Menu_AppendItem(menu, "B + F source: " + (OutputScope == PanelOutputScope.Filtered ? "Filtered" : "Selected"));
+            Menu_AppendItem(outputMenu.DropDown, "Filtered results", (_, __) => SetOutputScope(PanelOutputScope.Filtered), true, OutputScope == PanelOutputScope.Filtered);
+            Menu_AppendItem(outputMenu.DropDown, "Selected rows", (_, __) => SetOutputScope(PanelOutputScope.Selected), true, OutputScope == PanelOutputScope.Selected);
             var sizeMenu = Menu_AppendItem(menu, "Canvas panel size");
             var names = CanvasPanelSize.PresetNames;
             for (var i = 0; i < names.Length; i++)
@@ -630,14 +653,23 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelCreateSet", CreateSetTree);
             writer.SetInt32("PanelUnitConversion", (int)UnitConversion);
             writer.SetInt32("PanelDecimalPlaces", DecimalPlaces);
+            writer.SetInt32("PanelOutputScope", (int)OutputScope);
+            writer.SetInt32("PanelOutputSchema", 1);
             return base.Write(writer);
         }
 
         public override bool Read(GH_IReader reader)
         {
+            ++_outputRequest;
+            _queryTree = null;
+            _reuseQuery = false;
+            ClearOutputSources();
+            _sourceItems = Array.Empty<IGH_Goo?>();
+            _session?.InvalidateInput(false, suspended: Locked);
             CancelPendingCopy();
             ClearHighlight();
             (Attributes as BetterPanelAttributes)?.ResetViewState();
+            RowSelection.Clear();
             var search = ""; var type = ""; var branch = "";
             var prefix = false; var invalid = false; var sort = 0; var size = 1; var searchMode = 0;
             reader.TryGetString("PanelSearch", ref search);
@@ -691,11 +723,14 @@ namespace BetterGhPanel
             UnitConversion = Enum.IsDefined(typeof(PanelUnitConversion), conversion)
                 ? (PanelUnitConversion)conversion : PanelUnitConversion.None;
             DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, decimals));
+            int outputScope = 0;
+            reader.TryGetInt32("PanelOutputScope", ref outputScope);
+            OutputScope = Enum.IsDefined(typeof(PanelOutputScope), outputScope) ? (PanelOutputScope)outputScope : PanelOutputScope.Filtered;
             _savedOptions.DecimalPlaces = DecimalPlaces;
             _restoringView = true;
             try { _session?.UpdateQuery(_savedOptions); }
             finally { _restoringView = false; }
-            var success = base.Read(reader);
+            var success = base.Read(UpgradeLegacyOutputParameters(reader));
             (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
             Attributes?.ExpireLayout();
             return success;
