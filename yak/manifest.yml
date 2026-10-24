@@ -20,6 +20,9 @@ description: >
   Filter values, geometry length, area, volume, or per-branch list length with comparisons.
   Branch paths accept optional braces. Text and regular expressions match displayed units and decimals.
   Filters apply to typed output after tree tools and unit conversion.
+  D emits filter matches; S emits selected rows. B supplies an original-input Boolean mask,
+  and the optional F input/output filters paired data in sync with D or S.
+  B and F follow Filtered results by default, with a Selected rows option in the component menu.
   Pending results show a recomputing state instead of stale rows and statistics.
   Copy converted numeric values from selected rows.
   Native geometry copying for Rhino Paste supports Windows with standard model units.

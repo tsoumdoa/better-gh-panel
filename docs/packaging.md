@@ -12,12 +12,12 @@ node scripts/package.mjs
 
 Packaging finds Yak in the standard Rhino 8 installation. On a machine without Rhino, `node scripts/package.mjs --stage-only` builds the same folder without creating an archive. Use `--yak <absolute path>` or `YAK_PATH` for a custom installation. Use `--skip-build` only after a successful Release build.
 
-The current beta patch is `0.1.20-beta.4`. The resulting `artifacts/better-gh-panel-0.1.20-beta.4/` contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `better-gh-panel-0.1.20-beta.4-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
+The current beta patch is `0.1.20-beta.5`. The resulting `artifacts/better-gh-panel-0.1.20-beta.5/` contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `better-gh-panel-0.1.20-beta.5-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
 ```text
-yak install --source artifacts/better-gh-panel-0.1.20-beta.4 better-gh-panel 0.1.20-beta.4
+yak install --source artifacts/better-gh-panel-0.1.20-beta.5 better-gh-panel 0.1.20-beta.5
 ```
 
 Replace `yak` with the full executable path if it is not on PATH. On Windows it is normally `C:\Program Files\Rhino 8\System\Yak.exe`; on Mac it is normally `/Applications/Rhino 8.app/Contents/Resources/bin/yak`. Restart Rhino and open Grasshopper afterward. Local install uses Yak's package directory and avoids copying a second `.gha` into the Grasshopper Libraries folder.
@@ -34,8 +34,10 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 Install the current public beta with:
 
 ```text
-yak install better-gh-panel 0.1.20-beta.4
+yak install better-gh-panel 0.1.20-beta.5
 ```
+
+Patch `0.1.20-beta.5` adds selected data (S), an original-input Boolean mask (B), and optional paired data (F), while D keeps all filter matches. B/F default to Filtered scope and can follow Selected rows instead; the saved scope supports Undo/Redo. Strict pairing includes empty branches, retains the primary Create set representative, and preserves paired values without unit conversion. Legacy archives retain D identities and load without false corruption errors. Validation includes 64 tree-tool combinations, typed/null/duplicate and internalized paired values, empty and mismatched trees, cached output reuse, unchanged-selection scheduling, stale queries, archive diagnostics, and native grip/control dispatch. Validation builds both runtimes and runs both Windows Rhino suites against the extracted final Yak archive.
 
 Patch `0.1.20-beta.4` consolidates unit-conversion definitions, shares query scope with measurement preparation, and gives row-menu actions stable named identities. Existing settings and behavior are preserved. See the [maintainability audit](maintainability.md) for feature ownership and deferred findings.
 
