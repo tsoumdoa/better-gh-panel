@@ -255,11 +255,11 @@ internal static class FilterChecks
             fixture.Source.PersistentData.Append(new GH_Number(1234.56789), new GH_Path(0, 0, 2));
             fixture.Solve();
             PanelTestAdapter.TreeTools(fixture.Component, 0, true, true, false, true);
-            fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = "= 3", TypeName = "Number" });
+            fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = "= 4", TypeName = "Number" });
             await fixture.WaitForOutput(2);
             Check(fixture.Sink.VolatileData.PathCount == 1 && fixture.Sink.VolatileData.Paths[0].ToString() == "{0}" &&
-                fixture.Sink.VolatileData.AllData(true).OfType<GH_Number>().Select(n => n.Value).SequenceEqual(new[] { 1234.56789 / 1000, 2.0 }),
-                "List length uses the branch after Flatten, Reverse and Create set, before the Number type restriction");
+                fixture.Sink.VolatileData.AllData(true).OfType<GH_Number>().Select(n => n.Value).SequenceEqual(new[] { 1.23, 2.0 }),
+                "List length counts the flattened branch before type filtering and Create set, then the set outputs displayed numeric values");
             PanelTestAdapter.TreeTools(fixture.Component, 0, false, false, false);
             fixture.Source.PersistentData.Branches[1].RemoveAt(1);
             fixture.Solve();

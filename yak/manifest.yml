@@ -5,9 +5,11 @@ authors:
   - aectooling by tomoS
 description: >
   Panel+ beta is a fast, resizable Grasshopper data panel for Rhino 8.
-  Trim, simplify, flatten, reverse, or create sets of unique values in typed data trees directly on the
+  Trim, simplify, flatten, reverse, or create sets of unique displayed values directly on the
   canvas. Search, filter, sort values within each branch, jump to branches and rows, and inspect
   item and branch counts, numeric statistics, and unique values with frequencies.
+  Create set runs after filters, units and decimal formatting, and outputs displayed numbers or text.
+  Displayed list lengths form one set of counts across branches, including zero for empty branches.
   Set rows show occurrence badges and expandable original input locations.
   One header chevron toggles full and half views; the close button minimizes
   the panel to a small capsule while preserving its view and wire connections. A compact
@@ -22,7 +24,7 @@ description: >
   or one list-length count per branch, including empty branches, without a comparison.
   Branch paths accept optional braces. Text and regular expressions match displayed units and decimals.
   Filters apply to typed output after tree tools and unit conversion.
-  D emits filter matches; S emits selected rows. B supplies an original-input Boolean mask,
+  D emits filter matches or displayed set values; S emits selected values. B supplies an original-input Boolean mask,
   and the optional F input/output filters paired data in sync with D or S.
   B and F follow Filtered results by default, with a Selected rows option in the component menu.
   Pending results show a recomputing state instead of stale rows and statistics.

@@ -11,13 +11,11 @@ namespace BetterGhPanel.Runtime
     {
         public static PanelSnapshot Capture(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
             PanelUnitConversion conversion = PanelUnitConversion.None, string geometryUnits = "units") =>
-            CaptureWithOccurrences(tree, out sourceItems, conversion, geometryUnits, null);
+            CaptureWithSources(tree, out sourceItems, conversion, geometryUnits, null);
 
-        internal static PanelSnapshot CaptureWithOccurrences(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
-            PanelUnitConversion conversion, string geometryUnits, IReadOnlyList<PanelSetOccurrences>? setOccurrences)
+        internal static PanelSnapshot CaptureWithSources(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
+            PanelUnitConversion conversion, string geometryUnits, IReadOnlyList<PanelSourceAddress>? sourceAddresses)
         {
-            if (setOccurrences != null && setOccurrences.Count != tree.DataCount)
-                throw new ArgumentException("Set occurrences must match the captured tree.", nameof(setOccurrences));
             var rows = new List<PanelRow>(tree.DataCount);
             var branches = new List<PanelBranch>(tree.PathCount);
             var source = new List<IGH_Goo?>(tree.DataCount);
@@ -59,12 +57,12 @@ namespace BetterGhPanel.Runtime
                         invalidReason = "Value could not be read.";
                     }
                     rows.Add(new PanelRow(i, path, type, display, number, item == null, valid, geometry, invalidReason,
-                        item is GH_String text ? text.Value : null, setOccurrences?[rows.Count]));
+                        item is GH_String text ? text.Value : null));
                     source.Add(item);
                 }
             }
             sourceItems = source.ToArray();
-            return new PanelSnapshot(rows, branches, conversion);
+            return new PanelSnapshot(rows, branches, conversion, sourceAddresses);
         }
 
         private static string FormatSummary(IGH_Goo? goo, out double? numeric)

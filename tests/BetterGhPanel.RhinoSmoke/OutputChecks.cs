@@ -26,6 +26,7 @@ internal static class OutputChecks
         var pair = outputTools.GetMethod("Pair", BindingFlags.Static | BindingFlags.NonPublic)!;
         var mask = outputTools.GetMethod("Mask", BindingFlags.Static | BindingFlags.NonPublic)!;
         var select = treeTools.GetMethod("Select", BindingFlags.Static | BindingFlags.NonPublic)!;
+        var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("CaptureWithSources", BindingFlags.Static | BindingFlags.NonPublic)!;
         var input = new GH_Structure<IGH_Goo>();
         var paired = new GH_Structure<IGH_Goo>();
         input.AppendRange(new IGH_Goo[] { new GH_Number(12), new GH_Integer(4), new GH_Number(12), null! }, new GH_Path(7, 0));
@@ -47,9 +48,9 @@ internal static class OutputChecks
         for (int trim = 0; trim <= 3; trim++)
             for (int flags = 0; flags < 16; flags++)
             {
-                var args = new object?[] { input, trim, (flags & 1) != 0, (flags & 2) != 0, (flags & 4) != 0, (flags & 8) != 0, null, null };
+                var args = new object?[] { input, trim, (flags & 1) != 0, (flags & 2) != 0, (flags & 4) != 0, null };
                 var transformed = (GH_Structure<IGH_Goo>)apply.Invoke(null, args)!;
-                var addresses = (IReadOnlyList<PanelSourceAddress>)args[6]!;
+                var addresses = (IReadOnlyList<PanelSourceAddress>)args[5]!;
                 var values = transformed.AllData(false).ToArray();
                 Check(addresses.Count == values.Length && addresses.Select((a, i) => ReferenceEquals(values[i], byAddress[(a.Path, a.ItemIndex)])).All(v => v),
                     $"Original addresses follow transformed values (trim {trim}, flags {flags})");
@@ -58,12 +59,14 @@ internal static class OutputChecks
                 Check(pairArgs[4] == null && SameShape(transformed, following) && following.AllData(true).Cast<GH_String>()
                     .Select(v => v.Value).SequenceEqual(addresses.Select(a => a.Path + ":" + a.ItemIndex)),
                     $"Paired values retain exact provenance and transformed paths (trim {trim}, flags {flags})");
-                var positions = Enumerable.Range(0, values.Length).Where(i => i % 2 == 0).Reverse().ToArray();
+                var snapshot = (PanelSnapshot)capture.Invoke(null, new object?[] { transformed, null, PanelUnitConversion.None, "mm", addresses })!;
+                var query = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { CreateSet = (flags & 8) != 0 });
+                var positions = query.RowPositions.Where((position, index) => index % 2 == 0).Reverse().ToArray();
                 var booleans = (GH_Structure<GH_Boolean>)mask.Invoke(null, new object[] { input, addresses, positions })!;
                 var selected = (GH_Structure<IGH_Goo>)select.Invoke(null, new object[] { transformed, positions })!;
                 Check(SameShape(input, booleans) && booleans.AllData(true).Cast<GH_Boolean>().Count(v => v.Value) == positions.Length &&
                     positions.All(i => ((GH_Boolean)booleans.get_Branch(input.Paths.First(path => path.ToString() == addresses[i].Path))[addresses[i].ItemIndex]!).Value) &&
-                    selected.AllData(false).SequenceEqual(values.Where((_, i) => i % 2 == 0)),
+                    selected.AllData(false).SequenceEqual(values.Where((_, i) => positions.Contains(i))),
                     $"B preserves input shape and S ignores selection order (trim {trim}, flags {flags})");
             }
         Check(input.Branches.Select((branch, b) => branch.SequenceEqual(original[b])).All(v => v), "Output mapping never mutates the incoming tree");
@@ -180,7 +183,7 @@ internal static class OutputChecks
             "Flatten/Reverse/Create set keep the retained primary item's partner and mark only its original occurrence");
         PanelTestAdapter.Units(c, PanelUnitConversion.MillimetersToMeters, 2);
         fixture.Query(new PanelQueryOptions());
-        await fixture.Ready(() => fixture.Values(0) == "0.02,0.003,0.007,0.012,0.018,0.004" && fixture.Values(3) == "G,F,E,D,C,B");
+        await fixture.Ready(() => fixture.Values(0) == "0.02,0,0.01" && fixture.Values(3) == "G,F,E");
 
         fixture.Paired.PersistentData.Clear();
         fixture.Paired.PersistentData.Append(new GH_String("wrong"), new GH_Path(0));
@@ -203,17 +206,17 @@ internal static class OutputChecks
             internalized.PersistentData.EnsurePath(path);
             foreach (var item in fixture.Source.PersistentData.get_Branch(path))
             {
-                internalized.PersistentData.Append(pairedIndex == 3 ? null! : new GH_Number(pairedIndex == 1 ? 1002 : 1000 + pairedIndex), path);
+                internalized.PersistentData.Append(pairedIndex == 4 ? null! : new GH_Number(pairedIndex == 5 ? 1006 : 1000 + pairedIndex), path);
                 pairedIndex++;
             }
         }
         internalized.ExpireSolution(true);
-        await fixture.Ready(() => fixture.Values(3) == "1006,1005,1004,<null>,1002,1002");
-        Check(c.Params.Output[3].VolatileData.DataCount == 6 && c.Params.Output[3].VolatileData.get_Branch(0)[3] == null,
+        await fixture.Ready(() => fixture.Values(3) == "1006,1006,<null>");
+        Check(c.Params.Output[3].VolatileData.DataCount == 3 && c.Params.Output[3].VolatileData.get_Branch(0)[2] == null,
             "Internalized F preserves typed numeric values, duplicates and nulls under primary units, Reverse and Create set");
 
         fixture.Select(0);
-        await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1 && fixture.Sinks[3].VolatileData.DataCount == 6);
+        await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1 && fixture.Sinks[3].VolatileData.DataCount == 3);
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "[" });
         await fixture.Ready(() => Property<string?>(fixture.Session, "Error") != null, allowError: true);
         await Wait(() => fixture.Sinks.All(sink => sink.VolatileData.DataCount == 0));
@@ -444,7 +447,7 @@ internal static class OutputChecks
         if (!condition) throw new InvalidOperationException(message);
     }
 
-    private sealed class Fixture : IDisposable
+    internal sealed class Fixture : IDisposable
     {
         internal readonly GH_Document Document = new GH_Document { Enabled = true };
         internal readonly Param_GenericObject Source = new Param_GenericObject(), Paired = new Param_GenericObject();
@@ -488,6 +491,8 @@ internal static class OutputChecks
         internal void Select(int position, bool toggle = false, bool preserveSelected = false) => Selection.GetType().GetMethod("Select", Instance)!
             .Invoke(Selection, new object[] { Result, position, toggle, false, preserveSelected });
         internal void ClearSelection() => Selection.GetType().GetMethod("Clear", Instance)!.Invoke(Selection, Array.Empty<object>());
+        internal void SelectBranch(string path) => Selection.GetType().GetMethod("SelectAll", Instance)!
+            .Invoke(Selection, new object[] { Result, path, true });
         internal async Task Ready(Func<bool> condition, bool allowError = false)
         {
             try

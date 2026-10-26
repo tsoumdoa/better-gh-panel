@@ -51,20 +51,20 @@ internal static class SetDetailsChecks
         {
             Paint();
             var snapshot = Result().Snapshot;
-            Check(snapshot.Rows.Select(row => row.SetOccurrences!.Count).SequenceEqual(new[] { 9, 1, 2, 1 }),
+            Check(Result().RowPositions.Select(position => Result().SetOccurrencesAt(position)!.Count).SequenceEqual(new[] { 9, 1, 2, 1 }),
                 "Set rows show original per-branch counts instead of counting only retained output rows");
             var output = component.Params.Output[0].VolatileData.AllData(true).ToArray();
             var inputGrip = component.Params.Input[0].Attributes.InputGrip;
             var outputGrip = component.Params.Output[0].Attributes.OutputGrip;
-            var textRow = PanelTestAdapter.RowBounds(component, 1);
+            var textRow = PanelTestAdapter.RowBounds(component, 2);
             PanelTestAdapter.CanvasClick(canvas, new PointF(textRow.X + 42, textRow.Y + 8));
-            Check(PanelTestAdapter.SelectedPosition(component) == 1, "Set fixture selects a different row before inspecting occurrences");
+            Check(PanelTestAdapter.SelectedPosition(component) == 2, "Set fixture selects a different row before inspecting occurrences");
             Click(CountBounds(0));
             Check(!Bounds("Bounds").IsEmpty && Property<int>(details, "SourcePosition") == 0,
                 "Native count badge expands an occurrence table below the panel");
             var badge = CountBounds(0);
             PanelTestAdapter.CanvasClick(canvas, new PointF(badge.X + badge.Width / 2, badge.Y + badge.Height / 2), clicks: 2);
-            Check(!Bounds("Bounds").IsEmpty && PanelTestAdapter.SelectedPosition(component) == 1,
+            Check(!Bounds("Bounds").IsEmpty && PanelTestAdapter.SelectedPosition(component) == 2,
                 "A trailing double-click neither toggles the drawer twice nor clears row selection");
             Check(component.Attributes.Bounds.Contains(Bounds("Bounds")) && component.Params.Input[0].Attributes.InputGrip == inputGrip &&
                 component.Params.Output[0].Attributes.OutputGrip == outputGrip, "Expanded table participates in hit testing without moving wire grips");
@@ -79,7 +79,7 @@ internal static class SetDetailsChecks
                 BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(point) }, null)!;
             component.Attributes.SetupTooltip(point, tooltip);
             Check(tooltip.Text == "{4;0} [9]", "Occurrence tooltip exposes the complete original path and zero-based item index");
-            Check(PanelTestAdapter.SelectedPosition(component) == 1 && ReferenceEquals(Result().Snapshot, snapshot) &&
+            Check(PanelTestAdapter.SelectedPosition(component) == 2 && ReferenceEquals(Result().Snapshot, snapshot) &&
                 component.Params.Output[0].VolatileData.AllData(true).SequenceEqual(output) &&
                 viewport.CameraLocation == camera && viewport.CameraTarget == target && source.PersistentData.DataCount == 13,
                 "Inspecting counts and paging preserves row selection, solution, typed output, camera and source data");
@@ -89,7 +89,7 @@ internal static class SetDetailsChecks
             Click(CountBounds(0));
             Check(!Property<bool>(details, "IsOpen"), "Clicking the same count badge again collapses the mini table");
 
-            Click(CountBounds(1));
+            Click(CountBounds(2));
             Check(Bounds("Previous").IsEmpty && Bounds("Next").IsEmpty && Bounds("Bounds").Bottom - Bounds("Table").Bottom == 4,
                 "Singleton occurrences show their original address without an empty paging footer");
             Click(Bounds("Collapse"));
@@ -98,7 +98,7 @@ internal static class SetDetailsChecks
             Check(Property<int>(details, "SourcePosition") == 0 && !Bounds("Bounds").IsEmpty,
                 "Sorting retains the expanded value and its original locations");
             await Query(new PanelQueryOptions { Search = ">8", SortMode = PanelSortMode.ValueDescending });
-            Check(Result().Snapshot.Rows[0].SetOccurrences!.Count == 9 && !Bounds("Bounds").IsEmpty,
+            Check(Result().SetOccurrencesAt(0)!.Count == 9 && !Bounds("Bounds").IsEmpty,
                 "Filtering retained values does not reduce their original occurrence count");
             await Query(new PanelQueryOptions { Search = "alpha" });
             Check(!Property<bool>(details, "IsOpen"), "Filtering out the expanded value dismisses its locations");
@@ -107,8 +107,8 @@ internal static class SetDetailsChecks
             PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 0);
             await Wait();
             Paint();
-            Check(Result().Snapshot.Rows[0].NumericValue == 0.009 && Result().Snapshot.Rows[0].SetOccurrences!.Count == 9 &&
-                Result().Snapshot.Rows[0].SetOccurrences!.Locations[0].ItemIndex == 0,
+            Check(Result().Snapshot.Rows[0].NumericValue == 0.009 && Result().SetOccurrencesAt(0)!.Count == 9 &&
+                Result().SetOccurrencesAt(0)!.Locations[0].ItemIndex == 0,
                 "Unit conversion and rounded display retain original counts and addresses");
             PanelTestAdapter.Units(component, PanelUnitConversion.None, -1);
             PanelTestAdapter.TreeTools(component, 0, true, true, false, true);
@@ -118,7 +118,7 @@ internal static class SetDetailsChecks
             Click(PanelTestAdapter.Bounds(component, CanvasControl.Display));
             Paint();
             Click(CountBounds(0));
-            var global = Result().Snapshot.Rows[0].SetOccurrences!;
+            var global = Result().SetOccurrencesAt(0)!;
             Check(global.Count == 11 && global.BranchCount == 2 && global.Locations[0].Path == "{4;1}" && global.Locations[0].ItemIndex == 2,
                 "Flatten plus Reverse shows all eleven occurrences and their original branch addresses");
             Check(!Bounds("Bounds").IsEmpty && Bounds("Bounds").Top > PanelTestAdapter.Bounds(component, CanvasControl.Panel).Bottom,
@@ -163,8 +163,8 @@ internal static class SetDetailsChecks
             document.NewSolution(false, GH_SolutionMode.Silent);
             await Wait();
             Paint();
-            Check(!Property<bool>(details, "IsOpen") && Result().Snapshot.Rows[0].SetOccurrences!.Count == 2 &&
-                Result().Snapshot.Rows[0].SetOccurrences!.Locations[0].Path == "{8}", "New input clears expanded state and replaces all old provenance");
+            Check(!Property<bool>(details, "IsOpen") && Result().SetOccurrencesAt(0)!.Count == 2 &&
+                Result().SetOccurrencesAt(0)!.Locations[0].Path == "{8}", "New input clears expanded state and replaces all old provenance");
             Click(CountBounds(0));
             Click(PanelTestAdapter.Bounds(component, CanvasControl.Reset));
             await Wait();

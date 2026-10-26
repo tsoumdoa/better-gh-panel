@@ -54,7 +54,7 @@ namespace BetterGhPanel
         internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
 
         public BetterPanelComponent() : base("Panel+", "Panel+",
-            "Inspect and manipulate typed data trees on the canvas. Tree tools, unit conversion and filters change the output. Sorting changes view order; decimal formatting never rounds wire values, and text/regex filters use the displayed formatting.",
+            "Inspect and manipulate data trees on the canvas. Tree tools, units and filters change output. Create set emits unique displayed numbers or text at the displayed precision; otherwise output retains original types and precision. Sorting changes view order.",
             "Params", "Util")
         {
             RowSelection.Changed += (_, __) =>
@@ -94,6 +94,7 @@ namespace BetterGhPanel
                 {
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
                     _session.SetDecimalPlacesResolver(() => DecimalPlaces);
+                    _session.SetCreateSetResolver(() => CreateSetTree);
                     if (Locked) _session.InvalidateInput(false, suspended: true);
                     _session.SetGeometryDetailResolver(position => position < _sourceItems.Length
                         ? GeometryHints.PrepareMeasurement(_sourceItems[position], _geometryUnits) : null);
@@ -221,6 +222,7 @@ namespace BetterGhPanel
                 options.BranchPrefix = false;
                 Session.UpdateQuery(options);
             }
+            else Session.UpdateQuery(Session.Options);
             OnPingDocument()?.Modified();
             ExpireSolution(true);
             Instances.ActiveCanvas?.Invalidate();
@@ -299,6 +301,8 @@ namespace BetterGhPanel
 
         internal string DisplayValue(PanelSnapshot snapshot, PanelRow row, int sourcePosition = -1)
         {
+            if (ReferenceEquals(snapshot, Session.Result.Snapshot) && Session.Result.DisplaySet?.Values.TryGetValue(sourcePosition, out var projected) == true)
+                return projected.Text;
             var geometry = Session.GetGeometryDetails(snapshot, sourcePosition);
             if (geometry == null)
                 geometry = Session.HasGeometryMeasurement(snapshot, sourcePosition)
@@ -317,6 +321,7 @@ namespace BetterGhPanel
             if (!ReferenceEquals(snapshot, Session.Snapshot) || position < 0 || position >= snapshot.Rows.Count)
                 throw new InvalidOperationException("The selected data has changed. Select the rows again.");
             var row = snapshot.Rows[position];
+            if (Session.Result.DisplaySet?.Values.TryGetValue(position, out var projected) == true) return projected.CopyText;
             var options = Session.Options;
             if (options.DisplayFilterValue)
             {
@@ -460,7 +465,7 @@ namespace BetterGhPanel
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddGenericParameter("Data", "D", "Matching typed items after Simplify → Trim → Flatten → Reverse → Create set → unit conversion → filters. Output keeps tree order and full numeric precision. Text/regex filters use displayed formatting; sorting changes only view order.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Data", "D", "Matching items after Simplify → Trim → Flatten → Reverse → unit conversion → filters. Create set outputs unique displayed numbers or text at the displayed precision. Otherwise output keeps original types and full precision. Sorting changes only view order.", GH_ParamAccess.tree);
             p.AddGenericParameter("Selected data", "S", "Selected rows within the current filtered results, in transformed tree order. Empty when no rows are selected.", GH_ParamAccess.tree);
             p.AddBooleanParameter("Membership mask", "B", "True at original D input positions retained by the B + F source setting (Filtered by default, or Selected). Preserves original paths and item counts. Removed set duplicates are False. This mask conveys membership, not transformed ordering.", GH_ParamAccess.tree);
             p.AddGenericParameter("Paired results", "F", "Paired input values corresponding to the B + F source setting (Filtered by default, or Selected), in the primary transformed tree order. F retains its original values and types.", GH_ParamAccess.tree);
@@ -492,10 +497,12 @@ namespace BetterGhPanel
         private static bool SameOutputFilter(PanelQueryOptions left, PanelQueryOptions right) =>
             left.Search == right.Search && left.SearchMode == right.SearchMode && left.TypeName == right.TypeName &&
             left.DisplayFilterValue == right.DisplayFilterValue &&
+            left.CreateSet == right.CreateSet &&
             left.OnlyInvalid == right.OnlyInvalid && left.BranchPath == right.BranchPath && left.BranchPrefix == right.BranchPrefix &&
-            (left.DecimalPlaces == right.DecimalPlaces || !PanelQueryEngine.UsesDisplayedText(right));
+            (left.DecimalPlaces == right.DecimalPlaces || !right.CreateSet && !PanelQueryEngine.UsesDisplayedText(right));
 
         private static bool HasOutputFilter(PanelQueryOptions options) =>
+            options.CreateSet ||
             (!options.DisplayFilterValue && (options.SearchMode == PanelSearchMode.Regex ? !string.IsNullOrEmpty(options.Search) : !string.IsNullOrWhiteSpace(options.Search))) ||
             options.TypeName != null || options.OnlyInvalid || !string.IsNullOrWhiteSpace(options.BranchPath);
 
@@ -541,8 +548,7 @@ namespace BetterGhPanel
                         Session.UpdateQuery(options);
                     }
                     _inputTree = PanelTreeOperations.CopyStructure(tree);
-                    tree = PanelTreeOperations.ApplyWithSources(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, CreateSetTree,
-                        out _retainedSources, out var setOccurrences);
+                    tree = PanelTreeOperations.ApplyWithSources(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out _retainedSources);
                     _queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.Apply(tree, UnitConversion));
                     CapturePairedInput(da);
                     var previousSources = _sourceItems;
@@ -553,7 +559,7 @@ namespace BetterGhPanel
                     _geometryUnits = rhinoDocument == null || rhinoDocument.ModelUnitSystem == Rhino.UnitSystem.None
                         ? "units" : rhinoDocument.GetUnitSystemName(true, false, false, true);
                     if (string.IsNullOrWhiteSpace(_geometryUnits)) _geometryUnits = "units";
-                    var snapshot = SnapshotCapture.CaptureWithOccurrences(_queryTree, out _sourceItems, UnitConversion, _geometryUnits, setOccurrences);
+                    var snapshot = SnapshotCapture.CaptureWithSources(_queryTree, out _sourceItems, UnitConversion, _geometryUnits, _retainedSources);
                     if (_retainGeometryMeasurements && previousUnits == _geometryUnits)
                         Session.AttachConvertedSnapshot(snapshot, position => position < previousSources.Length &&
                             position < _sourceItems.Length && ReferenceEquals(previousSources[position], _sourceItems[position]));

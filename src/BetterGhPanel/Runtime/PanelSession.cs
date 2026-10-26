@@ -20,6 +20,7 @@ namespace BetterGhPanel.Runtime
         private CancellationTokenSource? _queryCancellation;
         private PanelQueryOptions _options = new PanelQueryOptions();
         private Func<int>? _decimalPlacesResolver;
+        private Func<bool>? _createSetResolver;
         private Func<int, Func<PanelGeometryInfo?>?>? _geometryDetailResolver;
         private readonly Dictionary<int, GeometryMeasurement> _geometryDetails = new Dictionary<int, GeometryMeasurement>();
         private readonly List<int> _visibleGeometry = new List<int>();
@@ -103,6 +104,7 @@ namespace BetterGhPanel.Runtime
         }
 
         internal void SetDecimalPlacesResolver(Func<int> resolver) => _decimalPlacesResolver = resolver;
+        internal void SetCreateSetResolver(Func<bool> resolver) => _createSetResolver = resolver;
 
         internal void SetGeometryDetailResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) => _geometryDetailResolver = resolver;
 
@@ -332,6 +334,7 @@ namespace BetterGhPanel.Runtime
             // A component owns its formatting setting. Direct query updates and
             // ResetView cannot silently revert the filter's presentation precision.
             if (_decimalPlacesResolver != null) next.DecimalPlaces = _decimalPlacesResolver();
+            if (_createSetResolver != null) next.CreateSet = _createSetResolver();
             next.DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, next.DecimalPlaces));
             // Canonical paths keep direct input, saved options and menu checkmarks
             // consistent. Malformed input stays in the query so it reports the same
@@ -342,7 +345,7 @@ namespace BetterGhPanel.Runtime
                 _options.BranchPath != next.BranchPath || _options.BranchPrefix != next.BranchPrefix ||
                 _options.OnlyInvalid != next.OnlyInvalid || _options.SortMode != next.SortMode ||
                 _options.SearchMode != next.SearchMode || _options.DecimalPlaces != next.DecimalPlaces ||
-                _options.DisplayFilterValue != next.DisplayFilterValue;
+                _options.DisplayFilterValue != next.DisplayFilterValue || _options.CreateSet != next.CreateSet;
             _options = next;
             if (changed)
             {

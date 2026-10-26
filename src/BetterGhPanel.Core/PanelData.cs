@@ -55,14 +55,20 @@ namespace BetterGhPanel.Core
     /// <summary>Owns immutable copies so a query cannot observe changes to the input lists.</summary>
     public sealed class PanelSnapshot
     {
+        private readonly IReadOnlyList<PanelSourceAddress>? _sourceAddresses;
         public static PanelSnapshot Empty { get; } =
             new PanelSnapshot(Array.Empty<PanelRow>(), Array.Empty<PanelBranch>());
 
         public PanelSnapshot(IReadOnlyList<PanelRow> rows, IReadOnlyList<PanelBranch> branches,
-            PanelUnitConversion unitConversion = PanelUnitConversion.None)
+            PanelUnitConversion unitConversion = PanelUnitConversion.None, IReadOnlyList<PanelSourceAddress>? sourceAddresses = null)
         {
             if (rows == null) throw new ArgumentNullException(nameof(rows));
             if (branches == null) throw new ArgumentNullException(nameof(branches));
+            if (sourceAddresses != null)
+            {
+                if (sourceAddresses.Count != rows.Count) throw new ArgumentException("Source addresses must match the rows.", nameof(sourceAddresses));
+                _sourceAddresses = Array.AsReadOnly(new List<PanelSourceAddress>(sourceAddresses).ToArray());
+            }
             var rowCopy = new PanelRow[rows.Count];
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             bool hasMeasurableGeometry = false;
@@ -98,6 +104,8 @@ namespace BetterGhPanel.Core
         /// <summary>Source type counts for populating filters without another full-tree scan.</summary>
         public IReadOnlyDictionary<string, int> TypeCounts { get; }
         public IReadOnlyDictionary<string, int> BranchItemCounts { get; }
+        public PanelSourceAddress SourceAddressAt(int position) => _sourceAddresses?[position] ??
+            new PanelSourceAddress(Rows[position].Path, Rows[position].OriginalIndex);
     }
 
     public enum PanelSortMode
@@ -125,6 +133,8 @@ namespace BetterGhPanel.Core
         public PanelSearchMode SearchMode { get; set; } = PanelSearchMode.Text;
         /// <summary>Inspect the selected numeric metric without applying a search predicate.</summary>
         public bool DisplayFilterValue { get; set; }
+        /// <summary>Create a set of the current formatted values after filtering.</summary>
+        public bool CreateSet { get; set; }
         /// <summary>Presentation precision for text/regex matching; numeric predicates retain full precision.</summary>
         public int DecimalPlaces { get; set; } = PanelUnits.AutomaticDecimals;
         public string? TypeName { get; set; }
@@ -139,6 +149,7 @@ namespace BetterGhPanel.Core
             Search = Search,
             SearchMode = SearchMode,
             DisplayFilterValue = DisplayFilterValue,
+            CreateSet = CreateSet,
             DecimalPlaces = DecimalPlaces,
             TypeName = TypeName,
             BranchPath = BranchPath,
@@ -203,12 +214,14 @@ namespace BetterGhPanel.Core
 
     public sealed class PanelQueryResult
     {
-        internal PanelQueryResult(PanelSnapshot snapshot, int[] rowPositions, PanelStatistics statistics, IEnumerable<string> branchPaths)
+        internal PanelQueryResult(PanelSnapshot snapshot, int[] rowPositions, PanelStatistics statistics, IEnumerable<string> branchPaths,
+            PanelDisplaySetResult? displaySet = null)
         {
             Snapshot = snapshot;
             RowPositions = Array.AsReadOnly(rowPositions);
             Statistics = statistics;
             BranchPaths = Array.AsReadOnly(new List<string>(branchPaths).ToArray());
+            DisplaySet = displaySet;
         }
 
         public PanelSnapshot Snapshot { get; }
@@ -217,5 +230,8 @@ namespace BetterGhPanel.Core
         public PanelStatistics Statistics { get; }
         /// <summary>Matching paths, including empty branches when no item filter is active.</summary>
         public IReadOnlyList<string> BranchPaths { get; }
+        public PanelDisplaySetResult? DisplaySet { get; }
+        public PanelSetOccurrences? SetOccurrencesAt(int position) =>
+            DisplaySet != null && DisplaySet.Occurrences.TryGetValue(position, out var occurrences) ? occurrences : Snapshot.Rows[position].SetOccurrences;
     }
 }

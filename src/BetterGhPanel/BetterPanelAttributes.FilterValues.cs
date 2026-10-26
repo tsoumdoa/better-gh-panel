@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Linq;
 using BetterGhPanel.Core;
 using BetterGhPanel.UI;
 
@@ -11,6 +12,8 @@ namespace BetterGhPanel
         {
             _offset = Math.Max(0, Math.Min(Math.Max(0, Count - 1), _offset));
             using var renderer = new CanvasRowRenderer(graphics, result.Snapshot.Branches.Count, false);
+            var selected = _selection.BranchPaths(result);
+            bool set = result.DisplaySet?.IsBranchSet == true;
             float y = _list.Y;
             // A header fits in Full and ordinary Half layouts; minimum Half still
             // leaves room for a branch and its explicitly labeled count.
@@ -18,18 +21,22 @@ namespace BetterGhPanel
             {
                 Fill(graphics, Color.FromArgb(236, 241, 235), new RectangleF(_list.X, y, _list.Width, BranchHeight));
                 Text(graphics, "Branch", small, Accent, new RectangleF(_list.X + 6, y, _list.Width / 2, BranchHeight), trim);
-                Text(graphics, "List length", small, Accent, new RectangleF(_list.Right - 90, y, 84, BranchHeight), trim);
+                Text(graphics, "List length", small, Accent, new RectangleF(_list.Right - 90 - (set ? 40 : 0), y, 84, BranchHeight), trim);
                 y += BranchHeight;
             }
             for (int index = _offset; index < result.BranchPaths.Count && y + RowHeight <= _list.Bottom; index++)
             {
                 string path = result.BranchPaths[index];
                 var bounds = new RectangleF(_list.X, y, _list.Width, RowHeight);
-                Fill(graphics, (_shown & 1) == 0 ? Color.White : Color.FromArgb(247, 249, 246), bounds);
-                renderer.DrawCell(graphics, path, mono, Accent, new RectangleF(bounds.X + 6, y, Math.Max(0, bounds.Width - 102), RowHeight));
+                Fill(graphics, selected.Contains(path) ? Color.FromArgb(216, 232, 219) : (_shown & 1) == 0 ? Color.White : Color.FromArgb(247, 249, 246), bounds);
+                float badgeWidth = set ? 40 : 0;
+                renderer.DrawCell(graphics, path, mono, Accent, new RectangleF(bounds.X + 6, y, Math.Max(0, bounds.Width - 102 - badgeWidth), RowHeight));
                 int count = result.Snapshot.BranchItemCounts[path];
                 renderer.DrawValue(graphics, count.ToString(System.Globalization.CultureInfo.InvariantCulture) + (count == 1 ? " item" : " items"),
-                    small, Ink, new RectangleF(bounds.Right - 96, y, 90, RowHeight), true);
+                    small, Ink, new RectangleF(bounds.Right - 96 - badgeWidth, y, 90, RowHeight), true);
+                if (set)
+                    renderer.DrawValue(graphics, result.DisplaySet!.BranchOccurrences[path].Count + "×", small, Accent,
+                        new RectangleF(bounds.Right - badgeWidth, y, badgeWidth - 6, RowHeight), true);
                 _branchHits.Add(new BranchHit(bounds, path));
                 _shown++;
                 y += RowHeight;

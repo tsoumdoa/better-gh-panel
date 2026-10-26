@@ -13,19 +13,19 @@ namespace BetterGhPanel
     internal sealed partial class BetterPanelAttributes
     {
         private float _setCountWidth = 44;
-        private PanelSnapshot? _setCountSnapshot;
+        private PanelQueryResult? _setCountResult;
         private readonly CanvasSetDetails _setDetails = new CanvasSetDetails();
         private readonly List<RowHit> _setHits = new List<RowHit>();
         private bool _setControlsVisible;
 
-        private void SizeSetColumn(Graphics graphics, CanvasRowRenderer renderer, PanelSnapshot snapshot)
+        private void SizeSetColumn(Graphics graphics, CanvasRowRenderer renderer, PanelQueryResult result)
         {
-            if (ReferenceEquals(_setCountSnapshot, snapshot)) return;
-            _setCountSnapshot = snapshot;
+            if (ReferenceEquals(_setCountResult, result)) return;
+            _setCountResult = result;
             int largest = 1;
-            foreach (var row in snapshot.Rows)
-                if (row.SetOccurrences != null && row.SetOccurrences.Count > largest) largest = row.SetOccurrences.Count;
-            // Measure the whole snapshot once so filtering and scrolling never shift columns.
+            foreach (int position in result.RowPositions)
+                if (result.SetOccurrencesAt(position) is PanelSetOccurrences occurrences && occurrences.Count > largest) largest = occurrences.Count;
+            // Measure each completed result once, never the scrolling viewport.
             _setCountWidth = System.Math.Max(44, renderer.MeasureNumber(graphics, $"{largest:N0}") + 36);
         }
 
@@ -48,15 +48,16 @@ namespace BetterGhPanel
             Bounds = new RectangleF(m_innerBounds.X - 22, m_innerBounds.Y, m_innerBounds.Width + 44, m_innerBounds.Height);
         }
 
-        private void DrawSetCount(Graphics g, CanvasRowRenderer renderer, PanelRow row, RectangleF bounds,
+        private void DrawSetCount(Graphics g, CanvasRowRenderer renderer, RectangleF bounds,
             int sourcePosition, int viewNumber, Font small)
         {
-            if (row.SetOccurrences == null) return;
+            var occurrences = PanelOwner.Session.Result.SetOccurrencesAt(sourcePosition);
+            if (occurrences == null) return;
             var countBounds = new RectangleF(bounds.Right - _setCountWidth, bounds.Y, _setCountWidth, bounds.Height);
             bool expanded = _setDetails.SourcePosition == sourcePosition && _setDetails.IsOpen;
-            bool repeated = row.SetOccurrences.Count > 1;
+            bool repeated = occurrences.Count > 1;
             DrawSetBadge(g, new RectangleF(countBounds.X + 2, bounds.Y + 1.5f, countBounds.Width - 18, bounds.Height - 3), repeated, expanded);
-            renderer.DrawValue(g, $"{row.SetOccurrences.Count:N0}", small, expanded || repeated ? Accent : Color.FromArgb(139, 148, 132),
+            renderer.DrawValue(g, $"{occurrences.Count:N0}", small, expanded || repeated ? Accent : Color.FromArgb(139, 148, 132),
                 new RectangleF(countBounds.X + 6, bounds.Y, countBounds.Width - 36, bounds.Height), true);
             renderer.DrawCell(g, "×", small, expanded ? Accent : repeated ? Color.FromArgb(130, 149, 117) : Color.FromArgb(161, 171, 153),
                 new RectangleF(countBounds.Right - 28, bounds.Y, 8, bounds.Height));
@@ -147,7 +148,7 @@ namespace BetterGhPanel
                 foreach (var hit in _setHits)
                 {
                     if (!hit.Bounds.Contains(point)) continue;
-                    _setDetails.Toggle(PanelOwner.Session.Snapshot, hit.SourcePosition);
+                    _setDetails.Toggle(PanelOwner.Session.Result, hit.SourcePosition);
                     handled = true;
                     break;
                 }
@@ -175,7 +176,7 @@ namespace BetterGhPanel
             foreach (var hit in _setHits)
             {
                 if (!hit.Bounds.Contains(point)) continue;
-                var occurrences = PanelOwner.Session.Snapshot.Rows[hit.SourcePosition].SetOccurrences!;
+                var occurrences = PanelOwner.Session.Result.SetOccurrencesAt(hit.SourcePosition)!;
                 e.Title = _setDetails.IsOpen && _setDetails.SourcePosition == hit.SourcePosition ? "Collapse occurrences" : "Expand occurrences";
                 e.Text = CanvasSetDetails.Summary(occurrences) + $". {occurrences.DuplicatesRemoved:N0} " +
                     (occurrences.DuplicatesRemoved == 1 ? "duplicate removed." : "duplicates removed.");

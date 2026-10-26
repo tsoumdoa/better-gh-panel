@@ -28,6 +28,7 @@ internal static class Program
     private static bool _itemOrderCaptureOnly;
     private static bool _outputsOnly;
     private static bool _filtersOnly;
+    private static bool _setsOnly;
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern bool SetDllDirectory(string path);
@@ -41,7 +42,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Length == 0 || (args[0] != "--run" && args[0] != "--tree-only" && args[0] != "--item-order-capture" && args[0] != "--outputs-only" && args[0] != "--filters-only"))
+        if (args.Length == 0 || (args[0] != "--run" && args[0] != "--tree-only" && args[0] != "--item-order-capture" && args[0] != "--outputs-only" && args[0] != "--filters-only" && args[0] != "--sets-only"))
         {
             Console.WriteLine("Windows Rhino 8 host smoke check (requires a working Rhino license).\nBuild the plugin first, then run with --run [absolute BetterGhPanel.gha path].\nCreates a hidden RhinoCore, loads the workspace assembly directly, and never installs a plugin.\nUse --tree-only [plugin path] to check managed tree operations with installed Rhino/Grasshopper assemblies without starting Rhino.");
             return 0;
@@ -50,6 +51,7 @@ internal static class Program
         _itemOrderCaptureOnly = args[0] == "--item-order-capture";
         _outputsOnly = args[0] == "--outputs-only";
         _filtersOnly = args[0] == "--filters-only";
+        _setsOnly = args[0] == "--sets-only";
         _grasshopper = Path.GetFullPath(Path.Combine(_system, "../Plug-ins/Grasshopper"));
         _plugin = args.Length > 1 ? Path.GetFullPath(args[1]) : Path.GetFullPath("src/BetterGhPanel/bin/Release/net7.0/BetterGhPanel.gha");
         _resultPath = Environment.GetEnvironmentVariable("PANEL_SMOKE_RESULT") ?? Path.Combine(Path.GetDirectoryName(_plugin)!, "rhino-smoke-result.json");
@@ -137,7 +139,7 @@ internal static class Program
             catch (Exception error) { Console.Error.WriteLine(error); }
             finally
             {
-                File.WriteAllText(_resultPath, "{\"passed\":" + (exitCode == 0 ? "true" : "false") + ",\"canvasDrawingVerified\":" + (_canvasDrawingVerified ? "true" : "false") + ",\"runtime\":\"Windows .NET 7 / Rhino 8.35\"}");
+                File.WriteAllText(_resultPath, "{\"passed\":" + (exitCode == 0 ? "true" : "false") + ",\"canvasDrawingVerified\":" + (_canvasDrawingVerified ? "true" : "false") + ",\"runtime\":\"Windows .NET 7 / Rhino " + Rhino.RhinoApp.Version + "\"}");
                 Console.Out.Flush(); Console.Error.Flush(); context.ExitThread();
             }
         };
@@ -152,6 +154,14 @@ internal static class Program
         Assert(string.Equals(Path.GetFullPath(assembly.Location), _plugin, StringComparison.OrdinalIgnoreCase),
             "Native checks load the exact requested plugin: " + assembly.Location);
         Console.WriteLine("Plugin version: " + assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion);
+        if (_setsOnly)
+        {
+            await CreateSetChecks.Run(assembly);
+            await SetDetailsChecks.Run(assembly);
+            await DisplaySetChecks.Run(assembly);
+            Console.WriteLine("PASS: Displayed set values, outputs and occurrence UI checks completed.");
+            return 0;
+        }
         if (_filtersOnly)
         {
             await FilterChecks.Run(assembly);
@@ -185,6 +195,7 @@ internal static class Program
         await StatisticsUiChecks.Run(assembly);
         await CreateSetChecks.Run(assembly);
         await SetDetailsChecks.Run(assembly);
+        await DisplaySetChecks.Run(assembly);
         await ItemOrderUiChecks.Run(assembly);
         var componentType = assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!;
         var component = (GH_Component)Activator.CreateInstance(componentType)!;
@@ -605,7 +616,7 @@ internal static class Program
         var apply = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!
             .GetMethod("ApplyWithSources", BindingFlags.Static | BindingFlags.NonPublic)!;
         GH_Structure<IGH_Goo> Transform(int depth = 0, bool simplify = false, bool flatten = false, bool reverse = false) =>
-            (GH_Structure<IGH_Goo>)apply.Invoke(null, new object?[] { source, depth, simplify, flatten, reverse, false, null, null })!;
+            (GH_Structure<IGH_Goo>)apply.Invoke(null, new object?[] { source, depth, simplify, flatten, reverse, null })!;
 
         Assert(ReferenceEquals(source, Transform()), "Disabled tools pass through the original typed tree");
         var trimmed = Transform(1);
@@ -629,7 +640,7 @@ internal static class Program
         sharedSuffix.Append(text, new GH_Path(7, 1, 9));
         sharedSuffix.EnsurePath(new GH_Path(7, 2, 9));
         var simplifiedThenTrimmed = (GH_Structure<IGH_Goo>)apply.Invoke(null,
-            new object?[] { sharedSuffix, 1, true, false, false, false, null, null })!;
+            new object?[] { sharedSuffix, 1, true, false, false, null })!;
         Assert(simplifiedThenTrimmed.PathCount == 1 && simplifiedThenTrimmed.Paths[0].ToString() == "{0}" &&
             simplifiedThenTrimmed.Branches.Single().SequenceEqual(new IGH_Goo[] { number, null!, text }),
             "Simplify removes shared prefix and suffix before Trim merges the remaining path levels");
@@ -651,7 +662,7 @@ internal static class Program
             source.Branches[0].SequenceEqual(new IGH_Goo[] { number, null! }) && source.Branches[2].Count == 0,
             "Every tool leaves upstream paths, branch lists and values untouched");
         var empty = new GH_Structure<IGH_Goo>();
-        var emptyResult = (GH_Structure<IGH_Goo>)apply.Invoke(null, new object?[] { empty, 3, true, true, true, false, null, null })!;
+        var emptyResult = (GH_Structure<IGH_Goo>)apply.Invoke(null, new object?[] { empty, 3, true, true, true, null })!;
         Assert(emptyResult.DataCount == 0 && empty.DataCount == 0, "All tools safely handle empty input");
     }
 

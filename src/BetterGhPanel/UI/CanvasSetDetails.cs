@@ -10,13 +10,13 @@ namespace BetterGhPanel.UI
     {
         internal const int PageSize = 4;
         internal const string Scope = "Locations refer to the original input tree, before Simplify, Trim, Flatten and Reverse. " +
-            "Item indices start at 0. Counts include every occurrence grouped into this set item, before output filters. " +
+            "Item indices start at 0. Counts include matching displayed values after filters, units and decimal formatting. " +
             "Expanding and paging do not change selection or output.";
         private PanelSnapshot? _snapshot;
         private PanelQueryResult? _checkedResult;
         internal int SourcePosition { get; private set; } = -1;
         internal int Offset { get; private set; }
-        internal PanelSetOccurrences? Occurrences => IsOpen ? _snapshot!.Rows[SourcePosition].SetOccurrences : null;
+        internal PanelSetOccurrences? Occurrences { get; private set; }
         internal bool IsOpen => _snapshot != null && SourcePosition >= 0;
         internal int Visible => Math.Min(PageSize, (Occurrences?.Count ?? 0) - Offset);
         internal bool HasPages => Occurrences?.Count > PageSize;
@@ -31,11 +31,13 @@ namespace BetterGhPanel.UI
             $"{occurrences.Count:N0} " + (occurrences.Count == 1 ? "occurrence" : "occurrences") +
             $" · {occurrences.BranchCount:N0} input " + (occurrences.BranchCount == 1 ? "branch" : "branches");
 
-        internal void Toggle(PanelSnapshot snapshot, int position)
+        internal void Toggle(PanelQueryResult result, int position)
         {
-            if (position < 0 || position >= snapshot.Rows.Count || snapshot.Rows[position].SetOccurrences == null) return;
+            var snapshot = result.Snapshot;
+            if (position < 0 || position >= snapshot.Rows.Count || result.SetOccurrencesAt(position) == null) return;
             if (ReferenceEquals(_snapshot, snapshot) && SourcePosition == position) { Close(); return; }
             _snapshot = snapshot;
+            Occurrences = result.SetOccurrencesAt(position);
             SourcePosition = position;
             Offset = 0;
             _checkedResult = null;
@@ -47,12 +49,15 @@ namespace BetterGhPanel.UI
             if (!ReferenceEquals(_snapshot, snapshot)) { Close(); return; }
             if (result == null || ReferenceEquals(result, _checkedResult)) return;
             _checkedResult = result;
-            if (!result.RowPositions.Contains(SourcePosition)) Close();
+            if (!result.RowPositions.Contains(SourcePosition) || result.SetOccurrencesAt(SourcePosition) == null) { Close(); return; }
+            Occurrences = result.SetOccurrencesAt(SourcePosition);
+            Offset = Math.Min(Offset, (Occurrences!.Count - 1) / PageSize * PageSize);
         }
 
         internal void Close()
         {
             _snapshot = null;
+            Occurrences = null;
             _checkedResult = null;
             SourcePosition = -1;
             Offset = 0;

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using BetterGhPanel.Core;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
@@ -10,6 +11,28 @@ namespace BetterGhPanel.Runtime
     // returns to original input addresses; paired values follow the primary tree.
     internal static class PanelOutputOperations
     {
+        internal static GH_Structure<IGH_Goo> DisplaySet(GH_Structure<IGH_Goo> source, PanelQueryResult query,
+            IReadOnlyList<int> positions, IEnumerable<string> branchPaths)
+        {
+            var result = new GH_Structure<IGH_Goo>();
+            var paths = new Dictionary<string, GH_Path>(StringComparer.Ordinal);
+            foreach (var path in source.Paths) paths[path.ToString()] = new GH_Path(path);
+            var set = query.DisplaySet ?? throw new ArgumentException("A completed displayed set is required.", nameof(query));
+            foreach (string path in branchPaths)
+            {
+                result.EnsurePath(paths[path]);
+                if (set.IsBranchSet) result.Append(new GH_Integer(query.Snapshot.BranchItemCounts[path]), paths[path]);
+            }
+            if (!set.IsBranchSet)
+                foreach (int position in positions.OrderBy(value => value))
+                {
+                    var value = set.Values[position];
+                    IGH_Goo item = value.Number.HasValue ? new GH_Number(value.Number.Value) : new GH_String(value.Text);
+                    result.Append(item, paths[query.Snapshot.Rows[position].Path]);
+                }
+            return result;
+        }
+
         internal static GH_Structure<GH_Boolean> Mask(GH_Structure<IGH_Goo> input,
             IReadOnlyList<PanelSourceAddress> retainedSources, IReadOnlyList<int> positions)
         {

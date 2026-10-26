@@ -86,7 +86,9 @@ namespace BetterGhPanel
             if (current && _queryTree != null && _inputTree != null && !ReferenceEquals(_cachedOutputResult, session.Result))
             {
                 _cachedOutputResult = session.Result;
-                _filteredData = filtering ? PanelTreeOperations.Filter(_queryTree, session.Result) : _queryTree;
+                _filteredData = session.Result.DisplaySet != null
+                    ? PanelOutputOperations.DisplaySet(_queryTree, session.Result, session.Result.RowPositions, session.Result.BranchPaths)
+                    : filtering ? PanelTreeOperations.Filter(_queryTree, session.Result) : _queryTree;
                 _filteredPair = _pairedQueryTree == null ? null : PanelTreeOperations.Filter(_pairedQueryTree, session.Result);
                 _filteredMask = null;
             }
@@ -96,13 +98,17 @@ namespace BetterGhPanel
                 _filteredMask = PanelOutputOperations.Mask(_inputTree, _retainedSources, session.Result.RowPositions);
             var data = current ? _filteredData ?? empty : !filtering && _queryTree != null ? _queryTree : empty;
             var selectedPositions = current ? RowSelection.OrderedPositions(session.Result) : Array.Empty<int>();
-            var selected = current && _queryTree != null ? PanelTreeOperations.Select(_queryTree, selectedPositions) : empty;
+            var selected = current && _queryTree != null ? session.Result.DisplaySet != null
+                ? PanelOutputOperations.DisplaySet(_queryTree, session.Result, selectedPositions, RowSelection.BranchPaths(session.Result))
+                : PanelTreeOperations.Select(_queryTree, selectedPositions) : empty;
             da.SetDataTree(0, data);
             da.SetDataTree(1, selected);
             da.SetDataTree(2, !current || _inputTree == null ? new GH_Structure<GH_Boolean>() : OutputScope == PanelOutputScope.Filtered
                 ? _filteredMask! : PanelOutputOperations.Mask(_inputTree, _retainedSources, selectedPositions));
             da.SetDataTree(3, !current || _pairedQueryTree == null ? empty : OutputScope == PanelOutputScope.Filtered
-                ? _filteredPair ?? empty : PanelTreeOperations.Select(_pairedQueryTree, selectedPositions));
+                ? _filteredPair ?? empty : session.Result.DisplaySet?.IsBranchSet == true
+                    ? PanelTreeOperations.SelectBranches(_filteredPair ?? empty, RowSelection.BranchPaths(session.Result))
+                    : PanelTreeOperations.Select(_pairedQueryTree, selectedPositions));
             if (_pairedError != null) AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, _pairedError);
             _publishedSelectionVersion = _selectionVersion;
             _publishedScope = OutputScope;

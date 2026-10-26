@@ -9,14 +9,14 @@ namespace BetterGhPanel.UI
     {
         internal const int OverviewRows = 8;
         internal const string Scope = "Statistics describe the current filtered tree, after tree tools and unit conversion. " +
-            "Totals describe that tree before filters. Item counts include all data types.";
+            "With Create set, statistics describe the displayed output values. Totals describe the tree before filters and sets. Item counts include all data types.";
         internal const string UniqueScope = "Unique values include valid finite Number/Integer values and Text values. " +
             "Numbers use exact numeric equality (including 1 = 1.0 and +0 = -0). Text preserves case and whitespace; text and numbers stay separate. " +
             "Null, invalid, nonfinite and other data types are excluded. Values appear in first source occurrence order. " +
-            "Exact values ignore display rounding; hover a value for its complete text.";
+            "Create set materializes displayed precision; otherwise exact values ignore display rounding. Hover a value for its complete text.";
 
         internal static string Summary(PanelQueryResult result) =>
-            Count(result.Statistics.ItemCount, result.Snapshot.Rows.Count) + " items · " +
+            Count(result.Statistics.ItemCount, Total(result)) + (result.DisplaySet?.IsBranchSet == true ? " values · " : " items · ") +
             Count(result.Statistics.BranchCount, result.Snapshot.Branches.Count) + " branches";
 
         internal static string BranchCount(PanelQueryResult result, string path)
@@ -31,7 +31,7 @@ namespace BetterGhPanel.UI
             var stats = result.Statistics;
             switch (index)
             {
-                case 0: return $"Items: {stats.ItemCount:N0} of {result.Snapshot.Rows.Count:N0}";
+                case 0: return (result.DisplaySet?.IsBranchSet == true ? "Values: " : "Items: ") + $"{stats.ItemCount:N0} of {Total(result):N0}";
                 case 1: return $"Branches: {stats.BranchCount:N0} of {result.Snapshot.Branches.Count:N0}";
                 case 2: return $"Numbers: {stats.NumericCount:N0} · Min: {Number(stats.Minimum, result, decimals)}";
                 case 3: return "Max: " + Number(stats.Maximum, result, decimals);
@@ -42,15 +42,17 @@ namespace BetterGhPanel.UI
             }
             var value = stats.UniqueValues[index - OverviewRows];
             string text = value.NumericValue.HasValue
-                ? "Number: " + PanelUnits.Format(value.NumericValue.Value, result.Snapshot.UnitConversion,
+                ? "Number: " + PanelUnits.Format(value.NumericValue.Value, Conversion(result),
                     PanelUnits.AutomaticDecimals, CultureInfo.InvariantCulture, "R")
                 : "Text: " + Quote(value.StringValue!, full);
             return $"{value.Count:N0}×  {text}";
         }
 
         private static string Count(int matched, int total) => matched == total ? $"{total:N0}" : $"{matched:N0}/{total:N0}";
+        private static int Total(PanelQueryResult result) => result.DisplaySet?.IsBranchSet == true ? result.Snapshot.Branches.Count : result.Snapshot.Rows.Count;
+        private static PanelUnitConversion Conversion(PanelQueryResult result) => result.DisplaySet == null ? result.Snapshot.UnitConversion : PanelUnitConversion.None;
         private static string Number(double? value, PanelQueryResult result, int decimals) => value.HasValue
-            ? PanelUnits.Format(value.Value, result.Snapshot.UnitConversion, decimals, automaticFormat: "G5") : "—";
+            ? PanelUnits.Format(value.Value, Conversion(result), decimals, automaticFormat: "G5") : "—";
 
         private static string Quote(string value, bool full)
         {

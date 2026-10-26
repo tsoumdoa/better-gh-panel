@@ -48,7 +48,7 @@ namespace BetterGhPanel
         {
             _setDetails.Close();
             _setHits.Clear();
-            _setCountSnapshot = null;
+            _setCountResult = null;
             _setControlsVisible = false;
             LayoutSetDetails();
             _offset = 0;
@@ -457,10 +457,10 @@ namespace BetterGhPanel
             // value, even when a separate branch heading would consume that row.
             bool sorted = PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder;
             bool grouped = _list.Height >= BranchHeight + RowHeight;
-            bool displayMetric = PanelOwner.Session.Options.DisplayFilterValue;
+            bool displayMetric = PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null;
             bool showTypes = displayMetric || result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
             using var rowRenderer = new CanvasRowRenderer(g, result.Snapshot.Rows.Count, sorted);
-            if (PanelOwner.CreateSetTree) SizeSetColumn(g, rowRenderer, result.Snapshot);
+            if (PanelOwner.CreateSetTree) SizeSetColumn(g, rowRenderer, result);
             float setWidth = PanelOwner.CreateSetTree ? _setCountWidth : 0;
             // Grouped rows already show their path in the branch heading.
             float pathWidth = grouped ? 0 : Math.Min(80, Math.Max(0, _list.Width - rowRenderer.GutterWidth -
@@ -501,12 +501,15 @@ namespace BetterGhPanel
                     // label only for values whose text does not identify their type.
                     bool showRowType = showTypes && (displayMetric || row.GeometryInfo == null);
                     float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
+                    var projectedType = result.DisplaySet != null ? result.DisplaySet.Values[sourcePosition] : null;
                     rowRenderer.DrawValue(g, PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition), font, Ink,
-                        new RectangleF(bounds.X + valueStart + 3, y, Math.Max(0, valueRight - bounds.X - valueStart - 3), RowHeight), displayMetric || row.NumericValue.HasValue);
+                        new RectangleF(bounds.X + valueStart + 3, y, Math.Max(0, valueRight - bounds.X - valueStart - 3), RowHeight),
+                        projectedType != null ? projectedType.Number.HasValue : displayMetric || row.NumericValue.HasValue);
                     if (showRowType)
-                        rowRenderer.DrawCell(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted,
+                        rowRenderer.DrawCell(g, projectedType != null
+                                ? projectedType.Number.HasValue ? "Num" : "Text" : CanvasMenu.ShortTypeName(row.TypeName), small, Muted,
                             new RectangleF(bounds.Right - setWidth - TypeColumnWidth, y, TypeColumnWidth - CellGap, RowHeight), true);
-                    DrawSetCount(g, rowRenderer, row, bounds, sourcePosition, i + 1, small);
+                    DrawSetCount(g, rowRenderer, bounds, sourcePosition, i + 1, small);
                     _rowHits.Add(new RowHit(bounds, sourcePosition, i + 1));
                     _shown++;
                     y += RowHeight;
@@ -535,13 +538,14 @@ namespace BetterGhPanel
             if (current)
                 Text(g, CanvasStatistics.Summary(result), small, Ink,
                     new RectangleF(_footer.X, _footer.Y, _selectAll.Left - _footer.X - 5, _statistics.Height), trim);
-            Control(g, _selectAll, "Select all", small, trim, current && result.RowPositions.Count > 0 && _selection.Count == result.RowPositions.Count);
+            int selected = DisplayListLengths ? _selection.BranchPaths(result).Count : _selection.Count;
+            Control(g, _selectAll, "Select all", small, trim, current && Count > 0 && selected == Count);
             Control(g, _statistics, "Stats", small, trim, current && _menu.Kind == CanvasMenuKind.Statistics);
             string output = result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count
                 ? "out: filtered" : PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None ? "out: tools" : "out: source";
             string status = PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
                 _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
-                _selection.Count > 0 ? $"{_selection.Count:N0} selected · right-click to copy" :
+                selected > 0 ? $"{selected:N0} selected" + (DisplayListLengths ? " branches" : " · right-click to copy") :
                 $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0}{(DisplayListLengths ? " branches" : "")} · {output}";
             Text(g, status, small, Muted, new RectangleF(_footer.X, _units.Y, _trim.Left - _footer.X - 6, _units.Height), trim);
             TreeToolIcons.Draw(g, _trim, TreeToolIcon.Trim, PanelOwner.TrimDepth > 0);
@@ -762,7 +766,7 @@ namespace BetterGhPanel
                 if (RowsAreCurrent(result))
                 {
                     InvalidateCopyStatus();
-                    _selection.SelectAll(result);
+                    _selection.SelectAll(result, includeEmptyBranches: DisplayListLengths);
                     PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
                     TrackSelectionCanvas(sender);
                     sender.Invalidate();
@@ -804,7 +808,7 @@ namespace BetterGhPanel
                 if (hit.Bounds.Contains(point))
                 {
                     InvalidateCopyStatus();
-                    _selection.SelectAll(currentResult, hit.Path);
+                    _selection.SelectAll(currentResult, hit.Path, includeEmptyBranches: DisplayListLengths);
                     PanelOwner.HighlightRows(currentResult.Snapshot, _selection.OrderedPositions(currentResult));
                     TrackSelectionCanvas(sender);
                     sender.Invalidate();
@@ -1109,12 +1113,12 @@ namespace BetterGhPanel
             else if (_trim.Contains(point) || _simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point) || _createSet.Contains(point))
             {
                 e.Title = _trim.Contains(point) ? "Trim tree" : _simplify.Contains(point) ? "Simplify tree" : _flatten.Contains(point) ? "Flatten tree" : _reverse.Contains(point) ? "Reverse tree" : "Create set";
-                e.Text = (_trim.Contains(point) ? "Depth: " + PanelOwner.TrimDepth + " · " : "") + "Changes output · Simplify → Trim → Flatten → Reverse → Create set";
+                e.Text = (_trim.Contains(point) ? "Depth: " + PanelOwner.TrimDepth + " · " : "") + "Changes output · Tree tools → Units → Filters → Create set";
                 e.Description = _trim.Contains(point) ? "Enter the number of trailing path levels to remove. Matching branches merge in source order. Fully trimmed paths become {0}. Enter 0 to disable." :
                     _simplify.Contains(point) ? "Toggle removal of path indices shared by all branches." :
                     _flatten.Contains(point) ? "Toggle merging all branches into {0}." :
                     _reverse.Contains(point) ? "Toggle reversing items within each output branch." :
-                    "Keep the first of each exact number, text or primitive value per branch. Use Flatten for one set across the tree. Text is case-sensitive; decimal formatting is ignored. Repeated nulls become one; invalid values, complex geometry and custom data pass through unchanged.";
+                    "Output unique displayed values after filters, units and decimal formatting. Numbers and measurements become displayed numbers; other values become displayed text. Sets are per branch; use Flatten for one item set. Displayed list lengths form one set across branches. B/F follow the first source occurrence or branch.";
             }
             else if (_type.Contains(point) || _sort.Contains(point) || _branch.Contains(point))
             {
@@ -1200,6 +1204,12 @@ namespace BetterGhPanel
                         e.Title = "Select branch " + hit.Path;
                         e.Text = CanvasStatistics.BranchCount(PanelOwner.Session.Result, hit.Path);
                         e.Description = "Select every matching row in this branch, including rows outside the panel's visible area. Other active filters are respected. Double-click to clear selection.";
+                        if (PanelOwner.Session.Result.DisplaySet?.BranchOccurrences.TryGetValue(hit.Path, out var occurrences) == true)
+                        {
+                            e.Text = "List length: " + PanelOwner.Session.Snapshot.BranchItemCounts[hit.Path] + " · " + occurrences.Count + " branches";
+                            e.Description = "Matching branches with this displayed count: " + string.Join(", ", occurrences) +
+                                ". Output contains the count. B and F follow the first branch. Click to select this count; double-click to clear selection.";
+                        }
                         return;
                     }
                 foreach (var hit in _rowHits)
