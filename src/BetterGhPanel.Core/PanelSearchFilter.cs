@@ -10,7 +10,6 @@ namespace BetterGhPanel.Core
     internal sealed class PanelSearchFilter
     {
         private readonly PanelSearchMode _mode;
-        private readonly string? _metricName;
         private readonly string _text;
         private readonly Func<double, bool>? _comparison;
         private readonly Regex? _regex;
@@ -24,9 +23,7 @@ namespace BetterGhPanel.Core
             _decimals = options.DecimalPlaces;
             _culture = culture ?? CultureInfo.CurrentCulture;
             if (!Enum.IsDefined(typeof(PanelSearchMode), _mode)) throw new ArgumentException("Unknown search mode.");
-            _metricName = _mode == PanelSearchMode.Length ? "Length" : _mode == PanelSearchMode.Area ? "Area" :
-                _mode == PanelSearchMode.Volume ? "Volume" : null;
-            _text = options.Search ?? string.Empty;
+            _text = options.DisplayFilterValue && _mode >= PanelSearchMode.Value ? string.Empty : options.Search ?? string.Empty;
             // Spaces in a regular expression are significant.
             if (_mode != PanelSearchMode.Regex) _text = _text.Trim();
             if (_text.Length == 0) return;
@@ -45,7 +42,7 @@ namespace BetterGhPanel.Core
         }
 
         internal bool HasFilter => _text.Length != 0;
-        internal bool IsGeometry => _metricName != null;
+        internal bool IsGeometry => _mode >= PanelSearchMode.Length && _mode <= PanelSearchMode.Volume;
         internal bool IsBranchFilter => _mode == PanelSearchMode.ListLength;
         internal bool UsesDisplayText => HasFilter && !IsBranchFilter && (_regex != null || _comparison == null);
         internal static bool IsNumericComparison(string text) => ParseComparison(text.Trim(), false) != null;
@@ -59,7 +56,7 @@ namespace BetterGhPanel.Core
             if (HasFilter)
             {
                 if (UsesDisplayText) return true;
-                if (IsGeometry) return MatchesMetric(geometry);
+                if (IsGeometry) return PanelFilterValue.MatchesGeometry(_mode, geometry);
                 // Scalar comparisons already have their exact numeric value; geometry
                 // cannot affect membership or numeric sorting for this predicate.
                 if (!IsBranchFilter) return false;
@@ -82,21 +79,8 @@ namespace BetterGhPanel.Core
                     Contains(row.Path, _text) || Contains(row.TypeName, _text);
             if (!IsGeometry)
                 return !row.IsNull && row.IsValid && row.NumericValue.HasValue && IsFinite(row.NumericValue.Value) && _comparison(row.NumericValue.Value);
-            if (row.IsNull || !row.IsValid) return false;
-            var geometry = measured ?? row.GeometryInfo;
-            if (geometry == null || !MatchesMetric(geometry) || !geometry.Value.HasValue) return false;
-            double value = geometry.Value.Value;
-            if (!IsFinite(value) || value < 0) return false;
-            // Circles display a radius, but a length comparison means circumference.
-            if (_mode == PanelSearchMode.Length && string.Equals(geometry.MetricName, "Radius", StringComparison.OrdinalIgnoreCase))
-                value *= 2 * Math.PI;
-            value = PanelUnits.ConvertGeometry(value, geometry.Power, geometry.Units, conversion);
-            return IsFinite(value) && _comparison(value);
+            return PanelFilterValue.TryGeometryValue(row, _mode, conversion, measured, out double value) && _comparison(value);
         }
-
-        private bool MatchesMetric(PanelGeometryInfo geometry) =>
-            string.Equals(geometry.MetricName, _metricName, StringComparison.OrdinalIgnoreCase) ||
-            _mode == PanelSearchMode.Length && string.Equals(geometry.MetricName, "Radius", StringComparison.OrdinalIgnoreCase);
 
         private static ArgumentException RegexTooSlow() => new ArgumentException("Regular expression took too long. Simplify the pattern and try again.");
         private static bool Contains(string value, string search) => value.IndexOf(search, StringComparison.OrdinalIgnoreCase) >= 0;

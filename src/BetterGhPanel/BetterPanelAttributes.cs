@@ -38,7 +38,8 @@ namespace BetterGhPanel
         private PointF _dragStart;
         private float _startWidth, _startHeight, _thumbGrab;
         private BetterPanelComponent PanelOwner => (BetterPanelComponent)Owner;
-        private int Count => PanelOwner.Session.HasCurrentResult ? PanelOwner.Session.Result.RowPositions.Count : 0;
+        private bool DisplayListLengths => PanelOwner.Session.Options.DisplayFilterValue && PanelOwner.Session.Options.SearchMode == PanelSearchMode.ListLength;
+        private int Count => PanelOwner.Session.HasCurrentResult ? DisplayListLengths ? PanelOwner.Session.Result.BranchPaths.Count : PanelOwner.Session.Result.RowPositions.Count : 0;
         private int MaximumOffset => Math.Max(0, Count - Math.Max(1, _shown));
 
         internal BetterPanelAttributes(BetterPanelComponent owner) : base(owner) { _selection = owner.RowSelection; }
@@ -443,13 +444,21 @@ namespace BetterGhPanel
                 return;
             }
             if (!PanelOwner.Session.HasCurrentResult) return;
+            if (DisplayListLengths)
+            {
+                _setDetails.Close();
+                RenderListLengths(g, result, small, mono, trim);
+                PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, Array.Empty<int>());
+                return;
+            }
             float y = _list.Y;
             string? previousPath = null;
             // A half-height panel at the minimum saved size still has room for a
             // value, even when a separate branch heading would consume that row.
             bool sorted = PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder;
             bool grouped = _list.Height >= BranchHeight + RowHeight;
-            bool showTypes = result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
+            bool displayMetric = PanelOwner.Session.Options.DisplayFilterValue;
+            bool showTypes = displayMetric || result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
             using var rowRenderer = new CanvasRowRenderer(g, result.Snapshot.Rows.Count, sorted);
             if (PanelOwner.CreateSetTree) SizeSetColumn(g, rowRenderer, result.Snapshot);
             float setWidth = PanelOwner.CreateSetTree ? _setCountWidth : 0;
@@ -490,10 +499,10 @@ namespace BetterGhPanel
                             new RectangleF(bounds.X + rowRenderer.GutterWidth + 9, y, Math.Max(0, pathWidth - 12), RowHeight));
                     // Geometry summaries already name their type; reserve the extra
                     // label only for values whose text does not identify their type.
-                    bool showRowType = showTypes && row.GeometryInfo == null;
+                    bool showRowType = showTypes && (displayMetric || row.GeometryInfo == null);
                     float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
                     rowRenderer.DrawValue(g, PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition), font, Ink,
-                        new RectangleF(bounds.X + valueStart + 3, y, Math.Max(0, valueRight - bounds.X - valueStart - 3), RowHeight), row.NumericValue.HasValue);
+                        new RectangleF(bounds.X + valueStart + 3, y, Math.Max(0, valueRight - bounds.X - valueStart - 3), RowHeight), displayMetric || row.NumericValue.HasValue);
                     if (showRowType)
                         rowRenderer.DrawCell(g, CanvasMenu.ShortTypeName(row.TypeName), small, Muted,
                             new RectangleF(bounds.Right - setWidth - TypeColumnWidth, y, TypeColumnWidth - CellGap, RowHeight), true);
@@ -533,7 +542,7 @@ namespace BetterGhPanel
             string status = PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
                 _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
                 _selection.Count > 0 ? $"{_selection.Count:N0} selected · right-click to copy" :
-                $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} · {output}";
+                $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0}{(DisplayListLengths ? " branches" : "")} · {output}";
             Text(g, status, small, Muted, new RectangleF(_footer.X, _units.Y, _trim.Left - _footer.X - 6, _units.Height), trim);
             TreeToolIcons.Draw(g, _trim, TreeToolIcon.Trim, PanelOwner.TrimDepth > 0);
             TreeToolIcons.Draw(g, _simplify, TreeToolIcon.Simplify, PanelOwner.SimplifyTree);
@@ -580,7 +589,8 @@ namespace BetterGhPanel
                     Fill(g, index == _menu.HoveredIndex ? Color.FromArgb(226, 236, 226) : Color.FromArgb(242, 247, 241), row);
                 if (_menu.Kind == CanvasMenuKind.Units && index == PanelUnits.ConversionCount ||
                     _menu.Kind == CanvasMenuKind.Statistics && index == CanvasStatistics.OverviewRows ||
-                    _menu.Kind == CanvasMenuKind.Preview && index == CanvasMenu.ItemOrderIndex)
+                    _menu.Kind == CanvasMenuKind.Preview && index == CanvasMenu.ItemOrderIndex ||
+                    _menu.Kind == CanvasMenuKind.Comparison && index == CanvasMenu.DisplayValueIndex)
                     using (var divider = new Pen(Color.FromArgb(225, 231, 224)))
                         g.DrawLine(divider, row.X + 7, row.Y, row.Right - 7, row.Y);
                 if (selected)
@@ -874,12 +884,25 @@ namespace BetterGhPanel
             }
             if (kind == CanvasMenuKind.Comparison)
             {
+                if (index == CanvasMenu.DisplayValueIndex)
+                {
+                    PanelOwner.RecordUndoEvent("Display filter value");
+                    options.SearchMode = _editingSearchMode;
+                    options.DisplayFilterValue = true;
+                    options.Search = string.Empty;
+                    _offset = 0;
+                    PanelOwner.Session.UpdateQuery(options);
+                    canvas.Invalidate();
+                    return;
+                }
                 string comparison = CanvasMenu.ComparisonAt(index);
                 string value = CanvasMenu.WithComparison(options.Search, index).Substring(comparison.Length).Trim();
                 var mode = _editingSearchMode;
                 CanvasTextInput.Show(canvas, PanelOwner, _search, value, text =>
                 {
                     var query = PanelOwner.Session.Options;
+                    PanelOwner.RecordUndoEvent("Panel comparison");
+                    query.DisplayFilterValue = false;
                     query.SearchMode = mode;
                     query.Search = CanvasMenu.ApplyComparison(text, comparison);
                     PanelOwner.Session.UpdateQuery(query);
@@ -918,6 +941,8 @@ namespace BetterGhPanel
             CanvasTextInput.Show(canvas, PanelOwner, _search, current, text =>
             {
                 var options = PanelOwner.Session.Options;
+                PanelOwner.RecordUndoEvent("Panel search");
+                options.DisplayFilterValue = false;
                 options.SearchMode = mode;
                 options.Search = text;
                 PanelOwner.Session.UpdateQuery(options);
@@ -1116,7 +1141,7 @@ namespace BetterGhPanel
             {
                 var options = PanelOwner.Session.Options;
                 e.Title = CanvasMenu.SearchModeLabel(options.SearchMode);
-                e.Text = string.IsNullOrEmpty(options.Search) ? "Press Enter to apply · arrow chooses filter mode" : options.Search;
+                e.Text = options.DisplayFilterValue ? "Display value · no comparison" : string.IsNullOrEmpty(options.Search) ? "Press Enter to apply · arrow chooses filter mode" : options.Search;
                 e.Description = options.SearchMode == PanelSearchMode.Text
                     ? "Search displayed values, paths and types. Text matches use the selected units and decimal formatting; numeric comparisons such as > 800 or <= 25 use full precision. Use the arrow for text regex, measured geometry or per-branch list length filters."
                     : options.SearchMode == PanelSearchMode.Regex
@@ -1124,13 +1149,17 @@ namespace BetterGhPanel
                     : options.SearchMode == PanelSearchMode.ListLength
                     ? "Compare the number of items in each branch using >, >=, <, <=, = or !=. A number alone means equal. Counts include all items after tree tools and before type or invalid-only filters. Matching branches keep their items subject to those filters; = 0 keeps empty branches when no item filters are active. Empty text clears the filter."
                     : "Compare full-precision values using >, >=, <, <=, = or !=. A number alone means equal. Geometry uses the selected display units. Length: curves, including circle circumference. Area: rectangles, surfaces and open Breps. Volume: boxes and closed Breps. Rows without that measurement are excluded. Empty text clears the filter.";
+                if (options.DisplayFilterValue)
+                    e.Description = "Display the selected value without a comparison. List length shows one count per branch after tree tools, including empty branches. Other modes show a value per item; n/a means the item has no eligible value. Type and Paths filters still apply. Outputs retain their typed data. Choose a comparison or edit the search to filter again.";
+                else e.Description += " Choose Display value in the operator menu to inspect values without a comparison.";
                 if (PanelOwner.Session.Error != null) e.Description = PanelOwner.Session.Error + "\n\n" + e.Description;
             }
             else if (_jump.Contains(point))
             {
                 e.Title = "Jump to a row";
-                e.Text = "Position in the current filtered and sorted view";
+                e.Text = DisplayListLengths ? "Branch position in the list-length view" : "Position in the current filtered and sorted view";
                 e.Description = "Enter a row number starting at 1 across the complete filtered view. In Asc/Desc, branches retain their order and items sort within each branch. The large number is the continuous view position across branches; the smaller bracketed number is the original zero-based item index within its branch. Source order shows only the original index.";
+                if (DisplayListLengths) e.Description = "Enter a branch row starting at 1. Counts describe each branch after tree tools and before item filters.";
             }
             else if (_resize.Contains(point))
             {
@@ -1194,6 +1223,9 @@ namespace BetterGhPanel
                             details += "\nMeasurement unavailable.";
                     }
                     else details = value.Length > 1000 ? value.Substring(0, 997) + "…" : value;
+                    if (PanelOwner.Session.Options.DisplayFilterValue)
+                        details = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode) + ": " + value + "\n" +
+                            PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, PanelOwner.DecimalPlaces, geometry) + "\n" + details;
                     e.Description = details + "\n\nClick to select without moving the camera. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Alt/Option-click selects the same index across filtered branches. Double-click to clear selection. Right-click to select indices across branches, frame the selection or copy values or geometry.";
                     break;
                 }

@@ -303,6 +303,9 @@ namespace BetterGhPanel
             if (geometry == null)
                 geometry = Session.HasGeometryMeasurement(snapshot, sourcePosition)
                     ? row.GeometryInfo?.WithUnavailableMeasurement() : row.GeometryInfo;
+            var options = Session.Options;
+            if (options.DisplayFilterValue)
+                return PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, geometry);
             var display = PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry);
             if (row.IsValid && geometry != null)
                 return display + (Session.IsGeometryPending(snapshot, sourcePosition) ? " · measuring…" : "");
@@ -314,6 +317,15 @@ namespace BetterGhPanel
             if (!ReferenceEquals(snapshot, Session.Snapshot) || position < 0 || position >= snapshot.Rows.Count)
                 throw new InvalidOperationException("The selected data has changed. Select the rows again.");
             var row = snapshot.Rows[position];
+            var options = Session.Options;
+            if (options.DisplayFilterValue)
+            {
+                var metric = Session.GetGeometryDetails(snapshot, position);
+                if (metric == null && Session.HasGeometryMeasurement(snapshot, position)) metric = row.GeometryInfo?.WithUnavailableMeasurement();
+                var value = PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, metric, includeUnits: false);
+                if (value == "measuring…" || value == "unavailable") throw new InvalidOperationException("A selected measurement is unavailable.");
+                return value;
+            }
             if (!row.IsValid)
                 return PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces);
             if (row.NumericValue.HasValue)
@@ -479,11 +491,12 @@ namespace BetterGhPanel
 
         private static bool SameOutputFilter(PanelQueryOptions left, PanelQueryOptions right) =>
             left.Search == right.Search && left.SearchMode == right.SearchMode && left.TypeName == right.TypeName &&
+            left.DisplayFilterValue == right.DisplayFilterValue &&
             left.OnlyInvalid == right.OnlyInvalid && left.BranchPath == right.BranchPath && left.BranchPrefix == right.BranchPrefix &&
             (left.DecimalPlaces == right.DecimalPlaces || !PanelQueryEngine.UsesDisplayedText(right));
 
         private static bool HasOutputFilter(PanelQueryOptions options) =>
-            (options.SearchMode == PanelSearchMode.Regex ? !string.IsNullOrEmpty(options.Search) : !string.IsNullOrWhiteSpace(options.Search)) ||
+            (!options.DisplayFilterValue && (options.SearchMode == PanelSearchMode.Regex ? !string.IsNullOrEmpty(options.Search) : !string.IsNullOrWhiteSpace(options.Search))) ||
             options.TypeName != null || options.OnlyInvalid || !string.IsNullOrWhiteSpace(options.BranchPath);
 
         public override void ClearData()
@@ -632,6 +645,7 @@ namespace BetterGhPanel
             var options = _session?.Options ?? _savedOptions;
             writer.SetString("PanelSearch", options.Search ?? "");
             writer.SetInt32("PanelSearchMode", (int)options.SearchMode);
+            writer.SetBoolean("PanelDisplayFilterValue", options.DisplayFilterValue);
             writer.SetString("PanelType", options.TypeName ?? "");
             writer.SetString("PanelBranch", options.BranchPath ?? "");
             writer.SetBoolean("PanelPrefix", options.BranchPrefix);
@@ -673,6 +687,8 @@ namespace BetterGhPanel
             var prefix = false; var invalid = false; var sort = 0; var size = 1; var searchMode = 0;
             reader.TryGetString("PanelSearch", ref search);
             reader.TryGetInt32("PanelSearchMode", ref searchMode);
+            bool displayFilterValue = false;
+            reader.TryGetBoolean("PanelDisplayFilterValue", ref displayFilterValue);
             reader.TryGetString("PanelType", ref type);
             reader.TryGetString("PanelBranch", ref branch);
             reader.TryGetBoolean("PanelPrefix", ref prefix);
@@ -680,6 +696,7 @@ namespace BetterGhPanel
             reader.TryGetInt32("PanelSort", ref sort);
             bool hasLegacySize = reader.TryGetInt32("PanelSize", ref size);
             _savedOptions = new PanelQueryOptions { Search = search, TypeName = string.IsNullOrEmpty(type) ? null : type,
+                DisplayFilterValue = displayFilterValue && searchMode >= (int)PanelSearchMode.Value && searchMode <= (int)PanelSearchMode.ListLength,
                 SearchMode = Enum.IsDefined(typeof(PanelSearchMode), searchMode) ? (PanelSearchMode)searchMode : PanelSearchMode.Text,
                 BranchPath = string.IsNullOrEmpty(branch) ? null : branch, BranchPrefix = prefix, OnlyInvalid = invalid,
                 SortMode = Enum.IsDefined(typeof(PanelSortMode), sort) ? (PanelSortMode)sort : PanelSortMode.SourceOrder };

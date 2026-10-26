@@ -327,6 +327,8 @@ namespace BetterGhPanel.Runtime
         {
             if (_disposed) return;
             var next = (options ?? new PanelQueryOptions()).Clone();
+            if (next.SearchMode < PanelSearchMode.Value) next.DisplayFilterValue = false;
+            if (next.DisplayFilterValue) next.Search = string.Empty;
             // A component owns its formatting setting. Direct query updates and
             // ResetView cannot silently revert the filter's presentation precision.
             if (_decimalPlacesResolver != null) next.DecimalPlaces = _decimalPlacesResolver();
@@ -339,7 +341,8 @@ namespace BetterGhPanel.Runtime
             var changed = _options.Search != next.Search || _options.TypeName != next.TypeName ||
                 _options.BranchPath != next.BranchPath || _options.BranchPrefix != next.BranchPrefix ||
                 _options.OnlyInvalid != next.OnlyInvalid || _options.SortMode != next.SortMode ||
-                _options.SearchMode != next.SearchMode || _options.DecimalPlaces != next.DecimalPlaces;
+                _options.SearchMode != next.SearchMode || _options.DecimalPlaces != next.DecimalPlaces ||
+                _options.DisplayFilterValue != next.DisplayFilterValue;
             _options = next;
             if (changed)
             {

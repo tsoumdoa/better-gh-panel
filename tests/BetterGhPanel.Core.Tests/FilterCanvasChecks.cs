@@ -77,11 +77,16 @@ internal static class FilterCanvasChecks
                 }
                 menu.TrySelect(new PointF(menu.Bounds.Right - 10, menu.Bounds.Bottom - 5), out _);
             }
-            int count = kind == CanvasMenuKind.SearchMode ? 7 : 6;
+            int count = 7;
             Require(reachable.Count == count && menu.Label(count - 1).Length > 0, "Every filter and comparison remains reachable through compact paging");
-            Require(menu.IsSelected(count - 1, options, PanelUnitConversion.None, -1), "Saved mode and comparison remain visibly checked");
+            Require(menu.IsSelected(kind == CanvasMenuKind.SearchMode ? count - 1 : 5, options, PanelUnitConversion.None, -1), "Saved mode and comparison remain visibly checked");
             if (kind == CanvasMenuKind.Comparison)
             {
+                options.DisplayFilterValue = true;
+                Require(menu.IsSelected(CanvasMenu.DisplayValueIndex, options, PanelUnitConversion.None, -1) &&
+                    !menu.IsSelected(5, options, PanelUnitConversion.None, -1) &&
+                    CanvasMenu.SearchHint(options) == "List · display", "Display value has its own checkmark and a clear search hint");
+                options.DisplayFilterValue = false;
                 options.Search = "5";
                 Require(menu.IsSelected(4, options, PanelUnitConversion.None, -1),
                     "A bare list-length threshold visibly checks implicit equality");

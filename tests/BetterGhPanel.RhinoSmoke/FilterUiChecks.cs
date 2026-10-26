@@ -82,6 +82,145 @@ internal static class FilterUiChecks
         component.DocumentContextChanged(document, GH_DocumentContext.Close);
         await VerifyFooterStatistics(assembly);
         await VerifyPreviewUndo(assembly);
+        await VerifyDisplayValues(assembly);
+    }
+
+    private static async Task VerifyDisplayValues(Assembly assembly)
+    {
+        using var document = new GH_Document { Enabled = true };
+        var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
+        component.CreateAttributes();
+        var source = new Param_GenericObject();
+        source.CreateAttributes();
+        source.PersistentData.Append(new GH_Number(1), new GH_Path(0));
+        source.PersistentData.Append(new GH_Number(2), new GH_Path(0));
+        source.PersistentData.Append(new GH_Number(3), new GH_Path(0));
+        source.PersistentData.Append(new GH_Circle(new Circle(Plane.WorldXY, 1000)), new GH_Path(1));
+        source.PersistentData.Append(new GH_Curve(new LineCurve(Point3d.Origin, new Point3d(5000, 0, 0)).ToNurbsCurve()), new GH_Path(1));
+        source.PersistentData.EnsurePath(new GH_Path(2));
+        document.AddObject(source, false);
+        document.AddObject(component, false);
+        component.Params.Input[0].AddSource(source);
+        document.NewSolution(false, GH_SolutionMode.Silent);
+        var session = PanelTestAdapter.Session(component);
+        using var canvas = new GH_Canvas { Size = new Size(1000, 800) };
+        component.Attributes.Pivot = new PointF(50, 50);
+        PanelTestAdapter.Resize(component, 360, 360);
+        component.Attributes.PerformLayout();
+        try
+        {
+            await Wait(session);
+            await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.ListLength, 0, "2");
+            Check(Positions(session).Count == 3, "Display fixture starts with an active list-length comparison");
+            document.UndoServer.Clear();
+            await Display(PanelSearchMode.ListLength);
+            Check(Options(session).DisplayFilterValue && Options(session).Search == "" && Positions(session).Count == 5 &&
+                !CanvasEditorAdapter.IsActive(assembly), "Display value replaces the comparison without opening a threshold editor");
+            Check(PanelTestAdapter.Hits(component, "_branchHits") == 3 && PanelTestAdapter.Hits(component, "_rowHits") == 0,
+                "List length displays one row per branch, including an empty branch");
+            SavePreview(component, canvas, "display-list-length");
+            document.NewSolution(false, GH_SolutionMode.Silent);
+            Check(component.Params.Output[0].VolatileData.DataCount == 5 && component.Params.Output[0].VolatileData.PathCount == 3 &&
+                component.Params.Output[0].VolatileData.AllData(true).OfType<GH_Number>().Select(value => value.Value).SequenceEqual(new double[] { 1, 2, 3 }),
+                "Metric display restores all typed D items and preserves the empty output branch");
+            document.UndoServer.PerformUndo();
+            await Wait(session);
+            Check(!Options(session).DisplayFilterValue && Options(session).Search == "> 2", "Undo restores the original comparison");
+            document.UndoServer.PerformRedo();
+            await Wait(session);
+            Check(Options(session).DisplayFilterValue && Options(session).Search == "", "Redo restores value display");
+
+            var chunk = new GH_LooseChunk("Panel");
+            component.Write(chunk);
+            var restored = (GH_Component)Activator.CreateInstance(component.GetType())!;
+            restored.CreateAttributes();
+            using var restoredDocument = new GH_Document();
+            try
+            {
+                Check(restored.Read(chunk) && Options(PanelTestAdapter.Session(restored)).DisplayFilterValue &&
+                    Options(PanelTestAdapter.Session(restored)).SearchMode == PanelSearchMode.ListLength,
+                    "Display value and its metric survive saved definitions");
+                chunk.RemoveItem("PanelDisplayFilterValue");
+                Check(restored.Read(chunk) && !Options(PanelTestAdapter.Session(restored)).DisplayFilterValue,
+                    "Older definitions keep their existing item view");
+            }
+            finally { restored.RemovedFromDocument(restoredDocument); }
+
+            var options = Options(session);
+            options.TypeName = "Integer"; // These are Numbers, so no branch survives this item restriction.
+            Query(session, options);
+            await Wait(session);
+            Paint(component, canvas);
+            Check(PanelTestAdapter.Hits(component, "_branchHits") == 0, "List display respects type restrictions");
+            options.TypeName = "Number";
+            Query(session, options);
+            await Wait(session);
+            Paint(component, canvas);
+            Check(PanelTestAdapter.Hits(component, "_branchHits") == 1 &&
+                PanelTestAdapter.DisplayValue(component, Property<PanelSnapshot>(session, "Snapshot"), 0) == "3",
+                "Type restrictions narrow visible branches without redefining list length");
+            options.TypeName = null;
+            options.BranchPath = "{2}";
+            Query(session, options);
+            await Wait(session);
+            Paint(component, canvas);
+            Check(PanelTestAdapter.Hits(component, "_branchHits") == 1 && Positions(session).Count == 0,
+                "An empty branch has an inspectable count row when selected through Paths");
+            options.BranchPath = null;
+            Query(session, options);
+            await Wait(session);
+            PanelTestAdapter.Resize(component, 300, 220);
+            component.Attributes.PerformLayout();
+            Paint(component, canvas);
+            Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
+            await Display(PanelSearchMode.ListLength);
+            Check(PanelTestAdapter.Hits(component, "_branchHits") >= 1, "List lengths remain readable in minimum Half view");
+            SavePreview(component, canvas, "display-list-length-half");
+            Paint(component, canvas);
+            Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Jump));
+            CanvasEditorAdapter.Active(assembly).Submit("3");
+            Paint(component, canvas);
+            Check(PanelTestAdapter.Offset(component) == 2 && PanelTestAdapter.Hits(component, "_branchHits") == 1,
+                "Branch row jumps reach the final empty branch in Half view");
+            Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
+            PanelTestAdapter.Resize(component, 360, 360);
+            component.Attributes.PerformLayout();
+            PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 3);
+            await Wait(session);
+            await Display(PanelSearchMode.Length);
+            var snapshot = Property<PanelSnapshot>(session, "Snapshot");
+            var timeout = Stopwatch.StartNew();
+            while (PanelTestAdapter.DisplayValue(component, snapshot, 4) == "measuring…" && timeout.Elapsed.TotalSeconds < 20)
+            {
+                Paint(component, canvas);
+                await Task.Delay(20);
+            }
+            Check(PanelTestAdapter.DisplayValue(component, snapshot, 3) == "6.283 m" &&
+                PanelTestAdapter.CopyValue(component, snapshot, 3) == "6.283" &&
+                PanelTestAdapter.DisplayValue(component, snapshot, 4) == "5.000 m" &&
+                PanelTestAdapter.DisplayValue(component, snapshot, 0) == "n/a" && Positions(session).Count == 5,
+                "Length display shows converted circumference and deferred curve length while retaining unsupported rows");
+            SavePreview(component, canvas, "display-length");
+            await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Length, 0, "6");
+            Check(!Options(session).DisplayFilterValue && Positions(session).SequenceEqual(new[] { 3 }),
+                "Choosing a comparison leaves display mode and filters with the same full-precision metric");
+            await Display(PanelSearchMode.Value);
+            PanelTestAdapter.ResetView(component);
+            await Wait(session);
+            Check(!Options(session).DisplayFilterValue && Options(session).SearchMode == PanelSearchMode.Text,
+                "Reset clears value display and restores the ordinary item view");
+        }
+        finally { component.DocumentContextChanged(document, GH_DocumentContext.Close); }
+
+        async Task Display(PanelSearchMode mode)
+        {
+            Paint(component, canvas);
+            Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Filter));
+            MenuRow(component, canvas, (int)mode);
+            MenuRow(component, canvas, 6);
+            await Wait(session);
+            Paint(component, canvas);
+        }
     }
 
     private static async Task VerifyPreviewModes(GH_Component component, GH_Canvas canvas, object session, GH_Document document)

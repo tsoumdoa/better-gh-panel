@@ -18,6 +18,8 @@ description: >
   Select rows or branches without moving the camera; use Frame selection to zoom explicitly.
   Select matching item indices across filtered branches from the row menu or with Alt/Option-click.
   Filter values, geometry length, area, volume, or per-branch list length with comparisons.
+  Choose Display value beside the operators to inspect numeric values, measurements,
+  or one list-length count per branch, including empty branches, without a comparison.
   Branch paths accept optional braces. Text and regular expressions match displayed units and decimals.
   Filters apply to typed output after tree tools and unit conversion.
   D emits filter matches; S emits selected rows. B supplies an original-input Boolean mask,

@@ -27,6 +27,7 @@ internal static class Program
     private static bool _canvasDrawingVerified;
     private static bool _itemOrderCaptureOnly;
     private static bool _outputsOnly;
+    private static bool _filtersOnly;
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern bool SetDllDirectory(string path);
@@ -40,7 +41,7 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Length == 0 || (args[0] != "--run" && args[0] != "--tree-only" && args[0] != "--item-order-capture" && args[0] != "--outputs-only"))
+        if (args.Length == 0 || (args[0] != "--run" && args[0] != "--tree-only" && args[0] != "--item-order-capture" && args[0] != "--outputs-only" && args[0] != "--filters-only"))
         {
             Console.WriteLine("Windows Rhino 8 host smoke check (requires a working Rhino license).\nBuild the plugin first, then run with --run [absolute BetterGhPanel.gha path].\nCreates a hidden RhinoCore, loads the workspace assembly directly, and never installs a plugin.\nUse --tree-only [plugin path] to check managed tree operations with installed Rhino/Grasshopper assemblies without starting Rhino.");
             return 0;
@@ -48,6 +49,7 @@ internal static class Program
         _system = Environment.GetEnvironmentVariable("RHINO_SYSTEM_PATH") ?? "C:/Program Files/Rhino 8/System";
         _itemOrderCaptureOnly = args[0] == "--item-order-capture";
         _outputsOnly = args[0] == "--outputs-only";
+        _filtersOnly = args[0] == "--filters-only";
         _grasshopper = Path.GetFullPath(Path.Combine(_system, "../Plug-ins/Grasshopper"));
         _plugin = args.Length > 1 ? Path.GetFullPath(args[1]) : Path.GetFullPath("src/BetterGhPanel/bin/Release/net7.0/BetterGhPanel.gha");
         _resultPath = Environment.GetEnvironmentVariable("PANEL_SMOKE_RESULT") ?? Path.Combine(Path.GetDirectoryName(_plugin)!, "rhino-smoke-result.json");
@@ -150,6 +152,13 @@ internal static class Program
         Assert(string.Equals(Path.GetFullPath(assembly.Location), _plugin, StringComparison.OrdinalIgnoreCase),
             "Native checks load the exact requested plugin: " + assembly.Location);
         Console.WriteLine("Plugin version: " + assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion);
+        if (_filtersOnly)
+        {
+            await FilterChecks.Run(assembly);
+            await FilterUiChecks.Run(assembly);
+            Console.WriteLine("PASS: Native filter, metric display and filter UI checks completed.");
+            return 0;
+        }
         if (_outputsOnly)
         {
             await OutputChecks.Run(assembly);

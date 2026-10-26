@@ -14,6 +14,10 @@ Created in [T3 Code](https://t3.codes).
 
 ## Native MVP
 
+**Patch `0.1.20-beta.6` — display filter values:** choose a numeric, geometry or **List length · per branch** mode in the search dropdown, then choose **Display value** alongside the comparison operators. No threshold is needed. List length shows one path/count row per branch, including empty branches, after tree tools and before item filters. Numeric value, Length, Area and Volume show the corresponding value per item using the current units and decimals; Length uses circle circumference. Unsupported items show **n/a**, and deferred geometry shows **measuring…** until ready. Type, invalid-only and Paths restrictions still apply. The choice saves with the definition and supports Undo; choose a comparison, edit the search, or Reset to return to the item view. Wire outputs and statistics continue to describe the typed data, while Copy values in a per-item metric view copies the displayed metric without unit labels.
+
+[See list lengths](docs/images/panel-display-list-length.png), [minimum Half view](docs/images/panel-display-list-length-half.png), and [geometry lengths](docs/images/panel-display-length.png).
+
 **Patch `0.1.20-beta.5` — selected data, masks and paired outputs:** **D** keeps all filter matches, **S** emits selected rows, **B** marks original input membership, and the optional **F** input/output carries paired data through the primary tree tools and filters. Choose **Filtered results** (default) or **Selected rows** for B/F in the component menu. Existing definitions retain their D connections.
 
 **Patch `0.1.20-beta.4` — maintenance:** unit definitions, query restrictions and row-menu actions now have shared owners, preserving existing output and interactions. See the [maintainability audit and feature guide](docs/maintainability.md).
@@ -73,7 +77,7 @@ Panel+ hides old rows, counts, type summaries and statistics behind **Recomputin
 
 [See the native recomputing state](docs/images/panel-recomputing.png).
 
-The public Yak beta is **`better-gh-panel 0.1.20-beta.5`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.20-beta.5`, then restart. Managed Grasshopper tree checks and Windows Rhino 8.35 host checks pass, including D/S/B/F routing across 64 tree-tool combinations, typed paired data, legacy definitions, native wire targets, saved settings and stale-result rejection. Mac and Windows .NET Framework host validation remain pending.
+The public Yak beta is **`better-gh-panel 0.1.20-beta.6`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.20-beta.6`, then restart. Core and focused native checks cover display values, typed outputs, saved settings and stale-result rejection. See [release validation](docs/packaging.md) for the existing Rhino 8.36 hidden-host viewport crash and remaining platform coverage.
 
 Beta **`0.1.15-beta`** adds current-result loading states, resumable queries with a 120 ms time budget, and filters on typed output after tree tools and unit conversion. Whitespace-only regex patterns filter output correctly; internalised geometry preview respects filters.
 
@@ -141,7 +145,7 @@ dotnet run --project tests/BetterGhPanel.Core.Tests -c Release
 node scripts/package.mjs
 ```
 
-The beta artifact is `artifacts/better-gh-panel-0.1.20-beta.5/better-gh-panel-0.1.20-beta.5-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The beta artifact is `artifacts/better-gh-panel-0.1.20-beta.6/better-gh-panel-0.1.20-beta.6-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino.
 

@@ -123,6 +123,8 @@ namespace BetterGhPanel.Core
     {
         public string Search { get; set; } = string.Empty;
         public PanelSearchMode SearchMode { get; set; } = PanelSearchMode.Text;
+        /// <summary>Inspect the selected numeric metric without applying a search predicate.</summary>
+        public bool DisplayFilterValue { get; set; }
         /// <summary>Presentation precision for text/regex matching; numeric predicates retain full precision.</summary>
         public int DecimalPlaces { get; set; } = PanelUnits.AutomaticDecimals;
         public string? TypeName { get; set; }
@@ -136,6 +138,7 @@ namespace BetterGhPanel.Core
         {
             Search = Search,
             SearchMode = SearchMode,
+            DisplayFilterValue = DisplayFilterValue,
             DecimalPlaces = DecimalPlaces,
             TypeName = TypeName,
             BranchPath = BranchPath,

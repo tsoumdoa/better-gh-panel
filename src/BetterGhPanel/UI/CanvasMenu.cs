@@ -13,13 +13,14 @@ namespace BetterGhPanel.UI
     internal sealed class CanvasMenu
     {
         internal const int ItemOrderIndex = 3;
+        internal const int DisplayValueIndex = 6;
         internal const string ItemOrderDescription = "Show zero-based item indices within each branch, after tree tools and before filtering or sorting. " +
             "Each branch starts at 0; filters and selection preserve the original indices. Points use their locations; other geometry uses bounding-box centers. " +
             "Labels follow the Preview scope and remain active in a minimized panel. Overlapping labels are hidden, with selected rows taking priority; zoom in or select fewer items to separate them.";
         private static readonly string[] SortLabels = { "Source order", "Value ascending", "Value descending" };
         private static readonly string[] PreviewLabels = { "Selected", "Filtered results", "Off" };
         private static readonly string[] SearchLabels = { "Text search", "Text · regular expression", "Numeric value", "Geometry · length", "Geometry · area", "Geometry · volume", "List length · per branch" };
-        private static readonly string[] ComparisonLabels = { "Greater than  >", "At least  ≥", "Less than  <", "At most  ≤", "Equal to  =", "Not equal to  ≠" };
+        private static readonly string[] ComparisonLabels = { "Greater than  >", "At least  ≥", "Less than  <", "At most  ≤", "Equal to  =", "Not equal to  ≠", "Display value" };
         private static readonly string[] Comparisons = { ">", ">=", "<", "<=", "=", "!=" };
         private PanelSnapshot _snapshot = PanelSnapshot.Empty;
         private PanelQueryResult? _statisticsResult;
@@ -170,6 +171,8 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.SearchMode) return index == (int)options.SearchMode;
             if (Kind == CanvasMenuKind.Comparison)
             {
+                if (index == DisplayValueIndex) return options.DisplayFilterValue;
+                if (options.DisplayFilterValue) return false;
                 string comparison = ComparisonPrefix(options.Search);
                 if (comparison.Length == 0 && options.SearchMode >= PanelSearchMode.Value && IsFiniteNumber(options.Search))
                     comparison = "=";
@@ -190,6 +193,7 @@ namespace BetterGhPanel.UI
             string prefix = options.SearchMode == PanelSearchMode.Regex ? ".* " :
                 options.SearchMode == PanelSearchMode.Text ? "" :
                 options.SearchMode == PanelSearchMode.ListLength ? "List " : options.SearchMode + " ";
+            if (options.DisplayFilterValue) return prefix + "· display";
             return prefix + (string.IsNullOrEmpty(options.Search) ?
                 options.SearchMode == PanelSearchMode.Text ? "Search…" : options.SearchMode == PanelSearchMode.Regex ? "Pattern…" : "filter…" : options.Search);
         }

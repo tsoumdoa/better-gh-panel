@@ -16,12 +16,12 @@ Packaging finds Yak in the standard Rhino 8 installation. On a machine without R
 
 McNeel's separate public Yak registry still serves the original packages. Published registry versions cannot be overwritten; yanking hides them from searches but retains direct installation. Removing those stored copies requires McNeel support. See the [public-repository cleanup notes](maintainability.md#public-repository-cleanup).
 
-The current beta patch is `0.1.20-beta.5`. The resulting `artifacts/better-gh-panel-0.1.20-beta.5/` contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `better-gh-panel-0.1.20-beta.5-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
+The current beta patch is `0.1.20-beta.6`. The resulting `artifacts/better-gh-panel-0.1.20-beta.6/` contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `better-gh-panel-0.1.20-beta.6-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
 ```text
-yak install --source artifacts/better-gh-panel-0.1.20-beta.5 better-gh-panel 0.1.20-beta.5
+yak install --source artifacts/better-gh-panel-0.1.20-beta.6 better-gh-panel 0.1.20-beta.6
 ```
 
 Replace `yak` with the full executable path if it is not on PATH. On Windows it is normally `C:\Program Files\Rhino 8\System\Yak.exe`; on Mac it is normally `/Applications/Rhino 8.app/Contents/Resources/bin/yak`. Restart Rhino and open Grasshopper afterward. Local install uses Yak's package directory and avoids copying a second `.gha` into the Grasshopper Libraries folder.
@@ -38,8 +38,12 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 Install the current public beta with:
 
 ```text
-yak install better-gh-panel 0.1.20-beta.5
+yak install better-gh-panel 0.1.20-beta.6
 ```
+
+Patch `0.1.20-beta.6` adds **Display value** beside the comparison operators. List length shows one count per branch, including empty branches, after tree tools. Numeric and geometry modes show their metric with the current units and decimals; circle length uses circumference. No comparison is applied, while type/invalid/Paths restrictions remain active. The option saves with the definition and supports Undo/Redo, reset and minimum Half layout. Per-item metric copies use the displayed numeric formatting without unit labels; typed outputs retain their data.
+
+For beta.6, run `npm run check`, then the managed tree checks and focused `--filters-only` and `--outputs-only` host modes against the extracted final Yak package. The full hidden-host suite on Rhino 8.36.26293.11001 hits a native `CRhinoDisplayPipeline_DrawShadedMeshes` access violation in the viewport overlap capture; the previously published beta.5 GitHub package reproduces the same failure. Full native viewport validation is therefore incomplete on this host. Focused filter/UI checks include all display-value interactions, asynchronous measurements, converted circumference, empty branches, persistence and Undo/Redo. Mac and Windows .NET Framework host execution remain untested.
 
 Patch `0.1.20-beta.5` adds selected data (S), an original-input Boolean mask (B), and optional paired data (F), while D keeps all filter matches. B/F default to Filtered scope and can follow Selected rows instead; the saved scope supports Undo/Redo. Strict pairing includes empty branches, retains the primary Create set representative, and preserves paired values without unit conversion. Legacy archives retain D identities and load without false corruption errors. Validation includes 64 tree-tool combinations, typed/null/duplicate and internalized paired values, empty and mismatched trees, cached output reuse, unchanged-selection scheduling, stale queries, archive diagnostics, and native grip/control dispatch. Validation builds both runtimes and runs both Windows Rhino suites against the extracted final Yak archive.
 

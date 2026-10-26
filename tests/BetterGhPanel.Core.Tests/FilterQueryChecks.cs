@@ -11,6 +11,7 @@ internal static class FilterQueryChecks
     internal static void Run()
     {
         NumericComparisons();
+        DisplayFilterValues();
         InvalidNumbers();
         BranchListLengths();
         BranchPaths();
@@ -22,6 +23,46 @@ internal static class FilterQueryChecks
         SharedQueryScope();
         RegularExpressions();
         InvalidExpressions();
+    }
+
+    private static void DisplayFilterValues()
+    {
+        var circle = new PanelRow(1, "{0}", "Circle", "circle", null,
+            geometryInfo: new PanelGeometryInfo("Circle", 1000, units: "mm", metricName: "Radius"));
+        var pending = new PanelRow(2, "{0}", "Curve", "curve", null,
+            geometryInfo: new PanelGeometryInfo("Curve", units: "mm", canMeasure: true));
+        var scalar = new PanelRow(0, "{0}", "Number", "1.23456", 1.23456);
+        var snapshot = new PanelSnapshot(new[] { scalar, circle, pending },
+            new[] { new PanelBranch("{0}", 3), new PanelBranch("{1}", 0) }, PanelUnitConversion.MillimetersToMeters);
+        var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Length, Search = "not a threshold", DisplayFilterValue = true };
+        var result = PanelQueryEngine.Execute(snapshot, options);
+        Check(result.RowPositions.SequenceEqual(new[] { 0, 1, 2 }) && result.BranchPaths.SequenceEqual(new[] { "{0}", "{1}" }),
+            "Display value bypasses comparison parsing, retains unsupported items and empty branches");
+        Check(options.Clone().DisplayFilterValue && !PanelQueryEngine.RequiresGeometryMeasurements(options),
+            "Display state survives query capture and does not hold results for offscreen measurements");
+        Check(PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, 3) == "6.283 m" &&
+            PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, 3, includeUnits: false) == "6.283",
+            "Length display and numeric copy use converted circle circumference, not radius");
+        Check(PanelFilterValue.TryGeometryValue(circle, PanelSearchMode.Length, snapshot.UnitConversion, null, out double length) &&
+            Math.Abs(length - 2 * Math.PI) < 1e-12, "Displayed geometry shares full-precision comparison values");
+        string automatic = PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, PanelUnits.AutomaticDecimals);
+        Check(automatic == PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, PanelUnits.AutomaticDecimals, includeUnits: false) + " m",
+            "Automatic metric formatting and copying retain the same digits");
+        Check(PanelFilterValue.Format(snapshot, scalar, PanelSearchMode.Value, 2) == "1.23 m" && scalar.NumericValue == 1.23456,
+            "Scalar display formats an already converted value without converting twice or rounding stored data");
+        Check(PanelFilterValue.Format(snapshot, scalar, PanelSearchMode.Length, 2) == "n/a" &&
+            PanelFilterValue.Format(snapshot, pending, PanelSearchMode.Length, 2) == "measuring…" &&
+            PanelFilterValue.Format(snapshot, pending, PanelSearchMode.Length, 2, pending.GeometryInfo!.WithUnavailableMeasurement()) == "unavailable",
+            "Unsupported, pending and failed metric displays remain distinguishable");
+        options.SearchMode = PanelSearchMode.ListLength;
+        options.TypeName = "Circle";
+        Check(PanelQueryEngine.Execute(snapshot, options).RowPositions.SequenceEqual(new[] { 1 }) &&
+            PanelFilterValue.Format(snapshot, circle, options.SearchMode, 2) == "3",
+            "Display mode respects type filters while list length counts the whole transformed branch");
+        options.TypeName = null;
+        options.BranchPath = "{1}";
+        Check(PanelQueryEngine.Execute(snapshot, options).BranchPaths.SequenceEqual(new[] { "{1}" }),
+            "Empty branches remain inspectable through Paths in display mode");
     }
 
     private static void SharedQueryScope()

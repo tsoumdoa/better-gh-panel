@@ -155,7 +155,7 @@ namespace BetterGhPanel.Core
         {
             if (options == null) throw new ArgumentNullException(nameof(options));
             if (UsesDisplayedText(options)) return true;
-            bool hasSearch = !string.IsNullOrWhiteSpace(options.Search);
+            bool hasSearch = !(options.DisplayFilterValue && options.SearchMode >= PanelSearchMode.Value) && !string.IsNullOrWhiteSpace(options.Search);
             if (hasSearch && (options.SearchMode == PanelSearchMode.Length ||
                 options.SearchMode == PanelSearchMode.Area || options.SearchMode == PanelSearchMode.Volume)) return true;
             // Active scalar comparisons cannot return geometry or need geometry sort keys.
