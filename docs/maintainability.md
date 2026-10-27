@@ -1,6 +1,6 @@
 # Maintainability audit
 
-This pass reduces duplicated feature definitions while keeping saved settings, typed output, query behavior and canvas interactions compatible. It deliberately keeps ownership and cancellation in the existing component/session objects.
+This pass reduces duplicated feature definitions while keeping saved settings, typed output, query behavior and canvas interactions compatible. Geometry scheduling uses an owned queue; the session retains responsibility for query state and publication.
 
 ## Changes in 0.1.20-beta.4
 
@@ -33,6 +33,13 @@ The release cleanup replaced all 25 GitHub downloads with copies containing only
 Separate public copies of 27 versions remain on McNeel's Yak registry, including two earlier versions without GitHub releases. Registry downloads confirmed local user paths in all 27; 25 archives exactly match the original GitHub assets. Replacing GitHub downloads does not update the registry. Its [CLI reference](https://developer.rhino3d.com/guides/yak/yak-cli-reference/#yank) says published versions cannot be overwritten, and yanking only hides versions from searches while retaining exact-version downloads. Removing stored registry copies requires McNeel support.
 
 `npm run check`, both runtime builds, the dependency vulnerability query, and managed Grasshopper tree checks passed. The full Windows Rhino 8.35 smoke run crashed in `CRhinoDisplayPipeline_DrawShadedMeshes` during `RowActionChecks.VerifyNativePreviewOverlap`, called through `DrawToBitmap`. The same crash reproduced against the unchanged published `v0.1.20-beta.5` package with the current harness, so the full native suite is not currently green. This reproduces in the hidden test host; normal interactive Rhino behavior has not been established by this audit.
+
+On Windows Rhino 8.36 the isolated overlap fixture also crashed at the same
+`DrawShadedMeshes` / `DrawToBitmap` stack against the exact public Yak
+`0.1.20-beta.7` and the in-progress build. The baseline archive SHA-256 was
+`5ad3ef3e804977be7f056c243fe13661ac267e3b1f3d869d2724963abd81ba39`;
+the host recorded the baseline plugin and Core hashes from the extracted
+archive before starting Rhino. Both runs remain failed fixtures, not passes.
 
 ## Deferred findings
 

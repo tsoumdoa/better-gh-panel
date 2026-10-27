@@ -1,10 +1,10 @@
 # Geometry measurement integration
 
 This work is not release-ready. The component's polyline candidate is disabled
-until the isolated Rhino 8.36 fixture establishes the required UserData and
-metadata behavior and input capture has a trustworthy native provenance gate.
-The fixture is compiled but has not been run. Existing native geometry
-expectations are kept.
+until its admission and ownership requirements are met. The isolated Windows
+Rhino 8.36 polyline fixture passed 28 assertions, including its managed UserData
+and source-metadata checks; it does not establish a safe path for arbitrary
+input or native plug-ins. Existing native geometry expectations are kept.
 
 Analytic line, arc, circle, rectangle, and box values continue to come from the
 existing snapshot presentation. Scheduled measurements of ordinary NURBS and
@@ -28,7 +28,8 @@ curves and Breps need separate, bounded, callback-free providers and complete
 value witnesses. The nested PolyCurve and Brep UserData checks in the native
 fixtures exercise conservative rejection, not support for copying those objects.
 The fixtures assert that nested data was attached before the plugin call and
-are registered as isolated cases; they have not been run as part of this change.
+are registered as isolated cases. The capture-safety fixture passed 27
+assertions in Windows Rhino 8.36; this is not evidence that copying is supported.
 
 The queue retains at most 128 witnesses and 2 MiB of witness data per session,
 and at most 8 MiB of witness payloads across all sessions. Entries
@@ -78,13 +79,13 @@ and the surface `Point4d GetPoint` overload. The surface dimension check uses
 `PointSize` only under the fixture's owned-pointer precondition, with corruption
 testing disabled; a borrowed Brep surface cannot use that assumption. These
 are static observations about the installed version, not a cross-version API
-guarantee or a host test result.
+guarantee.
 
 The registered fixture source covers benign and throwing managed UserData,
 source metadata preservation, weighted and periodic curves, non-default
 domains, a weighted standalone surface, nested data in a trimmed Brep,
 point-count rejection, metric equivalence, and changed/unchanged unit-only
-retention. It has compiled, but has not run in Rhino. Managed UserData counters
+retention. The isolated Windows Rhino 8.36 fixture passed 67 assertions. Managed UserData counters
 cannot detect native geometry virtual callbacks or native UserData `SizeOf`
 callbacks. Native subclass instrumentation, a supported exact-native-type
 and lifetime gate, host metric/callback checks, and a source-stability contract
