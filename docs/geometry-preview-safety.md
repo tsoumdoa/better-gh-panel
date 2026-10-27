@@ -402,12 +402,26 @@ controlled seam, not whether Rhino was still using that mesh natively or the
 cause of any offscreen-capture crash. An isolated experimental build that flushed
 inside the active draw passed a live-frame nested-idle probe, but the four
 required offscreen fixtures still failed; that experiment is not shipped.
+Review of that experiment also identified that the current SubD preview clears
+evaluation caches after drawing and meshing, before any established native
+consumption boundary. Whether Rhino retains those particular caches is unknown;
+the preview-lifetime fix must account for them as well as owned meshes.
 
 The required `preview-native-resources` fixture now checks that clearing
 immediately detaches the preview and then waits for deferred retirement before
 checking mesh disposal and accounting. Run `9bCHad` still failed on its second
 offscreen capture, before those final assertions could run. Active-draw and
 nested native lifetime remain separate requirements, not implied by that wait.
+
+The durable coordinator run `LUSwev` exercised the extracted `f17c246` test
+Yak with the later coordinator and fixture corrections. It recorded 62 of 66
+required fixtures passing, including `capture-transaction`, `highlight-overlap`
+and `item-order-capture`. `preview-reentrant-draw`, `preview-native-resources`
+and `preview-conduit-resources` each failed after one assertion with an
+`SEHException`; `preview-compatibility-draw` exited `0xC0000005` before a
+fixture assertion. The run summary, individual child exits, reports and loaded
+payload hashes are retained in the run directory. This is intermediate-package
+evidence, not validation of a final merged release.
 
 The installed RhinoCommon 8.36 implementation can retain a mesh in its managed
 pipeline cache when the two-argument `DrawMeshShaded` overload is used; the
