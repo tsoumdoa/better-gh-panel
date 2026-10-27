@@ -73,6 +73,19 @@ internal static class QueryPolicyChecks
         displayedMetric.DisplayFilterValue = true;
         Check(!PanelQueryPolicy.SameQuery(metric, displayedMetric) && !PanelQueryPolicy.SameOutputFilter(metric, displayedMetric),
             "Switching metric display is recorded independently of the pending-output policy");
+
+        var uncertain = new PanelSnapshot(new[]
+        {
+            new PanelRow(0, "{0}", "Unavailable", "<unavailable value>", null,
+                PanelValidity.Unverified, typeIdentityAvailable: false)
+        }, new[] { new PanelBranch("{0}", 1) });
+        var invalidOnly = new PanelQueryOptions { OnlyInvalid = true };
+        Check(PanelQueryEngine.Execute(uncertain, invalidOnly).RowPositions.Count == 0 &&
+            PanelQueryPolicy.InputDiagnostic(uncertain, invalidOnly).Contains("1 unverified") &&
+            PanelQueryPolicy.InputDiagnostic(uncertain, invalidOnly).Contains("1 type identity unavailable"),
+            "Input diagnostics survive an invalid-only filter that returns no rows");
+        Check(PanelQueryPolicy.InputDiagnostic(uncertain, new PanelQueryOptions()).Length == 0,
+            "The filter warning is not shown when no restriction is active");
     }
 
     private static void Check(bool condition, string message)

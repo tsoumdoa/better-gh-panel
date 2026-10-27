@@ -5,6 +5,7 @@ using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
 using BetterGhPanel.Core;
+using BetterGhPanel.Runtime;
 using BetterGhPanel.UI;
 using Grasshopper.GUI;
 using Grasshopper.GUI.Canvas;
@@ -333,7 +334,9 @@ namespace BetterGhPanel
                         PanelOwner.PreviewMode != PanelPreviewMode.Off);
                     DropdownControl(graphics, _search, CanvasMenu.SearchHint(options), small, trim,
                         options.SearchMode != PanelSearchMode.Text || !string.IsNullOrEmpty(options.Search));
-                    DropdownControl(graphics, _type, session.HasCurrentResult ? CanvasMenu.TypeHint(result, options) : "Types", small, trim, options.TypeName != null || options.OnlyInvalid);
+                    string typeHint = session.HasCurrentResult ? CanvasMenu.TypeHint(result, options) : "Types";
+                    if (PanelQueryPolicy.InputDiagnostic(session.Snapshot, options).Length > 0) typeHint = "! " + typeHint;
+                    DropdownControl(graphics, _type, typeHint, small, trim, options.TypeName != null || options.OnlyInvalid);
                     DropdownControl(graphics, _sort, options.SortMode == PanelSortMode.SourceOrder ? "Src" : options.SortMode == PanelSortMode.ValueAscending ? "↑" : "↓", small, trim, options.SortMode != PanelSortMode.SourceOrder);
                     DropdownControl(graphics, _branch, Short(options.BranchPath ?? "Paths", 80), mono, trim, options.BranchPath != null);
                     DrawViewAction(graphics, _jump, false);
@@ -509,7 +512,7 @@ namespace BetterGhPanel
                     bool showRowType = showTypes && (displayMetric || row.GeometryInfo == null);
                     float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
                     var projectedType = result.DisplaySet != null ? result.DisplaySet.Values[sourcePosition] : null;
-                    rowRenderer.DrawValue(g, PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition), font, Ink,
+                    rowRenderer.DrawValue(g, PanelValuePresentation.Visualize(PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition)), font, Ink,
                         new RectangleF(bounds.X + valueStart + 3, y, Math.Max(0, valueRight - bounds.X - valueStart - 3), RowHeight),
                         projectedType != null ? projectedType.Number.HasValue : displayMetric || row.NumericValue.HasValue);
                     if (showRowType)
@@ -624,7 +627,10 @@ namespace BetterGhPanel
             CloseRowMenu();
             var session = PanelOwner.Session;
             if (kind == CanvasMenuKind.Statistics && (!session.HasCurrentResult || PanelOwner.Locked)) return;
-            _menu.Toggle(kind, session.Snapshot, session.Options, session.Result);
+            var modes = kind == CanvasMenuKind.SearchMode
+                ? Enum.GetValues(typeof(PanelSearchMode)).Cast<PanelSearchMode>().Where(session.Snapshot.SupportsSearchMode)
+                : null;
+            _menu.Toggle(kind, session.Snapshot, session.Options, session.Result, modes);
             LayoutMenu();
             canvas.Invalidate();
         }
@@ -1173,6 +1179,8 @@ namespace BetterGhPanel
                     e.Description = "Choose a branch to filter the rows without moving the camera. Jump to an exact path using 0;0;1 or {0;0;1}; leave it empty for all branches. Click a branch heading to select its matching rows.\n\n" + e.Description;
                     if (PanelOwner.Session.Error != null) e.Description = PanelOwner.Session.Error + "\n\n" + e.Description;
                 }
+                string inputDiagnostic = PanelQueryPolicy.InputDiagnostic(PanelOwner.Session.Snapshot, options);
+                if (_type.Contains(point) && inputDiagnostic.Length > 0) e.Description += "\n\n" + inputDiagnostic;
             }
             else if (_reset.Contains(point))
             {
@@ -1256,13 +1264,16 @@ namespace BetterGhPanel
                     var row = PanelOwner.Session.Result.Snapshot.Rows[hit.SourcePosition];
                     e.Title = (PanelOwner.ShowItemOrder || PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder
                         ? "" : "Row " + hit.ViewNumber + " · ") + row.Path + " [" + row.OriginalIndex + "]";
-                    e.Text = (row.IsValid ? "" : "Invalid ") + row.TypeName;
+                    e.Text = (row.Validity == PanelValidity.VerifiedInvalid ? "Invalid " :
+                        row.Validity == PanelValidity.Unverified ? "Unverified " : "") + row.TypeName;
                     var snapshot = PanelOwner.Session.Result.Snapshot;
                     var value = PanelOwner.DisplayValue(snapshot, row, hit.SourcePosition);
                     var geometry = PanelOwner.Session.GetGeometryDetails(snapshot, hit.SourcePosition) ?? row.GeometryInfo;
                     string details;
-                    if (!row.IsValid)
+                    if (row.Validity == PanelValidity.VerifiedInvalid)
                         details = value + "\n" + (string.IsNullOrWhiteSpace(row.InvalidReason) ? "Geometry or value is invalid." : row.InvalidReason);
+                    else if (row.Validity == PanelValidity.Unverified)
+                        details = value + "\n" + (string.IsNullOrWhiteSpace(row.InvalidReason) ? "Validity could not be verified." : row.InvalidReason);
                     else if (geometry != null)
                     {
                         details = geometry.FormatDetails(snapshot.UnitConversion, PanelOwner.DecimalPlaces);
