@@ -406,9 +406,16 @@ namespace BetterGhPanel.Runtime
             else if (type == typeof(GH_Mesh)) geometry = ((GH_Mesh)goo).Value;
             else return false;
             if (geometry == null) return true;
+            return IsTrustedGeometry(geometry);
+        }
+
+        internal static bool IsTrustedGeometry(GeometryBase geometry)
+        {
             Type inner = geometry.GetType();
-            return inner == typeof(LineCurve) || inner == typeof(ArcCurve) || inner == typeof(PolylineCurve) ||
-                inner == typeof(NurbsCurve) || inner == typeof(PolyCurve) || inner == typeof(Brep) || inner == typeof(Mesh);
+            return inner == typeof(Point) || inner == typeof(LineCurve) || inner == typeof(ArcCurve) ||
+                inner == typeof(PolylineCurve) || inner == typeof(NurbsCurve) || inner == typeof(PolyCurve) ||
+                inner == typeof(Brep) || inner == typeof(Mesh) || inner == typeof(SubD) ||
+                inner == typeof(NurbsSurface) || inner == typeof(PlaneSurface) || inner == typeof(RevSurface);
         }
 
         internal static bool IsGeometryHolder(Type type) => type == typeof(GH_Curve) || type == typeof(GH_Surface) ||

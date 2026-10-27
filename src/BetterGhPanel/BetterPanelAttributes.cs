@@ -666,6 +666,7 @@ namespace BetterGhPanel
                 ? "out: filtered" : PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None ? "out: tools" : "out: source";
             string status = PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
                 _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
+                !string.IsNullOrEmpty(PanelOwner.PreviewStatus) ? PanelOwner.PreviewStatus :
                 selected > 0 ? $"{selected:N0} selected" + (DisplayListLengths ? " branches" : " · right-click to copy") :
                 DisplayListLengths ? $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} branches · {output}" :
                 _firstShownItem < 0 ? $"{result.RowPositions.Count:N0} items · {output}" :
@@ -1355,6 +1356,8 @@ namespace BetterGhPanel
                 e.Text = CanvasMenu.PreviewLabel(PanelOwner.PreviewMode);
                 e.Description = "Selected previews only selected rows; an empty selection draws nothing. Filtered results previews all matching geometry, including offscreen rows, with selected rows highlighted. Off disables Panel+ preview. Show item order adds numbered labels in Rhino (" +
                     (PanelOwner.ShowItemOrder ? "on" : "off") + "). Other components keep their own previews. Right-click a row to frame the selection.";
+                if (!string.IsNullOrEmpty(PanelOwner.PreviewStatus)) e.Description += " " + PanelOwner.PreviewStatus +
+                    " Oversized geometry, unsupported nested types, custom UserData, or mesh limits can prevent part of the preview.";
             }
             else if (_units.Contains(point))
             {

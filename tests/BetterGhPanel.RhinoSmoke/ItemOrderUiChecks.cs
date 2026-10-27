@@ -267,7 +267,8 @@ internal static class ItemOrderUiChecks
     private static List<(string Text, Point3d Anchor)> Labels(GH_Component component)
     {
         var labels = Field<object>(Field<object>(component, "_highlight"), "_orderLabels");
-        return new[] { "_selected", "_normal" }.SelectMany(name => Field<IEnumerable>(labels, name).Cast<object>())
+        return Field<IEnumerable>(labels, "_labels").Cast<object>()
+            .Select(pair => pair.GetType().GetProperty("Value")!.GetValue(pair)!)
             .Select(label => (Property<string>(label, "Text"), Property<Point3d>(label, "Anchor"))).ToList();
     }
 

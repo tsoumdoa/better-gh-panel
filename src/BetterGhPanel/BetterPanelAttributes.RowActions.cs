@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using BetterGhPanel.Core;
+using BetterGhPanel.Runtime;
 using BetterGhPanel.UI;
 using Grasshopper.GUI;
 using Grasshopper.GUI.Canvas;
@@ -167,16 +168,31 @@ namespace BetterGhPanel
             else if (action == PanelRowAction.FrameSelection)
             {
                 InvalidateCopyStatus();
-                _actionStatus = PanelOwner.FrameRows(result.Snapshot, positions) ?? "Selection framed";
-                _copiedUntil = DateTime.UtcNow.AddSeconds(5);
+                long before = PanelGeometryActions.FrameGeneration;
+                long actionGeneration = _actionGeneration;
+                void Completed(string value)
+                {
+                    if (actionGeneration != _actionGeneration || PanelGeometryActions.FrameGeneration != before + 1 || !ResultIsCurrent(result)) return;
+                    _actionStatus = value; _copiedUntil = DateTime.UtcNow.AddSeconds(5); canvas.Invalidate();
+                }
+                string? status = PanelOwner.FrameRowsWithCompletion(result.Snapshot, positions, Completed);
+                if (PanelGeometryActions.FrameGeneration <= before + 1)
+                { _actionStatus = status ?? "Selection framed"; _copiedUntil = DateTime.UtcNow.AddSeconds(5); }
             }
             else if (action == PanelRowAction.CopyValues) CopySelectedValues(result, canvas);
             else if (action == PanelRowAction.CopyGeometry)
             {
                 InvalidateCopyStatus();
-                PanelOwner.TryCopyGeometry(result.Snapshot, positions, out var status);
-                _actionStatus = status;
-                _copiedUntil = DateTime.UtcNow.AddSeconds(5);
+                long before = PanelGeometryActions.ClipboardGeneration;
+                long actionGeneration = _actionGeneration;
+                void Completed(string value)
+                {
+                    if (actionGeneration != _actionGeneration || PanelGeometryActions.ClipboardGeneration != before + 1 || !ResultIsCurrent(result)) return;
+                    _actionStatus = value; _copiedUntil = DateTime.UtcNow.AddSeconds(5); canvas.Invalidate();
+                }
+                PanelOwner.TryCopyGeometryWithCompletion(result.Snapshot, positions, Completed, out var status);
+                if (PanelGeometryActions.ClipboardGeneration <= before + 1)
+                { _actionStatus = status; _copiedUntil = DateTime.UtcNow.AddSeconds(5); }
             }
             else if (action == PanelRowAction.SelectIndices) SelectAcrossBranches(result, _selection.Indices(result), canvas);
         }
@@ -211,6 +227,7 @@ namespace BetterGhPanel
             _copyPending = true;
             _actionStatus = "Copying values…";
             canvas.Invalidate();
+            long before = PanelGeometryActions.ClipboardGeneration;
             string status;
             try { status = await PanelOwner.CopyValuesAsync(result.Snapshot, positions); }
             catch (Exception) { status = "Could not copy values. Try again."; }
@@ -219,6 +236,7 @@ namespace BetterGhPanel
                 if (generation != _actionGeneration || canvas.IsDisposed || !ResultIsCurrent(result) ||
                     !positions.SequenceEqual(_selection.OrderedPositions(result))) return;
                 _copyPending = false;
+                if (PanelGeometryActions.ClipboardGeneration > before + 1) { _actionStatus = string.Empty; canvas.Invalidate(); return; }
                 _actionStatus = status;
                 _copiedUntil = DateTime.UtcNow.AddSeconds(5);
                 canvas.Invalidate();

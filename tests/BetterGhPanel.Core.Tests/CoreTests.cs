@@ -36,6 +36,9 @@ public sealed class CoreTests
     [Fact] public void CanvasMenuChoiceChecks() => global::CanvasMenuChoiceChecks.Run();
     [Fact] public void PanelRowSelectionChecks() => global::PanelRowSelectionChecks.Run();
     [Fact] public void SelectionPerformanceChecks() => global::SelectionPerformanceChecks.Run();
+    [Fact] public void PreviewMembershipChecks() => global::PreviewMembershipChecks.Run();
+    [Fact] public void PanelActionCommitChecks() => global::PanelActionCommitChecks.Run();
+    [Fact] public void PreviewNurbsLimits() => global::PreviewNurbsLimitChecks.Run();
     [Fact] public void FilterCanvasChecks() => global::FilterCanvasChecks.Run();
     [Fact] public void UnitConversionsAndFormatting() => Program.UnitConversionsAndFormatting();
     [Fact] public void UnitConversionChecks() => global::UnitConversionChecks.Run();

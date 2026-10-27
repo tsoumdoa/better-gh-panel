@@ -55,6 +55,7 @@ namespace BetterGhPanel
         internal bool PanelMinimized { get; private set; }
         internal PanelPreviewMode PreviewMode { get; private set; }
         internal bool ShowItemOrder { get; private set; }
+        internal string PreviewStatus => _highlight.Status;
         internal float DisplayHeight => CanvasPanelSize.DisplayHeight(CanvasHeight, CanvasDisplay);
         internal int TrimDepth { get; private set; }
         internal bool FlattenTree { get; private set; }
@@ -486,11 +487,26 @@ namespace BetterGhPanel
         }
 
         internal string? FrameRows(PanelSnapshot snapshot, IReadOnlyList<int> positions)
+            => FrameRowsWithCompletion(snapshot, positions, null);
+
+        internal string? FrameRowsWithCompletion(PanelSnapshot snapshot, IReadOnlyList<int> positions, Action<string>? completed)
         {
             if (_previewSuspended) return "Activate this Grasshopper document to frame geometry";
             if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
-            var result = PanelGeometryActions.Frame(ordered.Select(position => _sourceItems[position]));
-            return result.Success ? null : result.Error;
+            var session = _session!;
+            var expectedResult = session.Result;
+            var source = _sourceItems;
+            long selection = _selectionVersion;
+            bool Current() => !_previewSuspended && ReferenceEquals(_session, session) && session.HasCurrentResult &&
+                ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, expectedResult) &&
+                ReferenceEquals(_sourceItems, source) && _selectionVersion == selection;
+            string? Format(PanelGeometryActionResult result) => !result.Success ? result.Error :
+                result.Skipped > 0 || result.Exhausted
+                ? "Selection framed" + (result.Skipped > 0 ? "; " + result.Skipped + " skipped" : "") +
+                    (result.Exhausted ? "; inspection limit reached" : "") : null;
+            var result = PanelGeometryActions.FrameWithCompletion(ordered.Select(position => source[position]).ToArray(), Current,
+                value => completed?.Invoke(Format(value) ?? "Selection framed"));
+            return Format(result);
         }
 
         internal void HighlightRows(PanelSnapshot snapshot, IReadOnlyList<int> positions)
@@ -510,7 +526,15 @@ namespace BetterGhPanel
             }
             var previewPositions = PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.RowPositions : ordered;
             _highlight.SetOrderResult(ShowItemOrder && previewPositions.Count > 0 ? session.Result : null);
-            _highlight.Set(_sourceItems, previewPositions, ordered);
+            var source = _sourceItems;
+            var expectedResult = session.Result;
+            var mode = PreviewMode;
+            long selection = _selectionVersion;
+            bool Current() => !_previewSuspended && !Locked && PreviewMode == mode &&
+                ReferenceEquals(_session, session) && session.HasCurrentResult && ReferenceEquals(session.Snapshot, snapshot) &&
+                ReferenceEquals(session.Result, expectedResult) && ReferenceEquals(_sourceItems, source) && _selectionVersion == selection;
+            _highlight.SetScopeChecked(source, expectedResult, mode == PanelPreviewMode.FilteredResults, ordered, Current, RowSelection);
+            InvalidatePreviewCaches();
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
 
@@ -518,13 +542,22 @@ namespace BetterGhPanel
         {
             bool visible = _highlight.PreviewCount > 0;
             _highlight.Clear();
-            if (visible) Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
+            if (visible) { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
+        }
+
+        private void InvalidatePreviewCaches()
+        {
+            // GH's registered PreviewExpired handler also destroys the document
+            // draw list and clipping box. Calling GH_Document.ExpirePreview here
+            // would additionally mark a selection-only gesture as a document edit.
+            ExpirePreview(false);
         }
 
         internal async Task<string> CopyValuesAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions)
         {
             CancelPendingCopy();
             if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
+            long clipboardGeneration = PanelGeometryActions.BeginClipboard();
             var session = _session!;
             var cancellation = new CancellationTokenSource();
             _copyCancellation = cancellation;
@@ -534,38 +567,51 @@ namespace BetterGhPanel
             // callback. Live goo and the system clipboard belong to its UI thread.
             Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
             {
+                void Finish(PanelCommitOutcome outcome)
+                {
+                    string status = outcome == PanelCommitOutcome.Uncertain ? "Copy failed; clipboard state is uncertain." :
+                        outcome == PanelCommitOutcome.Committed && !PanelGeometryActions.ClipboardCurrent(clipboardGeneration)
+                            ? "Copy context changed during clipboard publication; clipboard state is uncertain." :
+                        outcome != PanelCommitOutcome.Committed ? "Copy cancelled" :
+                        ordered.Count == 1 ? "Value copied" : ordered.Count + " values copied";
+                    completion.TrySetResult(status);
+                    if (ReferenceEquals(_copyCancellation, cancellation)) { _copyCancellation = null; cancellation.Dispose(); }
+                }
                 try
                 {
-                    if (!measured || !ReferenceEquals(_copyCancellation, cancellation) || !ReferenceEquals(_session, session) ||
-                        !TryGetActionPositions(snapshot, ordered, out _)) completion.SetResult("Copy cancelled");
+                    if (!measured || !PanelGeometryActions.ClipboardCurrent(clipboardGeneration) ||
+                        !ReferenceEquals(_copyCancellation, cancellation) || !ReferenceEquals(_session, session) ||
+                        !TryGetActionPositions(snapshot, ordered, out _)) Finish(PanelCommitOutcome.Stale);
                     else
                     {
                         var text = string.Join(Environment.NewLine, ordered.Select(position => CopyValue(snapshot, position)));
-                        if (!ReferenceEquals(_copyCancellation, cancellation) || cancellation.IsCancellationRequested ||
-                            !ReferenceEquals(_session, session) || !TryGetActionPositions(snapshot, ordered, out var current) ||
-                            !ordered.SequenceEqual(current) || !session.GeometrySourcesCurrent(snapshot))
-                            completion.SetResult("Copy cancelled");
-                        else
+                        bool Current()
                         {
-                            using (var clipboard = new Eto.Forms.Clipboard()) clipboard.Text = text;
-                            completion.SetResult(ordered.Count == 1 ? "Value copied" : ordered.Count + " values copied");
+                            bool SelectionCurrent() => PanelGeometryActions.ClipboardCurrent(clipboardGeneration) &&
+                                ReferenceEquals(_copyCancellation, cancellation) && !cancellation.IsCancellationRequested &&
+                                ReferenceEquals(_session, session) && TryGetActionPositions(snapshot, ordered, out var current) &&
+                                ordered.SequenceEqual(current);
+                            return SelectionCurrent() && session.GeometrySourcesCurrent(snapshot) && SelectionCurrent();
                         }
+                        var state = PanelGeometryActions.CommitClipboard(Current,
+                            () => { using (var clipboard = new Eto.Forms.Clipboard()) clipboard.Text = text; }, Finish);
+                        if (state != PanelCommitOutcome.Deferred) Finish(state);
                     }
                 }
-                catch (Exception ex) { completion.SetResult("Copy failed: " + ex.Message); }
-                finally
+                catch (Exception ex)
                 {
-                    if (ReferenceEquals(_copyCancellation, cancellation))
-                    {
-                        _copyCancellation = null;
-                        cancellation.Dispose();
-                    }
+                    completion.TrySetResult("Copy failed: " + ex.Message);
+                    if (ReferenceEquals(_copyCancellation, cancellation)) { _copyCancellation = null; cancellation.Dispose(); }
                 }
             }));
             return await completion.Task;
         }
 
         internal bool TryCopyGeometry(PanelSnapshot snapshot, IReadOnlyList<int> positions, out string status)
+            => TryCopyGeometryWithCompletion(snapshot, positions, null, out status);
+
+        internal bool TryCopyGeometryWithCompletion(PanelSnapshot snapshot, IReadOnlyList<int> positions,
+            Action<string>? completed, out string status)
         {
             CancelPendingCopy();
             if (!TryGetActionPositions(snapshot, positions, out var ordered))
@@ -573,10 +619,20 @@ namespace BetterGhPanel
                 status = "Data changed; select rows again";
                 return false;
             }
-            var result = PanelGeometryActions.CopyGeometry(ordered.Select(position => _sourceItems[position]),
-                _geometryUnitSystem, _geometryTolerance);
-            status = result.Success ? result.Count + " geometries copied" +
-                (result.Skipped > 0 ? "; " + result.Skipped + " skipped" : "") : result.Error ?? "Copy geometry failed";
+            var session = _session!;
+            var expectedResult = session.Result;
+            var source = _sourceItems;
+            long selection = _selectionVersion;
+            bool Current() => ReferenceEquals(_session, session) && session.HasCurrentResult &&
+                ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, expectedResult) &&
+                ReferenceEquals(_sourceItems, source) && _selectionVersion == selection;
+            string Format(PanelGeometryActionResult result) => result.Success ? result.Count + " geometries copied" +
+                (result.Skipped > 0 ? "; " + result.Skipped + " skipped (" + (result.Detail ?? "unsupported geometry or unverified metadata") + ")" : "") +
+                (result.Exhausted ? "; preparation limit reached" : "") +
+                (result.UnverifiedMetadata ? "; custom metadata content not fully verified" : "") : result.Error ?? "Copy geometry failed";
+            var result = PanelGeometryActions.CopyGeometryWithCompletion(ordered.Select(position => source[position]).ToArray(),
+                _geometryUnitSystem, _geometryTolerance, Current, value => completed?.Invoke(Format(value)));
+            status = Format(result);
             return result.Success;
         }
 

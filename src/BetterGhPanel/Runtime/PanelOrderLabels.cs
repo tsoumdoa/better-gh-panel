@@ -13,12 +13,14 @@ namespace BetterGhPanel.Runtime
     internal sealed class PanelOrderLabels : DisplayConduit
     {
         private PanelQueryResult? _result;
-        private readonly List<Label> _normal = new List<Label>();
-        private readonly List<Label> _selected = new List<Label>();
+        private readonly SortedDictionary<int, Label> _labels = new SortedDictionary<int, Label>();
+        private readonly PanelPreviewMembership _membership;
         private bool _armed;
         private Guid _viewport;
         private Transform _model;
         private Color _selectedColor;
+
+        internal PanelOrderLabels(PanelPreviewMembership membership) { _membership = membership; }
 
         internal void SetResult(PanelQueryResult? result)
         {
@@ -30,23 +32,28 @@ namespace BetterGhPanel.Runtime
         {
             Enabled = false;
             _armed = false;
-            _normal.Clear();
-            _selected.Clear();
+            _labels.Clear();
         }
         internal void Clear() { ClearEntries(); SetResult(null); }
 
-        internal void Add(int sourcePosition, Point3d anchor, bool selected)
+        internal void Add(int viewIndex, int sourcePosition, Point3d anchor)
         {
             if (!anchor.IsValid || !PanelItemOrder.TryGetNumber(_result, sourcePosition, out int number)) return;
-            (selected ? _selected : _normal).Add(new Label(number, anchor));
+            _labels[viewIndex] = new Label(sourcePosition, number, anchor);
             Enabled = true;
+        }
+
+        internal void Remove(int viewIndex)
+        {
+            _labels.Remove(viewIndex);
+            if (_labels.Count == 0) { Enabled = false; _armed = false; }
         }
 
         // The component's native preview callback is the authority on whether this
         // panel may draw. Arm only its current viewport frame; never retain preview args.
         internal void Arm(IGH_PreviewArgs args)
         {
-            if (args.Display == null || _normal.Count + _selected.Count == 0) return;
+            if (args.Display == null || _labels.Count == 0) return;
             _viewport = args.Viewport.Id;
             _model = args.Display.ModelTransform;
             _selectedColor = Color.FromArgb(255, args.WireColour_Selected);
@@ -64,15 +71,16 @@ namespace BetterGhPanel.Runtime
             if (scale <= 0 || float.IsNaN(scale) || float.IsInfinity(scale)) scale = 1;
             // Selected labels win collisions. Each list retains current view order; hidden
             // labels keep their original numbers and can reappear as the view separates them.
-            DrawLabels(_selected, e, occupied, scale, _selectedColor);
-            DrawLabels(_normal, e, occupied, scale, Color.FromArgb(245, 247, 244));
+            DrawLabels(e, occupied, scale, _selectedColor, true);
+            DrawLabels(e, occupied, scale, Color.FromArgb(245, 247, 244), false);
         }
 
-        private void DrawLabels(List<Label> labels, DrawEventArgs args, LabelCollisionGrid occupied, float scale, Color fill)
+        private void DrawLabels(DrawEventArgs args, LabelCollisionGrid occupied, float scale, Color fill, bool selected)
         {
             var foreground = fill.GetBrightness() < 0.45f ? Color.White : Color.FromArgb(35, 41, 37);
-            foreach (var label in labels)
+            foreach (var label in _labels.Values)
             {
+                if (_membership.Contains(label.Position) != selected) continue;
                 if (!TryProject(args.Viewport, _model, label.Anchor, out var screen)) continue;
                 // Native dots choose their own font. Reserve a conservative constant-pixel
                 // footprint including padding, instead of measuring or allocating text per frame.
@@ -95,8 +103,9 @@ namespace BetterGhPanel.Runtime
 
         private readonly struct Label
         {
-            internal Label(int number, Point3d anchor)
-            { Anchor = anchor; Text = number.ToString(CultureInfo.InvariantCulture); }
+            internal Label(int position, int number, Point3d anchor)
+            { Position = position; Anchor = anchor; Text = number.ToString(CultureInfo.InvariantCulture); }
+            internal int Position { get; }
             internal Point3d Anchor { get; }
             internal string Text { get; }
         }
