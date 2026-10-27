@@ -14,6 +14,7 @@ const report = {
 const result = process.env.PANEL_SMOKE_RESULT;
 switch (behavior) {
   case 'pass': break;
+  case 'pass-desktop': report.hostMode = 'inactive-desktop'; break;
   case 'missing': process.exit(0); break;
   case 'malformed': writeFileSync(result, '{'); process.exit(0); break;
   case 'wrong-fixture': report.fixture = 'another-fixture'; break;

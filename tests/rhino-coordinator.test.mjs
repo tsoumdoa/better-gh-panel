@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { fixtureCommand, fixtureHostMode, loadInventory, runFixtures } from './BetterGhPanel.RhinoSmoke/coordinator.mjs';
+import { fixtureCommand, fixtureHostMode, loadInventory, main, runFixtures } from './BetterGhPanel.RhinoSmoke/coordinator.mjs';
 
 const fakeChild = fileURLToPath(new URL('./fake-rhino-child.mjs', import.meta.url));
 
@@ -42,12 +42,27 @@ test('inventory includes every original fixture and the independently crash-pron
 });
 
 test('pixel fixtures use an inactive desktop while other fixtures use the hidden host', () => {
-  for (const name of ['highlight-overlap', 'item-order-capture']) {
+  for (const name of ['highlight-overlap', 'item-order-capture', 'preview-safety', 'preview-reentrant-draw',
+    'preview-native-resources', 'preview-conduit-resources', 'preview-stock-point']) {
     assert.equal(fixtureHostMode(name), 'inactive-desktop');
     assert.deepEqual(fixtureCommand('host', name, 'plugin'), ['host', ['--desktop-fixture', name, 'plugin']]);
   }
   assert.equal(fixtureHostMode('output'), 'hidden');
   assert.deepEqual(fixtureCommand('host', 'output', 'plugin'), ['host', ['--fixture', 'output', 'plugin']]);
+});
+
+test('a failed desktop launcher check fails the run without skipping other fixtures', async t => {
+  const payload = withPayload(t);
+  const started = [];
+  const code = await main(['--plugin', payload.pluginPath, '--fixture', 'highlight-overlap', '--fixture', 'output'], {
+    outputRoot: payload.outputRoot, checkDesktop: () => false,
+    commandFor: (fixture, plugin) => {
+      started.push(fixture);
+      return [process.execPath, [fakeChild, fixture === 'highlight-overlap' ? 'pass-desktop' : 'pass', fixture, plugin]];
+    }
+  });
+  assert.equal(code, 1);
+  assert.deepEqual(started, ['highlight-overlap', 'output']);
 });
 
 test('successful children provide unique fixture-only evidence and unique files', async t => {

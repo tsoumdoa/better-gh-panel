@@ -1,11 +1,14 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const desktopFixtures = new Set(['highlight-overlap', 'item-order-capture']);
+const desktopFixtures = new Set([
+  'highlight-overlap', 'item-order-capture', 'preview-safety', 'preview-reentrant-draw',
+  'preview-native-resources', 'preview-conduit-resources', 'preview-stock-point'
+]);
 
 export const fixtureHostMode = fixture => desktopFixtures.has(fixture) ? 'inactive-desktop' : 'hidden';
 export const fixtureCommand = (executable, fixture, plugin) =>
@@ -111,12 +114,22 @@ export async function main(args, overrides = {}) {
   }
   const inventory = loadInventory();
   if (selected.some(name => !inventory.includes(name))) throw new Error(`Unknown fixture: ${selected.find(name => !inventory.includes(name))}`);
+  const fixtures = selected.length ? selected : inventory;
+  let desktopCheckPassed = true;
+  if (fixtures.some(name => desktopFixtures.has(name))) {
+    const checkDesktop = overrides.checkDesktop ?? (() => {
+      const check = spawnSync(process.execPath, ['--test', join(here, '../desktop-launcher.test.mjs')], { stdio: 'inherit', windowsHide: true });
+      return !check.error && check.status === 0;
+    });
+    try { desktopCheckPassed = await checkDesktop(); } catch { desktopCheckPassed = false; }
+    if (!desktopCheckPassed) console.error('Inactive desktop launcher checks failed; fixtures will still run.');
+  }
   const executable = join(here, 'bin/Release/net7.0-windows/BetterGhPanel.RhinoSmoke.exe');
-  const summary = await runFixtures({ fixtures: selected.length ? selected : inventory, pluginPath,
+  const summary = await runFixtures({ fixtures, pluginPath,
     outputRoot: overrides.outputRoot ?? join(here, 'bin/Release/net7.0-windows/runs'), timeoutMs,
     commandFor: overrides.commandFor ?? ((fixture, plugin) => fixtureCommand(executable, fixture, plugin)) });
   console.log(`${summary.outcomes.filter(result => result.errors.length === 0).length}/${summary.outcomes.length} fixtures passed`);
-  return summary.passed ? 0 : 1;
+  return summary.passed && desktopCheckPassed ? 0 : 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
