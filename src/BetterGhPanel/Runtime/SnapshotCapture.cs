@@ -166,7 +166,9 @@ namespace BetterGhPanel.Runtime
             if (runtime == typeof(GH_Colour))
             {
                 var value = ((GH_Colour)goo).Value;
-                return string.Format(CultureInfo.InvariantCulture, "{0},{1},{2} ({3})", value.R, value.G, value.B, value.A);
+                return value.IsNamedColor ? value.Name : value.A == byte.MaxValue
+                    ? string.Format(CultureInfo.InvariantCulture, "{0},{1},{2}", value.R, value.G, value.B)
+                    : string.Format(CultureInfo.InvariantCulture, "{0},{1},{2} ({3})", value.R, value.G, value.B, value.A);
             }
             if (runtime == typeof(GH_Interval)) return IntervalText(((GH_Interval)goo).Value);
             if (runtime == typeof(GH_Interval2D))

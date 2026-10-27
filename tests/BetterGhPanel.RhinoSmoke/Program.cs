@@ -60,6 +60,9 @@ internal static class Program
         ["recompute-disabled"] = RecomputeChecks.RunDisabled,
         ["geometry-hint"] = GeometryHintChecks.Run,
         ["analytic-curve-details"] = assembly => { FixtureUserData.EnsureRegistered(); return AnalyticCurveDetailsChecks.Run(assembly); },
+        ["geometry-group-persistent"] = GeometryGroupChecks.RunPersistent,
+        ["geometry-group-volatile"] = GeometryGroupChecks.RunVolatile,
+        ["geometry-group-cycles"] = GeometryGroupChecks.RunCycles,
         ["capture-safety"] = assembly => { FixtureUserData.EnsureRegistered(); CaptureSafetyChecks.VerifyManaged(assembly); CaptureSafetyChecks.VerifyNativeCapabilities(assembly); CaptureSafetyChecks.VerifyNativeUserData(assembly); return Task.CompletedTask; },
         ["polyline-safety"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryPolylineSafetyChecks.Run(assembly); },
         ["nurbs-value-candidate"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryNurbsCandidateChecks.Run(assembly); },
@@ -147,6 +150,7 @@ internal static class Program
                 OutputChecks.VerifyTree(_loadedPlugin);
                 VerifyUnitOperations(_loadedPlugin);
                 CaptureSafetyChecks.VerifyManaged(_loadedPlugin);
+                GeometryGroupChecks.VerifyCycles(_loadedPlugin);
                 FullValueChecks.VerifyPaintClipping(_loadedPlugin);
                 Console.WriteLine("PASS: Managed Grasshopper tree and unit operation checks completed (Rhino host not started).");
                 return 0;

@@ -87,6 +87,24 @@ internal static class CaptureSafetyChecks
             "Exact text, colour, domain, 2D domain, GUID and time capture semantic values");
         Check(snapshot.Rows[25].DisplayValue == "Empty Group" && snapshot.Rows[26].DisplayValue == "Empty Group (  )",
             "Empty and whitespace group names retain the stock distinction");
+        var colours = new GH_Structure<IGH_Goo>();
+        colours.AppendRange(new IGH_Goo[] { new GH_Colour(Color.FromArgb(255, 12, 34, 56)),
+            new GH_Colour(Color.FromArgb(128, 12, 34, 56)), new GH_Colour(Color.FromArgb(0, 12, 34, 56)),
+            new GH_String("12,34,56"), new GH_Colour(Color.Red), new GH_Colour(Color.Transparent) }, new GH_Path(0));
+        var colourSnapshot = Capture(colours, out _);
+        var stockConversions = colours.Branches[0].Select(item =>
+        {
+            var text = new GH_String();
+            return text.CastFrom(item) ? text.Value : null;
+        }).ToArray();
+        Check(stockConversions.SequenceEqual(new[] { "12,34,56", "12,34,56 (128)", "12,34,56 (0)", "12,34,56", "Red", "Transparent" }) &&
+            colourSnapshot.Rows.Select(row => row.DisplayValue).SequenceEqual(stockConversions),
+            "Exact opaque, alpha and named colour summaries match Grasshopper's managed string conversion");
+        var colourSet = PanelQueryEngine.Execute(colourSnapshot, new PanelQueryOptions { CreateSet = true });
+        Check(colourSet.RowPositions.SequenceEqual(new[] { 0, 1, 2, 4, 5 }) && colourSet.SetOccurrencesAt(0)!.Count == 2 &&
+            PanelQueryEngine.Execute(colourSnapshot, new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "^12,34,56$" })
+                .RowPositions.SequenceEqual(new[] { 0, 3 }),
+            "Opaque colour search and set keys agree with identical text while alpha remains distinct");
         Check(PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "^$" }).RowPositions.SequenceEqual(new[] { 15 }) &&
             PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = "<empty>" }).RowPositions.SequenceEqual(new[] { 16 }),
             "Empty-string search uses semantic content rather than its visual marker");

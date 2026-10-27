@@ -104,7 +104,7 @@ internal static class OutputChecks
     internal static Task Run(Assembly assembly) => RunWithEditor(assembly, RunCore);
     internal static Task RunPending(Assembly assembly) => RunWithEditor(assembly, VerifyPending);
 
-    private static async Task RunWithEditor(Assembly assembly, Func<Assembly, Task> check)
+    internal static async Task RunWithEditor(Assembly assembly, Func<Assembly, Task> check)
     {
         // Scheduled solutions need the host editor's native handle, even while
         // the test's Rhino window remains hidden.
