@@ -451,7 +451,9 @@ internal static class CaptureTransactionChecks
         Check(called && stale.Outputs.Count == 0,
             "holder replacement after reconstruction rejects measured D/S/B/F before any SetDataTree call");
         await fixture.Ready(() => !ReferenceEquals(snapshot, fixture.Result.Snapshot) && fixture.Result.Snapshot.Rows.Count == 1 &&
-            fixture.Result.RowPositions.Count == 0 && fixture.Sinks[0].VolatileData.DataCount == 0 && fixture.Sinks[3].VolatileData.DataCount == 0);
+            fixture.Result.RowPositions.Count == 0 && fixture.Sinks[0].VolatileData.DataCount == 0 &&
+            fixture.Sinks[1].VolatileData.DataCount == 0 && fixture.Sinks[2].VolatileData.DataCount == 1 &&
+            fixture.Sinks[3].VolatileData.DataCount == 0);
         Check(fixture.Sinks[1].VolatileData.DataCount == 0 &&
             !((GH_Boolean)fixture.Sinks[2].VolatileData.AllData(false).Single()).Value,
             "the stale measured publication recovers with fresh Length membership and no stale selected/mask/paired output");

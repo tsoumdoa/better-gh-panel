@@ -227,6 +227,24 @@ The existing native callback/lifetime and silent in-place geometry mutation limi
 remain, as do the outstanding exact-package rendering/release gates and unavailable
 Mac and Windows .NET Framework host evidence.
 
+On the later extracted `f17c246` test Yak, the full inventory's
+`capture-transaction` failed after 42 assertions in run `8K9mbw`: its wait
+condition allowed the check to run before the replacement B mask reached the
+sink. The coordinator terminal summary was lost, and its then-current reports
+did not persist child exit codes; the 61 reports marked complete and passing in
+that run are therefore not treated as complete coordinator pass evidence.
+The fixture now waits for the expected D, S, B and F output counts before the
+unchanged mask assertion. It passed 126 assertions against the same extracted
+payload in runs `rr11gN`, `x7jxDU` and `gsHPYp`. The latter two also retain the
+coordinator's child exit status and payload hashes on disk.
+
+An intermediate `UrXyHV` rerun executed all 126 assertions and exited zero but
+was rejected because the requested Windows short path and loaded long path had
+different spellings. The coordinator now compares canonical file paths and both
+SHA-256 hashes; alias and wrong-hash controls are covered by managed tests. It
+also writes per-fixture outcomes and a run summary so a disconnected terminal
+cannot turn a host's pre-shutdown report into unverified exit evidence.
+
 The capture fixture uses explicit internal hooks
 at callback boundaries; these are tests of the transaction, not a claim that native
 callbacks are bounded or that host behavior has been exercised without Rhino.

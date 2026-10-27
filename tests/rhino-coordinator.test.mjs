@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { fixtureCommand, fixtureHostMode, loadInventory, main, requiredFixtures, runFixtures } from './BetterGhPanel.RhinoSmoke/coordinator.mjs';
+import { fixtureCommand, fixtureHostMode, loadInventory, main, reportErrors, requiredFixtures, runFixtures } from './BetterGhPanel.RhinoSmoke/coordinator.mjs';
 
 const fakeChild = fileURLToPath(new URL('./fake-rhino-child.mjs', import.meta.url));
 
@@ -80,6 +80,12 @@ test('a failed desktop launcher check fails the run without skipping other fixtu
   });
   assert.equal(code, 1);
   assert.deepEqual(started, ['highlight-overlap', 'output']);
+  const [runDirectory] = readdirSync(payload.outputRoot);
+  const status = JSON.parse(readFileSync(join(payload.outputRoot, runDirectory, 'coordinator-status.json'), 'utf8'));
+  assert.equal(status.desktopCheckRequired, true);
+  assert.equal(status.desktopCheckPassed, false);
+  assert.equal(status.passed, false);
+  assert.equal(status.fixtureCount, 2);
 });
 
 test('successful children provide unique fixture-only evidence and unique files', async t => {
@@ -93,7 +99,43 @@ test('successful children provide unique fixture-only evidence and unique files'
     assert.deepEqual(outcome.errors, []);
     assert.equal(JSON.parse(readFileSync(outcome.resultPath, 'utf8')).fixture, outcome.fixture);
     assert.equal(outcome.report.assertionCount, 3);
+    const persisted = JSON.parse(readFileSync(outcome.outcomePath, 'utf8'));
+    assert.equal(persisted.fixture, outcome.fixture);
+    assert.equal(persisted.runId, outcome.runId);
+    assert.equal(persisted.child.code, 0);
+    assert.equal(persisted.child.signal, null);
+    assert.equal(persisted.assertionCount, 3);
+    assert.deepEqual(persisted.errors, []);
   }
+  const persistedRun = JSON.parse(readFileSync(join(summary.runDirectory, 'run-summary.json'), 'utf8'));
+  assert.equal(persistedRun.completed, true);
+  assert.equal(persistedRun.passed, true);
+  assert.deepEqual(persistedRun.outcomes.map(item => item.outcomePath), summary.outcomes.map(item => item.outcomePath));
+});
+
+test('payload identity accepts an alias of the same files and still compares hashes', async t => {
+  const payload = withPayload(t);
+  const targetDirectory = resolve(payload.pluginPath, '..');
+  const aliasDirectory = join(targetDirectory, '..', 'panel-payload-alias-' + process.pid + '-' + Date.now());
+  try { symlinkSync(targetDirectory, aliasDirectory, process.platform === 'win32' ? 'junction' : 'dir'); }
+  catch (error) { t.skip(`directory aliases unavailable: ${error.message}`); return; }
+  t.after(() => { try { unlinkSync(aliasDirectory); } catch (error) { if (error.code !== 'ENOENT') throw error; } });
+  const aliasedPlugin = join(aliasDirectory, 'BetterGhPanel.gha');
+  const summary = await runFixtures({ pluginPath: aliasedPlugin, outputRoot: payload.outputRoot,
+    fixtures: ['first'], timeoutMs: 2000, quiet: true,
+    commandFor: (fixture, plugin) => [process.execPath, [fakeChild, 'pass', fixture, plugin]] });
+  assert.equal(summary.passed, true);
+  const outcome = summary.outcomes[0];
+  const persisted = JSON.parse(readFileSync(outcome.outcomePath, 'utf8'));
+  assert.equal(persisted.payload.plugin.path, realpathSync.native(payload.pluginPath));
+  const report = { ...outcome.report,
+    plugin: { ...outcome.report.plugin, path: aliasedPlugin },
+    core: { ...outcome.report.core, path: join(aliasDirectory, 'BetterGhPanel.Core.dll') } };
+  const expected = { fixture: outcome.fixture, runId: outcome.runId, started: Date.parse(report.startedUtc),
+    hostMode: 'hidden', ...persisted.payload };
+  assert.deepEqual(reportErrors(report, expected), []);
+  report.plugin.sha256 = '0'.repeat(64);
+  assert.ok(reportErrors(report, expected).includes('wrong loaded plugin SHA-256'));
 });
 
 for (const [behavior, expected] of [
@@ -112,6 +154,12 @@ for (const [behavior, expected] of [
     assert.equal(summary.passed, false);
     assert.ok(summary.outcomes[0].errors.some(error => error.includes(expected)), summary.outcomes[0].errors.join('; '));
     assert.deepEqual(summary.outcomes[1].errors, []);
+    const persisted = JSON.parse(readFileSync(summary.outcomes[0].outcomePath, 'utf8'));
+    assert.ok(persisted.errors.some(error => error.includes(expected)));
+    if (behavior === 'native-failure') {
+      assert.equal(persisted.child.code, 7);
+      assert.equal(persisted.assertionCount, 3); // a passing host report cannot hide a failed exit
+    }
   });
 }
 

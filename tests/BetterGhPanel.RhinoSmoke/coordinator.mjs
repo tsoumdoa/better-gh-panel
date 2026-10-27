@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -29,8 +29,13 @@ export function loadInventory() {
 export const requiredFixtures = inventory => inventory.filter(name => !diagnosticFixtures.has(name));
 
 const fileHash = path => createHash('sha256').update(readFileSync(path)).digest('hex');
-const samePath = (a, b) => typeof a === 'string' && isAbsolute(a) &&
-  (process.platform === 'win32' ? resolve(a).toLowerCase() === resolve(b).toLowerCase() : resolve(a) === resolve(b));
+const samePath = (a, b) => {
+  if (typeof a !== 'string' || !isAbsolute(a) || typeof b !== 'string' || !isAbsolute(b)) return false;
+  try {
+    const left = realpathSync.native(a), right = realpathSync.native(b);
+    return process.platform === 'win32' ? left.toLowerCase() === right.toLowerCase() : left === right;
+  } catch { return false; }
+};
 
 // A report is proof of the particular process and the actual two loaded payload files,
 // not merely a marker left by a previous invocation or a successful startup assertion.
@@ -75,9 +80,12 @@ function runChild(command, args, env, logPath, timeoutMs) {
 
 // commandFor is injectable solely so managed tests can exercise real child-process failures.
 export async function runFixtures({ fixtures, pluginPath, outputRoot, timeoutMs, commandFor, quiet = false }) {
-  const plugin = resolve(pluginPath);
-  const core = join(dirname(plugin), 'BetterGhPanel.Core.dll');
-  if (!existsSync(plugin) || !existsSync(core)) throw new Error(`Requested plugin and adjacent Core are required: ${plugin}, ${core}`);
+  const requested = resolve(pluginPath);
+  if (!existsSync(requested)) throw new Error(`Requested plugin and adjacent Core are required: ${requested}`);
+  const plugin = realpathSync.native(requested);
+  const adjacentCore = join(dirname(plugin), 'BetterGhPanel.Core.dll');
+  if (!existsSync(adjacentCore)) throw new Error(`Requested plugin and adjacent Core are required: ${plugin}, ${adjacentCore}`);
+  const core = realpathSync.native(adjacentCore);
   if (!Array.isArray(fixtures) || fixtures.length === 0 || new Set(fixtures).size !== fixtures.length || fixtures.some(f => typeof f !== 'string' || !/^[a-z0-9-]+$/.test(f)))
     throw new Error('Fixtures must be a nonempty, unique list of valid names');
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('Timeout must be a positive integer in milliseconds');
@@ -103,11 +111,20 @@ export async function runFixtures({ fixtures, pluginPath, outputRoot, timeoutMs,
     try { report = JSON.parse(readFileSync(resultPath, 'utf8')); }
     catch (error) { errors.push(error.code === 'ENOENT' ? 'missing report' : `malformed report: ${error.message}`); }
     if (report !== undefined) errors.push(...reportErrors(report, { fixture, runId, started, hostMode: fixtureHostMode(fixture), ...payload }));
-    const outcome = { fixture, runId, resultPath, logPath, report, errors };
+    const outcomePath = join(runDirectory, `${fixture}-${runId}.outcome.json`);
+    const outcome = { fixture, runId, resultPath, logPath, outcomePath, child, report, errors };
+    // The report is written by the host before shutdown, so it cannot attest
+    // to the host's exit code. Persist the coordinator's assessment as well;
+    // terminal output can disappear when an orchestration session reconnects.
+    writeFileSync(outcomePath, JSON.stringify({ schemaVersion: 1, fixture, runId, resultPath, logPath,
+      child, errors, payload, assertionCount: report?.assertionCount ?? null }), { flag: 'wx' });
     outcomes.push(outcome);
     if (!quiet) console.log(`${errors.length ? 'FAIL' : 'PASS'} ${fixture}: ${errors.length ? errors.join('; ') : `${report.assertionCount} fixture assertions`} (${basename(logPath)})`);
   }
-  return { runDirectory, outcomes, passed: outcomes.every(outcome => outcome.errors.length === 0) };
+  const passed = outcomes.every(outcome => outcome.errors.length === 0);
+  writeFileSync(join(runDirectory, 'run-summary.json'), JSON.stringify({ schemaVersion: 1, completed: true,
+    passed, payload, outcomes: outcomes.map(({ fixture, runId, outcomePath }) => ({ fixture, runId, outcomePath })) }), { flag: 'wx' });
+  return { runDirectory, outcomes, passed };
 }
 
 export async function main(args, overrides = {}) {
@@ -137,6 +154,9 @@ export async function main(args, overrides = {}) {
   const summary = await runFixtures({ fixtures, pluginPath,
     outputRoot: overrides.outputRoot ?? join(here, 'bin/Release/net7.0-windows/runs'), timeoutMs,
     commandFor: overrides.commandFor ?? ((fixture, plugin) => fixtureCommand(executable, fixture, plugin)) });
+  writeFileSync(join(summary.runDirectory, 'coordinator-status.json'), JSON.stringify({ schemaVersion: 1,
+    desktopCheckRequired: fixtures.some(name => desktopFixtures.has(name)), desktopCheckPassed,
+    passed: summary.passed && desktopCheckPassed, fixtureCount: summary.outcomes.length }), { flag: 'wx' });
   console.log(`${summary.outcomes.filter(result => result.errors.length === 0).length}/${summary.outcomes.length} fixtures passed`);
   return summary.passed && desktopCheckPassed ? 0 : 1;
 }
