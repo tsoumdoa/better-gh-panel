@@ -32,7 +32,14 @@ The release cleanup replaced all 25 GitHub downloads with copies containing only
 
 Separate public copies of 27 versions remain on McNeel's Yak registry, including two earlier versions without GitHub releases. Registry downloads confirmed local user paths in all 27; 25 archives exactly match the original GitHub assets. Replacing GitHub downloads does not update the registry. Its [CLI reference](https://developer.rhino3d.com/guides/yak/yak-cli-reference/#yank) says published versions cannot be overwritten, and yanking only hides versions from searches while retaining exact-version downloads. Removing stored registry copies requires McNeel support.
 
-`npm run check`, both runtime builds, the dependency vulnerability query, and managed Grasshopper tree checks passed. The full Windows Rhino 8.35 smoke run crashed in `CRhinoDisplayPipeline_DrawShadedMeshes` during `RowActionChecks.VerifyNativePreviewOverlap`, called through `DrawToBitmap`. The same crash reproduced against the unchanged published `v0.1.20-beta.5` package with the current harness, so the full native suite is not currently green. This reproduces in the hidden test host; normal interactive Rhino behavior has not been established by this audit.
+## Historical host validation
+
+The following results describe earlier payloads and host implementations. Current
+preview ownership is described in [geometry preview safety](geometry-preview-safety.md);
+[PR #37](https://github.com/tsoumdoa/better-gh-panel/pull/37) records the reviewed
+candidate and its final validation results.
+
+`npm run check`, both runtime builds, the dependency vulnerability query, and managed Grasshopper tree checks passed. The full Windows Rhino 8.35 smoke run crashed in `CRhinoDisplayPipeline_DrawShadedMeshes` during `RowActionChecks.VerifyNativePreviewOverlap`, called through `DrawToBitmap`. The same crash reproduced against the unchanged published `v0.1.20-beta.5` package with that harness, so that native run failed. This reproduced in the hidden test host; normal interactive Rhino behavior was not established by that audit.
 
 On Windows Rhino 8.36 the isolated overlap fixture also crashed at the same
 `DrawShadedMeshes` / `DrawToBitmap` stack against the exact public Yak
@@ -91,6 +98,7 @@ pass or establish the identity of a future merged release package.
 
 - `PanelQueryPolicy` keeps query equality, downstream output equivalence and active-filter decisions separate. Output equivalence intentionally ignores sorting and sometimes decimal precision; preserve those distinctions when adding settings.
 - `GeometryMeasurementQueue` owns prepared work, cancellation and worker handoff; `PanelSession` retains query state and publication. New measurement providers must preserve UI dispatch, copy ownership, context checks and safe retention across unit changes.
+- Host fixtures now use the production preparation seam; the duplicate legacy detail resolver has been removed. Test support explicitly distinguishes witnessed retention from witnessless operations. The real compatibility admission limit and queue ownership checks remain in production.
 - Selection gestures repeat cancellation, highlighting and repaint side effects. Consolidate only after distinguishing gesture updates from query-completion synchronization and document changes.
 - The archived HTML prototype is documented as a visual reference and has an independent data engine. Removing it is a product/documentation decision, not dead-code cleanup in the native plugin.
 
@@ -104,7 +112,7 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 tests/BetterGhPanel.RhinoSmoke/run.ps1 -PluginPath <absolute-plugin-path>
 ```
 
-The full run starts one sequential Rhino process per entry in `tests/BetterGhPanel.RhinoSmoke/fixtures.json`; each has a timeout and unique result and log under `bin/Release/net7.0-windows/runs`. Viewport drawing fixtures use a normal window on a private inactive desktop and process Rhino idle tasks from the embedded host's WinForms idle loop; the rest use a hidden Rhino host. A Windows job terminates the desktop fixture process when the coordinator times out. The result records the host mode, idle integration and actual loaded plugin and Core paths and SHA-256, and a count of assertions performed in that fixture. It rejects incomplete, failed, stale, mismatched, empty or malformed reports and abnormal process exits while continuing the remaining fixtures. `-Fixture output,filter-metadata,filter-ui` selects individual fixtures for diagnosis; release validation requires the full inventory. `-TimeoutSeconds` changes the per-process timeout. `--identity-only <fixture> <plugin-path>` on the host executable writes the pre-start identity report without starting Rhino; it remains incomplete and is not a fixture pass. The build removes any stale host-local Core copy so the host can bind the Core next to the requested plugin.
+The full run starts one sequential Rhino process per required entry in `tests/BetterGhPanel.RhinoSmoke/fixtures.json`; each has a timeout and unique result and log under `bin/Release/net7.0-windows/runs`. Viewport drawing fixtures use a normal window on a private inactive desktop and RhinoCore's native message loop, including its idle processing; the rest use a hidden Rhino host. The desktop host requests Rhino shutdown before posting the loop's quit message, then disposes normally. A Windows job terminates the desktop fixture process when the coordinator times out. The result records the host mode, idle integration and actual loaded plugin and Core paths and SHA-256, and a count of assertions performed in that fixture. It rejects incomplete, failed, stale, mismatched, empty or malformed reports and abnormal process exits while continuing the remaining fixtures. `-Fixture output,filter-metadata,filter-ui` selects individual fixtures for diagnosis; release validation requires the full inventory. `-TimeoutSeconds` changes the per-process timeout. `--identity-only <fixture> <plugin-path>` on the host executable writes the pre-start identity report without starting Rhino; it remains incomplete and is not a fixture pass. The build removes any stale host-local Core copy so the host can bind the Core next to the requested plugin.
 
 `OutputChecks` adds provenance checks across all tree-tool combinations, downstream S/B/F updates, scope Undo/Redo, strict paired-tree validation, original mask shape and legacy port identities. The `output` fixture runs the native cases; `--tree-only` includes the managed provenance cases.
 

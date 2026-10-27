@@ -390,7 +390,7 @@ internal static class FilterChecks
         internal bool Current => (bool)_sessionType.GetProperty("HasCurrentResult")!.GetValue(_session)!;
         internal void Query(PanelQueryOptions options) => _sessionType.GetMethod("UpdateQuery")!.Invoke(_session, new object[] { options });
         internal void SetResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) =>
-            _sessionType.GetMethod("SetGeometryDetailResolver", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(_session, new object[] { resolver });
+            HostMeasurementPreparation.SetWitnesslessResolver(_session, resolver);
         internal void Solve() { Source.ExpireSolution(false); Document.NewSolution(false, GH_SolutionMode.Silent); }
         internal Task WaitForOutput(int count) => WaitUntil(() => Current && Sink.VolatileData.DataCount == count);
         public void Dispose() { Component.DocumentContextChanged(Document, GH_DocumentContext.Close); Document.Dispose(); }
@@ -443,9 +443,10 @@ internal static class FilterChecks
         internal void Invalidate() => Invoke("InvalidateInput", false, false);
         internal void OnResult(Action callback) => _type.GetEvent("ResultChanged")!.AddEventHandler(_session, (EventHandler)((_, __) => callback()));
         internal bool Pending(int position) => (bool)Invoke("IsGeometryPending", Snapshot, position)!;
-        internal void SetResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) => Invoke("SetGeometryDetailResolver", resolver);
+        internal void SetResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) =>
+            HostMeasurementPreparation.SetWitnesslessResolver(_session, resolver);
         internal void SetOwnedResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) =>
-            Invoke("SetGeometryPreparationResolver", HostMeasurementPreparation.Resolver(_assembly, resolver));
+            Invoke("SetGeometryPreparationResolver", HostMeasurementPreparation.WitnessedResolver(_assembly, resolver));
         internal void Attach(PanelSnapshot snapshot, bool retain = false)
         {
             Snapshot = snapshot;

@@ -729,14 +729,11 @@ internal static class RowActionChecks
 
         using var gate = new ManualResetEventSlim(false);
         int measurements = 0;
-        Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
+        HostMeasurementPreparation.SetWitnesslessResolver(session, position => () =>
         {
-            (Func<int, Func<PanelGeometryInfo?>?>)(position => () =>
-            {
-                Interlocked.Increment(ref measurements);
-                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Row action measurement gate timed out");
-                return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-            })
+            Interlocked.Increment(ref measurements);
+            if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Row action measurement gate timed out");
+            return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
         });
         var snapshot = Snapshot(session);
         try
@@ -784,28 +781,22 @@ internal static class RowActionChecks
 
         component.ExpireSolution(true);
         await WaitForQuery(session);
-        Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
-        {
-            (Func<int, Func<PanelGeometryInfo?>?>)(_ => () => throw new InvalidOperationException("Measurement unavailable in test"))
-        });
-        Forms.Clipboard.SetText("keep failed measurement clipboard");
-        await CopyValues(component, Snapshot(session), 0, 8);
-        Check(ClipboardText() == "keep failed measurement clipboard", "Measurement failure cannot publish a partial multirow clipboard");
-    }
+        HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () => throw new InvalidOperationException("Measurement unavailable in test"));
+    Forms.Clipboard.SetText("keep failed measurement clipboard");
+    await CopyValues(component, Snapshot(session), 0, 8);
+    Check(ClipboardText() == "keep failed measurement clipboard", "Measurement failure cannot publish a partial multirow clipboard");
+}
 
-    private static async Task VerifyCopyDuringDeselection(GH_Component component, object session)
-    {
-        component.ExpireSolution(true);
-        await WaitForQuery(session);
-        using var gate = new ManualResetEventSlim(false);
-        var restoreResolver = PanelTestAdapter.SaveGeometryResolver(session);
-        Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
+private static async Task VerifyCopyDuringDeselection(GH_Component component, object session)
+{
+    component.ExpireSolution(true);
+    await WaitForQuery(session);
+    using var gate = new ManualResetEventSlim(false);
+    var restoreResolver = PanelTestAdapter.SaveGeometryResolver(session);
+    HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () =>
         {
-            (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
-            {
-                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
-                return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-            })
+            if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+            return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
         });
         try
         {
@@ -842,13 +833,10 @@ internal static class RowActionChecks
         await WaitForQuery(session);
         using var gate = new ManualResetEventSlim(false);
         var restoreResolver = PanelTestAdapter.SaveGeometryResolver(session);
-        Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
+        HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () =>
         {
-            (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
-            {
-                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
-                return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-            })
+            if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+            return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
         });
         try
         {
@@ -894,16 +882,13 @@ internal static class RowActionChecks
             var currentGroup = (GH_GeometryGroup)sources[1]!;
             using var gate = new ManualResetEventSlim(false);
             bool callback = false;
-            Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
+            HostMeasurementPreparation.SetWitnesslessResolver(session, _ =>
             {
-                (Func<int, Func<PanelGeometryInfo?>?>)(_ =>
-                {
-                    callback = true;
-                    if (change == "number") number.Value = 99;
-                    if (change == "group") currentGroup.Name = "After";
-                    return () => { if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
-                        return new PanelGeometryInfo("Srf", 12, 2, "mm", "Area", "A"); };
-                })
+                callback = true;
+                if (change == "number") number.Value = 99;
+                if (change == "group") currentGroup.Name = "After";
+                return () => { if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+                    return new PanelGeometryInfo("Srf", 12, 2, "mm", "Area", "A"); };
             });
             try
             {
@@ -929,13 +914,10 @@ internal static class RowActionChecks
         await WaitForQuery(session);
         using var gate = new ManualResetEventSlim(false);
         var restoreResolver = PanelTestAdapter.SaveGeometryResolver(session);
-        Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
+        HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () =>
         {
-            (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
-            {
-                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
-                return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-            })
+            if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+            return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
         });
         try
         {

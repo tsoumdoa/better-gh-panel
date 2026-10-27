@@ -270,9 +270,7 @@ namespace BetterGhPanel.Runtime
         {
             try
             {
-                if (!trusted || ((holderType == typeof(GH_Curve) || holderType == typeof(GH_Surface) || holderType == typeof(GH_Brep) ||
-                    IsExtendedCapturedGeometryHolder(holderType)) &&
-                    !hasReference)) return PanelValidity.Unverified;
+                if (!trusted || (IsCapturedGeometryHolder(holderType) && !hasReference)) return PanelValidity.Unverified;
                 if (!standalone && hasReference && (reference.Referenced || reference.Id != Guid.Empty) &&
                     (!IsExtendedCapturedGeometryHolder(holderType) || reference.Document == 0 || reference.ObjectSerial == 0))
                     return PanelValidity.Unverified;

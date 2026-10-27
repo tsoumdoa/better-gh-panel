@@ -153,7 +153,7 @@ namespace BetterGhPanel
             else if (action == PanelRowAction.ViewFullValue)
             {
                 int position = _rowMenuSourcePosition;
-                if (position < 0 || position >= result.Snapshot.Rows.Count || !positions.Contains(position)) return;
+                if (position < 0 || position >= result.Snapshot.Rows.Count || !_selection.Contains(position)) return;
                 var row = result.Snapshot.Rows[position];
                 bool projected = result.DisplaySet?.Values.ContainsKey(position) == true;
                 string value = !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null

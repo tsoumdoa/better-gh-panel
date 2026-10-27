@@ -341,7 +341,7 @@ namespace BetterGhPanel.Runtime
                 if (trusted != _trusted || !TargetIs(geometry) || hasReference != _hasReference ||
                     (hasReference && !reference.Equals(_reference)) ||
                     (geometry != null && trusted && SafeGooInspection.MeasurementSourceCanRead(geometry) != _readable)) return false;
-                if (!SafeGooInspection.IsExtendedCapturedGeometryHolder(type) || !hasReference ||
+                if (!SafeGooInspection.IsCapturedGeometryHolder(type) || !hasReference ||
                     (!reference.Referenced && reference.Id == Guid.Empty)) return true;
                 bool available = false;
                 MeasurementReferenceState current = default;
@@ -370,7 +370,7 @@ namespace BetterGhPanel.Runtime
             {
                 if (_hasManagedValue) _managedValue = CaptureGraphWitness.ResolveManagedContext(_managedValue);
                 if (!_hasReference || (!_reference.Referenced && _reference.Id == Guid.Empty) ||
-                    !_value.TryGetTarget(out var value) || !SafeGooInspection.IsExtendedCapturedGeometryHolder(value.GetType())) return;
+                    !_value.TryGetTarget(out var value) || !SafeGooInspection.IsCapturedGeometryHolder(value.GetType())) return;
                 try { _referenceResolved = SafeGooInspection.TryResolveCapturedReference(_reference, out _resolvedReference); }
                 catch (Exception) { /* Keep the captured reference unverified. */ }
             }

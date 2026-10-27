@@ -107,7 +107,7 @@ namespace BetterGhPanel.Runtime
                         typeAvailable = identity.Available;
                         if (identity.Group != null && graph != null)
                         {
-                            if (graph == null || !graph.TryGroupSummary(identity.Group, out string name, out int count))
+                            if (!graph.TryGroupSummary(identity.Group, out string name, out int count))
                                 throw new InvalidOperationException("Captured group summary unavailable.");
                             if (groupSummaries.TryGetValue(identity.Group, out var cached) && cached.name == name && cached.count == count)
                                 groupSummary = cached.summary;

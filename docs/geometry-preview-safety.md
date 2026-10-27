@@ -1,9 +1,8 @@
 # Geometry preview and row actions
 
-This implementation is not release-ready: the current native fixture results
-include failures, and the lifetime of submitted display resources through a
-native pipeline flush is not established. The evidence and the exact builds
-used are listed below. The parent owns final-package validation and review.
+This document describes preview ownership and row-action limits. Historical
+failures are retained below; they are not the status of every later build.
+Final-package validation and independent review are required before merging.
 
 Panel+ uses result-local owned preview generations for bounds, labels and
 geometry drawing. Exact wrappers and groups are flattened under per-root and
@@ -62,41 +61,35 @@ or clipboard serialization will stay within a fixed time or memory bound.
 The snapshot classifier separately calls `Brep.IsValid` during capture as well.
 The unpublished mangled C++ adjacency export is not used.
 
-Owned Brep and SubD preview meshes are generated from the current meshing
-parameters and kept inside the reserved generated-mesh limit. They are reused
-while the effective parameters match. A parameter change retires the previous
-generated meshes and face-index arrays before building the replacement; eviction
-and clear retire the owning preview entries. Generated meshes use the face-index
-drawing overload, and SubD evaluation caches are cleared. Retired resources that
-may have been drawn are queued for a later `RhinoApp.Idle` callback rather than
-disposed in the draw callback. Undrawn retired entries can be disposed directly.
-Active callbacks suppress nested draws and defer disposal. McNeel documents
-[`RhinoApp.Idle`](https://developer.rhino3d.com/api/rhinocommon/rhino.rhinoapp/idle)
-as occurring when the application finishes processing and is about to enter
-idle. The [display-pipeline reference](https://developer.rhino3d.com/api/RhinoCommon/html/Methods_T_Rhino_Display_DisplayPipeline.htm)
-describes drawing stages and says `Flush` forces cached geometry to the display,
-but neither documents a mesh-lifetime boundary for nested frames. A nested message pump could
-potentially deliver idle after the managed callback returns and before the
-native pipeline has consumed its submitted pointers. The current implementation
-therefore does **not** prove safety through a native display flush, including
-reentrant redraw, mesh reset or component disposal. The latest isolated-host
-fixtures also timed out waiting for idle retirement; eventual resource release
-and idle-event unsubscription at shutdown remain unverified. The embedded fixture
-uses a WinForms message loop rather than Rhino's ordinary interactive main loop;
-that host integration may explain the missing idle event, but this is a
-hypothesis, not evidence of either interactive-host behavior or safe flush timing.
-Oversized detail is reported as partial. One native duplication or meshing
-call can still have an implementation-dependent allocation peak; the estimates
-are not a hard process-memory guarantee.
+Owned Brep and SubD meshes are generated from the requested meshing parameters
+within the reserved mesh allowance. Accepted results and deterministic limit
+rejections are reused for unchanged settings/density. Capacity failures remain
+retryable. A settings change retires old meshes and face-index arrays before
+replacement; eviction and clear retire the owning entries.
 
-The coordinator additionally reports that installed RhinoCommon 8.36
-decompilation shows the two-argument `DrawMeshShaded` can retain a Mesh in a
-managed pipeline cache until a later material/transform/flush, while the
-face-index overload calls native `DrawShadedMesh2` immediately. This patch
-leaves the two-argument calls for standalone Mesh and `_boxMesh` unchanged and
-keeps the face-index path for generated meshes, including extrusion meshes.
-Neither observation proves native post-call consumption or an end-of-frame
-lifetime boundary; that issue remains unresolved.
+All shaded meshes, including fixed boxes, use the face-index overload. Each
+component draw explicitly calls `DisplayPipeline.Flush` before releasing its
+active-draw guard, including on early return. Reentrant idle cannot dispose
+submitted resources during that flush. Subsequent idle releases retired
+resources; idle itself is **not** treated as a native frame-completion signal.
+If flush throws, that owner stops drawing and retains its charged resources
+indefinitely, including its idle subscription. A different pipeline cannot
+establish that the failed pipeline consumed its resources.
+
+SubD preparation creates independent bounded limit-edge curves and meshes.
+It clears evaluation caches before those independent objects reach the display;
+no `SubDDisplay` pointer is submitted and then destroyed by cache clearing.
+The duplicate preview/copy structural scan has one implementation.
+
+Installed RhinoCommon 8.36 inspection confirms the two-argument mesh draw can
+retain a managed Mesh until a later flush, while the face-index overload draws
+natively. The [display reference](https://developer.rhino3d.com/api/RhinoCommon/html/Methods_T_Rhino_Display_DisplayPipeline.htm)
+defines `Flush` as forcing cached geometry to the display. The strengthened
+retirement fixture checks real shaded/wire pixels after disposal injected
+between component return and enclosing conduit return, as well as failed-flush
+retention, cache rejection/retry, clear and close. This is host regression
+evidence, not a proof for every Rhino version, driver or native/GPU operation.
+Native duplication and meshing can still exceed estimated allocation peaks.
 
 Each root has a 4,096-visit, 1,024-leaf and depth-64 limit. Builds and actions
 share a 20,000-visit budget. At most 1,024 root preview entries and an estimated
@@ -209,10 +202,9 @@ and changes to an earlier set representative during frame/copy. The
 requires different shade and wire colors for selected/normal standalone/group
 extrusions. It checks cap-interior fill and absence of fill in inner-profile
 holes. Extrusions are meshed through their complete Brep representation rather
-than their Surface view, which omits caps and inner profiles. These new native
-fixtures were built here but not executed; the parent must run them on the
-exact candidate package. No native post-flush lifetime guarantee follows from
-these changes or from the managed checks.
+than their Surface view, which omits caps and inner profiles. These fixtures
+are required in the full candidate-package run. No native post-flush lifetime
+guarantee follows from the managed checks alone.
 
 The result-local compressed selection index preserves immutable ordered lists
 and updates a single toggle in logarithmic index work. Preview membership uses
@@ -262,7 +254,38 @@ delivered the named fixture group without its name, so the captured searchable
 summary was `Group with 3 objects`; the test compares against the value actually
 delivered rather than inventing the lost name.
 
-## Fixture evidence and remaining gaps
+## Current host validation
+
+The inactive-desktop harness runs `RhinoCore.Run()` rather than forwarding
+WinForms idle. It requests `RhinoApp.Exit(false)` before posting `WM_QUIT` and
+retains ordinary disposal and child-exit validation. In isolated experiments,
+the original reentrant, native-resource and conduit-resource fixtures passed
+7, 17 and 4 assertions with clean exits on the unchanged `12ce022` payload.
+The former loop failed their second captures; `PostQuitMessage` alone produced
+abnormal shutdown, and `RhinoApp.Exit(false)` alone did not end the embedded loop.
+
+The compatibility capture's remaining failure was a projection mismatch in
+the pixel checks. Its bitmap contained the expected colors, but the restored
+live viewport projected the world regions at a different scale. The fixture
+now snapshots the viewport supplied to the actual draw callback and uses that
+projection for the same regions and thresholds. All six assertions passed in
+the isolated experiment. The strengthened consumption fixture uses the same
+projection rule for its four separate shade/wire regions.
+
+Run `TyMQuI` on Rhino 8.36 passed the strengthened 24-assertion retirement seam,
+89-assertion preview geometry fixture, all four previously failing fixtures,
+and 80 viewport-freshness assertions. Its new mesh-reference test first exposed
+an incorrect filtered-statistics expectation, then incomplete reference-context
+checks in graph witnesses. Those corrections retain the distinction between
+unverified and invalid meshes and check deletion of previously loaded references.
+Targeted results do not replace the full extracted-package run and independent
+review recorded on [PR #37](https://github.com/tsoumdoa/better-gh-panel/pull/37).
+
+## Historical fixture evidence and remaining gaps
+
+The following chronology records earlier builds and tests, including failed
+experiments. Statements about the implementation or outstanding checks in this
+section refer to those runs; the current contract and host are described above.
 
 The following local runs used Windows Rhino 8.36.26293.11001 and isolated,
 sequential hosts. Their results describe the named builds, not an untested final

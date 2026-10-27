@@ -128,6 +128,7 @@ internal static class Program
     [DllImport("user32.dll")] private static extern int GetWindowThreadProcessId(IntPtr handle, out int processId);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr handle, System.Text.StringBuilder text, int maximum);
     [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern void PostQuitMessage(int exitCode);
 
     internal static int Run(string[] args)
     {
@@ -305,29 +306,32 @@ internal static class Program
                 Console.Error.WriteLine(error);
                 WriteReport();
             }
-            finally { Console.Out.Flush(); Console.Error.Flush(); context.ExitThread(); }
+            finally
+            {
+                Console.Out.Flush(); Console.Error.Flush();
+                if (_hostMode == "inactive-desktop")
+                {
+                    // This isolated host owns only fixture documents. Request
+                    // Rhino shutdown before ending its native message loop;
+                    // posting WM_QUIT alone leaves native shutdown incomplete.
+                    if (Rhino.RhinoDoc.ActiveDoc is { } document) document.Modified = false;
+                    Rhino.RhinoApp.Exit(false);
+                    PostQuitMessage(0);
+                }
+                else context.ExitThread();
+            }
         };
         timer.Start();
-        // A RhinoCore embedded host has a WinForms message loop, not Rhino's
-        // native application loop. Let Rhino process its own idle tasks when
-        // that loop becomes idle so deferred preview cleanup can run between
-        // actual display frames. This is not an end-of-frame guarantee.
-        bool pumpingIdle = false;
-        EventHandler? idlePump = _hostMode == "inactive-desktop" ? (_, __) =>
+        if (_hostMode == "inactive-desktop")
         {
-            if (pumpingIdle) return;
-            pumpingIdle = true;
-            try { host.DoIdle(); }
-            finally { pumpingIdle = false; }
-        } : null;
-        if (idlePump != null)
-        {
-            System.Windows.Forms.Application.Idle += idlePump;
+            // Viewport fixtures need Rhino's message preprocessing as well as
+            // its idle work. Forwarding WinForms Idle to DoIdle is insufficient
+            // for repeated native captures. Idle is still not a display fence.
             _rhinoIdlePump = true;
-            Console.WriteLine("The inactive-desktop host processes Rhino idle tasks from the WinForms idle loop.");
+            Console.WriteLine("The inactive-desktop host runs Rhino's native message loop and idle tasks.");
+            host.Run();
         }
-        try { System.Windows.Forms.Application.Run(context); }
-        finally { if (idlePump != null) System.Windows.Forms.Application.Idle -= idlePump; }
+        else System.Windows.Forms.Application.Run(context);
         return exitCode;
     }
 

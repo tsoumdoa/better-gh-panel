@@ -250,13 +250,12 @@ internal static class OutputChecks
         fixture.Select(0);
         await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
         int started = 0;
-        fixture.Session.GetType().GetMethod("SetGeometryDetailResolver", Instance)!.Invoke(fixture.Session,
-            new object[] { (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
-            {
-                Interlocked.Increment(ref started);
-                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Pending-output gate timed out");
-                return new PanelGeometryInfo("Crv", 10, 1, "mm", "Length", "L");
-            }) });
+        HostMeasurementPreparation.SetWitnesslessResolver(fixture.Session, _ => () =>
+        {
+            Interlocked.Increment(ref started);
+            if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Pending-output gate timed out");
+            return new PanelGeometryInfo("Crv", 10, 1, "mm", "Length", "L");
+        });
         try
         {
             fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Length, Search = "> 5" });

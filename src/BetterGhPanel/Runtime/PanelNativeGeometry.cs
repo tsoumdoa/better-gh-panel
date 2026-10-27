@@ -34,12 +34,8 @@ namespace BetterGhPanel.Runtime
         // Compatibility preview uses Rhino's normal duplication callbacks after
         // bounded structural preflight. Individual native/callback work is not
         // a hard sandbox; the retained snapshot still has a reserved size cap.
-        internal static bool TryScanForPreview(GeometryBase geometry, PanelGeometrySources.Budget budget, ref int rootRemaining,
-            Func<bool>? current, out Scan? scan)
-            => TryScan(geometry, budget, ref rootRemaining, false, true, current, out scan);
-
         internal static bool TryScanForCopy(GeometryBase geometry, PanelGeometrySources.Budget budget, ref int rootRemaining,
-            Func<bool> current, out Scan? scan)
+            Func<bool>? current, out Scan? scan)
             => TryScan(geometry, budget, ref rootRemaining, false, true, current, out scan);
 
         internal static bool TryScanForBounds(GeometryBase geometry, PanelGeometrySources.Budget budget, ref int rootRemaining)

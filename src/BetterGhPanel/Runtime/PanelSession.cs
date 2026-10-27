@@ -21,7 +21,6 @@ namespace BetterGhPanel.Runtime
         private PanelQueryOptions _options = new PanelQueryOptions();
         private Func<int>? _decimalPlacesResolver;
         private Func<bool>? _createSetResolver;
-        private Func<int, Func<PanelGeometryInfo?>?>? _geometryDetailResolver;
         private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryPreparationResolver;
         private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryRetentionResolver;
         private Func<PanelSnapshot, int, bool>? _geometrySourceCurrent;
@@ -118,12 +117,8 @@ namespace BetterGhPanel.Runtime
         internal void SetDecimalPlacesResolver(Func<int> resolver) => _decimalPlacesResolver = resolver;
         internal void SetCreateSetResolver(Func<bool> resolver) => _createSetResolver = resolver;
 
-        // Legacy delegate seam is used by the host fixtures. It deliberately has no
-        // retention proof; production uses the owned preparation provider below.
-        internal void SetGeometryDetailResolver(Func<int, Func<PanelGeometryInfo?>?> resolver)
-        { _geometryDetailResolver = resolver; _geometryPreparationResolver = null; _geometryRetentionResolver = null; _geometrySourceCurrent = null; }
         internal void SetGeometryPreparationResolver(Func<int, PreparedMeasurement<PanelGeometryInfo>?> resolver)
-        { _geometryPreparationResolver = resolver; _geometryDetailResolver = null; _geometryRetentionResolver = null; _geometrySourceCurrent = null; }
+        { _geometryPreparationResolver = resolver; _geometryRetentionResolver = null; _geometrySourceCurrent = null; }
         internal void SetGeometryRetentionResolver(Func<int, PreparedMeasurement<PanelGeometryInfo>?> resolver) => _geometryRetentionResolver = resolver;
         internal void SetGeometrySourceCurrentResolver(Func<PanelSnapshot, int, bool> resolver) => _geometrySourceCurrent = resolver;
         internal void SetCaptureCurrentResolver(Func<PanelSnapshot, bool> resolver) => _captureCurrent = resolver;
@@ -145,8 +140,7 @@ namespace BetterGhPanel.Runtime
                     canMeasure: summary.CanMeasure, measurementUnavailable: true);
                 return new PreparedMeasurement<PanelGeometryInfo>(() => unavailable, null, null);
             }
-            var operation = _geometryDetailResolver?.Invoke(position);
-            return operation == null ? null : new PreparedMeasurement<PanelGeometryInfo>(operation, null, null);
+            return null;
         }
 
         internal PanelGeometryInfo? GetGeometryDetails(PanelSnapshot snapshot, int sourcePosition) => _geometry.Get(snapshot, sourcePosition);
@@ -358,7 +352,6 @@ namespace BetterGhPanel.Runtime
             QueryChanged = null;
             ResultChanged = null;
             _decimalPlacesResolver = null;
-            _geometryDetailResolver = null;
             _geometryPreparationResolver = null;
             _geometryRetentionResolver = null;
             _captureCurrent = null;

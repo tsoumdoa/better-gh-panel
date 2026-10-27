@@ -64,12 +64,12 @@ internal static class RecomputeChecks
         Invoke(session, "AttachSnapshot", geometry);
         await Wait(() => Current(session));
         int started = 0;
-        Invoke(session, "SetGeometryDetailResolver", (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
+        HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () =>
         {
             Interlocked.Increment(ref started);
             if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
             return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-        }));
+        });
         Paint(fixture.Component, canvas);
         Check(Hits(fixture.Component, "_rowHits") == 1, "Ready rows have canvas hit regions");
         try
@@ -160,12 +160,12 @@ internal static class RecomputeChecks
         var snapshot = Property<PanelSnapshot>(session, "Snapshot");
         using var gate = new ManualResetEventSlim(false);
         int started = 0;
-        Invoke(session, "SetGeometryDetailResolver", (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
+        HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () =>
         {
             Interlocked.Increment(ref started);
             if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
             return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-        }));
+        });
         try
         {
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 10" });
@@ -275,12 +275,12 @@ internal static class RecomputeChecks
             ReferenceEquals(Field<PanelSnapshot>(menu, "_snapshot"), snapshot),
             "Release regression starts with borrowed geometry and populated result/menu caches");
         int started = 0;
-        Invoke(session, "SetGeometryDetailResolver", (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
+        HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () =>
         {
             Interlocked.Increment(ref started);
             if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
             return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-        }));
+        });
         try
         {
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 10" });

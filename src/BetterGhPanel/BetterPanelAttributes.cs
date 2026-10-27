@@ -776,8 +776,13 @@ namespace BetterGhPanel
         private bool RowsAreCurrent(PanelQueryResult result) => PaintedViewIsCurrent() &&
             ReferenceEquals(_paintedResult, result) && ResultIsCurrent(result);
 
-        private bool TargetPainted(Graphics graphics, RectangleF bounds) =>
-            !bounds.IsEmpty && _renderVisibleRegion.Contains(bounds) && FullyVisible(graphics, bounds);
+        private bool TargetPainted(Graphics graphics, RectangleF bounds)
+        {
+            // Offscreen pixels need no paint, but the entire visible portion must
+            // be covered by the graphics clip before publishing an interaction.
+            var visible = RectangleF.Intersect(bounds, _renderVisibleRegion);
+            return visible.Width > 0 && visible.Height > 0 && FullyVisible(graphics, visible);
+        }
 
         private void AddBranchHit(RectangleF bounds, string path)
         {

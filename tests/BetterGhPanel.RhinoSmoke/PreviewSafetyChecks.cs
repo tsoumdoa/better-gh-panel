@@ -1135,6 +1135,7 @@ internal static partial class PreviewSafetyChecks
     {
         var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
         bool modified = rhino.Modified;
+        bool meshEdges = Grasshopper.CentralSettings.PreviewMeshEdges;
         var previous = rhino.Views.ActiveView;
         var view = rhino.Views.Add("Preview retirement seam", Rhino.Display.DefinedViewportProjection.Top,
             new Rectangle(0, 0, 640, 480), false);
@@ -1145,10 +1146,12 @@ internal static partial class PreviewSafetyChecks
         using var conduit = new PreviewConduit(component, document);
         int idleInCapture = 0, idleAfterCapture = 0;
         bool captureActive = false;
+        Rhino.Display.RhinoViewport? capturedViewport = null;
         EventHandler observeIdle = (_, _) => { if (captureActive) idleInCapture++; else idleAfterCapture++; };
         RhinoApp.Idle += observeIdle;
         try
         {
+            Grasshopper.CentralSettings.PreviewMeshEdges = true;
             rhino.Views.ActiveView = view;
             view.ActiveViewport.ZoomBoundingBox(new BoundingBox(new Point3d(-4, -4, -2), new Point3d(4, 4, 2)));
             document.Properties.KeepOpen = true; document.PreviewMode = GH_PreviewMode.Shaded;
@@ -1162,12 +1165,18 @@ internal static partial class PreviewSafetyChecks
             Mesh[] resetMeshes = Array.Empty<Mesh>();
             bool wireCalled = false, wireGuarded = false, wireFrameHeld = false;
             bool meshCalled = false, meshGuarded = false, meshFrameHeld = false, resetHeld = false;
+            bool postCallbackChecks = false;
             long heldBytes = 0;
             string? error = null;
             conduit.OnDraw = args =>
             {
                 try
                 {
+                    capturedViewport = new Rhino.Display.RhinoViewport(args.Viewport);
+                    VerifyPostCallbackRetirement(component, highlight, args);
+                    VerifyRejectedMeshing(component, highlight, args);
+                    VerifyFailedDisplayFlush(component, highlight, args);
+                    postCallbackChecks = true;
                     var customWire = new StandalonePointPreview();
                     Set(highlight, new IGH_Goo?[] { group, customWire }, new[] { 0, 1 }, new[] { 0, 1 });
                     wireOwned = OwnedGeometry(highlight).OfType<Brep>().Single();
@@ -1225,6 +1234,11 @@ internal static partial class PreviewSafetyChecks
             captureActive = false;
             Check(error == null && bitmap != null && GreenPixels(bitmap) > 0,
                 "retirement seam executes an actual shaded draw: " + error);
+            Check(postCallbackChecks, "post-component retirement, negative meshing cache and failed-flush regressions execute inside the enclosing display callback");
+            int regionIndex = 0;
+            foreach (var region in ConsumptionRegions())
+                Check(RegionColors(bitmap!, capturedViewport!, region, Color.Lime, Color.Cyan),
+                    "consumption region " + regionIndex++ + " retains shading and wires after in-callback retirement and native capture return");
             Check(wireCalled && wireGuarded && wireFrameHeld && wireOwned != null && !wireOwned.Disposed,
                 "simulated idle and nested wire draw cannot release a cleared generation during its active callback");
             Check(resetHeld && meshCalled && meshGuarded && meshFrameHeld && meshOwned != null && !meshOwned.Disposed,
@@ -1245,7 +1259,9 @@ internal static partial class PreviewSafetyChecks
         finally
         {
             RhinoApp.Idle -= observeIdle;
+            capturedViewport?.Dispose();
             conduit.Enabled = false;
+            Grasshopper.CentralSettings.PreviewMeshEdges = meshEdges;
             document.Properties.KeepOpen = false; document.PreviewMode = GH_PreviewMode.Disabled;
             if (previous != null) rhino.Views.ActiveView = previous;
             view.Close(); rhino.Modified = modified;
@@ -1776,6 +1792,7 @@ internal static partial class PreviewSafetyChecks
         var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
         component.CreateAttributes();
         using var conduit = new PreviewConduit(component, document);
+        Rhino.Display.RhinoViewport? capturedViewport = null;
         try
         {
             rhino.Views.ActiveView = view;
@@ -1800,6 +1817,9 @@ internal static partial class PreviewSafetyChecks
             {
                 try
                 {
+                    // DrawToBitmap uses its own projection. Pixel regions must
+                    // use the viewport from this draw, not the restored live view.
+                    capturedViewport = new Rhino.Display.RhinoViewport(args.Viewport);
                     changed = first.Transform(Transform.Translation(0, 1, 0)) && second.Transform(Transform.Translation(0, 1, 0)) &&
                         third.Transform(Transform.Translation(0, 1, 0)) && fourth.Transform(Transform.Translation(0, 1, 0));
                     oldCoherent = changed && Box(highlight).Equals(oldBounds) && Count(highlight) == 4;
@@ -1822,8 +1842,8 @@ internal static partial class PreviewSafetyChecks
             {
                 var old = new BoundingBox(new Point3d(-8, ys[i] - 0.2, 0), new Point3d(8, ys[i] + 0.3, 0));
                 var current = new BoundingBox(new Point3d(-8, ys[i] + 0.8, 0), new Point3d(8, ys[i] + 1.3, 0));
-                Check(RegionHasColor(bitmap, view.ActiveViewport, old, i % 2 == 0 ? Color.Lime : Color.Red) &&
-                    RegionHasColor(bitmap, view.ActiveViewport, current, Color.Cyan),
+                Check(RegionHasColor(bitmap, capturedViewport!, old, i % 2 == 0 ? Color.Lime : Color.Red) &&
+                    RegionHasColor(bitmap, capturedViewport!, current, Color.Cyan),
                     "compatibility curve " + i + " actually draws with selected/filtered colors before and after rebuild");
             }
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
@@ -1842,6 +1862,7 @@ internal static partial class PreviewSafetyChecks
         }
         finally
         {
+            capturedViewport?.Dispose();
             conduit.Enabled = false; document.Properties.KeepOpen = false; document.PreviewMode = GH_PreviewMode.Disabled;
             if (previous != null) rhino.Views.ActiveView = previous;
             view.Close(); rhino.Modified = modified;

@@ -1,6 +1,5 @@
 using System;
 using System.Drawing;
-using System.Linq;
 using BetterGhPanel.Core;
 
 namespace BetterGhPanel.UI
@@ -49,7 +48,7 @@ namespace BetterGhPanel.UI
             if (!ReferenceEquals(_snapshot, snapshot)) { Close(); return; }
             if (result == null || ReferenceEquals(result, _checkedResult)) return;
             _checkedResult = result;
-            if (!result.RowPositions.Contains(SourcePosition) || result.SetOccurrencesAt(SourcePosition) == null) { Close(); return; }
+            if (!result.TryGetViewIndex(SourcePosition, out _) || result.SetOccurrencesAt(SourcePosition) == null) { Close(); return; }
             Occurrences = result.SetOccurrencesAt(SourcePosition);
             Offset = Math.Min(Offset, (Occurrences!.Count - 1) / PageSize * PageSize);
         }

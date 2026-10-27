@@ -174,6 +174,7 @@ internal static class CaptureStockGeometryChecks
             Check(cloud.IsValid && extrusion.IsValid, "native point-cloud and extrusion fixtures are valid");
             VerifyNativeCapture(assembly, cloud, extrusion);
             VerifyNativeReferences(assembly, cloud, extrusion);
+            VerifyNativeMeshReferences(assembly);
             var failures = new List<Exception>();
             async Task Step(string name, Func<Task> run)
             {
@@ -189,6 +190,64 @@ internal static class CaptureStockGeometryChecks
             if (failures.Count != 0) throw new AggregateException("One or more stock geometry solve checks failed.", failures);
         }
         finally { setEditor.Invoke(null, new object?[] { previous }); }
+    }
+
+    private static void VerifyNativeMeshReferences(Assembly assembly)
+    {
+        var document = Rhino.RhinoDoc.ActiveDoc ?? throw new InvalidOperationException("An active Rhino document is required");
+        bool modified = document.Modified;
+        Guid id = Guid.Empty;
+        using var mesh = new Mesh();
+        mesh.Vertices.Add(0, 0, 0); mesh.Vertices.Add(1, 0, 0); mesh.Vertices.Add(0, 1, 0);
+        mesh.Faces.AddFace(0, 1, 2);
+        try
+        {
+            var empty = new GH_Mesh(); var unresolved = new GH_Mesh(Guid.NewGuid());
+            Check(empty.Value == null && unresolved.Value == null && !unresolved.IsGeometryLoaded,
+                "mesh capture fixtures preserve nonreferenced null and unresolved null holders");
+            // Capture directly: ordinary GH source collection may replace an
+            // unloaded reference with null before the panel receives the holder.
+            var tree = new GH_Structure<IGH_Goo>();
+            tree.AppendRange(new IGH_Goo[] { empty, unresolved, new GH_ObjectWrapper(Group("empty mesh", empty)),
+                new GH_GeometricGooWrapper(Group("unresolved mesh", unresolved)) }, new GH_Path(0));
+            var captured = Capture(assembly, tree); var snapshot = (PanelSnapshot)captured[0]!;
+            Check(snapshot.Rows.Select(row => row.Validity).SequenceEqual(new[] { PanelValidity.VerifiedInvalid,
+                PanelValidity.Unverified, PanelValidity.VerifiedInvalid, PanelValidity.Unverified }) &&
+                HoldersCurrent(assembly, captured) && GraphsCurrent(assembly, captured),
+                "standalone and nested unresolved mesh references are unverified while nonreferenced null meshes stay invalid");
+            var invalid = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { OnlyInvalid = true });
+            var all = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
+            Check(invalid.RowPositions.SequenceEqual(new[] { 0, 2 }) && invalid.Statistics.InvalidCount == 2 &&
+                invalid.Statistics.UnverifiedCount == 0 && all.Statistics.UnverifiedCount == 2,
+                "invalid filtering excludes unresolved mesh references while unfiltered statistics retain them");
+
+            Check(mesh.IsValid, "native mesh fixture is valid");
+            id = document.Objects.AddMesh(mesh);
+            Check(id != Guid.Empty, "mesh reference fixture creates a document object");
+            var referenced = new GH_Mesh(id);
+            Check(referenced.LoadGeometry(document), "mesh reference loads from the active document");
+            var stale = referenced.Value;
+            tree = new GH_Structure<IGH_Goo>();
+            tree.AppendRange(new IGH_Goo[] { referenced, new GH_ObjectWrapper(Group("referenced mesh", referenced)) }, new GH_Path(0));
+            captured = Capture(assembly, tree); snapshot = (PanelSnapshot)captured[0]!;
+            Check(stale != null && snapshot.Rows[0].Validity == PanelValidity.VerifiedValid &&
+                snapshot.Rows[1].Validity == PanelValidity.Unverified && HoldersCurrent(assembly, captured) && GraphsCurrent(assembly, captured),
+                "loaded standalone mesh has resolved context while nested mesh references retain conservative validity");
+            Check(document.Objects.Delete(id, true), "referenced mesh document object is deleted");
+            Check(document.Objects.FindId(id) == null && referenced.ReferenceID == id && referenced.IsGeometryLoaded &&
+                ReferenceEquals(stale, referenced.Value), "deleted mesh reference retains its loaded stale geometry");
+            Check(!HoldersCurrent(assembly, captured) && !GraphsCurrent(assembly, captured),
+                "deleting a mesh reference invalidates standalone and nested capture witnesses");
+            captured = Capture(assembly, tree); snapshot = (PanelSnapshot)captured[0]!;
+            Check(snapshot.Rows.All(row => row.Validity == PanelValidity.Unverified) &&
+                HoldersCurrent(assembly, captured) && GraphsCurrent(assembly, captured),
+                "recapturing a deleted mesh reference stays unverified despite retained geometry");
+        }
+        finally
+        {
+            try { if (id != Guid.Empty && document.Objects.FindId(id) != null) document.Objects.Delete(id, true); }
+            finally { document.Modified = modified; }
+        }
     }
 
     private static void VerifyNativeCapture(Assembly assembly, PointCloud cloud, Extrusion extrusion)

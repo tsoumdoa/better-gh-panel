@@ -108,6 +108,47 @@ internal static class ViewFreshnessChecks
                 (Tooltip(firstBranch).Title ?? "").StartsWith("Select branch", StringComparison.Ordinal),
                 "A later partial redraw retains targets already painted for the unchanged view");
 
+            var originalPivot = component.Attributes.Pivot;
+            var edgeRow = PanelTestAdapter.RowBounds(component, 1);
+            float edgeShift = canvas.Viewport.VisibleRegion.Right - edgeRow.X - 100;
+            component.Attributes.Pivot = new PointF(originalPivot.X + edgeShift, originalPivot.Y);
+            component.Attributes.ExpireLayout();
+            component.Attributes.PerformLayout();
+            edgeRow.Offset(edgeShift, 0);
+            var visibleRow = RectangleF.Intersect(edgeRow, canvas.Viewport.VisibleRegion);
+            var edgeBranch = firstBranch;
+            edgeBranch.Offset(edgeShift, 0);
+            var visibleBranch = RectangleF.Intersect(edgeBranch, canvas.Viewport.VisibleRegion);
+            Check(visibleRow.Width > 0 && visibleRow.Width < edgeRow.Width && visibleRow.Height == edgeRow.Height,
+                "The viewport-edge fixture places a row partly beyond the right canvas edge");
+            Click(visibleRow);
+            Check(PanelTestAdapter.SelectedPosition(component) == 0 && Hits("_rowHits").Count == 0,
+                "Moving a row across the viewport edge rejects stale clicks before repaint");
+            PaintClip(new RectangleF(visibleRow.X, visibleRow.Y, visibleRow.Width / 2, visibleRow.Height));
+            Click(visibleRow);
+            Check(PanelTestAdapter.SelectedPosition(component) == 0 && Hits("_rowHits").Count == 0 &&
+                !(Tooltip(visibleRow).Description ?? "").Contains("Click to select without moving the camera"),
+                "A partial clip of the visible row portion cannot publish an edge interaction");
+            PaintClipWithHole(visibleRow);
+            Check(Hits("_rowHits").Count == 0,
+                "A clip hole inside the visible row portion still prevents an edge interaction");
+            PaintClip(visibleRow);
+            Check(Hits("_rowHits").Count == 1 && Hits("_branchHits").Count == 0 &&
+                (Tooltip(visibleRow).Description ?? "").Contains("Click to select without moving the camera"),
+                "Painting the entire visible portion publishes a row that extends beyond the viewport");
+            Click(visibleRow);
+            Check(PanelTestAdapter.SelectedPosition(component) == 1,
+                "The visible portion of a row across the right viewport edge accepts selection");
+            Paint();
+            Check((Tooltip(visibleBranch).Title ?? "").StartsWith("Select branch", StringComparison.Ordinal),
+                "A complete paint enables branch tooltips across the right viewport edge");
+            component.Attributes.Pivot = originalPivot;
+            component.Attributes.ExpireLayout();
+            component.Attributes.PerformLayout();
+            Paint();
+            Click(first);
+            await WaitFor(() => outputs.SequenceEqual(Enumerable.Range(0, 4).Select(OutputFingerprint)));
+
             PanelTestAdapter.Resize(component, 300, 220);
             component.Attributes.PerformLayout();
             Click(PanelTestAdapter.Bounds(component, CanvasControl.Display));

@@ -144,7 +144,7 @@ internal static class GeometryHintChecks
         var prepared = new List<int>();
         using var gate = new ManualResetEventSlim(false);
         ManualResetEventSlim? hold = gate;
-        set.Invoke(lifetime, new[] { HostMeasurementPreparation.Resolver(assembly, position =>
+        set.Invoke(lifetime, new[] { HostMeasurementPreparation.WitnessedResolver(assembly, position =>
         {
             prepareThread = Environment.CurrentManagedThreadId;
             prepared.Add(position);
@@ -248,13 +248,12 @@ internal static class GeometryHintChecks
         bool Has(int position) => (bool)has.Invoke(session, new object[] { snapshot, position })!;
         int calls = 0;
         using var gate = new ManualResetEventSlim(false);
-        type.GetMethod("SetGeometryDetailResolver", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(session, new object[] { (Func<int, Func<PanelGeometryInfo?>?>)(position => () =>
-            {
-                Interlocked.Increment(ref calls);
-                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Test gate timed out");
-                return new PanelGeometryInfo("measured " + position, position, units: "mm");
-            }) });
+        HostMeasurementPreparation.SetWitnesslessResolver(session, position => () =>
+        {
+            Interlocked.Increment(ref calls);
+            if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Test gate timed out");
+            return new PanelGeometryInfo("measured " + position, position, units: "mm");
+        });
         type.GetMethod("AttachSnapshot")!.Invoke(session, new object[] { snapshot });
         try
         {
@@ -303,17 +302,16 @@ internal static class GeometryHintChecks
         var prepared = new List<int>();
         int calls = 0;
         using var gate = new ManualResetEventSlim(false);
-        type.GetMethod("SetGeometryDetailResolver", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(session, new object[] { (Func<int, Func<PanelGeometryInfo?>?>)(position =>
+        HostMeasurementPreparation.SetWitnesslessResolver(session, position =>
+        {
+            prepared.Add(position);
+            return () =>
             {
-                prepared.Add(position);
-                return () =>
-                {
-                    Interlocked.Increment(ref calls);
-                    if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Test gate timed out");
-                    return new PanelGeometryInfo("Srf", position, 2, "mm", "Area", "A");
-                };
-            }) });
+                Interlocked.Increment(ref calls);
+                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Test gate timed out");
+                return new PanelGeometryInfo("Srf", position, 2, "mm", "Area", "A");
+            };
+        });
         void Paint(Point target, Size size, float zoom = 1)
         {
             canvas.Size = size;

@@ -224,9 +224,10 @@ internal static class GeometryMeasurementBatchChecks
         internal PanelSnapshot Snapshot { get; private set; }
         private object? Invoke(string name, params object[] arguments) =>
             _type.GetMethod(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.Invoke(_session, arguments);
-        internal void SetResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) => Invoke("SetGeometryDetailResolver", resolver);
+        internal void SetResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) =>
+            HostMeasurementPreparation.SetWitnesslessResolver(_session, resolver);
         internal void SetOwnedResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) =>
-            Invoke("SetGeometryPreparationResolver", HostMeasurementPreparation.Resolver(_assembly, resolver));
+            Invoke("SetGeometryPreparationResolver", HostMeasurementPreparation.WitnessedResolver(_assembly, resolver));
         internal Task<bool> Measure(CancellationToken cancellation, params int[] positions) =>
             (Task<bool>)Invoke("MeasureGeometryAsync", Snapshot, positions, cancellation)!;
         internal void RequestVisible(params int[] positions) => Invoke("RequestGeometryMeasurements", Snapshot, positions);

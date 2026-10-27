@@ -43,6 +43,10 @@ namespace BetterGhPanel.Runtime
         private long _retiredBytes;
         private long _stagedBytes;
         private int _activeDraws;
+        private bool _displayFlushFailed;
+        // Test seam: runs inside the lifetime guard, immediately before Flush.
+        internal Action? BeforeDisplayFlush { get; set; }
+        internal int CompletedDisplayFlushes { get; private set; }
         private bool _flushingRetired;
         private bool _releaseScheduled;
         private bool _recoveryScheduled;
@@ -64,7 +68,8 @@ namespace BetterGhPanel.Runtime
         internal int IdleReleases { get; private set; }
         internal bool RetirementPending => _releaseScheduled;
         internal BoundingBox ClippingBox => _bounds.Box;
-        internal string Status => _partial || _recovery.Pending || _unavailable > 0 || _meshFailures > 0
+        internal string Status => _displayFlushFailed ? "Preview partial: display flush failed; drawn resources retained." :
+            _partial || _recovery.Pending || _unavailable > 0 || _meshFailures > 0
             ? "Preview partial: " + (_partialReason ?? (_recovery.Pending ? "selected geometry is awaiting admission" :
                 "some geometry is unsupported or exceeds safety limits")) + "."
             : string.Empty;
@@ -172,6 +177,7 @@ namespace BetterGhPanel.Runtime
             long generation = _recoveryGeneration;
             var current = _recoveryCurrent;
             if (current == null || !Current(generation, current)) return;
+            if (_displayFlushFailed) return;
             if (_activeDraws != 0 || _flushingRetired) { ScheduleRecovery(); return; }
             generation = ++_generation;
             _recoveryGeneration = generation;
@@ -437,7 +443,7 @@ namespace BetterGhPanel.Runtime
 
         private void ReleaseOnIdle(object? sender, EventArgs args)
         {
-            if (_activeDraws != 0 || _flushingRetired) return;
+            if (_activeDraws != 0 || _flushingRetired || _displayFlushFailed) return;
             Rhino.RhinoApp.Idle -= ReleaseOnIdle;
             _releaseScheduled = false;
             IdleReleases++;
@@ -447,7 +453,7 @@ namespace BetterGhPanel.Runtime
 
         private void FlushRetired()
         {
-            if (_activeDraws != 0 || _flushingRetired || _releaseScheduled) return;
+            if (_activeDraws != 0 || _flushingRetired || _releaseScheduled || _displayFlushFailed) return;
             _flushingRetired = true;
             try
             {
@@ -508,9 +514,9 @@ namespace BetterGhPanel.Runtime
         internal void DrawWires(IGH_PreviewArgs args, bool componentSelected)
         {
             // A nested display callback can expire or replace this generation.
-            // Keep its owned resources alive until the outer callback returns,
-            // and suppress a nested draw which could reset an in-use mesh cache.
-            if (_activeDraws != 0) return;
+            // Keep resources alive through our explicit pipeline flush, including
+            // reentrant idle, and suppress nested draws that could reset a cache.
+            if (_activeDraws != 0 || _displayFlushFailed) return;
             _activeDraws++;
             DrawWireCalls++;
             try
@@ -537,7 +543,7 @@ namespace BetterGhPanel.Runtime
             if (generation != _generation) return;
             _orderLabels.Arm(args);
             }
-            finally { _activeDraws--; FlushRetired(); }
+            finally { EndDraw(args.Display); }
         }
 
         private void DrawWires(GH_PreviewWireArgs args, bool selected)
@@ -558,7 +564,7 @@ namespace BetterGhPanel.Runtime
         internal void DrawMeshes(IGH_PreviewArgs args)
         {
             if (args.MeshingParameters == null) return;
-            if (_activeDraws != 0) return;
+            if (_activeDraws != 0 || _displayFlushFailed) return;
             _activeDraws++;
             DrawMeshCalls++;
             try
@@ -577,6 +583,32 @@ namespace BetterGhPanel.Runtime
                     if (generation != _generation) return;
                 }
             }
+            }
+            finally { EndDraw(args.Display); }
+        }
+
+        private void EndDraw(Rhino.Display.DisplayPipeline? pipeline)
+        {
+            try
+            {
+                if (pipeline != null)
+                {
+                    BeforeDisplayFlush?.Invoke();
+                    // Flush drains RhinoCommon's managed MeshCache and invokes
+                    // the native flush while every submitted resource is alive.
+                    // Native consumption after return still needs host validation;
+                    // idle alone is not an end-of-frame or GPU completion fence.
+                    pipeline.Flush();
+                    CompletedDisplayFlushes++;
+                }
+            }
+            catch (Exception)
+            {
+                // A later pipeline cannot prove consumption by this pipeline.
+                // Quarantine this owner's bounded resources, keep the idle root,
+                // and stop drawing instead of retrying disposal after a delay.
+                _displayFlushFailed = true;
+                ScheduleRelease();
             }
             finally { _activeDraws--; FlushRetired(); }
         }
