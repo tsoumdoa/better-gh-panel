@@ -74,7 +74,8 @@ internal static class IndexSelectionChecks
 
             // A menu feature can move without changing its tooltip or dispatched action.
             Open(2);
-            PanelTestAdapter.SwapRowMenuActions(component, 0, 3);
+            PanelTestAdapter.SwapRowMenuActions(component, 0, 4);
+            Paint();
             var reorderedMenu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
             var reorderedPoint = new PointF(reorderedMenu.X + 10, reorderedMenu.Y + 10);
             var reorderedTooltip = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
@@ -137,28 +138,29 @@ internal static class IndexSelectionChecks
             Paint();
             Open(0);
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
-            Check(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Contains(menu), "Four row actions fit inside the minimum Half panel");
+            Check(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Contains(menu), "The first row action page fits inside the minimum Half panel");
             Save("index-selection-half");
+            var selectedAction = MenuItem(ReachIndex());
             Choose();
             Expect(0, 30, 60);
             // A trailing double-click from the menu cannot clear the new group.
-            var menuPoint = new PointF(menu.X + 10, menu.Bottom - 10);
+            var menuPoint = new PointF(selectedAction.X + 10, selectedAction.Y + 10);
             component.Attributes.RespondToMouseDoubleClick(canvas, new GH_CanvasMouseEvent(Point.Empty, menuPoint, Forms.MouseButtons.Left, 2, 0));
             Expect(0, 30, 60);
 
             Open(0);
-            menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+            selectedAction = MenuItem(ReachIndex());
             session.GetType().GetMethod("UpdateQuery")!.Invoke(session, new object[] { new PanelQueryOptions { Search = "does not match" } });
-            Click(new RectangleF(menu.X, menu.Bottom - 20, menu.Width, 20));
+            Click(selectedAction);
             await Wait(session);
             Paint();
             Expect();
             Check(Field<object?>(component.Attributes, "_rowMenuResult") == null, "A stale index action is discarded after the query changes");
             await Query(new PanelQueryOptions());
             Open(0);
-            menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+            selectedAction = MenuItem(ReachIndex());
             component.Locked = true;
-            Click(new RectangleF(menu.X, menu.Bottom - 20, menu.Width, 20));
+            Click(selectedAction);
             Check(Selected().Length <= 1, "Disabled components cannot expand a captured row selection");
             component.Locked = false;
             component.ExpireSolution(true);
@@ -180,12 +182,31 @@ internal static class IndexSelectionChecks
         PanelQueryResult Result() => (PanelQueryResult)session.GetType().GetProperty("Result")!.GetValue(session)!;
         int[] Selected() => ((IReadOnlyList<int>)selection.GetType().GetMethod("OrderedPositions", Instance)!.Invoke(selection, new object[] { Result() })!).ToArray();
         void Expect(params int[] expected) => Check(Selected().SequenceEqual(expected), "Cross-branch positions: [" + string.Join(",", expected) + "]");
-        string Label() => PanelTestAdapter.RowMenuLabel(component, 3);
-        void Open(int position) => Click(PanelTestAdapter.RowBounds(component, position), Forms.MouseButtons.Right);
-        void Choose()
+        string Label() => PanelTestAdapter.RowMenuLabel(component, ReachIndex());
+        void Open(int position)
         {
-            var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
-            Click(new RectangleF(menu.X, menu.Bottom - 20, menu.Width, 20));
+            Click(PanelTestAdapter.RowBounds(component, position), Forms.MouseButtons.Right);
+            Paint();
+        }
+        void Choose() => Click(MenuItem(ReachIndex()));
+        RectangleF MenuItem(int index)
+        {
+            var bounds = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+            return new RectangleF(bounds.X, bounds.Y + index * 20, bounds.Width, 20);
+        }
+        int ReachIndex()
+        {
+            var actions = Field<Array>(component.Attributes, "_rowMenuActions");
+            for (int i = 0; i < actions.Length; i++)
+                if (PanelTestAdapter.RowMenuLabel(component, i).StartsWith("Select ", StringComparison.Ordinal)) return i;
+            for (int i = 0; i < actions.Length; i++)
+                if (PanelTestAdapter.RowMenuLabel(component, i) == "More actions…")
+                {
+                    Click(MenuItem(i));
+                    Paint();
+                    return ReachIndex();
+                }
+            throw new InvalidOperationException("Index selection action is not reachable.");
         }
         void Click(RectangleF bounds, Forms.MouseButtons button = Forms.MouseButtons.Left)
         {

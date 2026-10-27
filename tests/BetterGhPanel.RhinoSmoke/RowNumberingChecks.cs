@@ -165,6 +165,7 @@ internal static class RowNumberingChecks
             Check(Selected(component, result).SequenceEqual(expectedPositions),
                 "Select all follows the per-branch displayed order, including filtered subsets");
             Click(component, canvas, PanelTestAdapter.RowBounds(component, expectedPositions[0]), Forms.MouseButtons.Right);
+            using (var paintedMenu = Capture(component, canvas)) { }
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
             Check(!menu.IsEmpty && ReferenceEquals(Field<object>(component.Attributes, "_rowMenuResult"), result),
                 "Sorted value copy opens a context menu for the current query");

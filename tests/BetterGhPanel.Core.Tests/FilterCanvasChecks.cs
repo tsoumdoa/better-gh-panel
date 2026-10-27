@@ -12,6 +12,7 @@ internal static class FilterCanvasChecks
         VerifyBranchSelection();
         VerifyPreviewMenu();
         VerifyRowActions();
+        VerifyTextPreview();
     }
 
     private static void VerifyRowActions()
@@ -22,6 +23,9 @@ internal static class FilterCanvasChecks
         Require(single.Single(choice => choice.Action == PanelRowAction.CopyValues).Label == "Copy value" &&
             single.Single(choice => choice.Action == PanelRowAction.SelectIndices).Label == "Select index 7 across branches",
             "Single-row action labels describe the selected item and its branch index");
+        Require(single.Single(choice => choice.Action == PanelRowAction.ViewFullValue).Label == "View full value" &&
+            single.Single(choice => choice.Action == PanelRowAction.ViewFullValue).Description.Contains("row you right-clicked"),
+            "The viewer action explicitly targets the context row, even with multiple selected rows");
 
         var multiple = CanvasRowActions.Create(6, new[] { 1, 3 }, true);
         Require(multiple.Single(choice => choice.Action == PanelRowAction.CopyValues).Label == "Copy values" &&
@@ -33,6 +37,40 @@ internal static class FilterCanvasChecks
         foreach (var choice in single)
             Require(choice.Description.Length > 0 && choice.Description == multiple.Single(other => other.Action == choice.Action).Description,
                 "Row action explanations stay with the action across selection changes");
+
+        Require(CanvasRowActions.NeedsPages(82) && !CanvasRowActions.NeedsPages(100),
+            "The compact panel pages five actions while taller panels show them together");
+        var reordered = Enumerable.Reverse(single).ToArray();
+        var first = CanvasRowActions.Page(reordered, 0);
+        var second = CanvasRowActions.Page(reordered, 1);
+        Require(first.Select(choice => choice.Action).SequenceEqual(new[] { PanelRowAction.FrameSelection, PanelRowAction.CopyValues,
+                PanelRowAction.ViewFullValue, PanelRowAction.NextPage }) &&
+            second.Select(choice => choice.Action).SequenceEqual(new[] { PanelRowAction.CopyGeometry, PanelRowAction.SelectIndices,
+                PanelRowAction.PreviousPage }), "Compact pages preserve all named actions by identity after reordering");
+        Require(first.Length * CanvasRowActions.RowHeight <= 82 && second.Length * CanvasRowActions.RowHeight <= 82,
+            "Every compact page fits below the minimum Half panel's header");
+    }
+
+    private static void VerifyTextPreview()
+    {
+        const string unicode = "first\r\n第二行 🧪\nend𐐷";
+        Require(PanelTextPreview.ForTooltip(unicode) == unicode, "Short Unicode values and their line endings remain intact");
+        var manyLines = string.Join("\r\n", Enumerable.Repeat("行", 40));
+        var linePreview = PanelTextPreview.ForTooltip(manyLines);
+        Require(linePreview.EndsWith("…", StringComparison.Ordinal) &&
+            linePreview.Count(character => character == '\n') < PanelTextPreview.MaximumLines &&
+            !linePreview.Contains("\r…"), "Tooltip previews bound line count without splitting CRLF");
+        var unicodeLines = PanelTextPreview.ForTooltip(string.Join("\u2028", Enumerable.Repeat("行", 40)));
+        Require(unicodeLines.EndsWith("…", StringComparison.Ordinal) &&
+            unicodeLines.Count(character => character == '\u2028') < PanelTextPreview.MaximumLines,
+            "Unicode line separators are also bounded in native tooltip previews");
+        var astralAtBoundary = new string('x', PanelTextPreview.MaximumCharacters - 1) + "🧪tail";
+        var textPreview = PanelTextPreview.ForTooltip(astralAtBoundary);
+        Require(textPreview.Length <= PanelTextPreview.MaximumCharacters + 1 && textPreview.EndsWith("…", StringComparison.Ordinal) &&
+            !char.IsHighSurrogate(textPreview[textPreview.Length - 2]),
+            "Tooltip previews bound characters without splitting a Unicode surrogate pair");
+        Require(PanelTextPreview.ForTooltip(new string('x', PanelTextPreview.MaximumCharacters)).Length == PanelTextPreview.MaximumCharacters,
+            "An exactly fitting preview does not acquire an ellipsis");
     }
 
     private static void VerifyPreviewMenu()

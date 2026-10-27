@@ -62,10 +62,13 @@ internal static class PanelTestAdapter
         Property<string>(Field<Array>(component.Attributes, "_rowMenuActions").GetValue(index)!, "Label");
     internal static void SwapRowMenuActions(GH_Component component, int first, int second)
     {
-        var actions = Field<Array>(component.Attributes, "_rowMenuActions");
-        var saved = actions.GetValue(first);
-        actions.SetValue(actions.GetValue(second), first);
-        actions.SetValue(saved, second);
+        foreach (var field in new[] { "_rowMenuActions", "_rowMenuPendingActions" })
+        {
+            var actions = Field<Array>(component.Attributes, field);
+            var saved = actions.GetValue(first);
+            actions.SetValue(actions.GetValue(second), first);
+            actions.SetValue(saved, second);
+        }
     }
 
     internal static void Render(GH_Component component, GH_Canvas canvas, Graphics graphics) =>

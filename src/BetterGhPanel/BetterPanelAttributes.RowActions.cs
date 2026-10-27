@@ -16,6 +16,11 @@ namespace BetterGhPanel
         private RectangleF _rowMenuBounds;
         private int _rowMenuHovered = -1;
         private CanvasRowAction[] _rowMenuActions = Array.Empty<CanvasRowAction>();
+        private CanvasRowAction[] _rowMenuPendingActions = Array.Empty<CanvasRowAction>();
+        private CanvasRowAction[] _rowMenuAllActions = Array.Empty<CanvasRowAction>();
+        private PointF _rowMenuAnchor;
+        private int _rowMenuSourcePosition = -1;
+        private bool _rowMenuPaged;
         private DateTime _copiedUntil;
         private DateTime _rowActionDismissedUntil;
         private string _actionStatus = string.Empty;
@@ -28,6 +33,7 @@ namespace BetterGhPanel
             _rowMenuResult = null;
             _rowMenuHovered = -1;
             _rowMenuActions = Array.Empty<CanvasRowAction>();
+            _rowMenuPendingActions = Array.Empty<CanvasRowAction>();
         }
 
         private void SuppressTrailingDoubleClick() =>
@@ -35,17 +41,33 @@ namespace BetterGhPanel
 
         private void RenderRowMenu(Graphics g, Font font, StringFormat trim)
         {
+            if (_rowMenuResult == null || !RowsAreCurrent(_rowMenuResult)) return;
             Fill(g, Color.FromArgb(32, 49, 55, 53), new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + 2, _rowMenuBounds.Width, _rowMenuBounds.Height));
             Fill(g, Color.White, _rowMenuBounds);
-            var actions = _rowMenuActions;
+            var actions = _rowMenuPendingActions;
             for (int i = 0; i < actions.Length; i++)
             {
-                var bounds = new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + i * 20, _rowMenuBounds.Width - 2, 20);
+                var bounds = new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + i * CanvasRowActions.RowHeight,
+                    _rowMenuBounds.Width - 2, CanvasRowActions.RowHeight);
                 if (i == _rowMenuHovered) Fill(g, Color.FromArgb(226, 236, 226), bounds);
                 Text(g, actions[i].Label, font, Ink, new RectangleF(bounds.X + 8, bounds.Y, bounds.Width - 16, bounds.Height), trim);
+                // Partial invalidations must not activate a row that has not
+                // actually been painted at its new position.
+                if (FullyVisible(g, bounds)) _rowMenuActions[i] = actions[i];
             }
             using (var pen = new Pen(Color.FromArgb(194, 205, 194)))
                 g.DrawRectangle(pen, _rowMenuBounds.X, _rowMenuBounds.Y, _rowMenuBounds.Width, _rowMenuBounds.Height);
+        }
+
+        private static bool FullyVisible(Graphics graphics, RectangleF bounds)
+        {
+            if (!graphics.VisibleClipBounds.Contains(bounds)) return false;
+            using (var unpainted = new Region(bounds))
+            using (var clip = graphics.Clip)
+            {
+                unpainted.Exclude(clip);
+                return unpainted.IsEmpty(graphics);
+            }
         }
 
         private GH_ObjectResponse RespondToRowContextMenu(GH_Canvas canvas, GH_CanvasMouseEvent e)
@@ -75,26 +97,56 @@ namespace BetterGhPanel
                 _selection.SelectAt(result, hit.SourcePosition, hit.ViewNumber - 1, preserveSelected: true);
                 PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
                 TrackSelectionCanvas(canvas);
-                _rowMenuResult = result;
                 var options = PanelOwner.Session.Options;
                 bool filtered = options.Search.Length > 0 || options.TypeName != null || options.OnlyInvalid || options.BranchPath != null;
-                _rowMenuActions = CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered);
-                float width = Math.Min(300, _panel.Width - 28);
-                float height = _rowMenuActions.Length * 20;
-                _rowMenuBounds = new RectangleF(
-                    Math.Max(_panel.Left + 14, Math.Min(e.CanvasX, _panel.Right - width - 14)),
-                    Math.Max(_panel.Top + HeaderHeight, Math.Min(e.CanvasY, _panel.Bottom - height - 6)), width, height);
+                _rowMenuAllActions = CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered);
+                _rowMenuAnchor = e.CanvasLocation;
+                _rowMenuSourcePosition = hit.SourcePosition;
+                _rowMenuPaged = CanvasRowActions.NeedsPages(_panel.Height - HeaderHeight - 6);
+                ShowRowMenu(result, 0);
                 canvas.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
             return base.RespondToMouseDown(canvas, e);
         }
 
+        private void ShowRowMenu(PanelQueryResult result, int page)
+        {
+            _rowMenuResult = result;
+            _rowMenuHovered = -1;
+            _rowMenuPendingActions = _rowMenuPaged ? CanvasRowActions.Page(_rowMenuAllActions, page) : _rowMenuAllActions;
+            _rowMenuActions = Enumerable.Repeat(new CanvasRowAction(PanelRowAction.Unpainted, "", ""), _rowMenuPendingActions.Length).ToArray();
+            float width = Math.Min(300, _panel.Width - 28);
+            float height = _rowMenuPendingActions.Length * CanvasRowActions.RowHeight;
+            _rowMenuBounds = new RectangleF(
+                Math.Max(_panel.Left + 14, Math.Min(_rowMenuAnchor.X, _panel.Right - width - 14)),
+                Math.Max(_panel.Top + HeaderHeight, Math.Min(_rowMenuAnchor.Y, _panel.Bottom - height - 6)), width, height);
+        }
+
         private void ChooseRowAction(PanelRowAction action, PanelQueryResult result, GH_Canvas canvas)
         {
             var positions = _selection.OrderedPositions(result);
             if (positions.Count == 0) return;
-            if (action == PanelRowAction.FrameSelection)
+            if (action == PanelRowAction.NextPage || action == PanelRowAction.PreviousPage)
+            {
+                if (_rowMenuPaged) ShowRowMenu(result, action == PanelRowAction.NextPage ? 1 : 0);
+            }
+            else if (action == PanelRowAction.ViewFullValue)
+            {
+                int position = _rowMenuSourcePosition;
+                if (position < 0 || position >= result.Snapshot.Rows.Count || !positions.Contains(position)) return;
+                var row = result.Snapshot.Rows[position];
+                bool projected = result.DisplaySet?.Values.ContainsKey(position) == true;
+                string value = !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
+                    ? row.StringValue : PanelOwner.DisplayValue(result.Snapshot, row, position);
+                try { PanelFullValueWindow.Show(value); }
+                catch (Exception)
+                {
+                    _actionStatus = "Could not open the full value.";
+                    _copiedUntil = DateTime.UtcNow.AddSeconds(5);
+                }
+            }
+            else if (action == PanelRowAction.FrameSelection)
             {
                 InvalidateCopyStatus();
                 _actionStatus = PanelOwner.FrameRows(result.Snapshot, positions) ?? "Selection framed";
@@ -158,13 +210,14 @@ namespace BetterGhPanel
         private bool RowActionTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             if (_rowMenuResult == null || !_rowMenuBounds.Contains(point)) return false;
-            int index = (int)((point.Y - _rowMenuBounds.Y) / 20);
-            if (index >= 0 && index < _rowMenuActions.Length)
+            int index = (int)((point.Y - _rowMenuBounds.Y) / CanvasRowActions.RowHeight);
+            if (RowsAreCurrent(_rowMenuResult) && index >= 0 && index < _rowMenuActions.Length &&
+                _rowMenuActions[index].Action != PanelRowAction.Unpainted)
             {
                 var action = _rowMenuActions[index];
                 e.Title = action.Label;
-                e.Text = $"{_selection.Count:N0} selected";
-                e.Description = action.Description;
+                e.Text = action.Action == PanelRowAction.ViewFullValue ? "The row you right-clicked" : $"{_selection.Count:N0} selected";
+                e.Description = PanelTextPreview.ForTooltip(action.Description);
             }
             return true;
         }

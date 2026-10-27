@@ -482,6 +482,7 @@ internal static class RowActionChecks
         Check(Selected(selection, Result(session)).SequenceEqual(new[] { 1, 0 }), "Native canvas retains row identities across sorting");
         var row = PanelTestAdapter.RowBounds(component, 1);
         Click(component, canvas, row, Forms.MouseButtons.Right);
+        Paint(component, canvas);
         var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
         Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
         await WaitUntil(() => !Field<bool>(component.Attributes, "_copyPending"));
@@ -664,6 +665,7 @@ internal static class RowActionChecks
             "A fresh intentional double-click immediately after display dismissal still clears its row selection");
 
         Click(component, canvas, number, Forms.MouseButtons.Right);
+        Paint(component, canvas);
         var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
         Click(component, canvas, new RectangleF(menu.X, menu.Y, menu.Width, 20));
         Check(Field<string>(component.Attributes, "_actionStatus").Contains("No valid geometry"),
@@ -808,6 +810,7 @@ internal static class RowActionChecks
             Forms.Clipboard.SetText("keep cancelled selection clipboard");
             var row = PanelTestAdapter.RowBounds(component, 8);
             Click(component, canvas, row, Forms.MouseButtons.Right);
+            Paint(component, canvas);
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
             Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
             await WaitUntil(() => Field<bool>(session, "_geometryRunning"));
@@ -850,6 +853,7 @@ internal static class RowActionChecks
             Paint(component, canvas);
             Forms.Clipboard.SetText("keep document-switch clipboard");
             Click(component, canvas, PanelTestAdapter.RowBounds(component, 8), Forms.MouseButtons.Right);
+            Paint(component, canvas);
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
             Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
             await WaitUntil(() => Field<bool>(session, "_geometryRunning"));
