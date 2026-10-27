@@ -29,6 +29,11 @@ namespace BetterGhPanel
                 string path = result.BranchPaths[index];
                 var bounds = new RectangleF(_list.X, y, _list.Width, RowHeight);
                 Fill(graphics, selected.Contains(path) ? Color.FromArgb(216, 232, 219) : (_shown & 1) == 0 ? Color.White : Color.FromArgb(247, 249, 246), bounds);
+                if (set && result.DisplaySet!.BranchSourceStatuses.TryGetValue(path, out var statuses))
+                {
+                    if (statuses.VerifiedInvalid > 0) Fill(graphics, Color.FromArgb(180, 106, 67), new RectangleF(bounds.X, bounds.Y + 3, 2, bounds.Height - 6));
+                    if (statuses.Unverified > 0) Fill(graphics, Color.FromArgb(103, 112, 166), new RectangleF(bounds.X + (statuses.VerifiedInvalid > 0 ? 2 : 0), bounds.Y + 3, 2, bounds.Height - 6));
+                }
                 float badgeWidth = set ? 40 : 0;
                 renderer.DrawCell(graphics, path, mono, Accent, new RectangleF(bounds.X + 6, y, Math.Max(0, bounds.Width - 102 - badgeWidth), RowHeight));
                 int count = result.Snapshot.BranchItemCounts[path];
@@ -37,7 +42,7 @@ namespace BetterGhPanel
                 if (set)
                     renderer.DrawValue(graphics, result.DisplaySet!.BranchOccurrences[path].Count + "×", small, Accent,
                         new RectangleF(bounds.Right - badgeWidth, y, badgeWidth - 6, RowHeight), true);
-                _branchHits.Add(new BranchHit(bounds, path));
+                if (TargetPainted(graphics, bounds)) AddBranchHit(bounds, path);
                 _shown++;
                 y += RowHeight;
             }

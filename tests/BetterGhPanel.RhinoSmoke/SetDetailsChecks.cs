@@ -66,6 +66,28 @@ internal static class SetDetailsChecks
             DirectClick(firstBadge);
             Check(Property<bool>(details, "IsOpen"), "A badge cannot toggle twice before its new state is painted");
             Paint();
+            await WaitFor(() => component.Params.Output[1].VolatileData.DataCount == 1);
+            var unchangedOutputs = Enumerable.Range(0, 4).Select(OutputFingerprint).ToArray();
+            var partialNext = Bounds("Next");
+            var partialTable = Bounds("Table");
+            var occurrencePoint = new PointF(partialTable.X + 5, partialTable.Y + 8);
+            component.Attributes.ExpireLayout();
+            component.Attributes.PerformLayout();
+            PaintClip(new RectangleF(firstBadge.X, firstBadge.Y, firstBadge.Width / 2, firstBadge.Height));
+            DirectClick(firstBadge);
+            DirectClick(partialNext);
+            Check(Property<bool>(details, "IsOpen") && Property<int>(details, "Offset") == 0 &&
+                Tooltip(firstBadge).Title != "Collapse occurrences" && TooltipAtPoint(occurrencePoint).Title != "Original input locations",
+                "Partially painted badges, detail controls and occurrence tooltips remain inactive");
+            Check(unchangedOutputs.SequenceEqual(Enumerable.Range(0, 4).Select(OutputFingerprint)),
+                "Rejected clipped badge and drawer gestures preserve D/S/B/F");
+            PaintClip(firstBadge);
+            Check(Tooltip(firstBadge).Title == "Collapse occurrences", "A fully painted badge has its own live tooltip");
+            DirectClick(firstBadge);
+            Check(!Property<bool>(details, "IsOpen"), "A fully painted badge remains actionable when its row is clipped");
+            Paint();
+            DirectClick(CountBounds(0));
+            Paint();
             var badge = CountBounds(0);
             PanelTestAdapter.CanvasClick(canvas, new PointF(badge.X + badge.Width / 2, badge.Y + badge.Height / 2), clicks: 2);
             Check(!Bounds("Bounds").IsEmpty && PanelTestAdapter.SelectedPosition(component) == 2,
@@ -80,6 +102,9 @@ internal static class SetDetailsChecks
             Check(Property<int>(details, "Offset") == 4, "A second page click before repaint cannot use stale occurrence targets");
             var staleTable = Bounds("Table");
             var stalePoint = new PointF(staleTable.X + 5, staleTable.Y + 8);
+            PaintClip(new RectangleF(staleTable.X, staleTable.Y, staleTable.Width / 2, 17));
+            DirectClick(nextPage);
+            Check(Property<int>(details, "Offset") == 4, "A partial occurrence-page paint cannot publish its pager");
             var staleTooltip = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
                 BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(stalePoint) }, null)!;
             component.Attributes.SetupTooltip(stalePoint, staleTooltip);
@@ -247,6 +272,37 @@ internal static class SetDetailsChecks
             canvas.Viewport.ApplyProjection(graphics);
             PanelTestAdapter.Render(component, canvas, graphics);
             if (name != null) bitmap.Save(Path.Combine(Path.GetDirectoryName(assembly.Location)!, "rhino-smoke-" + name + ".png"));
+        }
+        void PaintClip(RectangleF clip)
+        {
+            using var bitmap = new Bitmap(750, 800);
+            using var graphics = Graphics.FromImage(bitmap);
+            canvas.Viewport.ApplyProjection(graphics);
+            graphics.SetClip(clip);
+            PanelTestAdapter.Render(component, canvas, graphics);
+        }
+        GH_TooltipDisplayEventArgs Tooltip(RectangleF bounds) => TooltipAtPoint(new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2));
+        GH_TooltipDisplayEventArgs TooltipAtPoint(PointF point)
+        {
+            var value = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(point) }, null)!;
+            component.Attributes.SetupTooltip(point, value);
+            return value;
+        }
+        string OutputFingerprint(int index)
+        {
+            var tree = component.Params.Output[index].VolatileData;
+            return string.Join("|", tree.Paths.Select(path => path.ToString())) + ":" +
+                string.Join("|", tree.AllData(true).Select(value => value == null ? "null" : value.GetType().FullName + ":" + value));
+        }
+        async Task WaitFor(Func<bool> condition)
+        {
+            var clock = Stopwatch.StartNew();
+            while (!condition())
+            {
+                if (clock.Elapsed.TotalSeconds > 20) throw new TimeoutException("Set output did not finish");
+                await Task.Delay(10);
+            }
         }
         async Task Query(PanelQueryOptions options)
         {

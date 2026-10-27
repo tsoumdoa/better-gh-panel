@@ -1,6 +1,8 @@
 using System;
 using System.Linq;
 using BetterGhPanel.Core;
+using BetterGhPanel.UI;
+using BetterGhPanel.Runtime;
 
 internal static class CapturePolicyChecks
 {
@@ -37,6 +39,10 @@ internal static class CapturePolicyChecks
         Check(result.Statistics.InvalidCount == 2 && result.Statistics.UnverifiedCount == 1 &&
             result.Statistics.FilteredSourceStatuses.VerifiedInvalid == 2 && result.Statistics.FilteredSourceStatuses.Unverified == 1,
             "Statistics distinguish invalid, unverified and source statuses");
+        Check(CanvasStatistics.Label(result, 5, -1).Contains("2 invalid") && CanvasStatistics.Label(result, 5, -1).Contains("1 unverified") &&
+            CanvasStatistics.Label(empty, 8, -1).Contains("0 unverified") &&
+            PanelQueryPolicy.InputDiagnostic(snapshot, saved).Contains("1 unverified"),
+            "Statistics distinguish current row statuses from the prefilter warning retained by saved empty filters");
         var emptyInput = PanelSnapshot.Empty;
         Check(!emptyInput.SupportsSearchMode(PanelSearchMode.Value) && emptyInput.SupportsSearchMode(PanelSearchMode.ListLength),
             "Empty input retains only unconditional search modes");
@@ -79,9 +85,18 @@ internal static class CapturePolicyChecks
                 set.Statistics.UnverifiedCount == 0 && set.Statistics.FilteredSourceStatuses.VerifiedInvalid == 1 &&
                 set.Statistics.FilteredSourceStatuses.Unverified == 1,
                 "Set warnings aggregate sources independent of representative while projected statistics remain separate");
+            var displayed = CanvasStatistics.Label(set, 5, -1);
+            var sources = CanvasStatistics.Label(set, 8, -1);
+            var rowSources = CanvasStatistics.RowSourceStatuses(set, 0);
+            Check(displayed.Contains("0 invalid") && displayed.Contains("0 unverified") &&
+                sources.Contains("1 invalid") && sources.Contains("1 unverified") && rowSources.VerifiedValid == 1 && rowSources.Unverified == 1 &&
+                CanvasStatistics.SourceStatuses(rowSources).Contains("1 valid") && CanvasStatistics.SourceStatuses(rowSources).Contains("1 unverified"),
+                "Projected row statistics and occurrence status summaries remain accurate in either source order");
             var invalid = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { CreateSet = true, OnlyInvalid = true });
             Check(invalid.RowPositions.SequenceEqual(new[] { 2 }) && invalid.SetOccurrencesAt(2)!.SourceStatuses.Total == 1,
                 "Invalid-only filters source occurrences before set projection");
+            Check(CanvasStatistics.Label(invalid, 8, -1).Contains("1 invalid") && CanvasStatistics.Label(invalid, 8, -1).Contains("0 unverified"),
+                "Invalid-only source counts exclude unverified occurrences");
         }
     }
 
@@ -102,6 +117,9 @@ internal static class CapturePolicyChecks
                 statuses.VerifiedValid == 2 && statuses.VerifiedInvalid == 1 && statuses.Unverified == 1 &&
                 result.DisplaySet.BranchSourceStatuses["{2}"].Total == 0 && result.Statistics.ItemCount == 2,
                 "Equal-length branch warnings include filtered nonrepresentatives and empty branches");
+            Check(CanvasStatistics.SourceStatuses(statuses).Contains("1 invalid") && CanvasStatistics.SourceStatuses(statuses).Contains("1 unverified") &&
+                CanvasStatistics.Label(result, 8, -1).Contains("1 invalid") && CanvasStatistics.Label(result, 8, -1).Contains("1 unverified"),
+                "List-length set labels expose statuses from all matching source branches");
             query.OnlyInvalid = true;
             var invalid = PanelQueryEngine.Execute(snapshot, query);
             Check(invalid.RowPositions.Count == 1 && invalid.Statistics.FilteredSourceStatuses.VerifiedInvalid == 1 &&

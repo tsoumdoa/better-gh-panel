@@ -79,6 +79,35 @@ internal static class ViewFreshnessChecks
                 "The real scheduled solution publishes the selected typed row");
             var outputs = Enumerable.Range(0, 4).Select(OutputFingerprint).ToArray();
 
+            var firstBranch = Property<RectangleF>(Hits("_branchHits").Single(hit => Property<string>(hit, "Path") == "{1}"), "Bounds");
+            component.Attributes.ExpireLayout();
+            component.Attributes.PerformLayout();
+            PaintClip(new RectangleF(first.X, first.Y, first.Width / 2, first.Height));
+            Click(first);
+            Click(firstBranch);
+            Check(SelectedCount() == 1 && Hits("_rowHits").Count == 0 && Hits("_branchHits").Count == 0 &&
+                !(Tooltip(first).Description ?? "").Contains("Click to select without moving the camera") &&
+                !(Tooltip(firstBranch).Title ?? "").StartsWith("Select branch", StringComparison.Ordinal),
+                "A partial graphics clip cannot publish row or branch interactions or tooltips");
+            Check(outputs.SequenceEqual(Enumerable.Range(0, 4).Select(OutputFingerprint)),
+                "Rejected partially painted clicks leave all D/S/B/F output trees unchanged");
+            PaintClipWithHole(first);
+            Check(Hits("_rowHits").Count == 0 && !(Tooltip(first).Description ?? "").Contains("Click to select without moving the camera"),
+                "A nonrectangular clip with a hole cannot publish a row even when its clip bounds contain it");
+            PaintClip(first);
+            Check(Hits("_rowHits").Count == 1 && Hits("_branchHits").Count == 0 &&
+                (Tooltip(first).Description ?? "").Contains("Click to select without moving the camera"),
+                "A fully painted row is usable even when neighboring rows and headings are clipped");
+            Click(first);
+            Check(SelectedCount() == 1, "The fully painted row accepts its normal selection gesture");
+            Paint();
+            Check((Tooltip(firstBranch).Title ?? "").StartsWith("Select branch", StringComparison.Ordinal),
+                "A complete paint restores branch tooltips");
+            PaintClip(new RectangleF(first.X, first.Y, first.Width / 2, first.Height));
+            Check(Hits("_rowHits").Any(hit => Property<int>(hit, "SourcePosition") == 0) &&
+                (Tooltip(firstBranch).Title ?? "").StartsWith("Select branch", StringComparison.Ordinal),
+                "A later partial redraw retains targets already painted for the unchanged view");
+
             PanelTestAdapter.Resize(component, 300, 220);
             component.Attributes.PerformLayout();
             Click(PanelTestAdapter.Bounds(component, CanvasControl.Display));
@@ -86,6 +115,10 @@ internal static class ViewFreshnessChecks
             var list = PanelTestAdapter.Bounds(component, CanvasControl.List);
             Click(list);
             Check(SelectedCount() == 1, "Resize and Half layout reject row clicks before repaint");
+            PaintClip(new RectangleF(list.X, list.Y, list.Width / 2, list.Height));
+            Click(list);
+            Check(SelectedCount() == 1 && Hits("_rowHits").Count == 0 && Hits("_branchHits").Count == 0,
+                "A partial paint after layout cannot publish the newly positioned list targets");
             Paint();
             var seenPaths = new HashSet<string>();
             var seenRows = new HashSet<int>();
@@ -101,6 +134,10 @@ internal static class ViewFreshnessChecks
                 Check(++changes < 100, "Half scrolling advances in bounded steps");
                 Click(list);
                 Check(SelectedCount() == 1, "Scroll invalidates stale row and branch clicks before repaint");
+                PaintClip(new RectangleF(list.X, list.Y, list.Width / 2, list.Height));
+                Click(list);
+                Check(SelectedCount() == 1 && Hits("_rowHits").Count == 0 && Hits("_branchHits").Count == 0,
+                    "A partial repaint after scrolling cannot publish the new row or branch targets");
                 var point = new PointF(list.X + list.Width / 2, list.Y + list.Height / 2);
                 var tooltip = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
                     BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(point) }, null)!;
@@ -227,6 +264,32 @@ internal static class ViewFreshnessChecks
             using var graphics = Graphics.FromImage(bitmap);
             canvas.Viewport.ApplyProjection(graphics);
             PanelTestAdapter.Render(component, canvas, graphics);
+        }
+        void PaintClip(RectangleF clip)
+        {
+            using var bitmap = new Bitmap(800, 800);
+            using var graphics = Graphics.FromImage(bitmap);
+            canvas.Viewport.ApplyProjection(graphics);
+            graphics.SetClip(clip);
+            PanelTestAdapter.Render(component, canvas, graphics);
+        }
+        void PaintClipWithHole(RectangleF bounds)
+        {
+            using var bitmap = new Bitmap(800, 800);
+            using var graphics = Graphics.FromImage(bitmap);
+            canvas.Viewport.ApplyProjection(graphics);
+            using var clip = new Region(bounds);
+            clip.Exclude(new RectangleF(bounds.X + bounds.Width / 2, bounds.Y + 3, 4, bounds.Height - 6));
+            graphics.SetClip(clip, System.Drawing.Drawing2D.CombineMode.Replace);
+            PanelTestAdapter.Render(component, canvas, graphics);
+        }
+        GH_TooltipDisplayEventArgs Tooltip(RectangleF bounds)
+        {
+            var point = new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+            var tooltip = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(point) }, null)!;
+            component.Attributes.SetupTooltip(point, tooltip);
+            return tooltip;
         }
         async Task Wait()
         {

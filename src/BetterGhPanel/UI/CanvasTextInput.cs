@@ -15,6 +15,7 @@ namespace BetterGhPanel.UI
         private WeakReference<GH_Canvas>? _canvas;
         private RectangleF _canvasBounds;
         private Rectangle _screenBounds;
+        private bool _accepting;
 
         private CanvasTextInput(Action<string> accepted) { _accepted = accepted; }
 
@@ -47,8 +48,14 @@ namespace BetterGhPanel.UI
             if (_active != null && _active.TryGetTarget(out var current) && ReferenceEquals(current, this)) _active = null;
             var accepted = _accepted;
             _accepted = null;
-            accepted?.Invoke(text);
+            _accepting = true;
+            try { accepted?.Invoke(text); }
+            finally { _accepting = false; }
         }
+
+        internal static bool IsCurrent(CanvasTextInput? editor) => editor != null &&
+            (editor._accepting || editor._accepted != null && editor.IsTextInput && _active != null &&
+                _active.TryGetTarget(out var current) && ReferenceEquals(current, editor));
 
         internal static void Maintain(GH_Canvas canvas)
         {

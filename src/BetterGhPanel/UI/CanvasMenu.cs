@@ -102,6 +102,8 @@ namespace BetterGhPanel.UI
         private CanvasMenuKind _paintedKind;
         private RectangleF _paintedBounds;
         private int _paintedOffset = -1, _paintedVisible = -1;
+        private bool[] _paintedRows = Array.Empty<bool>();
+        private bool _paintedPrevious, _paintedNext;
         internal CanvasMenuKind Kind { get; private set; }
         internal RectangleF Bounds { get; private set; }
         internal int Offset { get; private set; }
@@ -114,15 +116,41 @@ namespace BetterGhPanel.UI
             Kind == CanvasMenuKind.Statistics && _statisticsResult != null ? CanvasStatistics.OverviewRows + _statisticsResult.Statistics.UniqueValues.Count : 0;
         internal int Visible => Math.Min(Count, Math.Max(1, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
         internal bool HasPaintedTargets => Kind != CanvasMenuKind.None && _paintedKind == Kind &&
-            _paintedBounds == Bounds && _paintedOffset == Offset && _paintedVisible == Visible;
+            _paintedBounds == Bounds && _paintedOffset == Offset && _paintedVisible == Visible &&
+            (_paintedRows.Any(painted => painted) || _paintedPrevious || _paintedNext);
 
         // Hit testing is valid only for the page and layout the user actually saw.
-        internal void MarkPainted()
+        internal void BeginPaint(bool preserve = false)
         {
+            if (preserve && _paintedKind == Kind && _paintedBounds == Bounds &&
+                _paintedOffset == Offset && _paintedVisible == Visible) return;
             _paintedKind = Kind;
             _paintedBounds = Bounds;
             _paintedOffset = Offset;
             _paintedVisible = Visible;
+            _paintedRows = new bool[Visible];
+            _paintedPrevious = _paintedNext = false;
+        }
+
+        internal void MarkRowPainted(int row) { if (row >= 0 && row < _paintedRows.Length) _paintedRows[row] = true; }
+        internal void MarkPagePainted(bool previous) { if (previous) _paintedPrevious = true; else _paintedNext = true; }
+        internal void InvalidatePaint() { _paintedKind = CanvasMenuKind.None; }
+
+        // Policy tests can simulate a complete paint without a Graphics instance.
+        internal void MarkPainted()
+        {
+            BeginPaint();
+            for (int row = 0; row < Visible; row++) MarkRowPainted(row);
+            if (Count > Visible) { MarkPagePainted(true); MarkPagePainted(false); }
+        }
+
+        internal bool IsPaintedAt(PointF point)
+        {
+            if (!HasPaintedTargets || !Bounds.Contains(point)) return false;
+            int row = (int)((point.Y - Bounds.Y) / 20);
+            if (row >= 0 && row < Visible) return _paintedRows[row];
+            return Count > Visible && row == Visible &&
+                (point.X < Bounds.X + Bounds.Width / 2 ? _paintedPrevious : _paintedNext);
         }
 
         internal static string TypeHint(PanelQueryResult result, PanelQueryOptions options)
@@ -175,7 +203,7 @@ namespace BetterGhPanel.UI
         internal void Close()
         {
             Kind = CanvasMenuKind.None;
-            _paintedKind = CanvasMenuKind.None;
+            InvalidatePaint();
             HoveredIndex = -1;
             _statisticsResult = null;
             _snapshot = PanelSnapshot.Empty;
@@ -190,7 +218,7 @@ namespace BetterGhPanel.UI
             IEnumerable<PanelSearchMode>? supportedSearchModes = null)
         {
             Kind = Kind == kind ? CanvasMenuKind.None : kind;
-            _paintedKind = CanvasMenuKind.None;
+            InvalidatePaint();
             _snapshot = snapshot;
             _statisticsResult = Kind == CanvasMenuKind.Statistics && ReferenceEquals(result?.Snapshot, snapshot) ? result : null;
             if (Kind == CanvasMenuKind.Statistics && _statisticsResult == null) Kind = CanvasMenuKind.None;
@@ -241,7 +269,7 @@ namespace BetterGhPanel.UI
         {
             index = -1;
             if (!Bounds.Contains(point)) { Close(); return false; }
-            if (!HasPaintedTargets) return false;
+            if (!IsPaintedAt(point)) return false;
             int row = (int)((point.Y - Bounds.Y) / 20);
             if (Count > Visible && row >= Visible)
             {
@@ -257,7 +285,7 @@ namespace BetterGhPanel.UI
         internal bool Hover(PointF point)
         {
             int row = (int)((point.Y - Bounds.Y) / 20);
-            int index = HasPaintedTargets && Bounds.Contains(point) && row >= 0 && row < Visible ? Offset + row : -1;
+            int index = IsPaintedAt(point) && row >= 0 && row < Visible ? Offset + row : -1;
             if (HoveredIndex == index) return false;
             HoveredIndex = index;
             return true;

@@ -50,6 +50,8 @@ namespace BetterGhPanel
             Fill(g, Color.FromArgb(32, 49, 55, 53), new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + 2, _rowMenuBounds.Width, _rowMenuBounds.Height));
             Fill(g, Color.White, _rowMenuBounds);
             var actions = _rowMenuPendingActions;
+            if (!_preservePaintedTargets)
+                _rowMenuActions = Enumerable.Repeat(new CanvasRowAction(PanelRowAction.Unpainted, "", ""), actions.Length).ToArray();
             for (int i = 0; i < actions.Length; i++)
             {
                 var bounds = new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + i * CanvasRowActions.RowHeight,
@@ -58,11 +60,19 @@ namespace BetterGhPanel
                 Text(g, actions[i].Label, font, Ink, new RectangleF(bounds.X + 8, bounds.Y, bounds.Width - 16, bounds.Height), trim);
                 // Partial invalidations must not activate a row that has not
                 // actually been painted at its new position.
-                if (FullyVisible(g, bounds)) _rowMenuActions[i] = actions[i];
+                var target = new RectangleF(_rowMenuBounds.X, bounds.Y, _rowMenuBounds.Width, bounds.Height);
+                if (TargetPainted(g, target)) _rowMenuActions[i] = actions[i];
             }
             using (var pen = new Pen(Color.FromArgb(194, 205, 194)))
                 g.DrawRectangle(pen, _rowMenuBounds.X, _rowMenuBounds.Y, _rowMenuBounds.Width, _rowMenuBounds.Height);
             _rowMenuPainted = _rowMenuActions.Any(action => action.Action != PanelRowAction.Unpainted);
+        }
+
+        private bool RowMenuTargetPainted(PointF point)
+        {
+            int index = (int)((point.Y - _rowMenuBounds.Y) / CanvasRowActions.RowHeight);
+            return _rowMenuPainted && _rowMenuBounds.Contains(point) && index >= 0 && index < _rowMenuActions.Length &&
+                _rowMenuActions[index].Action != PanelRowAction.Unpainted;
         }
 
         private static bool FullyVisible(Graphics graphics, RectangleF bounds)

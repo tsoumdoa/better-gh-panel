@@ -11,6 +11,43 @@ internal static class CanvasMenuChoiceChecks
     {
         SearchCapabilitiesAndPaging();
         ChoiceIdentityAndPersistedValues();
+        PartialPaintEligibility();
+    }
+
+    private static void PartialPaintEligibility()
+    {
+        var menu = new CanvasMenu();
+        menu.Toggle(CanvasMenuKind.SearchMode, PanelSnapshot.Empty, new PanelQueryOptions());
+        menu.Layout(new RectangleF(0, 0, 300, 110), default, default, default, search: new RectangleF(12, 24, 100, 20));
+        var first = new PointF(menu.Bounds.Left + 8, menu.Bounds.Top + 10);
+        var second = new PointF(menu.Bounds.Left + 8, menu.Bounds.Top + 30);
+        var previous = new PointF(menu.Bounds.Left + 8, menu.Bounds.Bottom - 10);
+        var next = new PointF(menu.Bounds.Right - 8, menu.Bounds.Bottom - 10);
+        menu.BeginPaint();
+        menu.MarkRowPainted(0);
+        menu.MarkPagePainted(false);
+        Check(menu.IsPaintedAt(first) && menu.TrySelect(first, out int firstIndex) && firstIndex == 0,
+            "A fully painted menu row is actionable when neighboring targets are clipped");
+        Check(menu.Hover(first) && menu.HoveredIndex == 0, "A fully painted menu row can be hovered");
+        menu.InvalidatePaint();
+        menu.BeginPaint();
+        menu.MarkRowPainted(0);
+        menu.MarkPagePainted(false);
+        Check(menu.HoveredIndex == 0, "Repainting retains the active menu hover highlight");
+        menu.BeginPaint(preserve: true);
+        Check(menu.IsPaintedAt(first) && menu.IsPaintedAt(next),
+            "An unchanged page retains targets painted in an earlier complete region");
+        Check(!menu.IsPaintedAt(second) && !menu.TrySelect(second, out _) && menu.Hover(second) && menu.HoveredIndex == -1 &&
+            !menu.IsPaintedAt(previous) && !menu.TrySelect(previous, out _) && menu.Offset == 0,
+            "Clipped rows and the unpainted half of a pager cannot be selected or hovered");
+        Check(menu.IsPaintedAt(next) && !menu.TrySelect(next, out _) && menu.Offset > 0 && !menu.IsPaintedAt(first),
+            "A painted pager advances and invalidates every target until the next page is painted");
+        menu.BeginPaint();
+        menu.MarkRowPainted(0);
+        Check(menu.TrySelect(first, out int nextIndex) && nextIndex == menu.Offset,
+            "The new page becomes actionable only after its own row is painted");
+        menu.Layout(new RectangleF(10, 10, 300, 110), default, default, default, search: new RectangleF(22, 34, 100, 20));
+        Check(!menu.HasPaintedTargets, "Moving the menu invalidates its previously painted geometry");
     }
 
     private static void SearchCapabilitiesAndPaging()

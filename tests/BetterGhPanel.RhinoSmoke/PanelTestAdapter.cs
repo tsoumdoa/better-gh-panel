@@ -152,6 +152,10 @@ internal sealed class CanvasEditorAdapter
         return new CanvasEditorAdapter(arguments[0]!, type);
     }
 
+    internal static void CloseActive(Assembly assembly) =>
+        assembly.GetType("BetterGhPanel.UI.CanvasTextInput", true)!.GetMethod("CloseActive", BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, new object?[] { null });
+
     private System.Windows.Forms.TextBox Input =>
         (System.Windows.Forms.TextBox)_type.BaseType!.GetField("m_inputTextBox", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_editor)!;
     internal int TextAreaWidth => Input.ClientSize.Width;

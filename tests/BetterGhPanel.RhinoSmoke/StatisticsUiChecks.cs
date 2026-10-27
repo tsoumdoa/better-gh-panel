@@ -58,6 +58,19 @@ internal static class StatisticsUiChecks
             Check(PanelTestAdapter.MenuOpen(component), "Stats opens from its dedicated footer affordance");
             Paint(component, canvas, "statistics");
             var bounds = PanelTestAdapter.MenuBounds(component);
+            var firstStat = new RectangleF(bounds.X, bounds.Y, bounds.Width, 20);
+            var beforeClip = Enumerable.Range(0, 4).Select(OutputFingerprint).ToArray();
+            component.Attributes.ExpireLayout();
+            component.Attributes.PerformLayout();
+            PaintClip(component, canvas, new RectangleF(firstStat.X, firstStat.Y, firstStat.Width / 2, firstStat.Height));
+            Click(component, canvas, firstStat);
+            Check(Tooltip(component, canvas, firstStat).Title != "Tree statistics" && PanelTestAdapter.MenuOpen(component) &&
+                beforeClip.SequenceEqual(Enumerable.Range(0, 4).Select(OutputFingerprint)),
+                "A clipped statistics row cannot expose a tooltip or affect selection and D/S/B/F");
+            PaintClip(component, canvas, firstStat);
+            Check(Tooltip(component, canvas, firstStat).Title == "Tree statistics",
+                "A fully painted statistics row exposes its tooltip without requiring the entire menu to repaint");
+            Paint(component, canvas);
             Click(component, canvas, new RectangleF(bounds.X + 5, bounds.Y + 2, bounds.Width - 10, 16));
             Check(PanelTestAdapter.MenuOpen(component) && PanelTestAdapter.SelectedPosition(component) == 0 &&
                 component.Params.Output[0].VolatileData.AllData(true).SequenceEqual(output),
@@ -123,6 +136,31 @@ internal static class StatisticsUiChecks
             Check(!PanelTestAdapter.MenuOpen(component), "Disabled components dismiss Stats and block stale reopening");
         }
         finally { component.DocumentContextChanged(document, GH_DocumentContext.Close); }
+
+        string OutputFingerprint(int index)
+        {
+            var tree = component.Params.Output[index].VolatileData;
+            return string.Join("|", tree.Paths.Select(path => path.ToString())) + ":" +
+                string.Join("|", tree.AllData(true).Select(value => value == null ? "null" : value.GetType().FullName + ":" + value));
+        }
+    }
+
+    private static void PaintClip(GH_Component component, GH_Canvas canvas, RectangleF clip)
+    {
+        using var bitmap = new Bitmap(canvas.Width, canvas.Height);
+        using var graphics = Graphics.FromImage(bitmap);
+        canvas.Viewport.ApplyProjection(graphics);
+        graphics.SetClip(clip);
+        PanelTestAdapter.Render(component, canvas, graphics);
+    }
+
+    private static GH_TooltipDisplayEventArgs Tooltip(GH_Component component, GH_Canvas canvas, RectangleF bounds)
+    {
+        var point = new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        var tooltip = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
+            BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, System.Drawing.Point.Round(point) }, null)!;
+        component.Attributes.SetupTooltip(point, tooltip);
+        return tooltip;
     }
 
     private static void Paint(GH_Component component, GH_Canvas canvas, string? name = null)
