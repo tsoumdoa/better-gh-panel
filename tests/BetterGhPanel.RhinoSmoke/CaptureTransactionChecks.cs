@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
 using Grasshopper;
@@ -51,7 +52,9 @@ internal static class CaptureTransactionChecks
             await VerifyGeometryHolderRecovery(assembly, true);
             VerifyLoadedPointReferences(assembly);
             await VerifyOutputFence(assembly);
+            await VerifyMeasuredOutputFence(assembly);
             await VerifySelectionPublicationVisits(assembly);
+            await VerifySelectionPublicationVisits(assembly, measuredGeometry: true);
             await VerifyStructureSolve(assembly, 0);
             await VerifyStructureSolve(assembly, 1);
             await VerifyStructureSolve(assembly, 2);
@@ -262,14 +265,24 @@ internal static class CaptureTransactionChecks
             "a value changed immediately before output publication is recaptured before D/S/B/F, and unchanged selection reuses the snapshot");
     }
 
-    private static async Task VerifySelectionPublicationVisits(Assembly assembly)
+    private static async Task VerifySelectionPublicationVisits(Assembly assembly, bool measuredGeometry = false)
     {
-        const int count = 80000;
+        int count = measuredGeometry ? 2048 : 80000;
         using var fixture = new OutputChecks.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         var source = fixture.Source.PersistentData.EnsurePath(new GH_Path(0));
         var paired = fixture.Paired.PersistentData.EnsurePath(new GH_Path(0));
-        for (int i = 0; i < count; i++) { source.Add(new GH_Point(new Point3d(i, 1, 2))); paired.Add(new GH_Integer(i)); }
+        for (int i = 0; i < count; i++)
+        {
+            if (measuredGeometry)
+            {
+                var points = new[] { new Point3d(i, 0, 0), new Point3d(i + 1, 1, 0), new Point3d(i + 2, 0, 0) };
+                Curve curve = i % 2 == 0 ? new PolylineCurve(points) : NurbsCurve.Create(false, 2, points);
+                source.Add(new GH_Curve { Value = curve });
+            }
+            else source.Add(new GH_Point(new Point3d(i, 1, 2)));
+            paired.Add(new GH_Integer(i));
+        }
         fixture.Scope(PanelOutputScope.Selected);
         fixture.Solve(); await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == count && fixture.Sinks[0].VolatileData.DataCount == count);
         var component = fixture.Component;
@@ -285,6 +298,45 @@ internal static class CaptureTransactionChecks
         var validation = type.GetProperty("CaptureValidationVisitsForTesting", Private)!;
         var reconstruction = type.GetProperty("OutputReconstructionVisitsForTesting", Private)!;
         var publication = type.GetProperty("OutputPublicationItemsForTesting", Private)!;
+        var holderVisits = type.GetProperty("CaptureMeasurementSourceVisitsForTesting", Private)!;
+        var entryVisits = type.GetProperty("MeasurementEntryVisitsForTesting", Private)!;
+        var entryCopies = type.GetProperty("MeasurementEntryCopiesForTesting", Private)!;
+        var sourceChecks = type.GetProperty("MeasurementSourceChecksForTesting", Private)!;
+        var sourceScans = type.GetProperty("MeasurementSourceScansForTesting", Private)!;
+        var entryCount = type.GetProperty("MeasurementEntryCountForTesting", Private)!;
+        if (measuredGeometry)
+        {
+            // Populate actual production preparations/workers, not a replacement
+            // resolver, synthetic cache entries, or geometry-free point summaries.
+            var batch = (Task<bool>)fixture.Session.GetType().GetMethod("MeasureGeometryAsync", Private)!
+                .Invoke(fixture.Session, new object[] { fixture.Result.Snapshot, Enumerable.Range(0, count).ToArray(), CancellationToken.None })!;
+            if (await Task.WhenAny(batch, Task.Delay(TimeSpan.FromSeconds(60))) != batch)
+                throw new TimeoutException("Populating measured selection entries timed out");
+            Check(await batch && (int)entryCount.GetValue(component)! == count,
+                "all curve entries are populated by owned production measurement workers before gesture instrumentation");
+            fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Length, Search = "> 0" });
+            await fixture.Ready(() => fixture.Result.RowPositions.Count == count && fixture.Sinks[0].VolatileData.DataCount == count &&
+                ReferenceEquals(Field(fixture, "_cachedOutputResult"), fixture.Result));
+            Check(fixture.Result.Snapshot.Rows.All(row => row.IsValid && row.GeometryInfo?.CanMeasure == true) &&
+                fixture.Sinks[0].VolatileData.AllData(false).All(value => value is GH_Curve),
+                "measured polyline and NURBS filter controls retain typed geometry output");
+        }
+        using var canvas = measuredGeometry ? new Grasshopper.GUI.Canvas.GH_Canvas
+            { Document = fixture.Document, Size = new System.Drawing.Size(1000, 700) } : null;
+        if (canvas != null)
+        {
+            canvas.Viewport.Size = canvas.Size; canvas.Viewport.Target = System.Drawing.Point.Empty;
+            canvas.Viewport.Zoom = 1; canvas.Viewport.ComputeProjection();
+            component.Attributes.PerformLayout();
+        }
+        void Render()
+        {
+            var target = canvas!;
+            using var bitmap = new System.Drawing.Bitmap(target.Width, target.Height);
+            using var graphics = System.Drawing.Graphics.FromImage(bitmap);
+            target.Viewport.ApplyProjection(graphics);
+            PanelTestAdapter.Render(component, target, graphics);
+        }
         foreach (string mode in new[] { "Selected", "FilteredResults" })
         foreach (bool labels in new[] { false, true })
         {
@@ -307,19 +359,102 @@ internal static class CaptureTransactionChecks
                 var positions = ordered.Invoke(selection, new object[] { result })!;
                 highlight.Invoke(component, new[] { result.Snapshot, positions });
                 await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == expected && fixture.Sinks[3].VolatileData.DataCount == expected);
+                // Include the real canvas display/details/visible-demand path.
+                // Viewport pixels and the host's native display lifetime are
+                // covered by their existing fixtures, not this scan counter.
+                if (measuredGeometry) Render();
                 long scanPasses = (long)passes.GetValue(component)!;
                 long validationVisits = (long)validation.GetValue(component)!;
                 long reconstructionVisits = (long)reconstruction.GetValue(component)!;
                 long publicationItems = (long)publication.GetValue(component)!;
-                Console.WriteLine("SELECTION_GESTURE mode=" + mode + " labels=" + labels + " gesture=" + gesture +
+                long measuredEntryVisits = (long)entryVisits.GetValue(component)!;
+                long copiedEntries = (long)entryCopies.GetValue(component)!;
+                long measuredSourceChecks = (long)sourceChecks.GetValue(component)!;
+                long measuredSourceScans = (long)sourceScans.GetValue(component)!;
+                var preview = Field(fixture, "_highlight")!;
+                int PreviewCount(string property) => (int)preview.GetType().GetProperty(property, Private)!.GetValue(preview)!;
+                Console.WriteLine("SELECTION_GESTURE input=" + (measuredGeometry ? "measured-curves" : "points") +
+                    " rows=" + count + " entries=" + entryCount.GetValue(component) + " mode=" + mode + " labels=" + labels + " gesture=" + gesture +
                     " elapsedMs=" + timer.ElapsedMilliseconds + " validationPasses=" + scanPasses +
-                    " validationVisits=" + validationVisits + " outputReconstructionVisits=" + reconstructionVisits + " publishedItems=" + publicationItems);
+                    " validationVisits=" + validationVisits + " captureMeasurementSourceVisits=" + holderVisits.GetValue(component) +
+                    " measurementEntryVisits=" + measuredEntryVisits + " measurementEntryCopies=" + copiedEntries +
+                    " measurementSourceChecks=" + measuredSourceChecks + " measurementSourceScans=" + measuredSourceScans +
+                    " previewEntries=" + PreviewCount("PreviewCount") + " previewBuildRows=" + PreviewCount("LastVisitedRows") +
+                    " previewBuildNodes=" + PreviewCount("LastVisitedNodes") +
+                    " outputReconstructionVisits=" + reconstructionVisits + " publishedItems=" + publicationItems);
                 Check(scanPasses == 1 && validationVisits >= count && reconstructionVisits > 0 && publicationItems >= count &&
                     ReferenceEquals(result.Snapshot, fixture.Result.Snapshot),
                     "selection gesture performs one full freshness validation before scheduled publication");
+                if (measuredGeometry)
+                {
+                    int visible = PanelTestAdapter.Hits(component, "_rowHits");
+                    Check((int)entryCount.GetValue(component)! == count && measuredSourceScans == 0 && copiedEntries == 0 &&
+                        measuredEntryVisits > 0 && measuredEntryVisits <= 8L * visible &&
+                        measuredSourceChecks > 0 && measuredSourceChecks <= 4L * visible &&
+                        (long)holderVisits.GetValue(component)! == count && validationVisits == 5L * count &&
+                        reconstructionVisits == 3L * count + expected && publicationItems == 2L * count + 2L * expected,
+                        "a measured selection gesture checks all captured holders once; cache reads are limited to rendered rows without a cache scan/copy");
+                    Check(PreviewCount("PreviewCount") > 0 && ReferenceEquals(result,
+                        preview.GetType().GetField("_orderResult", Private)!.GetValue(preview)) == labels,
+                        "both preview scopes build owned geometry with item labels following the requested setting");
+                    var d = fixture.Sinks[0].VolatileData.AllData(false).ToArray();
+                    var s = fixture.Sinks[1].VolatileData.AllData(false).ToArray();
+                    var b = fixture.Sinks[2].VolatileData.AllData(false).Cast<GH_Boolean>().Select(value => value.Value).ToArray();
+                    var f = fixture.Sinks[3].VolatileData.AllData(false).Cast<GH_Integer>().Select(value => value.Value).ToArray();
+                    Check(d.All(value => value is GH_Curve) && s.SequenceEqual(d.Take(expected)) &&
+                        b.SequenceEqual(Enumerable.Range(0, count).Select(i => i < expected)) &&
+                        f.SequenceEqual(Enumerable.Range(0, expected)),
+                        "sparse, dense and select-all measured gestures preserve source-order typed D/S, original B and paired F");
+                }
             }
         }
         enabled.SetValue(component, false);
+    }
+
+    private static async Task VerifyMeasuredOutputFence(Assembly assembly)
+    {
+        using var fixture = new OutputChecks.Fixture(assembly);
+        fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
+        fixture.Source.PersistentData.Append(new GH_Curve { Value = new PolylineCurve(new[] {
+            Point3d.Origin, new Point3d(3, 0, 0), new Point3d(3, 4, 0) }) }, new GH_Path(0));
+        fixture.Paired.PersistentData.Append(new GH_String("curve"), new GH_Path(0));
+        fixture.Scope(PanelOutputScope.Selected);
+        fixture.Solve(); await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 1);
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Length, Search = "> 2" });
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 1 && fixture.Sinks[0].VolatileData.DataCount == 1);
+        fixture.Select(0); await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
+        var component = fixture.Component; var type = component.GetType();
+        var snapshot = fixture.Result.Snapshot;
+        var source = (GH_Curve)((IGH_Goo?[])Field(fixture, "_sourceItems")!)[0]!;
+        var hook = type.GetProperty("BeforeOutputValidationForTesting", Private)!;
+        NestedCaptureDataAccess Publish(Action? callback)
+        {
+            var access = new NestedCaptureDataAccess();
+            type.GetField("_reuseQuery", Private)!.SetValue(component, true);
+            hook.SetValue(component, callback);
+            try { type.GetMethod("SolveInstance", Private)!.Invoke(component, new object[] { access }); }
+            finally { hook.SetValue(component, null); }
+            return access;
+        }
+        var unchanged = Publish(null);
+        Check(unchanged.Outputs.Count == 4 && unchanged.Outputs[0].DataCount == 1 && unchanged.Outputs[1].DataCount == 1 &&
+            ReferenceEquals(snapshot, fixture.Result.Snapshot),
+            "unchanged measured output-only publication uses the same snapshot and all four outputs");
+        bool called = false;
+        var stale = Publish(() =>
+        {
+            called = true;
+            source.Value = new PolylineCurve(new[] { Point3d.Origin, new Point3d(1, 0, 0) });
+            ((GH_Curve)fixture.Source.PersistentData.AllData(false).Single()).Value =
+                new PolylineCurve(new[] { Point3d.Origin, new Point3d(1, 0, 0) });
+        });
+        Check(called && stale.Outputs.Count == 0,
+            "holder replacement after reconstruction rejects measured D/S/B/F before any SetDataTree call");
+        await fixture.Ready(() => !ReferenceEquals(snapshot, fixture.Result.Snapshot) && fixture.Result.Snapshot.Rows.Count == 1 &&
+            fixture.Result.RowPositions.Count == 0 && fixture.Sinks[0].VolatileData.DataCount == 0 && fixture.Sinks[3].VolatileData.DataCount == 0);
+        Check(fixture.Sinks[1].VolatileData.DataCount == 0 &&
+            !((GH_Boolean)fixture.Sinks[2].VolatileData.AllData(false).Single()).Value,
+            "the stale measured publication recovers with fresh Length membership and no stale selected/mask/paired output");
     }
 
     private static void VerifyStructureWitness(Assembly assembly)

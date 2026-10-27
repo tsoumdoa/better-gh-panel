@@ -44,13 +44,28 @@ namespace BetterGhPanel
         internal Action<object>? GraphVisitObserverForTesting { get; set; }
         internal Action<GH_Structure<IGH_Goo>, GH_Structure<IGH_Goo>?>? StructureObserverForTesting { get; set; }
         internal Action? BeforeOutputValidationForTesting { get; set; }
-        internal bool CaptureDiagnosticsForTesting { get; set; }
+        private bool _captureDiagnosticsForTesting;
+        internal bool CaptureDiagnosticsForTesting
+        {
+            get => _captureDiagnosticsForTesting;
+            set { _captureDiagnosticsForTesting = value; if (_session != null) _session.GeometryDiagnosticsForTesting = value; }
+        }
         internal long CaptureValidationPassesForTesting { get; private set; }
         internal long CaptureValidationVisitsForTesting { get; private set; }
+        internal long CaptureMeasurementSourceVisitsForTesting { get; private set; }
+        internal long MeasurementEntryVisitsForTesting => _session?.GeometryEntryVisitsForTesting ?? 0;
+        internal long MeasurementEntryCopiesForTesting => _session?.GeometryEntryCopiesForTesting ?? 0;
+        internal long MeasurementSourceChecksForTesting => _session?.GeometrySourceChecksForTesting ?? 0;
+        internal long MeasurementSourceScansForTesting => _session?.GeometrySourceScansForTesting ?? 0;
+        internal int MeasurementEntryCountForTesting => _session?.GeometryEntryCountForTesting ?? 0;
         internal long OutputReconstructionVisitsForTesting { get; private set; }
         internal long OutputPublicationItemsForTesting { get; private set; }
         internal void ResetCaptureDiagnosticsForTesting()
-        { CaptureValidationPassesForTesting = CaptureValidationVisitsForTesting = OutputReconstructionVisitsForTesting = OutputPublicationItemsForTesting = 0; }
+        {
+            CaptureValidationPassesForTesting = CaptureValidationVisitsForTesting = CaptureMeasurementSourceVisitsForTesting =
+                OutputReconstructionVisitsForTesting = OutputPublicationItemsForTesting = 0;
+            _session?.ResetGeometryDiagnosticsForTesting();
+        }
         private void CountOutputVisits(long visits)
         { if (CaptureDiagnosticsForTesting) OutputReconstructionVisitsForTesting += visits; }
         private long _outputRequest;
@@ -116,6 +131,7 @@ namespace BetterGhPanel
                 if (_session == null)
                 {
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
+                    _session.GeometryDiagnosticsForTesting = CaptureDiagnosticsForTesting;
                     _session.SetDecimalPlacesResolver(() => DecimalPlaces);
                     _session.SetCreateSetResolver(() => CreateSetTree);
                     if (Locked) _session.InvalidateInput(false, suspended: true);
@@ -224,11 +240,12 @@ namespace BetterGhPanel
             var tree = _queryTree;
             var context = _geometryContext;
             if (session == null || session.IsDisposed || Locked || !ReferenceEquals(snapshot, _measurementSnapshot) ||
-                !ReferenceEquals(snapshot, session.Snapshot) || tree == null) return false;
+                !ReferenceEquals(snapshot, session.Snapshot) || !session.GeometrySnapshotAttached(snapshot) || tree == null) return false;
             long visits = 0;
             bool HoldersCurrent()
             {
                 bool result = SnapshotCapture.MeasurementSourcesCurrentWithVisits(_sourceItems, _measurementSources, out int count);
+                if (CaptureDiagnosticsForTesting) CaptureMeasurementSourceVisitsForTesting += count;
                 visits += count; return result;
             }
             bool GraphsCurrent()
@@ -262,7 +279,8 @@ namespace BetterGhPanel
             if (!current && generation == _solveGeneration && ReferenceEquals(snapshot, _measurementSnapshot))
                 RecaptureStaleMeasurementSource(snapshot);
             return current && generation == _solveGeneration && ReferenceEquals(session, _session) && !session.IsDisposed &&
-                !Locked && ReferenceEquals(snapshot, _measurementSnapshot) && ReferenceEquals(snapshot, session.Snapshot) && ReferenceEquals(tree, _queryTree);
+                !Locked && ReferenceEquals(snapshot, _measurementSnapshot) && ReferenceEquals(snapshot, session.Snapshot) &&
+                session.GeometrySnapshotAttached(snapshot) && ReferenceEquals(tree, _queryTree);
         }
 
         private static MeasurementContextStamp ReadGeometryContext(out Rhino.UnitSystem unitSystem, out double tolerance, out string units)

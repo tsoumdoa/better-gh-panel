@@ -127,6 +127,42 @@ namespace BetterGhPanel.Runtime
         private CancellationTokenSource? _capacityWait;
         private int _witnessBytes, _witnessCount;
 
+        // Counts actual cache slot reads (successful lookups, snapshot copies and
+        // enumeration), including work outside SourcesCurrent. Disabled normally.
+        internal bool DiagnosticsForTesting { get; set; }
+        internal long EntryVisitsForTesting { get; private set; }
+        internal long EntryCopiesForTesting { get; private set; }
+        internal long SourceChecksForTesting { get; private set; }
+        internal long SourceScansForTesting { get; private set; }
+        internal int EntryCountForTesting => _entries.Count;
+        internal void ResetDiagnosticsForTesting()
+            => EntryVisitsForTesting = EntryCopiesForTesting = SourceChecksForTesting = SourceScansForTesting = 0;
+
+        // An O(1), callback-free ownership fence, deliberately not a source proof.
+        internal bool IsAttachedTo(TSnapshot snapshot) => !_disposed && ReferenceEquals(snapshot, _snapshot);
+
+        private bool TryGetEntry(int position, out Entry entry)
+        {
+            bool found = _entries.TryGetValue(position, out entry!);
+            if (found) CountEntryVisit();
+            return found;
+        }
+        private void CountEntryVisit() { if (DiagnosticsForTesting) EntryVisitsForTesting++; }
+        private List<KeyValuePair<int, Entry>> CopyEntries()
+        {
+            CountEntryCopy();
+            return new List<KeyValuePair<int, Entry>>(_entries);
+        }
+        private void CountEntryCopy()
+        {
+            if (DiagnosticsForTesting) { EntryCopiesForTesting += _entries.Count; EntryVisitsForTesting += _entries.Count; }
+        }
+        private bool SourceCurrent(TSnapshot snapshot, int position)
+        {
+            if (DiagnosticsForTesting) SourceChecksForTesting++;
+            return _sourceCurrent(snapshot, position);
+        }
+
         internal GeometryMeasurementQueue(Action<Action> postUi, Action<Action> postCancellation,
             Action<int, Action> delayOnUi, Func<Action, bool> submitWorker, Action verifyUi,
             Func<TSnapshot, int, bool> validPosition, Func<TSnapshot, int, bool> canMeasure, Func<TSnapshot, int, bool> needsMeasurement,
@@ -149,10 +185,12 @@ namespace BetterGhPanel.Runtime
             CancelBatches();
             _visible.Clear();
             _snapshot = snapshot;
+            CountEntryCopy();
             foreach (var position in new List<int>(_entries.Keys))
             {
+                CountEntryVisit();
                 if (!ReferenceEquals(_snapshot, snapshot) || _disposed) { PumpLater(); return; }
-                if (!_entries.TryGetValue(position, out var entry)) continue;
+                if (!TryGetEntry(position, out var entry)) continue;
                 bool match = false;
                 try
                 {
@@ -189,29 +227,36 @@ namespace BetterGhPanel.Runtime
         }
 
         private bool IsCurrentEntry(TSnapshot snapshot, int position, Entry entry) =>
-            ReferenceEquals(snapshot, _snapshot) && _entries.TryGetValue(position, out var current) && ReferenceEquals(current, entry) &&
-            _sourceCurrent(snapshot, position) && ReferenceEquals(snapshot, _snapshot) &&
-            _entries.TryGetValue(position, out current) && ReferenceEquals(current, entry);
+            ReferenceEquals(snapshot, _snapshot) && TryGetEntry(position, out var current) && ReferenceEquals(current, entry) &&
+            SourceCurrent(snapshot, position) && ReferenceEquals(snapshot, _snapshot) &&
+            TryGetEntry(position, out current) && ReferenceEquals(current, entry);
 
         internal TResult? Get(TSnapshot snapshot, int position) =>
-            ReferenceEquals(snapshot, _snapshot) && _entries.TryGetValue(position, out var entry) && IsCurrentEntry(snapshot, position, entry) ? entry.Value : null;
+            ReferenceEquals(snapshot, _snapshot) && TryGetEntry(position, out var entry) && IsCurrentEntry(snapshot, position, entry) ? entry.Value : null;
         internal bool Has(TSnapshot snapshot, int position) =>
-            ReferenceEquals(snapshot, _snapshot) && _entries.TryGetValue(position, out var entry) && entry.Complete && IsCurrentEntry(snapshot, position, entry);
+            ReferenceEquals(snapshot, _snapshot) && TryGetEntry(position, out var entry) && entry.Complete && IsCurrentEntry(snapshot, position, entry);
         internal bool Pending(TSnapshot snapshot, int position) => ReferenceEquals(snapshot, _snapshot) &&
-            ((_entries.TryGetValue(position, out var entry) && !entry.Complete) || _visible.Contains(position) ||
+            ((TryGetEntry(position, out var entry) && !entry.Complete) || _visible.Contains(position) ||
              _batches.Exists(batch => !batch.Token.IsCancellationRequested && batch.Pending.Contains(position)));
         internal IEnumerable<KeyValuePair<int, TResult?>> Completed(TSnapshot snapshot)
         {
             if (!ReferenceEquals(snapshot, _snapshot)) yield break;
-            foreach (var pair in new List<KeyValuePair<int, Entry>>(_entries))
+            foreach (var pair in CopyEntries())
+            {
+                CountEntryVisit();
                 if (pair.Value.Complete && IsCurrentEntry(snapshot, pair.Key, pair.Value)) yield return new KeyValuePair<int, TResult?>(pair.Key, pair.Value.Value);
+            }
         }
 
         internal bool SourcesCurrent(TSnapshot snapshot)
         {
+            if (DiagnosticsForTesting) SourceScansForTesting++;
             if (!ReferenceEquals(snapshot, _snapshot)) return false;
-            foreach (var pair in new List<KeyValuePair<int, Entry>>(_entries))
+            foreach (var pair in CopyEntries())
+            {
+                CountEntryVisit();
                 if (!IsCurrentEntry(snapshot, pair.Key, pair.Value)) return false;
+            }
             return ReferenceEquals(snapshot, _snapshot);
         }
 
@@ -244,7 +289,7 @@ namespace BetterGhPanel.Runtime
                     // rejects positions beyond the snapshot before indexing it.
                     if (!_validPosition(snapshot, position))
                     { completion.TrySetResult(false); return; }
-                    if (_needsMeasurement(snapshot, position) && !_sourceCurrent(snapshot, position))
+                    if (_needsMeasurement(snapshot, position) && !SourceCurrent(snapshot, position))
                     { completion.TrySetResult(false); return; }
                     if (_needsMeasurement(snapshot, position) && CanStart(snapshot, position) && seen.Add(position)) pending.Add(position);
                 }
@@ -268,7 +313,7 @@ namespace BetterGhPanel.Runtime
         }
 
         private bool CanStart(TSnapshot snapshot, int position) =>
-            _canMeasure(snapshot, position) && _sourceCurrent(snapshot, position) && !Has(snapshot, position);
+            _canMeasure(snapshot, position) && SourceCurrent(snapshot, position) && !Has(snapshot, position);
 
         private int NextPosition()
         {
@@ -290,7 +335,7 @@ namespace BetterGhPanel.Runtime
                     while (batch.Positions.Count > 0 && Has(batch.Snapshot, batch.Positions.Peek()))
                         batch.Pending.Remove(batch.Positions.Dequeue());
                     if (batch.Positions.Count == 0) CompleteBatch(batch, true);
-                    else if (!_sourceCurrent(batch.Snapshot, batch.Positions.Peek())) CompleteBatch(batch, false);
+                    else if (!SourceCurrent(batch.Snapshot, batch.Positions.Peek())) CompleteBatch(batch, false);
                 }
             }
         }
@@ -347,9 +392,9 @@ namespace BetterGhPanel.Runtime
                 return;
             }
             catch (Exception) { entry.Work = null; }
-            bool current = ReferenceEquals(_snapshot, snapshot) && _entries.TryGetValue(position, out var existing) &&
-                ReferenceEquals(existing, entry) && IsDemanded(entry) && _sourceCurrent(snapshot, position);
-            if (!current || !ReferenceEquals(_snapshot, snapshot) || !_entries.TryGetValue(position, out existing) ||
+            bool current = ReferenceEquals(_snapshot, snapshot) && TryGetEntry(position, out var existing) &&
+                ReferenceEquals(existing, entry) && IsDemanded(entry) && SourceCurrent(snapshot, position);
+            if (!current || !ReferenceEquals(_snapshot, snapshot) || !TryGetEntry(position, out existing) ||
                 !ReferenceEquals(existing, entry) || !IsDemanded(entry))
             {
                 entry.Work?.TryAbandon();
@@ -404,11 +449,11 @@ namespace BetterGhPanel.Runtime
             if (!ReferenceEquals(_running, entry)) return;
             _running = null;
             entry.Work = null; // release unretained proof bytes as soon as the worker ends
-            if (!_disposed && _snapshot != null && _entries.TryGetValue(entry.Position, out var current) && ReferenceEquals(current, entry))
+            if (!_disposed && _snapshot != null && TryGetEntry(entry.Position, out var current) && ReferenceEquals(current, entry))
             {
                 var snapshot = _snapshot;
-                if (!_sourceCurrent(snapshot, entry.Position)) RemoveEntry(entry.Position, entry);
-                else if (!ReferenceEquals(snapshot, _snapshot) || !_entries.TryGetValue(entry.Position, out current) || !ReferenceEquals(current, entry)) { }
+                if (!SourceCurrent(snapshot, entry.Position)) RemoveEntry(entry.Position, entry);
+                else if (!ReferenceEquals(snapshot, _snapshot) || !TryGetEntry(entry.Position, out current) || !ReferenceEquals(current, entry)) { }
                 else if (claimed) { entry.Value = value; entry.Complete = true; _visible.Remove(entry.Position); _changed(); }
                 else RemoveEntry(entry.Position, entry);
             }
@@ -474,7 +519,7 @@ namespace BetterGhPanel.Runtime
 
         private void RemoveEntry(int position, Entry entry)
         {
-            if (!_entries.TryGetValue(position, out var current) || !ReferenceEquals(current, entry)) return;
+            if (!TryGetEntry(position, out var current) || !ReferenceEquals(current, entry)) return;
             _entries.Remove(position);
             if (entry.Witness != null)
             {
@@ -487,7 +532,8 @@ namespace BetterGhPanel.Runtime
         }
         private void ClearEntries()
         {
-            foreach (var entry in new List<Entry>(_entries.Values)) RemoveEntry(entry.Position, entry);
+            CountEntryCopy();
+            foreach (var entry in new List<Entry>(_entries.Values)) { CountEntryVisit(); RemoveEntry(entry.Position, entry); }
         }
         private void FailPending()
         {

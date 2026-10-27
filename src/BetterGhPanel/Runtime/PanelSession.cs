@@ -153,6 +153,16 @@ namespace BetterGhPanel.Runtime
         internal bool HasGeometryMeasurement(PanelSnapshot snapshot, int sourcePosition) => _geometry.Has(snapshot, sourcePosition);
         internal bool IsGeometryPending(PanelSnapshot snapshot, int sourcePosition) => _geometry.Pending(snapshot, sourcePosition);
         internal bool GeometrySourcesCurrent(PanelSnapshot snapshot) => _geometry.SourcesCurrent(snapshot);
+        // Ownership only: source freshness is established by the component's full
+        // capture fence. Do not use this alone to accept a measurement or action.
+        internal bool GeometrySnapshotAttached(PanelSnapshot snapshot) => _geometry.IsAttachedTo(snapshot);
+        internal bool GeometryDiagnosticsForTesting { set => _geometry.DiagnosticsForTesting = value; }
+        internal long GeometryEntryVisitsForTesting => _geometry.EntryVisitsForTesting;
+        internal long GeometryEntryCopiesForTesting => _geometry.EntryCopiesForTesting;
+        internal long GeometrySourceChecksForTesting => _geometry.SourceChecksForTesting;
+        internal long GeometrySourceScansForTesting => _geometry.SourceScansForTesting;
+        internal int GeometryEntryCountForTesting => _geometry.EntryCountForTesting;
+        internal void ResetGeometryDiagnosticsForTesting() => _geometry.ResetDiagnosticsForTesting();
         internal bool CanMeasureGeometry(PanelSnapshot snapshot, int sourcePosition) => !_disposed && ReferenceEquals(snapshot, Snapshot) &&
             sourcePosition >= 0 && sourcePosition < snapshot.Rows.Count && snapshot.Rows[sourcePosition].IsValid &&
             snapshot.Rows[sourcePosition].GeometryInfo?.CanMeasure == true && !HasGeometryMeasurement(snapshot, sourcePosition);

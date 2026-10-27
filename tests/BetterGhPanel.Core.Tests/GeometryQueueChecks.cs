@@ -39,6 +39,60 @@ internal static class GeometryQueueChecks
         ReentrantNotificationAndRead();
         ReentrantRetentionPreparation();
         MeasurementContextChanges();
+        SnapshotAttachmentAndScanCounts();
+    }
+
+    private static void SnapshotAttachmentAndScanCounts()
+    {
+        const int count = 4096;
+        using var fixture = new Fixture { OmitWitness = true };
+        var sources = new Source[count]; var positions = new int[count];
+        for (int i = 0; i < count; i++) { sources[i] = new Source(i); positions[i] = i; }
+        fixture.Attach(new Snapshot(sources), false);
+        int sourceChecks = 0;
+        fixture.SourceCurrent = (_, __) => { sourceChecks++; return true; };
+        var batch = fixture.Measure(CancellationToken.None, positions);
+        fixture.Ui();
+        while (!batch.IsCompleted) { fixture.Delay(); fixture.Worker(); fixture.Ui(); }
+        Check(batch.Result && fixture.Computations == count && fixture.Queue.EntryCountForTesting == count,
+            "scan-count control populates every entry through the production worker queue");
+        var queue = fixture.Queue;
+        queue.DiagnosticsForTesting = true;
+        queue.ResetDiagnosticsForTesting(); sourceChecks = 0;
+        Check(queue.SourcesCurrent(fixture.Current), "unchanged populated sources remain current");
+        Check(queue.EntryCopiesForTesting == count && queue.EntryVisitsForTesting == 4 * count &&
+            queue.SourceChecksForTesting == count && sourceChecks == count && queue.SourceScansForTesting == 1,
+            "source scan counters include the copy, enumeration and both entry lookups");
+        Console.WriteLine($"  {count:N0}-entry production source scan: copied entries={queue.EntryCopiesForTesting}, " +
+            $"entry reads={queue.EntryVisitsForTesting}, source checks={queue.SourceChecksForTesting}.");
+        queue.ResetDiagnosticsForTesting(); sourceChecks = 0;
+        Check(queue.IsAttachedTo(fixture.Current), "the publication fence keeps queue ownership");
+        queue.Attach(fixture.Current, false);
+        Check(queue.IsAttachedTo(fixture.Current) && queue.EntryCountForTesting == count && fixture.Computations == count &&
+            queue.EntryVisitsForTesting == 0 && queue.EntryCopiesForTesting == 0 &&
+            queue.SourceChecksForTesting == 0 && sourceChecks == 0 && queue.SourceScansForTesting == 0,
+            "same-snapshot output-only ownership checks never scan, allocate an entry copy or remeasure");
+        queue.Get(fixture.Current, count - 1);
+        Check(queue.EntryVisitsForTesting == 3 && queue.EntryCopiesForTesting == 0 && queue.SourceChecksForTesting == 1,
+            "diagnostics include ordinary display/detail reads outside a full source scan");
+        // Ownership alone deliberately says nothing about live source freshness.
+        fixture.SourceCurrent = (_, __) => false;
+        Check(queue.IsAttachedTo(fixture.Current) && !queue.SourcesCurrent(fixture.Current) &&
+            queue.Get(fixture.Current, 0) == null, "ownership cannot replace the full source freshness fence");
+        fixture.SourceCurrent = (_, __) => true;
+        var original = fixture.Current;
+        bool reentered = false;
+        fixture.SourceCurrent = (_, __) =>
+        {
+            if (!reentered) { reentered = true; fixture.Attach(new Snapshot(new Source(99)), false); }
+            return true;
+        };
+        Check(!queue.SourcesCurrent(original) && !queue.IsAttachedTo(original) && queue.IsAttachedTo(fixture.Current),
+            "reentrant attachment invalidates both the old source scan and its ownership fence");
+        queue.Suspend(true);
+        Check(!queue.IsAttachedTo(fixture.Current), "suspension detaches even retained measurements");
+        queue.Attach(fixture.Current, false); queue.Dispose();
+        Check(!queue.IsAttachedTo(fixture.Current), "disposal cannot validate an output snapshot");
     }
 
     private static void ReentrantPreparationReplacement()

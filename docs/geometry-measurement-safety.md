@@ -156,6 +156,75 @@ tree-operation call sites and exclude selection bookkeeping, hashing, native
 output internals and preview rendering. Elapsed time ranged from 24 to 51 ms
 across the 12 cases. These counters distinguish validation, reconstruction and
 host outputs; they are measurements of this fixture, not performance bounds.
+
+Those 80,000 point rows do not populate the deferred measurement cache. They
+therefore did not expose the additional cache scan in `PublishOutputs` at parent
+commit `adfc34f6b9d986cced5f85c5d8ca0407b92deb70`. That call copied every cached
+measurement entry, then called `MeasurementSourceCurrent` for each before output
+reconstruction. Its holder/inner-geometry/role/reference and document-unit-tolerance
+checks repeat a subset of the final `CapturedSnapshotCurrent` fence. The latter
+checks every captured geometry source, including unmeasured or invalid ones,
+plus graph/value witnesses, conversion, ordered D/F structure, component lifetime,
+solution ownership and context before and after validation. The publication owner
+also checks result, selection and output scope before and after that fence.
+
+The two APIs are not interchangeable in general. The queue scan also checks its
+attached snapshot and protects its enumeration from reentrant entry changes.
+Output reconstruction consumes an immutable, already-published query result and
+captured trees, not cache entries, so it needs no cache enumeration. Its final
+capture fence now additionally checks queue attachment before and after validation
+with the callback-free `IsAttachedTo` check. `PublishOutputs` no longer calls the
+cache scan before reconstruction. No source check at measurement preparation,
+dispatch, completion, detail access, measured-query publication or value-copy
+publication has been removed. There is no cached freshness success across gestures.
+
+Opt-in production diagnostics now count actual measurement-cache slot reads
+(successful dictionary lookups, copied slots and enumerated slots), copied entry
+counts, source-resolver calls and full cache scans, including accesses outside
+`SourcesCurrent`. These are separate from capture-validation passes/visits,
+capture measurement-source visits, logical D/S/B/F reconstruction and published
+items. The managed production-queue control populated 4,096 completed entries
+through its preparation/worker boundaries. One unchanged `SourcesCurrent` call
+recorded exactly 16,384 cache-slot reads, 4,096 copied entries and 4,096 source
+checks. Same-snapshot attachment and output-reuse ownership checks recorded zero
+of each and did not remeasure. An ordinary detail read recorded three cache-slot
+reads and one source check, proving the instrumentation is not restricted to the
+full-scan helper. Stale-source, reentrant replacement, suspension and disposal
+controls still reject the corresponding old work. These are deterministic managed
+operation counts, not native geometry timings or an end-to-end host measurement.
+
+The extended `capture-transaction` fixture retains the original point gestures and
+adds 2,048 actual polyline/NURBS rows and 2,048 paired integers. It populates all
+measurement entries through the unchanged production resolver/workers and executes
+a Length filter. For Selected/Filtered results preview, labels off/on and
+sparse/dense/select-all selection, its timed interval covers production selection,
+owned preview preparation, scheduled GH output publication, and the actual canvas
+renderer (including measured details and visible measurement demand). It records
+preview build rows/nodes/entries too; native viewport pixels and deferred native
+display lifetime remain the responsibility of the existing rendering fixtures.
+
+For this measured-tree fixture the enforced expected counts per gesture are one
+complete capture fence with 10,240 visits across five linear checks (2,048 geometry
+holders, managed-row checks, conversion mappings, D identities and F identities).
+It requires zero full cache scans or entry copies; cache reads/source checks are
+limited to rendered rows, with ceilings of eight/four per visible row. With
+1/1,024/2,048 selected rows, respectively, the output reconstruction counts are
+6,145/7,168/8,192 and published D/S/B/F counts are 4,098/6,144/8,192. Thus a sparse
+gesture still has full input freshness and original-shape output work. The change
+removes the additional measurement-cache pass, not those necessary linear checks
+or the dense preview/selection work. Another added control replaces an already
+measured curve after output reconstruction and requires zero `SetDataTree` calls,
+then recovery to fresh Length membership; unchanged output-only reuse is retained.
+
+The added native fixture source has been built, not run, for this change. Its
+expected complete-gesture counts and elapsed times remain for the coordinator to
+verify against the exact combined package. The earlier point-host observations
+above are not evidence that these measured-geometry gestures passed. No Rhino
+host, clipboard, camera, PR or release operation was performed for this change.
+The existing native callback/lifetime and silent in-place geometry mutation limits
+remain, as do the outstanding exact-package rendering/release gates and unavailable
+Mac and Windows .NET Framework host evidence.
+
 The capture fixture uses explicit internal hooks
 at callback boundaries; these are tests of the transaction, not a claim that native
 callbacks are bounded or that host behavior has been exercised without Rhino.
