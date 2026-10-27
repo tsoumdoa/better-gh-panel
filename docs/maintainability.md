@@ -44,6 +44,10 @@ The separate item-order viewport capture also crashed in
 `CRhinoDisplayPipeline_Flush` / `DrawToBitmap` for both the in-progress build
 and that same public beta.7 payload. It is an additional failed fixture; a
 matching baseline does not verify its rendering assertions.
+Starting the same isolated fixtures with the Rhino host minimized instead of
+hidden also produced native access violations at those respective capture
+stacks on Rhino 8.36. This diagnostic did not exercise an interactive viewport
+and does not replace either failed fixture.
 
 ## Deferred findings
 
