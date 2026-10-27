@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -13,6 +14,7 @@ internal static class InactiveDesktop
     private const uint GenericAll = 0x10000000;
     private const uint CreateSuspended = 0x00000004;
     private const uint CreateNoWindow = 0x08000000;
+    private const uint ExtendedStartupInfoPresent = 0x00080000;
     private const uint KillOnJobClose = 0x00002000;
     private const uint HandleFlagInherit = 1;
     private const int UseStandardHandles = 0x100;
@@ -23,8 +25,9 @@ internal static class InactiveDesktop
         IntPtr desktop = CreateDesktop(desktopName, IntPtr.Zero, IntPtr.Zero, 0, GenericAll, IntPtr.Zero);
         if (desktop == IntPtr.Zero) throw Error("Could not create an inactive Windows desktop");
         IntPtr job = IntPtr.Zero;
+        IntPtr attributes = IntPtr.Zero, jobList = IntPtr.Zero, handleList = IntPtr.Zero;
+        bool attributesInitialized = false;
         ProcessInformation process = default;
-        bool assigned = false;
         string? previousDesktop = Environment.GetEnvironmentVariable(EnvironmentName);
         try
         {
@@ -38,18 +41,48 @@ internal static class InactiveDesktop
             string executable = Environment.ProcessPath ?? throw new InvalidOperationException("Fixture executable path is unavailable.");
             var command = new StringBuilder(Quote(executable));
             foreach (string argument in arguments) command.Append(' ').Append(Quote(argument));
-            var startup = new StartupInfo
+            var standardInput = InheritableStandardHandle(-10);
+            var standardOutput = InheritableStandardHandle(-11);
+            var standardError = InheritableStandardHandle(-12);
+            var inheritedHandles = new HashSet<IntPtr> { standardInput, standardOutput, standardError };
+            var handles = new IntPtr[inheritedHandles.Count];
+            inheritedHandles.CopyTo(handles);
+
+            // Assign the job as part of CreateProcess. Creating a suspended child
+            // and assigning it afterward leaves an orphan window if the wrapper
+            // is terminated in between. Limit inheritance to the three stdio handles.
+            UIntPtr attributeSize = UIntPtr.Zero;
+            InitializeProcThreadAttributeList(IntPtr.Zero, 2, 0, ref attributeSize);
+            if (attributeSize == UIntPtr.Zero) throw Error("Could not size fixture process attributes");
+            attributes = Marshal.AllocHGlobal(checked((int)attributeSize.ToUInt64()));
+            if (!InitializeProcThreadAttributeList(attributes, 2, 0, ref attributeSize))
+                throw Error("Could not initialize fixture process attributes");
+            attributesInitialized = true;
+            jobList = Marshal.AllocHGlobal(IntPtr.Size);
+            Marshal.WriteIntPtr(jobList, job);
+            if (!UpdateProcThreadAttribute(attributes, 0, new IntPtr(0x0002000d), jobList,
+                (UIntPtr)(uint)IntPtr.Size, IntPtr.Zero, IntPtr.Zero))
+                throw Error("Could not bind the fixture cleanup job");
+            handleList = Marshal.AllocHGlobal(checked(handles.Length * IntPtr.Size));
+            Marshal.Copy(handles, 0, handleList, handles.Length);
+            if (!UpdateProcThreadAttribute(attributes, 0, new IntPtr(0x00020002), handleList,
+                (UIntPtr)(uint)(handles.Length * IntPtr.Size), IntPtr.Zero, IntPtr.Zero))
+                throw Error("Could not bind fixture output handles");
+
+            var startup = new StartupInfoEx
             {
-                Size = Marshal.SizeOf<StartupInfo>(), Desktop = desktopName, Flags = UseStandardHandles,
-                StandardInput = InheritableStandardHandle(-10), StandardOutput = InheritableStandardHandle(-11),
-                StandardError = InheritableStandardHandle(-12)
+                Info = new StartupInfo
+                {
+                    Size = Marshal.SizeOf<StartupInfoEx>(), Desktop = desktopName, Flags = UseStandardHandles,
+                    StandardInput = standardInput, StandardOutput = standardOutput, StandardError = standardError
+                },
+                AttributeList = attributes
             };
             Environment.SetEnvironmentVariable(EnvironmentName, desktopName);
-            if (!CreateProcess(executable, command, IntPtr.Zero, IntPtr.Zero, true, CreateSuspended | CreateNoWindow,
+            if (!CreateProcess(executable, command, IntPtr.Zero, IntPtr.Zero, true,
+                CreateSuspended | CreateNoWindow | ExtendedStartupInfoPresent,
                 IntPtr.Zero, Environment.CurrentDirectory, ref startup, out process))
                 throw Error("Could not start the isolated fixture");
-            if (!AssignProcessToJobObject(job, process.Process)) throw Error("Could not attach the fixture to its cleanup job");
-            assigned = true;
             Console.WriteLine("Inactive desktop fixture process: " + process.ProcessId);
             Console.Out.Flush();
             if (ResumeThread(process.Thread) == uint.MaxValue) throw Error("Could not start the fixture thread");
@@ -60,13 +93,10 @@ internal static class InactiveDesktop
         finally
         {
             Environment.SetEnvironmentVariable(EnvironmentName, previousDesktop);
-            // A suspended process that could not be assigned to the job needs
-            // explicit cleanup. Assigned processes die when the job closes.
-            if (process.Process != IntPtr.Zero && !assigned)
-            {
-                TerminateProcess(process.Process, 1);
-                WaitForSingleObject(process.Process, 5000);
-            }
+            if (attributesInitialized) DeleteProcThreadAttributeList(attributes);
+            if (attributes != IntPtr.Zero) Marshal.FreeHGlobal(attributes);
+            if (jobList != IntPtr.Zero) Marshal.FreeHGlobal(jobList);
+            if (handleList != IntPtr.Zero) Marshal.FreeHGlobal(handleList);
             if (job != IntPtr.Zero) CloseHandle(job);
             if (process.Thread != IntPtr.Zero) CloseHandle(process.Thread);
             if (process.Process != IntPtr.Zero) CloseHandle(process.Process);
@@ -89,7 +119,9 @@ internal static class InactiveDesktop
     private static IntPtr InheritableStandardHandle(int identifier)
     {
         IntPtr handle = GetStdHandle(identifier);
-        if (handle != IntPtr.Zero && handle != new IntPtr(-1) && !SetHandleInformation(handle, HandleFlagInherit, HandleFlagInherit))
+        if (handle == IntPtr.Zero || handle == new IntPtr(-1))
+            throw new InvalidOperationException("A fixture standard handle is unavailable.");
+        if (!SetHandleInformation(handle, HandleFlagInherit, HandleFlagInherit))
             throw Error("Could not inherit a fixture output handle");
         return handle;
     }
@@ -122,6 +154,9 @@ internal static class InactiveDesktop
         internal short ShowWindow, Reserved2Size;
         internal IntPtr Reserved2, StandardInput, StandardOutput, StandardError;
     }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct StartupInfoEx { internal StartupInfo Info; internal IntPtr AttributeList; }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct ProcessInformation { internal IntPtr Process, Thread; internal uint ProcessId, ThreadId; }
@@ -162,15 +197,19 @@ internal static class InactiveDesktop
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr CreateJobObject(IntPtr security, string? name);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetInformationJobObject(IntPtr job, int infoClass, ref JobExtendedLimitInformation info, uint length);
-    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool InitializeProcThreadAttributeList(IntPtr attributes, int count, int flags, ref UIntPtr size);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool UpdateProcThreadAttribute(IntPtr attributes, uint flags, IntPtr attribute,
+        IntPtr value, UIntPtr size, IntPtr previous, IntPtr returnSize);
+    [DllImport("kernel32.dll")] private static extern void DeleteProcThreadAttributeList(IntPtr attributes);
     [DllImport("kernel32.dll", EntryPoint = "CreateProcessW", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool CreateProcess(string application, StringBuilder command, IntPtr processSecurity, IntPtr threadSecurity,
-        bool inheritHandles, uint flags, IntPtr environment, string directory, ref StartupInfo startup, out ProcessInformation process);
+        bool inheritHandles, uint flags, IntPtr environment, string directory, ref StartupInfoEx startup, out ProcessInformation process);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern IntPtr GetStdHandle(int identifier);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern uint ResumeThread(IntPtr thread);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetExitCodeProcess(IntPtr process, out uint exitCode);
-    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool TerminateProcess(IntPtr process, uint exitCode);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool CloseHandle(IntPtr handle);
 }
