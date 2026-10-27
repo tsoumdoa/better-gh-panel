@@ -216,11 +216,13 @@ or the dense preview/selection work. Another added control replaces an already
 measured curve after output reconstruction and requires zero `SetDataTree` calls,
 then recovery to fresh Length membership; unchanged output-only reuse is retained.
 
-The added native fixture source has been built, not run, for this change. Its
-expected complete-gesture counts and elapsed times remain for the coordinator to
-verify against the exact combined package. The earlier point-host observations
-above are not evidence that these measured-geometry gestures passed. No Rhino
-host, clipboard, camera, PR or release operation was performed for this change.
+The combined intermediate build passed `capture-transaction` in Rhino 8.36 with
+126 assertions in run `FezgKh`, using plugin SHA-256
+`2c9990e422a546a79a316191f6189fb2588ccb7a365e99484ad71292f1cf7131`.
+All 12 measured-curve gestures met the stated counts, with elapsed times of
+17–37 ms; these times exclude native viewport drawing. The fixture still performs
+one full capture validation per gesture. The final extracted package and combined
+implementation still require their own coordinator run and independent reviews.
 The existing native callback/lifetime and silent in-place geometry mutation limits
 remain, as do the outstanding exact-package rendering/release gates and unavailable
 Mac and Windows .NET Framework host evidence.
