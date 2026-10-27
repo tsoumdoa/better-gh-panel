@@ -256,10 +256,12 @@ internal static class PreviewSafetyChecks
             object?[] captureArgs = { point, 20000, null };
             bool captured = (bool)witnessType.GetMethod("TryCapture", Static)!.Invoke(null, captureArgs)!;
             var witness = captureArgs[2]!;
-            Check(captured && (bool)Method(witness, "IsCurrent").Invoke(witness, Array.Empty<object>())!,
+            Method(witness, "ResolveManagedContexts").Invoke(witness, Array.Empty<object>());
+            var isCurrent = witnessType.GetMethod("IsCurrent", Instance, null, Type.EmptyTypes, null)!;
+            Check(captured && (bool)isCurrent.Invoke(witness, Array.Empty<object>())!,
                 "the captured point witness accepts the original reference");
             point.ReferenceID = second;
-            Check(point.Value == value && !(bool)Method(witness, "IsCurrent").Invoke(witness, Array.Empty<object>())!,
+            Check(point.Value == value && !(bool)isCurrent.Invoke(witness, Array.Empty<object>())!,
                 "the captured point witness rejects a same-value reference retarget");
             point.ReferenceID = first;
             observerField.SetValue(highlight, (Action<int, object>)((_, __) => point.ReferenceID = second));

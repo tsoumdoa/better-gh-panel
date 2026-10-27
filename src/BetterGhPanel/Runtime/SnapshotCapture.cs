@@ -79,7 +79,7 @@ namespace BetterGhPanel.Runtime
                 for (var i = 0; i < items.Count; i++)
                 {
                     IGH_Goo? item = items[i];
-                    string type = item?.GetType().Name ?? "Null", display = "<unavailable value>", reason = "";
+                    string type = item?.GetType().Name ?? "Null", display = item == null ? "<null>" : "<unavailable value>", reason = "";
                     string? stringValue = null;
                     double? number = null;
                     bool typeAvailable = false;

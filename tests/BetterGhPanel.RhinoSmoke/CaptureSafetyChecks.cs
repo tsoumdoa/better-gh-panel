@@ -89,6 +89,12 @@ internal static class CaptureSafetyChecks
             "Exact text, colour, domain, 2D domain, GUID and time capture semantic values");
         Check(snapshot.Rows[25].DisplayValue == "Empty Group" && snapshot.Rows[26].DisplayValue == "Empty Group (  )",
             "Empty and whitespace group names retain the stock distinction");
+        var nullTree = new GH_Structure<IGH_Goo>();
+        nullTree.Append(null!, new GH_Path(0));
+        var nullSnapshot = Capture(nullTree, out _);
+        Check(nullSnapshot.Rows[0].IsNull && nullSnapshot.Rows[0].DisplayValue == "<null>" &&
+            PanelQueryEngine.Execute(nullSnapshot, new PanelQueryOptions { Search = "<null>" }).RowPositions.SequenceEqual(new[] { 0 }),
+            "Null rows retain their captured display and searchable value");
         var colours = new GH_Structure<IGH_Goo>();
         colours.AppendRange(new IGH_Goo[] { new GH_Colour(Color.FromArgb(255, 12, 34, 56)),
             new GH_Colour(Color.FromArgb(128, 12, 34, 56)), new GH_Colour(Color.FromArgb(0, 12, 34, 56)),
