@@ -80,13 +80,9 @@ internal static partial class FilterUiChecks
             items.OfType<GH_String>().Select(item => item.Value).SequenceEqual(new[] { "Wall-A", "Wall-B" }),
             "Search modes and branch actions retain original numeric and text values");
         component.DocumentContextChanged(document, GH_DocumentContext.Close);
-        await VerifyFooterStatistics(assembly);
-        await VerifyPreviewUndo(assembly);
-        await VerifyDisplayValues(assembly);
-        await VerifyTypedChoicesAndStaleEditors(assembly);
     }
 
-    private static async Task VerifyDisplayValues(Assembly assembly)
+    internal static async Task VerifyDisplayValues(Assembly assembly)
     {
         using var document = new GH_Document { Enabled = true };
         var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
@@ -307,7 +303,7 @@ internal static partial class FilterUiChecks
         }
     }
 
-    private static async Task VerifyPreviewUndo(Assembly assembly)
+    internal static async Task VerifyPreviewUndo(Assembly assembly)
     {
         using var document = new GH_Document { Enabled = true };
         var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
@@ -326,7 +322,7 @@ internal static partial class FilterUiChecks
         finally { component.DocumentContextChanged(document, GH_DocumentContext.Close); }
     }
 
-    private static async Task VerifyFooterStatistics(Assembly assembly)
+    internal static async Task VerifyFooterStatistics(Assembly assembly)
     {
         // Keep output-tool changes isolated from the filter fixture above.
         using var document = new GH_Document { Enabled = true };
@@ -707,9 +703,5 @@ internal static partial class FilterUiChecks
     private static object? Invoke(object owner, string method, params object[] arguments) => owner.GetType().GetMethod(method, Instance)!.Invoke(owner, arguments);
     private static T Property<T>(object owner, string name) => (T)owner.GetType().GetProperty(name, Instance)!.GetValue(owner)!;
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, Instance)!.GetValue(owner)!;
-    private static void Check(bool condition, string description)
-    {
-        if (!condition) throw new InvalidOperationException(description);
-        Console.WriteLine("PASS: " + description);
-    }
+    private static void Check(bool condition, string description) => SmokeAssertions.Check(condition, description);
 }

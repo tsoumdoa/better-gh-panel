@@ -156,8 +156,5 @@ internal static class StatisticsUiChecks
         }
         if (!allowError) Check(Property<string?>(session, "Error") == null, "Statistics query completed successfully");
     }
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }

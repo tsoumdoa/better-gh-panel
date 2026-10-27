@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -6,6 +7,8 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
@@ -25,10 +28,64 @@ internal static class Program
     private static string _plugin = string.Empty;
     private static string _resultPath = string.Empty;
     private static bool _canvasDrawingVerified;
-    private static bool _itemOrderCaptureOnly;
-    private static bool _outputsOnly;
-    private static bool _filtersOnly;
-    private static bool _setsOnly;
+    private static string _fixture = string.Empty;
+    private static string _runId = string.Empty;
+    private static Assembly? _loadedPlugin;
+    private static Assembly? _loadedCore;
+    private static string _pluginSha256 = string.Empty;
+    private static string _coreSha256 = string.Empty;
+    private static DateTimeOffset _startedUtc;
+    private static bool _completed;
+    private static bool _passed;
+    private static string _phase = "identity";
+    private static string? _failure;
+
+    // This is also checked against fixtures.json, the coordinator's explicit inventory.
+    private static Dictionary<string, Func<Assembly, Task>> _fixtures = null!;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Dictionary<string, Func<Assembly, Task>> CreateFixtures() => new(StringComparer.Ordinal)
+    {
+        ["panel-handle"] = assembly => { PanelHandleChecks.Run(assembly); return Task.CompletedTask; },
+        ["output"] = OutputChecks.Run,
+        ["output-pending"] = OutputChecks.RunPending,
+        ["row-numbering"] = RowNumberingChecks.Run,
+        ["index-selection"] = IndexSelectionChecks.Run,
+        ["capsule"] = CapsuleChecks.Run,
+        ["capsule-double-click"] = CapsuleChecks.NativeDoubleClickChecks,
+        ["recompute-presentation"] = RecomputeChecks.VerifyPresentation,
+        ["recompute-output"] = RecomputeChecks.RunOutput,
+        ["recompute-regex"] = RecomputeChecks.RunWhitespaceRegex,
+        ["recompute-local-preview"] = RecomputeChecks.RunLocalPreview,
+        ["recompute-disabled"] = RecomputeChecks.RunDisabled,
+        ["geometry-hint"] = GeometryHintChecks.Run,
+        ["geometry-canvas-viewport"] = GeometryHintChecks.VerifyCanvasViewport,
+        ["measurement-priority"] = GeometryMeasurementBatchChecks.VerifyPriority,
+        ["measurement-cancellation"] = GeometryMeasurementBatchChecks.VerifyCancellation,
+        ["measurement-invalidation"] = GeometryMeasurementBatchChecks.VerifyInvalidation,
+        ["measurement-failures"] = GeometryMeasurementBatchChecks.VerifyFailures,
+        ["row-actions"] = RowActionChecks.Run,
+        ["highlight-overlap"] = RowActionChecks.RunOverlap,
+        ["filter-metadata"] = assembly => { FilterChecks.VerifyMetadata(assembly); return Task.CompletedTask; },
+        ["filter-measurements"] = FilterChecks.VerifyMeasurements,
+        ["filter-cancellation"] = FilterChecks.VerifyCancellation,
+        ["filter-snapshot-replacement"] = FilterChecks.VerifySnapshotReplacement,
+        ["filter-lifecycle-paths"] = FilterChecks.VerifyLifecycleAndPaths,
+        ["filter-displayed-output"] = FilterChecks.VerifyDisplayedOutput,
+        ["filter-displayed-geometry"] = FilterChecks.RunDisplayedGeometryOutput,
+        ["filter-ui"] = FilterUiChecks.Run,
+        ["filter-ui-choices"] = FilterUiChecks.VerifyTypedChoicesAndStaleEditors,
+        ["filter-footer-statistics"] = FilterUiChecks.VerifyFooterStatistics,
+        ["filter-preview-undo"] = FilterUiChecks.VerifyPreviewUndo,
+        ["filter-display-values"] = FilterUiChecks.VerifyDisplayValues,
+        ["statistics-ui"] = StatisticsUiChecks.Run,
+        ["create-set"] = CreateSetChecks.Run,
+        ["set-details"] = SetDetailsChecks.Run,
+        ["display-set"] = DisplaySetChecks.Run,
+        ["item-order-ui"] = ItemOrderUiChecks.Run,
+        ["item-order-capture"] = ItemOrderUiChecks.CaptureViewport,
+        ["integration"] = async assembly => { await ExecuteIntegration(assembly); },
+    };
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern bool SetDllDirectory(string path);
@@ -39,41 +96,67 @@ internal static class Program
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr handle, System.Text.StringBuilder text, int maximum);
     [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
 
-    [STAThread]
-    private static int Main(string[] args)
+    internal static int Run(string[] args)
     {
-        if (args.Length == 0 || (args[0] != "--run" && args[0] != "--tree-only" && args[0] != "--item-order-capture" && args[0] != "--outputs-only" && args[0] != "--filters-only" && args[0] != "--sets-only"))
+        if (!((args.Length == 1 || args.Length == 2) && args[0] == "--tree-only") &&
+            !((args.Length == 2 || args.Length == 3) && (args[0] == "--fixture" || args[0] == "--identity-only")))
         {
-            Console.WriteLine("Windows Rhino 8 host smoke check (requires a working Rhino license).\nBuild the plugin first, then run with --run [absolute BetterGhPanel.gha path].\nCreates a hidden RhinoCore, loads the workspace assembly directly, and never installs a plugin.\nUse --tree-only [plugin path] to check managed tree operations with installed Rhino/Grasshopper assemblies without starting Rhino.");
-            return 0;
+            Console.Error.WriteLine("Usage: --tree-only [plugin path], --fixture <fixture> [plugin path], or --identity-only <fixture> [plugin path]. Use run.ps1 for all isolated fixtures.");
+            return 2;
         }
-        _system = Environment.GetEnvironmentVariable("RHINO_SYSTEM_PATH") ?? "C:/Program Files/Rhino 8/System";
-        _itemOrderCaptureOnly = args[0] == "--item-order-capture";
-        _outputsOnly = args[0] == "--outputs-only";
-        _filtersOnly = args[0] == "--filters-only";
-        _setsOnly = args[0] == "--sets-only";
-        _grasshopper = Path.GetFullPath(Path.Combine(_system, "../Plug-ins/Grasshopper"));
-        _plugin = args.Length > 1 ? Path.GetFullPath(args[1]) : Path.GetFullPath("src/BetterGhPanel/bin/Release/net7.0/BetterGhPanel.gha");
-        _resultPath = Environment.GetEnvironmentVariable("PANEL_SMOKE_RESULT") ?? Path.Combine(Path.GetDirectoryName(_plugin)!, "rhino-smoke-result.json");
-        if (!File.Exists(_plugin) || !File.Exists(Path.Combine(_system, "RhinoCommon.dll")))
-            throw new FileNotFoundException("Build the plugin and install Rhino 8 before running this host check.");
-        AppDomain.CurrentDomain.AssemblyResolve += Resolve;
-        Environment.SetEnvironmentVariable("PATH", _system + ";" + Environment.GetEnvironmentVariable("PATH"));
-        SetDllDirectory(_system);
-        if (args[0] == "--tree-only")
+        bool treeOnly = args[0] == "--tree-only";
+        _fixture = treeOnly ? string.Empty : args[1];
+        try
         {
-            try
+            _system = Environment.GetEnvironmentVariable("RHINO_SYSTEM_PATH") ?? "C:/Program Files/Rhino 8/System";
+            _grasshopper = Path.GetFullPath(Path.Combine(_system, "../Plug-ins/Grasshopper"));
+            int pathIndex = treeOnly ? 1 : 2;
+            _plugin = args.Length > pathIndex ? Path.GetFullPath(args[pathIndex]) : Path.GetFullPath("src/BetterGhPanel/bin/Release/net7.0/BetterGhPanel.gha");
+            string corePath = Path.Combine(Path.GetDirectoryName(_plugin)!, "BetterGhPanel.Core.dll");
+            if (!File.Exists(_plugin) || !File.Exists(corePath) || !File.Exists(Path.Combine(_system, "RhinoCommon.dll")))
+                throw new FileNotFoundException("Build the plugin and Core together and install Rhino 8 before running this check.");
+            AppDomain.CurrentDomain.AssemblyResolve += Resolve;
+            Environment.SetEnvironmentVariable("PATH", _system + ";" + Environment.GetEnvironmentVariable("PATH"));
+            SetDllDirectory(_system);
+
+            // The test executable also references Core. Bind it to the requested payload
+            // before any fixture is JIT-compiled; then verify the assembly actually used.
+            _loadedPlugin = Assembly.LoadFrom(_plugin);
+            _loadedCore = LoadedCoreAssembly();
+            _fixtures = CreateFixtures();
+            var inventory = JsonSerializer.Deserialize<string[]>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures.json")))!;
+            if (inventory.Length != _fixtures.Count || inventory.Distinct(StringComparer.Ordinal).Count() != inventory.Length ||
+                !inventory.All(_fixtures.ContainsKey))
+                throw new InvalidOperationException("Host fixture dispatch does not match fixtures.json.");
+            if (!treeOnly && !_fixtures.ContainsKey(_fixture))
+                throw new ArgumentException("Unknown fixture: " + _fixture);
+            if (!string.Equals(Path.GetFullPath(_loadedPlugin.Location), _plugin, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(Path.GetFullPath(_loadedCore.Location), Path.GetFullPath(corePath), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The loaded plugin or Core assembly is not from the requested payload: plugin=" + _loadedPlugin.Location + ", Core=" + _loadedCore.Location + ", expected Core=" + corePath);
+            if (treeOnly)
             {
-                var assembly = Assembly.LoadFrom(_plugin);
-                VerifyTreeOperations(assembly);
-                CreateSetChecks.VerifyTree(assembly);
-                OutputChecks.VerifyTree(assembly);
-                VerifyUnitOperations(assembly);
+                VerifyTreeOperations(_loadedPlugin);
+                CreateSetChecks.VerifyTree(_loadedPlugin);
+                OutputChecks.VerifyTree(_loadedPlugin);
+                VerifyUnitOperations(_loadedPlugin);
                 Console.WriteLine("PASS: Managed Grasshopper tree and unit operation checks completed (Rhino host not started).");
                 return 0;
             }
-            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+            _runId = Environment.GetEnvironmentVariable("PANEL_SMOKE_RUN_ID") ?? Guid.NewGuid().ToString("D");
+            if (!Guid.TryParseExact(_runId, "D", out _)) throw new ArgumentException("Invalid PANEL_SMOKE_RUN_ID.");
+            _resultPath = Environment.GetEnvironmentVariable("PANEL_SMOKE_RESULT") ??
+                Path.Combine(Path.GetDirectoryName(_plugin)!, "rhino-smoke-" + _runId + "-result.json");
+            _pluginSha256 = HashFile(_loadedPlugin.Location);
+            _coreSha256 = HashFile(_loadedCore.Location);
+            _startedUtc = DateTimeOffset.UtcNow;
+            WriteReport(); // Durable identity evidence before Rhino startup or any fixture capture.
+            Console.WriteLine("SMOKE_IDENTITY " + JsonSerializer.Serialize(new { fixture = _fixture, runId = _runId,
+                plugin = new { path = _loadedPlugin.Location, sha256 = _pluginSha256 },
+                core = new { path = _loadedCore.Location, sha256 = _coreSha256 } }));
+            Console.Out.Flush();
+            if (args[0] == "--identity-only") return 0;
         }
+        catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         // Rhino's in-process startup can report existing plug-in registrations in a
         // completed informational window. Dismiss only its exact Close button in this
         // process; never answer license, install, or any other startup decisions.
@@ -105,7 +188,14 @@ internal static class Program
             }
         });
         try { return RunHost(); }
-        catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        catch (Exception error)
+        {
+            _phase = _completed ? "host-shutdown-failed" : "host-startup-failed";
+            _failure = error.ToString();
+            WriteReport();
+            Console.Error.WriteLine(error);
+            return 1;
+        }
     }
 
     private static Assembly? Resolve(object? sender, ResolveEventArgs args)
@@ -135,68 +225,51 @@ internal static class Program
         timer.Tick += async (sender, args) =>
         {
             timer.Stop();
-            try { exitCode = await ExecuteSmoke(); }
-            catch (Exception error) { Console.Error.WriteLine(error); }
-            finally
+            try
             {
-                File.WriteAllText(_resultPath, "{\"passed\":" + (exitCode == 0 ? "true" : "false") + ",\"canvasDrawingVerified\":" + (_canvasDrawingVerified ? "true" : "false") + ",\"runtime\":\"Windows .NET 7 / Rhino " + Rhino.RhinoApp.Version + "\"}");
-                Console.Out.Flush(); Console.Error.Flush(); context.ExitThread();
+                // Some fixtures previously inherited the active document and view
+                // created by an earlier check in the combined host.
+                var rhino = Rhino.RhinoDoc.ActiveDoc ?? Rhino.RhinoDoc.Create(null);
+                if (rhino.Views.ActiveView == null)
+                    rhino.Views.ActiveView = rhino.Views.Add("Panel fixture", Rhino.Display.DefinedViewportProjection.Perspective,
+                        new Rectangle(0, 0, 640, 480), false);
+                if (Rhino.RhinoDoc.ActiveDoc == null || rhino.Views.ActiveView == null)
+                    throw new InvalidOperationException("The isolated host could not create an active Rhino document and viewport.");
+                GH_Document.EnableSolutions = true;
+                _phase = "fixture";
+                WriteReport();
+                SmokeAssertions.Begin();
+                try
+                {
+                    await _fixtures[_fixture](_loadedPlugin!);
+                    _passed = true;
+                    exitCode = 0;
+                }
+                catch (Exception error) { _failure = error.ToString(); Console.Error.WriteLine(error); }
+                finally
+                {
+                    SmokeAssertions.End();
+                    _completed = true;
+                    _phase = _passed ? "fixture-completed" : "fixture-failed";
+                    WriteReport();
+                }
             }
+            catch (Exception error)
+            {
+                _failure = error.ToString();
+                _phase = "host-preparation-failed";
+                Console.Error.WriteLine(error);
+                WriteReport();
+            }
+            finally { Console.Out.Flush(); Console.Error.Flush(); context.ExitThread(); }
         };
         timer.Start();
         System.Windows.Forms.Application.Run(context);
         return exitCode;
     }
 
-    private static async Task<int> ExecuteSmoke()
+    private static async Task<int> ExecuteIntegration(Assembly assembly)
     {
-        var assembly = Assembly.LoadFrom(_plugin);
-        Assert(string.Equals(Path.GetFullPath(assembly.Location), _plugin, StringComparison.OrdinalIgnoreCase),
-            "Native checks load the exact requested plugin: " + assembly.Location);
-        Console.WriteLine("Plugin version: " + assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion);
-        if (_setsOnly)
-        {
-            await CreateSetChecks.Run(assembly);
-            await SetDetailsChecks.Run(assembly);
-            await DisplaySetChecks.Run(assembly);
-            Console.WriteLine("PASS: Displayed set values, outputs and occurrence UI checks completed.");
-            return 0;
-        }
-        if (_filtersOnly)
-        {
-            await FilterChecks.Run(assembly);
-            await FilterUiChecks.Run(assembly);
-            Console.WriteLine("PASS: Native filter, metric display and filter UI checks completed.");
-            return 0;
-        }
-        if (_outputsOnly)
-        {
-            await OutputChecks.Run(assembly);
-            Console.WriteLine("PASS: Native D/S/B/F output, selection, paired data and compatibility checks completed.");
-            return 0;
-        }
-        if (_itemOrderCaptureOnly)
-        {
-            await ItemOrderUiChecks.CaptureViewport(assembly);
-            Console.WriteLine("PASS: Native viewport item-order rendering, collision priority and visibility checks completed.");
-            return 0;
-        }
-        PanelHandleChecks.Run(assembly);
-        await OutputChecks.Run(assembly);
-        await RowNumberingChecks.Run(assembly);
-        await IndexSelectionChecks.Run(assembly);
-        await CapsuleChecks.Run(assembly);
-        await RecomputeChecks.Run(assembly);
-        await GeometryHintChecks.Run(assembly);
-        await GeometryMeasurementBatchChecks.Run(assembly);
-        await RowActionChecks.Run(assembly);
-        await FilterChecks.Run(assembly);
-        await FilterUiChecks.Run(assembly);
-        await StatisticsUiChecks.Run(assembly);
-        await CreateSetChecks.Run(assembly);
-        await SetDetailsChecks.Run(assembly);
-        await DisplaySetChecks.Run(assembly);
-        await ItemOrderUiChecks.Run(assembly);
         var componentType = assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!;
         var component = (GH_Component)Activator.CreateInstance(componentType)!;
         var componentIcon = (Bitmap)componentType.GetProperty("Icon", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component)!;
@@ -1022,9 +1095,31 @@ internal static class Program
         }
     }
 
-    private static void Assert(bool condition, string name)
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Assembly LoadedCoreAssembly() => typeof(PanelSnapshot).Assembly;
+
+    private static string HashFile(string path)
     {
-        if (!condition) throw new InvalidOperationException("FAIL: " + name);
-        Console.WriteLine("PASS: " + name);
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
+
+    private static void WriteReport()
+    {
+        var report = new
+        {
+            schemaVersion = 1, fixture = _fixture, runId = _runId, startedUtc = _startedUtc,
+            completed = _completed, passed = _passed, assertionCount = SmokeAssertions.Count,
+            phase = _phase, failure = _failure, canvasDrawingVerified = _canvasDrawingVerified,
+            plugin = new { path = _loadedPlugin!.Location, sha256 = _pluginSha256 },
+            core = new { path = _loadedCore!.Location, sha256 = _coreSha256 }
+        };
+        using var stream = new FileStream(_resultPath, FileMode.Create, FileAccess.Write, FileShare.Read);
+        using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false), 1024, true);
+        writer.Write(JsonSerializer.Serialize(report));
+        writer.Flush();
+        stream.Flush(true);
+    }
+
+    private static void Assert(bool condition, string name) => SmokeAssertions.Check(condition, name);
 }

@@ -143,7 +143,7 @@ Primitive values, points/vectors, and cheap geometry properties have cached summ
 
 ```text
 dotnet build BetterGhPanel.sln -c Release
-dotnet run --project tests/BetterGhPanel.Core.Tests -c Release
+dotnet test BetterGhPanel.sln -c Release
 node scripts/package.mjs
 ```
 
@@ -157,7 +157,7 @@ Run the local checks before opening or merging a PR:
 npm run check
 ```
 
-This runs the core and packaging checks, builds and stages both Rhino runtimes, and checks for unused parameters, private members, assignments, and imports. The diagnostics are explicitly enabled in `.editorconfig`. It runs locally on Windows or Mac and stops on the first failure. It does not launch Rhino or publish a package. GitHub Actions CI is disabled.
+This runs the discoverable core tests, native coordinator fake-child checks and packaging checks, builds and stages both Rhino runtimes, and checks for unused parameters, private members, assignments, and imports. The diagnostics are explicitly enabled in `.editorconfig`. It runs locally on Windows or Mac and stops on the first failure. It does not launch Rhino or publish a package. GitHub Actions CI is disabled.
 
 Periodic reviews still need to trace public APIs and reflection consumers and assess duplicate code and test value; static analysis cannot establish those on its own.
 

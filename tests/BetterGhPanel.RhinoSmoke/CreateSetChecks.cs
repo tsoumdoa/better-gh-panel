@@ -176,8 +176,5 @@ internal static class CreateSetChecks
         }
         Check(Property<string?>(session, "Error") == null, "Create set query completed successfully");
     }
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }

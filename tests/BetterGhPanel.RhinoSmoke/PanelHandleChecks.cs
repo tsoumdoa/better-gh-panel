@@ -115,9 +115,5 @@ internal static class PanelHandleChecks
     }
 
     private static GH_CanvasMouseEvent Mouse(PointF point) => new GH_CanvasMouseEvent(Point.Empty, point, Forms.MouseButtons.Left, 1, 0);
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-        Console.WriteLine("PASS: " + message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }

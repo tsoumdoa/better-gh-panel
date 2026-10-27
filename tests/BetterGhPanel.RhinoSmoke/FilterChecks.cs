@@ -14,17 +14,7 @@ using Rhino.Geometry;
 
 internal static class FilterChecks
 {
-    internal static async Task Run(Assembly assembly)
-    {
-        VerifyMetadata(assembly);
-        await VerifyMeasurements(assembly);
-        await VerifyCancellation(assembly);
-        await VerifySnapshotReplacement(assembly);
-        await VerifyLifecycleAndPaths(assembly);
-        await VerifyDisplayedOutput(assembly);
-    }
-
-    private static void VerifyMetadata(Assembly assembly)
+    internal static void VerifyMetadata(Assembly assembly)
     {
         var describe = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!
             .GetMethod("Describe", BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -41,7 +31,7 @@ internal static class FilterChecks
             "Snapshot metric metadata identifies surface/open Brep area and solid volume without mass calculation");
     }
 
-    private static async Task VerifyMeasurements(Assembly assembly)
+    internal static async Task VerifyMeasurements(Assembly assembly)
     {
         var rows = new[]
         {
@@ -120,7 +110,7 @@ internal static class FilterChecks
             "An empty metric expression leaves the view unfiltered without computing deferred geometry");
     }
 
-    private static async Task VerifyCancellation(Assembly assembly)
+    internal static async Task VerifyCancellation(Assembly assembly)
     {
         using var fixture = new Fixture(assembly, new[] { AreaRow(0, "{0}"), AreaRow(1, "{0}"), AreaRow(2, "{1}") });
         await WaitForQuery(fixture);
@@ -152,7 +142,7 @@ internal static class FilterChecks
         finally { gate.Set(); }
     }
 
-    private static async Task VerifySnapshotReplacement(Assembly assembly)
+    internal static async Task VerifySnapshotReplacement(Assembly assembly)
     {
         var rows = new[] { AreaRow(0, "{0}"), AreaRow(1, "{0}") };
         using var fixture = new Fixture(assembly, rows);
@@ -186,7 +176,7 @@ internal static class FilterChecks
         finally { gate.Set(); }
     }
 
-    private static async Task VerifyLifecycleAndPaths(Assembly assembly)
+    internal static async Task VerifyLifecycleAndPaths(Assembly assembly)
     {
         using var fixture = new Fixture(assembly, new[] { new PanelRow(0, "{0;0;1}", "Number", "12", 12) });
         await WaitForQuery(fixture);
@@ -209,7 +199,7 @@ internal static class FilterChecks
             "Disposing a session releases its last captured result");
     }
 
-    private static async Task VerifyDisplayedOutput(Assembly assembly)
+    internal static async Task VerifyDisplayedOutput(Assembly assembly)
     {
         // Scheduled output changes need the host editor's message dispatch handle.
         using var editor = new Grasshopper.GUI.GH_DocumentEditor();
@@ -286,10 +276,19 @@ internal static class FilterChecks
             Check(((Array)fixture.Component.GetType().GetField("_sourceItems", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .GetValue(fixture.Component)!).Length == 0 && fixture.Result.Snapshot.Rows.Count == 0,
                 "Clearing component input releases live values and immutable results before recomputing");
-
-            await VerifyDisplayedGeometryOutput(assembly);
         }
         finally { setEditor.Invoke(null, new object?[] { null }); }
+    }
+
+    internal static async Task RunDisplayedGeometryOutput(Assembly assembly)
+    {
+        var previous = Grasshopper.Instances.DocumentEditor;
+        using var editor = new Grasshopper.GUI.GH_DocumentEditor();
+        _ = editor.Handle;
+        var setEditor = typeof(Grasshopper.Instances).GetMethod("SetDocumentEditor", BindingFlags.Static | BindingFlags.NonPublic)!;
+        setEditor.Invoke(null, new object?[] { editor });
+        try { await VerifyDisplayedGeometryOutput(assembly); }
+        finally { setEditor.Invoke(null, new object?[] { previous }); }
     }
 
     private static async Task VerifyDisplayedGeometryOutput(Assembly assembly)
@@ -406,11 +405,7 @@ internal static class FilterChecks
         }
     }
 
-    private static void Check(bool condition, string description)
-    {
-        if (!condition) throw new InvalidOperationException(description);
-        Console.WriteLine("PASS: " + description);
-    }
+    private static void Check(bool condition, string description) => SmokeAssertions.Check(condition, description);
 
     private sealed class Fixture : IDisposable
     {

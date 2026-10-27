@@ -43,8 +43,16 @@ Separate public copies of 27 versions remain on McNeel's Yak registry, including
 
 ## Validation
 
-Run `npm run check` before opening or merging a PR. It covers managed behavior, packaging, both runtime builds and unused-code diagnostics. Native interaction changes also require the managed Grasshopper tree checks and both hidden Rhino suites in `tests/BetterGhPanel.RhinoSmoke/run.ps1`. Release validation loads the plugin extracted from the final Yak archive. Windows .NET Framework and Mac runtime validation remain separate coverage gaps.
+Run `npm run check` before opening or merging a PR. It runs the discoverable solution tests, native coordinator fake-child checks, packaging checks, both runtime builds and unused-code diagnostics. Native interaction changes also require the managed Grasshopper tree checks and all isolated Rhino fixtures. Release validation uses the plugin extracted from the final Yak archive. Windows .NET Framework and Mac runtime validation remain separate coverage gaps.
 
-`OutputChecks` adds provenance checks across all tree-tool combinations, downstream S/B/F updates, scope Undo/Redo, strict paired-tree validation, original mask shape and legacy port identities. The full host suite includes it; `BetterGhPanel.RhinoSmoke.exe --outputs-only` runs just the native output checks while `--tree-only` includes the managed provenance cases.
+```powershell
+dotnet build tests/BetterGhPanel.RhinoSmoke -c Release
+tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmoke.exe --tree-only <absolute-plugin-path>
+tests/BetterGhPanel.RhinoSmoke/run.ps1 -PluginPath <absolute-plugin-path>
+```
+
+The full run starts one sequential Rhino process per entry in `tests/BetterGhPanel.RhinoSmoke/fixtures.json`; each has a timeout and unique result and log under `bin/Release/net7.0-windows/runs`. The result records the actual loaded plugin and Core paths and SHA-256 before Rhino starts, and a count of assertions performed in that fixture. It rejects incomplete, failed, stale, mismatched, empty or malformed reports and abnormal process exits while continuing the remaining fixtures. `-Fixture output,filter-metadata,filter-ui` selects individual fixtures for diagnosis; release validation requires the full inventory. `-TimeoutSeconds` changes the per-process timeout. `--identity-only <fixture> <plugin-path>` on the host executable writes the pre-start identity report without starting Rhino; it remains incomplete and is not a fixture pass. The build removes any stale host-local Core copy so the host can bind the Core next to the requested plugin.
+
+`OutputChecks` adds provenance checks across all tree-tool combinations, downstream S/B/F updates, scope Undo/Redo, strict paired-tree validation, original mask shape and legacy port identities. The `output` fixture runs the native cases; `--tree-only` includes the managed provenance cases.
 
 The output regressions also check real archive diagnostics, internalized numeric/null/duplicate paired values, cache reuse, unchanged-selection solution counts, native grip picking at target edges, and a gated geometry filter with replacement input before late completion. Archive checks use empty paired input independently of the runtime internalization cases, so the hidden host does not need to populate Grasshopper's private goo-type cache.

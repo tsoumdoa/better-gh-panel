@@ -19,7 +19,6 @@ internal static class CapsuleChecks
 {
     internal static async Task Run(Assembly assembly)
     {
-        await NativeDoubleClickChecks(assembly);
         using var document = new GH_Document { Enabled = true };
         GH_Document.EnableSolutions = true;
         var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
@@ -154,7 +153,7 @@ internal static class CapsuleChecks
         component.DocumentContextChanged(document, GH_DocumentContext.Close);
     }
 
-    private static async Task NativeDoubleClickChecks(Assembly assembly)
+    internal static async Task NativeDoubleClickChecks(Assembly assembly)
     {
         using var document = new GH_Document();
         var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
@@ -314,9 +313,5 @@ internal static class CapsuleChecks
             await Task.Delay(10);
         }
     }
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-        Console.WriteLine("PASS: " + message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }

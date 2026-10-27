@@ -248,9 +248,5 @@ internal static class RowNumberingChecks
         if (session.GetType().GetProperty("Error")!.GetValue(session) is string error) throw new InvalidOperationException(error);
     }
 
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-        Console.WriteLine("PASS: " + message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }

@@ -19,26 +19,24 @@ internal static class RecomputeChecks
 {
     private const BindingFlags Instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
-    internal static async Task Run(Assembly assembly)
+    internal static Task RunOutput(Assembly assembly) => RunWithEditor(assembly, VerifyOutput);
+    internal static Task RunWhitespaceRegex(Assembly assembly) => RunWithEditor(assembly, VerifyWhitespaceRegex);
+    internal static Task RunLocalPreview(Assembly assembly) => RunWithEditor(assembly, VerifyLocalPreview);
+    internal static Task RunDisabled(Assembly assembly) => RunWithEditor(assembly, VerifyDisabled);
+
+    private static async Task RunWithEditor(Assembly assembly, Func<Assembly, Task> check)
     {
-        await VerifyPresentation(assembly);
-        // GH dispatches scheduled solutions through its editor's native handle.
-        // Create that handle without showing a window in this isolated host.
-        var editor = new Grasshopper.GUI.GH_DocumentEditor();
+        // Scheduled solutions need a native editor handle in each fresh host.
+        var previous = Grasshopper.Instances.DocumentEditor;
+        using var editor = new Grasshopper.GUI.GH_DocumentEditor();
         _ = editor.Handle;
         var setEditor = typeof(Grasshopper.Instances).GetMethod("SetDocumentEditor", BindingFlags.Static | BindingFlags.NonPublic)!;
         setEditor.Invoke(null, new object?[] { editor });
-        try
-        {
-            await VerifyOutput(assembly);
-            await VerifyWhitespaceRegex(assembly);
-            await VerifyLocalPreview(assembly);
-            await VerifyDisabled(assembly);
-        }
-        finally { setEditor.Invoke(null, new object?[] { null }); }
+        try { await check(assembly); }
+        finally { setEditor.Invoke(null, new object?[] { previous }); }
     }
 
-    private static async Task VerifyPresentation(Assembly assembly)
+    internal static async Task VerifyPresentation(Assembly assembly)
     {
         using var fixture = new Fixture(assembly);
         using var canvas = new GH_Canvas { Size = new Size(600, 500) };
@@ -387,11 +385,7 @@ internal static class RecomputeChecks
             await Task.Delay(10);
         }
     }
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-        Console.WriteLine("PASS: " + message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 
     private sealed class Fixture : IDisposable
     {

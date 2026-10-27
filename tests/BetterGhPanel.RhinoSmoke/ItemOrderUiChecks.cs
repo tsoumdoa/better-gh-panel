@@ -304,8 +304,5 @@ internal static class ItemOrderUiChecks
         }
         if (!allowError) Check(Property<string?>(session, "Error") == null, "Order-label query completes successfully");
     }
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }

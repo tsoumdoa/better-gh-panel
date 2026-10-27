@@ -101,7 +101,10 @@ internal static class OutputChecks
         Console.WriteLine("PASS: Output provenance, pairing and mask checks (64 tree-tool combinations).");
     }
 
-    internal static async Task Run(Assembly assembly)
+    internal static Task Run(Assembly assembly) => RunWithEditor(assembly, RunCore);
+    internal static Task RunPending(Assembly assembly) => RunWithEditor(assembly, VerifyPending);
+
+    private static async Task RunWithEditor(Assembly assembly, Func<Assembly, Task> check)
     {
         // Scheduled solutions need the host editor's native handle, even while
         // the test's Rhino window remains hidden.
@@ -113,9 +116,8 @@ internal static class OutputChecks
         setEditor.Invoke(null, new object?[] { editor });
         try
         {
-            await RunCore(assembly);
-            await VerifyPending(assembly);
-            Console.WriteLine("PASS: Output routing, selection, persistence and native interaction checks.");
+            await check(assembly);
+            Console.WriteLine("PASS: Output fixture completed.");
         }
         finally { setEditor.Invoke(null, new object?[] { previous }); }
     }
@@ -449,10 +451,7 @@ internal static class OutputChecks
             await Task.Delay(10);
         }
     }
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 
     internal sealed class Fixture : IDisposable
     {

@@ -9,15 +9,7 @@ using BetterGhPanel.Core;
 
 internal static class GeometryMeasurementBatchChecks
 {
-    internal static async Task Run(Assembly assembly)
-    {
-        await VerifyPriority(assembly);
-        await VerifyCancellation(assembly);
-        await VerifyInvalidation(assembly);
-        await VerifyFailures(assembly);
-    }
-
-    private static async Task VerifyPriority(Assembly assembly)
+    internal static async Task VerifyPriority(Assembly assembly)
     {
         using var fixture = new Fixture(assembly);
         using var gate = new ManualResetEventSlim(false);
@@ -58,7 +50,7 @@ internal static class GeometryMeasurementBatchChecks
         finally { gate.Set(); }
     }
 
-    private static async Task VerifyCancellation(Assembly assembly)
+    internal static async Task VerifyCancellation(Assembly assembly)
     {
         using var fixture = new Fixture(assembly);
         using var gate = new ManualResetEventSlim(false);
@@ -102,7 +94,7 @@ internal static class GeometryMeasurementBatchChecks
         finally { gate.Set(); }
     }
 
-    private static async Task VerifyInvalidation(Assembly assembly)
+    internal static async Task VerifyInvalidation(Assembly assembly)
     {
         using var fixture = new Fixture(assembly);
         using var gate = new ManualResetEventSlim(false);
@@ -158,7 +150,7 @@ internal static class GeometryMeasurementBatchChecks
         finally { gate.Set(); }
     }
 
-    private static async Task VerifyFailures(Assembly assembly)
+    internal static async Task VerifyFailures(Assembly assembly)
     {
         using var fixture = new Fixture(assembly);
         var prepared = new List<int>();
@@ -197,11 +189,7 @@ internal static class GeometryMeasurementBatchChecks
         }
     }
 
-    private static void Check(bool condition, string description)
-    {
-        if (!condition) throw new InvalidOperationException(description);
-        Console.WriteLine("PASS: " + description);
-    }
+    private static void Check(bool condition, string description) => SmokeAssertions.Check(condition, description);
 
     private sealed class Fixture : IDisposable
     {

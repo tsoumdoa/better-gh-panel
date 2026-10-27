@@ -111,7 +111,6 @@ internal static class GeometryHintChecks
             "Background area uses an owned trimmed Brep copy instead of live source goo");
         await VerifyCache(assembly, snapshot);
         await VerifyInactiveDocument(assembly, snapshot);
-        await VerifyCanvasViewport(assembly);
     }
 
     private static async Task VerifyCache(Assembly assembly, PanelSnapshot snapshot)
@@ -269,7 +268,7 @@ internal static class GeometryHintChecks
         }
     }
 
-    private static async Task VerifyCanvasViewport(Assembly assembly)
+    internal static async Task VerifyCanvasViewport(Assembly assembly)
     {
         var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
         component.CreateAttributes();
@@ -376,11 +375,7 @@ internal static class GeometryHintChecks
         }
     }
 
-    private static void Check(bool condition, string description)
-    {
-        if (!condition) throw new InvalidOperationException(description);
-        Console.WriteLine("PASS: " + description);
-    }
+    private static void Check(bool condition, string description) => SmokeAssertions.Check(condition, description);
 
     private sealed class UnformattedGoo : GH_Goo<string>
     {

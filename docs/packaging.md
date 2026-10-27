@@ -6,7 +6,7 @@ Run these commands from the repository root:
 
 ```text
 dotnet build BetterGhPanel.sln -c Release
-dotnet run --project tests/BetterGhPanel.Core.Tests -c Release
+dotnet test BetterGhPanel.sln -c Release
 node scripts/package.mjs
 ```
 
@@ -41,6 +41,8 @@ Install the current public beta with:
 yak install better-gh-panel 0.1.20-beta.7
 ```
 
+The release notes below record the validation and host modes used at the time. For the current isolated fixture runner, see [validation](maintainability.md#validation).
+
 Patch `0.1.20-beta.7` makes Create set operate after filters, units and decimal formatting, and materializes displayed numbers/text on D/S. Displayed list lengths become unique counts across branches, including selectable zero values from empty branches. Original source addresses drive occurrence details and B/F; selected pairs respect item filters. Changing precision republishes the set, and offscreen geometry is measured before grouping.
 
 Validation: `npm run check`, managed `--tree-only`, and focused `--sets-only`, `--outputs-only`, and `--filters-only` against the final extracted Yak archive. The set host checks numeric and converted geometry outputs, equal displayed lengths, empty branches, list counts before grouping, precision changes, filters, source masks/pairs, selection, persistence, Undo/Redo, occurrence tables and Full/Half canvas rendering. Both runtime payloads build; host execution uses Windows .NET 7 and Rhino 8.36. The existing full viewport capture crash described below still limits full-suite validation.
@@ -69,7 +71,7 @@ Patch `0.1.19-beta.1` removes the unused inline-path column from grouped source-
 
 Beta `0.1.19-beta` adds selection of the same zero-based item indices across branches through the row menu or Alt/Option-click. Managed checks cover distinct indices, short/empty branches, sorting, filter scope, range anchors and new-input cleanup. Windows host checks cover actual pointer dispatch and Alt state, offscreen geometry preview, unchanged camera and output, multi-index expansion, minimum Half menu bounds, trailing double-clicks and stale/disabled actions. The full suite runs against the plugin extracted from the final Yak archive; Mac and Windows .NET Framework host validation remain pending.
 
-Beta `0.1.18-beta` adds row deselection by double-click or empty-space click, padded panel move/resize handles, item/branch counts, exact unique numeric/text frequencies, compact capsule minimization and optional viewport item-order labels. Host checks cover native pointer dispatch, minimum Half menus, filtered statistics, presentation-only undo/redo, capsule restoration, saved settings, stale-result cleanup and viewport label visibility. `tests/BetterGhPanel.RhinoSmoke/run.ps1` runs the full behavior suite and the order-label capture in separate hidden Rhino processes because running both capture fixtures in the same hidden host crashes the Rhino 8.35 display pipeline. Both processes must pass assertions and exit normally. Release validation uses the plug-in extracted from the final Yak archive, passed with `-PluginPath`.
+Beta `0.1.18-beta` adds row deselection by double-click or empty-space click, padded panel move/resize handles, item/branch counts, exact unique numeric/text frequencies, compact capsule minimization and optional viewport item-order labels. Host checks cover native pointer dispatch, minimum Half menus, filtered statistics, presentation-only undo/redo, capsule restoration, saved settings, stale-result cleanup and viewport label visibility. At that time, the full behavior suite and the order-label capture ran in separate hidden Rhino processes because running both capture fixtures in the same hidden host crashed the Rhino 8.35 display pipeline. Both processes had to pass assertions and exit normally. Release validation uses the plug-in extracted from the final Yak archive, passed with `-PluginPath`.
 
 Beta `0.1.17-beta` adds automatic one-based row positions in Asc/Desc beside smaller original item indices. The native renderer uses a fixed full-tree gutter, shared text baselines and right-aligned numeric values without adding a toggle or changing the row height. Host checks cover sort directions, selection retention, row jumps beyond the viewport, filtered numbering, fixed gutter capacity, source order, output invariance and the minimum Half layout.
 

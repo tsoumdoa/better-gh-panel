@@ -77,7 +77,6 @@ internal static class RowActionChecks
             uint surfaceCrc = surface.DataCRC(0), solidCrc = solid.DataCRC(0), subdCrc = subd!.DataCRC(0);
 
             VerifyHighlightDrawing(assembly, document, rhino);
-            await VerifyNativePreviewOverlap(assembly, rhino);
             await VerifyValues(component, session);
             await VerifyCanvasAndQueryActions(component, session, rhino);
             await VerifyBranchHighlight(component, session, document, rhino);
@@ -104,6 +103,17 @@ internal static class RowActionChecks
             if (previousClipboard == null) Forms.Clipboard.Clear();
             else Forms.Clipboard.SetDataObject(previousClipboard, true);
         }
+    }
+
+    internal static async Task RunOverlap(Assembly assembly)
+    {
+        var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
+        var previousUnits = rhino.ModelUnitSystem;
+        bool previousModified = rhino.Modified;
+        GH_Document.EnableSolutions = true;
+        rhino.ModelUnitSystem = UnitSystem.Millimeters;
+        try { await VerifyNativePreviewOverlap(assembly, rhino); }
+        finally { rhino.ModelUnitSystem = previousUnits; rhino.Modified = previousModified; }
     }
 
     private static async Task VerifyNativePreviewOverlap(Assembly assembly, RhinoDoc rhino)
@@ -1009,9 +1019,5 @@ internal static class RowActionChecks
         }
     }
 
-    private static void Check(bool condition, string description)
-    {
-        if (!condition) throw new InvalidOperationException(description);
-        Console.WriteLine("PASS: " + description);
-    }
+    private static void Check(bool condition, string description) => SmokeAssertions.Check(condition, description);
 }

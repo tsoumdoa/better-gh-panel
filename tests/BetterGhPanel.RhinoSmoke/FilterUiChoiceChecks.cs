@@ -14,7 +14,7 @@ internal static partial class FilterUiChecks
 {
     // This fixture injects the caller's capability set into the real menu and
     // sends canvas mouse events through the ordinary attribute handlers.
-    private static async Task VerifyTypedChoicesAndStaleEditors(Assembly assembly)
+    internal static async Task VerifyTypedChoicesAndStaleEditors(Assembly assembly)
     {
         using var document = new GH_Document { Enabled = true };
         var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;

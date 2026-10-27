@@ -9,56 +9,6 @@ using BetterGhPanel.UI;
 
 internal static class Program
 {
-    private static int Main()
-    {
-        var tests = new Action[]
-        {
-            StatisticsAndEmptyBranches,
-            StatisticsChecks.Run,
-            SetOccurrencesChecks.Run,
-            DisplaySetChecks.Run,
-            ItemOrderChecks.Run,
-            SearchMatchesValuePathAndType,
-            NumericComparisonsUseInvariantCulture,
-            BranchSelectionPreservesTreeSemantics,
-            TypeAndInvalidFilters,
-            StableMixedSorting,
-            OddLengthSorting,
-            BranchSortingChecks.Run,
-            ImmutableSnapshotAndView,
-            EmptyAndNonfiniteNumbers,
-            InvalidFiniteNumbers,
-            ExtremeNumericStatistics,
-            Cancellation,
-            BudgetedQueryChecks.Run,
-            LargeData,
-            CanvasDimensionsAndPresets,
-            CanvasMenuPagingAndSnapshot,
-            CanvasMenuChoiceChecks.Run,
-            PanelRowSelectionChecks.Run,
-            SelectionPerformanceChecks.Run,
-            FilterCanvasChecks.Run,
-            UnitConversionsAndFormatting,
-            UnitConversionChecks.Run,
-            UnitMenuLayout,
-            GeometryMetricConversions,
-            FilterQueryChecks.Run,
-            QueryPolicyChecks.Run
-        };
-        var failures = 0;
-        foreach (var test in tests)
-        {
-            try { test(); Console.WriteLine("PASS " + test.Method.Name); }
-            catch (Exception exception)
-            {
-                failures++;
-                Console.Error.WriteLine("FAIL " + test.Method.Name + ": " + exception);
-            }
-        }
-        Console.WriteLine($"{tests.Length - failures}/{tests.Length} tests passed.");
-        return failures == 0 ? 0 : 1;
-    }
-
     private static PanelSnapshot Sample() => new PanelSnapshot(
         new[]
         {
@@ -78,7 +28,7 @@ internal static class Program
     private static PanelQueryResult Query(PanelQueryOptions? options = null) =>
         PanelQueryEngine.Execute(Sample(), options ?? new PanelQueryOptions());
 
-    private static void StatisticsAndEmptyBranches()
+    internal static void StatisticsAndEmptyBranches()
     {
         var result = Query();
         Equal(6, result.Statistics.ItemCount);
@@ -94,7 +44,7 @@ internal static class Program
         Equal(2, result.Statistics.TypeCounts["Text"]);
     }
 
-    private static void SearchMatchesValuePathAndType()
+    internal static void SearchMatchesValuePathAndType()
     {
         Sequence(new[] { 2 }, Query(new PanelQueryOptions { Search = "ALpHa" }).RowPositions);
         Sequence(new[] { 0, 1, 3 }, Query(new PanelQueryOptions { Search = "nUmBeR" }).RowPositions);
@@ -103,7 +53,7 @@ internal static class Program
         Equal(3, Query(new PanelQueryOptions { Search = "number" }).Statistics.NumericCount);
     }
 
-    private static void NumericComparisonsUseInvariantCulture()
+    internal static void NumericComparisonsUseInvariantCulture()
     {
         var previous = CultureInfo.CurrentCulture;
         try
@@ -120,7 +70,7 @@ internal static class Program
         finally { CultureInfo.CurrentCulture = previous; }
     }
 
-    private static void BranchSelectionPreservesTreeSemantics()
+    internal static void BranchSelectionPreservesTreeSemantics()
     {
         Sequence(new[] { 0, 1 }, Query(new PanelQueryOptions { BranchPath = "{0;1}" }).RowPositions);
         var descendants = Query(new PanelQueryOptions { BranchPath = "{0;1}", BranchPrefix = true });
@@ -131,7 +81,7 @@ internal static class Program
         Equal(0, Query(new PanelQueryOptions { BranchPath = "{404}" }).Statistics.BranchCount);
     }
 
-    private static void TypeAndInvalidFilters()
+    internal static void TypeAndInvalidFilters()
     {
         Sequence(new[] { 0, 1, 3 }, Query(new PanelQueryOptions { TypeName = "number" }).RowPositions);
         Sequence(new[] { 4, 5 }, Query(new PanelQueryOptions { OnlyInvalid = true }).RowPositions);
@@ -148,7 +98,7 @@ internal static class Program
         Equal(options.SortMode, clone.SortMode);
     }
 
-    private static void StableMixedSorting()
+    internal static void StableMixedSorting()
     {
         var ascending = Query(new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending });
         Sequence(new[] { 1, 0, 2, 3, 5, 4 }, ascending.RowPositions);
@@ -168,7 +118,7 @@ internal static class Program
             new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending }).RowPositions);
     }
 
-    private static void ImmutableSnapshotAndView()
+    internal static void ImmutableSnapshotAndView()
     {
         var rows = new List<PanelRow>(Sample().Rows);
         var originalRows = rows.ToArray();
@@ -186,7 +136,7 @@ internal static class Program
         Throws<NotSupportedException>(() => ((IList<int>)result.RowPositions)[0] = 5);
     }
 
-    private static void OddLengthSorting()
+    internal static void OddLengthSorting()
     {
         foreach (var length in new[] { 1, 3, 7, 17, 257 })
         {
@@ -200,7 +150,7 @@ internal static class Program
         }
     }
 
-    private static void EmptyAndNonfiniteNumbers()
+    internal static void EmptyAndNonfiniteNumbers()
     {
         var empty = PanelQueryEngine.Execute(PanelSnapshot.Empty, new PanelQueryOptions());
         Equal(0, empty.RowPositions.Count);
@@ -222,7 +172,7 @@ internal static class Program
         Sequence(new[] { 3, 4 }, PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = ">0" }).RowPositions);
     }
 
-    private static void InvalidFiniteNumbers()
+    internal static void InvalidFiniteNumbers()
     {
         // RhinoMath.UnsetValue is finite, but a native GH_Number carrying it is invalid.
         const double unsetValue = -1.23432101234321e308;
@@ -262,7 +212,7 @@ internal static class Program
             new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending }).RowPositions);
     }
 
-    private static void ExtremeNumericStatistics()
+    internal static void ExtremeNumericStatistics()
     {
         var snapshot = new PanelSnapshot(new[]
         {
@@ -273,7 +223,7 @@ internal static class Program
         Equal(0.0, result.Statistics.Mean!.Value);
     }
 
-    private static void Cancellation()
+    internal static void Cancellation()
     {
         using var source = new CancellationTokenSource();
         source.Cancel();
@@ -281,7 +231,7 @@ internal static class Program
         Throws<OperationCanceledException>(() => PanelQueryEngine.Execute(PanelSnapshot.Empty, new PanelQueryOptions(), source.Token));
     }
 
-    private static void LargeData()
+    internal static void LargeData()
     {
         const int count = 262144;
         const int branchSize = 1024;
@@ -310,7 +260,7 @@ internal static class Program
         Console.WriteLine($"  {count:N0} rows filtered, aggregated and sorted in {watch.ElapsedMilliseconds} ms (local measurement).");
     }
 
-    private static void CanvasDimensionsAndPresets()
+    internal static void CanvasDimensionsAndPresets()
     {
         Equal(CanvasPanelSize.DefaultWidth, CanvasPanelSize.DefaultHeight);
         Equal(CanvasPanelSize.DefaultWidth, CanvasPanelSize.Width(float.NaN));
@@ -342,7 +292,7 @@ internal static class Program
         }
     }
 
-    private static void CanvasMenuPagingAndSnapshot()
+    internal static void CanvasMenuPagingAndSnapshot()
     {
         var branches = Enumerable.Range(0, 100).Select(i => new PanelBranch("{" + i + "}", 0)).ToArray();
         var snapshot = new PanelSnapshot(Array.Empty<PanelRow>(), branches);
@@ -407,7 +357,7 @@ internal static class Program
         Equal("Plugin geometry", CanvasMenu.ShortTypeName("Plugin geometry"));
     }
 
-    private static void UnitConversionsAndFormatting()
+    internal static void UnitConversionsAndFormatting()
     {
         Near(1.23456789, PanelUnits.Convert(1234.56789, PanelUnitConversion.MillimetersToMeters));
         Near(1234.56789, PanelUnits.Convert(1.23456789, PanelUnitConversion.MetersToMillimeters));
@@ -427,7 +377,7 @@ internal static class Program
         Equal(double.PositiveInfinity, PanelUnits.Convert(double.PositiveInfinity, PanelUnitConversion.MillimetersToMeters));
     }
 
-    private static void UnitMenuLayout()
+    internal static void UnitMenuLayout()
     {
         foreach (float height in new[] { 110f, 180f, 220f, 360f, 900f })
         {
@@ -461,7 +411,7 @@ internal static class Program
         }
     }
 
-    private static void GeometryMetricConversions()
+    internal static void GeometryMetricConversions()
     {
         Equal("1 m", PanelUnits.FormatGeometry(1000, 1, "mm", PanelUnitConversion.MillimetersToMeters, -1));
         Equal("1 m²", PanelUnits.FormatGeometry(1000000, 2, "mm", PanelUnitConversion.SquareMillimetersToSquareMeters, -1));
