@@ -626,7 +626,11 @@ internal static partial class FilterUiChecks
     private static void MenuRow(GH_Component component, GH_Canvas canvas, int index)
     {
         var menu = Field<object>(component.Attributes, "_menu");
-        for (int attempts = 0; attempts < 10; attempts++)
+        int count = Property<int>(menu, "Count");
+        if (index < 0 || index >= count) throw new InvalidOperationException($"Invalid menu item {index} of {count}");
+        // Minimum Half may expose one item per page. Reaching the last item
+        // needs Count - 1 page clicks followed by one selection click.
+        for (int attempts = 0; attempts <= count; attempts++)
         {
             Paint(component, canvas);
             int offset = Property<int>(menu, "Offset"), visible = Property<int>(menu, "Visible");
@@ -638,8 +642,11 @@ internal static partial class FilterUiChecks
             }
             Click(component, canvas, new RectangleF(index < offset ? bounds.X : bounds.X + bounds.Width / 2,
                 bounds.Bottom - 20, bounds.Width / 2, 20));
+            int nextOffset = Property<int>(menu, "Offset");
+            if (nextOffset == offset)
+                throw new InvalidOperationException($"Menu page did not advance toward item {index}; offset={offset}, visible={visible}, count={count}, kind={MenuKind(component)}, bounds={bounds}");
         }
-        throw new InvalidOperationException("Could not reach filter menu item");
+        throw new InvalidOperationException($"Could not reach filter menu item {index} of {count}");
     }
 
     private static int SearchModeIndex(GH_Component component, PanelSearchMode mode)

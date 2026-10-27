@@ -21,6 +21,20 @@ internal static class SetDetailsChecks
 
     internal static async Task Run(Assembly assembly)
     {
+        // Scheduled selection output needs the host editor's native handle even
+        // though this fixture renders to an isolated, hidden canvas.
+        var previous = Grasshopper.Instances.DocumentEditor;
+        using var owned = previous == null ? new Grasshopper.GUI.GH_DocumentEditor() : null;
+        var editor = previous ?? owned!;
+        _ = editor.Handle;
+        var setEditor = typeof(Grasshopper.Instances).GetMethod("SetDocumentEditor", BindingFlags.Static | BindingFlags.NonPublic)!;
+        setEditor.Invoke(null, new object?[] { editor });
+        try { await RunWithEditor(assembly); }
+        finally { setEditor.Invoke(null, new object?[] { previous }); }
+    }
+
+    private static async Task RunWithEditor(Assembly assembly)
+    {
         using var document = new GH_Document { Enabled = true };
         GH_Document.EnableSolutions = true;
         var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
@@ -59,6 +73,10 @@ internal static class SetDetailsChecks
             var textRow = PanelTestAdapter.RowBounds(component, 2);
             PanelTestAdapter.CanvasClick(canvas, new PointF(textRow.X + 42, textRow.Y + 8));
             Check(PanelTestAdapter.SelectedPosition(component) == 2, "Set fixture selects a different row before inspecting occurrences");
+            await WaitForSelectedOutput();
+            Check(component.Params.Output[1].VolatileData.AllData(true).Single() is GH_String selected && selected.Value == "alpha",
+                "The selected set value is published before occurrence inspection begins");
+            Paint();
             var firstBadge = CountBounds(0);
             RawClick(firstBadge);
             Check(!Bounds("Bounds").IsEmpty && Property<int>(details, "SourcePosition") == 0,
@@ -66,7 +84,6 @@ internal static class SetDetailsChecks
             DirectClick(firstBadge);
             Check(Property<bool>(details, "IsOpen"), "A badge cannot toggle twice before its new state is painted");
             Paint();
-            await WaitFor(() => component.Params.Output[1].VolatileData.DataCount == 1);
             var unchangedOutputs = Enumerable.Range(0, 4).Select(OutputFingerprint).ToArray();
             var partialNext = Bounds("Next");
             var partialTable = Bounds("Table");
@@ -295,12 +312,16 @@ internal static class SetDetailsChecks
             return string.Join("|", tree.Paths.Select(path => path.ToString())) + ":" +
                 string.Join("|", tree.AllData(true).Select(value => value == null ? "null" : value.GetType().FullName + ":" + value));
         }
-        async Task WaitFor(Func<bool> condition)
+        async Task WaitForSelectedOutput()
         {
             var clock = Stopwatch.StartNew();
-            while (!condition())
+            while (component.Params.Output[1].VolatileData.DataCount != 1)
             {
-                if (clock.Elapsed.TotalSeconds > 20) throw new TimeoutException("Set output did not finish");
+                if (clock.Elapsed.TotalSeconds > 20)
+                    throw new TimeoutException($"Selected set output did not finish: position={PanelTestAdapter.SelectedPosition(component)}, " +
+                        $"counts={string.Join(",", component.Params.Output.Select(output => output.VolatileData.DataCount))}, " +
+                        $"selectionVersion={Field<long>(component, "_selectionVersion")}, publishedVersion={Field<long>(component, "_publishedSelectionVersion")}, " +
+                        $"current={Property<bool>(session, "HasCurrentResult")}, busy={Property<bool>(session, "IsBusy")}, canvasDocument={ReferenceEquals(canvas.Document, document)}");
                 await Task.Delay(10);
             }
         }

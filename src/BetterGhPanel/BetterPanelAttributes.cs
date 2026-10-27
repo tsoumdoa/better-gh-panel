@@ -875,13 +875,12 @@ namespace BetterGhPanel
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }
-                if (!_rowMenuPainted || !RowsAreCurrent(menuResult))
+                if (!_rowMenuPainted || !RowsAreCurrent(menuResult) || !RowMenuTargetPainted(point))
                 {
-                    sender.Invalidate();
-                    return GH_ObjectResponse.Handled;
-                }
-                if (_rowMenuBounds.Contains(point) && !RowMenuTargetPainted(point))
-                {
+                    // An unpainted action consumes the gesture and dismisses the
+                    // menu, as it did before per-target clipping was tracked.
+                    CloseRowMenu();
+                    SuppressTrailingDoubleClick();
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }

@@ -87,6 +87,8 @@ internal static class FullValueChecks
             Check(Tooltip(first).Title != "View full value", "Unpainted row actions do not supply a tooltip");
             Click(first);
             Check(Windows().Length == 0 && Selected().SequenceEqual(selected), "An unpainted viewer action cannot open a window or alter selection");
+            Check(Field<object?>(component.Attributes, "_rowMenuResult") == null,
+                "Rejecting an unpainted action dismisses the context menu so the row can reopen it");
 
             Open();
             Paint();
@@ -156,6 +158,14 @@ internal static class FullValueChecks
             Check(PanelTestAdapter.RowMenuLabel(component, 0) == "Copy geometry for Rhino" &&
                 Tooltip(MenuItem(1)).Title != "Select indices 0, 1 across branches",
                 "A partial repaint enables only the page row actually painted");
+            Click(MenuItem(1));
+            Check(Field<object?>(component.Attributes, "_rowMenuResult") == null && Windows().Length == 0 && Selected().SequenceEqual(selected),
+                "A clipped row action is rejected and dismisses the partially painted menu");
+            Paint();
+            Open();
+            Paint();
+            Click(MenuItem(Find("More actions…")));
+            PaintClip(MenuItem(0));
             Paint();
             Check(Find("Copy geometry for Rhino") >= 0 && Find("Select indices 0, 1 across branches") >= 0 && Find("Previous actions…") >= 0 &&
                 PanelTestAdapter.Bounds(component, CanvasControl.Panel).Contains(Field<RectangleF>(component.Attributes, "_rowMenuBounds")),
