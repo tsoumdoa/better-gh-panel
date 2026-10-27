@@ -171,6 +171,10 @@ namespace BetterGhPanel.Runtime
                 if (node is IGH_Goo goo)
                 {
                     if (TrustedTypeName(node.GetType()) == null) return PanelValidity.Unverified;
+                    // GH_Arc exposes a more specific validity check than the
+                    // inherited IGH_Goo implementation on Rhino 8.
+                    if (node.GetType() == typeof(GH_Arc))
+                        return ((GH_Arc)goo).IsValid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
                     if (IsGeometryHolder(node.GetType()))
                     {
                         if (!TryGetTrustedGeometry(goo, out GeometryBase? geometry)) return PanelValidity.Unverified;

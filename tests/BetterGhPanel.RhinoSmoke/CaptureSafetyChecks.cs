@@ -189,7 +189,11 @@ internal static class CaptureSafetyChecks
             brep.Curves3D[0].UserData.Count == 1 && brep.Surfaces[0].UserData.Count == 2,
             "Brep fixture has hostile and non-serializable embedded UserData, without outer UserData");
         var tree = new GH_Structure<IGH_Goo>();
-        tree.AppendRange(new IGH_Goo[] { new GH_Curve(poly), new GH_Brep(brep) }, new GH_Path(0));
+        var curveGoo = new GH_Curve { Value = poly };
+        var brepGoo = new GH_Brep { Value = brep };
+        tree.AppendRange(new IGH_Goo[] { curveGoo, brepGoo }, new GH_Path(0));
+        Check(ReferenceEquals(curveGoo.Value, poly) && ReferenceEquals(brepGoo.Value, brep),
+            "The capture fixture passes the instrumented geometry itself to the plugin");
         CaptureCountingUserData.Callbacks = 0;
         CaptureBenignUserData.Callbacks = 0;
         CaptureNonSerializableUserData.Callbacks = 0;
@@ -213,9 +217,12 @@ internal static class CaptureSafetyChecks
         var number = Capture(new GH_Number(Rhino.RhinoMath.UnsetValue), new GH_Number(double.NaN));
         Check(number.SupportsSearchMode(PanelSearchMode.Value) && number.Rows.All(row => row.Validity == PanelValidity.VerifiedInvalid),
             "Exact invalid finite-unset and nonfinite numbers still offer numeric search");
-        var curves = Capture(new GH_Line(), new GH_Arc(), new GH_Circle(), new GH_Curve());
-        Check(curves.SupportsSearchMode(PanelSearchMode.Length) && curves.Rows.All(row => row.Validity == PanelValidity.VerifiedInvalid),
-            "Trusted invalid line, arc, circle and null curve expose their unambiguous length mode");
+        var unsetArc = new GH_Arc(Arc.Unset);
+        var curves = Capture(new GH_Line(), unsetArc, new GH_Circle(), new GH_Curve());
+        Check(curves.SupportsSearchMode(PanelSearchMode.Length) &&
+            curves.Rows.Where(row => row.TypeName != "Arc").All(row => row.Validity == PanelValidity.VerifiedInvalid) &&
+            curves.Rows.Single(row => row.TypeName == "Arc").IsValid == unsetArc.IsValid,
+            "Invalid line, circle and null curve retain length mode, and arc validity follows Grasshopper");
         var area = Capture(new GH_Rectangle(), new GH_Surface());
         var volume = Capture(new GH_Box());
         var nullBrep = Capture(new GH_Brep());
@@ -231,7 +238,7 @@ internal static class CaptureSafetyChecks
         Check(mixed.SupportsSearchMode(PanelSearchMode.Length) && mixed.SupportsSearchMode(PanelSearchMode.Area) &&
             mixed.SupportsSearchMode(PanelSearchMode.Volume), "Arc-only/circle-arc and open/solid Brep modes form the input union");
         using var hostile = new HostileLineCurve();
-        var holder = new GH_Curve(hostile);
+        var holder = new GH_Curve { Value = hostile };
         var group = Group("hostile inner", 0); group.Objects.Add(holder);
         HostileLineCurve.Calls = 0;
         var untrusted = Capture(holder, group, new GH_Point(Point3d.Origin), new GH_Mesh());
