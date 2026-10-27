@@ -356,15 +356,12 @@ namespace BetterGhPanel
             cancellation?.Dispose();
         }
 
-        private bool TryGetActionPositions(PanelSnapshot snapshot, IReadOnlyList<int> positions, out int[] ordered)
+        private bool TryGetActionPositions(PanelSnapshot snapshot, IReadOnlyList<int> positions, out IReadOnlyList<int> ordered)
         {
             ordered = Array.Empty<int>();
             var session = _session;
             if (session == null || !session.HasCurrentResult || !ReferenceEquals(snapshot, session.Snapshot) || positions.Count == 0) return false;
-            var selected = new HashSet<int>(positions);
-            if (selected.Any(position => position < 0 || position >= _sourceItems.Length || position >= snapshot.Rows.Count)) return false;
-            ordered = session.Result.RowPositions.Where(selected.Contains).ToArray();
-            return ordered.Length == selected.Count;
+            return PanelActionPositions.TryGet(session.Result, _sourceItems.Length, RowSelection, positions, out ordered);
         }
 
         internal string? FrameRows(PanelSnapshot snapshot, IReadOnlyList<int> positions)
@@ -384,7 +381,7 @@ namespace BetterGhPanel
                 ClearHighlight();
                 return;
             }
-            var ordered = Array.Empty<int>();
+            IReadOnlyList<int> ordered = Array.Empty<int>();
             if (positions.Count > 0 && !TryGetActionPositions(snapshot, positions, out ordered))
             {
                 ClearHighlight();
@@ -424,7 +421,7 @@ namespace BetterGhPanel
                     {
                         var text = string.Join(Environment.NewLine, ordered.Select(position => CopyValue(snapshot, position)));
                         using (var clipboard = new Eto.Forms.Clipboard()) clipboard.Text = text;
-                        completion.SetResult(ordered.Length == 1 ? "Value copied" : ordered.Length + " values copied");
+                        completion.SetResult(ordered.Count == 1 ? "Value copied" : ordered.Count + " values copied");
                     }
                 }
                 catch (Exception ex) { completion.SetResult("Copy failed: " + ex.Message); }

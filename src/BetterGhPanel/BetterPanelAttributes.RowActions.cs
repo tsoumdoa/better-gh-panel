@@ -72,7 +72,7 @@ namespace BetterGhPanel
                 if (!hit.Bounds.Contains(e.CanvasLocation)) continue;
                 _rowContextHandled = true;
                 InvalidateCopyStatus();
-                _selection.Select(result, hit.SourcePosition, preserveSelected: true);
+                _selection.SelectAt(result, hit.SourcePosition, hit.ViewNumber - 1, preserveSelected: true);
                 PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
                 TrackSelectionCanvas(canvas);
                 _rowMenuResult = result;

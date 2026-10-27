@@ -178,7 +178,17 @@ namespace BetterGhPanel.Core
                 foreach (var step in set.Complete(work, cancellationToken))
                     if (step == null) yield return null;
                     else displaySet = step;
-            yield return new PanelQueryResult(snapshot, positions, statistics, branches, displaySet);
+            if (work.ShouldYield()) yield return null;
+            cancellationToken.ThrowIfCancellationRequested();
+            var viewIndices = new PanelResultPositionIndex(snapshot.Rows.Count, positions.Length);
+            for (int index = 0; index < positions.Length; index++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, cancellationToken);
+                viewIndices.Add(positions[index], index);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return new PanelQueryResult(snapshot, positions, viewIndices, statistics, branches, displaySet);
         }
 
         public static bool RequiresGeometryMeasurements(PanelQueryOptions options)

@@ -830,7 +830,7 @@ namespace BetterGhPanel
                         return GH_ObjectResponse.Handled;
                     }
                     InvalidateCopyStatus();
-                    _selection.Select(currentResult, hit.SourcePosition, modifiers.Toggle, modifiers.Range, preserveSelected: true);
+                    _selection.SelectAt(currentResult, hit.SourcePosition, hit.ViewNumber - 1, modifiers.Toggle, modifiers.Range, preserveSelected: true);
                     var positions = _selection.OrderedPositions(currentResult);
                     PanelOwner.HighlightRows(currentResult.Snapshot, positions);
                     TrackSelectionCanvas(sender);

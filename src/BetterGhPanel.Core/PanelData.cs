@@ -214,11 +214,17 @@ namespace BetterGhPanel.Core
 
     public sealed class PanelQueryResult
     {
-        internal PanelQueryResult(PanelSnapshot snapshot, int[] rowPositions, PanelStatistics statistics, IEnumerable<string> branchPaths,
+        private readonly PanelResultPositionIndex _viewIndices;
+        private readonly HashSet<string> _branchPaths;
+
+        internal PanelQueryResult(PanelSnapshot snapshot, int[] rowPositions, PanelResultPositionIndex viewIndices,
+            PanelStatistics statistics, HashSet<string> branchPaths,
             PanelDisplaySetResult? displaySet = null)
         {
             Snapshot = snapshot;
             RowPositions = Array.AsReadOnly(rowPositions);
+            _viewIndices = viewIndices;
+            _branchPaths = branchPaths;
             Statistics = statistics;
             BranchPaths = Array.AsReadOnly(new List<string>(branchPaths).ToArray());
             DisplaySet = displaySet;
@@ -227,9 +233,13 @@ namespace BetterGhPanel.Core
         public PanelSnapshot Snapshot { get; }
         /// <summary>Positions in Snapshot.Rows, retaining each row's original tree address.</summary>
         public IReadOnlyList<int> RowPositions { get; }
+        /// <summary>Finds a visible source position in this result's view order.</summary>
+        public bool TryGetViewIndex(int position, out int index) => _viewIndices.TryGet(position, out index);
         public PanelStatistics Statistics { get; }
         /// <summary>Matching paths, including empty branches when no item filter is active.</summary>
         public IReadOnlyList<string> BranchPaths { get; }
+        /// <summary>Whether a path, including a retained empty path, is present in this result.</summary>
+        public bool ContainsBranchPath(string path) => _branchPaths.Contains(path);
         public PanelDisplaySetResult? DisplaySet { get; }
         public PanelSetOccurrences? SetOccurrencesAt(int position) =>
             DisplaySet != null && DisplaySet.Occurrences.TryGetValue(position, out var occurrences) ? occurrences : Snapshot.Rows[position].SetOccurrences;

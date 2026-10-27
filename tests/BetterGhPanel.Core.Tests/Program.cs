@@ -36,6 +36,7 @@ internal static class Program
             CanvasMenuPagingAndSnapshot,
             CanvasMenuChoiceChecks.Run,
             PanelRowSelectionChecks.Run,
+            SelectionPerformanceChecks.Run,
             FilterCanvasChecks.Run,
             UnitConversionsAndFormatting,
             UnitConversionChecks.Run,
