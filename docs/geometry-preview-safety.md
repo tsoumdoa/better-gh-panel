@@ -363,7 +363,7 @@ evidence; it does not make the fixture pass.
 | Standalone and grouped Breps regenerate bounded shaded meshes after each setting change and reuse them when settings do not change. | `preview-single-pass-meshing` in `Aqlnf2` passed one actual shaded capture and all three regeneration/reuse assertions within that capture; it then failed its idle-retirement wait. Earlier run `T38ZA5` passed six assertions with the now-removed synchronous flush implementation. |
 | A live Brep changes, while old standalone/group bounds and actual drawing remain coherent without source expiration. | `preview-single-pass-geometry` in `Aqlnf2` passed the mutation/bounds check and separate old-generation pixel assertions for both Breps, before failing its idle wait. |
 | After rebuilding, standalone/group bounds and actual drawing reflect the new Brep geometry. | The same `Aqlnf2` fixture passed its rebuilt bounds, document-cache and two new-generation pixel assertions within the same capture; it did not test a later native frame. |
-| Clearing disposes generated meshes and document-close cleanup releases resources. | `preview-retirement-seam` in `ySzCfi` passed explicit post-capture cleanup and exactly-once accounting, including a document-close callback. It does not prove real idle delivery, shutdown cleanup or an end-of-frame boundary. The original immediate-clear assertion has not been reached under the deferred-retirement implementation. |
+| Clearing disposes generated meshes and document-close cleanup releases resources. | `preview-retirement-seam` in `ySzCfi` passed explicit post-capture cleanup and exactly-once accounting, including a document-close callback. It does not prove real idle delivery, shutdown cleanup or an end-of-frame boundary. The revised fixture's detachment and deferred-disposal assertions have not yet been reached. |
 | Selection-only changes invalidate Grasshopper's component/document preview caches and draw at new bounds. | `preview-safety` in `otFTIW` passed the host cache and actual viewport checks on the current candidate; the combined final build still needs those original assertions rerun. |
 
 All original fixtures remain in the inventory. These failures, eventual idle
@@ -382,6 +382,9 @@ was `347853480dd805fe7e31d25f4b62c5e9069f5976ef27014b3fe111789ae11e27`.
 The expanded diagnostic in run `hUoDHJ` passed 15 assertions on the same
 payload, adding later live frames for Brep mesh-setting changes and reuse,
 source mutation, rebuilding, bounds, drawing and idle cleanup.
+After correcting its OpenGL source and pixel-buffer handling, run `cLyE4W`
+passed 19 assertions, including distinct and alternating read/draw framebuffer
+sentinels, rejection of a bound unpack buffer and state restoration on failure.
 This is supplemental evidence: the test-side flush can change timing, it does
 not cover all assertions of the required fixtures, and it does not prove that
 idle is a safe boundary after every nested native display call.
@@ -390,6 +393,21 @@ An earlier temporary readback prototype exited with native heap-corruption code
 `0xC0000374` after completing its framebuffer read. Its task continuation could
 resume inline while the draw callback was still active; the later diagnostic
 uses asynchronous continuations and passed, but the crash cause was not proven.
+
+A separate test-only nested-idle probe (`run-XIQmYS`) called the retirement
+handler after the component's mesh callback returned but before the enclosing
+display callback returned. It observed an owned box mesh already disposed and
+failed its lifetime assertion. This establishes the managed ordering in that
+controlled seam, not whether Rhino was still using that mesh natively or the
+cause of any offscreen-capture crash. An isolated experimental build that flushed
+inside the active draw passed a live-frame nested-idle probe, but the four
+required offscreen fixtures still failed; that experiment is not shipped.
+
+The required `preview-native-resources` fixture now checks that clearing
+immediately detaches the preview and then waits for deferred retirement before
+checking mesh disposal and accounting. Run `9bCHad` still failed on its second
+offscreen capture, before those final assertions could run. Active-draw and
+nested native lifetime remain separate requirements, not implied by that wait.
 
 The installed RhinoCommon 8.36 implementation can retain a mesh in its managed
 pipeline cache when the two-argument `DrawMeshShaded` overload is used; the

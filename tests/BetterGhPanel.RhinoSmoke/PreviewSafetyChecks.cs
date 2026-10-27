@@ -1397,7 +1397,7 @@ internal static partial class PreviewSafetyChecks
         point.Value = new Point3d(37, 0, 0);
     }
 
-    internal static Task RunNativeResources(Assembly assembly)
+    internal static async Task RunNativeResources(Assembly assembly)
     {
         var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
         bool modified = rhino.Modified;
@@ -1481,7 +1481,10 @@ internal static partial class PreviewSafetyChecks
                 Check(newImage != null && GreenPixels(newImage) > 0 && Count(highlight) == 2,
                     "the rebuilt Brep generation draws after expiration");
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
-            Check((int)live.GetValue(null)! == 0, "clearing a preview disposes every generated Brep mesh");
+            Check(Count(highlight) == 0 && !Box(highlight).IsValid, "clearing a preview immediately detaches its geometry and bounds");
+            await WaitForPreviewRetirement(highlight);
+            Check((int)live.GetValue(null)! == 0 && Property<long>(highlight, "RetainedBytes") == 0,
+                "clearing a preview eventually disposes every generated Brep mesh and releases its accounting");
             component.DocumentContextChanged(document, GH_DocumentContext.Close);
         }
         finally
@@ -1490,7 +1493,6 @@ internal static partial class PreviewSafetyChecks
             if (previous != null) rhino.Views.ActiveView = previous;
             view.Close(); rhino.Modified = modified;
         }
-        return Task.CompletedTask;
     }
 
     // Directly exercise the plugin's preview callbacks in a Rhino display

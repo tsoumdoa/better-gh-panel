@@ -13,7 +13,7 @@ internal static partial class PreviewSafetyChecks
     // not replace the required offscreen fixtures or prove a safe retirement
     // boundary for native display resources.
     private static async Task<Bitmap> CaptureLiveFramebuffer(Rhino.Display.RhinoView view, PreviewConduit conduit,
-        GH_Component component)
+        GH_Component component, bool verifyState = false)
     {
         var completion = new TaskCompletionSource<Bitmap>(TaskCreationOptions.RunContinuationsAsynchronously);
         conduit.OnDraw = args =>
@@ -21,6 +21,7 @@ internal static partial class PreviewSafetyChecks
             try
             {
                 if (args.Viewport.Id != view.ActiveViewport.Id) throw new InvalidOperationException("Unexpected viewport in live capture.");
+                if (verifyState) LiveFramebufferCapture.VerifyState(Check);
                 component.DrawViewportMeshes(args);
                 component.DrawViewportWires(args);
                 args.Display.Flush();
@@ -58,7 +59,7 @@ internal static partial class PreviewSafetyChecks
             Set(highlight, new IGH_Goo?[] { wrapper }, new[] { 0 }, new[] { 0 });
             wrapper.Value = wrapper;
             conduit.Enabled = true;
-            using (var bitmap = await CaptureLiveFramebuffer(view, conduit, component))
+            using (var bitmap = await CaptureLiveFramebuffer(view, conduit, component, true))
                 Check(GreenPixels(bitmap) > 0 && Box(highlight).Contains(Point3d.Origin),
                     "a cyclic wrapper's admitted point draws in a live Rhino frame");
 
