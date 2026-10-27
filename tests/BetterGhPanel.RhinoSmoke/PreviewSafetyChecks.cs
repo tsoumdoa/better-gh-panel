@@ -427,8 +427,8 @@ internal static class PreviewSafetyChecks
             $"type={row.TypeName} known={row.TypeIdentityAvailable} validity={row.Validity} display={row.DisplayValue} capabilities={row.SearchCapabilities}")));
         Check(snapshot.Rows[0].TypeName == "Point Cloud" && snapshot.Rows[1].TypeName == "Extrusion" &&
             snapshot.Rows[5].TypeName == "Group" && snapshot.Rows[0].TypeIdentityAvailable && snapshot.Rows[1].TypeIdentityAvailable &&
-            snapshot.Rows[5].TypeIdentityAvailable && new[] { 0, 1, 5 }.All(i => snapshot.Rows[i].Validity == PanelValidity.Unverified),
-            "capture currently retains exact cloud/extrusion/group identities but marks their validity unverified");
+            snapshot.Rows[5].TypeIdentityAvailable && new[] { 0, 1, 5 }.All(i => snapshot.Rows[i].Validity == PanelValidity.VerifiedValid),
+            "capture retains exact cloud/extrusion/group identities and verifies their valid contents");
         Check(snapshot.Rows[0].DisplayValue == "<Point Cloud>" && snapshot.Rows[1].DisplayValue == "<Extrusion>" &&
             PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = "Point Cloud" }).RowPositions.SequenceEqual(new[] { 0 }) &&
             PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = "Extrusion" }).RowPositions.SequenceEqual(new[] { 1 }) &&
@@ -439,7 +439,7 @@ internal static class PreviewSafetyChecks
             snapshot.SupportsSearchMode(PanelSearchMode.ListLength) && !snapshot.SupportsSearchMode(PanelSearchMode.Length) &&
             !snapshot.SupportsSearchMode(PanelSearchMode.Area) && !snapshot.SupportsSearchMode(PanelSearchMode.Volume) &&
             !PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { OnlyInvalid = true }).RowPositions.Any(i => i == 0 || i == 1 || i == 5),
-            "unverified cloud/extrusion/group rows have no metric capability and are excluded by invalid-only filtering");
+            "valid cloud/extrusion/group rows have no metric capability and are excluded by invalid-only filtering");
         Check(delivered.Length == all.Length && output.Select(value => value?.GetType()).SequenceEqual(delivered.Select(value => value?.GetType())) &&
             delivered[0] is GH_PointCloud && delivered[1] is GH_Extrusion && delivered[5] is GH_GeometryGroup,
             "the real solve preserves delivered cloud, extrusion, wrapper and group types in D");

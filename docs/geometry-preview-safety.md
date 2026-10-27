@@ -217,19 +217,15 @@ uses a bounded managed point snapshot and an owned curve. Per-operation work
 and the preview staged/admitted/retired cap include those snapshots. Unsupported,
 invalid or over-budget entries remain visibly partial or skipped.
 
-The capture classifier in this branch recognizes the exact stock type names
-`Point Cloud` and `Extrusion`, but does not classify those holders as trusted
-geometry leaves. It therefore marks their validity unverified and formats the
-standalone values as `<Point Cloud>` and `<Extrusion>`; a group containing
-them is unverified unless a known-invalid member takes precedence. Their known
-type identities remain available to type filters, and text/regex search uses the
-captured display or group summary. Unverified rows are excluded by invalid-only
-filters and do not offer metric searches. Text, regex and list-length searches
-remain available; other rows can add metric modes to a mixed input. Typed
-outputs remain intact. Restoring verified validity needs coordinated capture
-graph, inner-object/reference freshness and bounded validity tests rather than
-adding these holders to a type allowlist. That capture work is separate from
-this provider change. In the `7PtSye` persistent-source solve Grasshopper
+The capture classifier recognizes exact `GH_PointCloud` and `GH_Extrusion`
+holders, their supported inner objects and their reference context. Valid values
+and groups containing only valid trusted leaves are verified valid; unsupported
+subclasses and unresolved references remain unverified. The standalone displays
+remain `<Point Cloud>` and `<Extrusion>`, their known type identities remain
+available to type filters, and text/regex search uses the captured display or
+group summary. These types do not add metric search modes; text, regex and
+list-length searches remain available, and other rows can add metric modes to a
+mixed input. Typed outputs remain intact. In the persistent-source fixture Grasshopper
 delivered the named fixture group without its name, so the captured searchable
 summary was `Group with 3 objects`; the test compares against the value actually
 delivered rather than inventing the lost name.
@@ -247,6 +243,7 @@ when a RhinoCommon plugin is loaded, including a normal interactive host.
 
 | Fixture and build | Observed evidence |
 | --- | --- |
+| Combined capture and preview, run `nHs3H2`, plugin SHA-256 `35e3a054c3d9dc7a6c25e85f3c012bc66bcd31d7b747a20089f3576e85d0f5db` | `capture-stock-geometry` passed 37 assertions, `preview-additional-geometry` 57, `preview-additional-draw` 11, `preview-single-pass-meshing` seven and `preview-single-pass-geometry` nine. The original `highlight-overlap` and `item-order-capture` fixtures passed nine and 10 assertions. `preview-reentrant-draw`, `preview-native-resources` and `preview-conduit-resources` failed on a later `DrawToBitmap`; `preview-compatibility-draw` crashed in its first capture. This intermediate desktop host processed Rhino events and idle tasks; the failed fixtures remain failed. |
 | `preview-additional-geometry` and `preview-additional-draw`, run `j5Z1LG`, plugin SHA-256 `8dad66db0f86ef1f6ba0902bbef3595cc54bda058103ac508f1dc7ab754863c5` | Passed the same 57 and 11 assertions after correcting a source comment. The plugin behavior is unchanged from the preceding run. |
 | `preview-additional-geometry` and `preview-additional-draw`, run `7PtSye`, plugin SHA-256 `765b0406319b3b5b5922a3c9c2010974018352d5b26d2f48af334bef826a1ee8` | Passed 57 and 11 assertions. Geometry coverage includes standalone/group preview and frame, mixed-group and standalone archive/real Paste with root custom data and cloud attributes, loaded-reference preview/frame/copy, stale reference and hidden-flag callbacks, bounds before/after cloud mutation and extrusion replacement, point/color ordering, 8,193-point admission, over-limit partial actions and typed D/S/B/F. The draw fixture checked actual selected/filtered pixels for standalone/group clouds and extrusions plus bounding-box, sphere and polyline wrappers, and the colored/hidden cloud. Its explicit cleanup seam does not prove the general idle/flush boundary. |
 | `preview-additional-geometry` and `preview-additional-draw`, run `QzqeOz`, plugin SHA-256 `4e94ebce7458893b457061228873b875b16f7baf4c3224f059226e3b8154272d` | Passed 37 and 11 assertions on the then-current candidate. The former checked standalone/group bounds, frame and archive copies, real Paste of all five values, source metadata, reentrant graph changes, partial/exhausted actions and typed D/S/B/F. A direct Rhino 3DM control proved the hidden-flag loss and the copy action visibly rejected it. The latter checked actual selected/filtered wire and shaded pixels for standalone/grouped clouds and extrusions and the three wrapper values, plus a colored/hidden cloud and explicit post-capture cleanup. |
