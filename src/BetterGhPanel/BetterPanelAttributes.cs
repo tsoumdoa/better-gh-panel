@@ -1281,11 +1281,11 @@ namespace BetterGhPanel
                         else if (PanelOwner.Session.HasGeometryMeasurement(snapshot, hit.SourcePosition) && !geometry.Value.HasValue)
                             details += "\nMeasurement unavailable.";
                     }
-                    else details = value.Length > 1000 ? value.Substring(0, 997) + "…" : value;
+                    else details = value;
                     if (PanelOwner.Session.Options.DisplayFilterValue)
                         details = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode) + ": " + value + "\n" +
                             PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, PanelOwner.DecimalPlaces, geometry) + "\n" + details;
-                    e.Description = details + "\n\nClick to select without moving the camera. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Alt/Option-click selects the same index across filtered branches. Double-click to clear selection. Right-click to select indices across branches, frame the selection or copy values or geometry.";
+                    e.Description = PanelTextPreview.ForTooltip(details) + "\n\nClick to select without moving the camera. Ctrl/Cmd-click toggles rows; Shift-click selects a range. Alt/Option-click selects the same index across filtered branches. Double-click to clear selection. Right-click to view the full value, select indices across branches, frame the selection or copy values or geometry.";
                     break;
                 }
             }
