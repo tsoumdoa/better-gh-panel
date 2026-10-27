@@ -56,6 +56,13 @@ that desktop for those fixtures, without switching the user's desktop. The
 hidden-host crashes remain recorded above; the final package still needs its
 own full run.
 
+An exploratory full `Rhino.exe` idle probe was also started on an inactive
+desktop to investigate preview-resource retirement. Rhino reached its startup
+window, but the probe script did not report that it had begun before the
+bounded runs timed out. The isolated processes were closed. These attempts do
+not establish whether an interactive Rhino host raises idle after the relevant
+display work, and they do not replace the required preview fixtures.
+
 ## Current boundaries and remaining considerations
 
 - `PanelQueryPolicy` keeps query equality, downstream output equivalence and active-filter decisions separate. Output equivalence intentionally ignores sorting and sometimes decimal precision; preserve those distinctions when adding settings.
