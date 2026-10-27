@@ -171,6 +171,16 @@ internal static class GeometryMeasurementBatchChecks
             !await Result(fixture.Measure(CancellationToken.None, fixture.Snapshot.Rows.Count)),
             "Invalid selected positions reject the batch without indexing outside the snapshot");
         Check(await Result(fixture.Measure(CancellationToken.None)), "Empty measurement selections complete without work");
+
+        using var unproven = new Fixture(assembly);
+        int computations = 0;
+        unproven.SetResolver(_ => () => { Interlocked.Increment(ref computations); return new PanelGeometryInfo("Measured", 4); });
+        Check(await Result(unproven.Measure(CancellationToken.None, 0)) && unproven.Has(0),
+            "An unwitnessed measurement is usable for its current snapshot");
+        var original = unproven.Snapshot;
+        unproven.Attach(new PanelSnapshot(original.Rows, original.Branches, PanelUnitConversion.MillimetersToMeters), true);
+        Check(!unproven.Has(0) && await Result(unproven.Measure(CancellationToken.None, 0)) && computations == 2,
+            "An unwitnessed measurement is remeasured rather than retained across a unit-only snapshot");
     }
 
     private static async Task<bool> Result(Task<bool> task)
