@@ -13,6 +13,7 @@
   "recompute-disabled",
   "geometry-hint",
   "capture-safety",
+  "polyline-safety",
   "geometry-canvas-viewport",
   "measurement-priority",
   "measurement-cancellation",

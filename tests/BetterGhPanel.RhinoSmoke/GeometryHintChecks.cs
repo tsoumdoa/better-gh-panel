@@ -19,8 +19,19 @@ internal static class GeometryHintChecks
     internal static async Task Run(Assembly assembly)
     {
         var hints = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!;
-        Func<PanelGeometryInfo?>? Prepare(IGH_Goo goo) => (Func<PanelGeometryInfo?>?)hints
-            .GetMethod("PrepareMeasurement", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, new object[] { goo, "mm" });
+        Func<PanelGeometryInfo?>? Prepare(IGH_Goo goo)
+        {
+            var prepared = hints.GetMethod("PrepareMeasurement", BindingFlags.Static | BindingFlags.NonPublic)!
+                .Invoke(null, new object[] { goo, "mm", (int)Rhino.UnitSystem.Millimeters, 0.001 });
+            if (prepared == null) return null;
+            return () =>
+            {
+                var arguments = new object?[] { null };
+                var claimed = (bool)prepared.GetType().GetMethod("TryRun", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(prepared, arguments)!;
+                return claimed ? (PanelGeometryInfo?)arguments[0] : null;
+            };
+        }
         string? Details(IGH_Goo goo) => Prepare(goo)?.Invoke()?.FormatDetails(PanelUnitConversion.None, -1);
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("Capture")!;
         PanelSnapshot Capture(params IGH_Goo[] items)

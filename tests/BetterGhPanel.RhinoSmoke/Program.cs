@@ -60,6 +60,7 @@ internal static class Program
         ["recompute-disabled"] = RecomputeChecks.RunDisabled,
         ["geometry-hint"] = GeometryHintChecks.Run,
         ["capture-safety"] = assembly => { CaptureSafetyChecks.VerifyManaged(assembly); CaptureSafetyChecks.VerifyNativeUserData(assembly); return Task.CompletedTask; },
+        ["polyline-safety"] = GeometryPolylineSafetyChecks.Run,
         ["geometry-canvas-viewport"] = GeometryHintChecks.VerifyCanvasViewport,
         ["measurement-priority"] = GeometryMeasurementBatchChecks.VerifyPriority,
         ["measurement-cancellation"] = GeometryMeasurementBatchChecks.VerifyCancellation,

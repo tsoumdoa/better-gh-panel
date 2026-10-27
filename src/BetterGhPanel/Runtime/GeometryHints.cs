@@ -1,4 +1,6 @@
 using System;
+using System.Globalization;
+using System.IO;
 using BetterGhPanel.Core;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
@@ -7,6 +9,10 @@ namespace BetterGhPanel.Runtime
 {
     internal static class GeometryHints
     {
+        // Enabled only after the isolated target-host UserData fixture proves this
+        // value reconstruction path and capture explicitly admits its exact type.
+        internal static readonly bool PolylineSnapshotVerified = false;
+
         // Only analytic measurements and stored properties belong in the snapshot.
         internal static PanelGeometryInfo? Describe(IGH_Goo goo, string units)
         {
@@ -38,32 +44,63 @@ namespace BetterGhPanel.Runtime
             return null;
         }
 
-        // Capture an owned deep copy on the UI thread, outside painting. The returned
-        // operation runs once on a worker and releases its copy even on failure.
-        internal static Func<PanelGeometryInfo?>? PrepareMeasurement(IGH_Goo? goo, string units)
+        // Reconstruct only bounded, exact polylines from value fields. This never
+        // duplicates or serializes the source (which may carry hostile UserData).
+        // Other curves and Breps require a separately proven bounded snapshot path.
+        internal static PreparedMeasurement<PanelGeometryInfo>? PrepareMeasurement(IGH_Goo? goo, string units,
+            int unitSystem, double tolerance)
         {
-            GeometryBase? geometry;
-            bool surface = false;
-            switch (goo)
+            const int maxPoints = 2048;
+            if (goo == null || goo.GetType() != typeof(GH_Curve) || units == null || units.Length > 128) return null;
+            var source = ((GH_Curve)goo).Value;
+            if (source == null || source.GetType() != typeof(PolylineCurve)) return null;
+            var polyline = (PolylineCurve)source;
+            int count = polyline.PointCount;
+            // The point and parameter arrays, worker curve and witness are all
+            // bounded before allocating or entering any copy/serialization API.
+            if (count < 2 || count > maxPoints || polyline.Dimension != 3) return null;
+            var points = new Point3d[count];
+            var parameters = new double[count];
+            for (int i = 0; i < count; i++)
             {
-                case GH_Curve curve when curve.Value != null:
-                    geometry = curve.Value.DuplicateCurve();
-                    break;
-                case GH_Surface value when value.Value != null:
-                    geometry = value.Value.DuplicateBrep();
-                    surface = true;
-                    break;
-                case GH_Brep brep when brep.Value != null:
-                    geometry = brep.Value.DuplicateBrep();
-                    break;
-                default: return null;
+                points[i] = polyline.Point(i);
+                parameters[i] = polyline.Parameter(i);
+                if (!points[i].IsValid || double.IsNaN(parameters[i]) || double.IsInfinity(parameters[i])) return null;
             }
-            if (geometry == null) return null;
-            return () =>
+            PolylineCurve? owned = null;
+            try
             {
-                using (geometry) return Measure(geometry, surface, units);
-            };
+                owned = new PolylineCurve(points);
+                if (owned.Dimension != 3 || owned.PointCount != count) return null;
+                var bytes = new byte[sizeof(int) + count * sizeof(double) * 4];
+                using (var stream = new MemoryStream(bytes, true))
+                using (var writer = new BinaryWriter(stream))
+                {
+                    writer.Write(count);
+                    for (int i = 0; i < count; i++)
+                    {
+                        // The witness is read from the exact worker copy. Reject a
+                        // reconstruction that changed coordinates or parameterization.
+                        var point = owned.Point(i);
+                        double parameter = owned.Parameter(i);
+                        if (!Same(point.X, points[i].X) || !Same(point.Y, points[i].Y) ||
+                            !Same(point.Z, points[i].Z) || !Same(parameter, parameters[i])) return null;
+                        writer.Write(point.X); writer.Write(point.Y); writer.Write(point.Z); writer.Write(parameter);
+                    }
+                }
+                string context = "GH_Curve/polyline/length|" + unitSystem.ToString(CultureInfo.InvariantCulture) + "|" +
+                    BitConverter.DoubleToInt64Bits(tolerance).ToString(CultureInfo.InvariantCulture) + "|" + units.Length + ":" + units;
+                var witness = new MeasurementWitness(context, bytes);
+                var workerCopy = owned;
+                var prepared = new PreparedMeasurement<PanelGeometryInfo>(() => Measure(workerCopy, false, units), workerCopy, witness);
+                owned = null;
+                return prepared;
+            }
+            finally { owned?.Dispose(); }
         }
+
+        private static bool Same(double first, double second) =>
+            BitConverter.DoubleToInt64Bits(first) == BitConverter.DoubleToInt64Bits(second);
 
         private static PanelGeometryInfo? Measure(GeometryBase geometry, bool surface, string units)
         {

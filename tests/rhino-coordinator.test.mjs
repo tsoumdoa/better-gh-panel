@@ -27,7 +27,7 @@ test('inventory includes every original fixture and the independently crash-pron
     'panel-handle', 'output', 'output-pending', 'row-numbering',
     'index-selection', 'capsule', 'capsule-double-click', 'recompute-presentation',
     'recompute-output', 'recompute-regex', 'recompute-local-preview', 'recompute-disabled',
-    'geometry-hint', 'capture-safety', 'geometry-canvas-viewport', 'measurement-priority', 'measurement-cancellation',
+    'geometry-hint', 'capture-safety', 'polyline-safety', 'geometry-canvas-viewport', 'measurement-priority', 'measurement-cancellation',
     'measurement-invalidation', 'measurement-failures', 'row-actions', 'highlight-overlap',
     'filter-metadata', 'filter-measurements', 'filter-cancellation', 'filter-snapshot-replacement',
     'filter-lifecycle-paths', 'filter-displayed-output', 'filter-displayed-geometry', 'filter-ui', 'filter-ui-choices', 'full-value',

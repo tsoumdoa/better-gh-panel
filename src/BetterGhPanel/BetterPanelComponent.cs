@@ -96,8 +96,9 @@ namespace BetterGhPanel
                     _session.SetDecimalPlacesResolver(() => DecimalPlaces);
                     _session.SetCreateSetResolver(() => CreateSetTree);
                     if (Locked) _session.InvalidateInput(false, suspended: true);
-                    _session.SetGeometryDetailResolver(position => position < _sourceItems.Length
-                        ? GeometryHints.PrepareMeasurement(_sourceItems[position], _geometryUnits) : null);
+                    _session.SetGeometryPreparationResolver(position => GeometryHints.PolylineSnapshotVerified && position < _sourceItems.Length
+                        ? GeometryHints.PrepareMeasurement(_sourceItems[position], _geometryUnits,
+                            (int)_geometryUnitSystem, _geometryTolerance) : null);
                     _savedOptions.DecimalPlaces = DecimalPlaces;
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
@@ -536,8 +537,6 @@ namespace BetterGhPanel
                     tree = PanelTreeOperations.ApplyWithSources(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out _retainedSources);
                     _queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.Apply(tree, UnitConversion));
                     CapturePairedInput(da);
-                    var previousSources = _sourceItems;
-                    var previousUnits = _geometryUnits;
                     var rhinoDocument = Rhino.RhinoDoc.ActiveDoc;
                     _geometryUnitSystem = rhinoDocument?.ModelUnitSystem ?? Rhino.UnitSystem.None;
                     _geometryTolerance = rhinoDocument?.ModelAbsoluteTolerance ?? 0.001;
@@ -545,9 +544,8 @@ namespace BetterGhPanel
                         ? "units" : rhinoDocument.GetUnitSystemName(true, false, false, true);
                     if (string.IsNullOrWhiteSpace(_geometryUnits)) _geometryUnits = "units";
                     var snapshot = SnapshotCapture.CaptureWithSources(_queryTree, out _sourceItems, UnitConversion, _geometryUnits, _retainedSources);
-                    if (_retainGeometryMeasurements && previousUnits == _geometryUnits)
-                        Session.AttachConvertedSnapshot(snapshot, position => position < previousSources.Length &&
-                            position < _sourceItems.Length && ReferenceEquals(previousSources[position], _sourceItems[position]));
+                    if (_retainGeometryMeasurements)
+                        Session.AttachConvertedSnapshot(snapshot, _ => true);
                     else Session.AttachSnapshot(snapshot);
                 }
                 // Pending/failed filters expose no stale or unfiltered items. The
