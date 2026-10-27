@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Reflection;
+using System.Text.Json;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
 using Grasshopper.Kernel;
@@ -237,16 +238,41 @@ internal static partial class PreviewSafetyChecks
         var group = new GH_GeometryGroup { Name = "keep" }; group.Objects.Add(new GH_Curve { Value = curve });
         var custom = new ActionPointPreview();
         var input = set ? new IGH_Goo[] { earlier, group, custom } : new IGH_Goo[] { group, custom };
-        fixture.Source.PersistentData.AppendRange(input, new GH_Path(0));
+        // Persistent generic collection duplicates groups and can erase Name.
+        // Reuse the stock-group fixture's verified volatile delivery path, so
+        // both initial capture and a real recapture receive the intended names.
+        var producer = new GeometryGroupChecks.VolatileSource(input);
+        producer.CreateAttributes(); fixture.Document.AddObject(producer, false);
+        fixture.Component.Params.Input[0].RemoveAllSources();
+        fixture.Component.Params.Input[0].AddSource(producer);
         for (int i = 0; i < input.Length; i++) fixture.Paired.PersistentData.Append(new GH_String("paired " + i), new GH_Path(0));
         if (set) PanelTestAdapter.TreeTools(fixture.Component, 0, false, false, false, true);
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "^(?!.*drop)", CreateSet = set });
-        fixture.Solve();
-        await fixture.Ready(() => fixture.Result.RowPositions.Count == input.Length);
+        void Solve(string phase)
+        {
+            producer.ExpireSolution(false);
+            fixture.Solve();
+            DumpSemanticDelivery(fixture, producer, copy, set, phase);
+        }
+        async Task Ready(Func<bool> condition)
+        {
+            try { await fixture.Ready(condition); }
+            catch { DumpSemanticDelivery(fixture, producer, copy, set, "wait failed"); throw; }
+        }
+        Solve("initial solve");
+        await Ready(() => fixture.Result.Snapshot.Rows.Count == input.Length &&
+            fixture.Sinks[0].VolatileData.DataCount == fixture.Result.RowPositions.Count);
         int position = set ? 1 : 0;
+        var delivered = fixture.Component.Params.Input[0].VolatileData.AllData(false).ToArray();
+        Check(fixture.Result.RowPositions.SequenceEqual(Enumerable.Range(0, input.Length)) &&
+            delivered[position] is GH_GeometryGroup named && named.Name == "keep" &&
+            fixture.Result.Snapshot.Rows[position].DisplayValue == "Group (keep) with 1 object" &&
+            (!set || delivered[0] is GH_GeometryGroup first && first.Name == "earlier" &&
+                fixture.Result.Snapshot.Rows[0].DisplayValue == "Group (earlier) with 1 object"),
+            "initial delivered group names and captured summaries survive real host collection");
         fixture.Select(position);
         if (!copy) fixture.Select(input.Length - 1, toggle: true);
-        await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == (copy ? 1 : 2));
+        await Ready(() => fixture.Sinks[1].VolatileData.DataCount == (copy ? 1 : 2));
         var snapshot = fixture.Result.Snapshot;
         var source = Field<IGH_Goo?[]>(fixture.Component, "_sourceItems");
         var currentGroup = (GH_GeometryGroup)source[position]!;
@@ -278,26 +304,96 @@ internal static partial class PreviewSafetyChecks
         if (copy) success = Copy(out status);
         else { status = Frame() ?? string.Empty; success = status.Length == 0; }
         CopyRoundTripUserData.OnDuplicateAction = null;
+        DumpSemanticDelivery(fixture, producer, copy, set, "after callback mutation");
         Check(called && !success && status.Contains("cancelled") &&
             (copy ? Forms.Clipboard.GetText() == "semantic freshness sentinel" : rhino.Views.ActiveView.ActiveViewport.CameraTarget == camera),
             (set ? "a changed earlier set representative" : "a group rename changing text-filter membership") +
             " during preparation cancels " + (copy ? "copy without replacing the clipboard" : "frame without moving the camera"));
         Check(ReferenceEquals(snapshot, fixture.Result.Snapshot) && ReferenceEquals(source[position], currentGroup),
             "the action detects semantic mutation with unchanged snapshot, selected root and selection");
-        // Complete the ordinary scheduled recapture, proving recovery and the
-        // resulting filtered/set membership rather than trusting only a status.
-        fixture.Solve();
-        await fixture.Ready(() => !ReferenceEquals(snapshot, fixture.Result.Snapshot) && !fixture.Result.RowPositions.Contains(position) &&
+        // Explicitly expire the volatile producer. A persistent-data re-solve
+        // would normalize names again and would not test the changed semantics.
+        int[] expectedPositions = set ? new[] { 0, 2 } : new[] { 1 };
+        Solve("recapture solve");
+        await Ready(() => !ReferenceEquals(snapshot, fixture.Result.Snapshot) &&
+            fixture.Result.Snapshot.Rows.Count == input.Length &&
             fixture.Sinks[0].VolatileData.DataCount == fixture.Result.RowPositions.Count &&
+            fixture.Sinks[1].VolatileData.DataCount == 0 &&
+            fixture.Sinks[2].VolatileData.DataCount == input.Length &&
             fixture.Sinks[3].VolatileData.DataCount == fixture.Result.RowPositions.Count);
-        var masks = fixture.Sinks[2].VolatileData.AllData(false).Cast<GH_Boolean>().Select(value => value.Value).ToArray();
-        var expectedMask = Enumerable.Range(0, input.Length).Select(fixture.Result.RowPositions.Contains).ToArray();
-        Check(masks.SequenceEqual(expectedMask) && !masks[position] &&
-            fixture.Sinks[3].VolatileData.AllData(false).Cast<GH_String>().Select(value => value.Value)
-                .SequenceEqual(fixture.Result.RowPositions.Select(i => "paired " + i)) &&
-            fixture.Sinks[1].VolatileData.AllData(false).All(value => value is not GH_GeometryGroup selected || selected.Name != "drop") &&
-            fixture.Sinks[0].VolatileData.AllData(false).All(value => set ? value is GH_String : value is ActionPointPreview),
-            "recovery publishes coherent typed D/S, original-shape B and correctly paired F membership");
+        DumpSemanticDelivery(fixture, producer, copy, set, "recapture completed");
+        var recovered = fixture.Result.Snapshot;
+        delivered = fixture.Component.Params.Input[0].VolatileData.AllData(false).ToArray();
+        Check(delivered[position] is GH_GeometryGroup changed && changed.Name == (set ? "keep" : "drop") &&
+            recovered.Rows[position].DisplayValue == "Group (" + (set ? "keep" : "drop") + ") with 1 object" &&
+            (!set || delivered[0] is GH_GeometryGroup representative && representative.Name == "keep" &&
+                recovered.Rows[0].DisplayValue == "Group (keep) with 1 object"),
+            "recapture receives and witnesses the changed group names after real volatile collection");
+        Check(fixture.Result.RowPositions.SequenceEqual(expectedPositions) && !fixture.Result.RowPositions.Contains(position) &&
+            (!set || fixture.Result.SetOccurrencesAt(0)?.Count == 2),
+            "recapture removes the renamed filtered group or switches the equal-summary set to the earlier representative");
+        Check(fixture.SelectedCount == 0 && fixture.Sinks[1].VolatileData.DataCount == 0,
+            "recapture clears stale selected S membership");
+        bool DataCurrent()
+        {
+            var data = fixture.Sinks[0].VolatileData.AllData(false).ToArray();
+            return data.Length == expectedPositions.Length && (set
+                ? data.All(value => value is GH_String) && ((GH_String)data[0]).Value == "Group (keep) with 1 object" &&
+                    ((GH_String)data[1]).Value == PanelTestAdapter.CopyValue(fixture.Component, recovered, 2)
+                : data.Single() is ActionPointPreview);
+        }
+        bool PairingCurrent(IReadOnlyList<int> retained)
+        {
+            var mask = fixture.Sinks[2].VolatileData;
+            var paired = fixture.Sinks[3].VolatileData;
+            return mask.PathCount == 1 && mask.Paths[0].CompareTo(new GH_Path(0)) == 0 && mask.DataCount == input.Length &&
+                mask.AllData(false).Cast<GH_Boolean>().Select(value => value.Value)
+                    .SequenceEqual(Enumerable.Range(0, input.Length).Select(retained.Contains)) &&
+                paired.PathCount == 1 && paired.Paths[0].CompareTo(new GH_Path(0)) == 0 &&
+                paired.AllData(false).All(value => value is GH_String) &&
+                paired.AllData(false).Cast<GH_String>().Select(value => value.Value).SequenceEqual(retained.Select(i => "paired " + i));
+        }
+        Check(DataCurrent() && PairingCurrent(expectedPositions),
+            "recovery publishes coherent typed D, original-shape B and correctly paired F with set=" + set);
+        bool SelectedCurrent()
+        {
+            var selected = fixture.Sinks[1].VolatileData.AllData(false).ToArray();
+            return selected.Length == 1 && (set
+                ? selected[0] is GH_String text && text.Value == "Group (keep) with 1 object"
+                : selected[0] is ActionPointPreview);
+        }
+        int survivor = expectedPositions[0];
+        fixture.Select(survivor);
+        await Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
+        Check(SelectedCurrent() &&
+            DataCurrent() && PairingCurrent(expectedPositions) && ReferenceEquals(recovered, fixture.Result.Snapshot),
+            "selecting a recovered row publishes typed nonempty S and retains Filtered B/F and the same snapshot with set=" + set);
+        fixture.Scope(PanelOutputScope.Selected);
+        await Ready(() => fixture.Sinks[3].VolatileData.DataCount == 1 && fixture.Values(3) == "paired " + survivor);
+        Check(DataCurrent() && SelectedCurrent() && PairingCurrent(new[] { survivor }) &&
+            ReferenceEquals(recovered, fixture.Result.Snapshot),
+            "Selected scope binds recovered typed D/S and original-shape B/F to the selected representative with set=" + set);
+    }
+
+    private static void DumpSemanticDelivery(OutputChecks.Fixture fixture, GeometryGroupChecks.VolatileSource producer,
+        bool copy, bool set, string phase)
+    {
+        static string Describe(IGH_Goo? item) => item is GH_GeometryGroup group
+            ? $"{item.GetType().Name}(Name={JsonSerializer.Serialize(group.Name)}, directCount={group.Objects.Count})"
+            : item?.GetType().Name ?? "<null>";
+        var delivered = fixture.Component.Params.Input[0].VolatileData.AllData(false).ToArray();
+        var captured = Field<IGH_Goo?[]>(fixture.Component, "_sourceItems");
+        var snapshot = fixture.Result.Snapshot;
+        Console.WriteLine($"SEMANTIC_DELIVERY phase={JsonSerializer.Serialize(phase)} action={(copy ? "copy" : "frame")} set={set} " +
+            $"snapshotRows={snapshot.Rows.Count} matches=[{string.Join(",", fixture.Result.RowPositions)}]");
+        Console.WriteLine("SEMANTIC_DELIVERY produced=" + string.Join("; ", producer.VolatileData.AllData(false).Select(Describe)));
+        Console.WriteLine("SEMANTIC_DELIVERY delivered=" + string.Join("; ", delivered.Select(Describe)));
+        Console.WriteLine("SEMANTIC_DELIVERY captured=" + string.Join("; ", captured.Select(Describe)));
+        for (int i = 0; i < snapshot.Rows.Count; i++)
+            Console.WriteLine($"SEMANTIC_DELIVERY snapshot[{i}] type={snapshot.Rows[i].TypeName} validity={snapshot.Rows[i].Validity} " +
+                $"display={JsonSerializer.Serialize(snapshot.Rows[i].DisplayValue)}");
+        Console.WriteLine("SEMANTIC_DELIVERY outputs=" + string.Join("; ", Enumerable.Range(0, 4).Select(i => i + "=" + fixture.Values(i))));
+        Console.Out.Flush();
     }
 
     private sealed class ActionPointPreview : GH_Point, IGH_Goo, IGH_PreviewData

@@ -289,7 +289,7 @@ internal static class GeometryGroupChecks
 
     // Grasshopper's persistent collection duplicates geometry and can drop Name.
     // This real source creates volatile data during the document solution instead.
-    private sealed class VolatileSource : GH_Param<IGH_Goo>
+    internal sealed class VolatileSource : GH_Param<IGH_Goo>
     {
         private readonly IGH_Goo[] _items;
         internal VolatileSource(IGH_Goo[] items) : base("Fixture volatile source", "V", "Delivers original values", "Test", "Test", GH_ParamAccess.tree) => _items = items;
