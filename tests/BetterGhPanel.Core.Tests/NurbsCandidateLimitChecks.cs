@@ -11,6 +11,9 @@ internal static class NurbsCandidateLimitChecks
         Check(!NurbsCandidateLimits.Curve(4, 2, 2, 2, out _) && !NurbsCandidateLimits.Curve(3, 13, 13, 24, out _) &&
             !NurbsCandidateLimits.Curve(3, 3, 2, 3, out _) && !NurbsCandidateLimits.Curve(3, 2, 1025, 1025, out _) &&
             !NurbsCandidateLimits.Curve(3, 2, 2, int.MaxValue, out _), "unsupported curves rejected before allocation");
+        Check(NurbsCandidateLimits.Polyline(3, 2048, out int polyline) && polyline == 65540 &&
+            !NurbsCandidateLimits.Polyline(3, 2049, out _) && !NurbsCandidateLimits.Polyline(2, 2, out _),
+            "polyline point count and dimension are bounded before allocation");
         Check(NurbsCandidateLimits.Surface(3, 2, 2, 64, 64, 64, 64, out int surface) && surface == 132192,
             "largest permitted surface point grid payload");
         Check(!NurbsCandidateLimits.Surface(2, 2, 2, 2, 2, 2, 2, out _) &&
@@ -30,6 +33,10 @@ internal static class NurbsCandidateLimitChecks
             using var replacement = NurbsCandidateLimits.TryReserve(surface);
             Check(replacement != null && NurbsCandidateLimits.TryReserve(surface) == null,
                 "release is idempotent and returns only the reserved capacity");
+            Check(NurbsCandidateLimits.TryReserve(surface, out var signal) == null && signal != null && !signal.IsCompleted,
+                "temporary capacity exhaustion provides a pending release signal");
+            replacement!.Dispose();
+            Check(signal!.IsCompleted, "a release wakes waiters without polling");
             Check(NurbsCandidateLimits.TryReserve(-1) == null && NurbsCandidateLimits.TryReserve(int.MaxValue) == null,
                 "invalid and overflowing reservations fail");
         }

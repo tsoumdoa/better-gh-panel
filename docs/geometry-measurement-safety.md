@@ -1,95 +1,65 @@
 # Geometry measurement integration
 
-This work is not release-ready. The component's polyline candidate is disabled
-until its admission and ownership requirements are met. The isolated Windows
-Rhino 8.36 polyline fixture passed 28 assertions, including its managed UserData
-and source-metadata checks; it does not establish a safe path for arbitrary
-input or native plug-ins. Existing native geometry expectations are kept.
+This is a partial restoration. The production resolver can prepare deferred
+lengths for exact `GH_Curve` holders containing bounded `PolylineCurve` or
+`NurbsCurve` values. General polycurves, Breps and surfaces still have no
+verified bounded provider and remain unavailable for deferred measurement.
+Analytic line, arc, circle, rectangle and box values continue to use the
+existing snapshot presentation. Existing native expectations for unsupported
+geometry are retained and are not evidence that those paths have been restored.
 
-Analytic line, arc, circle, rectangle, and box values continue to come from the
-existing snapshot presentation. Scheduled measurements of ordinary NURBS and
-polycurves, surfaces, and Breps have no verified bounded provider. They are
-reported unavailable when eligible for scheduling; their typed inputs and
-outputs are retained. This loss of measurement functionality is unresolved.
+Capture reads the exact inner geometry once and keeps that reference with the
+snapshot generation. Referenced Grasshopper holders and document-controlled,
+disposed or corruption-testing sources are rejected. For candidate curves,
+dimension, point count, NURBS order and knot count are checked before `IsValid`
+or further source validation. The resolver reconstructs from the captured
+reference, keeps it alive through native reads, and checks the holder again
+before preparation and before a result can be published or reused. Replacement
+or disposal hides the result and invalidates the snapshot for recapture.
+Preparation never duplicates or serializes source geometry or its UserData.
 
-The candidate reconstructs an exact 3D `GH_Curve`/`PolylineCurve` with at most
-2,048 points from coordinates and parameters. It rejects a reconstruction if
-the worker copy differs from those captured values. Its witness is read from
-that copy before the worker can claim it, and includes the complete point and
-parameter values, measurement role, model units, unit system, and tolerance.
-Non-default parameterizations that cannot be reproduced are unavailable. This
-path neither duplicates nor serializes the source. Exact managed types do not
-prove the absence of custom native behavior; concurrent external mutation or
-disposal of native objects remains a host limitation.
+The polyline path accepts at most 2,048 three-dimensional points. It copies
+coordinates and every parameter, applies the parameters with `SetParameter`,
+validates the independent worker copy, and verifies every copied value bit for
+bit. The NURBS curve path accepts dimensions 2 or 3, order at most 12 and at
+most 1,024 control points; it reconstructs knots, homogeneous control points,
+weights, rational state and domain. It independently validates the worker and
+compares those values bit for bit. Each witness is built from the actual worker
+copy and includes measurement role, model units, unit system and tolerance.
+Unsupported or inexact values are unavailable. A zero returned by Rhino's
+length API is treated as unavailable because the same return can indicate
+failure.
 
-Before enabling it, integrate the capture classifier's single captured inner
-reference, prove native provenance, and admit only the demonstrated case. General
-curves and Breps need separate, bounded, callback-free providers and complete
-value witnesses. The nested PolyCurve and Brep UserData checks in the native
-fixtures exercise conservative rejection, not support for copying those objects.
-The fixtures assert that nested data was attached before the plugin call and
-are registered as isolated cases. The capture-safety fixture passed 27
-assertions in Windows Rhino 8.36; this is not evidence that copying is supported.
+Both curve providers share a process-wide 4 MiB reservation before allocating
+value arrays, witness buffers or worker geometry. Reservations cover estimated
+payloads and a fixed per-candidate allowance, and are released when unclaimed
+work is abandoned or a claimed worker completes. Capacity exhaustion is
+temporary: the queue waits asynchronously for a release, without polling, and
+honors cancellation and snapshot replacement. A separate retention budget
+limits witnesses to 128 and 2 MiB per session and 8 MiB across sessions. A
+unit-only solve retains a measurement only when the new worker witness matches;
+otherwise it is remeasured. These estimates do not bound object headers,
+Rhino's allocator, caches, or the later native length algorithm.
 
-The queue retains at most 128 witnesses and 2 MiB of witness data per session,
-and at most 8 MiB of witness payloads across all sessions. Entries
-without proof are remeasured on a unit-only snapshot replacement. Workers own
-claimed resources until they finish, while cancellation can abandon only an
-unclaimed copy. Native retention tests use owned work with explicit synthetic
-test witnesses; their retention expectations have not been removed. Deterministic
-managed tests exercise the production queue through
-injected UI, time, and worker boundaries.
+Exact managed wrapper types and ownership checks do **not** prove the native
+subclass, sandbox arbitrary third-party native behavior, or prevent another
+thread from mutating or disposing a native object concurrently with a read.
+The integration relies on the host to keep a source stable for its snapshot
+generation until preparation completes, and to expire the solution after an
+in-place change. `GC.KeepAlive` protects managed lifetime, not concurrent
+external disposal. These are platform limitations, not claims of native
+isolation. The standalone NURBS surface candidate remains restricted to its
+explicitly trusted fixture and is not connected to production input.
 
-## Experimental exact-value NURBS candidate
-
-`NurbsMeasurementCandidate` is **not connected to automatic input**. The
-isolated `nurbs-value-candidate` fixture is the only caller. Its source objects
-are newly constructed for the fixture; the candidate requires independent proof
-of the built-in native type, an owned source pointer and source stability for
-the whole capture. RhinoCommon's exact managed wrapper does not provide that
-proof. `IsDocumentControlled == false` is not, by itself, a provenance or
-lifetime guarantee, and managed wrappers do not sandbox native subclasses or
-arbitrary native code. Do not enable this path for an ordinary `GH_Curve`,
-`GH_Surface` or `GH_Brep` on that basis.
-
-Under those preconditions, the candidate attempts to reconstruct standalone 2D/3D NURBS
-curves and 3D NURBS surfaces using every knot, homogeneous control point and
-weight, degree/order, dimensions, rational state, and domain. It checks that
-the worker copy reproduces all of these values bit-for-bit and is valid before
-dispatch; the witness is read from that copy and includes role, metric,
-model units, unit system and tolerance. Invalid/unset/non-finite values,
-nonpositive weights, incompatible dimensions, large counts, and failed or
-inexact reconstructions are rejected. This preserves the candidate's selected
-values and parameterization, but is not evidence that an arbitrary native
-subclass evaluates like the built-in NURBS base class.
-
-Curve order is limited to 12 and control points to 1,024; surface order is
-limited to 12 per direction, each axis to 128 points and the product to 4,096.
-Checked sizes precede value-array and worker allocations. A shared 4 MiB
-in-flight reservation covers estimated value buffers, witness clone and owned
-NURBS payloads, with an additional fixed allowance per candidate. The queue's
-separate shared retention budget accounts for witness payloads before retention.
-Neither budget proves a hard process peak: object headers, allocator overhead,
-Rhino caches and the later native length/mass-property algorithms are not
-bounded by these estimates.
-
-The installed Rhino 8.36 managed implementation was inspected to choose the
-curve control-point indexer (the `Point4d GetPoint` overload can copy on write)
-and the surface `Point4d GetPoint` overload. The surface dimension check uses
-`PointSize` only under the fixture's owned-pointer precondition, with corruption
-testing disabled; a borrowed Brep surface cannot use that assumption. These
-are static observations about the installed version, not a cross-version API
-guarantee.
-
-The registered fixture source covers benign and throwing managed UserData,
-source metadata preservation, weighted and periodic curves, non-default
-domains, a weighted standalone surface, nested data in a trimmed Brep,
-point-count rejection, metric equivalence, and changed/unchanged unit-only
-retention. The isolated Windows Rhino 8.36 fixture passed 67 assertions. Managed UserData counters
-cannot detect native geometry virtual callbacks or native UserData `SizeOf`
-callbacks. Native subclass instrumentation, a supported exact-native-type
-and lifetime gate, host metric/callback checks, and a source-stability contract
-remain necessary before automatic admission. General trimmed Breps, solids,
-untrimmed Breps, polycurves, planes/revolutions and other opaque or borrowed
-surfaces remain unavailable for deferred work; their input/output values are
-not replaced. Existing native curve/surface/Brep expectations remain in place.
+The registered `production-curve-measurement` Rhino fixture uses an actual
+`GH_Document`, component, session and resolver. It covers visible and offscreen
+measurements, metadata and output identity, preflight gates, replacement and
+disposal, unit-only retention, cancellation, and shared capacity recovery across
+panels. The existing isolated fixtures cover UserData, weighted and periodic
+NURBS and explicitly reparameterized/arc-length polylines. Managed tests cover
+the production queue and shared budget with deterministic boundaries. Earlier
+isolated Windows Rhino 8.36 runs passed 27 capture-safety, 28 polyline-safety,
+and 67 NURBS-candidate assertions. The integrated production fixture and the
+updated polyline cases have been compiled but still require a sequential Rhino
+host run. Managed UserData counters do not detect all possible native virtual
+or UserData calls.

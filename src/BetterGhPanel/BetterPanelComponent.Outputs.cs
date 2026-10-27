@@ -80,7 +80,9 @@ namespace BetterGhPanel
             var session = Session;
             _outputOptions = session.Options;
             _outputPending = session.IsBusy;
-            bool current = session.HasCurrentResult;
+            // A holder may have changed after a measured query completed. Do not
+            // publish a filtered result against a different inner geometry.
+            bool current = session.HasCurrentResult && session.GeometrySourcesCurrent(session.Snapshot);
             bool filtering = PanelQueryPolicy.HasOutputFilter(_outputOptions);
             var empty = new GH_Structure<IGH_Goo>();
             if (current && _queryTree != null && _inputTree != null && !ReferenceEquals(_cachedOutputResult, session.Result))

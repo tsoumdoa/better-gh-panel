@@ -1,9 +1,10 @@
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace BetterGhPanel.Runtime
 {
-    // Payload bounds for the experimental, trusted-native NURBS value path.
+    // Payload bounds and one process-wide reservation for both curve providers.
     // These do not bound Rhino's allocator or mass-property working memory.
     internal static class NurbsCandidateLimits
     {
@@ -12,7 +13,18 @@ namespace BetterGhPanel.Runtime
         internal const int MaxSurfaceAxisPoints = 128;
         internal const int MaxSurfacePoints = 4096;
         internal const int MaxInFlightBytes = 4 * 1024 * 1024;
+        internal const int MaxPolylinePoints = 2048;
+        private static readonly object Gate = new object();
         private static int _inFlightBytes;
+        private static TaskCompletionSource<bool> _released = NewReleaseSignal();
+
+        internal static bool Polyline(int dimension, int count, out int payload)
+        {
+            payload = 0;
+            if (dimension != 3 || count < 2 || count > MaxPolylinePoints) return false;
+            payload = checked(sizeof(int) + count * 4 * sizeof(double));
+            return true;
+        }
 
         internal static bool Curve(int dimension, int order, int count, int knots, out int payload)
         {
@@ -38,21 +50,30 @@ namespace BetterGhPanel.Runtime
         // Reserve before any value arrays or worker geometry are allocated. Four
         // payloads cover the two value buffers, witness clone and owned NURBS
         // payload, plus a fixed allowance for small managed/native structures.
-        internal static IDisposable? TryReserve(int payload)
+        internal static IDisposable? TryReserve(int payload) => TryReserve(payload, out _);
+
+        // The returned task is completed only when capacity is released. Taking
+        // it while holding Gate avoids missing a release between failure and wait.
+        internal static IDisposable? TryReserve(int payload, out Task? released)
         {
+            released = null;
             if (payload <= 0 || payload > (MaxInFlightBytes - 65536) / 4) return null;
             int bytes = checked(payload * 4 + 65536);
-            while (true)
+            lock (Gate)
             {
-                int current = Volatile.Read(ref _inFlightBytes);
-                if (current > MaxInFlightBytes - bytes) return null;
-                if (Interlocked.CompareExchange(ref _inFlightBytes, current + bytes, current) == current)
+                if (_inFlightBytes > MaxInFlightBytes - bytes)
                 {
-                    try { return new Reservation(bytes); }
-                    catch { Interlocked.Add(ref _inFlightBytes, -bytes); throw; }
+                    released = _released.Task;
+                    return null;
                 }
+                var reservation = new Reservation(bytes);
+                _inFlightBytes += bytes;
+                return reservation;
             }
         }
+
+        private static TaskCompletionSource<bool> NewReleaseSignal() =>
+            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         private sealed class Reservation : IDisposable
         {
@@ -61,8 +82,23 @@ namespace BetterGhPanel.Runtime
             public void Dispose()
             {
                 int bytes = Interlocked.Exchange(ref _bytes, 0);
-                if (bytes != 0) Interlocked.Add(ref _inFlightBytes, -bytes);
+                if (bytes == 0) return;
+                TaskCompletionSource<bool> signal;
+                lock (Gate)
+                {
+                    _inFlightBytes -= bytes;
+                    signal = _released;
+                    _released = NewReleaseSignal();
+                }
+                signal.TrySetResult(true);
             }
         }
+    }
+
+    // Full capacity is temporary, unlike an unsupported or invalid candidate.
+    internal sealed class MeasurementCapacityException : Exception
+    {
+        internal MeasurementCapacityException(Task released) { Released = released; }
+        internal Task Released { get; }
     }
 }

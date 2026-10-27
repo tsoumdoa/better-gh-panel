@@ -15,6 +15,7 @@
   "capture-safety",
   "polyline-safety",
   "nurbs-value-candidate",
+  "production-curve-measurement",
   "geometry-canvas-viewport",
   "measurement-priority",
   "measurement-cancellation",

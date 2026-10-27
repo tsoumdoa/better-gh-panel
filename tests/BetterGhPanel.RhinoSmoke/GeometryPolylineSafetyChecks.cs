@@ -19,6 +19,36 @@ internal static class GeometryPolylineSafetyChecks
         foreach (bool hostile in new[] { false, true }) await VerifyUserData(assembly, hostile);
         foreach (bool hostile in new[] { false, true }) VerifyUnsupportedNestedData(assembly, hostile);
         VerifyPreflight(assembly);
+        await VerifyParameterization(assembly);
+        VerifyAmbiguousZero(assembly);
+    }
+
+    private static async Task VerifyParameterization(Assembly assembly)
+    {
+        foreach (bool arcLength in new[] { false, true })
+        {
+            using var source = new PolylineCurve(new[] { Point3d.Origin, new Point3d(3, 0, 0), new Point3d(3, 4, 0) });
+            if (arcLength) source.SetArcLengthParameterization(1e-9);
+            else { source.SetParameter(0, -5); source.SetParameter(1, 2); source.SetParameter(2, 20); }
+            Check(source.IsValid && (arcLength ? source.Parameter(2) != 2 : source.Parameter(0) == -5 && source.Parameter(2) == 20),
+                "fixture has a valid non-default " + (arcLength ? "arc-length" : "explicit") + " parameterization");
+            var holder = new GH_Curve { Value = source };
+            var first = Prepare(assembly, holder) ?? throw new InvalidOperationException("Reparameterized polyline candidate unavailable");
+            var second = Prepare(assembly, holder) ?? throw new InvalidOperationException("Repeated parameterized candidate unavailable");
+            Check(Witness(first).Equals(Witness(second)), "parameter values survive reconstruction in the complete witness");
+            ((IDisposable)second).Dispose();
+            var result = await Task.Run(() => Run(first));
+            Check(result?.Value == 7, "parameterized worker preserves the original polyline length");
+        }
+    }
+
+    private static void VerifyAmbiguousZero(Assembly assembly)
+    {
+        using var zero = new LineCurve(Point3d.Origin, Point3d.Origin);
+        var method = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!
+            .GetMethod("Measure", BindingFlags.Static | BindingFlags.NonPublic)!;
+        Check(method.Invoke(null, new object[] { zero, false, "mm" }) == null,
+            "zero from the native length API is not reported as a measured length");
     }
 
     private static async Task VerifyUserData(Assembly assembly, bool hostile)

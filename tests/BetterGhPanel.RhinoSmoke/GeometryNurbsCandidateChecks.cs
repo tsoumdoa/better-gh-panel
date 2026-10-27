@@ -8,8 +8,8 @@ using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
 
-// The fixture itself creates the native objects. The candidate is NOT admitted
-// for arbitrary Grasshopper inputs; exact managed wrappers do not prove native type.
+// The fixture itself creates the native objects. Exact managed wrappers do not
+// prove native subclass behavior for arbitrary Grasshopper inputs.
 internal static class GeometryNurbsCandidateChecks
 {
     internal static async Task Run(Assembly assembly)

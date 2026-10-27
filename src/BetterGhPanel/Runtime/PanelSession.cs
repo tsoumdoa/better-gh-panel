@@ -23,6 +23,7 @@ namespace BetterGhPanel.Runtime
         private Func<bool>? _createSetResolver;
         private Func<int, Func<PanelGeometryInfo?>?>? _geometryDetailResolver;
         private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryPreparationResolver;
+        private Func<PanelSnapshot, int, bool>? _geometrySourceCurrent;
         private readonly GeometryMeasurementQueue<PanelSnapshot, PanelGeometryInfo> _geometry;
         private bool _awaitingSnapshot, _inputSuspended, _measurementNotifyScheduled;
         private System.Windows.Forms.Timer? _busyAnimation;
@@ -46,7 +47,8 @@ namespace BetterGhPanel.Runtime
                     snapshot.Rows[position].IsValid && snapshot.Rows[position].GeometryInfo?.CanMeasure == true,
                 (snapshot, position) => position >= 0 && position < snapshot.Rows.Count &&
                     snapshot.Rows[position].GeometryInfo?.Value == null,
-                PrepareGeometry, NotifyMeasurement);
+                PrepareGeometry, NotifyMeasurement,
+                (snapshot, position) => _geometrySourceCurrent?.Invoke(snapshot, position) ?? true);
             Snapshot = PanelSnapshot.Empty;
             Result = EmptyResult;
         }
@@ -114,9 +116,10 @@ namespace BetterGhPanel.Runtime
         // Legacy delegate seam is used by the host fixtures. It deliberately has no
         // retention proof; production uses the owned preparation provider below.
         internal void SetGeometryDetailResolver(Func<int, Func<PanelGeometryInfo?>?> resolver)
-        { _geometryDetailResolver = resolver; _geometryPreparationResolver = null; }
+        { _geometryDetailResolver = resolver; _geometryPreparationResolver = null; _geometrySourceCurrent = null; }
         internal void SetGeometryPreparationResolver(Func<int, PreparedMeasurement<PanelGeometryInfo>?> resolver)
-        { _geometryPreparationResolver = resolver; _geometryDetailResolver = null; }
+        { _geometryPreparationResolver = resolver; _geometryDetailResolver = null; _geometrySourceCurrent = null; }
+        internal void SetGeometrySourceCurrentResolver(Func<PanelSnapshot, int, bool> resolver) => _geometrySourceCurrent = resolver;
 
         private PreparedMeasurement<PanelGeometryInfo>? PrepareGeometry(int position)
         {
@@ -124,6 +127,7 @@ namespace BetterGhPanel.Runtime
             {
                 PreparedMeasurement<PanelGeometryInfo>? prepared;
                 try { prepared = _geometryPreparationResolver(position); }
+                catch (MeasurementCapacityException) { throw; }
                 catch (Exception) { prepared = null; }
                 if (prepared != null) return prepared;
                 var summary = position >= 0 && position < Snapshot.Rows.Count ? Snapshot.Rows[position].GeometryInfo : null;
@@ -141,6 +145,7 @@ namespace BetterGhPanel.Runtime
         internal PanelGeometryInfo? GetGeometryDetails(PanelSnapshot snapshot, int sourcePosition) => _geometry.Get(snapshot, sourcePosition);
         internal bool HasGeometryMeasurement(PanelSnapshot snapshot, int sourcePosition) => _geometry.Has(snapshot, sourcePosition);
         internal bool IsGeometryPending(PanelSnapshot snapshot, int sourcePosition) => _geometry.Pending(snapshot, sourcePosition);
+        internal bool GeometrySourcesCurrent(PanelSnapshot snapshot) => _geometry.SourcesCurrent(snapshot);
         internal bool CanMeasureGeometry(PanelSnapshot snapshot, int sourcePosition) => !_disposed && ReferenceEquals(snapshot, Snapshot) &&
             sourcePosition >= 0 && sourcePosition < snapshot.Rows.Count && snapshot.Rows[sourcePosition].IsValid &&
             snapshot.Rows[sourcePosition].GeometryInfo?.CanMeasure == true && !HasGeometryMeasurement(snapshot, sourcePosition);
@@ -252,6 +257,7 @@ namespace BetterGhPanel.Runtime
                     RhinoApp.InvokeOnUiThread((Action)(() =>
                     {
                         if (_disposed || request != _request || token.IsCancellationRequested) return;
+                        if (measureGeometry && !_geometry.SourcesCurrent(snapshot)) return;
                         PublishQuery(result, null);
                     }));
                 }

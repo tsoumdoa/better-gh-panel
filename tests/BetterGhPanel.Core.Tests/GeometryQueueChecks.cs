@@ -25,6 +25,72 @@ internal static class GeometryQueueChecks
         CopyBeforeWitness();
         SchedulingAndAffinity();
         GlobalRetentionBudget();
+        CapacityRecoveryAndCancellation();
+        SourceReplacement();
+    }
+
+    private static void CapacityRecoveryAndCancellation()
+    {
+        var held = new List<IDisposable>();
+        try
+        {
+            IDisposable? reservation;
+            while ((reservation = NurbsCandidateLimits.TryReserve(1)) != null) held.Add(reservation);
+            using var first = new Fixture { UseReservations = true };
+            using var second = new Fixture { UseReservations = true };
+            using var cancel = new CancellationTokenSource();
+            var canceled = first.Measure(cancel.Token, 0);
+            var waiting = second.Measure(CancellationToken.None, 0);
+            first.Ui(); second.Ui(); first.Delay(); second.Delay();
+            Check(!canceled.IsCompleted && !waiting.IsCompleted && first.PreparedPositions.Count == 1 && second.PreparedPositions.Count == 1 &&
+                first.Delays.Count == 0 && second.Delays.Count == 0 && first.Resources.Count == 0 && second.Resources.Count == 0,
+                "two queues wait for shared capacity without allocating or spinning");
+            cancel.Cancel(); first.Ui();
+            Check(canceled.IsCompleted && !canceled.Result, "capacity waiting honors cancellation");
+            held[0].Dispose();
+            held[1].Dispose();
+            Check(SpinWait.SpinUntil(() => { second.Ui(); return second.Delays.Count != 0; }, TimeSpan.FromSeconds(5)),
+                "capacity release posts an asynchronous retry to the waiting queue");
+            second.Delay(); second.Worker(); second.Ui(); first.Ui();
+            Check(waiting.IsCompleted && waiting.Result && second.PreparedPositions.Count == 2 && first.PreparedPositions.Count == 1,
+                "one waiting panel recovers and a canceled panel does not restart");
+
+            // Fill the returned slot again, then replace the waiting generation.
+            while ((reservation = NurbsCandidateLimits.TryReserve(1)) != null) held.Add(reservation);
+            using var replaced = new Fixture { UseReservations = true };
+            var old = replaced.Measure(CancellationToken.None, 0);
+            replaced.Ui(); replaced.Delay();
+            Check(!old.IsCompleted, "replacement case is waiting on the shared budget");
+            replaced.Attach(new Snapshot(new Source(99)), false);
+            Check(old.IsCompleted && !old.Result, "replacement cancels the old waiting generation");
+            held[2].Dispose();
+            replaced.Ui();
+            Check(replaced.PreparedPositions.Count == 1 && replaced.Delays.Count == 0,
+                "capacity release does not revive the replaced request");
+        }
+        finally { foreach (var item in held) item.Dispose(); }
+    }
+
+    private static void SourceReplacement()
+    {
+        using var fixture = new Fixture();
+        bool current = true;
+        fixture.SourceCurrent = (_, __) => current;
+        var batch = fixture.Measure(CancellationToken.None, 0);
+        fixture.Ui(); fixture.Delay();
+        current = false;
+        fixture.Worker(); fixture.Ui();
+        Check(batch.IsCompleted && !batch.Result && !fixture.Queue.Has(fixture.Current, 0) &&
+            fixture.Queue.Get(fixture.Current, 0) == null && fixture.Resources[0].Disposals == 1,
+            "replacement after preparation rejects the result and releases its worker copy");
+        current = true;
+        var later = fixture.Measure(CancellationToken.None, 0);
+        fixture.Ui(); fixture.Delay(); fixture.Worker(); fixture.Ui();
+        Check(later.Result && fixture.Queue.Has(fixture.Current, 0), "current source can be measured");
+        current = false;
+        Check(!fixture.Queue.Has(fixture.Current, 0) && fixture.Queue.Get(fixture.Current, 0) == null &&
+            !fixture.Queue.SourcesCurrent(fixture.Current),
+            "cached results are hidden immediately when their source changes");
     }
 
     private static void GlobalRetentionBudget()
@@ -335,8 +401,14 @@ internal static class GeometryQueueChecks
     }
     private sealed class Resource : IDisposable
     {
+        private readonly IDisposable? _reservation;
+        internal Resource(IDisposable? reservation = null) { _reservation = reservation; }
         internal int Disposals;
-        public void Dispose() { if (Interlocked.Increment(ref Disposals) != 1) throw new InvalidOperationException("double dispose"); }
+        public void Dispose()
+        {
+            if (Interlocked.Increment(ref Disposals) != 1) throw new InvalidOperationException("double dispose");
+            _reservation?.Dispose();
+        }
     }
     private sealed class Fixture : IDisposable
     {
@@ -352,7 +424,8 @@ internal static class GeometryQueueChecks
         internal Snapshot Current = new Snapshot(new Source(1), new Source(2), new Source(3));
         internal ManualResetEventSlim? Gate;
         internal Action? AfterCopy, OnValidate;
-        internal bool InlineCancellation, RejectWorker, ThrowSubmit, FailCompute;
+        internal Func<Snapshot, int, bool>? SourceCurrent;
+        internal bool InlineCancellation, RejectWorker, ThrowSubmit, FailCompute, UseReservations;
         internal int Computations, UiNotifications, WrongThreadCalls;
 
         internal Fixture()
@@ -366,7 +439,8 @@ internal static class GeometryQueueChecks
                 (snapshot, position) => { OnValidate?.Invoke(); return position >= 0 && position < snapshot.Rows.Length; },
                 (snapshot, position) => position >= 0 && position < snapshot.Rows.Length,
                 (snapshot, position) => position >= 0 && position < snapshot.Rows.Length,
-                Prepare, () => { VerifyUi(); UiNotifications++; });
+                Prepare, () => { VerifyUi(); UiNotifications++; },
+                (snapshot, position) => SourceCurrent?.Invoke(snapshot, position) ?? true);
             Queue.Attach(Current, false);
         }
         private void VerifyUi()
@@ -377,11 +451,17 @@ internal static class GeometryQueueChecks
         private PreparedMeasurement<Result> Prepare(int position)
         {
             VerifyUi(); PreparedPositions.Add(position);
+            IDisposable? reservation = null;
+            if (UseReservations)
+            {
+                reservation = NurbsCandidateLimits.TryReserve(1024, out var released);
+                if (reservation == null) throw new MeasurementCapacityException(released!);
+            }
             var source = Current.Rows[position];
             int copiedValue = source.Value;
             string copiedRole = source.Role;
             AfterCopy?.Invoke();
-            var resource = new Resource(); Resources.Add(resource);
+            var resource = new Resource(reservation); Resources.Add(resource);
             var witness = new MeasurementWitness(copiedRole + "|mm|0.001|length", BitConverter.GetBytes(copiedValue));
             var gate = Gate; bool fail = FailCompute;
             return new PreparedMeasurement<Result>(() =>

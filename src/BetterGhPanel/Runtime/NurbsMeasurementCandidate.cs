@@ -8,25 +8,33 @@ using Rhino.Runtime;
 
 namespace BetterGhPanel.Runtime
 {
-    // Experimental implementation for the host fixture only. Callers must know
-    // independently that the source is the built-in native NURBS implementation,
-    // owns its pointer, and is stable for the whole call. A managed type check is
-    // not such a proof. Production input currently has no way to establish it.
+    // Reconstruct selected values without duplicating source geometry or metadata.
+    // A managed type check cannot prove the native subclass or prevent external
+    // concurrent mutation/disposal; those remain platform limitations.
     internal static class NurbsMeasurementCandidate
     {
         internal static PreparedMeasurement<PanelGeometryInfo>? PrepareTrustedCurve(NurbsCurve source,
             string units, int unitSystem, double tolerance)
+            => PrepareCapturedCurve(source, units, unitSystem, tolerance, false);
+
+        internal static PreparedMeasurement<PanelGeometryInfo>? PrepareCapturedCurve(NurbsCurve source,
+            string units, int unitSystem, double tolerance, bool retryCapacity)
         {
-            if (source == null || source.GetType() != typeof(NurbsCurve) || source.IsDocumentControlled ||
-                CommonObject.PerformCorruptionTesting || !ValidContext(units, tolerance)) return null;
-            int dimension = source.Dimension, order = source.Order, count = source.Points.Count, knotCount = source.Knots.Count;
-            bool rational = source.IsRational;
-            if (!NurbsCandidateLimits.Curve(dimension, order, count, knotCount, out int payload)) return null;
-            IDisposable? reservation = NurbsCandidateLimits.TryReserve(payload);
-            if (reservation == null) return null;
+            IDisposable? reservation = null;
             NurbsCurve? owned = null;
             try
             {
+                if (source == null || source.GetType() != typeof(NurbsCurve) || !ValidContext(units, tolerance) ||
+                    !SafeGooInspection.CurveCandidatePreflight(source)) return null;
+                int dimension = source.Dimension, order = source.Order, count = source.Points.Count, knotCount = source.Knots.Count;
+                if (!NurbsCandidateLimits.Curve(dimension, order, count, knotCount, out int payload)) return null;
+                reservation = NurbsCandidateLimits.TryReserve(payload, out var released);
+                if (reservation == null)
+                {
+                    if (retryCapacity && released != null) throw new MeasurementCapacityException(released);
+                    return null;
+                }
+                bool rational = source.IsRational;
                 var domain = source.Domain;
                 if (!ValidDomain(domain)) return null;
                 var knots = new double[knotCount];
@@ -70,31 +78,32 @@ namespace BetterGhPanel.Runtime
                 }
                 var witness = new MeasurementWitness(Context("curve/length", units, unitSystem, tolerance), bytes);
                 var worker = owned;
-                var resource = new OwnedResource(worker, reservation);
+                var resource = new OwnedMeasurementResource(worker, reservation);
                 var prepared = new PreparedMeasurement<PanelGeometryInfo>(() => GeometryHints.Measure(worker, false, units), resource, witness);
                 owned = null; reservation = null;
                 return prepared;
             }
-            finally { owned?.Dispose(); reservation?.Dispose(); }
+            finally { try { owned?.Dispose(); } finally { try { reservation?.Dispose(); } finally { GC.KeepAlive(source); } } }
         }
 
         internal static PreparedMeasurement<PanelGeometryInfo>? PrepareTrustedSurface(NurbsSurface source,
             string units, int unitSystem, double tolerance)
         {
-            if (source == null || source.GetType() != typeof(NurbsSurface) || source.IsDocumentControlled ||
-                CommonObject.PerformCorruptionTesting || !ValidContext(units, tolerance)) return null;
-            bool rational = source.IsRational;
-            // PointSize uses NonConstPointer: it is acceptable only under this
-            // method's independently established, owned-pointer precondition.
-            int dimension = source.Points.PointSize - (rational ? 1 : 0), orderU = source.OrderU, orderV = source.OrderV;
-            int countU = source.Points.CountU, countV = source.Points.CountV;
-            int knotCountU = source.KnotsU.Count, knotCountV = source.KnotsV.Count;
-            if (!NurbsCandidateLimits.Surface(dimension, orderU, orderV, countU, countV, knotCountU, knotCountV, out int payload)) return null;
-            IDisposable? reservation = NurbsCandidateLimits.TryReserve(payload);
-            if (reservation == null) return null;
+            IDisposable? reservation = null;
             NurbsSurface? owned = null;
             try
             {
+                if (source == null || source.GetType() != typeof(NurbsSurface) || CommonObject.PerformCorruptionTesting ||
+                    source.Disposed || source.IsDocumentControlled || !ValidContext(units, tolerance)) return null;
+                bool rational = source.IsRational;
+                // PointSize uses NonConstPointer: only this fixture-only surface
+                // path assumes an independently established owned pointer.
+                int dimension = source.Points.PointSize - (rational ? 1 : 0), orderU = source.OrderU, orderV = source.OrderV;
+                int countU = source.Points.CountU, countV = source.Points.CountV;
+                int knotCountU = source.KnotsU.Count, knotCountV = source.KnotsV.Count;
+                if (!NurbsCandidateLimits.Surface(dimension, orderU, orderV, countU, countV, knotCountU, knotCountV, out int payload)) return null;
+                reservation = NurbsCandidateLimits.TryReserve(payload);
+                if (reservation == null) return null;
                 var domainU = source.Domain(0); var domainV = source.Domain(1);
                 if (!ValidDomain(domainU) || !ValidDomain(domainV)) return null;
                 var knotsU = new double[knotCountU]; var knotsV = new double[knotCountV];
@@ -134,12 +143,12 @@ namespace BetterGhPanel.Runtime
                 }
                 var witness = new MeasurementWitness(Context("surface/area", units, unitSystem, tolerance), bytes);
                 var worker = owned;
-                var resource = new OwnedResource(worker, reservation);
+                var resource = new OwnedMeasurementResource(worker, reservation);
                 var prepared = new PreparedMeasurement<PanelGeometryInfo>(() => MeasureSurface(worker, units), resource, witness);
                 owned = null; reservation = null;
                 return prepared;
             }
-            finally { owned?.Dispose(); reservation?.Dispose(); }
+            finally { try { owned?.Dispose(); } finally { try { reservation?.Dispose(); } finally { GC.KeepAlive(source); } } }
         }
 
         private static PanelGeometryInfo? MeasureSurface(NurbsSurface surface, string units)
@@ -166,11 +175,5 @@ namespace BetterGhPanel.Runtime
             unitSystem.ToString(CultureInfo.InvariantCulture) + "|" + BitConverter.DoubleToInt64Bits(tolerance).ToString(CultureInfo.InvariantCulture) +
             "|" + units.Length.ToString(CultureInfo.InvariantCulture) + ":" + units;
 
-        private sealed class OwnedResource : IDisposable
-        {
-            private readonly IDisposable _geometry, _reservation;
-            internal OwnedResource(IDisposable geometry, IDisposable reservation) { _geometry = geometry; _reservation = reservation; }
-            public void Dispose() { try { _geometry.Dispose(); } finally { _reservation.Dispose(); } }
-        }
     }
 }

@@ -3,23 +3,28 @@ using System.Globalization;
 using System.IO;
 using BetterGhPanel.Core;
 using Grasshopper.Kernel.Types;
+using Rhino;
 using Rhino.Geometry;
 
 namespace BetterGhPanel.Runtime
 {
     internal static class GeometryHints
     {
-        // Enabled only after the isolated target-host UserData fixture proves this
-        // value reconstruction path and capture explicitly admits its exact type.
-        internal static readonly bool PolylineSnapshotVerified = false;
-
         // Only analytic measurements and stored properties belong in the snapshot.
         internal static PanelGeometryInfo? Describe(IGH_Goo goo, string units)
         {
             if (SafeGooInspection.IsGeometryHolder(goo.GetType()))
             {
-                if (!SafeGooInspection.TryGetTrustedGeometry(goo, out GeometryBase? geometry) || geometry == null || !geometry.IsValid) return null;
-                return DescribeCaptured(goo, geometry, units);
+                if (goo.GetType() == typeof(GH_Curve) &&
+                    (((GH_Curve)goo).IsReferencedGeometry || ((GH_Curve)goo).ReferenceID != Guid.Empty)) return null;
+                if (!SafeGooInspection.TryGetTrustedGeometry(goo, out GeometryBase? geometry) || geometry == null) return null;
+                try
+                {
+                    if ((geometry.GetType() == typeof(PolylineCurve) || geometry.GetType() == typeof(NurbsCurve)) &&
+                        !SafeGooInspection.CurveCandidatePreflight(geometry)) return null;
+                    return geometry.IsValid ? DescribeCaptured(goo, geometry, units) : null;
+                }
+                finally { GC.KeepAlive(geometry); }
             }
             return DescribeCaptured(goo, null, units);
         }
@@ -50,29 +55,59 @@ namespace BetterGhPanel.Runtime
         internal static PreparedMeasurement<PanelGeometryInfo>? PrepareMeasurement(IGH_Goo? goo, string units,
             int unitSystem, double tolerance)
         {
-            const int maxPoints = 2048;
             if (goo == null || goo.GetType() != typeof(GH_Curve) || units == null || units.Length > 128) return null;
-            var source = ((GH_Curve)goo).Value;
-            if (source == null || source.GetType() != typeof(PolylineCurve)) return null;
-            var polyline = (PolylineCurve)source;
-            int count = polyline.PointCount;
-            // The point and parameter arrays, worker curve and witness are all
-            // bounded before allocating or entering any copy/serialization API.
-            if (count < 2 || count > maxPoints || polyline.Dimension != 3) return null;
-            var points = new Point3d[count];
-            var parameters = new double[count];
-            for (int i = 0; i < count; i++)
+            var holder = (GH_Curve)goo;
+            if (holder.IsReferencedGeometry || holder.ReferenceID != Guid.Empty) return null;
+            var source = holder.Value;
+            try { return source == null ? null : PrepareCapturedMeasurement(source, units, unitSystem, tolerance, false); }
+            finally { GC.KeepAlive(source); }
+        }
+
+        internal static PreparedMeasurement<PanelGeometryInfo>? PrepareCapturedMeasurement(GeometryBase source, string units,
+            int unitSystem, double tolerance, bool retryCapacity)
+        {
+            try
             {
-                points[i] = polyline.Point(i);
-                parameters[i] = polyline.Parameter(i);
-                if (!points[i].IsValid || double.IsNaN(parameters[i]) || double.IsInfinity(parameters[i])) return null;
+                if (source == null || units == null || units.Length > 128 || !RhinoMath.IsValidDouble(tolerance) ||
+                    !SafeGooInspection.CurveCandidatePreflight(source)) return null;
+                if (source.GetType() == typeof(NurbsCurve))
+                    return NurbsMeasurementCandidate.PrepareCapturedCurve((NurbsCurve)source, units, unitSystem, tolerance, retryCapacity);
+                if (source.GetType() != typeof(PolylineCurve)) return null;
+                return PreparePolyline((PolylineCurve)source, units, unitSystem, tolerance, retryCapacity);
             }
+            finally { GC.KeepAlive(source); }
+        }
+
+        private static PreparedMeasurement<PanelGeometryInfo>? PreparePolyline(PolylineCurve source, string units,
+            int unitSystem, double tolerance, bool retryCapacity)
+        {
+            IDisposable? reservation = null;
             PolylineCurve? owned = null;
             try
             {
+                if (!SafeGooInspection.CurveCandidatePreflight(source)) return null;
+                int count = source.PointCount;
+                if (!NurbsCandidateLimits.Polyline(source.Dimension, count, out int payload)) return null;
+                reservation = NurbsCandidateLimits.TryReserve(payload, out var released);
+                if (reservation == null)
+                {
+                    if (retryCapacity && released != null) throw new MeasurementCapacityException(released);
+                    return null;
+                }
+                var points = new Point3d[count];
+                var parameters = new double[count];
+                for (int i = 0; i < count; i++)
+                {
+                    points[i] = source.Point(i);
+                    parameters[i] = source.Parameter(i);
+                    if (!points[i].IsValid || !RhinoMath.IsValidDouble(parameters[i]) ||
+                        (i > 0 && parameters[i] <= parameters[i - 1])) return null;
+                }
                 owned = new PolylineCurve(points);
-                if (owned.Dimension != 3 || owned.PointCount != count) return null;
-                var bytes = new byte[sizeof(int) + count * sizeof(double) * 4];
+                for (int i = 0; i < count; i++) owned.SetParameter(i, parameters[i]);
+                // Validate the reconstructed object independently of the source.
+                if (!owned.IsValid || owned.Dimension != 3 || owned.PointCount != count) return null;
+                var bytes = new byte[payload];
                 using (var stream = new MemoryStream(bytes, true))
                 using (var writer = new BinaryWriter(stream))
                 {
@@ -92,11 +127,12 @@ namespace BetterGhPanel.Runtime
                     BitConverter.DoubleToInt64Bits(tolerance).ToString(CultureInfo.InvariantCulture) + "|" + units.Length + ":" + units;
                 var witness = new MeasurementWitness(context, bytes);
                 var workerCopy = owned;
-                var prepared = new PreparedMeasurement<PanelGeometryInfo>(() => Measure(workerCopy, false, units), workerCopy, witness);
-                owned = null;
+                var resource = new OwnedMeasurementResource(workerCopy, reservation);
+                var prepared = new PreparedMeasurement<PanelGeometryInfo>(() => Measure(workerCopy, false, units), resource, witness);
+                owned = null; reservation = null;
                 return prepared;
             }
-            finally { owned?.Dispose(); }
+            finally { try { owned?.Dispose(); } finally { try { reservation?.Dispose(); } finally { GC.KeepAlive(source); } } }
         }
 
         private static bool Same(double first, double second) =>
@@ -112,7 +148,10 @@ namespace BetterGhPanel.Runtime
                     string shape = linear ? "linear" : value.IsPlanar() ? "planar" : "nonplanar";
                     string shapeDetails = value is ArcCurve arc ? (arc.Arc.IsCircle ? "Circle" : "Arc") :
                         linear ? "Linear" : value is PolylineCurve ? "Polyline" : "Curve";
-                    return Metric(curve, value.GetLength(), 1, units, "Length", "L", shape,
+                    double length = value.GetLength();
+                    // Rhino also returns zero on a failed length calculation.
+                    if (!RhinoMath.IsValidDouble(length) || length <= 0) return null;
+                    return Metric(curve, length, 1, units, "Length", "L", shape,
                         "Shape: " + shapeDetails + "\nPlanarity: " + (linear || shape == "planar" ? "Planar" : "Nonplanar"));
                 case Brep brep:
                     var summary = surface ? SurfaceInfo(brep) : BrepInfo(brep);

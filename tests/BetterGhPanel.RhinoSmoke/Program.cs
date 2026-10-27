@@ -62,6 +62,7 @@ internal static class Program
         ["capture-safety"] = assembly => { FixtureUserData.EnsureRegistered(); CaptureSafetyChecks.VerifyManaged(assembly); CaptureSafetyChecks.VerifyNativeCapabilities(assembly); CaptureSafetyChecks.VerifyNativeUserData(assembly); return Task.CompletedTask; },
         ["polyline-safety"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryPolylineSafetyChecks.Run(assembly); },
         ["nurbs-value-candidate"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryNurbsCandidateChecks.Run(assembly); },
+        ["production-curve-measurement"] = assembly => { FixtureUserData.EnsureRegistered(); return ProductionCurveMeasurementChecks.Run(assembly); },
         ["geometry-canvas-viewport"] = GeometryHintChecks.VerifyCanvasViewport,
         ["measurement-priority"] = GeometryMeasurementBatchChecks.VerifyPriority,
         ["measurement-cancellation"] = GeometryMeasurementBatchChecks.VerifyCancellation,

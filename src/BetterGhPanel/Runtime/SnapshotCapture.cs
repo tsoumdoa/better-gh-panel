@@ -16,10 +16,23 @@ namespace BetterGhPanel.Runtime
 
         internal static PanelSnapshot CaptureWithSources(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
             PanelUnitConversion conversion, string geometryUnits, IReadOnlyList<PanelSourceAddress>? sourceAddresses)
+            => CaptureCore(tree, out sourceItems, out _, conversion, geometryUnits, sourceAddresses);
+
+        // The returned inner references belong to this exact capture generation.
+        // They are never obtained again to decide which object to reconstruct.
+        internal static PanelSnapshot CaptureForMeasurements(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
+            out GeometryBase?[] measurementSources, PanelUnitConversion conversion, string geometryUnits,
+            IReadOnlyList<PanelSourceAddress>? sourceAddresses)
+            => CaptureCore(tree, out sourceItems, out measurementSources, conversion, geometryUnits, sourceAddresses);
+
+        private static PanelSnapshot CaptureCore(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
+            out GeometryBase?[] measurementSources, PanelUnitConversion conversion, string geometryUnits,
+            IReadOnlyList<PanelSourceAddress>? sourceAddresses)
         {
             var rows = new List<PanelRow>(tree.DataCount);
             var branches = new List<PanelBranch>(tree.PathCount);
             var source = new List<IGH_Goo?>(tree.DataCount);
+            var geometrySources = new List<GeometryBase?>(tree.DataCount);
             var budget = new SafeGooInspection.Budget();
             // A summary is immutable for this capture generation and may be shared
             // across references; no ancestor-dependent validity is memoized.
@@ -43,6 +56,7 @@ namespace BetterGhPanel.Runtime
                     PanelGeometryInfo? geometry = null;
                     PanelGroupSummary? groupSummary = null;
                     PanelSearchCapabilities capabilities;
+                    GeometryBase? capturedGeometry = null;
                     try
                     {
                         var identity = SafeGooInspection.ResolveIdentity(item, budget);
@@ -61,17 +75,17 @@ namespace BetterGhPanel.Runtime
                                 if (groupSummaries.Count < maxCachedGroupSummaries) groupSummaries.Add(identity.Group, groupSummary);
                             }
                         }
-                        validity = SafeGooInspection.Validity(item, budget, out reason, out GeometryBase? capturedGeometry);
+                        validity = SafeGooInspection.Validity(item, budget, out reason, out capturedGeometry);
                         if (identity.Group == null) display = FormatSummary(item, type, out number, out stringValue);
 
                         if (item != null && validity == PanelValidity.VerifiedValid)
                         {
                             geometry = GeometryHints.DescribeCaptured(item, capturedGeometry, geometryUnits);
-                            // No bounded, callback-free copy path is established for
-                            // arbitrary curve/Brep user data (including nested data).
-                            // Preserve stored summaries and explicitly mark deferred
-                            // measurements unavailable until such a path is proven.
-                            if (geometry?.CanMeasure == true) geometry = geometry.WithUnavailableMeasurement();
+                            // Only the bounded exact curve candidates have a value
+                            // reconstruction provider. Other deferred shapes stay unavailable.
+                            bool supported = item.GetType() == typeof(GH_Curve) && capturedGeometry != null &&
+                                (capturedGeometry.GetType() == typeof(PolylineCurve) || capturedGeometry.GetType() == typeof(NurbsCurve));
+                            if (geometry?.CanMeasure == true && !supported) geometry = geometry.WithUnavailableMeasurement();
                             display = geometry?.FormatCompact(PanelUnitConversion.None, PanelUnits.AutomaticDecimals) ?? display;
                         }
                         capabilities = Capabilities(item, validity, capturedGeometry);
@@ -85,13 +99,17 @@ namespace BetterGhPanel.Runtime
                         geometry = null;
                         capabilities = PanelSearchCapabilities.None;
                     }
+                    finally { GC.KeepAlive(capturedGeometry); }
                     rows.Add(new PanelRow(i, path, type, display, number, validity,
                         typeIdentityAvailable: typeAvailable, searchCapabilities: capabilities, isNull: item == null,
                         geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary));
                     source.Add(item);
+                    geometrySources.Add(validity == PanelValidity.VerifiedValid && geometry?.CanMeasure == true
+                        ? capturedGeometry : null);
                 }
             }
             sourceItems = source.ToArray();
+            measurementSources = geometrySources.ToArray();
             return new PanelSnapshot(rows, branches, conversion, sourceAddresses, budget.Visits,
                 (int)retainedSummaryBytes, groupSummaries.Count);
         }

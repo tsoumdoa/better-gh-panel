@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using BetterGhPanel.Core;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
+using Rhino.Runtime;
 
 namespace BetterGhPanel.Runtime
 {
@@ -177,9 +178,23 @@ namespace BetterGhPanel.Runtime
                         return ((GH_Arc)goo).IsValid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
                     if (IsGeometryHolder(node.GetType()))
                     {
+                        // A referenced GH holder may lose its loaded value at any
+                        // time. Do not read or validate that value for a candidate.
+                        if (node.GetType() == typeof(GH_Curve) &&
+                            (((GH_Curve)goo).IsReferencedGeometry || ((GH_Curve)goo).ReferenceID != Guid.Empty))
+                            return PanelValidity.Unverified;
                         if (!TryGetTrustedGeometry(goo, out GeometryBase? geometry)) return PanelValidity.Unverified;
                         capturedGeometry = geometry;
-                        return geometry != null && geometry.IsValid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
+                        try
+                        {
+                            if (geometry == null) return PanelValidity.VerifiedInvalid;
+                            // IsValid can traverse the whole source and can invoke
+                            // corruption checking. Bound and gate candidates first.
+                            if ((geometry.GetType() == typeof(PolylineCurve) || geometry.GetType() == typeof(NurbsCurve)) &&
+                                !CurveCandidatePreflight(geometry)) return PanelValidity.Unverified;
+                            return geometry.IsValid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
+                        }
+                        finally { GC.KeepAlive(geometry); }
                     }
                     return goo.IsValid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
                 }
@@ -190,6 +205,26 @@ namespace BetterGhPanel.Runtime
                 return PanelValidity.Unverified;
             }
             catch (Exception) { return PanelValidity.Unverified; }
+        }
+
+        internal static bool CurveCandidatePreflight(GeometryBase source)
+        {
+            try
+            {
+                if (CommonObject.PerformCorruptionTesting || source.Disposed || source.IsDocumentControlled) return false;
+                if (source.GetType() == typeof(PolylineCurve))
+                {
+                    var curve = (PolylineCurve)source;
+                    return NurbsCandidateLimits.Polyline(curve.Dimension, curve.PointCount, out _);
+                }
+                if (source.GetType() == typeof(NurbsCurve))
+                {
+                    var curve = (NurbsCurve)source;
+                    return NurbsCandidateLimits.Curve(curve.Dimension, curve.Order, curve.Points.Count, curve.Knots.Count, out _);
+                }
+                return false;
+            }
+            finally { GC.KeepAlive(source); }
         }
 
         /// <summary>
