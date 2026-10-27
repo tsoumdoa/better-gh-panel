@@ -336,7 +336,7 @@ internal static class GeometryHintChecks
             Check(prepared.Count == 0 && calls == 0, "Offscreen panel rendering never prepares or measures geometry");
 
             Paint(Point.Empty, fullSize);
-            var first = PanelTestAdapter.RowBounds(component, 0);
+            _ = PanelTestAdapter.RowBounds(component, 0);
             var second = PanelTestAdapter.RowBounds(component, 1);
             Paint(hiddenTarget, fullSize);
             await Task.Delay(160);
@@ -346,8 +346,10 @@ internal static class GeometryHintChecks
             await WaitUntil(() => Volatile.Read(ref calls) == 1);
             Check(prepared.SequenceEqual(new[] { 1 }) && !Has(0) && !Has(2),
                 "A partially visible panel measures only rows intersecting the canvas viewport");
-            Check(PanelTestAdapter.RowBounds(component, 0) == first && PanelTestAdapter.RowBounds(component, 1) == second &&
-                PanelTestAdapter.Offset(component) == 0, "Canvas clipping preserves row layout and the panel scroll position");
+            Check(!PanelTestAdapter.TryRowBounds(component, 0, out _) &&
+                PanelTestAdapter.TryRowBounds(component, 1, out var visibleSecond) && visibleSecond == second &&
+                PanelTestAdapter.Offset(component) == 0,
+                "Canvas clipping keeps the visible row layout and scroll position without retaining hidden row hits");
             Paint(Point.Empty, fullSize);
             Paint(hiddenTarget, fullSize);
             gate.Set();

@@ -113,9 +113,20 @@ internal static class PanelTestAdapter
 
     internal static RectangleF RowBounds(GH_Component component, int sourcePosition)
     {
-        foreach (var hit in Field<IEnumerable>(component.Attributes, "_rowHits"))
-            if (Property<int>(hit, "SourcePosition") == sourcePosition) return Property<RectangleF>(hit, "Bounds");
+        if (TryRowBounds(component, sourcePosition, out var bounds)) return bounds;
         throw new InvalidOperationException("Row is not visible.");
+    }
+
+    internal static bool TryRowBounds(GH_Component component, int sourcePosition, out RectangleF bounds)
+    {
+        foreach (var hit in Field<IEnumerable>(component.Attributes, "_rowHits"))
+            if (Property<int>(hit, "SourcePosition") == sourcePosition)
+            {
+                bounds = Property<RectangleF>(hit, "Bounds");
+                return true;
+            }
+        bounds = RectangleF.Empty;
+        return false;
     }
 
     internal static string DisplayValue(GH_Component component, BetterGhPanel.Core.PanelSnapshot snapshot, int position) =>
