@@ -87,6 +87,7 @@ internal static class Program
         ["production-curve-measurement"] = assembly => { FixtureUserData.EnsureRegistered(); return ProductionCurveMeasurementChecks.Run(assembly); },
         ["standalone-compatibility"] = assembly => { Rhino.Runtime.HostUtils.InitializeRhinoCommon(); FixtureUserData.EnsureRegistered(); return StandaloneCompatibilityChecks.Run(assembly); },
         ["capture-transaction"] = CaptureTransactionChecks.Run,
+        ["capture-stock-geometry"] = CaptureStockGeometryChecks.RunNative,
         ["geometry-canvas-viewport"] = GeometryHintChecks.VerifyCanvasViewport,
         ["measurement-priority"] = GeometryMeasurementBatchChecks.VerifyPriority,
         ["measurement-cancellation"] = GeometryMeasurementBatchChecks.VerifyCancellation,

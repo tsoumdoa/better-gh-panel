@@ -58,7 +58,7 @@ namespace BetterGhPanel.Runtime
             // bounded group graph has been captured from managed fields.
             if (seed.Managed != null)
                 for (int i = 0; i < seed.Managed.Length; i++) seed.Managed[i] = CaptureGraphWitness.ResolveManagedContext(seed.Managed[i]);
-            foreach (var graph in seed.Graphs.Values) graph.ResolveManagedContexts();
+            foreach (var graph in seed.Graphs.Values) graph.ResolveContexts();
             var rows = new List<PanelRow>(tree.DataCount);
             var branches = new List<PanelBranch>(tree.PathCount);
             var source = new List<IGH_Goo?>(tree.DataCount);

@@ -24,6 +24,7 @@ internal static class CaptureSafetyChecks
         AssertionCount = 0;
         CaptureTransactionChecks.VerifyNestedDataAccess();
         CaptureBudgetChecks.Verify(assembly);
+        CaptureStockGeometryChecks.VerifyManaged(assembly);
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("Capture")!;
         PanelSnapshot Capture(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] items)
         {
@@ -238,7 +239,7 @@ internal static class CaptureSafetyChecks
         }
 
         // Uninitialized exact stock instances exercise identity even when their
-        // native value is absent. The plain mesh-face value is safely invalid.
+        // native value is absent. The plain mesh-face and null extrusion are safely invalid.
         var types = new[] { typeof(GH_Transform), typeof(GH_MeshFace), typeof(GH_ComplexNumber), typeof(GH_SubD), typeof(GH_Extrusion) };
         var values = types.Select(type => (IGH_Goo)RuntimeHelpers.GetUninitializedObject(type)).ToArray();
         var subd = (GH_SubD)values[3]; var extrusion = (GH_Extrusion)values[4];
@@ -249,9 +250,11 @@ internal static class CaptureSafetyChecks
         var tree = new GH_Structure<IGH_Goo>(); tree.AppendRange(objects, new GH_Path(0));
         var snapshot = capture(tree, out _);
         string[] names = { "Transform", "Meshface", "Complex", "SubD", "Extrusion", "{SubD}", "{Extrusion}", "{{SubD}}", "Goo" };
+        int[] invalidPositions = { 1, 4, 6 };
         Check(snapshot.Rows.Select(row => row.TypeName).SequenceEqual(names) &&
-            snapshot.Rows.All(row => row.TypeIdentityAvailable) && snapshot.Rows[1].Validity == PanelValidity.VerifiedInvalid &&
-            snapshot.Rows.Where((row, i) => i != 1).All(row => row.Validity == PanelValidity.Unverified),
+            snapshot.Rows.All(row => row.TypeIdentityAvailable) &&
+            snapshot.Rows.Select((row, i) => row.Validity == (invalidPositions.Contains(i) ?
+                PanelValidity.VerifiedInvalid : PanelValidity.Unverified)).All(value => value),
             "Missing stock names and exact wrapper layers remain known even for invalid or unsupported values");
         for (int i = 0; i < names.Length; i++)
         {

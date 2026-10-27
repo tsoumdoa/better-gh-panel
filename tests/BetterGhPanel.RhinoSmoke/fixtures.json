@@ -38,6 +38,7 @@
   "production-curve-measurement",
   "standalone-compatibility",
   "capture-transaction",
+  "capture-stock-geometry",
   "geometry-canvas-viewport",
   "measurement-priority",
   "measurement-cancellation",

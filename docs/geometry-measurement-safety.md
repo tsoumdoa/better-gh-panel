@@ -23,9 +23,10 @@ typed output and does not promise preservation of nonserializable metadata in a
 copy or archive. The fixture probes representative serializable root and nested
 metadata, rather than claiming this holds for all installed plug-ins.
 
-Capture keeps the exact inner source of every built-in curve, surface, Brep and
-mesh holder, including null, invalid and unverified values, with the snapshot
-generation. It also records reference ID, loaded/referenced state and curve edge
+Capture keeps the exact inner source of every built-in curve, surface, Brep,
+mesh, point-cloud and extrusion holder, including null, invalid and unverified
+values, with the snapshot generation. It also records reference ID,
+loaded/referenced state and curve edge
 index. For references it records the
 active Rhino document and referenced object's runtime serial numbers. Exact
 holder/source, reference state, source lifetime and generation are checked after
@@ -45,6 +46,21 @@ absolute tolerance also belong to the measurement context. They are rechecked at
 dispatch, after preparation, completion and before publication or same-snapshot
 reuse. A changed context invalidates the old result, and value witnesses are not
 retained across a document-context change.
+
+Exact `GH_PointCloud` and `GH_Extrusion` holders use the same best-effort native
+validity and reference checks for capture, including when reached through a bounded
+group or wrapper graph. Loaded nested references retain the active document and
+object serials in the graph witness; unresolved references and unsupported holder
+or inner subclasses remain unverified. These checks do not create new measurement
+providers or group aggregate metrics. The Rhino host may perform unbounded native
+validity work, and the witness cannot detect unannounced in-place native mutation.
+In the Rhino 8.36 `capture-stock-geometry` fixture, 37 assertions passed for
+valid, invalid and unverified holders and groups; real document references and
+replacement; filters, statistics and typed D/S/B/F with Create Set on and off;
+and recovery after capture-time replacement. The generic GH source in that host
+turned unloaded standalone references into nulls before the panel received them.
+The fixture separately invokes the real component solve through a controlled data
+access seam to verify that exact unresolved holders are unverified when supplied.
 
 Capture keeps transformed trees, source arrays and snapshot local until the
 component's solve generation, document/session lifetime, D and F paths and ordered

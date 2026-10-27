@@ -188,7 +188,7 @@ namespace BetterGhPanel.Runtime
                     PanelValidity status;
                     GeometryBase? geometry = null;
                     if (captured.TryGetValue(frame.Node, out var leaf) && leaf.HasManagedValue) status = leaf.ManagedValidity;
-                    else if (IsGeometryHolder(type) && captured.TryGetValue(frame.Node, out leaf))
+                    else if (IsCapturedGeometryHolder(type) && captured.TryGetValue(frame.Node, out leaf))
                     {
                         if (!leaf.TryTarget(out var target)) status = PanelValidity.Unverified;
                         else
@@ -247,7 +247,7 @@ namespace BetterGhPanel.Runtime
                     // inherited IGH_Goo implementation on Rhino 8.
                     if (node.GetType() == typeof(GH_Arc))
                         return ((GH_Arc)goo).IsValid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
-                    if (IsGeometryHolder(node.GetType()))
+                    if (IsCapturedGeometryHolder(node.GetType()))
                     {
                         bool hasReferenceState = TryGetMeasurementReference(goo, out var reference);
                         bool trusted = TryGetTrustedGeometry(goo, out GeometryBase? geometry);
@@ -270,9 +270,12 @@ namespace BetterGhPanel.Runtime
         {
             try
             {
-                if (!trusted || ((holderType == typeof(GH_Curve) || holderType == typeof(GH_Surface) || holderType == typeof(GH_Brep)) &&
+                if (!trusted || ((holderType == typeof(GH_Curve) || holderType == typeof(GH_Surface) || holderType == typeof(GH_Brep) ||
+                    IsExtendedCapturedGeometryHolder(holderType)) &&
                     !hasReference)) return PanelValidity.Unverified;
-                if (!standalone && hasReference && (reference.Referenced || reference.Id != Guid.Empty)) return PanelValidity.Unverified;
+                if (!standalone && hasReference && (reference.Referenced || reference.Id != Guid.Empty) &&
+                    (!IsExtendedCapturedGeometryHolder(holderType) || reference.Document == 0 || reference.ObjectSerial == 0))
+                    return PanelValidity.Unverified;
                 if (geometry == null) return PanelValidity.VerifiedInvalid;
                 if (!standalone && (geometry.GetType() == typeof(PolylineCurve) || geometry.GetType() == typeof(NurbsCurve)) &&
                     !CurveCandidatePreflight(geometry)) return PanelValidity.Unverified;
@@ -326,6 +329,10 @@ namespace BetterGhPanel.Runtime
             { var holder = (GH_Brep)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
             else if (type == typeof(GH_Mesh))
             { var holder = (GH_Mesh)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
+            else if (type == typeof(GH_PointCloud))
+            { var holder = (GH_PointCloud)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
+            else if (type == typeof(GH_Extrusion))
+            { var holder = (GH_Extrusion)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
             else if (type == typeof(GH_Point))
             { var holder = (GH_Point)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = !deferManagedLoad && holder.IsGeometryLoaded; }
             else if (type == typeof(GH_Plane))
@@ -363,7 +370,7 @@ namespace BetterGhPanel.Runtime
         internal static bool TryCaptureStandaloneGeometryRaw(IGH_Goo goo, out CapturedGeometryLeaf leaf)
         {
             leaf = default;
-            if (!IsGeometryHolder(goo.GetType())) return false;
+            if (!IsCapturedGeometryHolder(goo.GetType())) return false;
             // Read the exact holder's fields before any document or geometry call
             // that might reenter. Validation will use this object, never reread it.
             bool trusted = TryGetTrustedGeometry(goo, out var geometry);
@@ -377,13 +384,13 @@ namespace BetterGhPanel.Runtime
         {
             var reference = leaf.Reference;
             if (!leaf.HasReference || (!reference.Referenced && reference.Id == Guid.Empty)) return leaf;
-            var document = Rhino.RhinoDoc.ActiveDoc;
-            var obj = document?.Objects.FindId(reference.Id);
-            if (!reference.Loaded || reference.Id == Guid.Empty || document == null || obj == null)
-                return new CapturedGeometryLeaf(leaf.Geometry, leaf.Trusted, leaf.Readable, false, reference);
-            var resolved = new MeasurementReferenceState(reference.Id, reference.Referenced, reference.Loaded, reference.Edge,
-                document.RuntimeSerialNumber, obj.RuntimeSerialNumber);
-            return new CapturedGeometryLeaf(leaf.Geometry, leaf.Trusted, leaf.Readable, true, resolved);
+            try
+            {
+                if (TryResolveCapturedReference(reference, out var resolved))
+                    return new CapturedGeometryLeaf(leaf.Geometry, leaf.Trusted, leaf.Readable, true, resolved);
+            }
+            catch (Exception) { /* The context is unavailable, not verified invalid. */ }
+            return new CapturedGeometryLeaf(leaf.Geometry, leaf.Trusted, leaf.Readable, false, reference);
         }
 
         internal static bool TryCaptureStandaloneGeometry(IGH_Goo goo, out CapturedGeometryLeaf leaf)
@@ -418,11 +425,15 @@ namespace BetterGhPanel.Runtime
         {
             try
             {
-                if (holder == null || !IsGeometryHolder(holder.GetType())) return false;
+                if (holder == null || !IsCapturedGeometryHolder(holder.GetType())) return false;
                 bool trusted = TryGetTrustedGeometry(holder, out var geometry);
                 if (trusted != captured.Trusted || !ReferenceEquals(geometry, captured.Geometry)) return false;
                 if (!TryGetMeasurementReference(holder, out var reference, captured.HasReference) || !reference.Equals(captured.Reference)) return false;
-                if (!captured.HasReference && TryGetMeasurementReference(holder, out _, true)) return false;
+                if (!captured.HasReference)
+                {
+                    try { if (TryGetMeasurementReference(holder, out _, true)) return false; }
+                    catch (Exception) { /* Still unresolved. Recheck on the next capture. */ }
+                }
                 return geometry == null || !trusted || MeasurementSourceCanRead(geometry) == captured.Readable;
             }
             catch (Exception) { return false; }
@@ -442,6 +453,10 @@ namespace BetterGhPanel.Runtime
             else if (type == typeof(GH_Surface)) geometry = ((GH_Surface)goo).Value;
             else if (type == typeof(GH_Brep)) geometry = ((GH_Brep)goo).Value;
             else if (type == typeof(GH_Mesh)) geometry = ((GH_Mesh)goo).Value;
+            else if (type == typeof(GH_PointCloud))
+            { geometry = ((GH_PointCloud)goo).Value; return geometry == null || geometry.GetType() == typeof(PointCloud); }
+            else if (type == typeof(GH_Extrusion))
+            { geometry = ((GH_Extrusion)goo).Value; return geometry == null || geometry.GetType() == typeof(Extrusion); }
             else return false;
             if (geometry == null) return true;
             return IsTrustedGeometry(geometry);
@@ -459,6 +474,14 @@ namespace BetterGhPanel.Runtime
         internal static bool IsGeometryHolder(Type type) => type == typeof(GH_Curve) || type == typeof(GH_Surface) ||
             type == typeof(GH_Brep) || type == typeof(GH_Mesh);
 
+        // Capture these stock types without expanding the independent preview or
+        // measurement provider allowlists in this change.
+        internal static bool IsExtendedCapturedGeometryHolder(Type type) =>
+            type == typeof(GH_PointCloud) || type == typeof(GH_Extrusion);
+
+        internal static bool IsCapturedGeometryHolder(Type type) =>
+            IsGeometryHolder(type) || IsExtendedCapturedGeometryHolder(type);
+
         // Keep the previously audited validity allowlist independent of the broader
         // identity table. Newly recognized identities are not evidence of safe validity.
         private static bool HasTrustedLeafValidity(Type type) =>
@@ -467,7 +490,7 @@ namespace BetterGhPanel.Runtime
             type == typeof(GH_Interval2D) || type == typeof(GH_Guid) || type == typeof(GH_Time) ||
             type == typeof(GH_Point) || type == typeof(GH_Plane) || type == typeof(GH_Vector) ||
             type == typeof(GH_Line) || type == typeof(GH_Arc) || type == typeof(GH_Circle) ||
-            type == typeof(GH_Rectangle) || type == typeof(GH_Box) || type == typeof(GH_MeshFace) || IsGeometryHolder(type);
+            type == typeof(GH_Rectangle) || type == typeof(GH_Box) || type == typeof(GH_MeshFace) || IsCapturedGeometryHolder(type);
 
         internal static string? TrustedTypeName(Type type)
         {

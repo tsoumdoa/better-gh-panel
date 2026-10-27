@@ -128,9 +128,9 @@ namespace BetterGhPanel.Runtime
             return new CapturedManagedValue(copy, captured.Raw, validity, true, captured.HasReference, resolved, reference);
         }
 
-        internal void ResolveManagedContexts()
+        internal void ResolveContexts()
         {
-            foreach (var node in _nodes) node.ResolveManagedContext();
+            foreach (var node in _nodes) node.ResolveContext();
         }
 
         // When deeper traversal is unavailable, preserve an exact wrapper chain
@@ -213,7 +213,7 @@ namespace BetterGhPanel.Runtime
                         result._nodes.Add(new Node(value, name, children));
                         for (int i = count - 1; i >= 0; i--) pending.Push((children[i], depth + 1));
                     }
-                    else if (value is IGH_Goo goo && SafeGooInspection.IsGeometryHolder(type))
+                    else if (value is IGH_Goo goo && SafeGooInspection.IsCapturedGeometryHolder(type))
                     {
                         bool trusted = SafeGooInspection.TryGetTrustedGeometry(goo, out GeometryBase? geometry);
                         bool hasReference = SafeGooInspection.TryGetMeasurementReference(goo, out var reference, false);
@@ -293,6 +293,8 @@ namespace BetterGhPanel.Runtime
             private readonly int _groupCount = -1;
             private readonly bool _trusted, _readable, _hasReference;
             private readonly MeasurementReferenceState _reference;
+            private MeasurementReferenceState _resolvedReference;
+            private bool _referenceResolved;
             internal Node(object value, object? target)
             { _value = new WeakReference<object>(value); _targetNull = target == null; if (target != null) _target = new WeakReference<object>(target); }
             internal Node(object value, CapturedManagedValue captured)
@@ -336,9 +338,16 @@ namespace BetterGhPanel.Runtime
                 var goo = (IGH_Goo)value;
                 bool trusted = SafeGooInspection.TryGetTrustedGeometry(goo, out GeometryBase? geometry);
                 bool hasReference = SafeGooInspection.TryGetMeasurementReference(goo, out var reference, false);
-                return trusted == _trusted && TargetIs(geometry) && hasReference == _hasReference &&
-                    (!hasReference || reference.Equals(_reference)) &&
-                    (geometry == null || !trusted || SafeGooInspection.MeasurementSourceCanRead(geometry) == _readable);
+                if (trusted != _trusted || !TargetIs(geometry) || hasReference != _hasReference ||
+                    (hasReference && !reference.Equals(_reference)) ||
+                    (geometry != null && trusted && SafeGooInspection.MeasurementSourceCanRead(geometry) != _readable)) return false;
+                if (!SafeGooInspection.IsExtendedCapturedGeometryHolder(type) || !hasReference ||
+                    (!reference.Referenced && reference.Id == Guid.Empty)) return true;
+                bool available = false;
+                MeasurementReferenceState current = default;
+                try { available = SafeGooInspection.TryGetMeasurementReference(goo, out current); }
+                catch (Exception) { /* An unresolved document remains unverified. */ }
+                return available == _referenceResolved && (!available || current.Equals(_resolvedReference));
             }
             private bool TargetIs(object? value) => _targetNull ? value == null :
                 _target != null && _target.TryGetTarget(out var target) && ReferenceEquals(target, value);
@@ -357,8 +366,14 @@ namespace BetterGhPanel.Runtime
                 return true;
             }
             internal bool HasManagedValue => _hasManagedValue;
-            internal void ResolveManagedContext()
-            { if (_hasManagedValue) _managedValue = CaptureGraphWitness.ResolveManagedContext(_managedValue); }
+            internal void ResolveContext()
+            {
+                if (_hasManagedValue) _managedValue = CaptureGraphWitness.ResolveManagedContext(_managedValue);
+                if (!_hasReference || (!_reference.Referenced && _reference.Id == Guid.Empty) ||
+                    !_value.TryGetTarget(out var value) || !SafeGooInspection.IsExtendedCapturedGeometryHolder(value.GetType())) return;
+                try { _referenceResolved = SafeGooInspection.TryResolveCapturedReference(_reference, out _resolvedReference); }
+                catch (Exception) { /* Keep the captured reference unverified. */ }
+            }
             internal BetterGhPanel.Core.PanelValidity ManagedValidity => _managedValue.Validity;
             internal IGH_Goo? ManagedCopy => _managedValue.Copy;
             internal bool TryGroupSummary(out string name, out int count)
@@ -366,7 +381,7 @@ namespace BetterGhPanel.Runtime
             internal bool Trusted => _trusted;
             internal bool Readable => _readable;
             internal bool HasReference => _hasReference;
-            internal MeasurementReferenceState Reference => _reference;
+            internal MeasurementReferenceState Reference => _referenceResolved ? _resolvedReference : _reference;
         }
 
         private static bool TryCopyManagedValue(object value, out IGH_Goo? copy)
