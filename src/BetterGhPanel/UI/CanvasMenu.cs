@@ -8,32 +8,106 @@ namespace BetterGhPanel.UI
 {
     internal enum CanvasMenuKind { None, Type, Sort, Branch, Units, SearchMode, Comparison, Preview, Statistics }
     internal enum PanelPreviewMode { Selected, FilteredResults, Off }
+    internal enum CanvasComparison { GreaterThan, AtLeast, LessThan, AtMost, Equal, NotEqual }
+    internal enum CanvasDecimalChoice { Automatic, Custom }
+
+    internal readonly struct CanvasChoice<T>
+    {
+        internal CanvasChoice(T value, string label) { Value = value; Label = label; }
+        internal T Value { get; }
+        internal string Label { get; }
+    }
+
+    internal readonly struct CanvasPreviewChoice
+    {
+        internal CanvasPreviewChoice(PanelPreviewMode? mode, string label) { Mode = mode; Label = label; }
+        internal PanelPreviewMode? Mode { get; }
+        internal bool IsItemOrder => !Mode.HasValue;
+        internal string Label { get; }
+    }
+
+    internal readonly struct CanvasUnitChoice
+    {
+        internal CanvasUnitChoice(PanelUnitConversion conversion) { Conversion = conversion; Decimals = null; }
+        internal CanvasUnitChoice(CanvasDecimalChoice decimals) { Conversion = null; Decimals = decimals; }
+        internal PanelUnitConversion? Conversion { get; }
+        internal CanvasDecimalChoice? Decimals { get; }
+    }
+
+    internal readonly struct CanvasComparisonChoice
+    {
+        internal CanvasComparisonChoice(CanvasComparison? comparison, string label) { Comparison = comparison; Label = label; }
+        internal CanvasComparison? Comparison { get; }
+        internal bool IsDisplayValue => !Comparison.HasValue;
+        internal string Label { get; }
+    }
 
     // One owner for menu lifetime, snapshot validity, layout, and paging.
     internal sealed class CanvasMenu
     {
-        internal const int ItemOrderIndex = 3;
-        internal const int DisplayValueIndex = 6;
         internal const string ItemOrderDescription = "Show zero-based item indices within each branch, after tree tools and before filtering or sorting. " +
             "Each branch starts at 0; filters and selection preserve the original indices. Points use their locations; other geometry uses bounding-box centers. " +
             "Labels follow the Preview scope and remain active in a minimized panel. Overlapping labels are hidden, with selected rows taking priority; zoom in or select fewer items to separate them.";
-        private static readonly string[] SortLabels = { "Source order", "Value ascending", "Value descending" };
-        private static readonly string[] PreviewLabels = { "Selected", "Filtered results", "Off" };
-        private static readonly string[] SearchLabels = { "Text search", "Text · regular expression", "Numeric value", "Geometry · length", "Geometry · area", "Geometry · volume", "List length · per branch" };
-        private static readonly string[] ComparisonLabels = { "Greater than  >", "At least  ≥", "Less than  <", "At most  ≤", "Equal to  =", "Not equal to  ≠", "Display value" };
-        private static readonly string[] Comparisons = { ">", ">=", "<", "<=", "=", "!=" };
+        private static readonly CanvasChoice<PanelSortMode>[] SortChoices =
+        {
+            new CanvasChoice<PanelSortMode>(PanelSortMode.SourceOrder, "Source order"),
+            new CanvasChoice<PanelSortMode>(PanelSortMode.ValueAscending, "Value ascending"),
+            new CanvasChoice<PanelSortMode>(PanelSortMode.ValueDescending, "Value descending")
+        };
+        private static readonly CanvasPreviewChoice[] PreviewChoices =
+        {
+            new CanvasPreviewChoice(PanelPreviewMode.Selected, "Selected"),
+            new CanvasPreviewChoice(PanelPreviewMode.FilteredResults, "Filtered results"),
+            new CanvasPreviewChoice(PanelPreviewMode.Off, "Off"),
+            new CanvasPreviewChoice(null, "Show item order")
+        };
+        private static readonly CanvasChoice<PanelSearchMode>[] SearchChoices =
+        {
+            new CanvasChoice<PanelSearchMode>(PanelSearchMode.Text, "Text search"),
+            new CanvasChoice<PanelSearchMode>(PanelSearchMode.Regex, "Text · regular expression"),
+            new CanvasChoice<PanelSearchMode>(PanelSearchMode.Value, "Numeric value"),
+            new CanvasChoice<PanelSearchMode>(PanelSearchMode.Length, "Geometry · length"),
+            new CanvasChoice<PanelSearchMode>(PanelSearchMode.Area, "Geometry · area"),
+            new CanvasChoice<PanelSearchMode>(PanelSearchMode.Volume, "Geometry · volume"),
+            new CanvasChoice<PanelSearchMode>(PanelSearchMode.ListLength, "List length · per branch")
+        };
+        private static readonly CanvasComparisonChoice[] ComparisonChoices =
+        {
+            new CanvasComparisonChoice(CanvasComparison.GreaterThan, "Greater than  >"),
+            new CanvasComparisonChoice(CanvasComparison.AtLeast, "At least  ≥"),
+            new CanvasComparisonChoice(CanvasComparison.LessThan, "Less than  <"),
+            new CanvasComparisonChoice(CanvasComparison.AtMost, "At most  ≤"),
+            new CanvasComparisonChoice(CanvasComparison.Equal, "Equal to  ="),
+            new CanvasComparisonChoice(CanvasComparison.NotEqual, "Not equal to  ≠"),
+            new CanvasComparisonChoice(null, "Display value")
+        };
+        private static readonly CanvasUnitChoice[] UnitChoices =
+        {
+            new CanvasUnitChoice(PanelUnitConversion.None),
+            new CanvasUnitChoice(PanelUnitConversion.MillimetersToMeters),
+            new CanvasUnitChoice(PanelUnitConversion.MetersToMillimeters),
+            new CanvasUnitChoice(PanelUnitConversion.SquareMillimetersToSquareMeters),
+            new CanvasUnitChoice(PanelUnitConversion.SquareMetersToSquareMillimeters),
+            new CanvasUnitChoice(PanelUnitConversion.RadiansToDegrees),
+            new CanvasUnitChoice(PanelUnitConversion.DegreesToRadians),
+            new CanvasUnitChoice(PanelUnitConversion.CubicMillimetersToCubicMeters),
+            new CanvasUnitChoice(PanelUnitConversion.CubicMetersToCubicMillimeters),
+            new CanvasUnitChoice(CanvasDecimalChoice.Automatic),
+            new CanvasUnitChoice(CanvasDecimalChoice.Custom)
+        };
         private PanelSnapshot _snapshot = PanelSnapshot.Empty;
         private PanelQueryResult? _statisticsResult;
         private string[] _types = Array.Empty<string>();
+        private CanvasChoice<PanelSearchMode>[] _searchChoices = Array.Empty<CanvasChoice<PanelSearchMode>>();
         internal CanvasMenuKind Kind { get; private set; }
         internal RectangleF Bounds { get; private set; }
         internal int Offset { get; private set; }
         internal int HoveredIndex { get; private set; } = -1;
         internal int Count => Kind == CanvasMenuKind.Type ? _types.Length + 2 :
-            Kind == CanvasMenuKind.Sort ? SortLabels.Length : Kind == CanvasMenuKind.Branch ? _snapshot.Branches.Count + 2 :
-            Kind == CanvasMenuKind.Units ? PanelUnits.ConversionCount + 2 :
-            Kind == CanvasMenuKind.SearchMode ? SearchLabels.Length : Kind == CanvasMenuKind.Comparison ? ComparisonLabels.Length :
-            Kind == CanvasMenuKind.Preview ? PreviewLabels.Length + 1 :
+            Kind == CanvasMenuKind.Sort ? SortChoices.Length : Kind == CanvasMenuKind.Branch ? _snapshot.Branches.Count + 2 :
+            Kind == CanvasMenuKind.Units ? UnitChoices.Length :
+            Kind == CanvasMenuKind.SearchMode ? _searchChoices.Length : Kind == CanvasMenuKind.Comparison ? ComparisonChoices.Length :
+            Kind == CanvasMenuKind.Preview ? PreviewChoices.Length :
             Kind == CanvasMenuKind.Statistics && _statisticsResult != null ? CanvasStatistics.OverviewRows + _statisticsResult.Statistics.UniqueValues.Count : 0;
         internal int Visible => Math.Min(Count, Math.Max(1, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
 
@@ -91,11 +165,14 @@ namespace BetterGhPanel.UI
             _statisticsResult = null;
             _snapshot = PanelSnapshot.Empty;
             _types = Array.Empty<string>();
+            _searchChoices = Array.Empty<CanvasChoice<PanelSearchMode>>();
         }
         internal bool IsCurrent(PanelSnapshot snapshot) => ReferenceEquals(_snapshot, snapshot);
         internal bool IsCurrent(PanelQueryResult result) => Kind != CanvasMenuKind.Statistics || ReferenceEquals(_statisticsResult, result);
 
-        internal void Toggle(CanvasMenuKind kind, PanelSnapshot snapshot, PanelQueryOptions options, PanelQueryResult? result = null)
+        // Null retains the legacy all-modes menu until the caller supplies input capabilities.
+        internal void Toggle(CanvasMenuKind kind, PanelSnapshot snapshot, PanelQueryOptions options, PanelQueryResult? result = null,
+            IEnumerable<PanelSearchMode>? supportedSearchModes = null)
         {
             Kind = Kind == kind ? CanvasMenuKind.None : kind;
             _snapshot = snapshot;
@@ -109,6 +186,14 @@ namespace BetterGhPanel.UI
                 var active = options.TypeName;
                 _types = keys.Concat(active != null && !keys.Contains(active) ? new[] { active } : Array.Empty<string>())
                     .OrderBy(x => x, StringComparer.Ordinal).ToArray();
+            }
+            if (Kind == CanvasMenuKind.SearchMode)
+            {
+                var supported = supportedSearchModes == null ? null : new HashSet<PanelSearchMode>(supportedSearchModes);
+                _searchChoices = SearchChoices.Where(choice => supported == null || supported.Contains(choice.Value) || choice.Value == options.SearchMode).ToArray();
+                // A saved mode must remain visible even if a future caller cannot advertise it.
+                if (!_searchChoices.Any(choice => choice.Value == options.SearchMode))
+                    _searchChoices = _searchChoices.Concat(new[] { new CanvasChoice<PanelSearchMode>(options.SearchMode, options.SearchMode.ToString()) }).ToArray();
             }
             if (Kind == CanvasMenuKind.None) Close();
         }
@@ -163,20 +248,28 @@ namespace BetterGhPanel.UI
         internal bool IsSelected(int index, PanelQueryOptions options, PanelUnitConversion conversion, int decimals, PanelPreviewMode preview = PanelPreviewMode.Selected, bool showItemOrder = false)
         {
             if (Kind == CanvasMenuKind.Statistics) return false;
-            if (Kind == CanvasMenuKind.Preview) return index == ItemOrderIndex ? showItemOrder : index == (int)preview;
+            if (Kind == CanvasMenuKind.Preview)
+            {
+                var choice = PreviewChoiceAt(index);
+                return choice.IsItemOrder ? showItemOrder : choice.Mode == preview;
+            }
             if (Kind == CanvasMenuKind.Units)
-                return index < PanelUnits.ConversionCount ? index == (int)conversion :
-                    index == PanelUnits.ConversionCount ? decimals < 0 : decimals >= 0;
-            if (Kind == CanvasMenuKind.Sort) return index == (int)options.SortMode;
-            if (Kind == CanvasMenuKind.SearchMode) return index == (int)options.SearchMode;
+            {
+                var choice = UnitChoiceAt(index);
+                return choice.Conversion.HasValue ? choice.Conversion == conversion :
+                    choice.Decimals == CanvasDecimalChoice.Automatic ? decimals < 0 : decimals >= 0;
+            }
+            if (Kind == CanvasMenuKind.Sort) return SortModeAt(index) == options.SortMode;
+            if (Kind == CanvasMenuKind.SearchMode) return SearchModeAt(index) == options.SearchMode;
             if (Kind == CanvasMenuKind.Comparison)
             {
-                if (index == DisplayValueIndex) return options.DisplayFilterValue;
+                var choice = ComparisonChoiceAt(index);
+                if (choice.IsDisplayValue) return options.DisplayFilterValue;
                 if (options.DisplayFilterValue) return false;
                 string comparison = ComparisonPrefix(options.Search);
-                if (comparison.Length == 0 && options.SearchMode >= PanelSearchMode.Value && IsFiniteNumber(options.Search))
+                if (comparison.Length == 0 && IsComparisonMode(options.SearchMode) && IsFiniteNumber(options.Search))
                     comparison = "=";
-                return ComparisonAt(index) == comparison;
+                return ComparisonOperator(choice.Comparison!.Value) == comparison;
             }
             if (Kind == CanvasMenuKind.Type) return index == 0 ? options.TypeName == null && !options.OnlyInvalid :
                 index == 1 ? options.OnlyInvalid : TypeNameAt(index) == options.TypeName;
@@ -185,9 +278,23 @@ namespace BetterGhPanel.UI
 
         internal string TypeNameAt(int index) => _types[index - 2];
         internal string BranchPathAt(int index) => _snapshot.Branches[index - 2].Path;
-        internal static string ComparisonAt(int index) => Comparisons[index];
-        internal static string SearchModeLabel(PanelSearchMode mode) => SearchLabels[(int)mode];
-        internal static string PreviewLabel(PanelPreviewMode mode) => PreviewLabels[(int)mode];
+        internal PanelSortMode SortModeAt(int index) => SortChoices[index].Value;
+        internal PanelSearchMode SearchModeAt(int index) => _searchChoices[index].Value;
+        internal CanvasPreviewChoice PreviewChoiceAt(int index) => PreviewChoices[index];
+        internal CanvasUnitChoice UnitChoiceAt(int index) => UnitChoices[index];
+        internal CanvasComparisonChoice ComparisonChoiceAt(int index) => ComparisonChoices[index];
+        internal bool IsSectionStart(int index) =>
+            Kind == CanvasMenuKind.Units && UnitChoiceAt(index).Decimals == CanvasDecimalChoice.Automatic ||
+            Kind == CanvasMenuKind.Statistics && index == CanvasStatistics.OverviewRows ||
+            Kind == CanvasMenuKind.Preview && PreviewChoiceAt(index).IsItemOrder ||
+            Kind == CanvasMenuKind.Comparison && ComparisonChoiceAt(index).IsDisplayValue;
+        internal static string SearchModeLabel(PanelSearchMode mode) =>
+            SearchChoices.FirstOrDefault(choice => choice.Value == mode).Label ?? mode.ToString();
+        internal static string PreviewLabel(PanelPreviewMode mode) =>
+            PreviewChoices.FirstOrDefault(choice => choice.Mode == mode).Label ?? mode.ToString();
+        internal static bool IsComparisonMode(PanelSearchMode mode) =>
+            mode == PanelSearchMode.Value || mode == PanelSearchMode.Length || mode == PanelSearchMode.Area ||
+            mode == PanelSearchMode.Volume || mode == PanelSearchMode.ListLength;
         internal static string SearchHint(PanelQueryOptions options)
         {
             string prefix = options.SearchMode == PanelSearchMode.Regex ? ".* " :
@@ -198,7 +305,18 @@ namespace BetterGhPanel.UI
                 options.SearchMode == PanelSearchMode.Text ? "Search…" : options.SearchMode == PanelSearchMode.Regex ? "Pattern…" : "filter…" : options.Search);
         }
 
-        internal static string WithComparison(string search, int index)
+        internal static string ComparisonOperator(CanvasComparison comparison) => comparison switch
+        {
+            CanvasComparison.GreaterThan => ">",
+            CanvasComparison.AtLeast => ">=",
+            CanvasComparison.LessThan => "<",
+            CanvasComparison.AtMost => "<=",
+            CanvasComparison.Equal => "=",
+            CanvasComparison.NotEqual => "!=",
+            _ => throw new ArgumentOutOfRangeException(nameof(comparison))
+        };
+
+        internal static string WithComparison(string search, CanvasComparison comparison)
         {
             string value = (search ?? "").Trim();
             string prefix = ComparisonPrefix(value);
@@ -206,7 +324,7 @@ namespace BetterGhPanel.UI
             // Switching from text or regex starts with an empty threshold; an
             // existing numeric threshold survives an operator change.
             if (!IsFiniteNumber(value)) value = "";
-            return ComparisonAt(index) + " " + value;
+            return ComparisonOperator(comparison) + " " + value;
         }
 
         internal static string ApplyComparison(string text, string comparison)
@@ -233,12 +351,12 @@ namespace BetterGhPanel.UI
         internal string Label(int index, int decimals = PanelUnits.AutomaticDecimals)
         {
             if (Kind == CanvasMenuKind.Statistics) return CanvasStatistics.Label(_statisticsResult!, index, decimals);
-            if (Kind == CanvasMenuKind.Preview) return index == ItemOrderIndex ? "Show item order" : PreviewLabels[index];
+            if (Kind == CanvasMenuKind.Preview) return PreviewChoiceAt(index).Label;
             if (Kind == CanvasMenuKind.Units)
             {
-                if (index < PanelUnits.ConversionCount)
-                    return PanelUnits.Label((PanelUnitConversion)index);
-                if (index == PanelUnits.ConversionCount) return "Decimals: automatic";
+                var choice = UnitChoiceAt(index);
+                if (choice.Conversion.HasValue) return PanelUnits.Label(choice.Conversion.Value);
+                if (choice.Decimals == CanvasDecimalChoice.Automatic) return "Decimals: automatic";
                 return "Decimal places…" + (decimals >= 0 ? " (" + decimals + ")" : "");
             }
             if (Kind == CanvasMenuKind.Type)
@@ -248,9 +366,9 @@ namespace BetterGhPanel.UI
                 string name = TypeNameAt(index), hint = ShortTypeName(name);
                 return hint == name ? name : hint + " · " + name;
             }
-            if (Kind == CanvasMenuKind.Sort) return SortLabels[index];
-            if (Kind == CanvasMenuKind.SearchMode) return SearchLabels[index];
-            if (Kind == CanvasMenuKind.Comparison) return ComparisonLabels[index];
+            if (Kind == CanvasMenuKind.Sort) return SortChoices[index].Label;
+            if (Kind == CanvasMenuKind.SearchMode) return _searchChoices[index].Label;
+            if (Kind == CanvasMenuKind.Comparison) return ComparisonChoiceAt(index).Label;
             if (index == 0) return "All branches";
             if (index == 1) return "Jump to exact path…";
             var branch = _snapshot.Branches[index - 2];

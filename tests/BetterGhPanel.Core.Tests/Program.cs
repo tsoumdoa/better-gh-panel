@@ -34,6 +34,7 @@ internal static class Program
             LargeData,
             CanvasDimensionsAndPresets,
             CanvasMenuPagingAndSnapshot,
+            CanvasMenuChoiceChecks.Run,
             PanelRowSelectionChecks.Run,
             FilterCanvasChecks.Run,
             UnitConversionsAndFormatting,

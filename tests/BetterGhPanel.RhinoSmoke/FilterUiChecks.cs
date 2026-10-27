@@ -19,7 +19,7 @@ using Rhino;
 using Rhino.Geometry;
 using Forms = System.Windows.Forms;
 
-internal static class FilterUiChecks
+internal static partial class FilterUiChecks
 {
     private const BindingFlags Instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
@@ -83,6 +83,7 @@ internal static class FilterUiChecks
         await VerifyFooterStatistics(assembly);
         await VerifyPreviewUndo(assembly);
         await VerifyDisplayValues(assembly);
+        await VerifyTypedChoicesAndStaleEditors(assembly);
     }
 
     private static async Task VerifyDisplayValues(Assembly assembly)

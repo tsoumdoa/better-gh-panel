@@ -142,6 +142,8 @@ internal sealed class CanvasEditorAdapter
     private System.Windows.Forms.TextBox Input =>
         (System.Windows.Forms.TextBox)_type.BaseType!.GetField("m_inputTextBox", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_editor)!;
     internal int TextAreaWidth => Input.ClientSize.Width;
+    internal bool AcceptedIsNull => _type.GetField("_accepted", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_editor) == null;
+    internal Action<string> CaptureAccepted() => (Action<string>)_type.GetField("_accepted", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_editor)!;
 
     internal void Submit(string text)
     {

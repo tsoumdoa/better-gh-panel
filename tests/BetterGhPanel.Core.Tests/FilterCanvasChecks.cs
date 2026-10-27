@@ -83,7 +83,8 @@ internal static class FilterCanvasChecks
             if (kind == CanvasMenuKind.Comparison)
             {
                 options.DisplayFilterValue = true;
-                Require(menu.IsSelected(CanvasMenu.DisplayValueIndex, options, PanelUnitConversion.None, -1) &&
+                int display = Enumerable.Range(0, menu.Count).Single(index => menu.ComparisonChoiceAt(index).IsDisplayValue);
+                Require(menu.IsSelected(display, options, PanelUnitConversion.None, -1) &&
                     !menu.IsSelected(5, options, PanelUnitConversion.None, -1) &&
                     CanvasMenu.SearchHint(options) == "List · display", "Display value has its own checkmark and a clear search hint");
                 options.DisplayFilterValue = false;
@@ -95,9 +96,9 @@ internal static class FilterCanvasChecks
                     "A literal numeric text search is not marked as an equality comparison");
             }
         }
-        Require(CanvasMenu.WithComparison("== 12.5", 0) == "> 12.5" &&
-            CanvasMenu.WithComparison("<= -1e3", 5) == "!= -1e3", "Changing operators preserves a finite numeric threshold");
-        Require(CanvasMenu.WithComparison("Wall.*", 1) == ">= " && CanvasMenu.WithComparison("NaN", 0) == "> ",
+        Require(CanvasMenu.WithComparison("== 12.5", CanvasComparison.GreaterThan) == "> 12.5" &&
+            CanvasMenu.WithComparison("<= -1e3", CanvasComparison.NotEqual) == "!= -1e3", "Changing operators preserves a finite numeric threshold");
+        Require(CanvasMenu.WithComparison("Wall.*", CanvasComparison.AtLeast) == ">= " && CanvasMenu.WithComparison("NaN", CanvasComparison.GreaterThan) == "> ",
             "Switching from text or nonfinite input starts with a clean numeric threshold");
         Require(CanvasMenu.ApplyComparison(" 5 ", ">") == "> 5" &&
             CanvasMenu.ApplyComparison(" <= 6 ", ">") == "<= 6" &&
