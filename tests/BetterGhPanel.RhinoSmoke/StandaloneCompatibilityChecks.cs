@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -15,6 +16,7 @@ using Grasshopper.Kernel.Types;
 using Rhino.DocObjects.Custom;
 using Rhino.FileIO;
 using Rhino.Geometry;
+using Forms = System.Windows.Forms;
 
 // Real GH solutions through the production capture, preparation and worker queue.
 internal static class StandaloneCompatibilityChecks
@@ -368,33 +370,53 @@ internal static class StandaloneCompatibilityChecks
         var root = poly.UserData.Find(typeof(CompatibilityUserData));
         var nested = poly.SegmentCurve(0).UserData.Find(typeof(CompatibilityUserData));
         CompatibilityUserData.RootDuplicates = CompatibilityUserData.NestedDuplicates = 0;
-        var duplicate = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!.GetMethod("DuplicateGeometry", Static)!;
-        using var copy = (PolyCurve?)duplicate.Invoke(null, new object[] { new GH_Curve { Value = poly } });
-        Check(copy != null && CompatibilityUserData.RootDuplicates > 0 && CompatibilityUserData.NestedDuplicates > 0 &&
-            ReferenceEquals(root, poly.UserData.Find(typeof(CompatibilityUserData))) &&
-            ReferenceEquals(nested, poly.SegmentCurve(0).UserData.Find(typeof(CompatibilityUserData))),
-            "production geometry-copy preparation invokes root and nested callbacks and preserves source metadata");
-        using var file = new File3dm();
-        Guid archiveId = file.Objects.Add(copy!, null);
-        Check(archiveId != Guid.Empty, "copied geometry enters the archive");
         CompatibilityUserData.Writes = CompatibilityUserData.Reads = 0;
-        byte[] bytes = file.ToByteArray(new File3dmWriteOptions { Version = 8 });
-        Check(bytes != null && bytes.Length > 0, "the metadata archive was written");
-        using var restored = File3dm.FromByteArray(bytes!);
-        Console.WriteLine("METADATA_ARCHIVE bytes=" + bytes!.Length + " writes=" + CompatibilityUserData.Writes +
-            " reads=" + CompatibilityUserData.Reads + " restored=" + (restored != null));
-        Console.Out.Flush();
-        Check(restored != null, "the metadata archive is readable");
-        // File3dm's object table implements IList, but model geometry is not
-        // indexed; LINQ First() may use its indexer and return null. Use the
-        // exact archived object identity instead.
-        var archivedObject = restored!.Objects.FindId(archiveId);
-        Check(archivedObject?.Geometry is PolyCurve, "the archived polycurve is found by its object identity");
-        var roundTrip = (PolyCurve)archivedObject!.Geometry;
-        Check(CompatibilityUserData.Writes >= 2 && CompatibilityUserData.Reads >= 2 &&
-            ((CompatibilityUserData?)roundTrip.UserData.Find(typeof(CompatibilityUserData)))?.Tag == 1 &&
-            ((CompatibilityUserData?)roundTrip.SegmentCurve(0).UserData.Find(typeof(CompatibilityUserData)))?.Tag == 2,
-            "representative serializable root and nested metadata roundtrip through a native archive");
+        var previousClipboard = Forms.Clipboard.GetDataObject();
+        try
+        {
+            var doc = Rhino.RhinoDoc.ActiveDoc ?? throw new InvalidOperationException("An active Rhino document is required");
+            var copy = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!.GetMethod("CopyGeometry", Static)!;
+            var result = copy.Invoke(null, new object[] { new IGH_Goo[] { new GH_Curve { Value = poly } },
+                doc.ModelUnitSystem, doc.ModelAbsoluteTolerance })!;
+            var resultType = result.GetType();
+            Check((bool)resultType.GetProperty("Success", Private)!.GetValue(result)! &&
+                (int)resultType.GetProperty("Count", Private)!.GetValue(result)! == 1 &&
+                (int)resultType.GetProperty("Skipped", Private)!.GetValue(result)! == 0 &&
+                CompatibilityUserData.RootDuplicates > 0 && CompatibilityUserData.NestedDuplicates > 0 &&
+                ReferenceEquals(root, poly.UserData.Find(typeof(CompatibilityUserData))) &&
+                ReferenceEquals(nested, poly.SegmentCurve(0).UserData.Find(typeof(CompatibilityUserData))),
+                "production geometry copy invokes root and nested callbacks and preserves source metadata");
+            object? payload = Forms.Clipboard.GetData("Rhino 8 3DM Geometry");
+            byte[] bytes;
+            if (payload is byte[] array) bytes = array;
+            else if (payload is Stream stream)
+            {
+                using var output = new MemoryStream();
+                stream.Position = 0; stream.CopyTo(output); bytes = output.ToArray();
+            }
+            else throw new InvalidOperationException("Native geometry clipboard has no archive bytes.");
+            Check(bytes.Length > 0, "the production clipboard contains a geometry archive");
+            using var restored = File3dm.FromByteArray(bytes);
+            Check(restored != null, "the production clipboard archive is readable");
+            File3dmObject? archivedObject = null;
+            foreach (var item in restored!.Objects)
+            {
+                if (item == null) continue;
+                if (archivedObject != null) throw new InvalidOperationException("Expected one copied geometry object.");
+                archivedObject = item;
+            }
+            Check(archivedObject?.Geometry is PolyCurve, "the production clipboard archive contains the polycurve");
+            var roundTrip = (PolyCurve)archivedObject!.Geometry;
+            Check(CompatibilityUserData.Writes >= 2 && CompatibilityUserData.Reads >= 2 &&
+                ((CompatibilityUserData?)roundTrip.UserData.Find(typeof(CompatibilityUserData)))?.Tag == 1 &&
+                ((CompatibilityUserData?)roundTrip.SegmentCurve(0).UserData.Find(typeof(CompatibilityUserData)))?.Tag == 2,
+                "representative serializable root and nested metadata roundtrip through the production clipboard archive");
+        }
+        finally
+        {
+            if (previousClipboard == null) Forms.Clipboard.Clear();
+            else Forms.Clipboard.SetDataObject(previousClipboard, true);
+        }
     }
 
     private static void Clear(OutputChecks.Fixture f) { f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear(); }
