@@ -23,6 +23,7 @@ internal static class CaptureSafetyChecks
     {
         AssertionCount = 0;
         CaptureTransactionChecks.VerifyNestedDataAccess();
+        CaptureBudgetChecks.Verify(assembly);
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("Capture")!;
         PanelSnapshot Capture(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] items)
         {
@@ -152,15 +153,16 @@ internal static class CaptureSafetyChecks
         var snapshot = capture(tree, out _);
         Check(snapshot.Rows[0].Validity == PanelValidity.Unverified && snapshot.InspectionVisitCount <= 100000 &&
             snapshot.Rows[1100].Validity == PanelValidity.Unverified && snapshot.Rows[1101].Validity == PanelValidity.VerifiedValid &&
+            snapshot.Rows[1100].TypeIdentityAvailable && snapshot.Rows[1100].DisplayValue.Contains("with 120 objects") &&
             ReferenceEquals(snapshot.Rows[1].DisplayValue, snapshot.Rows[100].DisplayValue),
             "Depth and aggregate budgets bound repeated group work, preserve direct summaries and leave ordinary rows usable");
         var distinct = new GH_Structure<IGH_Goo>();
         for (int i = 0; i < 1100; i++) distinct.Append(Group("distinct " + i, 120), new GH_Path(0));
         var distinctSnapshot = capture(distinct, out _);
         Check(distinctSnapshot.InspectionVisitCount <= 100000 &&
-            distinctSnapshot.Rows[1099].Validity == PanelValidity.Unverified &&
-            distinctSnapshot.Rows[1099].DisplayValue == "<unavailable value>",
-            "Distinct groups share the aggregate work limit and cannot retain an unwitnessed summary after exhaustion");
+            distinctSnapshot.Rows[1099].Validity == PanelValidity.Unverified && distinctSnapshot.Rows[1099].TypeIdentityAvailable &&
+            distinctSnapshot.Rows[1099].DisplayValue == "Group (distinct 1099) with 120 objects",
+            "Distinct groups share the aggregate work limit while retaining witnessed direct summaries");
         var longNames = new GH_Structure<IGH_Goo>();
         for (int i = 0; i < 1100; i++) longNames.Append(Group(i + new string('y', 1024), 0), new GH_Path(0));
         var longSnapshot = capture(longNames, out _);
@@ -230,7 +232,7 @@ internal static class CaptureSafetyChecks
         }
 
         // Uninitialized exact stock instances exercise identity even when their
-        // native value is absent; the expanded identity table must not call validity.
+        // native value is absent. The plain mesh-face value is safely invalid.
         var types = new[] { typeof(GH_Transform), typeof(GH_MeshFace), typeof(GH_ComplexNumber), typeof(GH_SubD), typeof(GH_Extrusion) };
         var values = types.Select(type => (IGH_Goo)RuntimeHelpers.GetUninitializedObject(type)).ToArray();
         var subd = (GH_SubD)values[3]; var extrusion = (GH_Extrusion)values[4];
@@ -242,7 +244,8 @@ internal static class CaptureSafetyChecks
         var snapshot = capture(tree, out _);
         string[] names = { "Transform", "Meshface", "Complex", "SubD", "Extrusion", "{SubD}", "{Extrusion}", "{{SubD}}", "Goo" };
         Check(snapshot.Rows.Select(row => row.TypeName).SequenceEqual(names) &&
-            snapshot.Rows.All(row => row.TypeIdentityAvailable && row.Validity == PanelValidity.Unverified),
+            snapshot.Rows.All(row => row.TypeIdentityAvailable) && snapshot.Rows[1].Validity == PanelValidity.VerifiedInvalid &&
+            snapshot.Rows.Where((row, i) => i != 1).All(row => row.Validity == PanelValidity.Unverified),
             "Missing stock names and exact wrapper layers remain known even for invalid or unsupported values");
         for (int i = 0; i < names.Length; i++)
         {

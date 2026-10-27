@@ -43,6 +43,16 @@ namespace BetterGhPanel
         internal Action<int, IGH_Goo?>? CaptureObserverForTesting { get; set; }
         internal Action<object>? GraphVisitObserverForTesting { get; set; }
         internal Action<GH_Structure<IGH_Goo>, GH_Structure<IGH_Goo>?>? StructureObserverForTesting { get; set; }
+        internal Action? BeforeOutputValidationForTesting { get; set; }
+        internal bool CaptureDiagnosticsForTesting { get; set; }
+        internal long CaptureValidationPassesForTesting { get; private set; }
+        internal long CaptureValidationVisitsForTesting { get; private set; }
+        internal long OutputReconstructionVisitsForTesting { get; private set; }
+        internal long OutputPublicationItemsForTesting { get; private set; }
+        internal void ResetCaptureDiagnosticsForTesting()
+        { CaptureValidationPassesForTesting = CaptureValidationVisitsForTesting = OutputReconstructionVisitsForTesting = OutputPublicationItemsForTesting = 0; }
+        private void CountOutputVisits(long visits)
+        { if (CaptureDiagnosticsForTesting) OutputReconstructionVisitsForTesting += visits; }
         private long _outputRequest;
         private PanelQueryOptions? _outputOptions;
         private bool _outputPending;
@@ -150,7 +160,7 @@ namespace BetterGhPanel
             var snapshot = _measurementSnapshot;
             if (snapshot == null || !ReferenceEquals(_session?.Snapshot, snapshot) || !MeasurementSourceCurrent(snapshot, position)) return null;
             var capture = _measurementSources[position];
-            if (capture == null) return null;
+            if (capture == null || capture.Geometry == null || !capture.Leaf.Trusted || !capture.Leaf.HasReference) return null;
             var source = capture.Geometry;
             try
             {
@@ -181,7 +191,7 @@ namespace BetterGhPanel
             var holder = _sourceItems[position];
             try
             {
-                if (SafeGooInspection.IsCurrentMeasurementSource(holder, source, capture.Reference) &&
+                if (SafeGooInspection.IsCurrentCapturedGeometry(holder, capture.Leaf) &&
                     (!_captureHasGeometry || (context.Equals(_geometryContext) && GeometryContextCurrent(context))) &&
                     ReferenceEquals(snapshot, _measurementSnapshot) && ReferenceEquals(snapshot, _session?.Snapshot) &&
                     position < _measurementSources.Length && position < _sourceItems.Length &&
@@ -207,7 +217,7 @@ namespace BetterGhPanel
             })));
         }
 
-        private bool CapturedSnapshotCurrent(PanelSnapshot snapshot)
+        internal bool CapturedSnapshotCurrent(PanelSnapshot snapshot)
         {
             long generation = _solveGeneration;
             var session = _session;
@@ -215,11 +225,40 @@ namespace BetterGhPanel
             var context = _geometryContext;
             if (session == null || session.IsDisposed || Locked || !ReferenceEquals(snapshot, _measurementSnapshot) ||
                 !ReferenceEquals(snapshot, session.Snapshot) || tree == null) return false;
+            long visits = 0;
+            bool HoldersCurrent()
+            {
+                bool result = SnapshotCapture.MeasurementSourcesCurrentWithVisits(_sourceItems, _measurementSources, out int count);
+                visits += count; return result;
+            }
+            bool GraphsCurrent()
+            {
+                bool result = SnapshotCapture.GraphSourcesCurrentWithVisits(_captureGraphs, out long count);
+                visits += count; return result;
+            }
+            bool ManagedCurrent()
+            {
+                bool result = SnapshotCapture.ManagedRowsCurrentWithVisits(snapshot, _sourceItems, out int count);
+                visits += count; return result;
+            }
+            bool UnitsCurrent()
+            {
+                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count);
+                visits += count; return result;
+            }
+            bool StructuresCurrent()
+            {
+                bool result = PanelTreeOperations.StructureStillMatchesWithVisits(_liveInputTree, _inputTree, out int count);
+                visits += count;
+                if (!result || PairedInputPresent() != _pairedInputPresent) return false;
+                if (!_pairedInputPresent) return true;
+                result = PanelTreeOperations.StructureStillMatchesWithVisits(_livePairedTree, _pairedInputTree, out count);
+                visits += count; return result;
+            }
             bool current = (!_captureHasGeometry || GeometryContextCurrent(context)) &&
-                SnapshotCapture.MeasurementSourcesCurrent(_sourceItems, _measurementSources) &&
-                SnapshotCapture.GraphSourcesCurrent(_captureGraphs) && SnapshotCapture.ManagedRowsCurrent(snapshot, _sourceItems) &&
-                PanelUnitOperations.InputsStillMatch(_preConversionTree, tree, snapshot.UnitConversion) && InputStructuresCurrent() &&
+                HoldersCurrent() && GraphsCurrent() && ManagedCurrent() && UnitsCurrent() && StructuresCurrent() &&
                 (!_captureHasGeometry || (context.Equals(_geometryContext) && GeometryContextCurrent(context)));
+            if (CaptureDiagnosticsForTesting) { CaptureValidationPassesForTesting++; CaptureValidationVisitsForTesting += visits; }
             if (!current && generation == _solveGeneration && ReferenceEquals(snapshot, _measurementSnapshot))
                 RecaptureStaleMeasurementSource(snapshot);
             return current && generation == _solveGeneration && ReferenceEquals(session, _session) && !session.IsDisposed &&
@@ -708,6 +747,7 @@ namespace BetterGhPanel
             long generation = ++_solveGeneration;
             var document = OnPingDocument();
             bool previouslySolving = _solving;
+            bool rescheduleOutput = false;
             _solving = true;
             try
             {
@@ -778,24 +818,42 @@ namespace BetterGhPanel
                 }
                 var committedTree = _queryTree;
                 var committedSnapshot = session.Snapshot;
+                var committedResult = session.Result;
+                var committedScope = OutputScope;
+                var committedSelection = _selectionVersion;
+                bool committedResultCurrent = session.HasCurrentResult;
+                bool PublicationOwnerCurrent() => Current() && ReferenceEquals(committedTree, _queryTree) &&
+                    ReferenceEquals(committedSnapshot, session.Snapshot) && ReferenceEquals(committedResult, session.Result) &&
+                    committedScope == OutputScope && committedSelection == _selectionVersion &&
+                    committedResultCurrent == session.HasCurrentResult;
                 bool PublicationCurrent()
                 {
-                    if (!Current() || !ReferenceEquals(committedTree, _queryTree) || !ReferenceEquals(committedSnapshot, session.Snapshot)) return false;
+                    if (!PublicationOwnerCurrent())
+                    {
+                        if (Current() && _queryTree != null) rescheduleOutput = true;
+                        return false;
+                    }
                     bool inputsCurrent = CapturedSnapshotCurrent(committedSnapshot);
-                    if (!inputsCurrent && Current() && ReferenceEquals(committedSnapshot, session.Snapshot))
+                    bool ownerCurrent = PublicationOwnerCurrent();
+                    if (!ownerCurrent && Current() && _queryTree != null) rescheduleOutput = true;
+                    if (!inputsCurrent && ownerCurrent)
                         InvalidateStaleCapture(session, document, generation);
-                    return inputsCurrent && Current() && ReferenceEquals(committedSnapshot, session.Snapshot) && ReferenceEquals(committedTree, _queryTree);
+                    return inputsCurrent && ownerCurrent;
                 }
                 // Pending/failed filters expose no stale or unfiltered items. The
                 // completed query schedules another solution using this same tree.
-                if (!PublicationCurrent()) return;
+                if (!PublicationOwnerCurrent()) return;
                 PublishOutputs(da, PublicationCurrent);
-                if (PublicationCurrent())
+                if (PublicationOwnerCurrent())
                 {
                     if (session.Error != null) AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Filter: " + session.Error);
                 }
             }
-            finally { _solving = previouslySolving; }
+            finally
+            {
+                _solving = previouslySolving;
+                if (rescheduleOutput && !previouslySolving) ScheduleOutput();
+            }
         }
 
         private void InvalidateStaleCapture(PanelSession session, GH_Document? document, long generation)

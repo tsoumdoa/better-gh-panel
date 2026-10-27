@@ -23,8 +23,10 @@ typed output and does not promise preservation of nonserializable metadata in a
 copy or archive. The fixture probes representative serializable root and nested
 metadata, rather than claiming this holds for all installed plug-ins.
 
-Capture keeps the exact inner source, reference ID, loaded/referenced state and
-curve edge index with the snapshot generation. For references it also records the
+Capture keeps the exact inner source of every built-in curve, surface, Brep and
+mesh holder, including null, invalid and unverified values, with the snapshot
+generation. It also records reference ID, loaded/referenced state and curve edge
+index. For references it records the
 active Rhino document and referenced object's runtime serial numbers. Exact
 holder/source, reference state, source lifetime and generation are checked after
 preparation and before measurement publication or reuse. Referenced values are
@@ -51,18 +53,44 @@ and wrapper witnesses record ordered targets, names and trusted leaf values;
 validity walks those captured members rather than rereading the live graph, so
 temporary replacement and restoration cannot change the inspected child. Their
 committed witnesses use weak references and do not own groups or wrappers. The
-graph evidence is limited to 4,096 visits per root and 100,000 per capture; an
-incomplete row is unverified and unavailable rather than retried indefinitely.
+group and wrapper graph evidence is limited to 4,096 visits per root and 100,000
+per capture. When this evidence is incomplete, deeper validity remains unverified.
+The captured name, direct count and known identity of an exact group remain
+available, including exact wrapper chains within the 64-node root depth limit; a
+shallow witness rechecks each captured wrapper target and group name/count. The
+shallow identity work is bounded per row and its retained evidence is proportional
+to the rows and captured wrapper depth; chains beyond that limit cannot establish a
+deeper identity or summary. Group summaries do not imply
+validated children or an aggregate geometry metric.
 Ordinary number, integer, boolean and text inputs are read into a temporary
 per-row scalar array before callback-bearing inspection. Display, filtering and
 unit conversion consume those captured values, so a temporary replacement and
 restoration cannot alter the value that was inspected. Rows then reuse the frozen
 values for a linear recheck, without per-row graph witnesses or copying strings;
 the temporary scalar array is proportional to input size and is not retained with
-the snapshot. Unit conversion also checks the pre-conversion inputs against the
-converted tree.
+the snapshot. Ordinary exact point and other supported managed value rows use a
+separate linear witness containing immutable value copies, outside the graph
+budget. Point reference identity, component parameters, loaded state and the
+resolved document/object context are checked along with the coordinates; exact
+plane and box reference contexts are checked too. Reference document lookups and
+managed value validity checks that can enter native code are deferred until after
+row and bounded-graph values have been captured. An exact box is first witnessed
+as its raw value because its public goo constructor and setter may normalize it;
+if a faithful copy cannot be made, its summary remains unavailable. Exact mesh
+faces and simple stock transforms receive valid/invalid classification; compound
+transforms containing unsupported or externally supplied implementations remain
+unverified without invoking their methods. Unit conversion also checks the
+pre-conversion inputs against the converted tree.
 A changed capture receives at most one automatic retry; a continuing change
 leaves it unavailable until the source expires again.
+
+An output-only selection publication reuses the same snapshot. Output trees are
+constructed from the captured structures first, then one complete freshness fence
+runs immediately before output publication. The fence is linear in the rows,
+tree structure and retained bounded graph evidence; it is not constant-time for a
+large input. Diagnostic fixture counters report its visits separately from output
+tree reconstruction and host output items. The preview build and output tree
+construction can also take time proportional to their own selected or emitted data.
 
 Bounded polyline and NURBS reconstruction still has priority for eligible local
 curves. It reconstructs values and complete witnesses without duplicating source
@@ -90,8 +118,29 @@ solids, real loaded references, output metadata, unit-only remeasurement,
 callback exceptions, replacement during duplication and metadata roundtrips.
 `capture-transaction` covers reentrant expiration, removal and locking; managed
 leaf and numeric/text replace-and-restore; wrapper/group replace-and-restore;
-D/F tree shape changes; and a
-100,000-row scalar capture and recovery. It uses explicit internal fixture hooks
+D/F tree shape changes; and a 100,000-row scalar capture and recovery. The new
+host-free capture-budget fixture also checks 100,001 points followed by a line,
+shallow summaries for 4,096-member groups and wrappers, filters, typed D/S/B/F,
+point-, plane- and box-reference retargeting, stock validity and hostile transform
+behavior. The same fixture checks nested object and geometric wrappers after both
+per-root and aggregate group budget exhaustion, including retarget and recovery.
+In the coordinated Rhino host run, `capture-safety` passed 227 assertions and
+`capture-transaction` passed 73. The latter exercises mesh/invalid-curve
+replacement, loaded point references, the final output fence, and sparse, dense
+and select-all gestures across both preview modes and label settings. A separate
+managed run captured and checked 100,001 points in 142 ms and allocated 40,906,776
+bytes on the fixture thread. These observations are not time or memory guarantees.
+
+For each of the 12 host gestures over 80,000 points and 80,000 paired items, the
+instrumented publication used one freshness fence and visited 480,000 witness or
+structure entries. Sparse, dense and select-all gestures respectively recorded
+240,001, 280,000 and 320,000 logical output reconstruction visits, and 160,002,
+240,000 and 320,000 published items. Reconstruction visits are counted at the
+tree-operation call sites and exclude selection bookkeeping, hashing, native
+output internals and preview rendering. Elapsed time ranged from 24 to 51 ms
+across the 12 cases. These counters distinguish validation, reconstruction and
+host outputs; they are measurements of this fixture, not performance bounds.
+The capture fixture uses explicit internal hooks
 at callback boundaries; these are tests of the transaction, not a claim that native
 callbacks are bounded or that host behavior has been exercised without Rhino.
 The managed queue tests gate context changes during preparation and a claimed
@@ -100,6 +149,6 @@ a unit change before output reuse.
 The narrow-provider fixtures retain their zero-callback assertions; conflicting
 expectations that production reject oversized or nested standalone geometry have
 been revised. Managed queue tests exercise reentrant cross-panel admission,
-cancellation, ownership and recovery. The new and revised Rhino fixtures still
-require the parent-coordinated host run; successful compilation alone does not
-validate native behavior.
+cancellation, ownership and recovery. The combined branch still needs its
+coordinated host run and final code reviews; successful compilation or these
+isolated fixtures alone do not validate it.

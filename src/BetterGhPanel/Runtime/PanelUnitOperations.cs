@@ -34,13 +34,19 @@ namespace BetterGhPanel.Runtime
         }
 
         internal static bool InputsStillMatch(GH_Structure<IGH_Goo>? source, GH_Structure<IGH_Goo>? converted, PanelUnitConversion conversion)
+            => InputsStillMatchWithVisits(source, converted, conversion, out _);
+
+        internal static bool InputsStillMatchWithVisits(GH_Structure<IGH_Goo>? source, GH_Structure<IGH_Goo>? converted,
+            PanelUnitConversion conversion, out int visits)
         {
+            visits = 0;
             if (source == null || converted == null || source.PathCount != converted.PathCount) return false;
             for (int b = 0; b < source.PathCount; b++)
             {
                 if (source.Paths[b].CompareTo(converted.Paths[b]) != 0 || source.Branches[b].Count != converted.Branches[b].Count) return false;
                 for (int i = 0; i < source.Branches[b].Count; i++)
                 {
+                    visits++;
                     var original = source.Branches[b][i]; var result = converted.Branches[b][i];
                     if (conversion == PanelUnitConversion.None) { if (!ReferenceEquals(original, result)) return false; continue; }
                     if (original?.GetType() == typeof(GH_Number))

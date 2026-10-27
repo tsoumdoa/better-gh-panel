@@ -47,6 +47,11 @@ internal static class CaptureTransactionChecks
             VerifyStructureWitness(assembly);
             await VerifyScalarMutationAndOutputs(assembly);
             await VerifyScalarRetargetFilter(assembly);
+            await VerifyGeometryHolderRecovery(assembly, false);
+            await VerifyGeometryHolderRecovery(assembly, true);
+            VerifyLoadedPointReferences(assembly);
+            await VerifyOutputFence(assembly);
+            await VerifySelectionPublicationVisits(assembly);
             await VerifyStructureSolve(assembly, 0);
             await VerifyStructureSolve(assembly, 1);
             await VerifyStructureSolve(assembly, 2);
@@ -116,6 +121,205 @@ internal static class CaptureTransactionChecks
             flags.SequenceEqual(new[] { false, false, true, false }) &&
             ((GH_String)fixture.Sinks[3].VolatileData.AllData(false).Single()).Value == "seventy-five",
             "a temporary numeric change cannot alter numeric-filter D/S/B/F membership in a real solve");
+    }
+
+    private static async Task VerifyGeometryHolderRecovery(Assembly assembly, bool curve)
+    {
+        using var fixture = new OutputChecks.Fixture(assembly);
+        fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
+        fixture.Source.PersistentData.Append(curve ? new GH_Curve() : new GH_Mesh(Mesh(false)), new GH_Path(0));
+        fixture.Source.PersistentData.Append(new GH_Number(2), new GH_Path(0));
+        fixture.Paired.PersistentData.Append(new GH_String("geometry"), new GH_Path(0));
+        fixture.Paired.PersistentData.Append(new GH_String("number"), new GH_Path(0));
+        fixture.Query(curve ? new PanelQueryOptions { OnlyInvalid = true } : new PanelQueryOptions { Search = "4 vertices" });
+        bool changed = false;
+        SetObserver(fixture, (position, _) =>
+        {
+            if (position != 1) return;
+            SetObserver(fixture, null); changed = true;
+            var current = fixture.Component.Params.Input[0].VolatileData.AllData(false).First();
+            var persistent = fixture.Source.PersistentData.AllData(false).First();
+            if (curve)
+            {
+                ((GH_Curve)current).Value = new LineCurve(Point3d.Origin, new Point3d(3, 4, 0));
+                ((GH_Curve)persistent).Value = new LineCurve(Point3d.Origin, new Point3d(3, 4, 0));
+            }
+            else
+            {
+                ((GH_Mesh)current).Value = Mesh(true);
+                ((GH_Mesh)persistent).Value = Mesh(true);
+            }
+        });
+        fixture.Solve();
+        await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 2 &&
+            (curve ? fixture.Result.RowPositions.Count == 0 : fixture.Result.RowPositions.SequenceEqual(new[] { 0 })) &&
+            fixture.Sinks[0].VolatileData.DataCount == (curve ? 0 : 1));
+        var snapshot = fixture.Result.Snapshot;
+        var mask = fixture.Sinks[2].VolatileData.AllData(false).Cast<GH_Boolean>().Select(value => value.Value).ToArray();
+        Check(changed && (curve ? snapshot.Rows[0].IsValid && mask.SequenceEqual(new[] { false, false }) &&
+                fixture.Sinks[1].VolatileData.DataCount == 0 && fixture.Sinks[3].VolatileData.DataCount == 0 :
+                snapshot.Rows[0].DisplayValue.Contains("4 vertices") && mask.SequenceEqual(new[] { true, false }) &&
+                fixture.Sinks[0].VolatileData.AllData(false).Single() is GH_Mesh &&
+                ((GH_String)fixture.Sinks[3].VolatileData.AllData(false).Single()).Value == "geometry"),
+            (curve ? "a null curve replaced by valid geometry" : "a visited mesh replaced by a different vertex count") +
+            " is recaptured before filtering and D/S/B/F output");
+        if (curve)
+        {
+            fixture.Query(new PanelQueryOptions());
+            await fixture.Ready(() => fixture.Result.RowPositions.Count == 2 && fixture.Sinks[0].VolatileData.DataCount == 2);
+            fixture.Select(0); await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
+            Check(ReferenceEquals(snapshot, fixture.Result.Snapshot) && fixture.Sinks[1].VolatileData.AllData(false).Single() is GH_Curve selected &&
+                selected.Value != null, "the unchanged valid curve reuses its snapshot for selected output");
+        }
+        else
+        {
+            fixture.Select(0);
+            await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
+            Check(ReferenceEquals(snapshot, fixture.Result.Snapshot) && fixture.Sinks[1].VolatileData.AllData(false).Single() is GH_Mesh,
+                "unchanged mesh input reuses the same snapshot for selected output");
+        }
+    }
+
+    private static Mesh Mesh(bool fourVertices)
+    {
+        var mesh = new Mesh();
+        mesh.Vertices.Add(0, 0, 0); mesh.Vertices.Add(1, 0, 0); mesh.Vertices.Add(0, 1, 0);
+        mesh.Faces.AddFace(0, 1, 2);
+        if (fourVertices) { mesh.Vertices.Add(1, 1, 0); mesh.Faces.AddFace(1, 3, 2); }
+        return mesh;
+    }
+
+    private static void VerifyLoadedPointReferences(Assembly assembly)
+    {
+        var document = Rhino.RhinoDoc.ActiveDoc ?? throw new InvalidOperationException("An active Rhino document is required");
+        bool modified = document.Modified;
+        Guid first = Guid.Empty, second = Guid.Empty;
+        try
+        {
+            first = document.Objects.AddPoint(new Point3d(1, 2, 3));
+            second = document.Objects.AddPoint(new Point3d(1, 2, 3));
+            Check(first != Guid.Empty && second != Guid.Empty && first != second, "point reference fixture creates distinct document objects");
+            var point = new GH_Point(first);
+            Check(point.LoadGeometry(document), "point reference fixture loads a real document point");
+            var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!;
+            var method = capture.GetMethod("CaptureForMeasurements", Static)!;
+            var current = capture.GetMethod("GraphSourcesCurrent", Static)!;
+            object?[] Capture(IGH_Goo item, Action<int, IGH_Goo?>? observer = null)
+            {
+                var tree = new GH_Structure<IGH_Goo>(); tree.Append(item, new GH_Path(0));
+                var args = new object?[] { tree, null, null, null, PanelUnitConversion.None, "mm", null, observer, null, null, null };
+                _ = method.Invoke(null, args); return args;
+            }
+            bool Current(object?[] args) => (bool)current.Invoke(null, new[] { args[3] })!;
+            var stable = Capture(point);
+            Check(Current(stable), "unchanged loaded point reference and document context are current");
+            var original = point.Value;
+            var changed = Capture(point, (_, __) => point.ReferenceID = second);
+            Check(point.Value == original && !Current(changed), "retargeting a loaded point with unchanged coordinates rejects the old capture");
+            point.ReferenceID = first; Check(point.LoadGeometry(document), "point reference is restored for nested testing");
+            var group = new GH_GeometryGroup { Name = "point reference" }; group.Objects.Add(point);
+            var nested = Capture(new GH_ObjectWrapper(group), (_, __) => point.ReferenceData!.m_RefIndex++);
+            Check(!Current(nested), "changing a referenced point component inside a group invalidates its graph witness");
+            point.ReferenceData!.m_RefIndex--;
+            var after = Capture(point);
+            Check(Current(after), "unchanged point reference recovers after a component change");
+            Check(document.Objects.Delete(first, true), "the referenced point object can be deleted"); first = Guid.Empty;
+            Check(!Current(after), "removing the loaded point's document object invalidates the captured load context");
+        }
+        finally
+        {
+            try { if (first != Guid.Empty) document.Objects.Delete(first, true); if (second != Guid.Empty) document.Objects.Delete(second, true); }
+            finally { document.Modified = modified; }
+        }
+    }
+
+    private static async Task VerifyOutputFence(Assembly assembly)
+    {
+        using var fixture = new OutputChecks.Fixture(assembly);
+        fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
+        fixture.Source.PersistentData.Append(new GH_Point(new Point3d(1, 2, 3)), new GH_Path(0));
+        fixture.Paired.PersistentData.Append(new GH_String("point"), new GH_Path(0));
+        fixture.Solve(); await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 1 && fixture.Sinks[0].VolatileData.DataCount == 1);
+        var before = fixture.Result.Snapshot;
+        var hook = fixture.Component.GetType().GetProperty("BeforeOutputValidationForTesting", Private)!;
+        bool called = false;
+        hook.SetValue(fixture.Component, (Action)(() =>
+        {
+            hook.SetValue(fixture.Component, null); called = true;
+            ((GH_Point)fixture.Component.Params.Input[0].VolatileData.AllData(false).Single()).Value = new Point3d(9, 8, 7);
+            ((GH_Point)fixture.Source.PersistentData.AllData(false).Single()).Value = new Point3d(9, 8, 7);
+        }));
+        fixture.Select(0);
+        await fixture.Ready(() => !ReferenceEquals(before, fixture.Result.Snapshot) && fixture.Result.Snapshot.Rows.Count == 1 &&
+            fixture.Result.Snapshot.Rows[0].DisplayValue == "(9, 8, 7)" && fixture.Sinks[0].VolatileData.DataCount == 1);
+        var after = fixture.Result.Snapshot;
+        fixture.Select(0); await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
+        Check(called && ReferenceEquals(after, fixture.Result.Snapshot) &&
+            ((GH_Point)fixture.Sinks[0].VolatileData.AllData(false).Single()).Value == new Point3d(9, 8, 7) &&
+            ((GH_Point)fixture.Sinks[1].VolatileData.AllData(false).Single()).Value == new Point3d(9, 8, 7) &&
+            ((GH_Boolean)fixture.Sinks[2].VolatileData.AllData(false).Single()).Value &&
+            ((GH_String)fixture.Sinks[3].VolatileData.AllData(false).Single()).Value == "point",
+            "a value changed immediately before output publication is recaptured before D/S/B/F, and unchanged selection reuses the snapshot");
+    }
+
+    private static async Task VerifySelectionPublicationVisits(Assembly assembly)
+    {
+        const int count = 80000;
+        using var fixture = new OutputChecks.Fixture(assembly);
+        fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
+        var source = fixture.Source.PersistentData.EnsurePath(new GH_Path(0));
+        var paired = fixture.Paired.PersistentData.EnsurePath(new GH_Path(0));
+        for (int i = 0; i < count; i++) { source.Add(new GH_Point(new Point3d(i, 1, 2))); paired.Add(new GH_Integer(i)); }
+        fixture.Scope(PanelOutputScope.Selected);
+        fixture.Solve(); await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == count && fixture.Sinks[0].VolatileData.DataCount == count);
+        var component = fixture.Component;
+        var type = component.GetType();
+        var selection = type.GetProperty("RowSelection", Private)!.GetValue(component)!;
+        var select = selection.GetType().GetMethod("Select", Private)!;
+        var selectAll = selection.GetType().GetMethod("SelectAll", Private)!;
+        var ordered = selection.GetType().GetMethod("OrderedPositions", Private)!;
+        var highlight = type.GetMethod("HighlightRows", Private)!;
+        var enabled = type.GetProperty("CaptureDiagnosticsForTesting", Private)!;
+        var reset = type.GetMethod("ResetCaptureDiagnosticsForTesting", Private)!;
+        var passes = type.GetProperty("CaptureValidationPassesForTesting", Private)!;
+        var validation = type.GetProperty("CaptureValidationVisitsForTesting", Private)!;
+        var reconstruction = type.GetProperty("OutputReconstructionVisitsForTesting", Private)!;
+        var publication = type.GetProperty("OutputPublicationItemsForTesting", Private)!;
+        foreach (string mode in new[] { "Selected", "FilteredResults" })
+        foreach (bool labels in new[] { false, true })
+        {
+            PanelTestAdapter.PreviewMode(component, mode); PanelTestAdapter.ShowItemOrder(component, labels);
+            foreach (string gesture in new[] { "sparse", "dense", "select-all" })
+            {
+                enabled.SetValue(component, false);
+                fixture.ClearSelection();
+                await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 0);
+                reset.Invoke(component, Array.Empty<object>()); enabled.SetValue(component, true);
+                var timer = Stopwatch.StartNew();
+                var result = fixture.Result;
+                int expected = gesture == "sparse" ? 1 : gesture == "dense" ? count / 2 : count;
+                if (gesture == "select-all") selectAll.Invoke(selection, new object?[] { result, null, false });
+                else
+                {
+                    select.Invoke(selection, new object[] { result, 0, false, false, false });
+                    if (gesture == "dense") select.Invoke(selection, new object[] { result, expected - 1, false, true, false });
+                }
+                var positions = ordered.Invoke(selection, new object[] { result })!;
+                highlight.Invoke(component, new[] { result.Snapshot, positions });
+                await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == expected && fixture.Sinks[3].VolatileData.DataCount == expected);
+                long scanPasses = (long)passes.GetValue(component)!;
+                long validationVisits = (long)validation.GetValue(component)!;
+                long reconstructionVisits = (long)reconstruction.GetValue(component)!;
+                long publicationItems = (long)publication.GetValue(component)!;
+                Console.WriteLine("SELECTION_GESTURE mode=" + mode + " labels=" + labels + " gesture=" + gesture +
+                    " elapsedMs=" + timer.ElapsedMilliseconds + " validationPasses=" + scanPasses +
+                    " validationVisits=" + validationVisits + " outputReconstructionVisits=" + reconstructionVisits + " publishedItems=" + publicationItems);
+                Check(scanPasses == 1 && validationVisits >= count && reconstructionVisits > 0 && publicationItems >= count &&
+                    ReferenceEquals(result.Snapshot, fixture.Result.Snapshot),
+                    "selection gesture performs one full freshness validation before scheduled publication");
+            }
+        }
+        enabled.SetValue(component, false);
     }
 
     private static void VerifyStructureWitness(Assembly assembly)

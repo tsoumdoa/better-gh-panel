@@ -89,10 +89,6 @@ namespace BetterGhPanel
         private bool PairedInputPresent() => Params.Input[1].SourceCount != 0 ||
             !(Params.Input[1] is Param_GenericObject input) || input.PersistentData.PathCount != 0;
 
-        private bool InputStructuresCurrent() => PanelTreeOperations.StructureStillMatches(_liveInputTree, _inputTree) &&
-            PairedInputPresent() == _pairedInputPresent && (!_pairedInputPresent ||
-            PanelTreeOperations.StructureStillMatches(_livePairedTree, _pairedInputTree));
-
         private void PublishOutputs(IGH_DataAccess da, Func<bool> solveCurrent)
         {
             var session = Session;
@@ -101,36 +97,57 @@ namespace BetterGhPanel
             // A holder may have changed after a measured query completed. Do not
             // publish a filtered result against a different inner geometry.
             bool current = session.HasCurrentResult && session.GeometrySourcesCurrent(session.Snapshot);
-            if (!solveCurrent()) return;
             bool filtering = PanelQueryPolicy.HasOutputFilter(_outputOptions);
             var empty = new GH_Structure<IGH_Goo>();
             if (current && _queryTree != null && _inputTree != null && !ReferenceEquals(_cachedOutputResult, session.Result))
             {
                 _cachedOutputResult = session.Result;
+                if (session.Result.DisplaySet != null) CountOutputVisits(session.Result.RowPositions.Count);
+                else if (filtering && (session.Result.RowPositions.Count != _queryTree.DataCount || session.Result.BranchPaths.Count != _queryTree.PathCount))
+                    CountOutputVisits(_queryTree.DataCount);
                 _filteredData = session.Result.DisplaySet != null
                     ? PanelOutputOperations.DisplaySet(_queryTree, session.Result, session.Result.RowPositions, session.Result.BranchPaths)
                     : filtering ? PanelTreeOperations.Filter(_queryTree, session.Result) : _queryTree;
+                if (_pairedQueryTree != null && (session.Result.RowPositions.Count != _pairedQueryTree.DataCount || session.Result.BranchPaths.Count != _pairedQueryTree.PathCount))
+                    CountOutputVisits(_pairedQueryTree.DataCount);
                 _filteredPair = _pairedQueryTree == null ? null : PanelTreeOperations.Filter(_pairedQueryTree, session.Result);
                 _filteredMask = null;
             }
             // Selection-only solutions reuse unchanged query outputs. A large
             // original-shape mask is built once per filtered result, not per click.
             if (current && _inputTree != null && OutputScope == PanelOutputScope.Filtered && _filteredMask == null)
+            {
+                CountOutputVisits((long)_inputTree.DataCount + session.Result.RowPositions.Count);
                 _filteredMask = PanelOutputOperations.Mask(_inputTree, _retainedSources, session.Result.RowPositions);
+            }
             var data = current ? _filteredData ?? empty : !filtering && _queryTree != null ? _queryTree : empty;
             var selectedPositions = current ? RowSelection.OrderedPositions(session.Result) : Array.Empty<int>();
+            if (current && _queryTree != null && selectedPositions.Count > 0)
+                CountOutputVisits(session.Result.DisplaySet != null ? selectedPositions.Count : _queryTree.DataCount);
             var selected = current && _queryTree != null ? session.Result.DisplaySet != null
                 ? PanelOutputOperations.DisplaySet(_queryTree, session.Result, selectedPositions, RowSelection.BranchPaths(session.Result))
                 : PanelTreeOperations.Select(_queryTree, selectedPositions) : empty;
-            if (!solveCurrent()) return;
-            da.SetDataTree(0, data);
-            da.SetDataTree(1, selected);
-            da.SetDataTree(2, !current || _inputTree == null ? new GH_Structure<GH_Boolean>() : OutputScope == PanelOutputScope.Filtered
-                ? _filteredMask! : PanelOutputOperations.Mask(_inputTree, _retainedSources, selectedPositions));
-            da.SetDataTree(3, !current || _pairedQueryTree == null ? empty : OutputScope == PanelOutputScope.Filtered
+            if (current && _inputTree != null && OutputScope == PanelOutputScope.Selected)
+                CountOutputVisits((long)_inputTree.DataCount + selectedPositions.Count);
+            var mask = !current || _inputTree == null ? new GH_Structure<GH_Boolean>() : OutputScope == PanelOutputScope.Filtered
+                ? _filteredMask! : PanelOutputOperations.Mask(_inputTree, _retainedSources, selectedPositions);
+            if (current && _pairedQueryTree != null && OutputScope == PanelOutputScope.Selected && selectedPositions.Count > 0)
+                CountOutputVisits(_pairedQueryTree.DataCount);
+            var paired = !current || _pairedQueryTree == null ? empty : OutputScope == PanelOutputScope.Filtered
                 ? _filteredPair ?? empty : session.Result.DisplaySet?.IsBranchSet == true
                     ? PanelTreeOperations.SelectBranches(_filteredPair ?? empty, RowSelection.BranchPaths(session.Result))
-                    : PanelTreeOperations.Select(_pairedQueryTree, selectedPositions));
+                    : PanelTreeOperations.Select(_pairedQueryTree, selectedPositions);
+            // Tree construction above only reads captured structures and managed
+            // query data. Run the full freshness fence once, after all of it and
+            // immediately before GH receives any output.
+            BeforeOutputValidationForTesting?.Invoke();
+            if (!solveCurrent()) return;
+            if (CaptureDiagnosticsForTesting)
+                OutputPublicationItemsForTesting += (long)data.DataCount + selected.DataCount + mask.DataCount + paired.DataCount;
+            da.SetDataTree(0, data);
+            da.SetDataTree(1, selected);
+            da.SetDataTree(2, mask);
+            da.SetDataTree(3, paired);
             if (_pairedError != null) AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, _pairedError);
             _publishedSelectionVersion = _selectionVersion;
             _publishedScope = OutputScope;

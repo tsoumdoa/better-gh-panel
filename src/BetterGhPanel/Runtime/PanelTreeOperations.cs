@@ -22,7 +22,11 @@ namespace BetterGhPanel.Runtime
         }
 
         internal static bool StructureStillMatches(GH_Structure<IGH_Goo>? source, GH_Structure<IGH_Goo>? captured)
+            => StructureStillMatchesWithVisits(source, captured, out _);
+
+        internal static bool StructureStillMatchesWithVisits(GH_Structure<IGH_Goo>? source, GH_Structure<IGH_Goo>? captured, out int visits)
         {
+            visits = 0;
             try
             {
                 if (source == null || captured == null || source.PathCount != captured.PathCount) return false;
@@ -30,7 +34,10 @@ namespace BetterGhPanel.Runtime
                 {
                     if (source.Paths[b].CompareTo(captured.Paths[b]) != 0 || source.Branches[b].Count != captured.Branches[b].Count) return false;
                     for (int i = 0; i < source.Branches[b].Count; i++)
+                    {
+                        visits++;
                         if (!ReferenceEquals(source.Branches[b][i], captured.Branches[b][i])) return false;
+                    }
                 }
                 return true;
             }

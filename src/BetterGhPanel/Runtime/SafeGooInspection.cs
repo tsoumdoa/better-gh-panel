@@ -26,10 +26,11 @@ namespace BetterGhPanel.Runtime
 
     internal readonly struct CapturedGeometryLeaf
     {
-        internal CapturedGeometryLeaf(GeometryBase? geometry, bool trusted, bool hasReference, MeasurementReferenceState reference)
-        { Geometry = geometry; Trusted = trusted; HasReference = hasReference; Reference = reference; }
+        internal CapturedGeometryLeaf(GeometryBase? geometry, bool trusted, bool readable, bool hasReference, MeasurementReferenceState reference)
+        { Geometry = geometry; Trusted = trusted; Readable = readable; HasReference = hasReference; Reference = reference; }
         internal GeometryBase? Geometry { get; }
         internal bool Trusted { get; }
+        internal bool Readable { get; }
         internal bool HasReference { get; }
         internal MeasurementReferenceState Reference { get; }
     }
@@ -75,7 +76,7 @@ namespace BetterGhPanel.Runtime
         // Exact GH_ObjectWrapper.Value and GH_GeometricGooWrapper.InternalGoo are
         // direct field-backed getters in the supported SDK. Their other members may
         // delegate and must not be used before classification.
-        internal static Identity ResolveIdentity(IGH_Goo? root, Budget budget, CaptureGraphWitness? graph = null)
+        internal static Identity ResolveIdentity(IGH_Goo? root, CaptureGraphWitness? graph = null)
         {
             if (root == null) return new Identity("Null", true, null);
             Type rootType = root.GetType();
@@ -90,16 +91,12 @@ namespace BetterGhPanel.Runtime
             bool known = true;
             string? name = null;
             GH_GeometryGroup? group = null;
-            int identityRemaining = MaxNodesPerRoot;
             for (int depth = 0; depth < MaxDepth && current != null; depth++)
             {
                 if (!seen.Add(current)) { known = false; break; }
                 Type type = current.GetType();
-                // One direct wrapper read per row retains known Goo/{Group} identities
-                // even after aggregate inspection is exhausted. Deeper chains share the
-                // per-capture work budget with graph validity inspection.
-                if (depth > 0 && (type == typeof(GH_ObjectWrapper) || type == typeof(GH_GeometricGooWrapper)) &&
-                    !budget.Take(ref identityRemaining)) { known = false; break; }
+                // Resolve only the captured exact chain. The existing depth limit
+                // bounds this identity work per row independently of group traversal.
                 if (type == typeof(GH_ObjectWrapper))
                 {
                     layers.Add(false);
@@ -144,7 +141,7 @@ namespace BetterGhPanel.Runtime
                 {
                     var leaf = directLeaf.Value;
                     capturedGeometry = leaf.Geometry;
-                    direct = CapturedGeometryValidity(rootType, leaf.Geometry, leaf.Trusted, leaf.HasReference, leaf.Reference, true);
+                    direct = CapturedGeometryValidity(rootType, leaf.Geometry, leaf.Trusted, leaf.HasReference, leaf.Reference, true, leaf.Readable);
                 }
                 else if (graph?.ManagedCopy(root) is IGH_Goo copy) direct = KnownManagedValidity(copy);
                 else direct = LeafValidity(root, out capturedGeometry, true);
@@ -197,7 +194,7 @@ namespace BetterGhPanel.Runtime
                         else
                         {
                             geometry = target as GeometryBase;
-                            status = CapturedGeometryValidity(type, geometry, leaf.Trusted, leaf.HasReference, leaf.Reference, false);
+                            status = CapturedGeometryValidity(type, geometry, leaf.Trusted, leaf.HasReference, leaf.Reference, false, leaf.Readable);
                         }
                     }
                     else status = LeafValidity(frame.Node, out geometry, false);
@@ -234,6 +231,15 @@ namespace BetterGhPanel.Runtime
             {
                 if (node is IGH_Goo goo)
                 {
+                    if (node.GetType() == typeof(GH_Transform))
+                    {
+                        // GH_Transform can contain arbitrary ITransform objects.
+                        // Only the empty or single exact stock matrix form is safe.
+                        var transforms = ((GH_Transform)goo).CompoundTransforms;
+                        if (transforms.Count > 1 || (transforms.Count == 1 &&
+                            transforms[0]?.GetType() != typeof(Grasshopper.Kernel.Types.Transforms.Generic))) return PanelValidity.Unverified;
+                        return goo.IsValid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
+                    }
                     // A constant stock TypeName does not make a goo's validity path safe:
                     // some stock holders can contain externally supplied implementations.
                     if (!HasTrustedLeafValidity(node.GetType())) return PanelValidity.Unverified;
@@ -260,7 +266,7 @@ namespace BetterGhPanel.Runtime
         }
 
         private static PanelValidity CapturedGeometryValidity(Type holderType, GeometryBase? geometry, bool trusted,
-            bool hasReference, MeasurementReferenceState reference, bool standalone)
+            bool hasReference, MeasurementReferenceState reference, bool standalone, bool capturedReadable = true)
         {
             try
             {
@@ -270,8 +276,7 @@ namespace BetterGhPanel.Runtime
                 if (geometry == null) return PanelValidity.VerifiedInvalid;
                 if (!standalone && (geometry.GetType() == typeof(PolylineCurve) || geometry.GetType() == typeof(NurbsCurve)) &&
                     !CurveCandidatePreflight(geometry)) return PanelValidity.Unverified;
-                if ((holderType == typeof(GH_Curve) || holderType == typeof(GH_Surface) || holderType == typeof(GH_Brep)) &&
-                    !MeasurementSourceCanRead(geometry)) return PanelValidity.Unverified;
+                if (!capturedReadable || !MeasurementSourceCanRead(geometry)) return PanelValidity.Unverified;
                 return geometry.IsValid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
             }
             catch (Exception) { return PanelValidity.Unverified; }
@@ -307,7 +312,8 @@ namespace BetterGhPanel.Runtime
 
         // Only exact built-in holders are inspected. Never dispatch through an
         // arbitrary IGH_GeometricGoo or unwrap a group to prepare a measurement.
-        internal static bool TryGetMeasurementReference(IGH_Goo goo, out MeasurementReferenceState state, bool requireDocumentContext = true)
+        internal static bool TryGetMeasurementReference(IGH_Goo goo, out MeasurementReferenceState state,
+            bool requireDocumentContext = true, bool deferManagedLoad = false)
         {
             state = default;
             Guid id; bool referenced, loaded; int edge = -1;
@@ -318,20 +324,33 @@ namespace BetterGhPanel.Runtime
             { var holder = (GH_Surface)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
             else if (type == typeof(GH_Brep))
             { var holder = (GH_Brep)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
+            else if (type == typeof(GH_Mesh))
+            { var holder = (GH_Mesh)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
+            else if (type == typeof(GH_Point))
+            { var holder = (GH_Point)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = !deferManagedLoad && holder.IsGeometryLoaded; }
+            else if (type == typeof(GH_Plane))
+            { var holder = (GH_Plane)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = !deferManagedLoad && holder.IsGeometryLoaded; }
+            else if (type == typeof(GH_Box))
+            { var holder = (GH_Box)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = !deferManagedLoad && holder.IsGeometryLoaded; }
             else return false;
-            uint documentSerial = 0, objectSerial = 0;
-            if (requireDocumentContext && (referenced || id != Guid.Empty))
+            state = new MeasurementReferenceState(id, referenced, loaded, edge, 0, 0);
+            return !requireDocumentContext || TryResolveCapturedReference(state, out state);
+        }
+
+        internal static bool TryResolveCapturedReference(MeasurementReferenceState raw, out MeasurementReferenceState state)
+        {
+            state = raw;
+            if (raw.Referenced || raw.Id != Guid.Empty)
             {
                 // There is no public holder API exposing which document supplied
                 // a loaded value. Admit references only while the active document
                 // has the referenced object; record both runtime identities.
                 var document = Rhino.RhinoDoc.ActiveDoc;
-                var obj = document?.Objects.FindId(id);
-                if (!loaded || id == Guid.Empty || document == null || obj == null) return false;
-                documentSerial = document.RuntimeSerialNumber;
-                objectSerial = obj.RuntimeSerialNumber;
+                var obj = document?.Objects.FindId(raw.Id);
+                if (!raw.Loaded || raw.Id == Guid.Empty || document == null || obj == null) return false;
+                state = new MeasurementReferenceState(raw.Id, raw.Referenced, raw.Loaded, raw.Edge,
+                    document.RuntimeSerialNumber, obj.RuntimeSerialNumber);
             }
-            state = new MeasurementReferenceState(id, referenced, loaded, edge, documentSerial, objectSerial);
             return true;
         }
 
@@ -349,7 +368,8 @@ namespace BetterGhPanel.Runtime
             // that might reenter. Validation will use this object, never reread it.
             bool trusted = TryGetTrustedGeometry(goo, out var geometry);
             bool hasReference = TryGetMeasurementReference(goo, out var reference, false);
-            leaf = new CapturedGeometryLeaf(geometry, trusted, hasReference, reference);
+            bool readable = geometry == null || !trusted || MeasurementSourceCanRead(geometry);
+            leaf = new CapturedGeometryLeaf(geometry, trusted, readable, hasReference, reference);
             return true;
         }
 
@@ -360,10 +380,10 @@ namespace BetterGhPanel.Runtime
             var document = Rhino.RhinoDoc.ActiveDoc;
             var obj = document?.Objects.FindId(reference.Id);
             if (!reference.Loaded || reference.Id == Guid.Empty || document == null || obj == null)
-                return new CapturedGeometryLeaf(leaf.Geometry, leaf.Trusted, false, reference);
+                return new CapturedGeometryLeaf(leaf.Geometry, leaf.Trusted, leaf.Readable, false, reference);
             var resolved = new MeasurementReferenceState(reference.Id, reference.Referenced, reference.Loaded, reference.Edge,
                 document.RuntimeSerialNumber, obj.RuntimeSerialNumber);
-            return new CapturedGeometryLeaf(leaf.Geometry, leaf.Trusted, true, resolved);
+            return new CapturedGeometryLeaf(leaf.Geometry, leaf.Trusted, leaf.Readable, true, resolved);
         }
 
         internal static bool TryCaptureStandaloneGeometry(IGH_Goo goo, out CapturedGeometryLeaf leaf)
@@ -389,6 +409,24 @@ namespace BetterGhPanel.Runtime
             }
             catch (Exception) { return false; }
             finally { GC.KeepAlive(source); }
+        }
+
+        // Capture freshness applies to every exact geometry holder, including
+        // meshes and null, invalid or unsupported inner values. This check does
+        // not make those values eligible for measurement.
+        internal static bool IsCurrentCapturedGeometry(IGH_Goo? holder, CapturedGeometryLeaf captured)
+        {
+            try
+            {
+                if (holder == null || !IsGeometryHolder(holder.GetType())) return false;
+                bool trusted = TryGetTrustedGeometry(holder, out var geometry);
+                if (trusted != captured.Trusted || !ReferenceEquals(geometry, captured.Geometry)) return false;
+                if (!TryGetMeasurementReference(holder, out var reference, captured.HasReference) || !reference.Equals(captured.Reference)) return false;
+                if (!captured.HasReference && TryGetMeasurementReference(holder, out _, true)) return false;
+                return geometry == null || !trusted || MeasurementSourceCanRead(geometry) == captured.Readable;
+            }
+            catch (Exception) { return false; }
+            finally { GC.KeepAlive(captured.Geometry); }
         }
 
         /// <summary>
@@ -429,7 +467,7 @@ namespace BetterGhPanel.Runtime
             type == typeof(GH_Interval2D) || type == typeof(GH_Guid) || type == typeof(GH_Time) ||
             type == typeof(GH_Point) || type == typeof(GH_Plane) || type == typeof(GH_Vector) ||
             type == typeof(GH_Line) || type == typeof(GH_Arc) || type == typeof(GH_Circle) ||
-            type == typeof(GH_Rectangle) || type == typeof(GH_Box) || IsGeometryHolder(type);
+            type == typeof(GH_Rectangle) || type == typeof(GH_Box) || type == typeof(GH_MeshFace) || IsGeometryHolder(type);
 
         internal static string? TrustedTypeName(Type type)
         {
