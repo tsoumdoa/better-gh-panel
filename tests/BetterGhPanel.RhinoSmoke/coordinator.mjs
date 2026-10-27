@@ -12,7 +12,7 @@ const desktopFixtures = new Set([
 ]);
 // These comparison captures are opt-in. Their results are diagnostic evidence
 // and must not replace any required Panel+ fixture.
-const diagnosticFixtures = new Set(['preview-stock-compatibility-draw', 'preview-compatibility-conduit']);
+const diagnosticFixtures = new Set(['preview-stock-compatibility-draw', 'preview-compatibility-conduit', 'clipboard-interop-diagnostic']);
 
 export const fixtureHostMode = fixture => desktopFixtures.has(fixture) ? 'inactive-desktop' : 'hidden';
 export const fixtureCommand = (executable, fixture, plugin) =>

@@ -68,6 +68,7 @@ internal static class Program
         ["polyline-safety"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryPolylineSafetyChecks.Run(assembly); },
         ["preview-safety"] = PreviewSafetyChecks.Run,
         ["preview-geometry"] = PreviewGeometryChecks.Run,
+        ["clipboard-interop-diagnostic"] = PreviewGeometryChecks.RunClipboardInteropDiagnostic,
         ["preview-reentrant-draw"] = PreviewSafetyChecks.RunReentrantDraw,
         ["preview-metadata-safety"] = assembly => { FixtureUserData.EnsureRegistered(); return PreviewSafetyChecks.RunMetadata(assembly); },
         ["preview-native-resources"] = PreviewSafetyChecks.RunNativeResources,

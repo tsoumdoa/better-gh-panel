@@ -47,7 +47,8 @@ internal static class RawClipboardProbe
             {
                 var bytes = new byte[(int)size];
                 Marshal.Copy(data, bytes, 0, bytes.Length);
-                Console.WriteLine(bytes.Length + ":" + Convert.ToHexString(SHA256.HashData(bytes)));
+                Console.WriteLine(bytes.Length + ":" + Convert.ToHexString(SHA256.HashData(bytes)) + ":" +
+                    Convert.ToHexString(bytes, 0, Math.Min(64, bytes.Length)));
             }
             finally { GlobalUnlock(handle); }
             return 0;

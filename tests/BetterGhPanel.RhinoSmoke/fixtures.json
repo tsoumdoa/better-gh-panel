@@ -20,6 +20,7 @@
   "polyline-safety",
   "preview-safety",
   "preview-geometry",
+  "clipboard-interop-diagnostic",
   "preview-reentrant-draw",
   "preview-metadata-safety",
   "preview-native-resources",
