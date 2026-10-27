@@ -750,7 +750,7 @@ internal static class RowActionChecks
             Check(pendingStatus == "Copy cancelled", "Superseded value copy reports cancellation: " + pendingStatus);
             // Cancelling the copy can complete before its measurement worker.
             // Inspect the clipboard only after the late UI callback has run.
-            await WaitUntil(() => !Field<bool>(session, "_geometryRunning"));
+            await WaitUntil(() => !PanelTestAdapter.GeometryRunning(session));
             var currentClipboard = ReadClipboardBytes(out var currentTransport);
             if (!expectedClipboard.SequenceEqual(currentClipboard))
             {
@@ -777,7 +777,7 @@ internal static class RowActionChecks
         finally
         {
             gate.Set();
-            await WaitUntil(() => !Field<bool>(session, "_geometryRunning"));
+            await WaitUntil(() => !PanelTestAdapter.GeometryRunning(session));
         }
 
         component.ExpireSolution(true);
@@ -796,7 +796,7 @@ internal static class RowActionChecks
         component.ExpireSolution(true);
         await WaitForQuery(session);
         using var gate = new ManualResetEventSlim(false);
-        var resolver = Field<Func<int, Func<PanelGeometryInfo?>?>>(session, "_geometryDetailResolver");
+        var restoreResolver = PanelTestAdapter.SaveGeometryResolver(session);
         Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
         {
             (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
@@ -816,21 +816,21 @@ internal static class RowActionChecks
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
             Paint(component, canvas);
             Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
-            await WaitUntil(() => Field<bool>(session, "_geometryRunning"));
+            await WaitUntil(() => PanelTestAdapter.GeometryRunning(session));
             Check(Field<bool>(component.Attributes, "_copyPending"), "Context-menu value copy is pending during geometry measurement");
             Paint(component, canvas);
             var point = new PointF(row.X + 45, row.Y + row.Height / 2);
             MouseDown(component, canvas, point, 1);
             TrailingDoubleClick(component, canvas, point);
             gate.Set();
-            await WaitUntil(() => !Field<bool>(session, "_geometryRunning"));
+            await WaitUntil(() => !PanelTestAdapter.GeometryRunning(session));
             Check(!Field<bool>(component.Attributes, "_copyPending") && PanelTestAdapter.SelectedPosition(component) < 0 &&
                 ClipboardText() == "keep cancelled selection clipboard", "Deselecting cancels an in-flight value copy and rejects its late clipboard publication");
         }
         finally
         {
             gate.Set();
-            Method(session, "SetGeometryDetailResolver").Invoke(session, new object[] { resolver });
+            restoreResolver();
         }
     }
 
@@ -839,7 +839,7 @@ internal static class RowActionChecks
         component.ExpireSolution(true);
         await WaitForQuery(session);
         using var gate = new ManualResetEventSlim(false);
-        var resolver = Field<Func<int, Func<PanelGeometryInfo?>?>>(session, "_geometryDetailResolver");
+        var restoreResolver = PanelTestAdapter.SaveGeometryResolver(session);
         Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
         {
             (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
@@ -861,11 +861,11 @@ internal static class RowActionChecks
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
             Paint(component, canvas);
             Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
-            await WaitUntil(() => Field<bool>(session, "_geometryRunning"));
+            await WaitUntil(() => PanelTestAdapter.GeometryRunning(session));
             Check(Field<bool>(component.Attributes, "_copyPending"), "Value copy is pending while its geometry is measured");
             component.DocumentContextChanged(document, GH_DocumentContext.Unloaded);
             gate.Set();
-            await WaitUntil(() => !Field<bool>(session, "_geometryRunning"));
+            await WaitUntil(() => !PanelTestAdapter.GeometryRunning(session));
             component.DocumentContextChanged(document, GH_DocumentContext.Loaded);
             Paint(component, canvas);
             Check(!Field<bool>(component.Attributes, "_copyPending") && ClipboardText() == "keep document-switch clipboard",
@@ -876,7 +876,7 @@ internal static class RowActionChecks
         finally
         {
             gate.Set();
-            Method(session, "SetGeometryDetailResolver").Invoke(session, new object[] { resolver });
+            restoreResolver();
         }
     }
 

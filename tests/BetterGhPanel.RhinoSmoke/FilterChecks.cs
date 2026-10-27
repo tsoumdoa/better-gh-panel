@@ -46,16 +46,17 @@ internal static class FilterChecks
         using var fixture = new Fixture(assembly, rows);
         await WaitForQuery(fixture);
         var prepared = new List<int>();
-        int active = 0, maximumActive = 0, published = 0;
+        int active = 0, maximumActive = 0, published = 0, computations = 0;
         int uiThread = Environment.CurrentManagedThreadId;
         bool preparationOnUi = true, computationOnWorker = true;
         fixture.OnResult(() => published++);
-        fixture.SetResolver(position =>
+        fixture.SetOwnedResolver(position =>
         {
             preparationOnUi &= Environment.CurrentManagedThreadId == uiThread;
             prepared.Add(position);
             return () =>
             {
+                Interlocked.Increment(ref computations);
                 computationOnWorker &= Environment.CurrentManagedThreadId != uiThread;
                 maximumActive = Math.Max(maximumActive, Interlocked.Increment(ref active));
                 try
@@ -88,25 +89,25 @@ internal static class FilterChecks
         fixture.Query(options);
         fixture.Attach(new PanelSnapshot(rows, fixture.Snapshot.Branches, PanelUnitConversion.SquareMillimetersToSquareMeters), true);
         await WaitForQuery(fixture);
-        Check(fixture.Result.RowPositions.SequenceEqual(new[] { 1 }) && prepared.Count == 3,
+        Check(fixture.Result.RowPositions.SequenceEqual(new[] { 1 }) && Volatile.Read(ref computations) == 3,
             "A unit-only snapshot filters retained raw measurements using full precision converted area");
 
         int beforeError = published;
         options.Search = "> invalid";
         fixture.Query(options);
         await WaitUntil(() => !fixture.IsBusy);
-        Check(fixture.Error != null && published == beforeError + 1 && prepared.Count == 3,
+        Check(fixture.Error != null && published == beforeError + 1 && Volatile.Read(ref computations) == 3,
             "Invalid metric expressions report completion with an error before preparing geometry");
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "[" });
         await WaitUntil(() => !fixture.IsBusy);
-        Check(fixture.Error != null && prepared.Count == 3, "Invalid regex reports an error without geometry work");
+        Check(fixture.Error != null && Volatile.Read(ref computations) == 3, "Invalid regex reports an error without geometry work");
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Value, Search = "> 60" });
         await WaitForQuery(fixture);
-        Check(fixture.Result.RowPositions.SequenceEqual(new[] { 8 }) && prepared.Count == 3,
+        Check(fixture.Result.RowPositions.SequenceEqual(new[] { 8 }) && Volatile.Read(ref computations) == 3,
             "Changing only filter mode starts a fresh query and value filters use numeric rows without geometry work");
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Volume });
         await WaitForQuery(fixture);
-        Check(fixture.Result.RowPositions.Count == rows.Length && prepared.Count == 3,
+        Check(fixture.Result.RowPositions.Count == rows.Length && Volatile.Read(ref computations) == 3,
             "An empty metric expression leaves the view unfiltered without computing deferred geometry");
     }
 
@@ -419,10 +420,12 @@ internal static class FilterChecks
 
     private sealed class Fixture : IDisposable
     {
+        private readonly Assembly _assembly;
         private readonly object _session;
         private readonly Type _type;
         internal Fixture(Assembly assembly, IReadOnlyList<PanelRow> rows)
         {
+            _assembly = assembly;
             _type = assembly.GetType("BetterGhPanel.Runtime.PanelSession", true)!;
             _session = Activator.CreateInstance(_type, new object[] { (Action)(() => { }) })!;
             Snapshot = new PanelSnapshot(rows, rows.GroupBy(row => row.Path).Select(group => new PanelBranch(group.Key, group.Count())).ToArray());
@@ -441,6 +444,8 @@ internal static class FilterChecks
         internal void OnResult(Action callback) => _type.GetEvent("ResultChanged")!.AddEventHandler(_session, (EventHandler)((_, __) => callback()));
         internal bool Pending(int position) => (bool)Invoke("IsGeometryPending", Snapshot, position)!;
         internal void SetResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) => Invoke("SetGeometryDetailResolver", resolver);
+        internal void SetOwnedResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) =>
+            Invoke("SetGeometryPreparationResolver", HostMeasurementPreparation.Resolver(_assembly, resolver));
         internal void Attach(PanelSnapshot snapshot, bool retain = false)
         {
             Snapshot = snapshot;

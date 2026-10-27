@@ -1029,8 +1029,31 @@ internal static class Program
     private static void Click(GH_Component component, GH_Canvas canvas, RectangleF region) => Assert(component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(region.X + region.Width / 2, region.Y + region.Height / 2))) == GH_ObjectResponse.Handled, "Canvas control responds to native mouse events");
     private static void ClickMenuRow(GH_Component component, GH_Canvas canvas, int index)
     {
-        var menu = PanelTestAdapter.MenuBounds(component);
-        component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(menu.X + 10, menu.Y + index * 20 + 10)));
+        var state = component.Attributes.GetType().GetField("_menu", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component.Attributes)!;
+        int Value(string name) => (int)state.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(state)!;
+        int count = Value("Count");
+        if (index < 0 || index >= count) throw new ArgumentOutOfRangeException(nameof(index));
+        for (int attempts = 0; attempts <= count; attempts++)
+        {
+            // Page choices are actionable only after that page has been painted.
+            using (var bitmap = new Bitmap(canvas.Width, canvas.Height))
+            using (var graphics = Graphics.FromImage(bitmap))
+            {
+                canvas.Viewport.ApplyProjection(graphics);
+                PanelTestAdapter.Render(component, canvas, graphics);
+            }
+            var menu = PanelTestAdapter.MenuBounds(component);
+            int offset = Value("Offset"), visible = Value("Visible");
+            if (index >= offset && index < offset + visible)
+            {
+                component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(menu.X + 10, menu.Y + (index - offset) * 20 + 10)));
+                return;
+            }
+            float x = index < offset ? menu.X + 10 : menu.Right - 10;
+            component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(x, menu.Bottom - 10)));
+            if (Value("Offset") == offset) break;
+        }
+        throw new InvalidOperationException("Could not reach the requested painted menu row.");
     }
     private static void DrawCanvasPreview(GH_Component component, GH_Canvas canvas, int dpi = 96, string? artifactName = null)
     {

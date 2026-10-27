@@ -14,6 +14,16 @@ internal static class PanelTestAdapter
     private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
     internal static object Session(GH_Component component) => Property<object>(component, "Session");
     internal static bool HasSession(GH_Component component) => Field<object?>(component, "_session") != null;
+    internal static bool GeometryRunning(object session) => Field<object?>(Field<object>(session, "_geometry"), "_running") != null;
+
+    internal static Action SaveGeometryResolver(object session)
+    {
+        var preparation = Field<object?>(session, "_geometryPreparationResolver");
+        var legacy = Field<object?>(session, "_geometryDetailResolver");
+        string method = preparation != null ? "SetGeometryPreparationResolver" : "SetGeometryDetailResolver";
+        var resolver = preparation ?? legacy;
+        return () => session.GetType().GetMethod(method, PrivateInstance)!.Invoke(session, new[] { resolver });
+    }
     internal static int Preset(GH_Component component) => Property<int>(component, "PreviewSize");
     internal static string PreviewMode(GH_Component component) => Property<object>(component, "PreviewMode").ToString()!;
     internal static bool ShowItemOrder(GH_Component component) => Property<bool>(component, "ShowItemOrder");

@@ -69,8 +69,11 @@ internal static class GeometryHintChecks
             "Mesh hints show stored vertex and face counts");
         Check(snapshot.Rows[8].DisplayValue == "Srf · untrimmed" && snapshot.Rows[9].DisplayValue == "Brep · closed · 6 faces",
             "Surface and Brep capture omits mass calculations");
-        Check(snapshot.Rows[10].DisplayValue == "<Widget>" && !snapshot.Rows[11].IsValid,
-            "Third-party and invalid goo retain safe fallback summaries without formatting");
+        Check(snapshot.Rows[10].DisplayValue == "<UnformattedGoo>" &&
+            snapshot.Rows[10].Validity == PanelValidity.Unverified && !snapshot.Rows[10].TypeIdentityAvailable &&
+            unknown.TypeNameReads == 0 && unknown.ValidityReads == 0 && unknown.FormatCalls == 0 &&
+            snapshot.Rows[11].Validity == PanelValidity.VerifiedInvalid,
+            "Third-party metadata remains unverified without invoking custom getters or formatting, while invalid geometry stays invalid");
         Check(!string.IsNullOrWhiteSpace(snapshot.Rows[11].InvalidReason) && snapshot.Rows[11].GeometryInfo == null,
             "Invalid geometry captures its validity reason and cannot be measured");
         var lineDetails = Details(lineCurve)!;
@@ -390,10 +393,11 @@ internal static class GeometryHintChecks
 
     private sealed class UnformattedGoo : GH_Goo<string>
     {
-        public override bool IsValid => true;
-        public override string TypeName => "Widget";
+        internal int TypeNameReads, ValidityReads, FormatCalls;
+        public override bool IsValid { get { ValidityReads++; return true; } }
+        public override string TypeName { get { TypeNameReads++; return "Widget"; } }
         public override string TypeDescription => "Test third-party data";
         public override IGH_Goo Duplicate() => new UnformattedGoo();
-        public override string ToString() => throw new InvalidOperationException("Do not format third-party goo during capture or hover");
+        public override string ToString() { FormatCalls++; throw new InvalidOperationException("Do not format third-party goo during capture or hover"); }
     }
 }

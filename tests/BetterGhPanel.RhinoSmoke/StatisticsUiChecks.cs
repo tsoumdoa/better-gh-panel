@@ -105,6 +105,14 @@ internal static class StatisticsUiChecks
             {
                 bounds = PanelTestAdapter.MenuBounds(component);
                 Click(component, canvas, new RectangleF(bounds.Right - 20, bounds.Bottom - 18, 16, 16));
+                if (i == 0)
+                {
+                    int paintedOffset = Property<int>(menu, "Offset");
+                    Click(component, canvas, new RectangleF(bounds.Right - 20, bounds.Bottom - 18, 16, 16));
+                    Check(Property<int>(menu, "Offset") == paintedOffset,
+                        "Statistics paging rejects a second click until the new page is painted");
+                }
+                Paint(component, canvas);
             }
             Check(Property<int>(menu, "Offset") + Property<int>(menu, "Visible") == menuCount,
                 "Native minimum Half paging reaches the final distinct value");

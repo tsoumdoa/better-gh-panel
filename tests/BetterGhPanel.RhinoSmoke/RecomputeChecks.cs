@@ -91,7 +91,7 @@ internal static class RecomputeChecks
             Invoke(session, "AttachSnapshot", small);
             await Wait(() => Current(session));
             gate.Set();
-            await Wait(() => !Field<bool>(session, "_geometryRunning"));
+            await Wait(() => !PanelTestAdapter.GeometryRunning(session));
             Check(Current(session) && ReferenceEquals(Result(session).Snapshot, small) && !timer.Enabled,
                 "Late geometry completion cannot replace newer input and completion stops animation");
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "[" });
@@ -183,7 +183,7 @@ internal static class RecomputeChecks
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Value, Search = "> 0" });
             await Wait(() => fixture.Values().SequenceEqual(new[] { 7.0 }));
             gate.Set();
-            await Wait(() => !Field<bool>(session, "_geometryRunning"));
+            await Wait(() => !PanelTestAdapter.GeometryRunning(session));
             await Task.Delay(80);
             Check(fixture.Values().SequenceEqual(new[] { 7.0 }) && fixture.Sink.VolatileData.Paths[0].ToString() == "{9}",
                 "Input replacement rejects late geometry output and propagates only the new solution");
@@ -304,7 +304,7 @@ internal static class RecomputeChecks
                 "Disabled input rejects stale geometry actions without moving the camera");
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "." });
             gate.Set();
-            await Wait(() => !Field<bool>(session, "_geometryRunning"));
+            await Wait(() => !PanelTestAdapter.GeometryRunning(session));
             Paint(component, canvas);
             Check(!Property<bool>(session, "IsBusy") && !Current(session) && !timer.Enabled,
                 "Query changes and late geometry completion cannot restart a disabled panel");

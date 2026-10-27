@@ -67,6 +67,7 @@ internal static class ItemOrderUiChecks
             document.SolutionEnd += (_, __) => solutions++;
             int baselineSolutions = solutions;
             Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Preview));
+            Paint(component, canvas);
             var menu = PanelTestAdapter.MenuBounds(component);
             Click(component, canvas, new RectangleF(menu.X + 4, menu.Y + 60, menu.Width - 8, 20));
             Check(PanelTestAdapter.ShowItemOrder(component) && Labels(component).Select(label => label.Text).SequenceEqual(new[] { "0", "0" }),

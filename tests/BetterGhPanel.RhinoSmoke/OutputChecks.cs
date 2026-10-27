@@ -273,7 +273,7 @@ internal static class OutputChecks
             await fixture.Ready(() => fixture.Values(0) == "42" && fixture.Values(3) == "new partner" && fixture.Values(2) == "True");
             var snapshot = fixture.Result.Snapshot;
             gate.Set();
-            await Wait(() => !(bool)fixture.Session.GetType().GetField("_geometryRunning", Instance)!.GetValue(fixture.Session)!);
+            await Wait(() => !PanelTestAdapter.GeometryRunning(fixture.Session));
             Check(ReferenceEquals(snapshot, fixture.Result.Snapshot) && fixture.Values(0) == "42" && fixture.Values(3) == "new partner" &&
                 fixture.Values(1) == "" && fixture.Values(2) == "True", "Late workers and rapid scope/selection changes cannot republish old paired data after replacement input");
         }
