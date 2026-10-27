@@ -1,5 +1,5 @@
 using System;
-using System.Collections;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Reflection;
@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
 using Grasshopper.GUI.Canvas;
+using Grasshopper.GUI.StringDisplay;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Special;
@@ -205,8 +206,34 @@ internal static class GeometryGroupChecks
         fixture.Sinks[output].VolatileData.DataCount > 0 && fixture.Sinks[output].VolatileData.AllData(true).All(value => value?.GetType() == type);
     private static bool[] Flags(OutputChecks.Fixture fixture) => fixture.Sinks[2].VolatileData.AllData(true).Cast<GH_Boolean>().Select(value => value.Value).ToArray();
 
-    private static string[] RenderStock(GH_Panel stock, GH_Document document)
+    internal static void VerifyStockRenderWithoutHost()
     {
+        // Exercise the stock painter without a Rhino process or a GH solution.
+        // The native fixtures separately compare these rendered entries after solving.
+        var stock = new GH_Panel(); stock.CreateAttributes();
+        var source = new VolatileSource(Array.Empty<IGH_Goo>()); source.CreateAttributes(); stock.AddSource(source);
+        var values = Enumerable.Range(0, ItemCount).Select(i => "Group (Facade A) with " + i + " objects").ToArray();
+        values[11] = ""; values[12] = "<empty>"; values[13] = "12,34,56"; values[14] = "12,34,56 (128)";
+        values[15] = "12,34,56 (0)"; values[20] = "Red"; values[21] = "Transparent";
+        stock.AddVolatileDataList(new GH_Path(0), values.Select(value => new GH_String(value)));
+        var previousPalette = GH_Skin.palette_hidden_standard;
+        try
+        {
+            GH_Skin.palette_hidden_standard = null; // reproduce a fresh hidden host
+            var rendered = RenderStock(stock, null);
+            Check(rendered.Length == ItemCount && rendered.SequenceEqual(values.Select(PanelValuePresentation.Visualize)),
+                "Stock rendering initializes the hidden palette and paints all 22 prepared entries without starting Rhino");
+        }
+        finally { GH_Skin.palette_hidden_standard = previousPalette; }
+    }
+
+    private static string[] RenderStock(GH_Panel stock, GH_Document? document)
+    {
+        // The hidden editor does not necessarily load the canvas skin. The stock
+        // panel's full renderer needs its hidden palette for the capsule outline.
+        if (GH_Skin.palette_hidden_standard == null) GH_Skin.LoadSkin();
+        if (GH_Skin.palette_hidden_standard == null)
+            throw new InvalidOperationException("Grasshopper did not initialize the stock panel palette.");
         using var canvas = new GH_Canvas { Size = new Size(800, 1000), Document = document };
         canvas.Viewport.Size = canvas.Size; canvas.Viewport.Target = System.Drawing.Point.Empty; canvas.Viewport.Zoom = 1;
         canvas.Viewport.ComputeProjection();
@@ -216,13 +243,29 @@ internal static class GeometryGroupChecks
         using var bitmap = new Bitmap(canvas.Width, canvas.Height);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.White); canvas.Viewport.ApplyProjection(graphics);
-        var attributes = stock.Attributes;
+        var attributes = (GH_PanelAttributes)stock.Attributes;
         attributes.GetType().GetMethod("Render", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(attributes, new object[] { canvas, graphics, GH_CanvasChannel.Objects });
-        var stack = (IEnumerable?)attributes.GetType().GetField("m_stack", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(attributes)
+        var stack = (GH_StringList<GH_FormattedListItem>?)attributes.GetType()
+            .GetField("m_stack", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(attributes)
             ?? throw new InvalidOperationException("Stock panel did not render its content stack.");
-        return stack.Cast<object>().Where(item => item.GetType().Name == "PanelEntryItem")
-            .Select(item => (string)item.GetType().GetProperty("Text")!.GetValue(item)!).ToArray();
+
+        // Observe the actual stock entries after their RenderItem calls, using
+        // the same destination, clipping and scroll position as the panel.
+        var destination = Rectangle.FromLTRB(attributes.PanelBounds.Left, attributes.ContentBounds.Top,
+            attributes.PanelBounds.Right, attributes.PanelBounds.Bottom);
+        var clip = destination; clip.Inflate(-1, -1);
+        var rendered = new List<string>();
+        graphics.SetClip(clip);
+        try
+        {
+            stack.RenderItems(graphics, destination, stock.ScrollRatio, null, (item, bounds) =>
+            {
+                if (item.GetType().Name == "PanelEntryItem" && bounds.IntersectsWith(clip)) rendered.Add(item.Text);
+            });
+        }
+        finally { graphics.ResetClip(); }
+        return rendered.ToArray();
     }
 
     private static IGH_Goo[] Values()

@@ -151,6 +151,7 @@ internal static class Program
                 VerifyUnitOperations(_loadedPlugin);
                 CaptureSafetyChecks.VerifyManaged(_loadedPlugin);
                 GeometryGroupChecks.VerifyCycles(_loadedPlugin);
+                GeometryGroupChecks.VerifyStockRenderWithoutHost();
                 FullValueChecks.VerifyPaintClipping(_loadedPlugin);
                 Console.WriteLine("PASS: Managed Grasshopper tree and unit operation checks completed (Rhino host not started).");
                 return 0;
