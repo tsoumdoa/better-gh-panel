@@ -22,6 +22,7 @@ internal static class CaptureSafetyChecks
     internal static void VerifyManaged(Assembly assembly)
     {
         AssertionCount = 0;
+        CaptureTransactionChecks.VerifyNestedDataAccess();
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("Capture")!;
         PanelSnapshot Capture(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] items)
         {

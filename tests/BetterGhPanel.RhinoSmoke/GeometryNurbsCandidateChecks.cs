@@ -138,10 +138,12 @@ internal static class GeometryNurbsCandidateChecks
         Check(source.HasUserData && nestedCurve.HasUserData && nestedSurface.HasUserData && nestedTrim.HasUserData && nestedFace.HasUserData,
             "root, curve, surface, trim and face data are present on their original objects");
         PolylineSafetyUserData.Reset(hostile);
-        var prepare = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!.GetMethod("PrepareMeasurement", BindingFlags.Static | BindingFlags.NonPublic)!;
-        Check(prepare.Invoke(null, new object[] { holder, "mm", (int)Rhino.UnitSystem.Millimeters, 0.001 }) == null &&
+        // This checks the bounded reconstruction route only. The production
+        // standalone resolver deliberately falls back to duplicating the Brep.
+        var prepare = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!.GetMethod("PrepareCapturedMeasurement", BindingFlags.Static | BindingFlags.NonPublic)!;
+        Check(prepare.Invoke(null, new object[] { source, "mm", (int)Rhino.UnitSystem.Millimeters, 0.001, false }) == null &&
             PolylineSafetyUserData.Callbacks == 0 && source.HasUserData && nestedCurve.HasUserData && nestedSurface.HasUserData &&
-            nestedTrim.HasUserData && nestedFace.HasUserData, "trimmed Brep remains unavailable without invoking nested data");
+            nestedTrim.HasUserData && nestedFace.HasUserData, "bounded reconstruction rejects a trimmed Brep without invoking nested data");
         PolylineSafetyUserData.Reset(false);
     }
 

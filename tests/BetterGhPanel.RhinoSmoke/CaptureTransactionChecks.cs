@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
@@ -6,6 +8,7 @@ using System.Threading.Tasks;
 using BetterGhPanel.Core;
 using Grasshopper;
 using Grasshopper.GUI;
+using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
@@ -14,6 +17,18 @@ internal static class CaptureTransactionChecks
 {
     private const BindingFlags Static = BindingFlags.Static | BindingFlags.NonPublic;
     private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+
+    internal static void VerifyNestedDataAccess()
+    {
+        IGH_DataAccess access = new NestedCaptureDataAccess();
+        var nested = (NestedCaptureDataAccess)access;
+        nested.Primary.Append(new GH_Number(99), new GH_Path(0));
+        nested.Paired.Append(new GH_String("new"), new GH_Path(0));
+        Check(access.GetDataTree(0, out GH_Structure<IGH_Goo> primary) && ReferenceEquals(primary, nested.Primary) &&
+            access.GetDataTree(1, out GH_Structure<IGH_Goo> paired) && ReferenceEquals(paired, nested.Paired) &&
+            access.SetDataTree(0, primary) && nested.Outputs.TryGetValue(0, out var output) && ReferenceEquals(output, primary),
+            "nested solve seam supplies independent GH input trees and records its output");
+    }
 
     internal static async Task Run(Assembly assembly)
     {
@@ -38,7 +53,10 @@ internal static class CaptureTransactionChecks
             await VerifyRetryLimit(assembly);
             await VerifyReplacementSolve(assembly, false);
             await VerifyReplacementSolve(assembly, true);
-            await VerifyRemoval(assembly);
+            await VerifyRemoval(assembly, false, false);
+            await VerifyRemoval(assembly, true, false);
+            await VerifyRemoval(assembly, false, true);
+            await VerifyRemoval(assembly, true, true);
             await VerifyLock(assembly);
             await VerifyUnchanged(assembly);
         }
@@ -369,17 +387,46 @@ internal static class CaptureTransactionChecks
         fixture.Source.PersistentData.Append(wrappedGroup ? new GH_ObjectWrapper(Group()) : new GH_Curve
         { Value = new PolylineCurve(new[] { Point3d.Origin, new Point3d(2, 0, 0), new Point3d(2, 3, 0) }) }, new GH_Path(0));
         bool called = false;
+        Exception? callbackError = null;
+        PanelSnapshot? nestedSnapshot = null;
+        NestedCaptureDataAccess? nestedAccess = null;
         SetObserver(fixture, (_, __) =>
         {
             SetObserver(fixture, null);
             called = true;
-            fixture.Source.PersistentData.Clear();
-            fixture.Source.PersistentData.Append(new GH_Number(wrappedGroup ? 77 : 99), new GH_Path(0));
-            fixture.Component.ClearData();
-            fixture.Source.ExpireSolution(false);
-            fixture.Document.NewSolution(false, Grasshopper.Kernel.GH_SolutionMode.Silent);
-            fixture.Document.ScheduleSolution(1, _ => fixture.Component.ExpireSolution(false));
+            try
+            {
+                int number = wrappedGroup ? 77 : 99;
+                fixture.Source.PersistentData.Clear();
+                fixture.Source.PersistentData.Append(new GH_Number(number), new GH_Path(0));
+                Console.WriteLine("CAPTURE_REENTRY: clearing the older component capture"); Console.Out.Flush();
+                fixture.Component.ClearData();
+                var access = new NestedCaptureDataAccess();
+                nestedAccess = access;
+                nestedAccess.Primary.Append(new GH_Number(number), new GH_Path(0));
+                nestedAccess.Paired.Append(new GH_String("new"), new GH_Path(0));
+                // Exercise the component's real SolveInstance and publication logic
+                // reentrantly, without recursively entering GH_Document.NewSolution.
+                Console.WriteLine("CAPTURE_REENTRY: starting the newer component solve"); Console.Out.Flush();
+                fixture.Component.GetType().GetMethod("SolveInstance", Private)!.Invoke(fixture.Component, new object[] { access });
+                nestedSnapshot = (PanelSnapshot)fixture.Session.GetType().GetProperty("Snapshot")!.GetValue(fixture.Session)!;
+                Console.WriteLine("CAPTURE_REENTRY: newer component solve returned"); Console.Out.Flush();
+            }
+            catch (Exception error) { callbackError = error; }
         });
+        fixture.Solve();
+        Check(called && callbackError == null, "reentrant component solve completed: " + (callbackError?.ToString() ?? "no error"));
+        Check(nestedSnapshot != null && nestedSnapshot.Rows.Count == 1 && nestedSnapshot.Rows[0].NumericValue == (wrappedGroup ? 77 : 99) &&
+            ReferenceEquals(nestedSnapshot, Field(fixture, "_measurementSnapshot")) &&
+            ReferenceEquals(nestedSnapshot, fixture.Session.GetType().GetProperty("Snapshot")!.GetValue(fixture.Session)) &&
+            nestedAccess != null && nestedAccess.Outputs.TryGetValue(0, out var nestedOutput) &&
+            nestedOutput is GH_Structure<IGH_Goo> nestedTree && nestedTree.AllData(false).Single() is GH_Number nestedNumber &&
+            nestedNumber.Value == (wrappedGroup ? 77 : 99) &&
+            !fixture.Component.Params.Output[0].VolatileData.AllData(false).Any(item => item is GH_Curve || item is GH_ObjectWrapper || item is GH_GeometryGroup),
+            "a newer component solve during " + (wrappedGroup ? "wrapper/group" : "standalone holder") +
+            " capture commits its own output and the older capture cannot replace it");
+        // Once the older GH solution has returned, use the ordinary scheduler to
+        // prove that the replacement also reaches the actual downstream output.
         fixture.Solve();
         await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 1 && fixture.Result.Snapshot.Rows[0].NumericValue == (wrappedGroup ? 77 : 99));
         Check(called && fixture.Component.Params.Output[0].VolatileData.AllData(false).Single() is GH_Number number &&
@@ -387,20 +434,34 @@ internal static class CaptureTransactionChecks
             "expiration and a newer solve during " + (wrappedGroup ? "wrapper/group" : "standalone holder") + " capture cannot publish the older input");
     }
 
-    private static async Task VerifyRemoval(Assembly assembly)
+    private static async Task VerifyRemoval(Assembly assembly, bool wrappedGroup, bool closeDocument)
     {
         using var fixture = new OutputChecks.Fixture(assembly);
-        fixture.Source.PersistentData.Clear(); fixture.Source.PersistentData.Append(new GH_ObjectWrapper(Group()), new GH_Path(0));
+        fixture.Source.PersistentData.Clear();
+        fixture.Source.PersistentData.Append(wrappedGroup ? new GH_ObjectWrapper(Group()) : new GH_Curve
+        { Value = new PolylineCurve(new[] { Point3d.Origin, new Point3d(1, 0, 0), new Point3d(1, 1, 0) }) }, new GH_Path(0));
         bool called = false;
+        object? oldSession = null;
         SetObserver(fixture, (_, __) =>
         {
             SetObserver(fixture, null); called = true;
-            fixture.Document.RemoveObject(fixture.Component, false);
+            oldSession = Field(fixture, "_session");
+            // Avoid changing GH's document object list during its solution. Invoke
+            // the actual component lifecycle callback here, then remove the object
+            // from the document after the older solve returns.
+            Console.WriteLine("CAPTURE_LIFECYCLE: invoking " + (closeDocument ? "document close" : "removal") + " callback"); Console.Out.Flush();
+            if (closeDocument) fixture.Component.DocumentContextChanged(fixture.Document, GH_DocumentContext.Close);
+            else fixture.Component.RemovedFromDocument(fixture.Document);
+            Console.WriteLine("CAPTURE_LIFECYCLE: callback returned"); Console.Out.Flush();
         });
         fixture.Solve();
         await Task.Delay(30);
-        Check(called && Field(fixture, "_session") == null && Field(fixture, "_queryTree") == null && Field(fixture, "_measurementSnapshot") == null,
-            "removal while wrapper/group capture is on-stack cannot recreate a disposed session or commit old input");
+        Check(called && oldSession != null && (bool)oldSession.GetType().GetProperty("IsDisposed", Private)!.GetValue(oldSession)! &&
+            Field(fixture, "_session") == null && Field(fixture, "_queryTree") == null && Field(fixture, "_measurementSnapshot") == null &&
+            !fixture.Component.Params.Output[0].VolatileData.AllData(false).Any(item => item is GH_Curve || item is GH_ObjectWrapper || item is GH_GeometryGroup),
+            (closeDocument ? "document close" : "removal") + " while " + (wrappedGroup ? "wrapper/group" : "standalone holder") +
+            " capture is on-stack cannot recreate a disposed session or publish old input");
+        Check(fixture.Document.RemoveObject(fixture.Component, false), "component can be removed from the GH document after the solution returns");
     }
 
     private static async Task VerifyLock(Assembly assembly)
@@ -448,4 +509,53 @@ internal static class CaptureTransactionChecks
     }
     private static object? Field(OutputChecks.Fixture f, string name) => f.Component.GetType().GetField(name, Private)!.GetValue(f.Component);
     private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
+}
+
+// Supplies a second set of real GH trees to the real component solve while the
+// first solve remains on-stack. It intentionally does not enter the GH scheduler.
+internal sealed class NestedCaptureDataAccess : IGH_DataAccess
+{
+    internal readonly GH_Structure<IGH_Goo> Primary = new GH_Structure<IGH_Goo>();
+    internal readonly GH_Structure<IGH_Goo> Paired = new GH_Structure<IGH_Goo>();
+    internal readonly Dictionary<int, IGH_Structure> Outputs = new Dictionary<int, IGH_Structure>();
+
+    public bool GetDataTree<T>(int index, out GH_Structure<T> tree) where T : IGH_Goo
+    {
+        if (index != 0 && index != 1) throw new InvalidOperationException("Unexpected input index " + index);
+        IGH_Structure input = index == 0 ? Primary : Paired;
+        if (input is GH_Structure<T> typed)
+        {
+            tree = typed;
+            return true;
+        }
+        tree = null!;
+        return false;
+    }
+    public bool SetDataTree(int output, IGH_Structure tree) { Outputs[output] = tree; return true; }
+    public bool GetDataTree<T>(string name, out GH_Structure<T> tree) where T : IGH_Goo => throw Unexpected();
+    public bool SetDataTree(int index, IGH_DataTree tree) => throw Unexpected();
+    public bool GetData<T>(int index, ref T destination) => throw Unexpected();
+    public bool GetData<T>(string name, ref T destination) => throw Unexpected();
+    public bool GetDataList<T>(int index, List<T> list) => throw Unexpected();
+    public bool GetDataList<T>(string name, List<T> list) => throw Unexpected();
+    public bool SetData(int index, object data) => throw Unexpected();
+    public bool SetData(int index, object data, int itemIndexOverride) => throw Unexpected();
+    public bool SetData(string name, object data) => throw Unexpected();
+    public bool SetDataList(int index, IEnumerable data) => throw Unexpected();
+    public bool SetDataList(int index, IEnumerable data, int listIndexOverride) => throw Unexpected();
+    public bool SetDataList(string name, IEnumerable data) => throw Unexpected();
+    public bool BlitData<T>(int index, GH_Structure<T> tree, bool overwrite) where T : IGH_Goo => throw Unexpected();
+    public int Iteration => throw Unexpected();
+    public void IncrementIteration() => throw Unexpected();
+    public void DisableGapLogic() => throw Unexpected();
+    public void DisableGapLogic(int index) => throw Unexpected();
+    public GH_Path ParameterTargetPath(int index) => throw Unexpected();
+    public int ParameterTargetIndex(int index) => throw Unexpected();
+    public void AbortComponentSolution() => throw Unexpected();
+    public List<T> Util_RemoveNullRefs<T>(List<T> list) => throw Unexpected();
+    public int Util_CountNullRefs<T>(List<T> list) => throw Unexpected();
+    public int Util_CountNonNullRefs<T>(List<T> list) => throw Unexpected();
+    public bool Util_EnsureNonNullCount<T>(List<T> list, int count) => throw Unexpected();
+    public int Util_FirstNonNullItem<T>(List<T> list) => throw Unexpected();
+    private static Exception Unexpected() => new InvalidOperationException("Unexpected nested solve data access call");
 }
