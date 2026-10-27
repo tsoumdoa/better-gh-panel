@@ -379,6 +379,9 @@ wrapper became cyclic, three box-preview frames across mesh settings, and
 retirement after the observed frame and idle. The loaded plugin SHA-256 was
 `f31604610156b741c58e84b4fcdce052796949b4a74922acce6236311141d195` and Core
 was `347853480dd805fe7e31d25f4b62c5e9069f5976ef27014b3fe111789ae11e27`.
+The expanded diagnostic in run `hUoDHJ` passed 15 assertions on the same
+payload, adding later live frames for Brep mesh-setting changes and reuse,
+source mutation, rebuilding, bounds, drawing and idle cleanup.
 This is supplemental evidence: the test-side flush can change timing, it does
 not cover all assertions of the required fixtures, and it does not prove that
 idle is a safe boundary after every nested native display call.

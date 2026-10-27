@@ -78,9 +78,45 @@ internal static partial class PreviewSafetyChecks
                     "live wire and shaded callbacks retain bounded standalone and grouped boxes across mesh settings");
                 await Task.Delay(25);
             }
+            using var nativeBrep = new Box(new BoundingBox(new Point3d(-2, -2, -1), new Point3d(2, 2, 1))).ToBrep();
+            var brep = new GH_Brep { Value = nativeBrep };
+            var brepGroup = new GH_GeometryGroup(); brepGroup.Objects.Add(brep);
+            Set(highlight, new IGH_Goo?[] { brep, brepGroup }, new[] { 0, 1 }, new[] { 0 });
+            await WaitForPreviewRetirement(highlight);
+            var leafType = assembly.GetType("BetterGhPanel.Runtime.PanelPreviewLeaf", true)!;
+            var live = leafType.GetProperty("LiveGeneratedMeshes", Static)!;
+            var builds = leafType.GetProperty("GeneratedMeshBuilds", Static)!;
+            foreach (var mode in new[] { GH_PreviewMesh.LowQuality, GH_PreviewMesh.HighQuality, GH_PreviewMesh.Custom })
+            {
+                if (mode == GH_PreviewMesh.Custom) document.PreviewCustomMeshParameters = new MeshingParameters(0.35);
+                document.PreviewMeshType = mode;
+                int before = (int)builds.GetValue(null)!;
+                using (var bitmap = await CaptureLiveFramebuffer(view, conduit, component))
+                    Check(GreenPixels(bitmap) > 0 && Count(highlight) == 2 && (int)builds.GetValue(null)! > before &&
+                        (int)live.GetValue(null)! > 0 && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+                        "live standalone and grouped Breps draw with bounded meshes after each mesh-setting change");
+                int cachedBuilds = (int)builds.GetValue(null)!;
+                int cachedMeshes = (int)live.GetValue(null)!;
+                using (var bitmap = await CaptureLiveFramebuffer(view, conduit, component))
+                    Check(GreenPixels(bitmap) > 0 && (int)builds.GetValue(null)! == cachedBuilds && (int)live.GetValue(null)! == cachedMeshes,
+                        "a later live frame reuses Brep meshes when mesh settings are unchanged");
+            }
+            var oldBounds = Box(highlight);
+            Check(nativeBrep.Transform(Transform.Translation(30, 0, 0)) && Box(highlight).Equals(oldBounds),
+                "live Brep bounds remain on the admitted generation after source mutation");
+            using (var bitmap = await CaptureLiveFramebuffer(view, conduit, component))
+                Check(GreenPixels(bitmap) > 0 && Count(highlight) == 2 && Box(highlight).Equals(oldBounds),
+                    "a later live frame draws the old Brep generation before source expiration");
+            Set(highlight, new IGH_Goo?[] { brep, brepGroup }, new[] { 0, 1 }, new[] { 0 });
+            Check(Box(highlight).Min.X > oldBounds.Max.X, "rebuilding moves the live Brep bounds to the changed source");
+            view.ActiveViewport.ZoomBoundingBox(Box(highlight));
+            using (var bitmap = await CaptureLiveFramebuffer(view, conduit, component))
+                Check(GreenPixels(bitmap) > 0 && Count(highlight) == 2,
+                    "a later live frame draws the rebuilt Brep generation after expiration");
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
             await WaitForPreviewRetirement(highlight);
-            Check(Property<long>(highlight, "RetainedBytes") == 0, "live box resources retire after the observed frame and idle");
+            Check(Property<long>(highlight, "RetainedBytes") == 0 && (int)live.GetValue(null)! == 0,
+                "live preview resources retire after the observed frames and idle");
         }
         finally
         {
