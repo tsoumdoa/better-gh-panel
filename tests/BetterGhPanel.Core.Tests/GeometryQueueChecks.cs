@@ -30,6 +30,271 @@ internal static class GeometryQueueChecks
         GlobalRetentionBudget();
         CapacityRecoveryAndCancellation();
         SourceReplacement();
+        ReentrantPreparationReplacement();
+        ReentrantPreparationCancellation();
+        WitnesslessRemeasurement();
+        LegacyAdmissionRecovery();
+        ClaimedLegacyAdmissionSurvivesCancellation();
+        ReentrantCrossPanelAdmission();
+        ReentrantNotificationAndRead();
+        ReentrantRetentionPreparation();
+        MeasurementContextChanges();
+    }
+
+    private static void ReentrantPreparationReplacement()
+    {
+        using var fixture = new Fixture();
+        Task<bool>? replacement = null;
+        fixture.AfterCopy = () =>
+        {
+            fixture.AfterCopy = null;
+            fixture.Attach(new Snapshot(new Source(9)), false);
+            replacement = fixture.Measure(CancellationToken.None, 0);
+            fixture.Ui();
+            Check(fixture.Workers.Count == 0 && fixture.Delays.Count == 0,
+                "reentrant replacement cannot start another worker during preparation");
+        };
+        var obsolete = fixture.Measure(CancellationToken.None, 0);
+        fixture.Ui(); fixture.Delay();
+        Check(obsolete.IsCompleted && !obsolete.Result && fixture.Resources.Count == 1 && fixture.Resources[0].Disposals == 1 &&
+            fixture.Workers.Count == 0 && !fixture.Queue.Has(fixture.Current, 0),
+            "a copy returned after reentrant replacement is abandoned without publication");
+        fixture.Delay(); fixture.Worker(); fixture.Ui();
+        Check(replacement != null && replacement.IsCompleted && replacement.Result && fixture.Queue.Get(fixture.Current, 0)?.Value == 9 &&
+            fixture.Resources.Count == 2 && fixture.Resources.TrueForAll(resource => resource.Disposals == 1),
+            "the replacement runs once after preparation exits and owns its own copy");
+    }
+
+    private static void WitnesslessRemeasurement()
+    {
+        using var fixture = new Fixture { OmitWitness = true };
+        var first = fixture.Measure(CancellationToken.None, 0);
+        fixture.Ui(); fixture.Delay(); fixture.Worker(); fixture.Ui();
+        Check(first.Result && fixture.Queue.Has(fixture.Current, 0), "witnessless work completes in its original snapshot");
+        fixture.Queue.Attach(fixture.Current, false);
+        Check(fixture.Queue.Has(fixture.Current, 0) && fixture.Computations == 1,
+            "attaching the same snapshot for output preserves its witnessless measurement");
+        fixture.Attach(new Snapshot(fixture.Current.Rows[0]), true);
+        Check(!fixture.Queue.Has(fixture.Current, 0) && fixture.PreparedPositions.Count == 1,
+            "unit-only attachment cannot retain or prepare a witnessless result for comparison");
+        var second = fixture.Measure(CancellationToken.None, 0);
+        fixture.Ui(); fixture.Delay(); fixture.Worker(); fixture.Ui();
+        Check(second.Result && fixture.Computations == 2 && fixture.Resources.TrueForAll(resource => resource.Disposals == 1),
+            "a later request remeasures and releases a new witnessless copy");
+    }
+
+    private static void ReentrantPreparationCancellation()
+    {
+        using var fixture = new Fixture();
+        using var cancellation = new CancellationTokenSource();
+        fixture.InlineCancellation = true;
+        fixture.AfterCopy = () => { fixture.AfterCopy = null; cancellation.Cancel(); };
+        var canceled = fixture.Measure(cancellation.Token, 0);
+        fixture.Ui(); fixture.Delay();
+        Check(canceled.IsCompleted && !canceled.Result && fixture.Workers.Count == 0 &&
+            fixture.Resources.Count == 1 && fixture.Resources[0].Disposals == 1 && !fixture.Queue.Has(fixture.Current, 0),
+            "cancellation during reentrant preparation abandons the copy without submitting it");
+    }
+
+    private static void LegacyAdmissionRecovery()
+    {
+        var held = new List<IDisposable>();
+        try
+        {
+            for (int i = 0; i < LegacyMeasurementAdmission.MaxConcurrent; i++)
+                held.Add(LegacyMeasurementAdmission.TryAcquire(out _) ?? throw new InvalidOperationException("admission unavailable"));
+            Check(LegacyMeasurementAdmission.TryAcquire(out var released) == null && !released.IsCompleted,
+                "legacy admission is shared and exposes a release signal at capacity");
+            using var first = new Fixture { UseLegacyAdmission = true };
+            using var second = new Fixture { UseLegacyAdmission = true };
+            using var cancellation = new CancellationTokenSource();
+            var canceled = first.Measure(cancellation.Token, 0);
+            var waiting = second.Measure(CancellationToken.None, 0);
+            first.Ui(); second.Ui(); first.Delay(); second.Delay();
+            cancellation.Cancel(); first.Ui();
+            Check(canceled.IsCompleted && !canceled.Result && !waiting.IsCompleted && first.Resources.Count == 0 && second.Resources.Count == 0,
+                "capacity waits do not duplicate and a canceled panel stops waiting");
+            held[0].Dispose();
+            Check(SpinWait.SpinUntil(() => { second.Ui(); return second.Delays.Count != 0; }, TimeSpan.FromSeconds(5)),
+                "released legacy admission resumes a waiting panel without polling");
+            second.Delay(); second.Worker(); second.Ui(); first.Ui();
+            Check(waiting.Result && second.Resources.Count == 1 && second.Resources[0].Disposals == 1 && first.Resources.Count == 0,
+                "the resumed copy runs once and cancellation does not restart the other panel");
+        }
+        finally { foreach (var reservation in held) reservation.Dispose(); }
+    }
+
+    private static void ClaimedLegacyAdmissionSurvivesCancellation()
+    {
+        var held = new List<IDisposable>();
+        try
+        {
+            for (int i = 0; i < LegacyMeasurementAdmission.MaxConcurrent - 1; i++)
+                held.Add(LegacyMeasurementAdmission.TryAcquire(out _) ?? throw new InvalidOperationException("admission unavailable"));
+            using var first = new Fixture { UseLegacyAdmission = true, OmitWitness = true };
+            using var second = new Fixture { UseLegacyAdmission = true, OmitWitness = true };
+            using var cancel = new CancellationTokenSource();
+            using var gate = new ManualResetEventSlim(false);
+            first.Gate = gate;
+            var canceled = first.Measure(cancel.Token, 0);
+            first.Ui(); first.Delay();
+            var worker = Task.Run(first.Worker);
+            Check(first.Started.Wait(TimeSpan.FromSeconds(5)), "legacy worker claims its reserved copy");
+            cancel.Cancel(); first.Ui();
+            var waiting = second.Measure(CancellationToken.None, 0);
+            second.Ui(); second.Delay();
+            Check(canceled.IsCompleted && !canceled.Result && !waiting.IsCompleted && first.Resources[0].Disposals == 0 &&
+                second.Resources.Count == 0, "a canceled claimed native operation keeps admission until its worker completes");
+            gate.Set();
+            Check(worker.Wait(TimeSpan.FromSeconds(5)), "claimed worker finishes");
+            first.Ui();
+            Check(SpinWait.SpinUntil(() => { second.Ui(); return second.Delays.Count != 0; }, TimeSpan.FromSeconds(5)),
+                "worker completion releases admission to another panel");
+            second.Delay(); second.Worker(); second.Ui();
+            Check(waiting.Result && first.Resources[0].Disposals == 1 && second.Resources[0].Disposals == 1,
+                "both claimed copies and their permits are released exactly once");
+        }
+        finally { foreach (var reservation in held) reservation.Dispose(); }
+    }
+
+    private static void ReentrantCrossPanelAdmission()
+    {
+        var held = new List<IDisposable>();
+        try
+        {
+            for (int i = 0; i < LegacyMeasurementAdmission.MaxConcurrent - 1; i++)
+                held.Add(LegacyMeasurementAdmission.TryAcquire(out _) ?? throw new InvalidOperationException("admission unavailable"));
+            using var first = new Fixture { UseLegacyAdmission = true, OmitWitness = true };
+            using var second = new Fixture { UseLegacyAdmission = true, OmitWitness = true };
+            using var cancelFirst = new CancellationTokenSource();
+            using var cancelSecond = new CancellationTokenSource();
+            Task<bool>? remaining = null, canceledShared = null;
+            first.AfterCopy = () =>
+            {
+                first.AfterCopy = null;
+                remaining = second.Measure(CancellationToken.None, 0);
+                canceledShared = second.Measure(cancelSecond.Token, 0);
+                second.Ui(); second.Delay();
+                Check(!remaining.IsCompleted && !canceledShared.IsCompleted && second.Resources.Count == 0 && second.Workers.Count == 0,
+                    "a reentrant panel returns immediately and waits asynchronously while the last permit is held");
+                cancelSecond.Cancel(); second.Ui();
+                Check(canceledShared.IsCompleted && !canceledShared.Result && !remaining.IsCompleted,
+                    "canceling one reentrant consumer keeps the shared waiting demand");
+            };
+            var abandoned = first.Measure(cancelFirst.Token, 0);
+            first.Ui(); first.Delay();
+            Check(first.Resources.Count == 1 && first.Resources[0].Disposals == 0,
+                "the first panel retains admission for its unclaimed copy");
+            cancelFirst.Cancel(); first.Ui();
+            Check(abandoned.IsCompleted && !abandoned.Result && first.Resources[0].Disposals == 1,
+                "abandoning unclaimed work disposes the copy before releasing its permit");
+            Check(SpinWait.SpinUntil(() => { second.Ui(); return second.Delays.Count != 0; }, TimeSpan.FromSeconds(5)),
+                "the other panel wakes once the abandoned permit is released");
+            second.Delay(); second.Worker(); second.Ui();
+            Check(remaining != null && remaining.IsCompleted && remaining.Result && second.Resources[0].Disposals == 1,
+                "the remaining reentrant consumer completes with exactly-once disposal");
+            first.Worker(); first.Ui();
+            Check(first.Computations == 0 && first.Resources[0].Disposals == 1, "the abandoned callback cannot claim or release twice");
+        }
+        finally { foreach (var reservation in held) reservation.Dispose(); }
+    }
+
+    private static void ReentrantNotificationAndRead()
+    {
+        using var fixture = new Fixture { OmitWitness = true };
+        fixture.AfterNotify = () =>
+        {
+            fixture.AfterNotify = null;
+            fixture.Attach(new Snapshot(new Source(9)), false);
+        };
+        var obsolete = fixture.Measure(CancellationToken.None, 0);
+        fixture.Ui(); fixture.Delay();
+        Check(obsolete.IsCompleted && !obsolete.Result && fixture.Workers.Count == 0 && fixture.Resources[0].Disposals == 1,
+            "replacement during notification cannot submit the obsolete prepared copy");
+        var current = fixture.Measure(CancellationToken.None, 0);
+        fixture.Ui(); fixture.Delay(); fixture.Worker(); fixture.Ui();
+        Check(current.Result, "replacement can measure after reentrant notification");
+        var old = fixture.Current;
+        fixture.SourceCurrent = (_, __) =>
+        {
+            fixture.SourceCurrent = null;
+            fixture.Attach(new Snapshot(new Source(11)), false);
+            return true;
+        };
+        Check(fixture.Queue.Get(old, 0) == null && !fixture.Queue.Has(old, 0),
+            "a reentrant source check cannot return a value from an invalidated snapshot");
+    }
+
+    private static void ReentrantRetentionPreparation()
+    {
+        using var fixture = new Fixture();
+        var original = fixture.Measure(CancellationToken.None, 0);
+        fixture.Ui(); fixture.Delay(); fixture.Worker(); fixture.Ui();
+        Check(original.Result, "retention fixture has a witnessed value");
+        Task<bool>? replacement = null;
+        fixture.AfterCopy = () =>
+        {
+            fixture.AfterCopy = null;
+            fixture.Attach(new Snapshot(new Source(9)), false);
+            replacement = fixture.Measure(CancellationToken.None, 0);
+            fixture.Ui();
+            Check(fixture.Delays.Count == 0 && fixture.Workers.Count == 0,
+                "nested replacement cannot start a worker during retention proof preparation");
+        };
+        fixture.Attach(new Snapshot(fixture.Current.Rows[0]), true);
+        Check(fixture.Resources.Count == 2 && fixture.Resources[1].Disposals == 1 && !fixture.Queue.Has(fixture.Current, 0),
+            "a proof returned after reentrant replacement is discarded exactly once");
+        fixture.Delay(); fixture.Worker(); fixture.Ui();
+        Check(replacement != null && replacement.Result && fixture.Queue.Get(fixture.Current, 0)?.Value == 9 &&
+            fixture.Resources.TrueForAll(resource => resource.Disposals == 1),
+            "the newer snapshot starts only after retention preparation and disposal finish");
+    }
+
+    private static void MeasurementContextChanges()
+    {
+        var original = new MeasurementContextStamp(1, 2, 0.001, "mm");
+        Check(!original.Equals(new MeasurementContextStamp(2, 2, 0.001, "mm")) &&
+            !original.Equals(new MeasurementContextStamp(1, 3, 0.001, "mm")) &&
+            !original.Equals(new MeasurementContextStamp(1, 2, 0.002, "mm")) &&
+            !original.Equals(new MeasurementContextStamp(1, 2, 0.001, "cm")),
+            "document, unit system, tolerance and unit label participate in the geometry context");
+        using (var fixture = new Fixture { UseLegacyAdmission = true, OmitWitness = true })
+        {
+            var live = original;
+            fixture.SourceCurrent = (_, __) => original.Equals(live);
+            fixture.AfterCopy = () => { fixture.AfterCopy = null; live = new MeasurementContextStamp(1, 2, 0.002, "mm"); };
+            var stale = fixture.Measure(CancellationToken.None, 0);
+            fixture.Ui(); fixture.Delay(); fixture.Ui();
+            Check(stale.IsCompleted && !stale.Result && fixture.Workers.Count == 0 && fixture.Resources[0].Disposals == 1,
+                "a context change during preparation abandons its copy before dispatch");
+        }
+        using (var fixture = new Fixture { UseLegacyAdmission = true, OmitWitness = true })
+        using (var gate = new ManualResetEventSlim(false))
+        {
+            var live = original;
+            fixture.SourceCurrent = (_, __) => original.Equals(live);
+            fixture.Gate = gate;
+            var stale = fixture.Measure(CancellationToken.None, 0);
+            fixture.Ui(); fixture.Delay();
+            var worker = Task.Run(fixture.Worker);
+            Check(fixture.Started.Wait(TimeSpan.FromSeconds(5)), "context-change worker is gated after claiming");
+            live = new MeasurementContextStamp(2, 2, 0.001, "mm");
+            gate.Set(); Check(worker.Wait(TimeSpan.FromSeconds(5)), "context-change worker finishes"); fixture.Ui();
+            Check(stale.IsCompleted && !stale.Result && !fixture.Queue.Has(fixture.Current, 0) && fixture.Resources[0].Disposals == 1,
+                "a document change during worker execution rejects its result and releases the copy");
+        }
+        using (var fixture = new Fixture { UseLegacyAdmission = true, OmitWitness = true })
+        {
+            var live = original;
+            fixture.SourceCurrent = (_, __) => original.Equals(live);
+            var measured = fixture.Measure(CancellationToken.None, 0);
+            fixture.Ui(); fixture.Delay(); fixture.Worker(); fixture.Ui();
+            Check(measured.Result && fixture.Queue.Has(fixture.Current, 0), "unchanged context admits a measurement");
+            live = new MeasurementContextStamp(1, 3, 0.001, "mm");
+            fixture.Queue.Attach(fixture.Current, false);
+            Check(!fixture.Queue.Has(fixture.Current, 0) && fixture.Queue.Get(fixture.Current, 0) == null,
+                "a model-unit change after completion hides the old value even on same-snapshot reuse");
+        }
     }
 
     private static void CapacityRecoveryAndCancellation()
@@ -533,9 +798,9 @@ internal static class GeometryQueueChecks
         internal readonly GeometryMeasurementQueue<Snapshot, Result> Queue;
         internal Snapshot Current = new Snapshot(new Source(1), new Source(2), new Source(3));
         internal ManualResetEventSlim? Gate;
-        internal Action? AfterCopy, OnValidate;
+        internal Action? AfterCopy, OnValidate, AfterNotify;
         internal Func<Snapshot, int, bool>? SourceCurrent;
-        internal bool InlineCancellation, RejectWorker, ThrowSubmit, FailCompute, UseReservations;
+        internal bool InlineCancellation, RejectWorker, ThrowSubmit, FailCompute, UseReservations, UseLegacyAdmission, OmitWitness;
         internal int Computations, UiNotifications, WrongThreadCalls;
 
         internal Fixture()
@@ -549,7 +814,7 @@ internal static class GeometryQueueChecks
                 (snapshot, position) => { OnValidate?.Invoke(); return position >= 0 && position < snapshot.Rows.Length; },
                 (snapshot, position) => position >= 0 && position < snapshot.Rows.Length,
                 (snapshot, position) => position >= 0 && position < snapshot.Rows.Length,
-                Prepare, () => { VerifyUi(); UiNotifications++; },
+                Prepare, () => { VerifyUi(); UiNotifications++; AfterNotify?.Invoke(); },
                 (snapshot, position) => SourceCurrent?.Invoke(snapshot, position) ?? true);
             Queue.Attach(Current, false);
         }
@@ -567,12 +832,17 @@ internal static class GeometryQueueChecks
                 reservation = NurbsCandidateLimits.TryReserve(1024, out var released);
                 if (reservation == null) throw new MeasurementCapacityException(released!);
             }
+            if (UseLegacyAdmission)
+            {
+                reservation = LegacyMeasurementAdmission.TryAcquire(out var released);
+                if (reservation == null) throw new MeasurementCapacityException(released);
+            }
             var source = Current.Rows[position];
             int copiedValue = source.Value;
             string copiedRole = source.Role;
             AfterCopy?.Invoke();
             var resource = new Resource(reservation); Resources.Add(resource);
-            var witness = new MeasurementWitness(copiedRole + "|mm|0.001|length", BitConverter.GetBytes(copiedValue));
+            var witness = OmitWitness ? null : new MeasurementWitness(copiedRole + "|mm|0.001|length", BitConverter.GetBytes(copiedValue));
             var gate = Gate; bool fail = FailCompute;
             return new PreparedMeasurement<Result>(() =>
             {

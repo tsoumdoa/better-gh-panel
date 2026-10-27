@@ -158,8 +158,8 @@ internal static class CaptureSafetyChecks
         var distinctSnapshot = capture(distinct, out _);
         Check(distinctSnapshot.InspectionVisitCount <= 100000 &&
             distinctSnapshot.Rows[1099].Validity == PanelValidity.Unverified &&
-            distinctSnapshot.Rows[1099].DisplayValue == "Group (distinct 1099) with 120 objects",
-            "Distinct groups also share the aggregate work limit and retain their direct summaries after exhaustion");
+            distinctSnapshot.Rows[1099].DisplayValue == "<unavailable value>",
+            "Distinct groups share the aggregate work limit and cannot retain an unwitnessed summary after exhaustion");
         var longNames = new GH_Structure<IGH_Goo>();
         for (int i = 0; i < 1100; i++) longNames.Append(Group(i + new string('y', 1024), 0), new GH_Path(0));
         var longSnapshot = capture(longNames, out _);
@@ -327,8 +327,8 @@ internal static class CaptureSafetyChecks
         Check(CaptureCountingUserData.Callbacks == 0 && CaptureBenignUserData.Callbacks == 0 && CaptureNonSerializableUserData.Callbacks == 0 &&
             poly.UserData.Count == 0 && poly.SegmentCurve(0).UserData.Count == 1 && brep.UserData.Count == 0 &&
             brep.Curves3D[0].UserData.Count == 1 && brep.Surfaces[0].UserData.Count == 2 &&
-            snapshot.Rows.All(row => row.GeometryInfo?.CanMeasure != true),
-            "Capture leaves nested UserData untouched and does not claim a safe automatic copy path");
+            snapshot.Rows.All(row => row.GeometryInfo?.CanMeasure == true),
+            "Capture leaves nested UserData untouched and marks standalone holders for deferred compatibility measurement");
         Console.WriteLine("PASS: Plugin-controlled capture with nested segment and Brep UserData.");
     }
 

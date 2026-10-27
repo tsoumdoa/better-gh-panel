@@ -20,6 +20,8 @@
   "polyline-safety",
   "nurbs-value-candidate",
   "production-curve-measurement",
+  "standalone-compatibility",
+  "capture-transaction",
   "geometry-canvas-viewport",
   "measurement-priority",
   "measurement-cancellation",

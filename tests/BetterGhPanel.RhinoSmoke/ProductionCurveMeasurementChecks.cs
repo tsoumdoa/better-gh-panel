@@ -52,15 +52,16 @@ internal static class ProductionCurveMeasurementChecks
         using var curve = Polyline();
         var referenced = new GH_Curve { Value = curve, ReferenceID = Guid.NewGuid() };
         Check(referenced.IsReferencedGeometry && Capture(referenced).Rows[0].Validity == PanelValidity.Unverified && Prepare(referenced) == null,
-            "referenced holders are rejected before their loaded curve is admitted");
+            "an orphaned synthetic reference cannot establish its document context");
 
         using var doc = Rhino.RhinoDoc.CreateHeadless(null);
         var id = doc.Objects.AddCurve(curve);
         var controlled = (Curve)doc.Objects.FindId(id).Geometry;
         Check(controlled.IsDocumentControlled, "document-controlled curve fixture was created");
         var controlledHolder = new GH_Curve { Value = controlled };
-        Check(Capture(controlledHolder).Rows[0].Validity == PanelValidity.Unverified && Prepare(controlledHolder) == null,
-            "document-controlled sources are rejected before validation and preparation");
+        using (var controlledWork = (IDisposable?)Prepare(controlledHolder))
+            Check(Capture(controlledHolder).Rows[0].Validity == PanelValidity.VerifiedValid && controlledWork != null,
+                "loaded document-controlled sources can be prepared as owned copies");
 
         var local = new GH_Curve { Value = curve };
         using var localNurbs = Nurbs();
@@ -79,17 +80,20 @@ internal static class ProductionCurveMeasurementChecks
         using var oversized = new PolylineCurve(Enumerable.Range(0, 2049).Select(i => new Point3d(i, i % 2, 0)));
         using var tooManyPoints = new NurbsCurve(3, false, 2, 1025);
         using var tooHighOrder = new NurbsCurve(3, false, 13, 13);
-        Check(oversized.UserData.Add(new PolylineSafetyUserData()) && tooManyPoints.UserData.Add(new PolylineSafetyUserData()) &&
-            tooHighOrder.UserData.Add(new PolylineSafetyUserData()), "oversized and high-order sources have metadata before capture");
+        Check(tooManyPoints.UserData.Add(new PolylineSafetyUserData()) && tooHighOrder.UserData.Add(new PolylineSafetyUserData()),
+            "invalid NURBS sources have metadata before capture");
         PolylineSafetyUserData.Reset(true);
-        foreach (Curve rejected in new Curve[] { oversized, tooManyPoints, tooHighOrder })
+        foreach (Curve rejected in new Curve[] { tooManyPoints, tooHighOrder })
         {
             var holder = new GH_Curve { Value = rejected };
-            Check(Capture(holder).Rows[0].Validity == PanelValidity.Unverified && Prepare(holder) == null,
-                "point and order limits reject the source before validity and reconstruction");
+            Check(Capture(holder).Rows[0].Validity != PanelValidity.VerifiedValid && Prepare(holder) == null,
+                "invalid NURBS sources remain unavailable");
         }
-        Check(PolylineSafetyUserData.Callbacks == 0, "bounded source preflight leaves rejected metadata uncalled");
+        Check(PolylineSafetyUserData.Callbacks == 0, "invalid source inspection leaves metadata uncalled");
         PolylineSafetyUserData.Reset(false);
+        using (var oversizeWork = (IDisposable?)Prepare(new GH_Curve { Value = oversized }))
+            Check(Capture(new GH_Curve { Value = oversized }).Rows[0].Validity == PanelValidity.VerifiedValid && oversizeWork != null,
+                "valid curves above the value-provider limit use compatibility duplication");
         bool prior = CommonObject.PerformCorruptionTesting;
         try
         {

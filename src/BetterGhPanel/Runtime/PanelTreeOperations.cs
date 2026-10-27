@@ -21,6 +21,22 @@ namespace BetterGhPanel.Runtime
             return copy;
         }
 
+        internal static bool StructureStillMatches(GH_Structure<IGH_Goo>? source, GH_Structure<IGH_Goo>? captured)
+        {
+            try
+            {
+                if (source == null || captured == null || source.PathCount != captured.PathCount) return false;
+                for (int b = 0; b < source.PathCount; b++)
+                {
+                    if (source.Paths[b].CompareTo(captured.Paths[b]) != 0 || source.Branches[b].Count != captured.Branches[b].Count) return false;
+                    for (int i = 0; i < source.Branches[b].Count; i++)
+                        if (!ReferenceEquals(source.Branches[b][i], captured.Branches[b][i])) return false;
+                }
+                return true;
+            }
+            catch (System.Exception) { return false; }
+        }
+
         internal static GH_Structure<IGH_Goo> Filter(GH_Structure<IGH_Goo> source, PanelQueryResult query)
         {
             if (query.RowPositions.Count == source.DataCount && query.BranchPaths.Count == source.PathCount) return source;

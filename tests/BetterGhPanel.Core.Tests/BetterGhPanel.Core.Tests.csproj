@@ -26,6 +26,8 @@
     <Compile Include="../../src/BetterGhPanel/UI/LabelCollisionGrid.cs" Link="LabelCollisionGrid.cs" />
     <Compile Include="../../src/BetterGhPanel/Runtime/PanelQueryPolicy.cs" Link="PanelQueryPolicy.cs" />
     <Compile Include="../../src/BetterGhPanel/Runtime/GeometryMeasurementQueue.cs" Link="GeometryMeasurementQueue.cs" />
+    <Compile Include="../../src/BetterGhPanel/Runtime/LegacyMeasurementAdmission.cs" Link="LegacyMeasurementAdmission.cs" />
+    <Compile Include="../../src/BetterGhPanel/Runtime/MeasurementContextStamp.cs" Link="MeasurementContextStamp.cs" />
     <Compile Include="../../src/BetterGhPanel/Runtime/NurbsCandidateLimits.cs" Link="NurbsCandidateLimits.cs" />
   </ItemGroup>
 </Project>

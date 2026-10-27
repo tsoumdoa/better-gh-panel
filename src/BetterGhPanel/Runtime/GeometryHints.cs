@@ -15,15 +15,11 @@ namespace BetterGhPanel.Runtime
         {
             if (SafeGooInspection.IsGeometryHolder(goo.GetType()))
             {
-                if (goo.GetType() == typeof(GH_Curve) &&
-                    (((GH_Curve)goo).IsReferencedGeometry || ((GH_Curve)goo).ReferenceID != Guid.Empty)) return null;
                 if (!SafeGooInspection.TryGetTrustedGeometry(goo, out GeometryBase? geometry) || geometry == null) return null;
                 try
                 {
-                    if ((geometry.GetType() == typeof(PolylineCurve) || geometry.GetType() == typeof(NurbsCurve)) &&
-                        !SafeGooInspection.CurveCandidatePreflight(geometry)) return null;
-                    if ((geometry.GetType() == typeof(LineCurve) || geometry.GetType() == typeof(ArcCurve)) &&
-                        !SafeGooInspection.CurveSourceCanRead(geometry)) return null;
+                    if ((goo.GetType() == typeof(GH_Curve) || goo.GetType() == typeof(GH_Surface) || goo.GetType() == typeof(GH_Brep)) &&
+                        !SafeGooInspection.MeasurementSourceCanRead(geometry)) return null;
                     return geometry.IsValid ? DescribeCaptured(goo, geometry, units) : null;
                 }
                 finally { GC.KeepAlive(geometry); }
@@ -51,17 +47,70 @@ namespace BetterGhPanel.Runtime
             return null;
         }
 
-        // Analytic details use captured value structs; other supported curves are
-        // reconstructed from bounded values. Source geometry is never duplicated.
+        // This entry point is also used by isolated host fixtures. Production passes
+        // the holder and exact source captured with its snapshot generation instead.
         internal static PreparedMeasurement<PanelGeometryInfo>? PrepareMeasurement(IGH_Goo? goo, string units,
             int unitSystem, double tolerance)
         {
-            if (goo == null || goo.GetType() != typeof(GH_Curve) || units == null || units.Length > 128) return null;
-            var holder = (GH_Curve)goo;
-            if (holder.IsReferencedGeometry || holder.ReferenceID != Guid.Empty) return null;
-            var source = holder.Value;
-            try { return source == null ? null : PrepareCapturedMeasurement(source, units, unitSystem, tolerance, false); }
+            if (goo == null || !SafeGooInspection.TryCaptureStandaloneGeometry(goo, out var leaf) ||
+                !leaf.Trusted || !leaf.HasReference || leaf.Geometry == null) return null;
+            var source = leaf.Geometry;
+            var reference = leaf.Reference;
+            try
+            {
+                if (!SafeGooInspection.IsCurrentMeasurementSource(goo, source, reference)) return null;
+                return source.IsValid ? PrepareStandaloneMeasurement(goo, source, reference, units, unitSystem, tolerance, false) : null;
+            }
             finally { GC.KeepAlive(source); }
+        }
+
+        // The bounded value providers take priority. If one cannot reproduce an
+        // eligible curve, or no provider exists, beta.7's public duplicate APIs
+        // prepare a private worker copy. They can invoke plug-in UserData callbacks
+        // and perform unbounded native work; this is not a sandbox or a witness.
+        internal static PreparedMeasurement<PanelGeometryInfo>? PrepareStandaloneMeasurement(IGH_Goo holder, GeometryBase source,
+            MeasurementReferenceState reference, string units, int unitSystem, double tolerance, bool retryCapacity)
+        {
+            if (units == null || units.Length > 128 || !RhinoMath.IsValidDouble(tolerance) ||
+                !SafeGooInspection.IsCurrentMeasurementSource(holder, source, reference)) return null;
+            Type type = source.GetType();
+            if (holder.GetType() == typeof(GH_Curve) && SafeGooInspection.CurveSourceCanRead(source) &&
+                (type == typeof(LineCurve) || type == typeof(ArcCurve) ||
+                 ((type == typeof(PolylineCurve) || type == typeof(NurbsCurve)) && SafeGooInspection.CurveCandidatePreflight(source))))
+            {
+                PreparedMeasurement<PanelGeometryInfo>? bounded;
+                try { bounded = PrepareCapturedMeasurement(source, units, unitSystem, tolerance, true); }
+                catch (MeasurementCapacityException) { if (retryCapacity) throw; return null; }
+                if (bounded != null)
+                {
+                    if (SafeGooInspection.IsCurrentMeasurementSource(holder, source, reference)) return bounded;
+                    bounded.Dispose();
+                    return null;
+                }
+                // Failed analytic validation should not be bypassed by duplication.
+                if (type == typeof(LineCurve) || type == typeof(ArcCurve)) return null;
+            }
+
+            IDisposable? admission = LegacyMeasurementAdmission.TryAcquire(out var released);
+            if (admission == null)
+            {
+                if (retryCapacity) throw new MeasurementCapacityException(released);
+                return null;
+            }
+            GeometryBase? owned = null;
+            try
+            {
+                if (holder.GetType() == typeof(GH_Curve)) owned = ((Curve)source).DuplicateCurve();
+                else if (holder.GetType() == typeof(GH_Surface) || holder.GetType() == typeof(GH_Brep)) owned = ((Brep)source).DuplicateBrep();
+                if (owned == null || !SafeGooInspection.IsCurrentMeasurementSource(holder, source, reference)) return null;
+                bool surface = holder.GetType() == typeof(GH_Surface);
+                var worker = owned;
+                var resource = new OwnedMeasurementResource(worker, admission);
+                var prepared = new PreparedMeasurement<PanelGeometryInfo>(() => Measure(worker, surface, units), resource, null);
+                owned = null; admission = null;
+                return prepared;
+            }
+            finally { try { owned?.Dispose(); } finally { try { admission?.Dispose(); } finally { GC.KeepAlive(source); } } }
         }
 
         internal static PreparedMeasurement<PanelGeometryInfo>? PrepareCapturedMeasurement(GeometryBase source, string units,

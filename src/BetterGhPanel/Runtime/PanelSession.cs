@@ -23,7 +23,9 @@ namespace BetterGhPanel.Runtime
         private Func<bool>? _createSetResolver;
         private Func<int, Func<PanelGeometryInfo?>?>? _geometryDetailResolver;
         private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryPreparationResolver;
+        private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryRetentionResolver;
         private Func<PanelSnapshot, int, bool>? _geometrySourceCurrent;
+        private Func<PanelSnapshot, bool>? _captureCurrent;
         private readonly GeometryMeasurementQueue<PanelSnapshot, PanelGeometryInfo> _geometry;
         private bool _awaitingSnapshot, _inputSuspended, _measurementNotifyScheduled;
         private System.Windows.Forms.Timer? _busyAnimation;
@@ -48,7 +50,8 @@ namespace BetterGhPanel.Runtime
                 (snapshot, position) => position >= 0 && position < snapshot.Rows.Count &&
                     snapshot.Rows[position].GeometryInfo?.Value == null,
                 PrepareGeometry, NotifyMeasurement,
-                (snapshot, position) => _geometrySourceCurrent?.Invoke(snapshot, position) ?? true);
+                (snapshot, position) => _geometrySourceCurrent?.Invoke(snapshot, position) ?? true,
+                position => _geometryRetentionResolver != null ? _geometryRetentionResolver(position) : PrepareGeometry(position));
             Snapshot = PanelSnapshot.Empty;
             Result = EmptyResult;
         }
@@ -57,6 +60,7 @@ namespace BetterGhPanel.Runtime
         public PanelQueryResult Result { get; private set; }
         public PanelQueryOptions Options => _options.Clone();
         public bool IsBusy { get; private set; }
+        internal bool IsDisposed => _disposed;
         public bool HasCurrentResult => !_disposed && !_awaitingSnapshot && !IsBusy && Error == null && ReferenceEquals(Result.Snapshot, Snapshot);
         public string? Error { get; private set; }
         public event EventHandler? QueryChanged;
@@ -75,6 +79,7 @@ namespace BetterGhPanel.Runtime
             _awaitingSnapshot = false;
             _inputSuspended = false;
             _geometry.Attach(Snapshot, canRetainMeasurement != null, canRetainMeasurement);
+            if (_disposed || _awaitingSnapshot || !ReferenceEquals(Snapshot, snapshot)) return;
             QueueQuery();
         }
 
@@ -116,10 +121,12 @@ namespace BetterGhPanel.Runtime
         // Legacy delegate seam is used by the host fixtures. It deliberately has no
         // retention proof; production uses the owned preparation provider below.
         internal void SetGeometryDetailResolver(Func<int, Func<PanelGeometryInfo?>?> resolver)
-        { _geometryDetailResolver = resolver; _geometryPreparationResolver = null; _geometrySourceCurrent = null; }
+        { _geometryDetailResolver = resolver; _geometryPreparationResolver = null; _geometryRetentionResolver = null; _geometrySourceCurrent = null; }
         internal void SetGeometryPreparationResolver(Func<int, PreparedMeasurement<PanelGeometryInfo>?> resolver)
-        { _geometryPreparationResolver = resolver; _geometryDetailResolver = null; _geometrySourceCurrent = null; }
+        { _geometryPreparationResolver = resolver; _geometryDetailResolver = null; _geometryRetentionResolver = null; _geometrySourceCurrent = null; }
+        internal void SetGeometryRetentionResolver(Func<int, PreparedMeasurement<PanelGeometryInfo>?> resolver) => _geometryRetentionResolver = resolver;
         internal void SetGeometrySourceCurrentResolver(Func<PanelSnapshot, int, bool> resolver) => _geometrySourceCurrent = resolver;
+        internal void SetCaptureCurrentResolver(Func<PanelSnapshot, bool> resolver) => _captureCurrent = resolver;
 
         private PreparedMeasurement<PanelGeometryInfo>? PrepareGeometry(int position)
         {
@@ -134,7 +141,7 @@ namespace BetterGhPanel.Runtime
                 if (summary == null) return null;
                 var unavailable = new PanelGeometryInfo(summary.Description, power: summary.Power, units: summary.Units,
                     metricName: summary.MetricName, metricLabel: summary.MetricLabel,
-                    details: summary.Details + "\nMeasurement unavailable: no verified, bounded geometry snapshot.",
+                    details: summary.Details + "\nMeasurement unavailable: geometry could not be prepared.",
                     canMeasure: summary.CanMeasure, measurementUnavailable: true);
                 return new PreparedMeasurement<PanelGeometryInfo>(() => unavailable, null, null);
             }
@@ -223,14 +230,14 @@ namespace BetterGhPanel.Runtime
                     work = PanelQueryEngine.Start(snapshot, options, token);
                     if (work.TryComplete(ImmediateQueryBudget))
                     {
-                        PublishQuery(work.Result, null);
+                        if (CanPublish(snapshot, request, token)) PublishQuery(work.Result, null);
                         return;
                     }
                 }
                 catch (Exception ex)
                 {
                     work?.Dispose();
-                    PublishQuery(null, ex.Message);
+                    if (CanPublish(snapshot, request, token)) PublishQuery(null, ex.Message);
                     return;
                 }
             }
@@ -256,8 +263,9 @@ namespace BetterGhPanel.Runtime
                     var result = work?.Complete() ?? PanelQueryEngine.Execute(snapshot, options, token, measurements);
                     RhinoApp.InvokeOnUiThread((Action)(() =>
                     {
-                        if (_disposed || request != _request || token.IsCancellationRequested) return;
+                        if (!CanPublish(snapshot, request, token)) return;
                         if (measureGeometry && !_geometry.SourcesCurrent(snapshot)) return;
+                        if (!CanPublish(snapshot, request, token)) return;
                         PublishQuery(result, null);
                     }));
                 }
@@ -266,12 +274,19 @@ namespace BetterGhPanel.Runtime
                 {
                     RhinoApp.InvokeOnUiThread((Action)(() =>
                     {
-                        if (_disposed || request != _request || token.IsCancellationRequested) return;
+                        if (!CanPublish(snapshot, request, token)) return;
                         PublishQuery(null, ex.Message);
                     }));
                 }
                 finally { work?.Dispose(); }
             });
+        }
+
+        private bool CanPublish(PanelSnapshot snapshot, long request, CancellationToken token)
+        {
+            if (_disposed || request != _request || token.IsCancellationRequested || !ReferenceEquals(snapshot, Snapshot)) return false;
+            if (_captureCurrent != null && !_captureCurrent(snapshot)) return false;
+            return !_disposed && request == _request && !token.IsCancellationRequested && ReferenceEquals(snapshot, Snapshot);
         }
 
         private void PublishQuery(PanelQueryResult? result, string? error)
@@ -291,7 +306,7 @@ namespace BetterGhPanel.Runtime
                 TaskCreationOptions.RunContinuationsAsynchronously);
             RhinoApp.InvokeOnUiThread((Action)(() =>
             {
-                if (_disposed || request != _request || token.IsCancellationRequested || !ReferenceEquals(snapshot, Snapshot))
+                if (!CanPublish(snapshot, request, token))
                 {
                     completion.TrySetResult(null);
                     return;
@@ -304,6 +319,7 @@ namespace BetterGhPanel.Runtime
                     var geometry = entry.Value ?? snapshot.Rows[entry.Key].GeometryInfo?.WithUnavailableMeasurement();
                     if (geometry != null) values.Add(entry.Key, geometry);
                 }
+                if (!CanPublish(snapshot, request, token)) { completion.TrySetResult(null); return; }
                 completion.TrySetResult(new ReadOnlyDictionary<int, PanelGeometryInfo>(values));
             }));
             return completion.Task;
@@ -334,6 +350,8 @@ namespace BetterGhPanel.Runtime
             _decimalPlacesResolver = null;
             _geometryDetailResolver = null;
             _geometryPreparationResolver = null;
+            _geometryRetentionResolver = null;
+            _captureCurrent = null;
             Snapshot = PanelSnapshot.Empty;
             Result = EmptyResult;
         }

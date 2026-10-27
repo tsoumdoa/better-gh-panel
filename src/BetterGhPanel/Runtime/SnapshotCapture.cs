@@ -8,6 +8,24 @@ using Rhino.Geometry;
 
 namespace BetterGhPanel.Runtime
 {
+    internal sealed class CapturedMeasurementSource
+    {
+        internal CapturedMeasurementSource(GeometryBase geometry, MeasurementReferenceState reference)
+        { Geometry = geometry; Reference = reference; }
+        internal GeometryBase Geometry { get; }
+        internal MeasurementReferenceState Reference { get; }
+    }
+
+    internal sealed class CapturedInputSeed
+    {
+        internal CapturedInputSeed(bool[] incomplete, Dictionary<int, CaptureGraphWitness> graphs,
+            Dictionary<int, CapturedGeometryLeaf> geometry)
+        { Incomplete = incomplete; Graphs = graphs; Geometry = geometry; }
+        internal bool[] Incomplete { get; }
+        internal Dictionary<int, CaptureGraphWitness> Graphs { get; }
+        internal Dictionary<int, CapturedGeometryLeaf> Geometry { get; }
+    }
+
     internal static class SnapshotCapture
     {
         public static PanelSnapshot Capture(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
@@ -16,27 +34,34 @@ namespace BetterGhPanel.Runtime
 
         internal static PanelSnapshot CaptureWithSources(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
             PanelUnitConversion conversion, string geometryUnits, IReadOnlyList<PanelSourceAddress>? sourceAddresses)
-            => CaptureCore(tree, out sourceItems, out _, conversion, geometryUnits, sourceAddresses);
+            => CaptureCore(tree, out sourceItems, out _, out _, conversion, geometryUnits, sourceAddresses, null, null, null, null);
 
         // The returned inner references belong to this exact capture generation.
         // They are never obtained again to decide which object to reconstruct.
         internal static PanelSnapshot CaptureForMeasurements(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
-            out GeometryBase?[] measurementSources, PanelUnitConversion conversion, string geometryUnits,
-            IReadOnlyList<PanelSourceAddress>? sourceAddresses)
-            => CaptureCore(tree, out sourceItems, out measurementSources, conversion, geometryUnits, sourceAddresses);
+            out CapturedMeasurementSource?[] measurementSources, out CaptureGraphWitness[] graphWitnesses,
+            PanelUnitConversion conversion, string geometryUnits, IReadOnlyList<PanelSourceAddress>? sourceAddresses,
+            Action<int, IGH_Goo?>? inspectionObserver, Action<object>? graphVisitObserver, CapturedScalar[]? scalars, CapturedInputSeed? seed)
+            => CaptureCore(tree, out sourceItems, out measurementSources, out graphWitnesses, conversion, geometryUnits, sourceAddresses, inspectionObserver, graphVisitObserver, scalars, seed);
 
         private static PanelSnapshot CaptureCore(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] sourceItems,
-            out GeometryBase?[] measurementSources, PanelUnitConversion conversion, string geometryUnits,
-            IReadOnlyList<PanelSourceAddress>? sourceAddresses)
+            out CapturedMeasurementSource?[] measurementSources, out CaptureGraphWitness[] graphWitnesses,
+            PanelUnitConversion conversion, string geometryUnits, IReadOnlyList<PanelSourceAddress>? sourceAddresses,
+            Action<int, IGH_Goo?>? inspectionObserver, Action<object>? graphVisitObserver, CapturedScalar[]? scalars, CapturedInputSeed? seed)
         {
+            scalars ??= CapturedScalar.Capture(tree);
+            if (scalars.Length != tree.DataCount) throw new ArgumentException("Captured scalar count does not match the tree.");
+            seed ??= PrepareInputs(tree);
+            if (seed.Incomplete.Length != tree.DataCount) throw new ArgumentException("Captured input count does not match the tree.");
             var rows = new List<PanelRow>(tree.DataCount);
             var branches = new List<PanelBranch>(tree.PathCount);
             var source = new List<IGH_Goo?>(tree.DataCount);
-            var geometrySources = new List<GeometryBase?>(tree.DataCount);
+            var geometrySources = new List<CapturedMeasurementSource?>(tree.DataCount);
+            var graphs = new List<(int position, CaptureGraphWitness witness)>();
             var budget = new SafeGooInspection.Budget();
             // A summary is immutable for this capture generation and may be shared
             // across references; no ancestor-dependent validity is memoized.
-            var groupSummaries = new Dictionary<GH_GeometryGroup, PanelGroupSummary>();
+            var groupSummaries = new Dictionary<GH_GeometryGroup, (string name, int count, PanelGroupSummary summary)>();
             const long maxRetainedSummaryBytes = 1024 * 1024;
             const int maxCachedGroupSummaries = 16384;
             long retainedSummaryBytes = 0;
@@ -48,7 +73,7 @@ namespace BetterGhPanel.Runtime
                 for (var i = 0; i < items.Count; i++)
                 {
                     IGH_Goo? item = items[i];
-                    string type = item?.GetType().Name ?? "Null", display = "<unavailable value>", reason;
+                    string type = item?.GetType().Name ?? "Null", display = "<unavailable value>", reason = "";
                     string? stringValue = null;
                     double? number = null;
                     bool typeAvailable = false;
@@ -57,38 +82,61 @@ namespace BetterGhPanel.Runtime
                     PanelGroupSummary? groupSummary = null;
                     PanelSearchCapabilities capabilities;
                     GeometryBase? capturedGeometry = null;
+                    MeasurementReferenceState reference = default;
+                    bool hasReference = false;
+                    CapturedGeometryLeaf? directLeaf = null;
+                    int position = rows.Count;
+                    seed.Graphs.TryGetValue(position, out CaptureGraphWitness? graph);
+                    bool graphComplete = !seed.Incomplete[position];
                     try
                     {
-                        var identity = SafeGooInspection.ResolveIdentity(item, budget);
+                        if (seed.Geometry.TryGetValue(position, out var rawLeaf))
+                        {
+                            var leaf = SafeGooInspection.ResolveCapturedGeometryContext(rawLeaf);
+                            directLeaf = leaf; hasReference = leaf.HasReference; reference = leaf.Reference;
+                        }
+                        var identity = SafeGooInspection.ResolveIdentity(item, budget, graph);
                         type = identity.Name;
                         typeAvailable = identity.Available;
-                        if (identity.Group != null)
+                        if (identity.Group != null && graphComplete)
                         {
-                            if (!groupSummaries.TryGetValue(identity.Group, out groupSummary))
+                            if (graph == null || !graph.TryGroupSummary(identity.Group, out string name, out int count))
+                                throw new InvalidOperationException("Captured group summary unavailable.");
+                            if (groupSummaries.TryGetValue(identity.Group, out var cached) && cached.name == name && cached.count == count)
+                                groupSummary = cached.summary;
+                            else
                             {
-                                string name = identity.Group.Name ?? string.Empty;
-                                int count = identity.Group.Objects.Count;
                                 long estimatedBytes = ((long)name.Length + 64) * sizeof(char);
                                 bool retain = estimatedBytes <= maxRetainedSummaryBytes - retainedSummaryBytes;
                                 groupSummary = new PanelGroupSummary(name, count, retain);
                                 if (retain) retainedSummaryBytes += estimatedBytes;
-                                if (groupSummaries.Count < maxCachedGroupSummaries) groupSummaries.Add(identity.Group, groupSummary);
+                                if (groupSummaries.ContainsKey(identity.Group) || groupSummaries.Count < maxCachedGroupSummaries)
+                                    groupSummaries[identity.Group] = (name, count, groupSummary);
                             }
                         }
-                        validity = SafeGooInspection.Validity(item, budget, out reason, out capturedGeometry);
-                        if (identity.Group == null) display = FormatSummary(item, type, out number, out stringValue);
+                        var scalar = scalars[position];
+                        IGH_Goo? inspected = item == null ? null : graph?.ManagedCopy(item) ?? item;
+                        if (scalar.Available)
+                        {
+                            validity = scalar.Validity;
+                            reason = scalar.IsValid ? "" : "The value is invalid.";
+                            display = scalar.Format(out number, out stringValue);
+                        }
+                        else validity = graphComplete ? SafeGooInspection.Validity(item, budget, out reason, out capturedGeometry, graph, graphVisitObserver, directLeaf) : PanelValidity.Unverified;
+                        if (!graphComplete) { reason = "Validity could not be safely verified (capture graph limit)."; groupSummary = null; }
+                        if (!scalar.Available && identity.Group == null) display = FormatSummary(inspected, type, out number, out stringValue);
 
                         if (item != null && validity == PanelValidity.VerifiedValid)
                         {
-                            geometry = GeometryHints.DescribeCaptured(item, capturedGeometry, geometryUnits);
-                            // Only the bounded exact curve candidates have a value
-                            // reconstruction provider. Other deferred shapes stay unavailable.
-                            bool supported = item.GetType() == typeof(GH_Curve) && capturedGeometry != null &&
-                                (capturedGeometry.GetType() == typeof(PolylineCurve) || capturedGeometry.GetType() == typeof(NurbsCurve));
+                            geometry = GeometryHints.DescribeCaptured(inspected!, capturedGeometry, geometryUnits);
+                            // Only a standalone exact holder and its captured inner object
+                            // can enter either reconstruction or the compatibility fallback.
+                            bool supported = capturedGeometry != null && hasReference && directLeaf.HasValue && directLeaf.Value.Trusted;
                             if (geometry?.CanMeasure == true && !supported) geometry = geometry.WithUnavailableMeasurement();
                             display = geometry?.FormatCompact(PanelUnitConversion.None, PanelUnits.AutomaticDecimals) ?? display;
                         }
-                        capabilities = Capabilities(item, validity, capturedGeometry);
+                        capabilities = Capabilities(inspected, validity, capturedGeometry);
+                        inspectionObserver?.Invoke(rows.Count, item);
                     }
                     catch (Exception)
                     {
@@ -100,18 +148,98 @@ namespace BetterGhPanel.Runtime
                         capabilities = PanelSearchCapabilities.None;
                     }
                     finally { GC.KeepAlive(capturedGeometry); }
-                    rows.Add(new PanelRow(i, path, type, display, number, validity,
-                        typeIdentityAvailable: typeAvailable, searchCapabilities: capabilities, isNull: item == null,
-                        geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary));
+                    if (!graphComplete)
+                        rows.Add(new PanelRow(i, path, type, "<unavailable value>", null, PanelValidity.Unverified,
+                            typeIdentityAvailable: false, searchCapabilities: PanelSearchCapabilities.None,
+                            isNull: item == null, invalidReason: "Capture graph exceeded its inspection limit."));
+                    else
+                        rows.Add(new PanelRow(i, path, type, display, number, validity,
+                            typeIdentityAvailable: typeAvailable, searchCapabilities: capabilities, isNull: item == null,
+                            geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary));
                     source.Add(item);
-                    geometrySources.Add(validity == PanelValidity.VerifiedValid && geometry?.CanMeasure == true
-                        ? capturedGeometry : null);
+                    geometrySources.Add(validity == PanelValidity.VerifiedValid && geometry != null && capturedGeometry != null && hasReference
+                        ? new CapturedMeasurementSource(capturedGeometry, reference) : null);
+                    if (graph != null) graphs.Add((rows.Count - 1, graph));
                 }
+            }
+            foreach (var graph in graphs)
+            {
+                if (graph.witness.IsCurrent()) continue;
+                var row = rows[graph.position];
+                rows[graph.position] = new PanelRow(row.OriginalIndex, row.Path, row.TypeName, "<unavailable value>", null,
+                    PanelValidity.Unverified, typeIdentityAvailable: false, searchCapabilities: PanelSearchCapabilities.None,
+                    isNull: row.IsNull, invalidReason: "Capture graph changed or exceeded its inspection limit.");
+                geometrySources[graph.position] = null;
             }
             sourceItems = source.ToArray();
             measurementSources = geometrySources.ToArray();
+            graphWitnesses = new CaptureGraphWitness[graphs.Count];
+            for (int i = 0; i < graphs.Count; i++) graphWitnesses[i] = graphs[i].witness;
             return new PanelSnapshot(rows, branches, conversion, sourceAddresses, budget.Visits,
                 (int)retainedSummaryBytes, groupSummaries.Count);
+        }
+
+        internal static CapturedInputSeed PrepareInputs(GH_Structure<IGH_Goo> tree)
+        {
+            var incomplete = new bool[tree.DataCount];
+            var graphs = new Dictionary<int, CaptureGraphWitness>();
+            var geometry = new Dictionary<int, CapturedGeometryLeaf>();
+            int remaining = SafeGooInspection.MaxNodesPerCapture, position = 0;
+            for (int b = 0; b < tree.PathCount; b++)
+                foreach (var item in tree.Branches[b])
+                {
+                    if (!CaptureGraphWitness.TryCapture(item, ref remaining, out var graph)) incomplete[position] = true;
+                    else if (graph != null) graphs.Add(position, graph);
+                    if (item != null)
+                    {
+                        try { if (SafeGooInspection.TryCaptureStandaloneGeometryRaw(item, out var leaf)) geometry.Add(position, leaf); }
+                        catch (Exception) { incomplete[position] = true; }
+                    }
+                    position++;
+                }
+            return new CapturedInputSeed(incomplete, graphs, geometry);
+        }
+
+        internal static bool GraphSourcesCurrent(CaptureGraphWitness[] witnesses)
+        {
+            foreach (var witness in witnesses) if (!witness.IsCurrent()) return false;
+            return true;
+        }
+
+        // PanelRow already owns immutable scalar values; checking them directly
+        // keeps large numeric/text captures linear without duplicate string copies.
+        internal static bool ManagedRowsCurrent(PanelSnapshot snapshot, IGH_Goo?[] holders)
+            => ManagedRowsCurrentWithVisits(snapshot, holders, out _);
+
+        internal static bool ManagedRowsCurrentWithVisits(PanelSnapshot snapshot, IGH_Goo?[] holders, out int visits)
+        {
+            visits = 0;
+            if (snapshot.Rows.Count != holders.Length) return false;
+            for (int i = 0; i < holders.Length; i++)
+            {
+                visits++;
+                var holder = holders[i]; var row = snapshot.Rows[i];
+                if (holder == null) continue;
+                Type type = holder.GetType();
+                if (type == typeof(GH_Number) && row.NumericValue.HasValue &&
+                    BitConverter.DoubleToInt64Bits(((GH_Number)holder).Value) != BitConverter.DoubleToInt64Bits(row.NumericValue.Value)) return false;
+                if (type == typeof(GH_Integer) && row.NumericValue.HasValue && ((GH_Integer)holder).Value != row.NumericValue.Value) return false;
+                if (type == typeof(GH_String) && !string.Equals(((GH_String)holder).Value, row.StringValue, StringComparison.Ordinal)) return false;
+                if (type == typeof(GH_Boolean) && row.DisplayValue != (((GH_Boolean)holder).Value ? "True" : "False")) return false;
+            }
+            return true;
+        }
+
+        internal static bool MeasurementSourcesCurrent(IGH_Goo?[] holders, CapturedMeasurementSource?[] sources)
+        {
+            if (holders.Length != sources.Length) return false;
+            for (int i = 0; i < sources.Length; i++)
+            {
+                var source = sources[i];
+                if (source != null && !SafeGooInspection.IsCurrentMeasurementSource(holders[i], source.Geometry, source.Reference))
+                    return false;
+            }
+            return true;
         }
 
         private static PanelSearchCapabilities Capabilities(IGH_Goo? item, PanelValidity validity, GeometryBase? geometry)

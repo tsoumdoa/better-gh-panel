@@ -17,7 +17,7 @@ internal static class GeometryPolylineSafetyChecks
     internal static async Task Run(Assembly assembly)
     {
         foreach (bool hostile in new[] { false, true }) await VerifyUserData(assembly, hostile);
-        foreach (bool hostile in new[] { false, true }) VerifyUnsupportedNestedData(assembly, hostile);
+        foreach (bool hostile in new[] { false, true }) VerifyLegacyNestedData(assembly, hostile);
         VerifyPreflight(assembly);
         await VerifyParameterization(assembly);
         VerifyAmbiguousZero(assembly);
@@ -94,13 +94,24 @@ internal static class GeometryPolylineSafetyChecks
         var data = new PolylineSafetyUserData();
         Check(source.UserData.Add(data) && source.UserData.Count == 1, "oversize source has instrumented metadata");
         PolylineSafetyUserData.Reset(true);
-        Check(Prepare(assembly, goo) == null && source.UserData.Count == 1 && PolylineSafetyUserData.Callbacks == 0,
-            "oversize polyline is rejected at the count preflight without callbacks or metadata loss");
+        var candidate = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!
+            .GetMethod("PrepareCapturedMeasurement", BindingFlags.Static | BindingFlags.NonPublic)!;
+        Check(candidate.Invoke(null, new object[] { source, "mm", (int)Rhino.UnitSystem.Millimeters, 0.001, false }) == null &&
+            source.UserData.Count == 1 && PolylineSafetyUserData.Callbacks == 0,
+            "the bounded polyline provider rejects oversize values without callbacks or metadata loss");
         PolylineSafetyUserData.Reset(false);
     }
 
-    private static void VerifyUnsupportedNestedData(Assembly assembly, bool hostile)
+    private static void VerifyLegacyNestedData(Assembly assembly, bool hostile)
     {
+        void PrepareAndRelease(IGH_Goo value)
+        {
+            object? work = null;
+            try { work = Prepare(assembly, value); }
+            catch (TargetInvocationException) when (hostile) { /* Plug-in callback failure is allowed. */ }
+            if (!hostile) Check(work != null && Witness(work) == null, "legacy copy is available without claiming a complete witness");
+            (work as IDisposable)?.Dispose();
+        }
         using var outer = new PolyCurve();
         Check(outer.Append(new LineCurve(Point3d.Origin, new Point3d(1, 0, 0))) &&
             outer.Append(new LineCurve(new Point3d(1, 0, 0), new Point3d(2, 1, 0))), "polycurve segments created");
@@ -110,8 +121,8 @@ internal static class GeometryPolylineSafetyChecks
         Check(!curve.HasUserData && segment.UserData.Add(new PolylineSafetyUserData()) && segment.HasUserData,
             "nested segment contains data while outer polycurve does not");
         PolylineSafetyUserData.Reset(hostile);
-        Check(Prepare(assembly, curveGoo) == null && !curve.HasUserData && segment.HasUserData &&
-            PolylineSafetyUserData.Callbacks == 0, "unsupported nested polycurve is unavailable without callbacks");
+        PrepareAndRelease(curveGoo);
+        Check(!curve.HasUserData && segment.HasUserData, "legacy polycurve preparation preserves nested source data");
         PolylineSafetyUserData.Reset(false);
 
         using var nativeBrep = new Box(new BoundingBox(Point3d.Origin, new Point3d(1, 2, 3))).ToBrep();
@@ -123,8 +134,9 @@ internal static class GeometryPolylineSafetyChecks
             embeddedSurface.UserData.Add(new PolylineSafetyUserData()) && embeddedCurve.HasUserData && embeddedSurface.HasUserData,
             "Brep embedded curve and surface contain data while outer Brep does not");
         PolylineSafetyUserData.Reset(hostile);
-        Check(Prepare(assembly, brepGoo) == null && !brep.HasUserData && embeddedCurve.HasUserData && embeddedSurface.HasUserData &&
-            PolylineSafetyUserData.Callbacks == 0, "unsupported nested Brep is unavailable without callbacks");
+        PrepareAndRelease(brepGoo);
+        Check(!brep.HasUserData && embeddedCurve.HasUserData && embeddedSurface.HasUserData,
+            "legacy Brep preparation preserves embedded source data");
         PolylineSafetyUserData.Reset(false);
     }
 

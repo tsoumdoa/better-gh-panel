@@ -69,7 +69,7 @@ internal static class AnalyticCurveDetailsChecks
 
         var referenced = new GH_Curve { Value = arc, ReferenceID = Guid.NewGuid() };
         Check(referenced.IsReferencedGeometry && Prepare(referenced) == null && Capture(referenced).Rows[0].Validity == PanelValidity.Unverified,
-            "referenced analytic holders are not inspected or prepared");
+            "an orphaned synthetic analytic reference remains unverified");
         using var hostile = new HostileLineCurve();
         HostileLineCurve.Calls = 0;
         Check(Prepare(new GH_Curve { Value = hostile }) == null && HostileLineCurve.Calls == 0,
@@ -81,8 +81,9 @@ internal static class AnalyticCurveDetailsChecks
         {
             var id = doc.Objects.AddCurve(arc);
             var controlled = (Curve)doc.Objects.FindId(id).Geometry;
-            Check(controlled.IsDocumentControlled && Prepare(new GH_Curve { Value = controlled }) == null,
-                "document-controlled analytic geometry is unavailable");
+            using var controlledWork = (IDisposable?)Prepare(new GH_Curve { Value = controlled });
+            Check(controlled.IsDocumentControlled && controlledWork != null,
+                "loaded document-controlled analytic geometry can use an owned duplicate");
         }
         bool corruption = CommonObject.PerformCorruptionTesting;
         try
