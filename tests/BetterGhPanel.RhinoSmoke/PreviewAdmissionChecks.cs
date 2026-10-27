@@ -18,15 +18,17 @@ internal static partial class PreviewSafetyChecks
     {
         FixtureUserData.EnsureRegistered();
         var rhino = RhinoDoc.ActiveDoc ?? throw new InvalidOperationException("Admission fixture needs a Rhino document.");
-        var previous = rhino.Views.ActiveView;
-        var view = rhino.Views.Add("Admission and action freshness", Rhino.Display.DefinedViewportProjection.Top,
-            new Rectangle(0, 0, 640, 480), false);
         bool modified = rhino.Modified;
+        var previous = rhino.Views.ActiveView;
         var prior = Forms.Clipboard.GetDataObject();
+        Rhino.Display.RhinoView? view = null;
+        object? highlight = null;
         try
         {
+            view = rhino.Views.Add("Admission and action freshness", Rhino.Display.DefinedViewportProjection.Top,
+                new Rectangle(0, 0, 640, 480), false);
             rhino.Views.ActiveView = view;
-            object highlight = Activator.CreateInstance(loaded.GetType("BetterGhPanel.Runtime.PanelGeometryHighlight", true)!, true)!;
+            highlight = Activator.CreateInstance(loaded.GetType("BetterGhPanel.Runtime.PanelGeometryHighlight", true)!, true)!;
             VerifyInvalidNativeAdmission(loaded, highlight, rhino);
             VerifySelectedRecovery(loaded, highlight);
             foreach (bool copy in new[] { false, true })
@@ -35,9 +37,43 @@ internal static partial class PreviewSafetyChecks
         finally
         {
             CopyRoundTripUserData.OnDuplicateAction = null;
-            if (prior == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(prior, true);
-            if (previous != null) rhino.Views.ActiveView = previous;
-            view.Close(); rhino.Modified = modified;
+            try
+            {
+                try
+                {
+                    Console.WriteLine("Admission cleanup: clearing preview resources.");
+                    if (highlight != null) Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
+                }
+                finally
+                {
+                    try
+                    {
+                        Console.WriteLine("Admission cleanup: restoring prior active view.");
+                        if (previous != null) rhino.Views.ActiveView = previous;
+                    }
+                    finally
+                    {
+                        Console.WriteLine("Admission cleanup: closing fixture view.");
+                        view?.Close();
+                    }
+                }
+            }
+            finally
+            {
+                try
+                {
+                    rhino.Modified = modified;
+                    Console.WriteLine($"Admission cleanup: RhinoDoc.Modified before fixture={modified}, restored={rhino.Modified}.");
+                }
+                finally
+                {
+                    // Restore the document before entering the system writer,
+                    // including on an assertion failure or a view-close error.
+                    Console.WriteLine("Admission cleanup: restoring prior clipboard.");
+                    if (prior == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(prior, true);
+                    Console.WriteLine("Admission cleanup completed.");
+                }
+            }
         }
     });
 
@@ -46,14 +82,37 @@ internal static partial class PreviewSafetyChecks
         using var mesh = new Mesh();
         mesh.Vertices.Add(0, 0, 0); mesh.Vertices.Add(3, 0, 0); mesh.Vertices.Add(0, 3, 0);
         mesh.Faces.AddFace(0, 0, 2);
-        using var brep = new Box(new BoundingBox(Point3d.Origin, new Point3d(3, 3, 3))).ToBrep();
-        brep.Vertices[0].Location = new Point3d(100, 100, 100);
+        using var brep = new Box(new BoundingBox(Point3d.Origin, new Point3d(3, 3, 3))).ToBrep()
+            ?? throw new InvalidOperationException("Invalid Brep fixture could not create its initial box.");
+        // BrepFaceList.Add(int) explicitly creates an incomplete face whose
+        // caller must supply its loops. Reuse an existing finite surface and
+        // deliberately leave that new face without its required outer loop.
+        // Editing a vertex location does not reliably make Brep.IsValid false.
+        int originalFaces = brep.Faces.Count;
+        var incompleteFace = brep.Faces.Add(0);
         using var validMesh = new Mesh();
         validMesh.Vertices.Add(0, 0, 0); validMesh.Vertices.Add(3, 0, 0); validMesh.Vertices.Add(0, 3, 0);
         validMesh.Faces.AddFace(0, 1, 2);
-        using var validBrep = new Box(new BoundingBox(Point3d.Origin, new Point3d(3, 3, 3))).ToBrep();
-        Check(!mesh.IsValid && !brep.IsValid && mesh.GetBoundingBox(false).IsValid && brep.GetBoundingBox(false).IsValid &&
-            validMesh.IsValid && validBrep.IsValid, "invalid nonnull mesh/Brep have finite bounds alongside valid native controls");
+        using var validBrep = new Box(new BoundingBox(Point3d.Origin, new Point3d(3, 3, 3))).ToBrep()
+            ?? throw new InvalidOperationException("Valid Brep control could not create its box.");
+        Console.WriteLine($"Invalid Brep construction: faces before={originalFaces}, after={brep.Faces.Count}, " +
+            $"new face present={incompleteFace != null}, new face loops={incompleteFace?.Loops.Count}.");
+        // Evaluate and print every condition before the first assertion, so a
+        // failed control does not hide the other native outcomes in the report.
+        bool meshValid = InspectNativeAdmissionControl("invalid mesh", mesh, out var meshBounds);
+        bool brepValid = InspectNativeAdmissionControl("invalid Brep", brep, out var brepBounds);
+        bool validMeshValid = InspectNativeAdmissionControl("valid mesh", validMesh, out var validMeshBounds);
+        bool validBrepValid = InspectNativeAdmissionControl("valid Brep", validBrep, out var validBrepBounds);
+        Check(incompleteFace != null && brep.Faces.Count == originalFaces + 1 && incompleteFace.Loops.Count == 0,
+            "invalid Brep fixture contains an added incomplete face with no boundary loop");
+        Check(!meshValid, "invalid mesh control reports IsValid=false");
+        Check(meshBounds.IsValid, "invalid mesh control retains finite valid bounds");
+        Check(!brepValid, "incomplete nonnull Brep control reports IsValid=false");
+        Check(brepBounds.IsValid, "incomplete nonnull Brep control retains finite valid bounds");
+        Check(validMeshValid, "unchanged valid mesh control reports IsValid=true");
+        Check(validMeshBounds.IsValid, "unchanged valid mesh control retains finite valid bounds");
+        Check(validBrepValid, "unchanged valid Brep control reports IsValid=true");
+        Check(validBrepBounds.IsValid, "unchanged valid Brep control retains finite valid bounds");
         var actions = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!;
         var values = new IGH_GeometricGoo[] { new GH_Mesh { Value = mesh }, new GH_Brep { Value = brep } };
         for (int i = 0; i < values.Length; i++)
@@ -86,6 +145,26 @@ internal static partial class PreviewSafetyChecks
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
         Check(!mesh.Disposed && !brep.Disposed && !validMesh.Disposed && !validBrep.Disposed,
             "preview/frame/copy admission never disposes source native geometry");
+    }
+
+    private static bool InspectNativeAdmissionControl(string name, GeometryBase geometry, out BoundingBox bounds)
+    {
+        if (geometry == null) throw new InvalidOperationException("Admission control " + name + " is unexpectedly null.");
+        bool valid = geometry.IsValid;
+        bounds = geometry.GetBoundingBox(false);
+        bool loggedValid = geometry.IsValidWithLog(out string validityLog);
+        Console.WriteLine($"Admission control {name}: nonnull=true, type={geometry.GetType().Name}, " +
+            $"IsValid={valid}, IsValidWithLog={loggedValid}, bounds valid={bounds.IsValid}, bounds={bounds}, validity log={validityLog}");
+        if (geometry is Mesh mesh)
+            Console.WriteLine($"Admission control {name}: vertices={mesh.Vertices.Count}, faces={mesh.Faces.Count}.");
+        if (geometry is Brep brep)
+        {
+            bool topology = brep.IsValidTopology(out string topologyLog);
+            Console.WriteLine($"Admission control {name}: surfaces={brep.Surfaces.Count}, faces={brep.Faces.Count}, " +
+                $"loops={brep.Loops.Count}, IsValidTopology={topology}, topology log={topologyLog}");
+        }
+        Console.Out.Flush();
+        return valid;
     }
 
     private static void VerifySelectedRecovery(Assembly assembly, object highlight)
