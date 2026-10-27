@@ -383,6 +383,11 @@ This is supplemental evidence: the test-side flush can change timing, it does
 not cover all assertions of the required fixtures, and it does not prove that
 idle is a safe boundary after every nested native display call.
 
+An earlier temporary readback prototype exited with native heap-corruption code
+`0xC0000374` after completing its framebuffer read. Its task continuation could
+resume inline while the draw callback was still active; the later diagnostic
+uses asynchronous continuations and passed, but the crash cause was not proven.
+
 The installed RhinoCommon 8.36 implementation can retain a mesh in its managed
 pipeline cache when the two-argument `DrawMeshShaded` overload is used; the
 face-index overload calls native drawing directly. That distinction does not
