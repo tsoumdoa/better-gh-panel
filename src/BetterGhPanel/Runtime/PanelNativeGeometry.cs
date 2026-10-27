@@ -17,6 +17,7 @@ namespace BetterGhPanel.Runtime
         internal const int MaxCollection = 256;
         internal const int MaxMetadataBytes = 64 * 1024;
         internal const int MaxLegacyCurvePoints = 32768;
+        internal const int MaxPointCloudPoints = 32768;
         private const int MaxVertexEstimate = 16 * 1024;
         private static readonly Type? SharedDictionaryType = typeof(UserData).Assembly.GetType("Rhino.DocObjects.Custom.SharedUserDictionary");
 
@@ -68,6 +69,22 @@ namespace BetterGhPanel.Runtime
                     Node node = pending.Pop();
                     if (node.Depth >= PanelGeometrySources.MaxDepth) { budget.MarkLimit(); return false; }
                     var value = node.Value;
+                    Type type = value.GetType();
+                    // Reject large clouds/profile tables before inspecting
+                    // metadata or invoking any duplication/serialization path.
+                    if (!node.Component && type == typeof(PointCloud))
+                    {
+                        int count = ((PointCloud)value).Count;
+                        if (count <= 0) return false;
+                        if (count > MaxPointCloudPoints) { budget.MarkLimit(); return false; }
+                    }
+                    if (!node.Component && type == typeof(Extrusion))
+                    {
+                        int count = ((Extrusion)value).ProfileCount;
+                        if (count <= 0) return false;
+                        if (count > MaxCollection || count > rootRemaining || count > budget.Remaining)
+                        { budget.MarkLimit(); return false; }
+                    }
                     observed.Add(value);
                     if (!forBounds && node.Optional && value.HasUserData)
                     {
@@ -88,7 +105,6 @@ namespace BetterGhPanel.Runtime
                         }
                         continue;
                     }
-                    Type type = value.GetType();
                     if (type == typeof(Brep))
                     {
                         var brep = (Brep)value;
@@ -136,6 +152,23 @@ namespace BetterGhPanel.Runtime
                         var subd = (SubD)value;
                         if (subd.Vertices.Count > MaxComponents || subd.Edges.Count > MaxComponents || subd.Faces.Count > MaxComponents)
                         { budget.MarkLimit(); return false; }
+                    }
+                    else if (type == typeof(PointCloud))
+                    {
+                        // Count was checked before metadata inspection above.
+                    }
+                    else if (type == typeof(Extrusion))
+                    {
+                        var extrusion = (Extrusion)value;
+                        // Public cached meshes can carry UserData independently
+                        // of the extrusion. Profile internals are not exposed as
+                        // borrowed geometry; native duplication remains best effort.
+                        if (!forBounds)
+                            foreach (var meshType in new[] { MeshType.Render, MeshType.Analysis, MeshType.Preview })
+                            {
+                                var mesh = extrusion.GetMesh(meshType);
+                                if (mesh != null) pending.Push(new Node(mesh, false, node.Depth + 1, true, (int)meshType));
+                            }
                     }
                     else if (type == typeof(NurbsCurve))
                     {

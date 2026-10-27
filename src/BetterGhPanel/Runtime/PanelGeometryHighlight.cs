@@ -200,7 +200,8 @@ namespace BetterGhPanel.Runtime
                 TryAdmitPoint(array, position, order, budget, mayEvict, generation, current)) return;
             root = source[position];
             var scopeToken = _scopeToken;
-            var inspected = PanelGeometrySources.Inspect(root, budget, true);
+            using var inspected = PanelGeometrySources.Inspect(root, budget, true,
+                bytes => ReserveInspectionValue(bytes, mayEvict, generation, current), ReleaseInspectionValue);
             if (!Current(generation, current)) return;
             if (inspected.Unavailable)
             {
@@ -265,7 +266,8 @@ namespace BetterGhPanel.Runtime
                     if (!Current(generation, current)) return;
                     bounds.Union(copy.Bounds);
                 }
-                var fresh = PanelGeometrySources.Inspect(root, budget, true);
+                using var fresh = PanelGeometrySources.Inspect(root, budget, true,
+                    bytes => ReserveInspectionValue(bytes, false, generation, current), ReleaseInspectionValue);
                 if (!Current(generation, current)) return;
                 if (!PanelGeometrySources.SameGraph(inspected, fresh))
                 { _partial = true; _partialReason ??= fresh.Exhausted ? "inspection limit" : "group or wrapper changed during preparation"; return; }
@@ -283,6 +285,20 @@ namespace BetterGhPanel.Runtime
                 if (reserved) _stagedBytes -= estimate;
             }
         }
+
+        private bool ReserveInspectionValue(long bytes, bool mayEvict, long generation, Func<bool> current)
+        {
+            while (mayEvict && bytes > MaxRetainedBytes - RetainedBytes && _unselected.Count > 0)
+            {
+                Remove(_entries[_unselected.Max]);
+                if (!Current(generation, current)) return false;
+            }
+            if (!Current(generation, current) || bytes < 0 || bytes > MaxRetainedBytes - RetainedBytes) return false;
+            _stagedBytes += bytes;
+            return true;
+        }
+
+        private void ReleaseInspectionValue(long bytes) { _stagedBytes -= bytes; }
 
         // A direct exact GH_Point needs only managed value-field work after its
         // single graph inspection. Evict first, because releasing an old entry
@@ -303,7 +319,7 @@ namespace BetterGhPanel.Runtime
             if (!_orderLabels.CanAddWithoutEnabling) return false;
             if (_entries.Count >= MaxEntries || RetainedBytes + estimate > MaxRetainedBytes)
             { _partial = true; _partialReason ??= "preview memory or entry limit"; return true; }
-            var inspected = PanelGeometrySources.Inspect(source[position], budget, true);
+            using var inspected = PanelGeometrySources.Inspect(source[position], budget, true);
             if (inspected.Unavailable)
             {
                 if (inspected.Exhausted) _partial = true; else RememberUnavailable(position);

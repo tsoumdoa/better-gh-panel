@@ -71,6 +71,464 @@ internal static class PreviewSafetyChecks
         }
     }
 
+    internal static Task RunAdditionalGeometry(Assembly assembly) => OutputChecks.RunWithEditor(assembly, RunAdditionalGeometryCore);
+
+    private static async Task RunAdditionalGeometryCore(Assembly assembly)
+    {
+        FixtureUserData.EnsureRegistered();
+        var rhino = RhinoDoc.ActiveDoc ?? throw new InvalidOperationException("Additional geometry needs a Rhino document.");
+        bool modified = rhino.Modified;
+        var clipboard = Forms.Clipboard.GetDataObject();
+        var originalIds = rhino.Objects.Select(item => item.Id).ToHashSet();
+        using var cloud = new PointCloud();
+        cloud.Add(new Point3d(-18, 0, 0), Vector3d.ZAxis, Color.Aqua, 7.5);
+        cloud.Add(new Point3d(-17, 1, 1), Vector3d.ZAxis, Color.Orange, 2.5);
+        using var profile = new Rectangle3d(new Plane(new Point3d(-10, 0, 0), Vector3d.ZAxis), 2, 3).ToNurbsCurve();
+        using var extrusion = Extrusion.Create(profile, 4, true) ?? throw new InvalidOperationException("Extrusion fixture failed.");
+        var polyline = new Polyline(new[] { new Point3d(10, 0, 0), new Point3d(12, 1, 0), new Point3d(13, 0, 0) });
+        var cloudHolder = new GH_PointCloud { Value = cloud };
+        var extrusionHolder = new GH_Extrusion { Value = extrusion };
+        var bbox = new BoundingBox(new Point3d(-3, 0, 0), new Point3d(-1, 2, 2));
+        var sphere = new Sphere(new Plane(new Point3d(5, 0, 0), Vector3d.ZAxis), 1);
+        var polylineWrapper = new GH_ObjectWrapper(polyline);
+        var values = new IGH_Goo?[] { cloudHolder, extrusionHolder, new GH_ObjectWrapper(bbox), new GH_ObjectWrapper(sphere), polylineWrapper };
+        var group = new GH_GeometryGroup { Name = "mixed" };
+        group.Objects.Add(cloudHolder); group.Objects.Add(extrusionHolder); group.Objects.Add(new GH_Point(new Point3d(-14, 0, 0)));
+        var wrappedGroup = new GH_GeometricGooWrapper(group);
+        object highlight = Activator.CreateInstance(assembly.GetType("BetterGhPanel.Runtime.PanelGeometryHighlight", true)!, true)!;
+        try
+        {
+            Check(cloud.SetUserString("source", "cloud") && extrusion.SetUserString("source", "extrusion") &&
+                cloud.UserData.Add(new CopyRoundTripUserData { Value = 301 }) && extrusion.UserData.Add(new CopyRoundTripUserData { Value = 302 }),
+                "point cloud and extrusion carry serializable source metadata");
+            var expected = new[] { cloud.GetBoundingBox(false), extrusion.GetBoundingBox(false), bbox, sphere.BoundingBox,
+                new BoundingBox(new Point3d(10, 0, 0), new Point3d(13, 1, 0)) };
+            for (int i = 0; i < values.Length; i++)
+            {
+                Set(highlight, new[] { values[i] }, new[] { 0 }, new[] { 0 });
+                Check(Count(highlight) == 1 && Box(highlight).Contains(expected[i].Min) && Box(highlight).Contains(expected[i].Max) &&
+                    !Status(highlight).Contains("partial") && Bounds(assembly, values[i]!).Contains(expected[i].Center),
+                    "additional geometry " + i + " receives a coherent standalone preview and frame bounds");
+                object frame = Frame(assembly, new[] { values[i] });
+                Check(Property<bool>(frame, "Success") && Property<int>(frame, "Skipped") == 0,
+                    "additional geometry " + i + " frames without a skip");
+            }
+            Set(highlight, new IGH_Goo?[] { group, wrappedGroup }, new[] { 0, 1 }, new[] { 0 });
+            Check(Count(highlight) == 2 && Box(highlight).Contains(expected[0].Min) && Box(highlight).Contains(expected[1].Max),
+                "mixed and wrapped groups preview terminal cloud, extrusion and point leaves");
+            object groupCopy = Copy(assembly, new IGH_Goo?[] { group });
+            Check(Property<bool>(groupCopy, "Success") && Property<int>(groupCopy, "Count") == 3 && Property<int>(groupCopy, "Skipped") == 0 &&
+                Property<bool>(groupCopy, "UnverifiedMetadata"), "a mixed group copies all leaves with the custom-metadata warning");
+            using (var archive = ClipboardArchive())
+            {
+                var copied = ArchiveGeometries(archive);
+                Console.WriteLine("Additional source geometry: " + DescribeAdditional(new GeometryBase[] { cloud, extrusion }));
+                Console.WriteLine("Mixed-group clipboard geometry: " + DescribeAdditional(copied));
+                Check(copied.OfType<PointCloud>().Any(value => value.Count == 2 && value[0].Color.ToArgb() == Color.Aqua.ToArgb() &&
+                    value[0].Normal == Vector3d.ZAxis && value[0].PointValue == 7.5 && !value[1].Hidden &&
+                    value.GetUserString("source") == "cloud" && (value.UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 301) &&
+                    copied.OfType<Extrusion>().Any(value => value.GetUserString("source") == "extrusion" &&
+                    (value.UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 302),
+                    "mixed-group clipboard preserves cloud attributes and root custom metadata on both native types");
+            }
+            Check(RhinoApp.RunScript(rhino.RuntimeSerialNumber, "_Paste", false), "Rhino accepts the mixed-group clipboard");
+            var groupDeadline = DateTime.UtcNow.AddSeconds(20);
+            while (rhino.Objects.Count(item => !originalIds.Contains(item.Id)) < 3)
+            { if (DateTime.UtcNow >= groupDeadline) throw new TimeoutException("Mixed-group Paste did not add three objects."); await Task.Delay(25); }
+            var groupPasted = rhino.Objects.Where(item => !originalIds.Contains(item.Id)).ToArray();
+            Check(groupPasted.Length == 3 && groupPasted.Select(item => item.Geometry).OfType<PointCloud>().Any(value =>
+                    value.Count == 2 && value[0].Color.ToArgb() == Color.Aqua.ToArgb() && value[0].Normal == Vector3d.ZAxis &&
+                    value[0].PointValue == 7.5 && (value.UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 301) &&
+                groupPasted.Select(item => item.Geometry).Any(value => value.GetUserString("source") == "extrusion" &&
+                    (value.UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 302) &&
+                groupPasted.Select(item => item.Geometry).OfType<Rhino.Geometry.Point>().Any(value => value.Location == new Point3d(-14, 0, 0)) &&
+                cloud.GetUserString("source") == "cloud" && extrusion.GetUserString("source") == "extrusion",
+                "real Paste of a mixed group preserves all three leaves and cloud/extrusion metadata");
+            foreach (var item in groupPasted) rhino.Objects.Delete(item.Id, true);
+            object frameGroup = Frame(assembly, new IGH_Goo?[] { wrappedGroup });
+            Check(Property<bool>(frameGroup, "Success") && Property<int>(frameGroup, "Skipped") == 0,
+                "a wrapped mixed group frames without recursive wrapper dispatch");
+            object copy = Copy(assembly, values);
+            Check(Property<bool>(copy, "Success") && Property<int>(copy, "Count") == 5 && Property<int>(copy, "Skipped") == 0,
+                "all five additional geometry values copy without skips");
+            using (var archive = ClipboardArchive())
+            {
+                var copied = ArchiveGeometries(archive);
+                Check(copied.Length == 5 && copied.OfType<PointCloud>().Count() == 1 && copied.OfType<Extrusion>().Count() == 1 &&
+                    copied.OfType<Brep>().Count() == 2 && copied.OfType<Brep>().Any(value => value.GetBoundingBox(false).Contains(bbox.Center)) &&
+                    copied.OfType<Brep>().Any(value => value.GetBoundingBox(false).Contains(sphere.Center)) &&
+                    copied.OfType<PolylineCurve>().Any(value => value.PointCount == 3 && value.Point(1) == polyline[1]),
+                    "the clipboard archive contains cloud, extrusion, box, sphere and polyline geometry at their original locations");
+            }
+            Check(RhinoApp.RunScript(rhino.RuntimeSerialNumber, "_Paste", false), "Rhino accepts the additional geometry clipboard");
+            var deadline = DateTime.UtcNow.AddSeconds(20);
+            while (rhino.Objects.Count(item => !originalIds.Contains(item.Id)) < 5)
+            { if (DateTime.UtcNow >= deadline) throw new TimeoutException("Additional geometry Paste did not add five objects."); await Task.Delay(25); }
+            var pasted = rhino.Objects.Where(item => !originalIds.Contains(item.Id)).Select(item => item.Geometry).ToArray();
+            Console.WriteLine("Pasted additional geometry: " + DescribeAdditional(pasted));
+            Check(pasted.Length == 5 && pasted.OfType<PointCloud>().Any(value => value.Count == 2 && value.GetUserString("source") == "cloud" &&
+                    value[0].Color.ToArgb() == Color.Aqua.ToArgb() && value[0].Normal == Vector3d.ZAxis && value[0].PointValue == 7.5 && !value[1].Hidden &&
+                    (value.UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 301) &&
+                pasted.Any(value => value.GetUserString("source") == "extrusion" && value.GetBoundingBox(false).Contains(expected[1].Center) &&
+                    (value.UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 302) &&
+                pasted.OfType<PolylineCurve>().Any(value => value.PointCount == 3 && value.Point(2) == polyline[2]) &&
+                pasted.Any(value => value.GetBoundingBox(false).Contains(bbox.Center)) &&
+                pasted.Any(value => value.GetBoundingBox(false).Contains(sphere.Center)) &&
+                cloud.GetUserString("source") == "cloud" && extrusion.GetUserString("source") == "extrusion" &&
+                (cloud.UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 301 &&
+                (extrusion.UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 302,
+                "real Paste preserves additional geometry, cloud attributes and source metadata");
+
+            await VerifyAdditionalReferences(assembly, highlight, rhino, cloud, extrusion);
+
+            Set(highlight, new IGH_Goo?[] { cloudHolder, group }, new[] { 0, 1 }, new[] { 0, 1 });
+            var cloudGenerationBounds = Box(highlight);
+            cloud.Add(new Point3d(50, 4, 0), Vector3d.ZAxis, Color.Aqua, 1);
+            Check(Box(highlight).Equals(cloudGenerationBounds) && !Box(highlight).Contains(new Point3d(50, 4, 0)),
+                "standalone and grouped clouds keep their original bounds after in-place source mutation without expiration");
+            Set(highlight, new IGH_Goo?[] { cloudHolder, group }, new[] { 0, 1 }, new[] { 0, 1 });
+            Check(Count(highlight) == 2 && Box(highlight).Contains(new Point3d(50, 4, 0)),
+                "a fresh preview generation captures the changed standalone and grouped cloud");
+            cloud.RemoveAt(2);
+            using var shiftedProfile = new Rectangle3d(new Plane(new Point3d(70, 0, 0), Vector3d.ZAxis), 2, 3).ToNurbsCurve();
+            using var shiftedExtrusion = Extrusion.Create(shiftedProfile, 4, true) ?? throw new InvalidOperationException("Replacement extrusion fixture failed.");
+            Set(highlight, new IGH_Goo?[] { extrusionHolder, group }, new[] { 0, 1 }, new[] { 0, 1 });
+            var extrusionGenerationBounds = Box(highlight);
+            extrusionHolder.Value = shiftedExtrusion;
+            Check(Box(highlight).Equals(extrusionGenerationBounds) && !Box(highlight).Contains(new Point3d(70, 0, 0)),
+                "standalone and grouped extrusion previews retain their old generation after holder replacement");
+            Set(highlight, new IGH_Goo?[] { extrusionHolder, group }, new[] { 0, 1 }, new[] { 0, 1 });
+            Check(Count(highlight) == 2 && Box(highlight).Contains(new Point3d(70, 0, 0)),
+                "a fresh preview generation captures the replacement standalone and grouped extrusion");
+            extrusionHolder.Value = extrusion;
+
+            var oldBox = Bounds(assembly, polylineWrapper);
+            Set(highlight, new IGH_Goo?[] { polylineWrapper }, new[] { 0 }, new[] { 0 });
+            polyline[1] = new Point3d(12, 20, 0);
+            Check(Box(highlight).Equals(oldBox), "a wrapped mutable polyline retains the old preview bounds until refresh");
+            Set(highlight, new IGH_Goo?[] { polylineWrapper }, new[] { 0 }, new[] { 0 });
+            Check(Box(highlight).Max.Y == 20, "a new preview generation captures the changed polyline");
+            var custom = new StandalonePointPreview();
+            var beforeFrame = rhino.Views.ActiveView.ActiveViewport.CameraTarget;
+            custom.OnBounds = () => polyline[1] = new Point3d(12, 25, 0);
+            object staleFrame = Frame(assembly, new IGH_Goo?[] { polylineWrapper, custom });
+            Check(!Property<bool>(staleFrame, "Success") && rhino.Views.ActiveView.ActiveViewport.CameraTarget == beforeFrame,
+                "a later bounds callback changing an earlier wrapped polyline cancels the camera action");
+            Forms.Clipboard.SetText("keep polyline freshness clipboard");
+            CopyRoundTripUserData.DuplicateAt = 1; CopyRoundTripUserData.TriggeredGeneration = 0;
+            CopyRoundTripUserData.OnDuplicateAction = () => polyline[1] = new Point3d(12, 30, 0);
+            copy = Copy(assembly, new IGH_Goo?[] { polylineWrapper, cloudHolder });
+            Check(!Property<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 &&
+                Forms.Clipboard.GetText() == "keep polyline freshness clipboard",
+                "a later duplicate callback changing an earlier wrapped polyline cancels clipboard publication");
+            CopyRoundTripUserData.TriggeredGeneration = 0;
+            CopyRoundTripUserData.OnDuplicateAction = () => polylineWrapper.Value = new Polyline(polyline);
+            copy = Copy(assembly, new IGH_Goo?[] { polylineWrapper, cloudHolder });
+            Check(!Property<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 &&
+                Forms.Clipboard.GetText() == "keep polyline freshness clipboard",
+                "retargeting a wrapped polyline to equal points during duplication cancels clipboard publication");
+            polylineWrapper.Value = polyline;
+            CopyRoundTripUserData.TriggeredGeneration = 0;
+            CopyRoundTripUserData.OnDuplicateAction = () => group.Objects[1] = new GH_Extrusion { Value = extrusion };
+            copy = Copy(assembly, new IGH_Goo?[] { group });
+            Check(!Property<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 &&
+                Forms.Clipboard.GetText() == "keep polyline freshness clipboard",
+                "replacing a mixed group's extrusion holder during cloud duplication cancels publication");
+            group.Objects[1] = extrusionHolder;
+            CopyRoundTripUserData.OnDuplicateAction = null;
+
+            beforeFrame = rhino.Views.ActiveView.ActiveViewport.CameraTarget;
+            custom.OnBounds = () => cloud[1].Hidden = true;
+            staleFrame = Frame(assembly, new IGH_Goo?[] { cloudHolder, custom });
+            Check(!Property<bool>(staleFrame, "Success") && cloud[1].Hidden &&
+                rhino.Views.ActiveView.ActiveViewport.CameraTarget == beforeFrame,
+                "a later bounds callback adding cloud hidden flags cancels frame before camera motion");
+            cloud.ClearHiddenFlags();
+            CopyRoundTripUserData.TriggeredGeneration = 0;
+            CopyRoundTripUserData.OnDuplicateAction = () => cloud[1].Hidden = true;
+            copy = Copy(assembly, new IGH_Goo?[] { cloudHolder });
+            Check(!Property<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 && cloud[1].Hidden &&
+                Forms.Clipboard.GetText() == "keep polyline freshness clipboard",
+                "hidden flags added by a duplicate callback cancel copy before clipboard publication");
+            cloud.ClearHiddenFlags();
+            CopyRoundTripUserData.TriggeredGeneration = 0;
+            CopyRoundTripUserData.OnDuplicateAction = () => cloud[1].Hidden = true;
+            Set(highlight, new IGH_Goo?[] { cloudHolder }, new[] { 0 }, new[] { 0 });
+            Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && cloud[1].Hidden &&
+                CopyRoundTripUserData.TriggeredGeneration > 0,
+                "hidden flags added during preview construction reject the stale generation");
+            CopyRoundTripUserData.OnDuplicateAction = null;
+            cloud.ClearHiddenFlags();
+
+            long stagedBytes = 0;
+            var observerField = highlight.GetType().GetField("_admissionObserver", Instance)!;
+            observerField.SetValue(highlight, (Action<int, object>)((_, __) =>
+            {
+                stagedBytes = Property<long>(highlight, "RetainedBytes");
+                polyline[1] = new Point3d(12, 40, 0);
+            }));
+            Set(highlight, new IGH_Goo?[] { polylineWrapper }, new[] { 0 }, new[] { 0 });
+            observerField.SetValue(highlight, null);
+            Check(stagedBytes > 128 && Count(highlight) == 0 && Status(highlight).Contains("partial") &&
+                Property<long>(highlight, "RetainedBytes") == 0,
+                "wrapped polyline staging is accounted and a mid-build mutation rejects and releases the generation");
+
+            using var hiddenCloud = new PointCloud();
+            hiddenCloud.Add(new Point3d(0, 0, 0)); hiddenCloud.Add(new Point3d(1, 0, 0)); hiddenCloud[1].Hidden = true;
+            using (var file = new File3dm())
+            {
+                Guid id = file.Objects.Add(hiddenCloud, null);
+                using var roundtrip = File3dm.FromByteArray(file.ToByteArray(new File3dmWriteOptions { Version = 8, SaveUserData = true }));
+                var archived = roundtrip.Objects.FindId(id)?.Geometry as PointCloud;
+                Console.WriteLine($"Hidden-cloud archive diagnostic: source hidden={hiddenCloud[1].Hidden}, " +
+                    $"archive type={archived?.GetType().Name}, archive hidden={archived?[1].Hidden}");
+                Check(id != Guid.Empty && hiddenCloud.ContainsHiddenFlags && hiddenCloud[1].Hidden && archived != null &&
+                    archived.Count == 2 && !archived[1].Hidden,
+                    "Rhino's 3DM roundtrip demonstrably drops a cloud's hidden flag while leaving its source unchanged");
+            }
+            var hiddenHolder = new GH_PointCloud { Value = hiddenCloud };
+            var hiddenGroup = new GH_GeometryGroup(); hiddenGroup.Objects.Add(hiddenHolder);
+            Check(Property<bool>(Frame(assembly, new IGH_Goo?[] { hiddenGroup }), "Success"),
+                "a cloud with hidden points remains frameable through a group");
+            Forms.Clipboard.SetText("keep hidden cloud clipboard");
+            copy = Copy(assembly, new IGH_Goo?[] { hiddenHolder });
+            Check(!Property<bool>(copy, "Success") && Property<int>(copy, "Skipped") == 1 &&
+                Property<string>(copy, "Error").Contains("hidden flags") && Forms.Clipboard.GetText() == "keep hidden cloud clipboard" &&
+                hiddenCloud[1].Hidden, "a cloud with non-roundtrippable hidden flags is visibly skipped without changing the clipboard or source");
+            copy = Copy(assembly, new IGH_Goo?[] { hiddenGroup, new GH_Point(Point3d.Origin) });
+            Check(Property<bool>(copy, "Success") && Property<int>(copy, "Count") == 1 && Property<int>(copy, "Skipped") == 1 &&
+                Property<string>(copy, "Detail").Contains("hidden flags") && hiddenCloud[1].Hidden,
+                "a mixed action visibly reports a skipped hidden-cloud group while copying the supported point");
+            using (var partialArchive = ClipboardArchive())
+                Check(ArchiveGeometries(partialArchive).Single() is Rhino.Geometry.Point,
+                    "the partial clipboard contains only the supported geometry");
+
+            using var orderedCloud = new PointCloud();
+            orderedCloud.Add(new Point3d(1, 0, 0), Color.Aqua);
+            orderedCloud.Add(new Point3d(2, 0, 0), Color.Orange);
+            orderedCloud.Add(new Point3d(3, 0, 0), Color.Aqua);
+            Set(highlight, new IGH_Goo?[] { new GH_PointCloud { Value = orderedCloud } }, new[] { 0 }, new[] { 0 });
+            var pairs = ((IEnumerable)Field<object>(highlight, "_entries")).Cast<object>().ToArray();
+            var entry = pairs.Single().GetType().GetProperty("Value")!.GetValue(pairs.Single())!;
+            var leaf = ((IEnumerable)Field<object>(entry, "Leaves")).Cast<object>().Single();
+            var snapshot = Field<object>(leaf, "_value");
+            var batches = ((IEnumerable)Property<object>(snapshot, "Batches")).Cast<object>().ToArray();
+            Check(batches.Select(batch => Property<int>(batch, "Argb")).SequenceEqual(new[] { Color.Aqua.ToArgb(), Color.Orange.ToArgb(), Color.Aqua.ToArgb() }) &&
+                batches.SelectMany(batch => Property<Point3d[]>(batch, "Points")).SequenceEqual(new[] { new Point3d(1, 0, 0), new Point3d(2, 0, 0), new Point3d(3, 0, 0) }) &&
+                !ReferenceEquals(Field<GeometryBase>(leaf, "_owned"), orderedCloud) && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+                "owned cloud batches preserve point/color order and stay inside the preview budget");
+
+            using var mediumCloud = new PointCloud();
+            for (int i = 0; i < 8193; i++) mediumCloud.Add(new Point3d(i, 0, 0));
+            var mediumHolder = new GH_PointCloud { Value = mediumCloud };
+            var mediumGroup = new GH_GeometryGroup(); mediumGroup.Objects.Add(mediumHolder);
+            Set(highlight, new IGH_Goo?[] { mediumHolder, mediumGroup }, new[] { 0, 1 }, new[] { 0, 1 });
+            copy = Copy(assembly, new IGH_Goo?[] { mediumGroup });
+            Check(Count(highlight) == 2 && Box(highlight).Contains(new Point3d(8192, 0, 0)) &&
+                Property<bool>(copy, "Success") && Property<int>(copy, "Count") == 1 && Property<int>(copy, "Skipped") == 0,
+                "an 8,193-point cloud remains previewable and copyable both standalone and in a group");
+            using (var mediumArchive = ClipboardArchive())
+                Check(ArchiveGeometries(mediumArchive).OfType<PointCloud>().Single().Count == 8193,
+                    "the medium cloud clipboard archive retains every point");
+            using var largeCloud = new PointCloud();
+            for (int i = 0; i < 32769; i++) largeCloud.Add(new Point3d(i, 0, 0));
+            Check(largeCloud.UserData.Add(new PolylineSafetyUserData()), "oversized point cloud has callback metadata before preflight");
+            PolylineSafetyUserData.Reset(true);
+            Forms.Clipboard.SetText("keep cloud limit clipboard");
+            copy = Copy(assembly, new IGH_Goo?[] { new GH_PointCloud { Value = largeCloud }, new GH_Point(Point3d.Origin) });
+            Check(Property<bool>(copy, "Success") && Property<int>(copy, "Skipped") == 1 && Property<bool>(copy, "Exhausted") &&
+                PolylineSafetyUserData.Callbacks == 0 && largeCloud.HasUserData,
+                "oversized point-cloud preflight reports a partial action before invoking its metadata callback");
+            PolylineSafetyUserData.Reset(false);
+
+            await VerifyAdditionalTypedOutput(assembly, values, group);
+        }
+        finally
+        {
+            CopyRoundTripUserData.OnDuplicateAction = null;
+            PolylineSafetyUserData.Reset(false);
+            highlight.GetType().GetField("_admissionObserver", Instance)!.SetValue(highlight, null);
+            Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
+            foreach (var item in rhino.Objects.Where(item => !originalIds.Contains(item.Id)).ToArray()) rhino.Objects.Delete(item.Id, true);
+            rhino.Modified = modified;
+            if (clipboard == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(clipboard, true);
+        }
+    }
+
+    private static GeometryBase[] ArchiveGeometries(File3dm archive)
+    {
+        var values = new List<GeometryBase>();
+        foreach (var item in archive.Objects) values.Add(item?.Geometry ?? throw new InvalidOperationException("Archive object is unavailable."));
+        return values.ToArray();
+    }
+
+    private static string DescribeAdditional(IEnumerable<GeometryBase> geometries) => string.Join("; ", geometries.Select(value =>
+    {
+        string detail = value.GetType().Name + " source=" + value.GetUserString("source") + " custom=" +
+            ((value.UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value.ToString() ?? "absent");
+        if (value is PointCloud cloud)
+            detail += " count=" + cloud.Count + " points=[" + string.Join(",", Enumerable.Range(0, cloud.Count).Select(i =>
+                cloud[i].Location + "/argb=" + cloud[i].Color.ToArgb().ToString("X8") + "/normal=" + cloud[i].Normal +
+                "/value=" + cloud[i].PointValue + "/hidden=" + cloud[i].Hidden)) + "]";
+        return detail;
+    }));
+
+    private static Task VerifyAdditionalReferences(Assembly assembly, object highlight, RhinoDoc rhino, PointCloud cloud, Extrusion extrusion)
+    {
+        Guid cloudId = rhino.Objects.AddPointCloud(cloud);
+        Guid extrusionId = rhino.Objects.AddExtrusion(extrusion);
+        var loadedCloud = new GH_PointCloud(cloudId);
+        var loadedExtrusion = new GH_Extrusion(extrusionId);
+        Check(cloudId != Guid.Empty && extrusionId != Guid.Empty && loadedCloud.LoadGeometry(rhino) && loadedExtrusion.LoadGeometry(rhino) &&
+            loadedCloud.IsReferencedGeometry && loadedCloud.IsGeometryLoaded && loadedExtrusion.IsReferencedGeometry && loadedExtrusion.IsGeometryLoaded,
+            "point-cloud and extrusion reference controls load from the Rhino document");
+        var group = new GH_GeometryGroup(); group.Objects.Add(loadedCloud); group.Objects.Add(loadedExtrusion);
+        Set(highlight, new IGH_Goo?[] { loadedCloud, loadedExtrusion, group }, new[] { 0, 1, 2 }, new[] { 0, 1, 2 });
+        Check(Count(highlight) == 3 && Box(highlight).Contains(cloud.GetBoundingBox(false).Center) &&
+            Box(highlight).Contains(extrusion.GetBoundingBox(false).Center) &&
+            Property<bool>(Frame(assembly, new IGH_Goo?[] { group }), "Success"),
+            "loaded references preview and frame both independently and inside a group");
+        object copy = Copy(assembly, new IGH_Goo?[] { group });
+        Check(Property<bool>(copy, "Success") && Property<int>(copy, "Count") == 2 && Property<int>(copy, "Skipped") == 0,
+            "a group of loaded references copies both terminal geometries");
+        using (var archive = ClipboardArchive())
+        {
+            var values = ArchiveGeometries(archive);
+            Check(values.OfType<PointCloud>().Any(value => value.GetUserString("source") == "cloud" &&
+                    (value.UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 301) &&
+                values.Any(value => value.GetUserString("source") == "extrusion" &&
+                    (value.UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 302),
+                "loaded-reference clipboard geometry retains both source metadata payloads");
+        }
+        Forms.Clipboard.SetText("keep retargeted cloud clipboard");
+        CopyRoundTripUserData.DuplicateAt = 1; CopyRoundTripUserData.TriggeredGeneration = 0;
+        CopyRoundTripUserData.OnDuplicateAction = () => loadedCloud.ReferenceID = extrusionId;
+        copy = Copy(assembly, new IGH_Goo?[] { loadedCloud });
+        Check(!Property<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 &&
+            Forms.Clipboard.GetText() == "keep retargeted cloud clipboard",
+            "retargeting a loaded cloud reference during duplication cancels clipboard publication");
+        CopyRoundTripUserData.OnDuplicateAction = null;
+        return Task.CompletedTask;
+    }
+
+    private static async Task VerifyAdditionalTypedOutput(Assembly assembly, IGH_Goo?[] values, GH_GeometryGroup group)
+    {
+        using var fixture = new OutputChecks.Fixture(assembly);
+        fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
+        var all = values.Concat(new IGH_Goo?[] { group }).ToArray();
+        fixture.Source.PersistentData.AppendRange(all!, new GH_Path(0));
+        fixture.Paired.PersistentData.AppendRange(Enumerable.Range(0, all.Length).Select(i => (IGH_Goo)new GH_String("pair-" + i)), new GH_Path(0));
+        fixture.Solve();
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == all.Length && fixture.Sinks[3].VolatileData.DataCount == all.Length);
+        var delivered = fixture.Component.Params.Input[0].VolatileData.AllData(false).ToArray();
+        var output = fixture.Sinks[0].VolatileData.AllData(false).ToArray();
+        var snapshot = fixture.Result.Snapshot;
+        Console.WriteLine("Additional captured rows: " + string.Join("; ", snapshot.Rows.Select(row =>
+            $"type={row.TypeName} known={row.TypeIdentityAvailable} validity={row.Validity} display={row.DisplayValue} capabilities={row.SearchCapabilities}")));
+        Check(snapshot.Rows[0].TypeName == "Point Cloud" && snapshot.Rows[1].TypeName == "Extrusion" &&
+            snapshot.Rows[5].TypeName == "Group" && snapshot.Rows[0].TypeIdentityAvailable && snapshot.Rows[1].TypeIdentityAvailable &&
+            snapshot.Rows[5].TypeIdentityAvailable && new[] { 0, 1, 5 }.All(i => snapshot.Rows[i].Validity == PanelValidity.Unverified),
+            "capture currently retains exact cloud/extrusion/group identities but marks their validity unverified");
+        Check(snapshot.Rows[0].DisplayValue == "<Point Cloud>" && snapshot.Rows[1].DisplayValue == "<Extrusion>" &&
+            PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = "Point Cloud" }).RowPositions.SequenceEqual(new[] { 0 }) &&
+            PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = "Extrusion" }).RowPositions.SequenceEqual(new[] { 1 }) &&
+            PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = "<Point Cloud>" }).RowPositions.Contains(0) &&
+            PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = snapshot.Rows[5].DisplayValue }).RowPositions.Contains(5),
+            "type and text searches use the known stock identities and captured group summary");
+        Check(snapshot.SupportsSearchMode(PanelSearchMode.Text) && snapshot.SupportsSearchMode(PanelSearchMode.Regex) &&
+            snapshot.SupportsSearchMode(PanelSearchMode.ListLength) && !snapshot.SupportsSearchMode(PanelSearchMode.Length) &&
+            !snapshot.SupportsSearchMode(PanelSearchMode.Area) && !snapshot.SupportsSearchMode(PanelSearchMode.Volume) &&
+            !PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { OnlyInvalid = true }).RowPositions.Any(i => i == 0 || i == 1 || i == 5),
+            "unverified cloud/extrusion/group rows have no metric capability and are excluded by invalid-only filtering");
+        Check(delivered.Length == all.Length && output.Select(value => value?.GetType()).SequenceEqual(delivered.Select(value => value?.GetType())) &&
+            delivered[0] is GH_PointCloud && delivered[1] is GH_Extrusion && delivered[5] is GH_GeometryGroup,
+            "the real solve preserves delivered cloud, extrusion, wrapper and group types in D");
+        fixture.SelectAt(0); fixture.SelectAt(5, toggle: true);
+        fixture.Scope(PanelOutputScope.Selected);
+        await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 2 && fixture.Sinks[3].VolatileData.DataCount == 2);
+        var selected = fixture.Sinks[1].VolatileData.AllData(false).ToArray();
+        var mask = fixture.Sinks[2].VolatileData.AllData(false).Cast<GH_Boolean>().Select(value => value.Value).ToArray();
+        Check(selected.Length == 2 && selected[0]?.GetType() == delivered[0]?.GetType() && selected[1]?.GetType() == delivered[5]?.GetType() &&
+            mask.SequenceEqual(new[] { true, false, false, false, false, true }) && fixture.Values(3) == "pair-0,pair-5",
+            "selected S and paired B/F preserve typed membership and source order");
+    }
+
+    internal static Task RunAdditionalGeometryDraw(Assembly assembly)
+    {
+        var rhino = RhinoDoc.ActiveDoc ?? throw new InvalidOperationException("Additional geometry drawing needs a Rhino document.");
+        bool modified = rhino.Modified; var previous = rhino.Views.ActiveView;
+        var view = rhino.Views.Add("Additional geometry preview", Rhino.Display.DefinedViewportProjection.Top,
+            new Rectangle(0, 0, 640, 480), false);
+        using var document = new GH_Document { Enabled = true };
+        using var cloud = new PointCloud(); cloud.Add(new Point3d(-15, 0, 0)); cloud.Add(new Point3d(-14.5, 0.5, 0));
+        using var groupedCloud = new PointCloud(); groupedCloud.Add(new Point3d(-10, 0, 0)); groupedCloud.Add(new Point3d(-9.5, 0.5, 0));
+        using var coloredCloud = new PointCloud();
+        coloredCloud.Add(new Point3d(20, 0, 0), Color.Cyan); coloredCloud.Add(new Point3d(23, 0, 0), Color.Cyan);
+        coloredCloud[1].Hidden = true;
+        using var profile = new Rectangle3d(new Plane(new Point3d(-5, -1, 0), Vector3d.ZAxis), 2, 2).ToNurbsCurve();
+        using var groupProfile = new Rectangle3d(new Plane(new Point3d(0, -1, 0), Vector3d.ZAxis), 2, 2).ToNurbsCurve();
+        using var extrusion = Extrusion.Create(profile, 2, true) ?? throw new InvalidOperationException("Extrusion drawing fixture failed.");
+        using var groupExtrusion = Extrusion.Create(groupProfile, 2, true) ?? throw new InvalidOperationException("Grouped extrusion drawing fixture failed.");
+        var cloudGroup = new GH_GeometryGroup(); cloudGroup.Objects.Add(new GH_PointCloud { Value = groupedCloud });
+        var extrusionGroup = new GH_GeometryGroup(); extrusionGroup.Objects.Add(new GH_Extrusion { Value = groupExtrusion });
+        var bbox = new BoundingBox(new Point3d(5, -1, 0), new Point3d(7, 1, 2));
+        var sphere = new Sphere(new Plane(new Point3d(10, 0, 0), Vector3d.ZAxis), 1);
+        var polyline = new Polyline(new[] { new Point3d(14, -1, 0), new Point3d(15, 1, 0), new Point3d(16, -1, 0) });
+        var source = new IGH_Goo?[] { new GH_PointCloud { Value = cloud }, cloudGroup, new GH_Extrusion { Value = extrusion },
+            extrusionGroup, new GH_ObjectWrapper(bbox), new GH_ObjectWrapper(sphere), new GH_ObjectWrapper(polyline),
+            new GH_PointCloud { Value = coloredCloud } };
+        var snapshot = new PanelSnapshot(Enumerable.Range(0, source.Length).Select(i => new PanelRow(i, "{0}", "Geometry", "geometry", null)).ToArray(),
+            new[] { new PanelBranch("{0}", source.Length) });
+        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
+        var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
+        component.CreateAttributes();
+        using var conduit = new PreviewConduit(component, document);
+        try
+        {
+            rhino.Views.ActiveView = view;
+            view.ActiveViewport.ConstructionGridVisible = view.ActiveViewport.ConstructionAxesVisible = view.ActiveViewport.WorldAxesVisible = false;
+            view.ActiveViewport.ZoomBoundingBox(new BoundingBox(new Point3d(-18, -4, -1), new Point3d(26, 4, 3)));
+            var shaded = Rhino.Display.DisplayModeDescription.FindByName("Shaded");
+            if (shaded != null) view.ActiveViewport.DisplayMode = shaded;
+            document.Properties.KeepOpen = true; document.PreviewMode = GH_PreviewMode.Shaded; document.AddObject(component, false);
+            object highlight = Field<object>(component, "_highlight");
+            Scope(highlight, source, result, new[] { 0, 2, 4, 6, 7 });
+            component.ExpirePreview(false);
+            Method(document, "CreatePreviewCaches").Invoke(document, Array.Empty<object>());
+            var bounds = Box(highlight); var hostBounds = document.PreviewBoundingBox;
+            Check(Count(highlight) == 8 && Property<int>(highlight, "Count") == 5 && hostBounds.Contains(bounds.Min) && hostBounds.Contains(bounds.Max),
+                "all additional standalone and group previews enter coherent component/document bounds");
+            bool called = false;
+            conduit.OnDraw = args => { called = true; component.DrawViewportMeshes(args); component.DrawViewportWires(args); };
+            conduit.Enabled = true;
+            using var bitmap = CapturePreview(view, highlight, "additional geometry", conduit);
+            Check(called && Property<int>(highlight, "DrawWireCalls") > 0 && Property<int>(highlight, "DrawMeshCalls") > 0,
+                "an actual native capture executes additional geometry wire and shaded callbacks");
+            var regions = new[] {
+                new BoundingBox(new Point3d(-15.5,-1,0),new Point3d(-14,1,0)),
+                new BoundingBox(new Point3d(-10.5,-1,0),new Point3d(-9,1,0)),
+                extrusion.GetBoundingBox(false), groupExtrusion.GetBoundingBox(false), bbox, sphere.BoundingBox,
+                new BoundingBox(new Point3d(14,-1,0),new Point3d(16,1,0)) };
+            for (int i = 0; i < regions.Length; i++)
+                Check(RegionHasColor(bitmap, view.ActiveViewport, regions[i], i % 2 == 0 ? Color.Lime : Color.Red),
+                    "additional preview " + i + " produces actual selected or filtered viewport pixels");
+            Check(RegionHasColor(bitmap, view.ActiveViewport, new BoundingBox(new Point3d(19.5, -0.5, 0), new Point3d(20.5, 0.5, 0)), Color.Cyan) &&
+                !RegionHasColor(bitmap, view.ActiveViewport, new BoundingBox(new Point3d(22.5, -0.5, 0), new Point3d(23.5, 0.5, 0)), Color.Cyan) &&
+                coloredCloud[1].Hidden,
+                "selected colored clouds retain source colors and omit hidden-point pixels without changing the source");
+            Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
+            Method(highlight, "ReleaseOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
+            Check(Property<long>(highlight, "RetainedBytes") == 0, "explicit post-capture cleanup releases additional preview resources");
+        }
+        finally
+        {
+            conduit.Enabled = false; document.Properties.KeepOpen = false; document.PreviewMode = GH_PreviewMode.Disabled;
+            if (previous != null) rhino.Views.ActiveView = previous;
+            view.Close(); rhino.Modified = modified;
+        }
+        return Task.CompletedTask;
+    }
+
     private static async Task VerifyCrossComponentActions(Assembly assembly, RhinoDoc rhino)
     {
         var prior = Forms.Clipboard.GetDataObject();
@@ -394,15 +852,9 @@ internal static class PreviewSafetyChecks
         var prior = Forms.Clipboard.GetDataObject();
         bool modified = rhino.Modified;
         var originalIds = rhino.Objects.Select(item => item.Id).ToHashSet();
-        using var cloud = new PointCloud(); cloud.Add(new Point3d(2, 3, 4));
-        using var profile = new Rectangle3d(Plane.WorldXY, 2, 3).ToNurbsCurve();
-        using var extrusion = Extrusion.Create(profile, 4, true) ?? throw new InvalidOperationException("Extrusion fixture failed");
-        var cloudHolder = new GH_PointCloud { Value = cloud };
-        var extrusionHolder = new GH_Extrusion { Value = extrusion };
-        var values = new IGH_Goo?[] { cloudHolder, extrusionHolder,
-            new GH_ObjectWrapper(new BoundingBox(Point3d.Origin, new Point3d(2, 3, 4))),
-            new GH_ObjectWrapper(new Sphere(Plane.WorldXY, 2)),
-            new GH_ObjectWrapper(new Polyline(new[] { Point3d.Origin, new Point3d(3, 0, 0) })) };
+        var invalid = new GH_ObjectWrapper(new Polyline(new[] { Point3d.Origin, Point3d.Origin }));
+        var unknown = new GH_ObjectWrapper(new object());
+        var values = new IGH_Goo?[] { invalid, unknown };
         try
         {
             for (int i = 0; i < values.Length; i++)
@@ -417,18 +869,16 @@ internal static class PreviewSafetyChecks
                 Check(Property<bool>(copied, "Success") && Property<int>(copied, "Count") == 1 && Property<int>(copied, "Skipped") == 1,
                     "copy visibly skips unsupported standalone geometry " + i);
             }
-            foreach (var unsupported in new IGH_GeometricGoo[] { cloudHolder, extrusionHolder })
-            {
-                var group = new GH_GeometryGroup(); group.Objects.Add(new GH_Point(Point3d.Origin)); group.Objects.Add(unsupported);
-                Set(highlight, new IGH_Goo?[] { group }, new[] { 0 }, new[] { 0 });
-                Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && !Bounds(assembly, group).IsValid,
-                    "a group with unsupported geometry is not silently admitted as a partial preview");
-                object framed = Frame(assembly, new IGH_Goo?[] { group, new GH_Point(new Point3d(10, 0, 0)) });
-                object copied = Copy(assembly, new IGH_Goo?[] { group, new GH_Point(new Point3d(10, 0, 0)) });
-                Check(Property<bool>(framed, "Success") && Property<int>(framed, "Skipped") == 1 &&
-                    Property<bool>(copied, "Success") && Property<int>(copied, "Skipped") == 1,
-                    "frame and copy report the skipped group and preserve the separate supported point");
-            }
+            var group = new GH_GeometryGroup(); group.Objects.Add(new GH_Point(Point3d.Origin)); group.Objects.Add(new HostileCurveHolder());
+            HostileCurveHolder.Calls = 0;
+            Set(highlight, new IGH_Goo?[] { group }, new[] { 0 }, new[] { 0 });
+            Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && !Bounds(assembly, group).IsValid && HostileCurveHolder.Calls == 0,
+                "a group with an unsupported hostile child is not silently admitted or dispatched");
+            object groupFrame = Frame(assembly, new IGH_Goo?[] { group, new GH_Point(new Point3d(10, 0, 0)) });
+            object groupCopy = Copy(assembly, new IGH_Goo?[] { group, new GH_Point(new Point3d(10, 0, 0)) });
+            Check(Property<bool>(groupFrame, "Success") && Property<int>(groupFrame, "Skipped") == 1 &&
+                Property<bool>(groupCopy, "Success") && Property<int>(groupCopy, "Skipped") == 1 && HostileCurveHolder.Calls == 0,
+                "frame and copy report the skipped group and preserve the separate supported point");
             Check(RhinoApp.RunScript(rhino.RuntimeSerialNumber, "_Paste", false), "Rhino accepts the partial-action clipboard");
             var deadline = DateTime.UtcNow.AddSeconds(20);
             while (!rhino.Objects.Any(item => !originalIds.Contains(item.Id)))
@@ -436,6 +886,13 @@ internal static class PreviewSafetyChecks
             var pasted = rhino.Objects.Where(item => !originalIds.Contains(item.Id)).ToArray();
             Check(pasted.Length == 1 && pasted[0].Geometry is Rhino.Geometry.Point point && point.Location == new Point3d(10, 0, 0),
                 "a partial action pastes only the explicitly supported point");
+            var tooLong = new GH_ObjectWrapper(new Polyline(Enumerable.Range(0, 32769).Select(i => new Point3d(i, 0, 0))));
+            Forms.Clipboard.SetText("keep oversized clipboard");
+            Set(highlight, new IGH_Goo?[] { tooLong }, new[] { 0 }, new[] { 0 });
+            object oversized = Copy(assembly, new IGH_Goo?[] { tooLong, new GH_Point(Point3d.Origin) });
+            Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && !Property<bool>(oversized, "Success") &&
+                Property<bool>(oversized, "Exhausted") && Forms.Clipboard.GetText() == "keep oversized clipboard",
+                "an oversized wrapped polyline exhausts the action visibly without replacing the clipboard");
         }
         finally
         {

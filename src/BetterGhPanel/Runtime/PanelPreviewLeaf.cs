@@ -1,8 +1,12 @@
 using System;
+using System.Collections.Generic;
+using System.Reflection;
 using System.Threading;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Rhino.Geometry;
+using Rhino.Display;
+using Color = System.Drawing.Color;
 
 namespace BetterGhPanel.Runtime
 {
@@ -17,6 +21,10 @@ namespace BetterGhPanel.Runtime
         internal const int MaxGeneratedBytes = 2 * 1024 * 1024;
         internal const int MaxGeneratedFaces = 16384;
         private static int _liveGeneratedMeshes, _generatedMeshBuilds;
+        // These public SDK properties were added after the project's 8.0
+        // reference assembly. Use them when available in the running host.
+        private static readonly PropertyInfo? CloudStyle = typeof(DisplayPipelineAttributes).GetProperty("PointCloudStyle");
+        private static readonly PropertyInfo? CloudRadius = typeof(DisplayPipelineAttributes).GetProperty("PointCloudRadius");
         internal static int LiveGeneratedMeshes => Volatile.Read(ref _liveGeneratedMeshes);
         internal static int GeneratedMeshBuilds => Volatile.Read(ref _generatedMeshBuilds);
         private readonly object _value;
@@ -53,6 +61,9 @@ namespace BetterGhPanel.Runtime
             if (value is PanelGeometrySources.StandalonePreview) return true;
             if (value is Point3d || value is Line || value is Arc || value is Circle || value is Rectangle3d) return true;
             if (value is Box) { bytes = 8192; return true; }
+            if (value is Sphere) { bytes = MaxGeneratedBytes + 262144L; return true; }
+            if (value is PanelGeometrySources.PolylineSnapshot capturedPolyline)
+            { bytes = 4096L + capturedPolyline.Points.Length * 256L; return bytes <= PanelGeometryHighlight.MaxRetainedBytes; }
             if (value is GeometryBase && Rhino.Runtime.CommonObject.PerformCorruptionTesting) return false;
             if (value is Point) return true;
             if (value is LineCurve || value is ArcCurve) return true;
@@ -83,6 +94,10 @@ namespace BetterGhPanel.Runtime
             // A single native meshing call can exceed its estimate; the created
             // mesh is checked before it enters the bounded result-local cache.
             bytes = 65536L + scan.NativeBytes * 8L + (geometry is Brep || geometry is Surface || geometry is SubD ? MaxGeneratedBytes + 131072L : 0);
+            // A cloud is rendered from owned, ordered point batches, including
+            // temporary lists and colour-run arrays. Reserve before construction
+            // even when every point has a different colour.
+            if (geometry is PointCloud cloud) bytes += cloud.Count * (cloud.ContainsColors ? 512L : 128L);
             return bytes <= PanelGeometryHighlight.MaxRetainedBytes;
         }
 
@@ -147,6 +162,17 @@ namespace BetterGhPanel.Runtime
                     boxMesh = Mesh.CreateFromBox(box, 1, 1, 1);
                     if (boxMesh == null) return null;
                 }
+                else if (value is Sphere sphere)
+                {
+                    owned = sphere.ToBrep();
+                    if (owned == null) return null;
+                }
+                else if (value is PanelGeometrySources.PolylineSnapshot capturedPolyline)
+                {
+                    owned = new PolylineCurve(capturedPolyline.Points);
+                    if (!owned.IsValid) return null;
+                    value = owned;
+                }
                 else if (value is GeometryBase geometry)
                 {
                     if (scan == null) return null;
@@ -161,10 +187,19 @@ namespace BetterGhPanel.Runtime
                     if (owned is not Brep && !owned.IsValid) return null;
                     value = owned;
                 }
-                BoundingBox bounds = value is Point3d p ? new BoundingBox(p, p) :
+                BoundingBox? cloudBounds = null;
+                if (value is PointCloud cloud)
+                {
+                    var points = CaptureCloud(cloud, bytes, current, out var capturedBounds);
+                    if (points == null) return null;
+                    value = points;
+                    cloudBounds = capturedBounds;
+                }
+                BoundingBox bounds = cloudBounds ?? (value is Point3d p ? new BoundingBox(p, p) :
                     value is Line l ? l.BoundingBox : value is Arc a ? a.BoundingBox() :
                     value is Circle c ? c.BoundingBox : value is Rectangle3d r ? r.BoundingBox :
-                    value is Box b ? b.BoundingBox : value is GeometryBase g ? g.GetBoundingBox(false) : BoundingBox.Empty;
+                    value is Box b ? b.BoundingBox : value is Sphere s ? s.BoundingBox :
+                    value is GeometryBase g ? g.GetBoundingBox(false) : BoundingBox.Empty);
                 if (!bounds.IsValid) return null;
                 var result = new PanelPreviewLeaf(value, bounds, bytes, owned, boxMesh, meshStatus, canRetireMeshes, retireMeshes);
                 owned = null; boxMesh = null;
@@ -185,7 +220,27 @@ namespace BetterGhPanel.Runtime
             else if (_value is Rectangle3d rect)
                 for (int i = 0; i < 4 && current(); i++) args.Pipeline.DrawLine(rect.Corner(i), rect.Corner((i + 1) % 4), args.Color, args.Thickness);
             else if (_value is Box box) args.Pipeline.DrawBox(box, args.Color, args.Thickness);
+            else if (_value is Sphere sphere) args.Pipeline.DrawSphere(sphere, args.Color, args.Thickness);
             else if (_value is Curve curve) args.Pipeline.DrawCurve(curve, args.Color, args.Thickness);
+            else if (_value is CloudPoints cloud)
+            {
+                var style = CentralSettings.PreviewPointStyle;
+                float radius = CentralSettings.PreviewPointRadius;
+                try
+                {
+                    var attributes = args.Pipeline.DisplayPipelineAttributes;
+                    if (CloudStyle?.GetValue(attributes) is PointStyle cloudStyle) style = cloudStyle;
+                    if (CloudRadius?.GetValue(attributes) is float cloudRadius && !float.IsNaN(cloudRadius) &&
+                        !float.IsInfinity(cloudRadius) && cloudRadius >= 0) radius = cloudRadius;
+                }
+                catch (Exception) { /* Older hosts retain Grasshopper point settings. */ }
+                foreach (var batch in cloud.Batches)
+                {
+                    if (!current()) return;
+                    args.Pipeline.DrawPoints(batch.Points, style, radius,
+                        cloud.HasColors ? Color.FromArgb(batch.Argb) : args.Color);
+                }
+            }
             else if (_value is Mesh mesh && CentralSettings.PreviewMeshEdges) args.Pipeline.DrawMeshWires(mesh, args.Color, 1);
             else if (_value is Brep brep)
                 for (int i = 0; current() && i < brep.Edges.Count; i++) args.Pipeline.DrawCurve(brep.Edges[i], args.Color, 1);
@@ -195,6 +250,54 @@ namespace BetterGhPanel.Runtime
                 try { args.Pipeline.DrawSubDWires(subd, args.Color, args.Thickness); }
                 finally { subd.ClearEvaluationCache(); }
             }
+        }
+
+        private sealed class CloudPoints
+        {
+            internal CloudPoints(bool hasColors, CloudBatch[] batches) { HasColors = hasColors; Batches = batches; }
+            internal bool HasColors { get; }
+            internal CloudBatch[] Batches { get; }
+        }
+
+        private readonly struct CloudBatch
+        {
+            internal CloudBatch(int argb, Point3d[] points) { Argb = argb; Points = points; }
+            internal int Argb { get; }
+            internal Point3d[] Points { get; }
+        }
+
+        private static CloudPoints? CaptureCloud(PointCloud cloud, long reserved, Func<bool>? current, out BoundingBox bounds)
+        {
+            bounds = BoundingBox.Empty;
+            int count = cloud.Count;
+            if (count <= 0 || count > PanelNativeGeometry.MaxPointCloudPoints) return null;
+            bool hasColors = cloud.ContainsColors;
+            if (65536L + count * (hasColors ? 512L : 128L) > reserved) return null;
+            var batches = new List<CloudBatch>();
+            List<Point3d>? group = null;
+            int groupColor = 0;
+            for (int i = 0; i < count; i++)
+            {
+                if ((i & 63) == 0 && current != null && !current()) return null;
+                var item = cloud[i];
+                var point = item.Location;
+                if (!point.IsValid) return null;
+                bounds.Union(point);
+                // Hidden entries remain represented in the clipping bounds, but
+                // are not submitted to the wire pipeline.
+                if (item.Hidden) continue;
+                int color = hasColors ? item.Color.ToArgb() : 0;
+                if (group == null || color != groupColor)
+                {
+                    if (group != null) batches.Add(new CloudBatch(groupColor, group.ToArray()));
+                    groupColor = color;
+                    group = new List<Point3d>();
+                }
+                group.Add(point);
+            }
+            if (cloud.Count != count || (current != null && !current())) return null;
+            if (group != null) batches.Add(new CloudBatch(groupColor, group.ToArray()));
+            return new CloudPoints(hasColors, batches.ToArray());
         }
 
         internal void DrawMeshes(GH_PreviewMeshArgs args, Func<bool> current)
@@ -207,7 +310,7 @@ namespace BetterGhPanel.Runtime
                 else args.Pipeline.DrawMeshShaded(mesh, args.Material);
             }
             else if (_boxMesh != null) args.Pipeline.DrawMeshShaded(_boxMesh, args.Material);
-            else if (_value is Brep || _value is Surface || _value is SubD) DrawGeneratedMesh(args, current);
+            else if (_value is Brep || _value is Surface || _value is SubD || _value is Sphere) DrawGeneratedMesh(args, current);
         }
 
         private void DrawGeneratedMesh(GH_PreviewMeshArgs args, Func<bool> current)
@@ -247,7 +350,8 @@ namespace BetterGhPanel.Runtime
                 { SetMeshUnavailable(true); return; }
                 if (parameters.Tolerance > 0 && diagonal / parameters.Tolerance > 65536)
                 { SetMeshUnavailable(true); return; }
-                if (_value is Brep brep) meshes = Mesh.CreateFromBrep(brep, parameters);
+                if (_value is Sphere && _owned is Brep sphereBrep) meshes = Mesh.CreateFromBrep(sphereBrep, parameters);
+                else if (_value is Brep brep) meshes = Mesh.CreateFromBrep(brep, parameters);
                 else if (_value is Surface surface)
                 {
                     var mesh = Mesh.CreateFromSurface(surface, parameters);

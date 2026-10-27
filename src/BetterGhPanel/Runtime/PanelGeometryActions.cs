@@ -165,6 +165,12 @@ namespace BetterGhPanel.Runtime
             int remaining = inspected.Remaining;
             foreach (object value in inspected.Leaves)
             {
+                if (value is Sphere sphere) { bounds.Union(sphere.BoundingBox); continue; }
+                if (value is PanelGeometrySources.PolylineSnapshot polyline)
+                {
+                    foreach (var point in polyline.Points) bounds.Union(point);
+                    continue;
+                }
                 // Bounds do not duplicate or serialize metadata. Inspect the
                 // exposed geometry first, then read the current source bounds;
                 // this preserves framing for values with custom UserData.
@@ -378,7 +384,21 @@ namespace BetterGhPanel.Runtime
             bytes = 8192;
             scan = null;
             if (value is Point3d || value is Line || value is Arc || value is Circle || value is Rectangle3d || value is Box) return true;
+            if (value is Sphere) { bytes = 262144; return true; }
+            if (value is PanelGeometrySources.PolylineSnapshot polyline)
+            { bytes = 8192L + polyline.Points.Length * 96L; return bytes <= MaxPreparedBytes; }
             if (!(value is GeometryBase geometry)) return false;
+            if (geometry is PointCloud cloud)
+            {
+                // Rhino's 3DM roundtrip dropped a hidden-point flag in the
+                // supported host. Never publish a copy that silently changes it.
+                // Bound the count before entering the native flag query.
+                int count = cloud.Count;
+                if (count > PanelNativeGeometry.MaxPointCloudPoints) { budget.MarkLimit(); return false; }
+                if (count <= 0) return false;
+                if (cloud.ContainsHiddenFlags)
+                { budget.MarkUnavailable("point-cloud hidden flags cannot be preserved in the Rhino clipboard archive"); return false; }
+            }
             if (!PanelNativeGeometry.TryScanForCopy(geometry, budget, ref remaining, current, out scan) || scan == null) return false;
             bytes = 65536L + scan.NativeBytes * 8L;
             return bytes <= MaxPreparedBytes;
@@ -393,6 +413,8 @@ namespace BetterGhPanel.Runtime
             if (value is Circle c) return new ArcCurve(c);
             if (value is Rectangle3d r) return r.ToNurbsCurve();
             if (value is Box b) return b.ToBrep();
+            if (value is Sphere sphere) return sphere.ToBrep();
+            if (value is PanelGeometrySources.PolylineSnapshot polyline) return new PolylineCurve(polyline.Points);
             if (value is GeometryBase g && scan != null)
             {
                 GeometryBase? copy = null;
@@ -400,6 +422,8 @@ namespace BetterGhPanel.Runtime
                 {
                     copy = g.Duplicate();
                     if (!current() || !currentGraph()) return null;
+                    if (copy is PointCloud copiedCloud && copiedCloud.ContainsHiddenFlags)
+                    { budget.MarkUnavailable("point-cloud hidden flags cannot be preserved in the Rhino clipboard archive"); return null; }
                     if (copy != null && copy.GetType() == g.GetType() &&
                         PanelNativeGeometry.TryScanForCopy(copy, budget, ref remaining, current, out var copied) && copied != null &&
                         PanelNativeGeometry.SameMetadata(scan, copied) && (copy is Brep || copy.IsValid))

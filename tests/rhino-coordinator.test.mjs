@@ -28,7 +28,7 @@ test('inventory includes every original fixture and the independently crash-pron
     'index-selection', 'capsule', 'capsule-double-click', 'recompute-presentation',
     'recompute-output', 'recompute-regex', 'recompute-local-preview', 'recompute-disabled',
     'geometry-hint', 'analytic-curve-details', 'geometry-group-persistent', 'geometry-group-volatile', 'geometry-group-cycles',
-    'capture-safety', 'polyline-safety', 'preview-safety', 'preview-geometry', 'clipboard-interop-diagnostic', 'preview-reentrant-draw',
+    'capture-safety', 'polyline-safety', 'preview-safety', 'preview-geometry', 'preview-additional-geometry', 'preview-additional-draw', 'clipboard-interop-diagnostic', 'preview-reentrant-draw',
     'preview-metadata-safety', 'preview-native-resources', 'preview-conduit-resources', 'preview-single-pass-meshing',
     'preview-single-pass-geometry', 'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point',
     'nurbs-value-candidate', 'production-curve-measurement', 'standalone-compatibility', 'capture-transaction',
@@ -58,7 +58,7 @@ test('comparison diagnostics are opt-in and do not replace required preview fixt
 test('pixel fixtures use an inactive desktop while other fixtures use the hidden host', () => {
   for (const name of ['highlight-overlap', 'item-order-capture', 'preview-safety', 'preview-reentrant-draw',
     'preview-native-resources', 'preview-conduit-resources', 'preview-single-pass-meshing', 'preview-single-pass-geometry',
-    'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point']) {
+    'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point', 'preview-additional-draw']) {
     assert.equal(fixtureHostMode(name), 'inactive-desktop');
     assert.deepEqual(fixtureCommand('host', name, 'plugin'), ['host', ['--desktop-fixture', name, 'plugin']]);
   }

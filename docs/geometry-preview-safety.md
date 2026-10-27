@@ -160,7 +160,10 @@ native-flush lifetime caveat above still applies after the callback exits. If de
 retirement occupies the cap, a replacement can remain visibly partial until a
 later selection or source refresh. Reinspection can
 compare native object identity but has no complete bounded value witness for an
-in-place mutation of the same Brep, surface, polycurve or SubD. Native calls and
+in-place mutation of the same Brep, surface, polycurve, SubD, point cloud or
+extrusion. Cloud count and hidden-flag-array changes are rechecked, but a change
+to point coordinates, colors, normals or values without changing those fields
+can still escape an action freshness check. Native calls and
 unknown callbacks have no hard execution-time bound, and a reentrant mutation of
 the same native object remains an unproven case. No such case is treated as
 evidence that the operation is safe or release-ready.
@@ -187,10 +190,49 @@ output reconstruction and viewport drawing may still perform proportional work.
 Managed visit-count tests and host fixtures cover the single-row gestures in
 both preview modes with labels on and off.
 
-Exact `GH_PointCloud`, `GH_Extrusion`, and wrapped `BoundingBox`, `Sphere` and
-`Polyline` are currently reported as unsupported or skipped by these paths;
-they are not silently counted as successfully previewed, framed or copied.
-This remains a compatibility gap, including inside groups.
+Exact `GH_PointCloud` and `GH_Extrusion` terminals, including those reached
+through bounded group/wrapper traversal, use owned native duplicates after
+inspection. Point-cloud preflight admits at most 32,768 points, subject also
+to the native-size and live-memory limits. Drawing uses bounded point-value
+batches from the owned duplicate, grouped into consecutive source-ARGB runs
+to preserve point order when the cloud has colors. Uncolored clouds use the selection or filtered color, and hidden points
+are not drawn. This avoids submitting a native point-cloud pointer through the
+`DrawPointCloud` call that crashed in an isolated capture. It uses Rhino's
+public point-cloud display style and radius when those host properties are
+available, with GH point settings as the older-host fallback. Batches and their
+construction are reserved in the preview budget. A cloud with many alternating
+colors can require one draw call per point, so this path can be slower than
+Rhino's native cloud renderer.
+Rhino 8.36's 3DM roundtrip dropped a hidden-point flag in the fixture. Explicit
+copy therefore visibly skips a cloud with a hidden-flag array, even if the
+selection also contains supported geometry; the source remains untouched.
+Extrusion
+preflight bounds the profile count and checks exposed cached meshes. Rhino's
+public profile API does not provide a borrowed, callback-free view of every
+internal extrusion profile or its metadata, so native duplicate and archive
+work remains best effort with the same callback and single-call peak limits as
+other native geometry. Exact wrappers around `BoundingBox` and `Sphere` use
+value copies and generate owned Breps for geometry copy; a wrapped `Polyline`
+uses a bounded managed point snapshot and an owned curve. Per-operation work
+and the preview staged/admitted/retired cap include those snapshots. Unsupported,
+invalid or over-budget entries remain visibly partial or skipped.
+
+The capture classifier in this branch recognizes the exact stock type names
+`Point Cloud` and `Extrusion`, but does not classify those holders as trusted
+geometry leaves. It therefore marks their validity unverified and formats the
+standalone values as `<Point Cloud>` and `<Extrusion>`; a group containing
+them is unverified unless a known-invalid member takes precedence. Their known
+type identities remain available to type filters, and text/regex search uses the
+captured display or group summary. Unverified rows are excluded by invalid-only
+filters and do not offer metric searches. Text, regex and list-length searches
+remain available; other rows can add metric modes to a mixed input. Typed
+outputs remain intact. Restoring verified validity needs coordinated capture
+graph, inner-object/reference freshness and bounded validity tests rather than
+adding these holders to a type allowlist. That capture work is separate from
+this provider change. In the `7PtSye` persistent-source solve Grasshopper
+delivered the named fixture group without its name, so the captured searchable
+summary was `Group with 3 objects`; the test compares against the value actually
+delivered rather than inventing the lost name.
 
 ## Fixture evidence and remaining gaps
 
@@ -205,6 +247,11 @@ when a RhinoCommon plugin is loaded, including a normal interactive host.
 
 | Fixture and build | Observed evidence |
 | --- | --- |
+| `preview-additional-geometry` and `preview-additional-draw`, run `j5Z1LG`, plugin SHA-256 `8dad66db0f86ef1f6ba0902bbef3595cc54bda058103ac508f1dc7ab754863c5` | Passed the same 57 and 11 assertions after correcting a source comment. The plugin behavior is unchanged from the preceding run. |
+| `preview-additional-geometry` and `preview-additional-draw`, run `7PtSye`, plugin SHA-256 `765b0406319b3b5b5922a3c9c2010974018352d5b26d2f48af334bef826a1ee8` | Passed 57 and 11 assertions. Geometry coverage includes standalone/group preview and frame, mixed-group and standalone archive/real Paste with root custom data and cloud attributes, loaded-reference preview/frame/copy, stale reference and hidden-flag callbacks, bounds before/after cloud mutation and extrusion replacement, point/color ordering, 8,193-point admission, over-limit partial actions and typed D/S/B/F. The draw fixture checked actual selected/filtered pixels for standalone/group clouds and extrusions plus bounding-box, sphere and polyline wrappers, and the colored/hidden cloud. Its explicit cleanup seam does not prove the general idle/flush boundary. |
+| `preview-additional-geometry` and `preview-additional-draw`, run `QzqeOz`, plugin SHA-256 `4e94ebce7458893b457061228873b875b16f7baf4c3224f059226e3b8154272d` | Passed 37 and 11 assertions on the then-current candidate. The former checked standalone/group bounds, frame and archive copies, real Paste of all five values, source metadata, reentrant graph changes, partial/exhausted actions and typed D/S/B/F. A direct Rhino 3DM control proved the hidden-flag loss and the copy action visibly rejected it. The latter checked actual selected/filtered wire and shaded pixels for standalone/grouped clouds and extrusions and the three wrapper values, plus a colored/hidden cloud and explicit post-capture cleanup. |
+| `preview-additional-geometry` and `preview-additional-draw`, run `GCB3vH`, plugin SHA-256 `be4841f2d5ed5802d77b17ac449a10af26c46a8c51c7b0c0c1c1db99ba623a63` | The geometry fixture failed after observing that Rhino's archive cleared a source cloud's hidden flag while preserving the logged colors, normals, values and root custom-data payloads. The draw fixture passed 10 assertions using point batches. The later run explicitly rejects the unsupported hidden-flag copy. |
+| `preview-additional-geometry` and `preview-additional-draw`, run `3tkfo2`, plugin SHA-256 `0734fcbb97ed26fe62b67c1e8f22940eb81b6bfb9197ab95ce7842fc20349ed8` | The geometry fixture failed its mixed-group metadata/attribute check. The draw fixture admitted all seven entries, then crashed in Rhino's native `CRhinoDisplayPipeline_DrawPointCloud` while Panel+ was drawing a cloud. The later point-batch result above does not make the crashed run a pass. |
 | `preview-safety`, run `T38ZA5`, plugin SHA-256 `527d800a9c988432389376680d41e8a2213ebbd36da16e9cfb315b8cc93b6d1c` | Passed 199 assertions, including bounded staged reentry and exactly-once cleanup, successive sparse selections, source replacement, host preview-cache invalidation and actual drawing outside the old bounds. |
 | `preview-geometry`, run `T38ZA5`, same plugin | Passed 79 assertions on the earlier fixture source. It covered owned ordinary geometry, loaded references, 1,025-point NURBS and 2,049-point polylines, root/nested SDK dictionaries and custom-data clipboard round trips, and actual Paste controls for ordinary user strings and custom data. |
 | `preview-metadata-safety`, run `k3ARHE`, same plugin | Passed 76 assertions, including skipped-group mutations, same-value reference retargeting, same-ID object replacement, dense toggles, partial-action reporting and reentrant clipboard/frame publication. Unsupported types were visibly skipped; only a separate supported point was pasted in that partial-action control. |
@@ -231,6 +278,15 @@ control for post-Paste type, points, weights and knots. That revised control
 passed in run `AEZwGq`; the earlier intermittent unreadable archive is still
 unexplained and should be watched in the final combined run.
 
+The former Eto/WPF byte-array writer was compared in run `rJsBMP`: a 7,342-byte
+archive produced a 7,386-byte native clipboard payload beginning with the WPF
+serialized-object marker. Both same-process managed readers returned the
+original bytes and Rhino Paste succeeded in that trial. The replacement raw
+WinForms stream writer passed three fresh `preview-geometry` runs of 89
+assertions, including a separate process reading and hashing the native clipboard
+handle and actual Rhino Paste. This explains the representational difference;
+it does not prove the cause of every earlier intermittent managed read failure.
+
 The stock-only long-curve comparison and the alternative Panel+ conduit capture
 remain in the inventory and can be run explicitly with `--fixture
 preview-stock-compatibility-draw` and `--fixture preview-compatibility-conduit`.
@@ -253,6 +309,19 @@ exercise several behaviors in one native frame but do not establish equivalent
 between-frame coverage. An earlier explicit `DisplayPipeline.Flush` from a
 draw callback was also followed by a fatal flush crash, so that call was removed;
 the current compatibility-draw crash occurred without that explicit call.
+The parent also reports an experimental `RhinoCore.Run` message loop that
+delivered 16 real idle events after the retirement-seam capture and reached all
+assertions in single-pass meshing and reentrant draw. Those processes exited
+abnormally after `PostQuitMessage`, so the runs remain failed and do not yet
+establish a supported shutdown or general nested-frame resource lifetime.
+The parent subsequently reports that forwarding WinForms `Application.Idle`
+to `RhinoCore.DoIdle` delivered `RhinoApp.Idle` and exited normally:
+`preview-retirement-seam` passed five assertions and
+`preview-single-pass-meshing` passed seven. `preview-reentrant-draw` still
+failed on its second `DrawToBitmap`. The message-loop results support idle
+delivery in that embedded configuration; they do not prove a general native
+post-flush lifetime boundary or turn the failing repeated-capture fixture into
+a pass.
 
 The two repeated-capture resource fixtures' assertions map to the following
 evidence. A passed assertion inside a failed fixture is identified as partial

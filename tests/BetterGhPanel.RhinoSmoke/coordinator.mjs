@@ -8,7 +8,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const desktopFixtures = new Set([
   'highlight-overlap', 'item-order-capture', 'preview-safety', 'preview-reentrant-draw',
   'preview-native-resources', 'preview-conduit-resources', 'preview-single-pass-meshing', 'preview-single-pass-geometry',
-  'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point'
+  'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point',
+  'preview-additional-draw'
 ]);
 // These comparison captures are opt-in. Their results are diagnostic evidence
 // and must not replace any required Panel+ fixture.
