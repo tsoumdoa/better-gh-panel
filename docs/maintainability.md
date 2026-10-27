@@ -40,6 +40,10 @@ On Windows Rhino 8.36 the isolated overlap fixture also crashed at the same
 `5ad3ef3e804977be7f056c243fe13661ac267e3b1f3d869d2724963abd81ba39`;
 the host recorded the baseline plugin and Core hashes from the extracted
 archive before starting Rhino. Both runs remain failed fixtures, not passes.
+The separate item-order viewport capture also crashed in
+`CRhinoDisplayPipeline_Flush` / `DrawToBitmap` for both the in-progress build
+and that same public beta.7 payload. It is an additional failed fixture; a
+matching baseline does not verify its rendering assertions.
 
 ## Deferred findings
 
