@@ -100,7 +100,7 @@ internal static class GeometryMeasurementBatchChecks
         using var gate = new ManualResetEventSlim(false);
         var prepared = new List<int>();
         int active = 0;
-        fixture.SetResolver(position =>
+        fixture.SetOwnedResolver(position =>
         {
             prepared.Add(position);
             return () =>
@@ -123,28 +123,28 @@ internal static class GeometryMeasurementBatchChecks
             Check(!await Result(convertedBatch), "Even unit-only snapshot changes reject pending copy completion");
             gate.Set();
             await WaitUntil(() => fixture.Has(0));
-            Check(prepared.SequenceEqual(new[] { 0 }) && fixture.Details(0)?.Value == 0,
-                "Unit-only invalidation retains allowed in-flight metrics without continuing the abandoned selection");
+            Check(prepared.SequenceEqual(new[] { 0, 0 }) && fixture.Details(0)?.Value == 0,
+                "Unit-only invalidation rechecks the witness and retains in-flight metrics without continuing the abandoned selection");
 
             gate.Reset();
             var replaced = fixture.Measure(CancellationToken.None, 2, 3);
-            await WaitUntil(() => prepared.Count == 2);
+            await WaitUntil(() => prepared.Count == 3);
             fixture.Attach(new PanelSnapshot(original.Rows, original.Branches));
             Check(!await Result(replaced), "New solutions resolve every old selected-row waiter before native work completes");
             var current = fixture.Measure(CancellationToken.None, 4);
             gate.Set();
-            Check(await Result(current) && !fixture.Has(2) && prepared.SequenceEqual(new[] { 0, 2, 4 }),
+            Check(await Result(current) && !fixture.Has(2) && prepared.SequenceEqual(new[] { 0, 0, 2, 4 }),
                 "New solution requests wait for the old worker, reject stale results and skip stale queued rows");
 
             gate.Reset();
             var disposed = fixture.Measure(CancellationToken.None, 0, 1);
-            await WaitUntil(() => prepared.Count == 4);
+            await WaitUntil(() => prepared.Count == 5);
             fixture.Dispose();
             Check(!await Result(disposed), "Disposal resolves selected-row waiters while native work is still running");
             gate.Set();
             await WaitUntil(() => Volatile.Read(ref active) == 0);
             await Task.Delay(100);
-            Check(!await Result(fixture.Measure(CancellationToken.None, 3)) && prepared.Count == 4,
+            Check(!await Result(fixture.Measure(CancellationToken.None, 3)) && prepared.Count == 5,
                 "Disposed sessions cannot publish or prepare any further selected-row measurements");
         }
         finally { gate.Set(); }
@@ -193,11 +193,13 @@ internal static class GeometryMeasurementBatchChecks
 
     private sealed class Fixture : IDisposable
     {
+        private readonly Assembly _assembly;
         private readonly object _session;
         private readonly Type _type;
 
         internal Fixture(Assembly assembly)
         {
+            _assembly = assembly;
             _type = assembly.GetType("BetterGhPanel.Runtime.PanelSession", true)!;
             _session = Activator.CreateInstance(_type, new object[] { (Action)(() => { }) })!;
             var rows = Enumerable.Range(0, 5).Select(position => new PanelRow(position, "{0}", "Curve", "Curve", null,
@@ -213,6 +215,8 @@ internal static class GeometryMeasurementBatchChecks
         private object? Invoke(string name, params object[] arguments) =>
             _type.GetMethod(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.Invoke(_session, arguments);
         internal void SetResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) => Invoke("SetGeometryDetailResolver", resolver);
+        internal void SetOwnedResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) =>
+            Invoke("SetGeometryPreparationResolver", HostMeasurementPreparation.Resolver(_assembly, resolver));
         internal Task<bool> Measure(CancellationToken cancellation, params int[] positions) =>
             (Task<bool>)Invoke("MeasureGeometryAsync", Snapshot, positions, cancellation)!;
         internal void RequestVisible(params int[] positions) => Invoke("RequestGeometryMeasurements", Snapshot, positions);

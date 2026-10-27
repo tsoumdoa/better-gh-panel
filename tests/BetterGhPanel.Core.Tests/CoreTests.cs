@@ -7,6 +7,7 @@ public sealed class CoreTests
     [Fact] public void StatisticsChecks() => global::StatisticsChecks.Run();
     [Fact] public void CapturePolicyChecks() => global::CapturePolicyChecks.Run();
     [Fact] public void GeometryQueueChecks() => global::GeometryQueueChecks.Run();
+    [Fact] public void NurbsCandidateLimitChecks() => global::NurbsCandidateLimitChecks.Run();
     [Fact] public void SetOccurrencesChecks() => global::SetOccurrencesChecks.Run();
     [Fact] public void DisplaySetChecks() => global::DisplaySetChecks.Run();
     [Fact] public void ItemOrderChecks() => global::ItemOrderChecks.Run();

@@ -17,7 +17,14 @@ namespace BetterGhPanel.Runtime
             _value = (byte[])(value ?? throw new ArgumentNullException(nameof(value))).Clone();
         }
         internal string Context { get; }
-        internal int ByteCount => _value.Length + Context.Length * sizeof(char);
+        internal int ByteCount
+        {
+            get
+            {
+                long size = (long)_value.Length + (long)Context.Length * sizeof(char);
+                return size > int.MaxValue ? int.MaxValue : (int)size;
+            }
+        }
         public bool Equals(MeasurementWitness? other)
         {
             if (other == null || Context != other.Context || _value.Length != other._value.Length) return false;
@@ -26,6 +33,26 @@ namespace BetterGhPanel.Runtime
         }
         public override bool Equals(object? obj) => Equals(obj as MeasurementWitness);
         public override int GetHashCode() => Context.GetHashCode();
+    }
+
+    // The existing per-session cap does not bound an arbitrary number of panels.
+    // This cap accounts for retained witness payloads across all queues. It does
+    // not count managed object headers or native geometry/mass-property allocations.
+    internal static class MeasurementRetentionBudget
+    {
+        internal const int MaxBytes = 8 * 1024 * 1024;
+        private static int _bytes;
+        internal static bool TryAcquire(int bytes)
+        {
+            if (bytes <= 0 || bytes > MaxBytes) return false;
+            while (true)
+            {
+                int current = Volatile.Read(ref _bytes);
+                if (current > MaxBytes - bytes) return false;
+                if (Interlocked.CompareExchange(ref _bytes, current + bytes, current) == current) return true;
+            }
+        }
+        internal static void Release(int bytes) => Interlocked.Add(ref _bytes, -bytes);
     }
 
     // The UI can abandon only unclaimed work. Once the worker wins the claim,
@@ -274,7 +301,8 @@ namespace BetterGhPanel.Runtime
                 return;
             }
             var witness = entry.Work.Witness;
-            if (witness != null && _witnessCount < MaxRetainedWitnesses && witness.ByteCount <= MaxRetainedWitnessBytes - _witnessBytes)
+            if (witness != null && _witnessCount < MaxRetainedWitnesses && witness.ByteCount <= MaxRetainedWitnessBytes - _witnessBytes &&
+                MeasurementRetentionBudget.TryAcquire(witness.ByteCount))
             { entry.Witness = witness; _witnessBytes += witness.ByteCount; _witnessCount++; }
             _running = entry;
             _changed();
@@ -323,7 +351,11 @@ namespace BetterGhPanel.Runtime
         {
             if (!_entries.TryGetValue(position, out var current) || !ReferenceEquals(current, entry)) return;
             _entries.Remove(position);
-            if (entry.Witness != null) { _witnessBytes -= entry.Witness.ByteCount; _witnessCount--; }
+            if (entry.Witness != null)
+            {
+                _witnessBytes -= entry.Witness.ByteCount; _witnessCount--;
+                MeasurementRetentionBudget.Release(entry.Witness.ByteCount);
+            }
             entry.Work?.TryAbandon();
         }
         private void ClearEntries()

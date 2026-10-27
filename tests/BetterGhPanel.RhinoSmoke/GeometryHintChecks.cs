@@ -129,7 +129,7 @@ internal static class GeometryHintChecks
         var type = assembly.GetType("BetterGhPanel.Runtime.PanelSession", true)!;
         using var lifetime = (IDisposable)Activator.CreateInstance(type, new object[] { (Action)(() => { }) })!;
         var get = type.GetMethod("GetGeometryDetails", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        var set = type.GetMethod("SetGeometryDetailResolver", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var set = type.GetMethod("SetGeometryPreparationResolver", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var attach = type.GetMethod("AttachSnapshot")!;
         var request = type.GetMethod("RequestGeometryMeasurements", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var has = type.GetMethod("HasGeometryMeasurement", BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -141,7 +141,7 @@ internal static class GeometryHintChecks
         var prepared = new List<int>();
         using var gate = new ManualResetEventSlim(false);
         ManualResetEventSlim? hold = gate;
-        set.Invoke(lifetime, new object[] { (Func<int, Func<PanelGeometryInfo?>?>)(position =>
+        set.Invoke(lifetime, new[] { HostMeasurementPreparation.Resolver(assembly, position =>
         {
             prepareThread = Environment.CurrentManagedThreadId;
             prepared.Add(position);

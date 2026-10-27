@@ -102,7 +102,7 @@ namespace BetterGhPanel.Runtime
         private static bool Same(double first, double second) =>
             BitConverter.DoubleToInt64Bits(first) == BitConverter.DoubleToInt64Bits(second);
 
-        private static PanelGeometryInfo? Measure(GeometryBase geometry, bool surface, string units)
+        internal static PanelGeometryInfo? Measure(GeometryBase geometry, bool surface, string units)
         {
             switch (geometry)
             {

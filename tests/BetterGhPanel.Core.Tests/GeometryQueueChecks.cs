@@ -24,6 +24,27 @@ internal static class GeometryQueueChecks
         InFlightRetentionAndRoleSwitch();
         CopyBeforeWitness();
         SchedulingAndAffinity();
+        GlobalRetentionBudget();
+    }
+
+    private static void GlobalRetentionBudget()
+    {
+        Check(MeasurementRetentionBudget.TryAcquire(MeasurementRetentionBudget.MaxBytes), "process-wide witness capacity can be reserved");
+        try
+        {
+            using var fixture = new Fixture();
+            var measured = fixture.Measure(CancellationToken.None, 0);
+            fixture.Ui(); fixture.Delay(); fixture.Worker(); fixture.Ui();
+            Check(measured.Result && fixture.Queue.Has(fixture.Current, 0), "global budget exhaustion does not prevent measurement");
+            fixture.Attach(new Snapshot(fixture.Current.Rows[0]), true);
+            Check(!fixture.Queue.Has(fixture.Current, 0), "a witness that cannot be globally retained is not reused");
+        }
+        finally { MeasurementRetentionBudget.Release(MeasurementRetentionBudget.MaxBytes); }
+        using var afterRelease = new Fixture();
+        var later = afterRelease.Measure(CancellationToken.None, 0);
+        afterRelease.Ui(); afterRelease.Delay(); afterRelease.Worker(); afterRelease.Ui();
+        afterRelease.Attach(new Snapshot(afterRelease.Current.Rows[0]), true);
+        Check(later.Result && afterRelease.Queue.Has(afterRelease.Current, 0), "released global capacity allows retention again");
     }
 
     private static void CancellationRegistration()
