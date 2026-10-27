@@ -8,6 +8,7 @@ internal static class UnitConversionChecks
         PersistedModesAndPresentation();
         ExactScalarArithmetic();
         GeometryApplicability();
+        AdditionalGeometryLength();
         UnknownModes();
     }
 
@@ -90,6 +91,18 @@ internal static class UnitConversionChecks
             Check(PanelUnits.FormatGeometry(1.25, 2, "mm", mode, 2) == "1.25 mm²",
                 "Unknown modes retain model geometry units");
         }
+    }
+
+    private static void AdditionalGeometryLength()
+    {
+        var circle = new PanelGeometryInfo("Cir", 2, units: "mm", metricName: "Radius", metricLabel: "R",
+            details: "Shape: Circle").WithAdditionalLength(4 * Math.PI);
+        Check(circle.FormatCompact(PanelUnitConversion.None, -1) == "Cir · R 2 mm" &&
+            circle.FormatDetails(PanelUnitConversion.None, -1) == "Radius: 2 mm\nLength: 12.5664 mm\nShape: Circle",
+            "analytic circumference adds details without replacing the compact radius");
+        Check(circle.FormatDetails(PanelUnitConversion.MillimetersToMeters, -1) ==
+            "Radius: 0.002 m\nLength: 0.0125664 m\nShape: Circle",
+            "both radius and circumference follow the geometry unit conversion");
     }
 
     private static void SameBits(double expected, double actual) =>

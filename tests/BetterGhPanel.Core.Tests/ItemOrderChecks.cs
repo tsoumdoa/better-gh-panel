@@ -27,6 +27,7 @@ internal static class ItemOrderChecks
         var panel = new RectangleF(50, 100, 300, 110);
         menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
         menu.Layout(panel, default, default, default, preview: new RectangleF(110, 102, 112, 18));
+        menu.MarkPainted();
         Check(panel.Contains(menu.Bounds) && menu.Count == 4 && menu.Visible == 4,
             "All preview scopes and the order toggle fit directly in a minimum Half panel");
         Check(menu.TrySelect(new PointF(menu.Bounds.Right - 8, menu.Bounds.Bottom - 5), out int selected) && selected == 3 &&

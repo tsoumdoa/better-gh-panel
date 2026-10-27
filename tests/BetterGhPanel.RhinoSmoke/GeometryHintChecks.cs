@@ -19,8 +19,19 @@ internal static class GeometryHintChecks
     internal static async Task Run(Assembly assembly)
     {
         var hints = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!;
-        Func<PanelGeometryInfo?>? Prepare(IGH_Goo goo) => (Func<PanelGeometryInfo?>?)hints
-            .GetMethod("PrepareMeasurement", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, new object[] { goo, "mm" });
+        Func<PanelGeometryInfo?>? Prepare(IGH_Goo goo)
+        {
+            var prepared = hints.GetMethod("PrepareMeasurement", BindingFlags.Static | BindingFlags.NonPublic)!
+                .Invoke(null, new object[] { goo, "mm", (int)Rhino.UnitSystem.Millimeters, 0.001 });
+            if (prepared == null) return null;
+            return () =>
+            {
+                var arguments = new object?[] { null };
+                var claimed = (bool)prepared.GetType().GetMethod("TryRun", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(prepared, arguments)!;
+                return claimed ? (PanelGeometryInfo?)arguments[0] : null;
+            };
+        }
         string? Details(IGH_Goo goo) => Prepare(goo)?.Invoke()?.FormatDetails(PanelUnitConversion.None, -1);
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("Capture")!;
         PanelSnapshot Capture(params IGH_Goo[] items)
@@ -58,8 +69,11 @@ internal static class GeometryHintChecks
             "Mesh hints show stored vertex and face counts");
         Check(snapshot.Rows[8].DisplayValue == "Srf · untrimmed" && snapshot.Rows[9].DisplayValue == "Brep · closed · 6 faces",
             "Surface and Brep capture omits mass calculations");
-        Check(snapshot.Rows[10].DisplayValue == "<Widget>" && !snapshot.Rows[11].IsValid,
-            "Third-party and invalid goo retain safe fallback summaries without formatting");
+        Check(snapshot.Rows[10].DisplayValue == "<UnformattedGoo>" &&
+            snapshot.Rows[10].Validity == PanelValidity.Unverified && !snapshot.Rows[10].TypeIdentityAvailable &&
+            unknown.TypeNameReads == 0 && unknown.ValidityReads == 0 && unknown.FormatCalls == 0 &&
+            snapshot.Rows[11].Validity == PanelValidity.VerifiedInvalid,
+            "Third-party metadata remains unverified without invoking custom getters or formatting, while invalid geometry stays invalid");
         Check(!string.IsNullOrWhiteSpace(snapshot.Rows[11].InvalidReason) && snapshot.Rows[11].GeometryInfo == null,
             "Invalid geometry captures its validity reason and cannot be measured");
         var lineDetails = Details(lineCurve)!;
@@ -111,7 +125,6 @@ internal static class GeometryHintChecks
             "Background area uses an owned trimmed Brep copy instead of live source goo");
         await VerifyCache(assembly, snapshot);
         await VerifyInactiveDocument(assembly, snapshot);
-        await VerifyCanvasViewport(assembly);
     }
 
     private static async Task VerifyCache(Assembly assembly, PanelSnapshot snapshot)
@@ -119,7 +132,7 @@ internal static class GeometryHintChecks
         var type = assembly.GetType("BetterGhPanel.Runtime.PanelSession", true)!;
         using var lifetime = (IDisposable)Activator.CreateInstance(type, new object[] { (Action)(() => { }) })!;
         var get = type.GetMethod("GetGeometryDetails", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        var set = type.GetMethod("SetGeometryDetailResolver", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var set = type.GetMethod("SetGeometryPreparationResolver", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var attach = type.GetMethod("AttachSnapshot")!;
         var request = type.GetMethod("RequestGeometryMeasurements", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var has = type.GetMethod("HasGeometryMeasurement", BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -131,7 +144,7 @@ internal static class GeometryHintChecks
         var prepared = new List<int>();
         using var gate = new ManualResetEventSlim(false);
         ManualResetEventSlim? hold = gate;
-        set.Invoke(lifetime, new object[] { (Func<int, Func<PanelGeometryInfo?>?>)(position =>
+        set.Invoke(lifetime, new[] { HostMeasurementPreparation.WitnessedResolver(assembly, position =>
         {
             prepareThread = Environment.CurrentManagedThreadId;
             prepared.Add(position);
@@ -235,13 +248,12 @@ internal static class GeometryHintChecks
         bool Has(int position) => (bool)has.Invoke(session, new object[] { snapshot, position })!;
         int calls = 0;
         using var gate = new ManualResetEventSlim(false);
-        type.GetMethod("SetGeometryDetailResolver", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(session, new object[] { (Func<int, Func<PanelGeometryInfo?>?>)(position => () =>
-            {
-                Interlocked.Increment(ref calls);
-                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Test gate timed out");
-                return new PanelGeometryInfo("measured " + position, position, units: "mm");
-            }) });
+        HostMeasurementPreparation.SetWitnesslessResolver(session, position => () =>
+        {
+            Interlocked.Increment(ref calls);
+            if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Test gate timed out");
+            return new PanelGeometryInfo("measured " + position, position, units: "mm");
+        });
         type.GetMethod("AttachSnapshot")!.Invoke(session, new object[] { snapshot });
         try
         {
@@ -269,7 +281,7 @@ internal static class GeometryHintChecks
         }
     }
 
-    private static async Task VerifyCanvasViewport(Assembly assembly)
+    internal static async Task VerifyCanvasViewport(Assembly assembly)
     {
         var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
         component.CreateAttributes();
@@ -280,6 +292,7 @@ internal static class GeometryHintChecks
         using var canvas = new GH_Canvas { Size = new Size(500, 500) };
         var session = PanelTestAdapter.Session(component);
         var type = session.GetType();
+        PanelTestAdapter.UseSyntheticCapture(session);
         var attach = type.GetMethod("AttachSnapshot")!;
         var has = type.GetMethod("HasGeometryMeasurement", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var rows = Enumerable.Range(0, 3).Select(position => new PanelRow(position, "{0}", "Surface", "Srf", null,
@@ -289,17 +302,16 @@ internal static class GeometryHintChecks
         var prepared = new List<int>();
         int calls = 0;
         using var gate = new ManualResetEventSlim(false);
-        type.GetMethod("SetGeometryDetailResolver", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .Invoke(session, new object[] { (Func<int, Func<PanelGeometryInfo?>?>)(position =>
+        HostMeasurementPreparation.SetWitnesslessResolver(session, position =>
+        {
+            prepared.Add(position);
+            return () =>
             {
-                prepared.Add(position);
-                return () =>
-                {
-                    Interlocked.Increment(ref calls);
-                    if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Test gate timed out");
-                    return new PanelGeometryInfo("Srf", position, 2, "mm", "Area", "A");
-                };
-            }) });
+                Interlocked.Increment(ref calls);
+                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Test gate timed out");
+                return new PanelGeometryInfo("Srf", position, 2, "mm", "Area", "A");
+            };
+        });
         void Paint(Point target, Size size, float zoom = 1)
         {
             canvas.Size = size;
@@ -323,7 +335,7 @@ internal static class GeometryHintChecks
             Check(prepared.Count == 0 && calls == 0, "Offscreen panel rendering never prepares or measures geometry");
 
             Paint(Point.Empty, fullSize);
-            var first = PanelTestAdapter.RowBounds(component, 0);
+            _ = PanelTestAdapter.RowBounds(component, 0);
             var second = PanelTestAdapter.RowBounds(component, 1);
             Paint(hiddenTarget, fullSize);
             await Task.Delay(160);
@@ -333,8 +345,10 @@ internal static class GeometryHintChecks
             await WaitUntil(() => Volatile.Read(ref calls) == 1);
             Check(prepared.SequenceEqual(new[] { 1 }) && !Has(0) && !Has(2),
                 "A partially visible panel measures only rows intersecting the canvas viewport");
-            Check(PanelTestAdapter.RowBounds(component, 0) == first && PanelTestAdapter.RowBounds(component, 1) == second &&
-                PanelTestAdapter.Offset(component) == 0, "Canvas clipping preserves row layout and the panel scroll position");
+            Check(!PanelTestAdapter.TryRowBounds(component, 0, out _) &&
+                PanelTestAdapter.TryRowBounds(component, 1, out var visibleSecond) && visibleSecond == second &&
+                PanelTestAdapter.Offset(component) == 0,
+                "Canvas clipping keeps the visible row layout and scroll position without retaining hidden row hits");
             Paint(Point.Empty, fullSize);
             Paint(hiddenTarget, fullSize);
             gate.Set();
@@ -376,18 +390,15 @@ internal static class GeometryHintChecks
         }
     }
 
-    private static void Check(bool condition, string description)
-    {
-        if (!condition) throw new InvalidOperationException(description);
-        Console.WriteLine("PASS: " + description);
-    }
+    private static void Check(bool condition, string description) => SmokeAssertions.Check(condition, description);
 
     private sealed class UnformattedGoo : GH_Goo<string>
     {
-        public override bool IsValid => true;
-        public override string TypeName => "Widget";
+        internal int TypeNameReads, ValidityReads, FormatCalls;
+        public override bool IsValid { get { ValidityReads++; return true; } }
+        public override string TypeName { get { TypeNameReads++; return "Widget"; } }
         public override string TypeDescription => "Test third-party data";
         public override IGH_Goo Duplicate() => new UnformattedGoo();
-        public override string ToString() => throw new InvalidOperationException("Do not format third-party goo during capture or hover");
+        public override string ToString() { FormatCalls++; throw new InvalidOperationException("Do not format third-party goo during capture or hover"); }
     }
 }

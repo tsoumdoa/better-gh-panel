@@ -14,6 +14,25 @@ internal static class PanelTestAdapter
     private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
     internal static object Session(GH_Component component) => Property<object>(component, "Session");
     internal static bool HasSession(GH_Component component) => Field<object?>(component, "_session") != null;
+    internal static bool GeometryRunning(object session) => Field<object?>(Field<object>(session, "_geometry"), "_running") != null;
+
+    // Only for fixtures that attach synthetic snapshots instead of solving a
+    // component. Real-solve fixtures retain the production capture witness.
+    internal static Action UseSyntheticCapture(object session)
+    {
+        var previous = Field<object?>(session, "_captureCurrent");
+        var setter = session.GetType().GetMethod("SetCaptureCurrentResolver", PrivateInstance)!;
+        var snapshotProperty = session.GetType().GetProperty("Snapshot", BindingFlags.Instance | BindingFlags.Public)!;
+        setter.Invoke(session, new object[] { (Func<BetterGhPanel.Core.PanelSnapshot, bool>)(snapshot =>
+            ReferenceEquals(snapshotProperty.GetValue(session), snapshot)) });
+        return () => setter.Invoke(session, new[] { previous });
+    }
+
+    internal static Action SaveGeometryResolver(object session)
+    {
+        var preparation = Field<object?>(session, "_geometryPreparationResolver");
+        return () => session.GetType().GetMethod("SetGeometryPreparationResolver", PrivateInstance)!.Invoke(session, new[] { preparation });
+    }
     internal static int Preset(GH_Component component) => Property<int>(component, "PreviewSize");
     internal static string PreviewMode(GH_Component component) => Property<object>(component, "PreviewMode").ToString()!;
     internal static bool ShowItemOrder(GH_Component component) => Property<bool>(component, "ShowItemOrder");
@@ -62,10 +81,13 @@ internal static class PanelTestAdapter
         Property<string>(Field<Array>(component.Attributes, "_rowMenuActions").GetValue(index)!, "Label");
     internal static void SwapRowMenuActions(GH_Component component, int first, int second)
     {
-        var actions = Field<Array>(component.Attributes, "_rowMenuActions");
-        var saved = actions.GetValue(first);
-        actions.SetValue(actions.GetValue(second), first);
-        actions.SetValue(saved, second);
+        foreach (var field in new[] { "_rowMenuActions", "_rowMenuPendingActions" })
+        {
+            var actions = Field<Array>(component.Attributes, field);
+            var saved = actions.GetValue(first);
+            actions.SetValue(actions.GetValue(second), first);
+            actions.SetValue(saved, second);
+        }
     }
 
     internal static void Render(GH_Component component, GH_Canvas canvas, Graphics graphics) =>
@@ -100,9 +122,20 @@ internal static class PanelTestAdapter
 
     internal static RectangleF RowBounds(GH_Component component, int sourcePosition)
     {
-        foreach (var hit in Field<IEnumerable>(component.Attributes, "_rowHits"))
-            if (Property<int>(hit, "SourcePosition") == sourcePosition) return Property<RectangleF>(hit, "Bounds");
+        if (TryRowBounds(component, sourcePosition, out var bounds)) return bounds;
         throw new InvalidOperationException("Row is not visible.");
+    }
+
+    internal static bool TryRowBounds(GH_Component component, int sourcePosition, out RectangleF bounds)
+    {
+        foreach (var hit in Field<IEnumerable>(component.Attributes, "_rowHits"))
+            if (Property<int>(hit, "SourcePosition") == sourcePosition)
+            {
+                bounds = Property<RectangleF>(hit, "Bounds");
+                return true;
+            }
+        bounds = RectangleF.Empty;
+        return false;
     }
 
     internal static string DisplayValue(GH_Component component, BetterGhPanel.Core.PanelSnapshot snapshot, int position) =>
@@ -139,9 +172,15 @@ internal sealed class CanvasEditorAdapter
         return new CanvasEditorAdapter(arguments[0]!, type);
     }
 
+    internal static void CloseActive(Assembly assembly) =>
+        assembly.GetType("BetterGhPanel.UI.CanvasTextInput", true)!.GetMethod("CloseActive", BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, new object?[] { null });
+
     private System.Windows.Forms.TextBox Input =>
         (System.Windows.Forms.TextBox)_type.BaseType!.GetField("m_inputTextBox", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_editor)!;
     internal int TextAreaWidth => Input.ClientSize.Width;
+    internal bool AcceptedIsNull => _type.GetField("_accepted", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_editor) == null;
+    internal Action<string> CaptureAccepted() => (Action<string>)_type.GetField("_accepted", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_editor)!;
 
     internal void Submit(string text)
     {

@@ -142,6 +142,5 @@ internal static class DisplaySetChecks
         }
         finally { rhino.ModelUnitSystem = units; setEditor.Invoke(null, new object?[] { previous }); }
     }
-    private static void Check(bool condition, string message)
-    { if (!condition) throw new InvalidOperationException(message); Console.WriteLine("PASS: " + message); }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }

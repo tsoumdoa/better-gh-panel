@@ -29,7 +29,8 @@ namespace BetterGhPanel.Core
             if (mode == PanelSearchMode.ListLength)
                 return snapshot.BranchItemCounts.TryGetValue(row.Path, out int count) ? count.ToString(CultureInfo.InvariantCulture) : "unavailable";
             if (row.IsNull) return "null";
-            if (!row.IsValid) return "invalid";
+            if (row.Validity == PanelValidity.Unverified) return "unverified";
+            if (row.Validity == PanelValidity.VerifiedInvalid) return "invalid";
             if (mode == PanelSearchMode.Value)
                 return row.NumericValue.HasValue && IsFinite(row.NumericValue.Value)
                     ? PanelUnits.Format(row.NumericValue.Value, includeUnits ? snapshot.UnitConversion : PanelUnitConversion.None,

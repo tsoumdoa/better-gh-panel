@@ -101,7 +101,10 @@ internal static class OutputChecks
         Console.WriteLine("PASS: Output provenance, pairing and mask checks (64 tree-tool combinations).");
     }
 
-    internal static async Task Run(Assembly assembly)
+    internal static Task Run(Assembly assembly) => RunWithEditor(assembly, RunCore);
+    internal static Task RunPending(Assembly assembly) => RunWithEditor(assembly, VerifyPending);
+
+    internal static async Task RunWithEditor(Assembly assembly, Func<Assembly, Task> check)
     {
         // Scheduled solutions need the host editor's native handle, even while
         // the test's Rhino window remains hidden.
@@ -113,9 +116,8 @@ internal static class OutputChecks
         setEditor.Invoke(null, new object?[] { editor });
         try
         {
-            await RunCore(assembly);
-            await VerifyPending(assembly);
-            Console.WriteLine("PASS: Output routing, selection, persistence and native interaction checks.");
+            await check(assembly);
+            Console.WriteLine("PASS: Output fixture completed.");
         }
         finally { setEditor.Invoke(null, new object?[] { previous }); }
     }
@@ -140,8 +142,8 @@ internal static class OutputChecks
         var cachedData = c.GetType().GetField("_filteredData", Instance)!.GetValue(c);
         var cachedMask = c.GetType().GetField("_filteredMask", Instance)!.GetValue(c);
         var cachedPair = c.GetType().GetField("_filteredPair", Instance)!.GetValue(c);
-        fixture.Select(3);
-        fixture.Select(2, toggle: true);
+        fixture.SelectAt(3);
+        fixture.SelectAt(2, toggle: true);
         await fixture.Ready(() => fixture.Values(1) == "18,12");
         Check(ReferenceEquals(snapshot, fixture.Result.Snapshot) && fixture.SelectedCount == 2 && fixture.Values(0) == "12,18,12,20" && fixture.Values(3) == "A,C,D,G",
             "Selection-only solutions retain the snapshot and selection while Filtered B/F stay independent");
@@ -168,6 +170,13 @@ internal static class OutputChecks
         fixture.Query(new PanelQueryOptions { Search = ">= 10", SortMode = PanelSortMode.ValueDescending });
         await fixture.Ready(() => fixture.Values(3) == "C,D");
         Check(fixture.Values(1) == "18,12" && fixture.Result.RowPositions[0] == 2, "View sorting does not reorder S or F wires");
+        await Task.Delay(50); // Let the query's own scheduled publication finish before measuring the gesture.
+        int beforeSortedClick = fixture.Solutions;
+        fixture.SelectAt(3, preserveSelected: true);
+        await Task.Delay(50);
+        Check(fixture.Solutions == beforeSortedClick && fixture.Values(0) == "12,18,12,20" && fixture.Values(1) == "18,12" &&
+            fixture.Values(2) == "False,False,True,True,False,False,False" && fixture.Values(3) == "C,D",
+            "A preserved sorted view-index gesture retains source-order D/S/F and source-address B without notification");
         fixture.Query(new PanelQueryOptions { Search = ">= 15" });
         await fixture.Ready(() => fixture.Values(0) == "18,20" && fixture.Values(1) == "18" && fixture.Values(3) == "C");
         Check(fixture.SelectedCount == 1 && fixture.Values(2) == "False,False,True,False,False,False,False", "Filtering prunes hidden selections on every downstream output");
@@ -241,13 +250,12 @@ internal static class OutputChecks
         fixture.Select(0);
         await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
         int started = 0;
-        fixture.Session.GetType().GetMethod("SetGeometryDetailResolver", Instance)!.Invoke(fixture.Session,
-            new object[] { (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
-            {
-                Interlocked.Increment(ref started);
-                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Pending-output gate timed out");
-                return new PanelGeometryInfo("Crv", 10, 1, "mm", "Length", "L");
-            }) });
+        HostMeasurementPreparation.SetWitnesslessResolver(fixture.Session, _ => () =>
+        {
+            Interlocked.Increment(ref started);
+            if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Pending-output gate timed out");
+            return new PanelGeometryInfo("Crv", 10, 1, "mm", "Length", "L");
+        });
         try
         {
             fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Length, Search = "> 5" });
@@ -264,7 +272,7 @@ internal static class OutputChecks
             await fixture.Ready(() => fixture.Values(0) == "42" && fixture.Values(3) == "new partner" && fixture.Values(2) == "True");
             var snapshot = fixture.Result.Snapshot;
             gate.Set();
-            await Wait(() => !(bool)fixture.Session.GetType().GetField("_geometryRunning", Instance)!.GetValue(fixture.Session)!);
+            await Wait(() => !PanelTestAdapter.GeometryRunning(fixture.Session));
             Check(ReferenceEquals(snapshot, fixture.Result.Snapshot) && fixture.Values(0) == "42" && fixture.Values(3) == "new partner" &&
                 fixture.Values(1) == "" && fixture.Values(2) == "True", "Late workers and rapid scope/selection changes cannot republish old paired data after replacement input");
         }
@@ -442,10 +450,7 @@ internal static class OutputChecks
             await Task.Delay(10);
         }
     }
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 
     internal sealed class Fixture : IDisposable
     {
@@ -490,6 +495,11 @@ internal static class OutputChecks
         internal void Scope(PanelOutputScope scope) => Component.GetType().GetMethod("SetOutputScope", Instance)!.Invoke(Component, new object[] { scope });
         internal void Select(int position, bool toggle = false, bool preserveSelected = false) => Selection.GetType().GetMethod("Select", Instance)!
             .Invoke(Selection, new object[] { Result, position, toggle, false, preserveSelected });
+        internal void SelectAt(int position, bool toggle = false, bool preserveSelected = false)
+        {
+            Check(Result.TryGetViewIndex(position, out int index), "Native selected row is visible in the current view");
+            Selection.GetType().GetMethod("SelectAt", Instance)!.Invoke(Selection, new object[] { Result, position, index, toggle, false, preserveSelected });
+        }
         internal void ClearSelection() => Selection.GetType().GetMethod("Clear", Instance)!.Invoke(Selection, Array.Empty<object>());
         internal void SelectBranch(string path) => Selection.GetType().GetMethod("SelectAll", Instance)!
             .Invoke(Selection, new object[] { Result, path, true });

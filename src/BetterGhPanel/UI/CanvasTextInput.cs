@@ -15,10 +15,11 @@ namespace BetterGhPanel.UI
         private WeakReference<GH_Canvas>? _canvas;
         private RectangleF _canvasBounds;
         private Rectangle _screenBounds;
+        private bool _accepting;
 
         private CanvasTextInput(Action<string> accepted) { _accepted = accepted; }
 
-        internal static void Show(GH_Canvas canvas, object owner, RectangleF canvasBounds, string current, Action<string> accepted)
+        internal static CanvasTextInput Show(GH_Canvas canvas, object owner, RectangleF canvasBounds, string current, Action<string> accepted)
         {
             CloseActive();
             var projected = Rectangle.Round(canvas.Viewport.ProjectRectangle(canvasBounds));
@@ -39,6 +40,7 @@ namespace BetterGhPanel.UI
             };
             _active = new WeakReference<CanvasTextInput>(editor);
             editor.ShowTextInputBox(canvas, current ?? string.Empty, true, true);
+            return editor;
         }
 
         protected override void HandleTextInputAccepted(string text)
@@ -46,8 +48,14 @@ namespace BetterGhPanel.UI
             if (_active != null && _active.TryGetTarget(out var current) && ReferenceEquals(current, this)) _active = null;
             var accepted = _accepted;
             _accepted = null;
-            accepted?.Invoke(text);
+            _accepting = true;
+            try { accepted?.Invoke(text); }
+            finally { _accepting = false; }
         }
+
+        internal static bool IsCurrent(CanvasTextInput? editor) => editor != null &&
+            (editor._accepting || editor._accepted != null && editor.IsTextInput && _active != null &&
+                _active.TryGetTarget(out var current) && ReferenceEquals(current, editor));
 
         internal static void Maintain(GH_Canvas canvas)
         {
@@ -66,6 +74,13 @@ namespace BetterGhPanel.UI
                 current.HideTextInputBox();
             }
             _active = null;
+        }
+
+        // Do not close a newer editor that replaced this one on the shared canvas.
+        internal static void Close(CanvasTextInput? editor)
+        {
+            if (editor != null && _active != null && _active.TryGetTarget(out var current) && ReferenceEquals(current, editor))
+                CloseActive();
         }
     }
 }

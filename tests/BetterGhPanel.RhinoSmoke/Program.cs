@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -6,6 +7,8 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
@@ -25,10 +28,97 @@ internal static class Program
     private static string _plugin = string.Empty;
     private static string _resultPath = string.Empty;
     private static bool _canvasDrawingVerified;
-    private static bool _itemOrderCaptureOnly;
-    private static bool _outputsOnly;
-    private static bool _filtersOnly;
-    private static bool _setsOnly;
+    private static string _fixture = string.Empty;
+    private static string _runId = string.Empty;
+    private static Assembly? _loadedPlugin;
+    private static Assembly? _loadedCore;
+    private static string _pluginSha256 = string.Empty;
+    private static string _coreSha256 = string.Empty;
+    private static DateTimeOffset _startedUtc;
+    private static bool _completed;
+    private static bool _passed;
+    private static string _phase = "identity";
+    private static string _hostMode = "hidden";
+    private static bool _rhinoIdlePump;
+    private static string? _failure;
+
+    // This is also checked against fixtures.json, the coordinator's explicit inventory.
+    private static Dictionary<string, Func<Assembly, Task>> _fixtures = null!;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Dictionary<string, Func<Assembly, Task>> CreateFixtures() => new(StringComparer.Ordinal)
+    {
+        ["panel-handle"] = assembly => { PanelHandleChecks.Run(assembly); return Task.CompletedTask; },
+        ["output"] = OutputChecks.Run,
+        ["output-pending"] = OutputChecks.RunPending,
+        ["row-numbering"] = RowNumberingChecks.Run,
+        ["index-selection"] = IndexSelectionChecks.Run,
+        ["capsule"] = CapsuleChecks.Run,
+        ["capsule-double-click"] = CapsuleChecks.NativeDoubleClickChecks,
+        ["recompute-presentation"] = RecomputeChecks.VerifyPresentation,
+        ["recompute-output"] = RecomputeChecks.RunOutput,
+        ["recompute-regex"] = RecomputeChecks.RunWhitespaceRegex,
+        ["recompute-local-preview"] = RecomputeChecks.RunLocalPreview,
+        ["recompute-disabled"] = RecomputeChecks.RunDisabled,
+        ["geometry-hint"] = GeometryHintChecks.Run,
+        ["analytic-curve-details"] = assembly => { FixtureUserData.EnsureRegistered(); return AnalyticCurveDetailsChecks.Run(assembly); },
+        ["geometry-group-persistent"] = GeometryGroupChecks.RunPersistent,
+        ["geometry-group-volatile"] = GeometryGroupChecks.RunVolatile,
+        ["geometry-group-cycles"] = GeometryGroupChecks.RunCycles,
+        ["capture-safety"] = assembly => { FixtureUserData.EnsureRegistered(); CaptureSafetyChecks.VerifyManaged(assembly); CaptureSafetyChecks.VerifyNativeCapabilities(assembly); CaptureSafetyChecks.VerifyNativeUserData(assembly); return Task.CompletedTask; },
+        ["polyline-safety"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryPolylineSafetyChecks.Run(assembly); },
+        ["preview-safety"] = PreviewSafetyChecks.Run,
+        ["preview-admission-freshness"] = PreviewSafetyChecks.RunAdmissionFreshness,
+        ["preview-geometry"] = PreviewGeometryChecks.Run,
+        ["preview-additional-geometry"] = PreviewSafetyChecks.RunAdditionalGeometry,
+        ["preview-additional-draw"] = PreviewSafetyChecks.RunAdditionalGeometryDraw,
+        ["clipboard-interop-diagnostic"] = PreviewGeometryChecks.RunClipboardInteropDiagnostic,
+        ["preview-reentrant-draw"] = PreviewSafetyChecks.RunReentrantDraw,
+        ["preview-metadata-safety"] = assembly => { FixtureUserData.EnsureRegistered(); return PreviewSafetyChecks.RunMetadata(assembly); },
+        ["preview-native-resources"] = PreviewSafetyChecks.RunNativeResources,
+        ["preview-conduit-resources"] = PreviewSafetyChecks.RunConduitResources,
+        ["preview-single-pass-meshing"] = PreviewSafetyChecks.RunSinglePassMeshing,
+        ["preview-single-pass-geometry"] = PreviewSafetyChecks.RunSinglePassGeometry,
+        ["preview-compatibility-draw"] = PreviewSafetyChecks.RunCompatibilityDraw,
+        ["preview-compatibility-conduit"] = PreviewSafetyChecks.RunCompatibilityConduitDraw,
+        ["preview-retirement-seam"] = PreviewSafetyChecks.RunRetirementSeam,
+        ["preview-stock-compatibility-draw"] = PreviewSafetyChecks.RunStockCompatibilityDraw,
+        ["preview-stock-point"] = PreviewSafetyChecks.RunStockPointDiagnostic,
+        ["preview-live-framebuffer"] = PreviewSafetyChecks.RunLiveFramebufferDiagnostic,
+        ["nurbs-value-candidate"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryNurbsCandidateChecks.Run(assembly); },
+        ["production-curve-measurement"] = assembly => { FixtureUserData.EnsureRegistered(); return ProductionCurveMeasurementChecks.Run(assembly); },
+        ["standalone-compatibility"] = assembly => { Rhino.Runtime.HostUtils.InitializeRhinoCommon(); FixtureUserData.EnsureRegistered(); return StandaloneCompatibilityChecks.Run(assembly); },
+        ["capture-transaction"] = CaptureTransactionChecks.Run,
+        ["capture-stock-geometry"] = CaptureStockGeometryChecks.RunNative,
+        ["geometry-canvas-viewport"] = GeometryHintChecks.VerifyCanvasViewport,
+        ["measurement-priority"] = GeometryMeasurementBatchChecks.VerifyPriority,
+        ["measurement-cancellation"] = GeometryMeasurementBatchChecks.VerifyCancellation,
+        ["measurement-invalidation"] = GeometryMeasurementBatchChecks.VerifyInvalidation,
+        ["measurement-failures"] = GeometryMeasurementBatchChecks.VerifyFailures,
+        ["row-actions"] = RowActionChecks.Run,
+        ["highlight-overlap"] = RowActionChecks.RunOverlap,
+        ["filter-metadata"] = assembly => { FilterChecks.VerifyMetadata(assembly); return Task.CompletedTask; },
+        ["filter-measurements"] = FilterChecks.VerifyMeasurements,
+        ["filter-cancellation"] = FilterChecks.VerifyCancellation,
+        ["filter-snapshot-replacement"] = FilterChecks.VerifySnapshotReplacement,
+        ["filter-lifecycle-paths"] = FilterChecks.VerifyLifecycleAndPaths,
+        ["filter-displayed-output"] = FilterChecks.VerifyDisplayedOutput,
+        ["filter-displayed-geometry"] = FilterChecks.RunDisplayedGeometryOutput,
+        ["filter-ui"] = FilterUiChecks.Run,
+        ["filter-ui-choices"] = FilterUiChecks.VerifyTypedChoicesAndStaleEditors,
+        ["full-value"] = FullValueChecks.Run,
+        ["view-freshness"] = ViewFreshnessChecks.Run,
+        ["filter-footer-statistics"] = FilterUiChecks.VerifyFooterStatistics,
+        ["filter-preview-undo"] = FilterUiChecks.VerifyPreviewUndo,
+        ["filter-display-values"] = FilterUiChecks.VerifyDisplayValues,
+        ["statistics-ui"] = StatisticsUiChecks.Run,
+        ["create-set"] = CreateSetChecks.Run,
+        ["set-details"] = SetDetailsChecks.Run,
+        ["display-set"] = DisplaySetChecks.Run,
+        ["item-order-ui"] = ItemOrderUiChecks.Run,
+        ["item-order-capture"] = ItemOrderUiChecks.CaptureViewport,
+        ["integration"] = async assembly => { await ExecuteIntegration(assembly); },
+    };
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern bool SetDllDirectory(string path);
@@ -38,42 +128,79 @@ internal static class Program
     [DllImport("user32.dll")] private static extern int GetWindowThreadProcessId(IntPtr handle, out int processId);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr handle, System.Text.StringBuilder text, int maximum);
     [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern void PostQuitMessage(int exitCode);
 
-    [STAThread]
-    private static int Main(string[] args)
+    internal static int Run(string[] args)
     {
-        if (args.Length == 0 || (args[0] != "--run" && args[0] != "--tree-only" && args[0] != "--item-order-capture" && args[0] != "--outputs-only" && args[0] != "--filters-only" && args[0] != "--sets-only"))
+        if (!((args.Length == 1 || args.Length == 2) && args[0] == "--tree-only") &&
+            !((args.Length == 2 || args.Length == 3) && (args[0] == "--fixture" || args[0] == "--identity-only")))
         {
-            Console.WriteLine("Windows Rhino 8 host smoke check (requires a working Rhino license).\nBuild the plugin first, then run with --run [absolute BetterGhPanel.gha path].\nCreates a hidden RhinoCore, loads the workspace assembly directly, and never installs a plugin.\nUse --tree-only [plugin path] to check managed tree operations with installed Rhino/Grasshopper assemblies without starting Rhino.");
-            return 0;
+            Console.Error.WriteLine("Usage: --tree-only [plugin path], --fixture <fixture> [plugin path], or --identity-only <fixture> [plugin path]. Use run.ps1 for all isolated fixtures.");
+            return 2;
         }
-        _system = Environment.GetEnvironmentVariable("RHINO_SYSTEM_PATH") ?? "C:/Program Files/Rhino 8/System";
-        _itemOrderCaptureOnly = args[0] == "--item-order-capture";
-        _outputsOnly = args[0] == "--outputs-only";
-        _filtersOnly = args[0] == "--filters-only";
-        _setsOnly = args[0] == "--sets-only";
-        _grasshopper = Path.GetFullPath(Path.Combine(_system, "../Plug-ins/Grasshopper"));
-        _plugin = args.Length > 1 ? Path.GetFullPath(args[1]) : Path.GetFullPath("src/BetterGhPanel/bin/Release/net7.0/BetterGhPanel.gha");
-        _resultPath = Environment.GetEnvironmentVariable("PANEL_SMOKE_RESULT") ?? Path.Combine(Path.GetDirectoryName(_plugin)!, "rhino-smoke-result.json");
-        if (!File.Exists(_plugin) || !File.Exists(Path.Combine(_system, "RhinoCommon.dll")))
-            throw new FileNotFoundException("Build the plugin and install Rhino 8 before running this host check.");
-        AppDomain.CurrentDomain.AssemblyResolve += Resolve;
-        Environment.SetEnvironmentVariable("PATH", _system + ";" + Environment.GetEnvironmentVariable("PATH"));
-        SetDllDirectory(_system);
-        if (args[0] == "--tree-only")
+        bool treeOnly = args[0] == "--tree-only";
+        _fixture = treeOnly ? string.Empty : args[1];
+        try
         {
-            try
+            string? desktop = Environment.GetEnvironmentVariable(InactiveDesktop.EnvironmentName);
+            if (!string.IsNullOrEmpty(desktop))
             {
-                var assembly = Assembly.LoadFrom(_plugin);
-                VerifyTreeOperations(assembly);
-                CreateSetChecks.VerifyTree(assembly);
-                OutputChecks.VerifyTree(assembly);
-                VerifyUnitOperations(assembly);
+                if (!InactiveDesktop.IsCurrent(desktop)) throw new InvalidOperationException("The fixture is not on its requested inactive desktop.");
+                _hostMode = "inactive-desktop";
+            }
+            _system = Environment.GetEnvironmentVariable("RHINO_SYSTEM_PATH") ?? "C:/Program Files/Rhino 8/System";
+            _grasshopper = Path.GetFullPath(Path.Combine(_system, "../Plug-ins/Grasshopper"));
+            int pathIndex = treeOnly ? 1 : 2;
+            _plugin = args.Length > pathIndex ? Path.GetFullPath(args[pathIndex]) : Path.GetFullPath("src/BetterGhPanel/bin/Release/net7.0/BetterGhPanel.gha");
+            string corePath = Path.Combine(Path.GetDirectoryName(_plugin)!, "BetterGhPanel.Core.dll");
+            if (!File.Exists(_plugin) || !File.Exists(corePath) || !File.Exists(Path.Combine(_system, "RhinoCommon.dll")))
+                throw new FileNotFoundException("Build the plugin and Core together and install Rhino 8 before running this check.");
+            AppDomain.CurrentDomain.AssemblyResolve += Resolve;
+            Environment.SetEnvironmentVariable("PATH", _system + ";" + Environment.GetEnvironmentVariable("PATH"));
+            SetDllDirectory(_system);
+
+            // The test executable also references Core. Bind it to the requested payload
+            // before any fixture is JIT-compiled; then verify the assembly actually used.
+            _loadedPlugin = Assembly.LoadFrom(_plugin);
+            _loadedCore = LoadedCoreAssembly();
+            _fixtures = CreateFixtures();
+            var inventory = JsonSerializer.Deserialize<string[]>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "fixtures.json")))!;
+            if (inventory.Length != _fixtures.Count || inventory.Distinct(StringComparer.Ordinal).Count() != inventory.Length ||
+                !inventory.All(_fixtures.ContainsKey))
+                throw new InvalidOperationException("Host fixture dispatch does not match fixtures.json.");
+            if (!treeOnly && !_fixtures.ContainsKey(_fixture))
+                throw new ArgumentException("Unknown fixture: " + _fixture);
+            if (!string.Equals(Path.GetFullPath(_loadedPlugin.Location), _plugin, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(Path.GetFullPath(_loadedCore.Location), Path.GetFullPath(corePath), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The loaded plugin or Core assembly is not from the requested payload: plugin=" + _loadedPlugin.Location + ", Core=" + _loadedCore.Location + ", expected Core=" + corePath);
+            if (treeOnly)
+            {
+                VerifyTreeOperations(_loadedPlugin);
+                CreateSetChecks.VerifyTree(_loadedPlugin);
+                OutputChecks.VerifyTree(_loadedPlugin);
+                VerifyUnitOperations(_loadedPlugin);
+                CaptureSafetyChecks.VerifyManaged(_loadedPlugin);
+                GeometryGroupChecks.VerifyCycles(_loadedPlugin);
+                GeometryGroupChecks.VerifyStockRenderWithoutHost();
+                FullValueChecks.VerifyPaintClipping(_loadedPlugin);
                 Console.WriteLine("PASS: Managed Grasshopper tree and unit operation checks completed (Rhino host not started).");
                 return 0;
             }
-            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+            _runId = Environment.GetEnvironmentVariable("PANEL_SMOKE_RUN_ID") ?? Guid.NewGuid().ToString("D");
+            if (!Guid.TryParseExact(_runId, "D", out _)) throw new ArgumentException("Invalid PANEL_SMOKE_RUN_ID.");
+            _resultPath = Environment.GetEnvironmentVariable("PANEL_SMOKE_RESULT") ??
+                Path.Combine(Path.GetDirectoryName(_plugin)!, "rhino-smoke-" + _runId + "-result.json");
+            _pluginSha256 = HashFile(_loadedPlugin.Location);
+            _coreSha256 = HashFile(_loadedCore.Location);
+            _startedUtc = DateTimeOffset.UtcNow;
+            WriteReport(); // Durable identity evidence before Rhino startup or any fixture capture.
+            Console.WriteLine("SMOKE_IDENTITY " + JsonSerializer.Serialize(new { fixture = _fixture, runId = _runId,
+                plugin = new { path = _loadedPlugin.Location, sha256 = _pluginSha256 },
+                core = new { path = _loadedCore.Location, sha256 = _coreSha256 } }));
+            Console.Out.Flush();
+            if (args[0] == "--identity-only") return 0;
         }
+        catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         // Rhino's in-process startup can report existing plug-in registrations in a
         // completed informational window. Dismiss only its exact Close button in this
         // process; never answer license, install, or any other startup decisions.
@@ -105,7 +232,14 @@ internal static class Program
             }
         });
         try { return RunHost(); }
-        catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        catch (Exception error)
+        {
+            _phase = _completed ? "host-shutdown-failed" : "host-startup-failed";
+            _failure = error.ToString();
+            WriteReport();
+            Console.Error.WriteLine(error);
+            return 1;
+        }
     }
 
     private static Assembly? Resolve(object? sender, ResolveEventArgs args)
@@ -122,8 +256,9 @@ internal static class Program
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static int RunHost()
     {
-        Console.WriteLine("Starting hidden Rhino 8 host; no plugin installation will be performed.");
-        using var host = new RhinoCore(new[] { "/nosplash", "/notemplate" }, WindowStyle.Hidden);
+        Console.WriteLine("Starting Rhino 8 host (" + _hostMode + "); no plugin installation will be performed.");
+        using var host = new RhinoCore(new[] { "/nosplash", "/notemplate" },
+            _hostMode == "inactive-desktop" ? WindowStyle.Normal : WindowStyle.Hidden);
         Console.WriteLine("Rhino initialized: " + Rhino.RhinoApp.Version);
         using var eto = new Eto.Forms.Application(new Eto.Wpf.Platform());
         var pluginId = Rhino.PlugIns.PlugIn.IdFromName("Grasshopper");
@@ -135,68 +270,73 @@ internal static class Program
         timer.Tick += async (sender, args) =>
         {
             timer.Stop();
-            try { exitCode = await ExecuteSmoke(); }
-            catch (Exception error) { Console.Error.WriteLine(error); }
+            try
+            {
+                // Some fixtures previously inherited the active document and view
+                // created by an earlier check in the combined host.
+                var rhino = Rhino.RhinoDoc.ActiveDoc ?? Rhino.RhinoDoc.Create(null);
+                if (rhino.Views.ActiveView == null)
+                    rhino.Views.ActiveView = rhino.Views.Add("Panel fixture", Rhino.Display.DefinedViewportProjection.Perspective,
+                        new Rectangle(0, 0, 640, 480), false);
+                if (Rhino.RhinoDoc.ActiveDoc == null || rhino.Views.ActiveView == null)
+                    throw new InvalidOperationException("The isolated host could not create an active Rhino document and viewport.");
+                GH_Document.EnableSolutions = true;
+                _phase = "fixture";
+                WriteReport();
+                SmokeAssertions.Begin();
+                try
+                {
+                    await _fixtures[_fixture](_loadedPlugin!);
+                    _passed = true;
+                    exitCode = 0;
+                }
+                catch (Exception error) { _failure = error.ToString(); Console.Error.WriteLine(error); }
+                finally
+                {
+                    SmokeAssertions.End();
+                    _completed = true;
+                    _phase = _passed ? "fixture-completed" : "fixture-failed";
+                    WriteReport();
+                }
+            }
+            catch (Exception error)
+            {
+                _failure = error.ToString();
+                _phase = "host-preparation-failed";
+                Console.Error.WriteLine(error);
+                WriteReport();
+            }
             finally
             {
-                File.WriteAllText(_resultPath, "{\"passed\":" + (exitCode == 0 ? "true" : "false") + ",\"canvasDrawingVerified\":" + (_canvasDrawingVerified ? "true" : "false") + ",\"runtime\":\"Windows .NET 7 / Rhino " + Rhino.RhinoApp.Version + "\"}");
-                Console.Out.Flush(); Console.Error.Flush(); context.ExitThread();
+                Console.Out.Flush(); Console.Error.Flush();
+                if (_hostMode == "inactive-desktop")
+                {
+                    // This isolated host owns only fixture documents. Request
+                    // Rhino shutdown before ending its native message loop;
+                    // posting WM_QUIT alone leaves native shutdown incomplete.
+                    if (Rhino.RhinoDoc.ActiveDoc is { } document) document.Modified = false;
+                    Rhino.RhinoApp.Exit(false);
+                    PostQuitMessage(0);
+                }
+                else context.ExitThread();
             }
         };
         timer.Start();
-        System.Windows.Forms.Application.Run(context);
+        if (_hostMode == "inactive-desktop")
+        {
+            // Viewport fixtures need Rhino's message preprocessing as well as
+            // its idle work. Forwarding WinForms Idle to DoIdle is insufficient
+            // for repeated native captures. Idle is still not a display fence.
+            _rhinoIdlePump = true;
+            Console.WriteLine("The inactive-desktop host runs Rhino's native message loop and idle tasks.");
+            host.Run();
+        }
+        else System.Windows.Forms.Application.Run(context);
         return exitCode;
     }
 
-    private static async Task<int> ExecuteSmoke()
+    private static async Task<int> ExecuteIntegration(Assembly assembly)
     {
-        var assembly = Assembly.LoadFrom(_plugin);
-        Assert(string.Equals(Path.GetFullPath(assembly.Location), _plugin, StringComparison.OrdinalIgnoreCase),
-            "Native checks load the exact requested plugin: " + assembly.Location);
-        Console.WriteLine("Plugin version: " + assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion);
-        if (_setsOnly)
-        {
-            await CreateSetChecks.Run(assembly);
-            await SetDetailsChecks.Run(assembly);
-            await DisplaySetChecks.Run(assembly);
-            Console.WriteLine("PASS: Displayed set values, outputs and occurrence UI checks completed.");
-            return 0;
-        }
-        if (_filtersOnly)
-        {
-            await FilterChecks.Run(assembly);
-            await FilterUiChecks.Run(assembly);
-            Console.WriteLine("PASS: Native filter, metric display and filter UI checks completed.");
-            return 0;
-        }
-        if (_outputsOnly)
-        {
-            await OutputChecks.Run(assembly);
-            Console.WriteLine("PASS: Native D/S/B/F output, selection, paired data and compatibility checks completed.");
-            return 0;
-        }
-        if (_itemOrderCaptureOnly)
-        {
-            await ItemOrderUiChecks.CaptureViewport(assembly);
-            Console.WriteLine("PASS: Native viewport item-order rendering, collision priority and visibility checks completed.");
-            return 0;
-        }
-        PanelHandleChecks.Run(assembly);
-        await OutputChecks.Run(assembly);
-        await RowNumberingChecks.Run(assembly);
-        await IndexSelectionChecks.Run(assembly);
-        await CapsuleChecks.Run(assembly);
-        await RecomputeChecks.Run(assembly);
-        await GeometryHintChecks.Run(assembly);
-        await GeometryMeasurementBatchChecks.Run(assembly);
-        await RowActionChecks.Run(assembly);
-        await FilterChecks.Run(assembly);
-        await FilterUiChecks.Run(assembly);
-        await StatisticsUiChecks.Run(assembly);
-        await CreateSetChecks.Run(assembly);
-        await SetDetailsChecks.Run(assembly);
-        await DisplaySetChecks.Run(assembly);
-        await ItemOrderUiChecks.Run(assembly);
         var componentType = assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!;
         var component = (GH_Component)Activator.CreateInstance(componentType)!;
         var componentIcon = (Bitmap)componentType.GetProperty("Icon", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component)!;
@@ -264,15 +404,21 @@ internal static class Program
         var independentRows = snapshot.Rows.Select(row => new PanelRow(
             row.OriginalIndex, row.Path, row.TypeName, "cached summary", row.NumericValue, row.IsNull, row.IsValid)).ToArray();
         var independentSnapshot = new PanelSnapshot(independentRows, snapshot.Branches);
-        session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { independentSnapshot });
-        await WaitForQuery(session);
-        Assert(PanelTestAdapter.DisplayValue(component, independentSnapshot, 0) == "cached summary",
-            "Canvas presentation uses captured summaries instead of live goo formatting");
-        Assert(PanelTestAdapter.CopyValue(component, independentSnapshot, 0) == "10",
-            "Value copying uses captured full-precision numeric data");
-        session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { snapshot });
-        Assert(PanelTestAdapter.DisplayValue(component, independentSnapshot, 0) == "cached summary",
-            "Obsolete snapshots never resolve display values from a newer solution");
+        var restoreCapture = PanelTestAdapter.UseSyntheticCapture(session);
+        try
+        {
+            session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { independentSnapshot });
+            await WaitForQuery(session);
+            Assert(PanelTestAdapter.DisplayValue(component, independentSnapshot, 0) == "cached summary",
+                "Canvas presentation uses captured summaries instead of live goo formatting");
+            Assert(PanelTestAdapter.CopyValue(component, independentSnapshot, 0) == "10",
+                "Value copying uses captured full-precision numeric data");
+            session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { snapshot });
+            Assert(PanelTestAdapter.DisplayValue(component, independentSnapshot, 0) == "cached summary",
+                "Obsolete snapshots never resolve display values from a newer solution");
+            await WaitForQuery(session);
+        }
+        finally { restoreCapture(); }
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(session);
         UpdateQuery(session, new PanelQueryOptions { Search = "alpha", BranchPath = "{0;2}", SortMode = PanelSortMode.ValueDescending });
@@ -332,8 +478,13 @@ internal static class Program
         component.Attributes.ExpireLayout();
         component.Attributes.PerformLayout();
         using var canvas = new GH_Canvas { Size = new Size(1200, 900) };
+        canvas.Viewport.Size = canvas.Size;
+        canvas.Viewport.Target = Point.Empty;
+        canvas.Viewport.Zoom = 1;
+        canvas.Viewport.ComputeProjection();
         await VerifyCanvasTreeTools(component, canvas, assembly, session, input);
         await VerifyCanvasReset(component, canvas, assembly, session, input, document);
+        var restoreCanvasCapture = PanelTestAdapter.UseSyntheticCapture(session);
         var sampleRows = Enumerable.Range(0, 10000).Select(i => new PanelRow(i, "{0;0}", "Number", i.ToString(), i)).ToArray();
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { new PanelSnapshot(sampleRows, new[] { new PanelBranch("{0;0}", 10000) }) });
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
@@ -346,9 +497,10 @@ internal static class Program
         CanvasEditorAdapter.Active(assembly).Submit("5000");
         DrawCanvasPreview(component, canvas);
         var list = PanelTestAdapter.Bounds(component, CanvasControl.List);
+        var hitsBeforeClick = PanelTestAdapter.Hits(component, "_rowHits");
         component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(list.X + 40, list.Y + 24)));
         Assert(PanelTestAdapter.Offset(component) == 4999 && PanelTestAdapter.SelectedPosition(component) >= 0,
-            "Reset regression starts with scrolled, selected rows and default query options");
+            $"Reset regression starts with scrolled, selected rows and default query options (offset={PanelTestAdapter.Offset(component)}, selected={PanelTestAdapter.SelectedPosition(component)}, hits={hitsBeforeClick}/{PanelTestAdapter.Hits(component, "_rowHits")}, visible={canvas.Viewport.VisibleRegion}, list={list}, current={Get<bool>(session, "HasCurrentResult")})");
         var unchangedResult = Get<PanelQueryResult>(session, "Result");
         document.IsModified = false;
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
@@ -409,6 +561,7 @@ internal static class Program
         DrawCanvasPreview(component, canvas);
         DrawCanvasPreview(component, canvas, 192);
         AssertCanvasDpiInvariant();
+        restoreCanvasCapture();
         await VerifyCanvasUnits(component, canvas, assembly, session, input);
         await VerifyUndoRedo(component, document, session, input);
         // Review screenshot uses a real solved mixed tree with enough rows to show the compact layout.
@@ -464,10 +617,14 @@ internal static class Program
         PanelTestAdapter.Units(component, PanelUnitConversion.SquareMillimetersToSquareMeters, -1);
         await WaitForQuery(session);
         var convertedSurface = Get<PanelSnapshot>(session, "Snapshot");
+        // A new snapshot may need another measurement when no complete
+        // retention witness exists; request visible work before checking it.
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-converted-surface.png");
+        await WaitForMeasurement(session, convertedSurface, surfacePosition);
         Assert(GetGeometryMeasurement(session, convertedSurface, surfacePosition) == 100 &&
             PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("A 0.0001 m²") &&
             PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("untrimmed · planar"),
-            "Units converts the cached metric while preserving surface metadata and its raw area");
+            "Units displays converted area while preserving surface metadata and its raw value");
         PanelTestAdapter.Units(component, PanelUnitConversion.SquareMillimetersToSquareMeters, 6);
         Assert(ReferenceEquals(convertedSurface, Get<PanelSnapshot>(session, "Snapshot")) &&
             PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("0.000100 m²"),
@@ -490,9 +647,11 @@ internal static class Program
         PanelTestAdapter.Units(component, PanelUnitConversion.CubicMillimetersToCubicMeters, -1);
         await WaitForQuery(session);
         var convertedBrep = Get<PanelSnapshot>(session, "Snapshot");
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-converted-brep.png");
+        await WaitForMeasurement(session, convertedBrep, brepPosition);
         Assert(Math.Abs((GetGeometryMeasurement(session, convertedBrep, brepPosition) ?? double.NaN) - 24) < 1e-9 &&
             PanelTestAdapter.DisplayValue(component, convertedBrep, brepPosition).Contains("2.4E-08 m³"),
-            "Units offers cubic conversion and retains the measured solid volume: " + PanelTestAdapter.DisplayValue(component, convertedBrep, brepPosition));
+            "Units displays converted solid volume: " + PanelTestAdapter.DisplayValue(component, convertedBrep, brepPosition));
         UpdateQuery(session, new PanelQueryOptions { TypeName = "Line" });
         PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, -1);
         await WaitForQuery(session);
@@ -545,6 +704,7 @@ internal static class Program
             Assert(component.Params.Input[0].Attributes.InputGrip == inputGrip &&
                 component.Params.Output[0].Attributes.OutputGrip == outputGrip,
                 "Folding keeps both native wire connections fixed");
+            DrawCanvasPreview(component, canvas);
         }
         Assert(PanelTestAdapter.Size(component) == new SizeF(360, 360) &&
             ReferenceEquals(result, Get<PanelQueryResult>(PanelTestAdapter.Session(component), "Result")) &&
@@ -574,7 +734,9 @@ internal static class Program
         document.UndoServer.PerformRedo();
         component.Attributes.PerformLayout();
         Assert(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Height == 360, "Native redo restores full display");
+        DrawCanvasPreview(component, canvas);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
+        DrawCanvasPreview(component, canvas);
         var corner = PanelTestAdapter.Bounds(component, CanvasControl.Resize);
         var start = new PointF(corner.X + 5, corner.Y + 5);
         float bottom = PanelTestAdapter.Bounds(component, CanvasControl.Panel).Bottom;
@@ -583,6 +745,7 @@ internal static class Program
         Assert(Math.Abs(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Bottom - bottom - 24) < 0.01f,
             "Half panel resize corner follows the cursor");
         component.Attributes.RespondToMouseUp(canvas, Mouse(start));
+        DrawCanvasPreview(component, canvas);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
         PanelTestAdapter.Resize(component, 360, 360);
         component.Attributes.PerformLayout();
@@ -949,9 +1112,35 @@ internal static class Program
     private static void Click(GH_Component component, GH_Canvas canvas, RectangleF region) => Assert(component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(region.X + region.Width / 2, region.Y + region.Height / 2))) == GH_ObjectResponse.Handled, "Canvas control responds to native mouse events");
     private static void ClickMenuRow(GH_Component component, GH_Canvas canvas, int index)
     {
-        var menu = PanelTestAdapter.MenuBounds(component);
-        component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(menu.X + 10, menu.Y + index * 20 + 10)));
+        var state = component.Attributes.GetType().GetField("_menu", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(component.Attributes)!;
+        int Value(string name) => (int)state.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(state)!;
+        int count = Value("Count");
+        if (index < 0 || index >= count) throw new ArgumentOutOfRangeException(nameof(index));
+        for (int attempts = 0; attempts <= count; attempts++)
+        {
+            // Page choices are actionable only after that page has been painted.
+            using (var bitmap = new Bitmap(canvas.Width, canvas.Height))
+            using (var graphics = Graphics.FromImage(bitmap))
+            {
+                canvas.Viewport.ApplyProjection(graphics);
+                PanelTestAdapter.Render(component, canvas, graphics);
+            }
+            var menu = PanelTestAdapter.MenuBounds(component);
+            int offset = Value("Offset"), visible = Value("Visible");
+            if (index >= offset && index < offset + visible)
+            {
+                component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(menu.X + 10, menu.Y + (index - offset) * 20 + 10)));
+                return;
+            }
+            float x = index < offset ? menu.X + 10 : menu.Right - 10;
+            component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(x, menu.Bottom - 10)));
+            if (Value("Offset") == offset) break;
+        }
+        throw new InvalidOperationException("Could not reach the requested painted menu row.");
     }
+    private static string CanvasArtifact(string name) => Path.Combine(
+        string.IsNullOrEmpty(_resultPath) ? Path.GetTempPath() : Path.GetDirectoryName(_resultPath)!, _runId + "-" + name);
+
     private static void DrawCanvasPreview(GH_Component component, GH_Canvas canvas, int dpi = 96, string? artifactName = null)
     {
         var bounds = component.Attributes.Bounds;
@@ -975,14 +1164,14 @@ internal static class Program
             graphics.DrawBezier(wire, output, new PointF(output.X + 45, output.Y), new PointF(output.X + 55, output.Y + 20), new PointF(output.X + 100, output.Y + 20));
         }
         PanelTestAdapter.Render(component, canvas, graphics);
-        string artifact = Path.Combine(Path.GetDirectoryName(_plugin)!, artifactName ?? (dpi == 96 ? "rhino-smoke-canvas.png" : "rhino-smoke-canvas-dpi192.png"));
+        string artifact = CanvasArtifact(artifactName ?? (dpi == 96 ? "rhino-smoke-canvas.png" : "rhino-smoke-canvas-dpi192.png"));
         bitmap.Save(artifact);
         Console.WriteLine("Actual canvas Objects renderer preview (sample data and illustrative grid/wires): " + artifact);
     }
     private static void AssertCanvasDpiInvariant()
     {
-        using var normal = new Bitmap(Path.Combine(Path.GetDirectoryName(_plugin)!, "rhino-smoke-canvas.png"));
-        using var high = new Bitmap(Path.Combine(Path.GetDirectoryName(_plugin)!, "rhino-smoke-canvas-dpi192.png"));
+        using var normal = new Bitmap(CanvasArtifact("rhino-smoke-canvas.png"));
+        using var high = new Bitmap(CanvasArtifact("rhino-smoke-canvas-dpi192.png"));
         var rectangle = new Rectangle(0, 0, normal.Width, normal.Height);
         var first = normal.LockBits(rectangle, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         var second = high.LockBits(rectangle, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
@@ -1022,9 +1211,32 @@ internal static class Program
         }
     }
 
-    private static void Assert(bool condition, string name)
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static Assembly LoadedCoreAssembly() => typeof(PanelSnapshot).Assembly;
+
+    private static string HashFile(string path)
     {
-        if (!condition) throw new InvalidOperationException("FAIL: " + name);
-        Console.WriteLine("PASS: " + name);
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
+
+    private static void WriteReport()
+    {
+        var report = new
+        {
+            schemaVersion = 1, fixture = _fixture, runId = _runId, startedUtc = _startedUtc,
+            completed = _completed, passed = _passed, assertionCount = SmokeAssertions.Count,
+            phase = _phase, failure = _failure, canvasDrawingVerified = _canvasDrawingVerified, hostMode = _hostMode,
+            rhinoIdlePump = _rhinoIdlePump,
+            plugin = new { path = _loadedPlugin!.Location, sha256 = _pluginSha256 },
+            core = new { path = _loadedCore!.Location, sha256 = _coreSha256 }
+        };
+        using var stream = new FileStream(_resultPath, FileMode.Create, FileAccess.Write, FileShare.Read);
+        using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false), 1024, true);
+        writer.Write(JsonSerializer.Serialize(report));
+        writer.Flush();
+        stream.Flush(true);
+    }
+
+    private static void Assert(bool condition, string name) => SmokeAssertions.Check(condition, name);
 }

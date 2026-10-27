@@ -38,12 +38,12 @@ namespace BetterGhPanel.Core
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
-            var sortText = query.SortMode == PanelSortMode.SourceOrder ? null : new Dictionary<int, string>();
+            var sortText = query.SortMode == PanelSortMode.SourceOrder ? null : new Dictionary<int, PanelText>();
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var branchCounts = new Dictionary<string, int>(StringComparer.Ordinal);
             var numericValues = new Dictionary<double, ValueCount>();
-            var stringValues = new Dictionary<string, ValueCount>(StringComparer.Ordinal);
+            var stringValues = new Dictionary<PanelText, ValueCount>(new PanelTextComparer());
             var uniqueValues = new List<ValueCount>();
             var scalarCount = 0;
 
@@ -66,6 +66,8 @@ namespace BetterGhPanel.Core
             var numericCount = 0;
             var nullCount = 0;
             var invalidCount = 0;
+            var unverifiedCount = 0;
+            var filteredSourceStatuses = default(PanelSourceStatusCounts);
             var minimum = double.PositiveInfinity;
             var maximum = double.NegativeInfinity;
             var mean = 0.0;
@@ -78,20 +80,23 @@ namespace BetterGhPanel.Core
                 PanelGeometryInfo? measured = null;
                 measuredGeometry?.TryGetValue(i, out measured);
                 if (!search.Matches(row, snapshot.UnitConversion, measured, cancellationToken)) continue;
+                filteredSourceStatuses = filteredSourceStatuses.Add(row.Validity);
                 if (set != null && !set.IncludeRow(i, measured)) continue;
 
                 rowPositions.Add(i);
                 if (sortText != null && !row.IsNull && !HasFiniteNumber(row))
-                    sortText.Add(i, PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture));
+                    sortText.Add(i, PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture));
                 branches.Add(row.Path);
                 Increment(branchCounts, row.Path);
                 if (set?.IsBranchSet == true) continue;
                 var projected = set == null ? null : set.Values[i];
                 var numeric = projected != null ? projected.Number : HasFiniteNumber(row) ? row.NumericValue : null;
-                var text = projected != null ? projected.Number.HasValue ? null : projected.Text : row.StringValue;
+                PanelText? text = projected != null ? projected.Number.HasValue ? (PanelText?)null : projected.SemanticText :
+                    row.StringValue != null ? new PanelText(row.StringValue) : (PanelText?)null;
                 Increment(typeCounts, projected == null ? row.TypeName : projected.Number.HasValue ? "Number" : "Text");
                 if (projected == null && row.IsNull) nullCount++;
-                if (projected == null && !row.IsValid) invalidCount++;
+                if (projected == null && row.Validity == PanelValidity.VerifiedInvalid) invalidCount++;
+                if (projected == null && row.Validity == PanelValidity.Unverified) unverifiedCount++;
                 if (projected != null || !row.IsNull && row.IsValid)
                 {
                     if (numeric.HasValue)
@@ -107,12 +112,12 @@ namespace BetterGhPanel.Core
                         frequency.Count++;
                         scalarCount++;
                     }
-                    else if (text != null)
+                    else if (text.HasValue)
                     {
-                        if (!stringValues.TryGetValue(text, out var frequency))
+                        if (!stringValues.TryGetValue(text.Value, out var frequency))
                         {
                             frequency = new ValueCount(null, text);
-                            stringValues.Add(text, frequency);
+                            stringValues.Add(text.Value, frequency);
                             uniqueValues.Add(frequency);
                         }
                         frequency.Count++;
@@ -138,6 +143,50 @@ namespace BetterGhPanel.Core
                 foreach (var step in SortBranches(positions, snapshot, branchCounts, sortText!,
                     query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work, set?.Values))
                     yield return step;
+            // Build the scroll index as part of the cooperative query, not in a
+            // paint or gesture. The first row of the next retained non-empty
+            // branch anchors each empty path without changing item numbering.
+            var firstRows = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int index = 0; index < positions.Length; index++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, cancellationToken);
+                string path = snapshot.Rows[positions[index]].Path;
+                if (!firstRows.ContainsKey(path)) firstRows.Add(path, index);
+            }
+            var orderedBranches = new List<string>();
+            for (int index = 0; index < snapshot.Branches.Count; index++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, cancellationToken);
+                string path = snapshot.Branches[index].Path;
+                if (branches.Contains(path)) orderedBranches.Add(path);
+            }
+            var reverseEmptyPaths = new List<string>();
+            var reverseEmptyOffsets = new List<int>();
+            int nextRow = positions.Length;
+            for (int index = orderedBranches.Count - 1; index >= 0; index--)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, cancellationToken);
+                string path = orderedBranches[index];
+                if (firstRows.TryGetValue(path, out int first)) nextRow = first;
+                else { reverseEmptyPaths.Add(path); reverseEmptyOffsets.Add(nextRow); }
+            }
+            var emptyPaths = new List<string>();
+            var emptyOffsets = new List<int>();
+            int previousOffset = 0;
+            for (int index = reverseEmptyPaths.Count - 1; index >= 0; index--)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, cancellationToken);
+                // Actual tree rows are branch-ordered. Preserve item order even
+                // for a synthetic snapshot with interleaved branch records.
+                previousOffset = Math.Max(previousOffset, reverseEmptyOffsets[index]);
+                emptyPaths.Add(reverseEmptyPaths[index]);
+                emptyOffsets.Add(previousOffset);
+            }
+            var viewIndex = new PanelViewIndex(positions.Length, emptyOffsets, emptyPaths);
             if (set?.IsBranchSet == true)
             {
                 // One displayed/output number per retained branch. Membership still
@@ -172,13 +221,23 @@ namespace BetterGhPanel.Core
                 invalidCount, numericCount == 0 ? (double?)null : minimum,
                 numericCount == 0 ? (double?)null : maximum, numericCount == 0 ? (double?)null : mean,
                 new ReadOnlyDictionary<string, int>(typeCounts), new ReadOnlyDictionary<string, int>(branchCounts),
-                Array.AsReadOnly(frequencies), scalarCount);
+                Array.AsReadOnly(frequencies), scalarCount, unverifiedCount, filteredSourceStatuses);
             PanelDisplaySetResult? displaySet = null;
             if (set != null)
                 foreach (var step in set.Complete(work, cancellationToken))
                     if (step == null) yield return null;
                     else displaySet = step;
-            yield return new PanelQueryResult(snapshot, positions, statistics, branches, displaySet);
+            if (work.ShouldYield()) yield return null;
+            cancellationToken.ThrowIfCancellationRequested();
+            var viewIndices = new PanelResultPositionIndex(snapshot.Rows.Count, positions.Length);
+            for (int index = 0; index < positions.Length; index++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, cancellationToken);
+                viewIndices.Add(positions[index], index);
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet);
         }
 
         public static bool RequiresGeometryMeasurements(PanelQueryOptions options)
@@ -262,9 +321,9 @@ namespace BetterGhPanel.Core
 
         private sealed class ValueCount
         {
-            internal ValueCount(double? number, string? text) { Number = number; Text = text; }
+            internal ValueCount(double? number, PanelText? text) { Number = number; Text = text; }
             internal double? Number { get; }
-            internal string? Text { get; }
+            internal PanelText? Text { get; }
             internal int Count { get; set; }
         }
 
@@ -284,7 +343,7 @@ namespace BetterGhPanel.Core
         // Group stably in transformed-tree order, even if snapshot rows are interleaved.
         // Only values in the same branch compete; path text never determines branch order.
         private static IEnumerable<PanelQueryResult?> SortBranches(int[] ids, PanelSnapshot snapshot,
-            IReadOnlyDictionary<string, int> branchCounts, IReadOnlyDictionary<int, string> sortText,
+            IReadOnlyDictionary<string, int> branchCounts, IReadOnlyDictionary<int, PanelText> sortText,
             bool descending, CancellationToken token, PanelQueryWork work, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues = null)
         {
             if (ids.Length < 2) yield break;
@@ -347,7 +406,7 @@ namespace BetterGhPanel.Core
         // Own merge sort keeps cancellation exceptions unwrapped and never mutates snapshot data.
         private static IEnumerable<PanelQueryResult?> StableSort(int[] ids, int[] buffer, int offset, int count,
             IReadOnlyList<PanelRow> rows,
-            IReadOnlyDictionary<int, string> sortText, bool descending,
+            IReadOnlyDictionary<int, PanelText> sortText, bool descending,
             CancellationToken token, PanelQueryWork work, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues)
         {
             if (count < 2) yield break;
@@ -391,7 +450,7 @@ namespace BetterGhPanel.Core
         }
 
         private static int Compare(int leftId, int rightId, IReadOnlyList<PanelRow> rows,
-            IReadOnlyDictionary<int, string> sortText, bool descending, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues)
+            IReadOnlyDictionary<int, PanelText> sortText, bool descending, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues)
         {
             if (displayedValues != null)
             {
@@ -399,7 +458,7 @@ namespace BetterGhPanel.Core
                 var rightValue = displayedValues[rightId];
                 if (leftValue.Number.HasValue != rightValue.Number.HasValue) return leftValue.Number.HasValue ? -1 : 1;
                 int order = leftValue.Number.HasValue ? leftValue.Number.Value.CompareTo(rightValue.Number!.Value) :
-                    StringComparer.OrdinalIgnoreCase.Compare(leftValue.Text, rightValue.Text);
+                    leftValue.SemanticText.Compare(rightValue.SemanticText, StringComparison.OrdinalIgnoreCase);
                 return order == 0 ? leftId.CompareTo(rightId) : descending ? -order : order;
             }
             var left = rows[leftId];
@@ -415,7 +474,7 @@ namespace BetterGhPanel.Core
             {
                 comparison = StringComparer.OrdinalIgnoreCase.Compare(left.TypeName, right.TypeName);
                 if (comparison != 0) return comparison;
-                comparison = StringComparer.OrdinalIgnoreCase.Compare(sortText[leftId], sortText[rightId]);
+                comparison = sortText[leftId].Compare(sortText[rightId], StringComparison.OrdinalIgnoreCase);
             }
             if (comparison != 0) return descending ? -comparison : comparison;
             return leftId.CompareTo(rightId);

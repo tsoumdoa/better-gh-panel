@@ -14,17 +14,7 @@ using Rhino.Geometry;
 
 internal static class FilterChecks
 {
-    internal static async Task Run(Assembly assembly)
-    {
-        VerifyMetadata(assembly);
-        await VerifyMeasurements(assembly);
-        await VerifyCancellation(assembly);
-        await VerifySnapshotReplacement(assembly);
-        await VerifyLifecycleAndPaths(assembly);
-        await VerifyDisplayedOutput(assembly);
-    }
-
-    private static void VerifyMetadata(Assembly assembly)
+    internal static void VerifyMetadata(Assembly assembly)
     {
         var describe = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!
             .GetMethod("Describe", BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -41,7 +31,7 @@ internal static class FilterChecks
             "Snapshot metric metadata identifies surface/open Brep area and solid volume without mass calculation");
     }
 
-    private static async Task VerifyMeasurements(Assembly assembly)
+    internal static async Task VerifyMeasurements(Assembly assembly)
     {
         var rows = new[]
         {
@@ -56,16 +46,17 @@ internal static class FilterChecks
         using var fixture = new Fixture(assembly, rows);
         await WaitForQuery(fixture);
         var prepared = new List<int>();
-        int active = 0, maximumActive = 0, published = 0;
+        int active = 0, maximumActive = 0, published = 0, computations = 0;
         int uiThread = Environment.CurrentManagedThreadId;
         bool preparationOnUi = true, computationOnWorker = true;
         fixture.OnResult(() => published++);
-        fixture.SetResolver(position =>
+        fixture.SetOwnedResolver(position =>
         {
             preparationOnUi &= Environment.CurrentManagedThreadId == uiThread;
             prepared.Add(position);
             return () =>
             {
+                Interlocked.Increment(ref computations);
                 computationOnWorker &= Environment.CurrentManagedThreadId != uiThread;
                 maximumActive = Math.Max(maximumActive, Interlocked.Increment(ref active));
                 try
@@ -98,29 +89,29 @@ internal static class FilterChecks
         fixture.Query(options);
         fixture.Attach(new PanelSnapshot(rows, fixture.Snapshot.Branches, PanelUnitConversion.SquareMillimetersToSquareMeters), true);
         await WaitForQuery(fixture);
-        Check(fixture.Result.RowPositions.SequenceEqual(new[] { 1 }) && prepared.Count == 3,
+        Check(fixture.Result.RowPositions.SequenceEqual(new[] { 1 }) && Volatile.Read(ref computations) == 3,
             "A unit-only snapshot filters retained raw measurements using full precision converted area");
 
         int beforeError = published;
         options.Search = "> invalid";
         fixture.Query(options);
         await WaitUntil(() => !fixture.IsBusy);
-        Check(fixture.Error != null && published == beforeError + 1 && prepared.Count == 3,
+        Check(fixture.Error != null && published == beforeError + 1 && Volatile.Read(ref computations) == 3,
             "Invalid metric expressions report completion with an error before preparing geometry");
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "[" });
         await WaitUntil(() => !fixture.IsBusy);
-        Check(fixture.Error != null && prepared.Count == 3, "Invalid regex reports an error without geometry work");
+        Check(fixture.Error != null && Volatile.Read(ref computations) == 3, "Invalid regex reports an error without geometry work");
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Value, Search = "> 60" });
         await WaitForQuery(fixture);
-        Check(fixture.Result.RowPositions.SequenceEqual(new[] { 8 }) && prepared.Count == 3,
+        Check(fixture.Result.RowPositions.SequenceEqual(new[] { 8 }) && Volatile.Read(ref computations) == 3,
             "Changing only filter mode starts a fresh query and value filters use numeric rows without geometry work");
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Volume });
         await WaitForQuery(fixture);
-        Check(fixture.Result.RowPositions.Count == rows.Length && prepared.Count == 3,
+        Check(fixture.Result.RowPositions.Count == rows.Length && Volatile.Read(ref computations) == 3,
             "An empty metric expression leaves the view unfiltered without computing deferred geometry");
     }
 
-    private static async Task VerifyCancellation(Assembly assembly)
+    internal static async Task VerifyCancellation(Assembly assembly)
     {
         using var fixture = new Fixture(assembly, new[] { AreaRow(0, "{0}"), AreaRow(1, "{0}"), AreaRow(2, "{1}") });
         await WaitForQuery(fixture);
@@ -152,7 +143,7 @@ internal static class FilterChecks
         finally { gate.Set(); }
     }
 
-    private static async Task VerifySnapshotReplacement(Assembly assembly)
+    internal static async Task VerifySnapshotReplacement(Assembly assembly)
     {
         var rows = new[] { AreaRow(0, "{0}"), AreaRow(1, "{0}") };
         using var fixture = new Fixture(assembly, rows);
@@ -186,7 +177,7 @@ internal static class FilterChecks
         finally { gate.Set(); }
     }
 
-    private static async Task VerifyLifecycleAndPaths(Assembly assembly)
+    internal static async Task VerifyLifecycleAndPaths(Assembly assembly)
     {
         using var fixture = new Fixture(assembly, new[] { new PanelRow(0, "{0;0;1}", "Number", "12", 12) });
         await WaitForQuery(fixture);
@@ -209,7 +200,7 @@ internal static class FilterChecks
             "Disposing a session releases its last captured result");
     }
 
-    private static async Task VerifyDisplayedOutput(Assembly assembly)
+    internal static async Task VerifyDisplayedOutput(Assembly assembly)
     {
         // Scheduled output changes need the host editor's message dispatch handle.
         using var editor = new Grasshopper.GUI.GH_DocumentEditor();
@@ -275,21 +266,40 @@ internal static class FilterChecks
             fixture.Source.PersistentData.Clear();
             fixture.Source.PersistentData.Append(new InvalidNumber(1500), new GH_Path(0));
             fixture.Source.PersistentData.Append(new InvalidInteger(3000), new GH_Path(0));
-            fixture.Query(new PanelQueryOptions { OnlyInvalid = true, DecimalPlaces = 5 });
+            fixture.Query(new PanelQueryOptions { DecimalPlaces = 5 });
             fixture.Solve();
             await fixture.WaitForOutput(2);
-            Check(fixture.Sink.VolatileData.AllData(true).All(item => !item.IsValid) &&
-                fixture.Snapshot.Rows.All(row => !row.IsValid) &&
-                PanelTestAdapter.CopyValue(fixture.Component, fixture.Snapshot, 0).StartsWith("Invalid ·", StringComparison.Ordinal),
-                "Conversion preserves invalid scalar types and validity, and copying keeps their invalid marker");
+            Check(fixture.Sink.VolatileData.AllData(true).All(item => item is InvalidNumber || item is InvalidInteger) &&
+                fixture.Snapshot.Rows.All(row => row.Validity == PanelValidity.Unverified) && fixture.Snapshot.UnverifiedCount == 2,
+                "Scalar subclasses remain typed and unconverted while their validity is explicitly unverified");
+            fixture.Query(new PanelQueryOptions { OnlyInvalid = true, DecimalPlaces = 5 });
+            await fixture.WaitForOutput(0);
+            Check(fixture.Snapshot.UnverifiedCount == 2, "Invalid-only excludes uncertain subclasses and retains input diagnostics");
+            fixture.Source.PersistentData.Append(new GH_Number(Rhino.RhinoMath.UnsetValue), new GH_Path(0));
+            fixture.Solve();
+            await fixture.WaitForOutput(1);
+            Check(fixture.Result.RowPositions.Count == 1 && fixture.Snapshot.Rows[2].Validity == PanelValidity.VerifiedInvalid &&
+                fixture.Sink.VolatileData.AllData(true).Single() is GH_Number unset && unset.Value == Rhino.RhinoMath.UnsetValue,
+                "An exact trusted finite unset number remains invalid and unconverted through invalid-only output");
+            fixture.Query(new PanelQueryOptions { DecimalPlaces = 5 });
+            await fixture.WaitForOutput(3);
             fixture.Component.ClearData();
             Check(((Array)fixture.Component.GetType().GetField("_sourceItems", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .GetValue(fixture.Component)!).Length == 0 && fixture.Result.Snapshot.Rows.Count == 0,
                 "Clearing component input releases live values and immutable results before recomputing");
-
-            await VerifyDisplayedGeometryOutput(assembly);
         }
         finally { setEditor.Invoke(null, new object?[] { null }); }
+    }
+
+    internal static async Task RunDisplayedGeometryOutput(Assembly assembly)
+    {
+        var previous = Grasshopper.Instances.DocumentEditor;
+        using var editor = new Grasshopper.GUI.GH_DocumentEditor();
+        _ = editor.Handle;
+        var setEditor = typeof(Grasshopper.Instances).GetMethod("SetDocumentEditor", BindingFlags.Static | BindingFlags.NonPublic)!;
+        setEditor.Invoke(null, new object?[] { editor });
+        try { await VerifyDisplayedGeometryOutput(assembly); }
+        finally { setEditor.Invoke(null, new object?[] { previous }); }
     }
 
     private static async Task VerifyDisplayedGeometryOutput(Assembly assembly)
@@ -380,7 +390,7 @@ internal static class FilterChecks
         internal bool Current => (bool)_sessionType.GetProperty("HasCurrentResult")!.GetValue(_session)!;
         internal void Query(PanelQueryOptions options) => _sessionType.GetMethod("UpdateQuery")!.Invoke(_session, new object[] { options });
         internal void SetResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) =>
-            _sessionType.GetMethod("SetGeometryDetailResolver", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(_session, new object[] { resolver });
+            HostMeasurementPreparation.SetWitnesslessResolver(_session, resolver);
         internal void Solve() { Source.ExpireSolution(false); Document.NewSolution(false, GH_SolutionMode.Silent); }
         internal Task WaitForOutput(int count) => WaitUntil(() => Current && Sink.VolatileData.DataCount == count);
         public void Dispose() { Component.DocumentContextChanged(Document, GH_DocumentContext.Close); Document.Dispose(); }
@@ -406,18 +416,16 @@ internal static class FilterChecks
         }
     }
 
-    private static void Check(bool condition, string description)
-    {
-        if (!condition) throw new InvalidOperationException(description);
-        Console.WriteLine("PASS: " + description);
-    }
+    private static void Check(bool condition, string description) => SmokeAssertions.Check(condition, description);
 
     private sealed class Fixture : IDisposable
     {
+        private readonly Assembly _assembly;
         private readonly object _session;
         private readonly Type _type;
         internal Fixture(Assembly assembly, IReadOnlyList<PanelRow> rows)
         {
+            _assembly = assembly;
             _type = assembly.GetType("BetterGhPanel.Runtime.PanelSession", true)!;
             _session = Activator.CreateInstance(_type, new object[] { (Action)(() => { }) })!;
             Snapshot = new PanelSnapshot(rows, rows.GroupBy(row => row.Path).Select(group => new PanelBranch(group.Key, group.Count())).ToArray());
@@ -435,7 +443,10 @@ internal static class FilterChecks
         internal void Invalidate() => Invoke("InvalidateInput", false, false);
         internal void OnResult(Action callback) => _type.GetEvent("ResultChanged")!.AddEventHandler(_session, (EventHandler)((_, __) => callback()));
         internal bool Pending(int position) => (bool)Invoke("IsGeometryPending", Snapshot, position)!;
-        internal void SetResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) => Invoke("SetGeometryDetailResolver", resolver);
+        internal void SetResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) =>
+            HostMeasurementPreparation.SetWitnesslessResolver(_session, resolver);
+        internal void SetOwnedResolver(Func<int, Func<PanelGeometryInfo?>?> resolver) =>
+            Invoke("SetGeometryPreparationResolver", HostMeasurementPreparation.WitnessedResolver(_assembly, resolver));
         internal void Attach(PanelSnapshot snapshot, bool retain = false)
         {
             Snapshot = snapshot;

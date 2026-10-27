@@ -10,11 +10,19 @@
     <GrasshopperPath Condition="'$(GrasshopperPath)' == ''">C:/Program Files/Rhino 8/Plug-ins/Grasshopper</GrasshopperPath>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="../../src/BetterGhPanel.Core/BetterGhPanel.Core.csproj" />
+    <None Update="fixtures.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/BetterGhPanel.Core/BetterGhPanel.Core.csproj" Private="false" />
     <Reference Include="RhinoCommon" HintPath="$(RhinoSystemPath)/RhinoCommon.dll" Private="false" />
     <Reference Include="Grasshopper" HintPath="$(GrasshopperPath)/Grasshopper.dll" Private="false" />
     <Reference Include="GH_IO" HintPath="$(GrasshopperPath)/GH_IO.dll" Private="false" />
     <Reference Include="Eto" HintPath="$(RhinoSystemPath)/Eto.dll" Private="false" />
     <Reference Include="Eto.Wpf" HintPath="$(RhinoSystemPath)/Eto.Wpf.dll" Private="false" />
   </ItemGroup>
+  <!-- A stale host-local copy wins .NET's default binding even when a different payload
+       is requested. Keep it out of the host output so Bootstrap binds the payload copy. -->
+  <Target Name="RemoveHostLocalCore" AfterTargets="Build">
+    <Delete Files="$(TargetDir)BetterGhPanel.Core.dll" />
+  </Target>
 </Project>

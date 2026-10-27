@@ -21,6 +21,20 @@ internal static class SetDetailsChecks
 
     internal static async Task Run(Assembly assembly)
     {
+        // Scheduled selection output needs the host editor's native handle even
+        // though this fixture renders to an isolated, hidden canvas.
+        var previous = Grasshopper.Instances.DocumentEditor;
+        using var owned = previous == null ? new Grasshopper.GUI.GH_DocumentEditor() : null;
+        var editor = previous ?? owned!;
+        _ = editor.Handle;
+        var setEditor = typeof(Grasshopper.Instances).GetMethod("SetDocumentEditor", BindingFlags.Static | BindingFlags.NonPublic)!;
+        setEditor.Invoke(null, new object?[] { editor });
+        try { await RunWithEditor(assembly); }
+        finally { setEditor.Invoke(null, new object?[] { previous }); }
+    }
+
+    private static async Task RunWithEditor(Assembly assembly)
+    {
         using var document = new GH_Document { Enabled = true };
         GH_Document.EnableSolutions = true;
         var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
@@ -59,9 +73,38 @@ internal static class SetDetailsChecks
             var textRow = PanelTestAdapter.RowBounds(component, 2);
             PanelTestAdapter.CanvasClick(canvas, new PointF(textRow.X + 42, textRow.Y + 8));
             Check(PanelTestAdapter.SelectedPosition(component) == 2, "Set fixture selects a different row before inspecting occurrences");
-            Click(CountBounds(0));
+            await WaitForSelectedOutput();
+            Check(component.Params.Output[1].VolatileData.AllData(true).Single() is GH_String selected && selected.Value == "alpha",
+                "The selected set value is published before occurrence inspection begins");
+            Paint();
+            var firstBadge = CountBounds(0);
+            RawClick(firstBadge);
             Check(!Bounds("Bounds").IsEmpty && Property<int>(details, "SourcePosition") == 0,
                 "Native count badge expands an occurrence table below the panel");
+            DirectClick(firstBadge);
+            Check(Property<bool>(details, "IsOpen"), "A badge cannot toggle twice before its new state is painted");
+            Paint();
+            var unchangedOutputs = Enumerable.Range(0, 4).Select(OutputFingerprint).ToArray();
+            var partialNext = Bounds("Next");
+            var partialTable = Bounds("Table");
+            var occurrencePoint = new PointF(partialTable.X + 5, partialTable.Y + 8);
+            component.Attributes.ExpireLayout();
+            component.Attributes.PerformLayout();
+            PaintClip(new RectangleF(firstBadge.X, firstBadge.Y, firstBadge.Width / 2, firstBadge.Height));
+            DirectClick(firstBadge);
+            DirectClick(partialNext);
+            Check(Property<bool>(details, "IsOpen") && Property<int>(details, "Offset") == 0 &&
+                Tooltip(firstBadge).Title != "Collapse occurrences" && TooltipAtPoint(occurrencePoint).Title != "Original input locations",
+                "Partially painted badges, detail controls and occurrence tooltips remain inactive");
+            Check(unchangedOutputs.SequenceEqual(Enumerable.Range(0, 4).Select(OutputFingerprint)),
+                "Rejected clipped badge and drawer gestures preserve D/S/B/F");
+            PaintClip(firstBadge);
+            Check(Tooltip(firstBadge).Title == "Collapse occurrences", "A fully painted badge has its own live tooltip");
+            DirectClick(firstBadge);
+            Check(!Property<bool>(details, "IsOpen"), "A fully painted badge remains actionable when its row is clipped");
+            Paint();
+            DirectClick(CountBounds(0));
+            Paint();
             var badge = CountBounds(0);
             PanelTestAdapter.CanvasClick(canvas, new PointF(badge.X + badge.Width / 2, badge.Y + badge.Height / 2), clicks: 2);
             Check(!Bounds("Bounds").IsEmpty && PanelTestAdapter.SelectedPosition(component) == 2,
@@ -69,8 +112,21 @@ internal static class SetDetailsChecks
             Check(component.Attributes.Bounds.Contains(Bounds("Bounds")) && component.Params.Input[0].Attributes.InputGrip == inputGrip &&
                 component.Params.Output[0].Attributes.OutputGrip == outputGrip, "Expanded table participates in hit testing without moving wire grips");
             Paint("set-occurrences");
-            Click(Bounds("Next"));
+            var nextPage = Bounds("Next");
+            RawClick(nextPage);
             Check(Property<int>(details, "Offset") == 4, "Native dispatch reaches Next below the original panel bounds");
+            DirectClick(nextPage);
+            Check(Property<int>(details, "Offset") == 4, "A second page click before repaint cannot use stale occurrence targets");
+            var staleTable = Bounds("Table");
+            var stalePoint = new PointF(staleTable.X + 5, staleTable.Y + 8);
+            PaintClip(new RectangleF(staleTable.X, staleTable.Y, staleTable.Width / 2, 17));
+            DirectClick(nextPage);
+            Check(Property<int>(details, "Offset") == 4, "A partial occurrence-page paint cannot publish its pager");
+            var staleTooltip = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(stalePoint) }, null)!;
+            component.Attributes.SetupTooltip(stalePoint, staleTooltip);
+            Check(staleTooltip.Title != "Original input locations", "Occurrence tooltips wait for the new page to be painted");
+            Paint();
             Click(Bounds("Next"));
             Check(Property<int>(details, "Offset") == 8 && Property<int>(details, "Visible") == 1, "Occurrence paging reaches the last original location");
             var table = Bounds("Table");
@@ -123,9 +179,37 @@ internal static class SetDetailsChecks
                 "Flatten plus Reverse shows all eleven occurrences and their original branch addresses");
             Check(!Bounds("Bounds").IsEmpty && Bounds("Bounds").Top > PanelTestAdapter.Bounds(component, CanvasControl.Panel).Bottom,
                 "Occurrence table remains readable below minimum Half layout");
+            var oldBadge = CountBounds(0);
+            var oldCollapse = Bounds("Collapse");
+            var track = PanelTestAdapter.Bounds(component, CanvasControl.Track);
+            int oldOffset = PanelTestAdapter.Offset(component);
+            DirectClick(new RectangleF(track.X, track.Bottom - 1, track.Width, 1));
+            Check(PanelTestAdapter.Offset(component) > oldOffset, "A Half scroll changes the visible set rows");
+            DirectClick(oldBadge);
+            DirectClick(oldCollapse);
+            Check(Property<bool>(details, "IsOpen"), "Scrolling rejects old badge and occurrence targets until repaint");
+            Paint();
+            DirectClick(PanelTestAdapter.Bounds(component, CanvasControl.Jump));
+            CanvasEditorAdapter.Active(assembly).Submit("1");
+            DirectClick(Bounds("Collapse"));
+            Check(Property<bool>(details, "IsOpen"), "Jumping rejects occurrence targets until the new viewport is painted");
+            Paint();
+            oldCollapse = Bounds("Collapse");
+            PanelTestAdapter.Resize(component, 310, 220);
+            component.Attributes.PerformLayout();
+            DirectClick(oldCollapse);
+            Check(Property<bool>(details, "IsOpen"), "Resizing rejects the previous occurrence target before repaint");
+            Paint();
+            PanelTestAdapter.Resize(component, 300, 220);
+            component.Attributes.PerformLayout();
             Paint("set-occurrences-half");
             canvas.Viewport.Zoom = 0.4f;
             canvas.Viewport.ComputeProjection();
+            var staleBadgePoint = new PointF(CountBounds(0).X + 5, CountBounds(0).Y + 8);
+            var hiddenTooltip = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(staleBadgePoint) }, null)!;
+            component.Attributes.SetupTooltip(staleBadgePoint, hiddenTooltip);
+            Check(hiddenTooltip.Title != "Collapse occurrences", "A zoom change invalidates badge tooltips before repaint");
             Paint();
             Check(((ICollection)Field<object>(component.Attributes, "_setHits")).Count == 0,
                 "Low zoom clears hidden set count hit targets");
@@ -185,8 +269,17 @@ internal static class SetDetailsChecks
         }
         void Click(RectangleF bounds)
         {
-            PanelTestAdapter.CanvasClick(canvas, new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2));
+            RawClick(bounds);
             Paint();
+        }
+        void RawClick(RectangleF bounds) =>
+            PanelTestAdapter.CanvasClick(canvas, new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2));
+        void DirectClick(RectangleF bounds)
+        {
+            var point = new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+            var mouse = new GH_CanvasMouseEvent(Point.Empty, point, System.Windows.Forms.MouseButtons.Left, 1, 0);
+            component.Attributes.RespondToMouseDown(canvas, mouse);
+            component.Attributes.RespondToMouseUp(canvas, mouse);
         }
         void Paint(string? name = null)
         {
@@ -196,6 +289,41 @@ internal static class SetDetailsChecks
             canvas.Viewport.ApplyProjection(graphics);
             PanelTestAdapter.Render(component, canvas, graphics);
             if (name != null) bitmap.Save(Path.Combine(Path.GetDirectoryName(assembly.Location)!, "rhino-smoke-" + name + ".png"));
+        }
+        void PaintClip(RectangleF clip)
+        {
+            using var bitmap = new Bitmap(750, 800);
+            using var graphics = Graphics.FromImage(bitmap);
+            canvas.Viewport.ApplyProjection(graphics);
+            graphics.SetClip(clip);
+            PanelTestAdapter.Render(component, canvas, graphics);
+        }
+        GH_TooltipDisplayEventArgs Tooltip(RectangleF bounds) => TooltipAtPoint(new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2));
+        GH_TooltipDisplayEventArgs TooltipAtPoint(PointF point)
+        {
+            var value = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(point) }, null)!;
+            component.Attributes.SetupTooltip(point, value);
+            return value;
+        }
+        string OutputFingerprint(int index)
+        {
+            var tree = component.Params.Output[index].VolatileData;
+            return string.Join("|", tree.Paths.Select(path => path.ToString())) + ":" +
+                string.Join("|", tree.AllData(true).Select(value => value == null ? "null" : value.GetType().FullName + ":" + value));
+        }
+        async Task WaitForSelectedOutput()
+        {
+            var clock = Stopwatch.StartNew();
+            while (component.Params.Output[1].VolatileData.DataCount != 1)
+            {
+                if (clock.Elapsed.TotalSeconds > 20)
+                    throw new TimeoutException($"Selected set output did not finish: position={PanelTestAdapter.SelectedPosition(component)}, " +
+                        $"counts={string.Join(",", component.Params.Output.Select(output => output.VolatileData.DataCount))}, " +
+                        $"selectionVersion={Field<long>(component, "_selectionVersion")}, publishedVersion={Field<long>(component, "_publishedSelectionVersion")}, " +
+                        $"current={Property<bool>(session, "HasCurrentResult")}, busy={Property<bool>(session, "IsBusy")}, canvasDocument={ReferenceEquals(canvas.Document, document)}");
+                await Task.Delay(10);
+            }
         }
         async Task Query(PanelQueryOptions options)
         {
@@ -217,9 +345,5 @@ internal static class SetDetailsChecks
 
     private static T Property<T>(object owner, string name) => (T)owner.GetType().GetProperty(name, Instance)!.GetValue(owner)!;
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, Instance)!.GetValue(owner)!;
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-        Console.WriteLine("PASS: " + message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }

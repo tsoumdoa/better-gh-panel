@@ -165,9 +165,11 @@ internal static class RowNumberingChecks
             Check(Selected(component, result).SequenceEqual(expectedPositions),
                 "Select all follows the per-branch displayed order, including filtered subsets");
             Click(component, canvas, PanelTestAdapter.RowBounds(component, expectedPositions[0]), Forms.MouseButtons.Right);
+            using (var paintedMenu = Capture(component, canvas)) { }
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
             Check(!menu.IsEmpty && ReferenceEquals(Field<object>(component.Attributes, "_rowMenuResult"), result),
                 "Sorted value copy opens a context menu for the current query");
+            using (Capture(component, canvas)) { }
             string beforeCopy = RowActionChecks.ClipboardState();
             Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
             var timer = Stopwatch.StartNew();
@@ -248,9 +250,5 @@ internal static class RowNumberingChecks
         if (session.GetType().GetProperty("Error")!.GetValue(session) is string error) throw new InvalidOperationException(error);
     }
 
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-        Console.WriteLine("PASS: " + message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }

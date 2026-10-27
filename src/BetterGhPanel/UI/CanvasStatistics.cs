@@ -7,9 +7,11 @@ namespace BetterGhPanel.UI
     // Presentation reads completed aggregates only. Opening or painting Stats never scans rows.
     internal static class CanvasStatistics
     {
-        internal const int OverviewRows = 8;
+        internal const int OverviewRows = 9;
         internal const string Scope = "Statistics describe the current filtered tree, after tree tools and unit conversion. " +
-            "With Create set, statistics describe the displayed output values. Totals describe the tree before filters and sets. Item counts include all data types.";
+            "With Create set, statistics describe the displayed output values; filtered source counts are listed separately. " +
+            "Orange row marks mean invalid; blue means unverified. Set row marks describe their source occurrences. " +
+            "Totals describe the tree before filters and sets. Item counts include all data types.";
         internal const string UniqueScope = "Unique values include valid finite Number/Integer values and Text values. " +
             "Numbers use exact numeric equality (including 1 = 1.0 and +0 = -0). Text preserves case and whitespace; text and numbers stay separate. " +
             "Null, invalid, nonfinite and other data types are excluded. Values appear in first source occurrence order. " +
@@ -26,6 +28,18 @@ namespace BetterGhPanel.UI
             return Count(matched, total) + " items";
         }
 
+        internal static string SourceStatuses(PanelSourceStatusCounts counts) =>
+            $"{counts.VerifiedValid:N0} valid · {counts.VerifiedInvalid:N0} invalid · {counts.Unverified:N0} unverified";
+
+        internal static PanelSourceStatusCounts RowSourceStatuses(PanelQueryResult result, int position)
+        {
+            var occurrences = result.SetOccurrencesAt(position);
+            if (occurrences != null) return occurrences.SourceStatuses;
+            var validity = result.Snapshot.Rows[position].Validity;
+            return new PanelSourceStatusCounts(validity == PanelValidity.VerifiedValid ? 1 : 0,
+                validity == PanelValidity.VerifiedInvalid ? 1 : 0, validity == PanelValidity.Unverified ? 1 : 0);
+        }
+
         internal static string Label(PanelQueryResult result, int index, int decimals, bool full = false)
         {
             var stats = result.Statistics;
@@ -36,9 +50,10 @@ namespace BetterGhPanel.UI
                 case 2: return $"Numbers: {stats.NumericCount:N0} · Min: {Number(stats.Minimum, result, decimals)}";
                 case 3: return "Max: " + Number(stats.Maximum, result, decimals);
                 case 4: return "Average: " + Number(stats.Mean, result, decimals);
-                case 5: return $"{stats.NullCount:N0} null · {stats.InvalidCount:N0} invalid · {stats.TypeCounts.Count:N0} types";
+                case 5: return $"{stats.NullCount:N0} null · {stats.InvalidCount:N0} invalid · {stats.UnverifiedCount:N0} unverified · {stats.TypeCounts.Count:N0} types";
                 case 6: return $"Unique: {stats.UniqueValues.Count:N0} values in {stats.ScalarCount:N0} number/text items";
                 case 7: return $"Excluded from unique values: {stats.UniqueExcludedCount:N0}";
+                case 8: return "Filtered sources: " + SourceStatuses(stats.FilteredSourceStatuses);
             }
             var value = stats.UniqueValues[index - OverviewRows];
             string text = value.NumericValue.HasValue

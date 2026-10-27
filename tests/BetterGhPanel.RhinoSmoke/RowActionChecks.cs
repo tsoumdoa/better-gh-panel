@@ -77,12 +77,13 @@ internal static class RowActionChecks
             uint surfaceCrc = surface.DataCRC(0), solidCrc = solid.DataCRC(0), subdCrc = subd!.DataCRC(0);
 
             VerifyHighlightDrawing(assembly, document, rhino);
-            await VerifyNativePreviewOverlap(assembly, rhino);
             await VerifyValues(component, session);
             await VerifyCanvasAndQueryActions(component, session, rhino);
             await VerifyBranchHighlight(component, session, document, rhino);
             await VerifyGeometryClipboard(component, session, rhino, items.Length);
             await VerifyCopyDuringDeselection(component, session);
+            await VerifyCopyDuringProgrammaticSelectionChange(component, session);
+            await VerifyValueCopyCaptureMutation(assembly);
             await VerifyCopyDuringDocumentSwitch(component, session, document);
             await VerifyFailuresAndCancellation(component, session);
 
@@ -104,6 +105,17 @@ internal static class RowActionChecks
             if (previousClipboard == null) Forms.Clipboard.Clear();
             else Forms.Clipboard.SetDataObject(previousClipboard, true);
         }
+    }
+
+    internal static async Task RunOverlap(Assembly assembly)
+    {
+        var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
+        var previousUnits = rhino.ModelUnitSystem;
+        bool previousModified = rhino.Modified;
+        GH_Document.EnableSolutions = true;
+        rhino.ModelUnitSystem = UnitSystem.Millimeters;
+        try { await VerifyNativePreviewOverlap(assembly, rhino); }
+        finally { rhino.ModelUnitSystem = previousUnits; rhino.Modified = previousModified; }
     }
 
     private static async Task VerifyNativePreviewOverlap(Assembly assembly, RhinoDoc rhino)
@@ -377,9 +389,9 @@ internal static class RowActionChecks
         }
         finally { CultureInfo.CurrentCulture = culture; }
 
-        await CopyValues(component, snapshot, 3, 2);
+        string textStatus = await CopyValues(component, snapshot, 3, 2);
         Check(ClipboardText() == "full\ntext" + Environment.NewLine + "<null>",
-            "Text and null values retain full content in a mixed selection");
+            $"Text and null values retain full content in a mixed selection (status={textStatus}, clipboard={ClipboardText()})");
         string coordinateExpected = PanelTestAdapter.DisplayValue(component, snapshot, 4) + Environment.NewLine +
             PanelTestAdapter.DisplayValue(component, snapshot, 11);
         string coordinateCopy = await CopyValues(component, snapshot, 4, 11);
@@ -472,7 +484,9 @@ internal static class RowActionChecks
         Check(Selected(selection, Result(session)).SequenceEqual(new[] { 1, 0 }), "Native canvas retains row identities across sorting");
         var row = PanelTestAdapter.RowBounds(component, 1);
         Click(component, canvas, row, Forms.MouseButtons.Right);
+        Paint(component, canvas);
         var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+        Paint(component, canvas);
         Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
         await WaitUntil(() => !Field<bool>(component.Attributes, "_copyPending"));
         Check(ClipboardText() == "42" + Environment.NewLine + "1234.56789",
@@ -609,9 +623,9 @@ internal static class RowActionChecks
         Method(selection, "Clear").Invoke(selection, Array.Empty<object>());
         Forms.Clipboard.SetText("keep menu gesture clipboard");
         var target = viewport.CameraTarget;
+        var pointRow = PanelTestAdapter.RowBounds(component, 4);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Sort));
         var sort = PanelTestAdapter.MenuBounds(component);
-        var pointRow = PanelTestAdapter.RowBounds(component, 4);
         var overlap = new PointF(sort.X + 45, Math.Max(sort.Top, pointRow.Top) + 0.5f);
         Check(pointRow.Contains(overlap) && overlap.Y < sort.Top + 20,
             "Unchanged Source order menu entry overlaps a live geometry row for the regression");
@@ -654,7 +668,9 @@ internal static class RowActionChecks
             "A fresh intentional double-click immediately after display dismissal still clears its row selection");
 
         Click(component, canvas, number, Forms.MouseButtons.Right);
+        Paint(component, canvas);
         var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+        Paint(component, canvas);
         Click(component, canvas, new RectangleF(menu.X, menu.Y, menu.Width, 20));
         Check(Field<string>(component.Attributes, "_actionStatus").Contains("No valid geometry"),
             "Explicit Frame selection explains why a numeric selection cannot move the camera");
@@ -713,14 +729,11 @@ internal static class RowActionChecks
 
         using var gate = new ManualResetEventSlim(false);
         int measurements = 0;
-        Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
+        HostMeasurementPreparation.SetWitnesslessResolver(session, position => () =>
         {
-            (Func<int, Func<PanelGeometryInfo?>?>)(position => () =>
-            {
-                Interlocked.Increment(ref measurements);
-                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Row action measurement gate timed out");
-                return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-            })
+            Interlocked.Increment(ref measurements);
+            if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException("Row action measurement gate timed out");
+            return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
         });
         var snapshot = Snapshot(session);
         try
@@ -736,7 +749,7 @@ internal static class RowActionChecks
             Check(pendingStatus == "Copy cancelled", "Superseded value copy reports cancellation: " + pendingStatus);
             // Cancelling the copy can complete before its measurement worker.
             // Inspect the clipboard only after the late UI callback has run.
-            await WaitUntil(() => !Field<bool>(session, "_geometryRunning"));
+            await WaitUntil(() => !PanelTestAdapter.GeometryRunning(session));
             var currentClipboard = ReadClipboardBytes(out var currentTransport);
             if (!expectedClipboard.SequenceEqual(currentClipboard))
             {
@@ -763,33 +776,27 @@ internal static class RowActionChecks
         finally
         {
             gate.Set();
-            await WaitUntil(() => !Field<bool>(session, "_geometryRunning"));
+            await WaitUntil(() => !PanelTestAdapter.GeometryRunning(session));
         }
 
         component.ExpireSolution(true);
         await WaitForQuery(session);
-        Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
-        {
-            (Func<int, Func<PanelGeometryInfo?>?>)(_ => () => throw new InvalidOperationException("Measurement unavailable in test"))
-        });
-        Forms.Clipboard.SetText("keep failed measurement clipboard");
-        await CopyValues(component, Snapshot(session), 0, 8);
-        Check(ClipboardText() == "keep failed measurement clipboard", "Measurement failure cannot publish a partial multirow clipboard");
-    }
+        HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () => throw new InvalidOperationException("Measurement unavailable in test"));
+    Forms.Clipboard.SetText("keep failed measurement clipboard");
+    await CopyValues(component, Snapshot(session), 0, 8);
+    Check(ClipboardText() == "keep failed measurement clipboard", "Measurement failure cannot publish a partial multirow clipboard");
+}
 
-    private static async Task VerifyCopyDuringDeselection(GH_Component component, object session)
-    {
-        component.ExpireSolution(true);
-        await WaitForQuery(session);
-        using var gate = new ManualResetEventSlim(false);
-        var resolver = Field<Func<int, Func<PanelGeometryInfo?>?>>(session, "_geometryDetailResolver");
-        Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
+private static async Task VerifyCopyDuringDeselection(GH_Component component, object session)
+{
+    component.ExpireSolution(true);
+    await WaitForQuery(session);
+    using var gate = new ManualResetEventSlim(false);
+    var restoreResolver = PanelTestAdapter.SaveGeometryResolver(session);
+    HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () =>
         {
-            (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
-            {
-                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
-                return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-            })
+            if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+            return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
         });
         try
         {
@@ -798,22 +805,106 @@ internal static class RowActionChecks
             Forms.Clipboard.SetText("keep cancelled selection clipboard");
             var row = PanelTestAdapter.RowBounds(component, 8);
             Click(component, canvas, row, Forms.MouseButtons.Right);
+            Paint(component, canvas);
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+            Paint(component, canvas);
             Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
-            await WaitUntil(() => Field<bool>(session, "_geometryRunning"));
+            await WaitUntil(() => PanelTestAdapter.GeometryRunning(session));
             Check(Field<bool>(component.Attributes, "_copyPending"), "Context-menu value copy is pending during geometry measurement");
+            Paint(component, canvas);
             var point = new PointF(row.X + 45, row.Y + row.Height / 2);
             MouseDown(component, canvas, point, 1);
             TrailingDoubleClick(component, canvas, point);
             gate.Set();
-            await WaitUntil(() => !Field<bool>(session, "_geometryRunning"));
+            await WaitUntil(() => !PanelTestAdapter.GeometryRunning(session));
             Check(!Field<bool>(component.Attributes, "_copyPending") && PanelTestAdapter.SelectedPosition(component) < 0 &&
                 ClipboardText() == "keep cancelled selection clipboard", "Deselecting cancels an in-flight value copy and rejects its late clipboard publication");
         }
         finally
         {
             gate.Set();
-            Method(session, "SetGeometryDetailResolver").Invoke(session, new object[] { resolver });
+            restoreResolver();
+        }
+    }
+
+    private static async Task VerifyCopyDuringProgrammaticSelectionChange(GH_Component component, object session)
+    {
+        component.ExpireSolution(true);
+        await WaitForQuery(session);
+        using var gate = new ManualResetEventSlim(false);
+        var restoreResolver = PanelTestAdapter.SaveGeometryResolver(session);
+        HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () =>
+        {
+            if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+            return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
+        });
+        try
+        {
+            var selection = Property<object>(component, "RowSelection");
+            var result = Result(session);
+            Method(selection, "SelectAt").Invoke(selection, new object[] { result, 8, 8, false, false, false });
+            Forms.Clipboard.SetText("keep programmatic selection clipboard");
+            var pending = CopyValues(component, Snapshot(session), 8);
+            await WaitUntil(() => PanelTestAdapter.GeometryRunning(session));
+            // This changes membership without going through canvas cancellation.
+            Method(selection, "SelectAt").Invoke(selection, new object[] { result, 4, 4, false, false, false });
+            gate.Set();
+            string status = await pending;
+            Check(status == "Copy cancelled" && ClipboardText() == "keep programmatic selection clipboard",
+                "a selection revision change cancels value copy even while the old row remains in the result: " + status);
+        }
+        finally
+        {
+            gate.Set();
+            restoreResolver();
+        }
+    }
+
+    private static async Task VerifyValueCopyCaptureMutation(Assembly assembly)
+    {
+        foreach (string change in new[] { "none", "number", "group" })
+        {
+            using var fixture = new OutputChecks.Fixture(assembly);
+            using var surface = new PlaneSurface(Plane.WorldXY, new Interval(0, 3), new Interval(0, 4)).ToBrep();
+            fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
+            var path = new GH_Path(0);
+            var group = new GH_GeometryGroup { Name = "Before" }; group.Objects.Add(new GH_Point(Point3d.Origin));
+            fixture.Source.PersistentData.Append(new GH_Number(7), path);
+            fixture.Source.PersistentData.Append(group, path);
+            fixture.Source.PersistentData.Append(new GH_Surface(surface), path);
+            for (int i = 0; i < 3; i++) fixture.Paired.PersistentData.Append(new GH_String("paired"), path);
+            fixture.Solve();
+            await fixture.Ready(() => Snapshot(fixture.Session).Rows.Count == 3);
+            var session = fixture.Session;
+            var snapshot = Snapshot(session);
+            var sources = Field<IGH_Goo?[]>(fixture.Component, "_sourceItems");
+            var number = (GH_Number)sources[0]!;
+            var currentGroup = (GH_GeometryGroup)sources[1]!;
+            using var gate = new ManualResetEventSlim(false);
+            bool callback = false;
+            HostMeasurementPreparation.SetWitnesslessResolver(session, _ =>
+            {
+                callback = true;
+                if (change == "number") number.Value = 99;
+                if (change == "group") currentGroup.Name = "After";
+                return () => { if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+                    return new PanelGeometryInfo("Srf", 12, 2, "mm", "Area", "A"); };
+            });
+            try
+            {
+                Forms.Clipboard.SetText("keep captured value clipboard");
+                var pending = CopyValues(fixture.Component, snapshot, 0, 1, 2);
+                await WaitUntil(() => callback && PanelTestAdapter.GeometryRunning(session));
+                gate.Set();
+                string status = await pending;
+                if (change == "none")
+                    Check(status == "3 values copied" && ClipboardText() != "keep captured value clipboard",
+                        "unchanged selected scalar and group values copy after the gated measurement: " + status);
+                else
+                    Check(status == "Copy cancelled" && ClipboardText() == "keep captured value clipboard",
+                        "a gated geometry preparation changing the selected " + change + " cancels clipboard publication: " + status);
+            }
+            finally { gate.Set(); await WaitUntil(() => !PanelTestAdapter.GeometryRunning(session)); }
         }
     }
 
@@ -822,14 +913,11 @@ internal static class RowActionChecks
         component.ExpireSolution(true);
         await WaitForQuery(session);
         using var gate = new ManualResetEventSlim(false);
-        var resolver = Field<Func<int, Func<PanelGeometryInfo?>?>>(session, "_geometryDetailResolver");
-        Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
+        var restoreResolver = PanelTestAdapter.SaveGeometryResolver(session);
+        HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () =>
         {
-            (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
-            {
-                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
-                return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-            })
+            if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+            return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
         });
         try
         {
@@ -840,13 +928,15 @@ internal static class RowActionChecks
             Paint(component, canvas);
             Forms.Clipboard.SetText("keep document-switch clipboard");
             Click(component, canvas, PanelTestAdapter.RowBounds(component, 8), Forms.MouseButtons.Right);
+            Paint(component, canvas);
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+            Paint(component, canvas);
             Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
-            await WaitUntil(() => Field<bool>(session, "_geometryRunning"));
+            await WaitUntil(() => PanelTestAdapter.GeometryRunning(session));
             Check(Field<bool>(component.Attributes, "_copyPending"), "Value copy is pending while its geometry is measured");
             component.DocumentContextChanged(document, GH_DocumentContext.Unloaded);
             gate.Set();
-            await WaitUntil(() => !Field<bool>(session, "_geometryRunning"));
+            await WaitUntil(() => !PanelTestAdapter.GeometryRunning(session));
             component.DocumentContextChanged(document, GH_DocumentContext.Loaded);
             Paint(component, canvas);
             Check(!Field<bool>(component.Attributes, "_copyPending") && ClipboardText() == "keep document-switch clipboard",
@@ -857,7 +947,7 @@ internal static class RowActionChecks
         finally
         {
             gate.Set();
-            Method(session, "SetGeometryDetailResolver").Invoke(session, new object[] { resolver });
+            restoreResolver();
         }
     }
 
@@ -1009,9 +1099,5 @@ internal static class RowActionChecks
         }
     }
 
-    private static void Check(bool condition, string description)
-    {
-        if (!condition) throw new InvalidOperationException(description);
-        Console.WriteLine("PASS: " + description);
-    }
+    private static void Check(bool condition, string description) => SmokeAssertions.Check(condition, description);
 }

@@ -14,6 +14,7 @@ internal static class BudgetedQueryChecks
         ResumeScanOnWorker();
         YieldThroughSorting();
         YieldAndCancelThroughBranchSorting();
+        YieldAndCancelThroughResultIndex();
         CancellationAndDisposal();
     }
 
@@ -76,6 +77,8 @@ internal static class BudgetedQueryChecks
         var expected = Enumerable.Range(0, 24).OrderByDescending(i => i % 7).ThenBy(i => i);
         Check(sortingSlices > 24 && result.RowPositions.SequenceEqual(expected),
             "Sort comparisons yield and resume with stable ordering, including equal values");
+        Check(result.RowPositions.Select((position, index) => result.TryGetViewIndex(position, out int viewIndex) && viewIndex == index).All(found => found),
+            "The reverse index is complete and agrees with every row after cooperative handoff");
         Check(reads.Reads.All(count => count == 1) && result.Statistics.ItemCount == 24 &&
             result.Statistics.BranchCount == snapshot.Branches.Count && result.Statistics.Minimum == 0 &&
             result.Statistics.Maximum == 6 && Math.Abs(result.Statistics.Mean!.Value - Enumerable.Range(0, 24).Average(i => i % 7)) < 1e-12,
@@ -96,6 +99,23 @@ internal static class BudgetedQueryChecks
         disposed.Dispose();
         try { disposed.Complete(); throw new InvalidOperationException("Disposed work completed"); }
         catch (ObjectDisposedException) { }
+    }
+
+    private static void YieldAndCancelThroughResultIndex()
+    {
+        var snapshot = Numbers(512);
+        var reads = new MeasurementReads(snapshot.Rows.Count);
+        using var cancellation = new CancellationTokenSource();
+        using var work = PanelQueryEngine.Start(snapshot, new PanelQueryOptions(), cancellation.Token, reads);
+        int afterScan = 0;
+        // Seven distinct values precede indexing. Sixty yield checks after the
+        // scan therefore suspend inside the result-local position-index build.
+        Check(!work.TryComplete(() => reads.Reads.All(count => count == 1) && ++afterScan > 60) && work.Result == null,
+            "Position-index construction yields without publishing a partial result");
+        cancellation.Cancel();
+        try { work.Complete(); throw new InvalidOperationException("Canceled position index completed"); }
+        catch (OperationCanceledException) { }
+        Check(work.Result == null, "Cancellation during indexing cannot publish incomplete lookup state");
     }
 
     private static void YieldAndCancelThroughBranchSorting()

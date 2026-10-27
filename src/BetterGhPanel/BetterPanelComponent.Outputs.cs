@@ -16,7 +16,9 @@ namespace BetterGhPanel
     {
         internal PanelRowSelection RowSelection { get; } = new PanelRowSelection();
         internal PanelOutputScope OutputScope { get; private set; }
-        private GH_Structure<IGH_Goo>? _inputTree, _pairedQueryTree;
+        private GH_Structure<IGH_Goo>? _inputTree, _preConversionTree, _pairedQueryTree;
+        private GH_Structure<IGH_Goo>? _liveInputTree, _livePairedTree, _pairedInputTree;
+        private bool _pairedInputPresent;
         private IReadOnlyList<PanelSourceAddress> _retainedSources = Array.Empty<PanelSourceAddress>();
         private string? _pairedError;
         private long _selectionVersion, _publishedSelectionVersion;
@@ -57,7 +59,11 @@ namespace BetterGhPanel
 
         private void ClearOutputSources()
         {
-            _inputTree = _pairedQueryTree = null;
+            _inputTree = _preConversionTree = _pairedQueryTree = null;
+            _liveInputTree = _livePairedTree = _pairedInputTree = null;
+            _pairedInputPresent = false;
+            _captureGraphs = Array.Empty<CaptureGraphWitness>();
+            _captureHasGeometry = false;
             _retainedSources = Array.Empty<PanelSourceAddress>();
             _pairedError = null;
             _cachedOutputResult = null;
@@ -65,50 +71,85 @@ namespace BetterGhPanel
             _filteredMask = null;
         }
 
-        private void CapturePairedInput(IGH_DataAccess da)
+        private void CapturePairedInput(IGH_DataAccess da, GH_Structure<IGH_Goo> inputTree, GH_Structure<IGH_Goo> queryTree,
+            IReadOnlyList<PanelSourceAddress> retainedSources, out GH_Structure<IGH_Goo>? pairedTree, out string? error,
+            out GH_Structure<IGH_Goo>? livePairedTree, out GH_Structure<IGH_Goo>? capturedPairedTree, out bool present)
         {
-            _pairedQueryTree = null;
-            _pairedError = null;
-            if (Params.Input[1].SourceCount == 0 && Params.Input[1] is Param_GenericObject input && input.PersistentData.PathCount == 0) return;
+            pairedTree = null;
+            error = null;
+            livePairedTree = capturedPairedTree = null;
+            present = PairedInputPresent();
+            if (!present) return;
             if (!da.GetDataTree(1, out GH_Structure<IGH_Goo> paired)) paired = new GH_Structure<IGH_Goo>();
-            if (_inputTree != null && _queryTree != null)
-                _pairedQueryTree = PanelOutputOperations.Pair(_inputTree, paired, _queryTree, _retainedSources, out _pairedError);
+            livePairedTree = paired;
+            capturedPairedTree = PanelTreeOperations.CopyStructure(paired);
+            pairedTree = PanelOutputOperations.Pair(inputTree, capturedPairedTree, queryTree, retainedSources, out error);
         }
 
-        private void PublishOutputs(IGH_DataAccess da)
+        private bool PairedInputPresent() => Params.Input[1].SourceCount != 0 ||
+            !(Params.Input[1] is Param_GenericObject input) || input.PersistentData.PathCount != 0;
+
+        private void PublishOutputs(IGH_DataAccess da, Func<bool> solveCurrent)
         {
             var session = Session;
             _outputOptions = session.Options;
             _outputPending = session.IsBusy;
+            // Construct from the committed managed result. PublicationCurrent runs
+            // the full capture fence below, including every measurement source and
+            // the queue's snapshot ownership. Scanning/copying the measurement cache
+            // here would repeat only a subset of that fence on every selection.
             bool current = session.HasCurrentResult;
-            bool filtering = HasOutputFilter(_outputOptions);
+            bool filtering = PanelQueryPolicy.HasOutputFilter(_outputOptions);
             var empty = new GH_Structure<IGH_Goo>();
             if (current && _queryTree != null && _inputTree != null && !ReferenceEquals(_cachedOutputResult, session.Result))
             {
                 _cachedOutputResult = session.Result;
+                if (session.Result.DisplaySet != null) CountOutputVisits(session.Result.RowPositions.Count);
+                else if (filtering && (session.Result.RowPositions.Count != _queryTree.DataCount || session.Result.BranchPaths.Count != _queryTree.PathCount))
+                    CountOutputVisits(_queryTree.DataCount);
                 _filteredData = session.Result.DisplaySet != null
                     ? PanelOutputOperations.DisplaySet(_queryTree, session.Result, session.Result.RowPositions, session.Result.BranchPaths)
                     : filtering ? PanelTreeOperations.Filter(_queryTree, session.Result) : _queryTree;
+                if (_pairedQueryTree != null && (session.Result.RowPositions.Count != _pairedQueryTree.DataCount || session.Result.BranchPaths.Count != _pairedQueryTree.PathCount))
+                    CountOutputVisits(_pairedQueryTree.DataCount);
                 _filteredPair = _pairedQueryTree == null ? null : PanelTreeOperations.Filter(_pairedQueryTree, session.Result);
                 _filteredMask = null;
             }
             // Selection-only solutions reuse unchanged query outputs. A large
             // original-shape mask is built once per filtered result, not per click.
             if (current && _inputTree != null && OutputScope == PanelOutputScope.Filtered && _filteredMask == null)
+            {
+                CountOutputVisits((long)_inputTree.DataCount + session.Result.RowPositions.Count);
                 _filteredMask = PanelOutputOperations.Mask(_inputTree, _retainedSources, session.Result.RowPositions);
+            }
             var data = current ? _filteredData ?? empty : !filtering && _queryTree != null ? _queryTree : empty;
             var selectedPositions = current ? RowSelection.OrderedPositions(session.Result) : Array.Empty<int>();
+            if (current && _queryTree != null && selectedPositions.Count > 0)
+                CountOutputVisits(session.Result.DisplaySet != null ? selectedPositions.Count : _queryTree.DataCount);
             var selected = current && _queryTree != null ? session.Result.DisplaySet != null
                 ? PanelOutputOperations.DisplaySet(_queryTree, session.Result, selectedPositions, RowSelection.BranchPaths(session.Result))
                 : PanelTreeOperations.Select(_queryTree, selectedPositions) : empty;
-            da.SetDataTree(0, data);
-            da.SetDataTree(1, selected);
-            da.SetDataTree(2, !current || _inputTree == null ? new GH_Structure<GH_Boolean>() : OutputScope == PanelOutputScope.Filtered
-                ? _filteredMask! : PanelOutputOperations.Mask(_inputTree, _retainedSources, selectedPositions));
-            da.SetDataTree(3, !current || _pairedQueryTree == null ? empty : OutputScope == PanelOutputScope.Filtered
+            if (current && _inputTree != null && OutputScope == PanelOutputScope.Selected)
+                CountOutputVisits((long)_inputTree.DataCount + selectedPositions.Count);
+            var mask = !current || _inputTree == null ? new GH_Structure<GH_Boolean>() : OutputScope == PanelOutputScope.Filtered
+                ? _filteredMask! : PanelOutputOperations.Mask(_inputTree, _retainedSources, selectedPositions);
+            if (current && _pairedQueryTree != null && OutputScope == PanelOutputScope.Selected && selectedPositions.Count > 0)
+                CountOutputVisits(_pairedQueryTree.DataCount);
+            var paired = !current || _pairedQueryTree == null ? empty : OutputScope == PanelOutputScope.Filtered
                 ? _filteredPair ?? empty : session.Result.DisplaySet?.IsBranchSet == true
                     ? PanelTreeOperations.SelectBranches(_filteredPair ?? empty, RowSelection.BranchPaths(session.Result))
-                    : PanelTreeOperations.Select(_pairedQueryTree, selectedPositions));
+                    : PanelTreeOperations.Select(_pairedQueryTree, selectedPositions);
+            // Tree construction above only reads captured structures and managed
+            // query data. Run the full freshness fence once, after all of it and
+            // immediately before GH receives any output.
+            BeforeOutputValidationForTesting?.Invoke();
+            if (!solveCurrent()) return;
+            if (CaptureDiagnosticsForTesting)
+                OutputPublicationItemsForTesting += (long)data.DataCount + selected.DataCount + mask.DataCount + paired.DataCount;
+            da.SetDataTree(0, data);
+            da.SetDataTree(1, selected);
+            da.SetDataTree(2, mask);
+            da.SetDataTree(3, paired);
             if (_pairedError != null) AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, _pairedError);
             _publishedSelectionVersion = _selectionVersion;
             _publishedScope = OutputScope;

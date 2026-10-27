@@ -19,31 +19,30 @@ internal static class RecomputeChecks
 {
     private const BindingFlags Instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 
-    internal static async Task Run(Assembly assembly)
+    internal static Task RunOutput(Assembly assembly) => RunWithEditor(assembly, VerifyOutput);
+    internal static Task RunWhitespaceRegex(Assembly assembly) => RunWithEditor(assembly, VerifyWhitespaceRegex);
+    internal static Task RunLocalPreview(Assembly assembly) => RunWithEditor(assembly, VerifyLocalPreview);
+    internal static Task RunDisabled(Assembly assembly) => RunWithEditor(assembly, VerifyDisabled);
+
+    private static async Task RunWithEditor(Assembly assembly, Func<Assembly, Task> check)
     {
-        await VerifyPresentation(assembly);
-        // GH dispatches scheduled solutions through its editor's native handle.
-        // Create that handle without showing a window in this isolated host.
-        var editor = new Grasshopper.GUI.GH_DocumentEditor();
+        // Scheduled solutions need a native editor handle in each fresh host.
+        var previous = Grasshopper.Instances.DocumentEditor;
+        using var editor = new Grasshopper.GUI.GH_DocumentEditor();
         _ = editor.Handle;
         var setEditor = typeof(Grasshopper.Instances).GetMethod("SetDocumentEditor", BindingFlags.Static | BindingFlags.NonPublic)!;
         setEditor.Invoke(null, new object?[] { editor });
-        try
-        {
-            await VerifyOutput(assembly);
-            await VerifyWhitespaceRegex(assembly);
-            await VerifyLocalPreview(assembly);
-            await VerifyDisabled(assembly);
-        }
-        finally { setEditor.Invoke(null, new object?[] { null }); }
+        try { await check(assembly); }
+        finally { setEditor.Invoke(null, new object?[] { previous }); }
     }
 
-    private static async Task VerifyPresentation(Assembly assembly)
+    internal static async Task VerifyPresentation(Assembly assembly)
     {
         using var fixture = new Fixture(assembly);
         using var canvas = new GH_Canvas { Size = new Size(600, 500) };
         using var gate = new ManualResetEventSlim(false);
         var session = fixture.Session;
+        PanelTestAdapter.UseSyntheticCapture(session);
         var numbers = Enumerable.Range(0, 256).Select(i => new PanelRow(i, "{0}", "Number", i.ToString(), i)).ToArray();
         var small = new PanelSnapshot(numbers, new[] { new PanelBranch("{0}", numbers.Length) });
         Invoke(session, "AttachSnapshot", small);
@@ -65,19 +64,20 @@ internal static class RecomputeChecks
         Invoke(session, "AttachSnapshot", geometry);
         await Wait(() => Current(session));
         int started = 0;
-        Invoke(session, "SetGeometryDetailResolver", (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
+        HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () =>
         {
             Interlocked.Increment(ref started);
             if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
             return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-        }));
+        });
         Paint(fixture.Component, canvas);
         Check(Hits(fixture.Component, "_rowHits") == 1, "Ready rows have canvas hit regions");
         try
         {
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 10" });
             await Wait(() => Volatile.Read(ref started) == 1);
-            Paint(fixture.Component, canvas, Path.Combine(Path.GetDirectoryName(assembly.Location)!, "rhino-smoke-recomputing.png"));
+            var reportPath = Environment.GetEnvironmentVariable("PANEL_SMOKE_RESULT");
+            Paint(fixture.Component, canvas, reportPath == null ? null : Path.ChangeExtension(reportPath, ".recomputing.png"));
             Check(!Current(session) && Hits(fixture.Component, "_rowHits") == 0 && Hits(fixture.Component, "_branchHits") == 0,
                 "Pending geometry filters hide old rows and branch hit regions");
             var timer = Field<System.Windows.Forms.Timer>(session, "_busyAnimation");
@@ -93,7 +93,7 @@ internal static class RecomputeChecks
             Invoke(session, "AttachSnapshot", small);
             await Wait(() => Current(session));
             gate.Set();
-            await Wait(() => !Field<bool>(session, "_geometryRunning"));
+            await Wait(() => !PanelTestAdapter.GeometryRunning(session));
             Check(Current(session) && ReferenceEquals(Result(session).Snapshot, small) && !timer.Enabled,
                 "Late geometry completion cannot replace newer input and completion stops animation");
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "[" });
@@ -160,12 +160,12 @@ internal static class RecomputeChecks
         var snapshot = Property<PanelSnapshot>(session, "Snapshot");
         using var gate = new ManualResetEventSlim(false);
         int started = 0;
-        Invoke(session, "SetGeometryDetailResolver", (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
+        HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () =>
         {
             Interlocked.Increment(ref started);
             if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
             return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-        }));
+        });
         try
         {
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 10" });
@@ -185,7 +185,7 @@ internal static class RecomputeChecks
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Value, Search = "> 0" });
             await Wait(() => fixture.Values().SequenceEqual(new[] { 7.0 }));
             gate.Set();
-            await Wait(() => !Field<bool>(session, "_geometryRunning"));
+            await Wait(() => !PanelTestAdapter.GeometryRunning(session));
             await Task.Delay(80);
             Check(fixture.Values().SequenceEqual(new[] { 7.0 }) && fixture.Sink.VolatileData.Paths[0].ToString() == "{9}",
                 "Input replacement rejects late geometry output and propagates only the new solution");
@@ -275,12 +275,12 @@ internal static class RecomputeChecks
             ReferenceEquals(Field<PanelSnapshot>(menu, "_snapshot"), snapshot),
             "Release regression starts with borrowed geometry and populated result/menu caches");
         int started = 0;
-        Invoke(session, "SetGeometryDetailResolver", (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
+        HostMeasurementPreparation.SetWitnesslessResolver(session, _ => () =>
         {
             Interlocked.Increment(ref started);
             if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
             return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
-        }));
+        });
         try
         {
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 10" });
@@ -306,7 +306,7 @@ internal static class RecomputeChecks
                 "Disabled input rejects stale geometry actions without moving the camera");
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "." });
             gate.Set();
-            await Wait(() => !Field<bool>(session, "_geometryRunning"));
+            await Wait(() => !PanelTestAdapter.GeometryRunning(session));
             Paint(component, canvas);
             Check(!Property<bool>(session, "IsBusy") && !Current(session) && !timer.Enabled,
                 "Query changes and late geometry completion cannot restart a disabled panel");
@@ -387,11 +387,7 @@ internal static class RecomputeChecks
             await Task.Delay(10);
         }
     }
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-        Console.WriteLine("PASS: " + message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 
     private sealed class Fixture : IDisposable
     {

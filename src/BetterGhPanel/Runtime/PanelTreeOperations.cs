@@ -21,6 +21,29 @@ namespace BetterGhPanel.Runtime
             return copy;
         }
 
+        internal static bool StructureStillMatches(GH_Structure<IGH_Goo>? source, GH_Structure<IGH_Goo>? captured)
+            => StructureStillMatchesWithVisits(source, captured, out _);
+
+        internal static bool StructureStillMatchesWithVisits(GH_Structure<IGH_Goo>? source, GH_Structure<IGH_Goo>? captured, out int visits)
+        {
+            visits = 0;
+            try
+            {
+                if (source == null || captured == null || source.PathCount != captured.PathCount) return false;
+                for (int b = 0; b < source.PathCount; b++)
+                {
+                    if (source.Paths[b].CompareTo(captured.Paths[b]) != 0 || source.Branches[b].Count != captured.Branches[b].Count) return false;
+                    for (int i = 0; i < source.Branches[b].Count; i++)
+                    {
+                        visits++;
+                        if (!ReferenceEquals(source.Branches[b][i], captured.Branches[b][i])) return false;
+                    }
+                }
+                return true;
+            }
+            catch (System.Exception) { return false; }
+        }
+
         internal static GH_Structure<IGH_Goo> Filter(GH_Structure<IGH_Goo> source, PanelQueryResult query)
         {
             if (query.RowPositions.Count == source.DataCount && query.BranchPaths.Count == source.PathCount) return source;
@@ -70,8 +93,11 @@ namespace BetterGhPanel.Runtime
             if (trimDepth == 0 && !simplify && !flatten && !reverse)
             {
                 for (int b = 0; b < source.PathCount; b++)
+                {
+                    var pathText = source.Paths[b].ToString();
                     for (int i = 0; i < source.Branches[b].Count; i++)
-                        retained.Add(new PanelSourceAddress(source.Paths[b].ToString(), i));
+                        retained.Add(new PanelSourceAddress(pathText, i));
+                }
                 retainedSources = retained.AsReadOnly();
                 return source;
             }
@@ -82,12 +108,13 @@ namespace BetterGhPanel.Runtime
             for (int b = 0; b < source.PathCount; b++)
             {
                 var path = new GH_Path(source.Paths[b]);
+                var pathText = path.ToString();
                 var positions = markers.EnsurePath(path);
                 positions.Capacity = source.Branches[b].Count;
                 for (int i = 0; i < source.Branches[b].Count; i++)
                 {
                     positions.Add(new GH_Integer(inputs.Count));
-                    inputs.Add((source.Branches[b][i], new PanelSourceAddress(path.ToString(), i)));
+                    inputs.Add((source.Branches[b][i], new PanelSourceAddress(pathText, i)));
                 }
             }
             markers = Transform(markers, trimDepth, simplify, flatten, reverse);

@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const checks = [
-  ['dotnet', ['run', '--project', 'tests/BetterGhPanel.Core.Tests', '-c', 'Release']],
+  ['dotnet', ['test', 'BetterGhPanel.sln', '-c', 'Release', '--nologo']],
+  [process.execPath, ['--test', 'tests/rhino-coordinator.test.mjs']],
   [process.execPath, ['--test', 'tests/package.test.mjs']],
   [process.execPath, ['scripts/package.mjs', '--stage-only']],
   ['dotnet', ['format', 'style', 'BetterGhPanel.sln', '--verify-no-changes', '--no-restore',

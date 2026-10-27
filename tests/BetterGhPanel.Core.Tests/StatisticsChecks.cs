@@ -131,6 +131,7 @@ internal static class StatisticsChecks
             var reached = new HashSet<int>();
             for (int page = 0; page < menu.Count; page++)
             {
+                menu.MarkPainted();
                 for (int row = 0; row < menu.Visible; row++)
                 {
                     Check(menu.TrySelect(new PointF(menu.Bounds.X + 8, menu.Bounds.Y + row * 20 + 10), out int index),

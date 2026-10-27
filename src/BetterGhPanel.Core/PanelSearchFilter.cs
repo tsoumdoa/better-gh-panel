@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.RegularExpressions;
@@ -16,6 +17,10 @@ namespace BetterGhPanel.Core
         private readonly Stopwatch? _regexBudget;
         private readonly int _decimals;
         private readonly IFormatProvider _culture;
+        private readonly Dictionary<PanelGroupKey, bool> _groupMatches = new Dictionary<PanelGroupKey, bool>();
+        private readonly Queue<PanelGroupKey> _groupMatchOrder = new Queue<PanelGroupKey>();
+        private const int MaxCachedGroupMatches = 16384;
+        internal int GroupEvaluationCount { get; private set; }
 
         internal PanelSearchFilter(PanelQueryOptions options, IFormatProvider? culture = null)
         {
@@ -71,15 +76,46 @@ namespace BetterGhPanel.Core
             {
                 token.ThrowIfCancellationRequested();
                 if (_regexBudget!.ElapsedMilliseconds >= 2000) throw RegexTooSlow();
-                try { return _regex.IsMatch(PanelValuePresentation.FormatDisplay(row, conversion, _decimals, measured, _culture)); }
+                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _culture);
+                if (TryGroupMatch(value, out bool cached)) return cached;
+                try
+                {
+                    bool match = _regex.IsMatch(value.ToString());
+                    RememberGroupMatch(value, match);
+                    return match;
+                }
                 catch (RegexMatchTimeoutException) { throw RegexTooSlow(); }
             }
             if (_comparison == null)
-                return Contains(PanelValuePresentation.FormatDisplay(row, conversion, _decimals, measured, _culture), _text) ||
+            {
+                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _culture);
+                bool matches;
+                if (TryGroupMatch(value, out bool cached)) matches = cached;
+                else { matches = value.Contains(_text); RememberGroupMatch(value, matches); }
+                return matches ||
                     Contains(row.Path, _text) || Contains(row.TypeName, _text);
+            }
             if (!IsGeometry)
                 return !row.IsNull && row.IsValid && row.NumericValue.HasValue && IsFinite(row.NumericValue.Value) && _comparison(row.NumericValue.Value);
-            return PanelFilterValue.TryGeometryValue(row, _mode, conversion, measured, out double value) && _comparison(value);
+            return PanelFilterValue.TryGeometryValue(row, _mode, conversion, measured, out double geometryValue) && _comparison(geometryValue);
+        }
+
+        private void RememberGroupMatch(PanelText value, bool match)
+        {
+            var key = value.GroupKey;
+            if (!key.HasValue) return;
+            GroupEvaluationCount++;
+            if (_groupMatches.Count == MaxCachedGroupMatches) _groupMatches.Remove(_groupMatchOrder.Dequeue());
+            _groupMatches.Add(key.Value, match);
+            _groupMatchOrder.Enqueue(key.Value);
+        }
+
+        private bool TryGroupMatch(PanelText value, out bool match)
+        {
+            var key = value.GroupKey;
+            if (key.HasValue && _groupMatches.TryGetValue(key.Value, out match)) return true;
+            match = false;
+            return false;
         }
 
         private static ArgumentException RegexTooSlow() => new ArgumentException("Regular expression took too long. Simplify the pattern and try again.");

@@ -61,10 +61,24 @@ internal static class DisplaySetChecks
         options.BranchPath = "{1}";
         var restricted = PanelQueryEngine.Execute(snapshot, options);
         Check(restricted.BranchPaths.SequenceEqual(new[] { "{1}" }), "Paths restrictions apply before list-length deduplication");
-        var selection = new PanelRowSelection();
+        int visits = 0, notifications = 0;
+        var selection = new PanelRowSelection(() => visits++);
+        selection.Changed += (_, __) => notifications++;
         selection.SelectAll(result, "{3}", includeEmptyBranches: true);
         Check(selection.Count == 1 && selection.OrderedPositions(result).Count == 0 && selection.BranchPaths(result).SequenceEqual(new[] { "{3}" }),
             "An empty source branch still has a selectable zero-valued set item");
+        visits = 0;
+        int previousNotifications = notifications;
+        selection.SelectAll(result, "{3}", includeEmptyBranches: true);
+        Check(visits == 0 && notifications == previousNotifications && selection.BranchPaths(result).SequenceEqual(new[] { "{3}" }),
+            "Repeating an empty set-branch selection preserves it without scanning rows or notifying");
+        options.BranchPath = null;
+        var equivalent = PanelQueryEngine.Execute(snapshot, options);
+        selection.Synchronize(equivalent);
+        visits = 0;
+        selection.SelectAll(equivalent, "{3}", includeEmptyBranches: true);
+        Check(visits == equivalent.RowPositions.Count && notifications == previousNotifications && selection.BranchPaths(equivalent).SequenceEqual(new[] { "{3}" }),
+            "A new result invalidates the bulk shortcut while retaining a still-visible empty branch");
         selection.Synchronize(restricted);
         Check(selection.Count == 0 && selection.BranchPaths(restricted).Count == 0, "Filtering removes hidden empty-branch selections");
         selection.SelectAll(result, includeEmptyBranches: true);

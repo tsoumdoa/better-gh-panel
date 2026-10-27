@@ -16,6 +16,7 @@ namespace BetterGhPanel
         private PanelQueryResult? _setCountResult;
         private readonly CanvasSetDetails _setDetails = new CanvasSetDetails();
         private readonly List<RowHit> _setHits = new List<RowHit>();
+        private readonly List<RectangleF> _paintedDetailTargets = new List<RectangleF>();
         private bool _setControlsVisible;
 
         private void SizeSetColumn(Graphics graphics, CanvasRowRenderer renderer, PanelQueryResult result)
@@ -31,8 +32,8 @@ namespace BetterGhPanel
 
         private bool SetControlAt(PointF point) => _setControlsVisible && _menu.Kind == CanvasMenuKind.None && _rowMenuResult == null &&
             RowsAreCurrent(PanelOwner.Session.Result) &&
-            (_setHits.Any(hit => hit.Bounds.Contains(point)) || _setDetails.Collapse.Contains(point) ||
-            _setDetails.CanPrevious && _setDetails.Previous.Contains(point) || _setDetails.CanNext && _setDetails.Next.Contains(point));
+            (_setHits.Any(hit => hit.Bounds.Contains(point)) || DetailTargetPainted(_setDetails.Collapse, point) ||
+            _setDetails.CanPrevious && DetailTargetPainted(_setDetails.Previous, point) || _setDetails.CanNext && DetailTargetPainted(_setDetails.Next, point));
 
         private void LayoutSetDetails()
         {
@@ -63,7 +64,8 @@ namespace BetterGhPanel
                 new RectangleF(countBounds.Right - 28, bounds.Y, 8, bounds.Height));
             DrawSetChevron(g, new RectangleF(countBounds.Right - 12, bounds.Y, 10, bounds.Height), expanded,
                 expanded ? Accent : Color.FromArgb(152, 167, 141));
-            _setHits.Add(new RowHit(countBounds, sourcePosition, viewNumber));
+            if (TargetPainted(g, countBounds) && !_setHits.Any(hit => hit.Bounds == countBounds && hit.SourcePosition == sourcePosition))
+                _setHits.Add(new RowHit(countBounds, sourcePosition, viewNumber));
         }
 
         private static void DrawSetBadge(Graphics g, RectangleF bounds, bool repeated, bool expanded)
@@ -100,6 +102,8 @@ namespace BetterGhPanel
             Text(g, "Occurrences: " + PanelOwner.DisplayValue(result.Snapshot, row, _setDetails.SourcePosition), small, Ink,
                 new RectangleF(bounds.X + 7, bounds.Y + 1, bounds.Width - 34, 21), trim);
             DrawSetChevron(g, _setDetails.Collapse, true);
+            MarkDetailTarget(g, _setDetails.Collapse);
+            MarkDetailTarget(g, new RectangleF(bounds.X, bounds.Y + 23, bounds.Width, 30));
             Text(g, CanvasSetDetails.Summary(occurrences), small, Muted, new RectangleF(bounds.X + 7, bounds.Y + 23, bounds.Width - 14, 16), trim);
             float indexWidth = 94;
             Text(g, "Input branch", small, Accent, new RectangleF(bounds.X + 9, bounds.Y + 38, bounds.Width - indexWidth - 20, 15), trim);
@@ -111,6 +115,7 @@ namespace BetterGhPanel
                 Fill(g, (i & 1) == 0 ? Color.FromArgb(247, 249, 246) : Color.White, line);
                 Text(g, address.Path, mono, Ink, new RectangleF(line.X + 3, line.Y, line.Width - indexWidth - 9, line.Height), trim);
                 Text(g, address.ItemIndex.ToString(), mono, Ink, new RectangleF(line.Right - indexWidth, line.Y, indexWidth - 3, line.Height), trim);
+                MarkDetailTarget(g, line);
             }
             if (_setDetails.HasPages)
             {
@@ -118,10 +123,20 @@ namespace BetterGhPanel
                     new RectangleF(bounds.X + 8, bounds.Bottom - 21, bounds.Width - 128, 18), trim);
                 Text(g, "‹ Previous", small, _setDetails.CanPrevious ? Accent : Color.LightGray, _setDetails.Previous, trim);
                 Text(g, "Next ›", small, _setDetails.CanNext ? Accent : Color.LightGray, _setDetails.Next, trim);
+                MarkDetailTarget(g, _setDetails.Previous);
+                MarkDetailTarget(g, _setDetails.Next);
             }
             using var border = new Pen(Color.FromArgb(164, 171, 164));
             g.DrawRectangle(border, bounds.X, bounds.Y, bounds.Width, bounds.Height);
         }
+
+        private void MarkDetailTarget(Graphics g, RectangleF target)
+        {
+            if (TargetPainted(g, target) && !_paintedDetailTargets.Contains(target)) _paintedDetailTargets.Add(target);
+        }
+
+        private bool DetailTargetPainted(RectangleF target, PointF point) => target.Contains(point) &&
+            _paintedDetailTargets.Any(painted => painted == target);
 
         private static void DrawSetChevron(Graphics g, RectangleF bounds, bool expanded, Color? color = null)
         {
@@ -135,13 +150,19 @@ namespace BetterGhPanel
         private bool HandleSetDetailsClick(GH_Canvas canvas, GH_CanvasMouseEvent e)
         {
             var point = e.CanvasLocation;
-            LayoutSetDetails();
+            if (!RowsAreCurrent(PanelOwner.Session.Result))
+            {
+                if (!_setDetails.Bounds.Contains(point)) return false;
+                canvas.Invalidate();
+                return true;
+            }
             bool handled = _setDetails.Bounds.Contains(point);
             if (handled)
             {
-                if (_setDetails.Collapse.Contains(point)) _setDetails.Close();
-                else if (_setDetails.Previous.Contains(point)) _setDetails.Page(-1);
-                else if (_setDetails.Next.Contains(point)) _setDetails.Page(1);
+                if (DetailTargetPainted(_setDetails.Collapse, point)) _setDetails.Close();
+                else if (_setDetails.CanPrevious && DetailTargetPainted(_setDetails.Previous, point)) _setDetails.Page(-1);
+                else if (_setDetails.CanNext && DetailTargetPainted(_setDetails.Next, point)) _setDetails.Page(1);
+                else return true;
             }
             else if (_setControlsVisible && RowsAreCurrent(PanelOwner.Session.Result))
             {
@@ -155,6 +176,7 @@ namespace BetterGhPanel
             }
             if (!handled) return false;
             SuppressTrailingDoubleClick();
+            InvalidatePaintedHits();
             LayoutSetDetails();
             CanvasDoubleClickGuard.Start(canvas, e);
             canvas.Invalidate();
@@ -163,16 +185,16 @@ namespace BetterGhPanel
 
         private bool SetDetailsTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
-            if (!_setControlsVisible || PanelOwner.Locked || !PanelOwner.Session.HasCurrentResult) return false;
+            if (!_setControlsVisible || !RowsAreCurrent(PanelOwner.Session.Result)) return false;
             if (_setDetails.Bounds.Contains(point))
             {
+                if (!_paintedDetailTargets.Any(target => target.Contains(point))) return false;
                 var location = _setDetails.LocationAt(point);
                 e.Title = _setDetails.Collapse.Contains(point) ? "Collapse occurrences" : "Original input locations";
                 e.Text = location.HasValue ? location.Value.Path + " [" + location.Value.ItemIndex + "]" : CanvasSetDetails.Summary(_setDetails.Occurrences!);
-                e.Description = CanvasSetDetails.Scope;
+                e.Description = "Filtered source occurrences: " + CanvasStatistics.SourceStatuses(_setDetails.Occurrences!.SourceStatuses) + ". " + CanvasSetDetails.Scope;
                 return true;
             }
-            if (!RowsAreCurrent(PanelOwner.Session.Result)) return false;
             foreach (var hit in _setHits)
             {
                 if (!hit.Bounds.Contains(point)) continue;
@@ -180,7 +202,7 @@ namespace BetterGhPanel
                 e.Title = _setDetails.IsOpen && _setDetails.SourcePosition == hit.SourcePosition ? "Collapse occurrences" : "Expand occurrences";
                 e.Text = CanvasSetDetails.Summary(occurrences) + $". {occurrences.DuplicatesRemoved:N0} " +
                     (occurrences.DuplicatesRemoved == 1 ? "duplicate removed." : "duplicates removed.");
-                e.Description = CanvasSetDetails.Scope;
+                e.Description = "Filtered source occurrences: " + CanvasStatistics.SourceStatuses(occurrences.SourceStatuses) + ". " + CanvasSetDetails.Scope;
                 return true;
             }
             return false;

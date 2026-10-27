@@ -24,13 +24,50 @@ namespace BetterGhPanel
         private readonly PanelGeometryHighlight _highlight = new PanelGeometryHighlight();
         private bool _previewSuspended;
         private IGH_Goo?[] _sourceItems = Array.Empty<IGH_Goo?>();
+        private CapturedMeasurementSource?[] _measurementSources = Array.Empty<CapturedMeasurementSource?>();
+        private CaptureGraphWitness[] _captureGraphs = Array.Empty<CaptureGraphWitness>();
+        private PanelSnapshot? _measurementSnapshot, _staleMeasurementSnapshot;
         private string _geometryUnits = "units";
         private Rhino.UnitSystem _geometryUnitSystem = Rhino.UnitSystem.None;
         private double _geometryTolerance = 0.001;
+        private MeasurementContextStamp _geometryContext;
+        private bool _captureHasGeometry;
         private CancellationTokenSource? _copyCancellation;
         private bool _retainGeometryMeasurements;
         private GH_Structure<IGH_Goo>? _queryTree;
         private bool _solving, _preserveQuery, _reuseQuery;
+        private long _solveGeneration;
+        private bool _issuingCaptureRetry;
+        private int _captureRetries;
+        // Fixture injection runs at the same boundary as native capture callbacks.
+        internal Action<int, IGH_Goo?>? CaptureObserverForTesting { get; set; }
+        internal Action<object>? GraphVisitObserverForTesting { get; set; }
+        internal Action<GH_Structure<IGH_Goo>, GH_Structure<IGH_Goo>?>? StructureObserverForTesting { get; set; }
+        internal Action? BeforeOutputValidationForTesting { get; set; }
+        private bool _captureDiagnosticsForTesting;
+        internal bool CaptureDiagnosticsForTesting
+        {
+            get => _captureDiagnosticsForTesting;
+            set { _captureDiagnosticsForTesting = value; if (_session != null) _session.GeometryDiagnosticsForTesting = value; }
+        }
+        internal long CaptureValidationPassesForTesting { get; private set; }
+        internal long CaptureValidationVisitsForTesting { get; private set; }
+        internal long CaptureMeasurementSourceVisitsForTesting { get; private set; }
+        internal long MeasurementEntryVisitsForTesting => _session?.GeometryEntryVisitsForTesting ?? 0;
+        internal long MeasurementEntryCopiesForTesting => _session?.GeometryEntryCopiesForTesting ?? 0;
+        internal long MeasurementSourceChecksForTesting => _session?.GeometrySourceChecksForTesting ?? 0;
+        internal long MeasurementSourceScansForTesting => _session?.GeometrySourceScansForTesting ?? 0;
+        internal int MeasurementEntryCountForTesting => _session?.GeometryEntryCountForTesting ?? 0;
+        internal long OutputReconstructionVisitsForTesting { get; private set; }
+        internal long OutputPublicationItemsForTesting { get; private set; }
+        internal void ResetCaptureDiagnosticsForTesting()
+        {
+            CaptureValidationPassesForTesting = CaptureValidationVisitsForTesting = CaptureMeasurementSourceVisitsForTesting =
+                OutputReconstructionVisitsForTesting = OutputPublicationItemsForTesting = 0;
+            _session?.ResetGeometryDiagnosticsForTesting();
+        }
+        private void CountOutputVisits(long visits)
+        { if (CaptureDiagnosticsForTesting) OutputReconstructionVisitsForTesting += visits; }
         private long _outputRequest;
         private PanelQueryOptions? _outputOptions;
         private bool _outputPending;
@@ -43,6 +80,7 @@ namespace BetterGhPanel
         internal bool PanelMinimized { get; private set; }
         internal PanelPreviewMode PreviewMode { get; private set; }
         internal bool ShowItemOrder { get; private set; }
+        internal string PreviewStatus => _highlight.Status;
         internal float DisplayHeight => CanvasPanelSize.DisplayHeight(CanvasHeight, CanvasDisplay);
         internal int TrimDepth { get; private set; }
         internal bool FlattenTree { get; private set; }
@@ -57,6 +95,12 @@ namespace BetterGhPanel
             "Inspect and manipulate data trees on the canvas. Tree tools, units and filters change output. Create set emits unique displayed numbers or text at the displayed precision; otherwise output retains original types and precision. Sorting changes view order.",
             "Params", "Util")
         {
+            _highlight.PreviewChanged = () =>
+            {
+                InvalidatePreviewCaches();
+                Instances.ActiveCanvas?.Invalidate();
+                Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
+            };
             RowSelection.Changed += (_, __) =>
             {
                 ++_selectionVersion;
@@ -93,15 +137,19 @@ namespace BetterGhPanel
                 if (_session == null)
                 {
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
+                    _session.GeometryDiagnosticsForTesting = CaptureDiagnosticsForTesting;
                     _session.SetDecimalPlacesResolver(() => DecimalPlaces);
                     _session.SetCreateSetResolver(() => CreateSetTree);
                     if (Locked) _session.InvalidateInput(false, suspended: true);
-                    _session.SetGeometryDetailResolver(position => position < _sourceItems.Length
-                        ? GeometryHints.PrepareMeasurement(_sourceItems[position], _geometryUnits) : null);
+                    _session.SetGeometryPreparationResolver(PrepareCapturedGeometry);
+                    _session.SetGeometryRetentionResolver(PrepareCapturedGeometryForRetention);
+                    _session.SetGeometrySourceCurrentResolver(MeasurementSourceCurrent);
+                    _session.SetCaptureCurrentResolver(CapturedSnapshotCurrent);
                     _savedOptions.DecimalPlaces = DecimalPlaces;
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
+                        (Attributes as BetterPanelAttributes)?.OnQueryStarted();
                         (Attributes as BetterPanelAttributes)?.InvalidateStatistics();
                         CancelPendingCopy();
                         ClearHighlight();
@@ -117,9 +165,144 @@ namespace BetterGhPanel
                         (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
                         if (!_solving && !_restoringView) ScheduleOutput();
                     };
+                    (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
                 }
                 return _session;
             }
+        }
+
+        private PreparedMeasurement<PanelGeometryInfo>? PrepareCapturedGeometry(int position)
+            => PrepareCapturedGeometryCore(position, false);
+
+        private PreparedMeasurement<PanelGeometryInfo>? PrepareCapturedGeometryForRetention(int position)
+            => PrepareCapturedGeometryCore(position, true);
+
+        private PreparedMeasurement<PanelGeometryInfo>? PrepareCapturedGeometryCore(int position, bool proofOnly)
+        {
+            var snapshot = _measurementSnapshot;
+            if (snapshot == null || !ReferenceEquals(_session?.Snapshot, snapshot) || !MeasurementSourceCurrent(snapshot, position)) return null;
+            var capture = _measurementSources[position];
+            if (capture == null || capture.Geometry == null || !capture.Leaf.Trusted || !capture.Leaf.HasReference) return null;
+            var source = capture.Geometry;
+            try
+            {
+                var prepared = proofOnly
+                    ? GeometryHints.PrepareCapturedMeasurement(source, _geometryUnits, (int)_geometryUnitSystem, _geometryTolerance, true)
+                    : GeometryHints.PrepareStandaloneMeasurement(_sourceItems[position]!, source, capture.Reference,
+                        _geometryUnits, (int)_geometryUnitSystem, _geometryTolerance, true);
+                if (MeasurementSourceCurrent(snapshot, position)) return prepared;
+                prepared?.Dispose();
+                return null;
+            }
+            finally { GC.KeepAlive(source); }
+        }
+
+        private bool MeasurementSourceCurrent(PanelSnapshot snapshot, int position)
+        {
+            if (!ReferenceEquals(snapshot, _measurementSnapshot) || position < 0 || position >= _measurementSources.Length ||
+                position >= _sourceItems.Length) return false;
+            var context = _geometryContext;
+            if (_captureHasGeometry && !GeometryContextCurrent(context))
+            {
+                RecaptureStaleMeasurementSource(snapshot);
+                return false;
+            }
+            var capture = _measurementSources[position];
+            if (capture == null) return true;
+            var source = capture.Geometry;
+            var holder = _sourceItems[position];
+            try
+            {
+                if (SafeGooInspection.IsCurrentCapturedGeometry(holder, capture.Leaf) &&
+                    (!_captureHasGeometry || (context.Equals(_geometryContext) && GeometryContextCurrent(context))) &&
+                    ReferenceEquals(snapshot, _measurementSnapshot) && ReferenceEquals(snapshot, _session?.Snapshot) &&
+                    position < _measurementSources.Length && position < _sourceItems.Length &&
+                    ReferenceEquals(capture, _measurementSources[position]) && ReferenceEquals(holder, _sourceItems[position])) return true;
+            }
+            catch (Exception) { /* The captured holder is no longer usable. */ }
+            finally { GC.KeepAlive(source); }
+            RecaptureStaleMeasurementSource(snapshot);
+            return false;
+        }
+
+        private void RecaptureStaleMeasurementSource(PanelSnapshot snapshot)
+        {
+            if (ReferenceEquals(_staleMeasurementSnapshot, snapshot)) return;
+            _staleMeasurementSnapshot = snapshot;
+            long generation = _solveGeneration;
+            // Avoid invalidating the queue reentrantly from its preparation or read.
+            _ = Task.Run(() => Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
+            {
+                if (generation != _solveGeneration || !ReferenceEquals(_measurementSnapshot, snapshot) ||
+                    !ReferenceEquals(_session?.Snapshot, snapshot) || _session == null) return;
+                InvalidateStaleCapture(_session, OnPingDocument(), generation);
+            })));
+        }
+
+        internal bool CapturedSnapshotCurrent(PanelSnapshot snapshot)
+        {
+            long generation = _solveGeneration;
+            var session = _session;
+            var tree = _queryTree;
+            var context = _geometryContext;
+            if (session == null || session.IsDisposed || Locked || !ReferenceEquals(snapshot, _measurementSnapshot) ||
+                !ReferenceEquals(snapshot, session.Snapshot) || !session.GeometrySnapshotAttached(snapshot) || tree == null) return false;
+            long visits = 0;
+            bool HoldersCurrent()
+            {
+                bool result = SnapshotCapture.MeasurementSourcesCurrentWithVisits(_sourceItems, _measurementSources, out int count);
+                if (CaptureDiagnosticsForTesting) CaptureMeasurementSourceVisitsForTesting += count;
+                visits += count; return result;
+            }
+            bool GraphsCurrent()
+            {
+                bool result = SnapshotCapture.GraphSourcesCurrentWithVisits(_captureGraphs, out long count);
+                visits += count; return result;
+            }
+            bool ManagedCurrent()
+            {
+                bool result = SnapshotCapture.ManagedRowsCurrentWithVisits(snapshot, _sourceItems, out int count);
+                visits += count; return result;
+            }
+            bool UnitsCurrent()
+            {
+                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count);
+                visits += count; return result;
+            }
+            bool StructuresCurrent()
+            {
+                bool result = PanelTreeOperations.StructureStillMatchesWithVisits(_liveInputTree, _inputTree, out int count);
+                visits += count;
+                if (!result || PairedInputPresent() != _pairedInputPresent) return false;
+                if (!_pairedInputPresent) return true;
+                result = PanelTreeOperations.StructureStillMatchesWithVisits(_livePairedTree, _pairedInputTree, out count);
+                visits += count; return result;
+            }
+            bool current = (!_captureHasGeometry || GeometryContextCurrent(context)) &&
+                HoldersCurrent() && GraphsCurrent() && ManagedCurrent() && UnitsCurrent() && StructuresCurrent() &&
+                (!_captureHasGeometry || (context.Equals(_geometryContext) && GeometryContextCurrent(context)));
+            if (CaptureDiagnosticsForTesting) { CaptureValidationPassesForTesting++; CaptureValidationVisitsForTesting += visits; }
+            if (!current && generation == _solveGeneration && ReferenceEquals(snapshot, _measurementSnapshot))
+                RecaptureStaleMeasurementSource(snapshot);
+            return current && generation == _solveGeneration && ReferenceEquals(session, _session) && !session.IsDisposed &&
+                !Locked && ReferenceEquals(snapshot, _measurementSnapshot) && ReferenceEquals(snapshot, session.Snapshot) &&
+                session.GeometrySnapshotAttached(snapshot) && ReferenceEquals(tree, _queryTree);
+        }
+
+        private static MeasurementContextStamp ReadGeometryContext(out Rhino.UnitSystem unitSystem, out double tolerance, out string units)
+        {
+            var document = Rhino.RhinoDoc.ActiveDoc;
+            unitSystem = document?.ModelUnitSystem ?? Rhino.UnitSystem.None;
+            tolerance = document?.ModelAbsoluteTolerance ?? 0.001;
+            units = document == null || unitSystem == Rhino.UnitSystem.None ? "units" : document.GetUnitSystemName(true, false, false, true);
+            if (string.IsNullOrWhiteSpace(units)) units = "units";
+            return new MeasurementContextStamp(document?.RuntimeSerialNumber ?? 0, (int)unitSystem, tolerance, units);
+        }
+
+        private static bool GeometryContextCurrent(MeasurementContextStamp captured)
+        {
+            try { return captured.Equals(ReadGeometryContext(out _, out _, out _)); }
+            catch (Exception) { return false; }
         }
 
         public override void CreateAttributes() => m_attributes = new BetterPanelAttributes(this);
@@ -196,6 +379,7 @@ namespace BetterGhPanel
 
         internal void SetCanvasSize(float width, float height)
         {
+            (Attributes as BetterPanelAttributes)?.InvalidatePaintedHits();
             CanvasWidth = CanvasPanelSize.Width(width);
             CanvasHeight = CanvasPanelSize.Height(height);
             Attributes.ExpireLayout();
@@ -231,6 +415,7 @@ namespace BetterGhPanel
         internal void SetCanvasDisplay(CanvasPanelDisplay display)
         {
             if (!Enum.IsDefined(typeof(CanvasPanelDisplay), display) || CanvasDisplay == display) return;
+            (Attributes as BetterPanelAttributes)?.InvalidatePaintedHits();
             RecordUndoEvent("Panel+ display size");
             CanvasTextInput.CloseActive();
             CanvasDisplay = display;
@@ -356,23 +541,36 @@ namespace BetterGhPanel
             cancellation?.Dispose();
         }
 
-        private bool TryGetActionPositions(PanelSnapshot snapshot, IReadOnlyList<int> positions, out int[] ordered)
+        private bool TryGetActionPositions(PanelSnapshot snapshot, IReadOnlyList<int> positions, out IReadOnlyList<int> ordered)
         {
             ordered = Array.Empty<int>();
             var session = _session;
             if (session == null || !session.HasCurrentResult || !ReferenceEquals(snapshot, session.Snapshot) || positions.Count == 0) return false;
-            var selected = new HashSet<int>(positions);
-            if (selected.Any(position => position < 0 || position >= _sourceItems.Length || position >= snapshot.Rows.Count)) return false;
-            ordered = session.Result.RowPositions.Where(selected.Contains).ToArray();
-            return ordered.Length == selected.Count;
+            return PanelActionPositions.TryGet(session.Result, _sourceItems.Length, RowSelection, positions, out ordered);
         }
 
         internal string? FrameRows(PanelSnapshot snapshot, IReadOnlyList<int> positions)
+            => FrameRowsWithCompletion(snapshot, positions, null);
+
+        internal string? FrameRowsWithCompletion(PanelSnapshot snapshot, IReadOnlyList<int> positions, Action<string>? completed)
         {
             if (_previewSuspended) return "Activate this Grasshopper document to frame geometry";
             if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
-            var result = PanelGeometryActions.Frame(ordered.Select(position => _sourceItems[position]));
-            return result.Success ? null : result.Error;
+            var session = _session!;
+            var expectedResult = session.Result;
+            var source = _sourceItems;
+            long selection = _selectionVersion;
+            bool Current() => !_previewSuspended && ReferenceEquals(_session, session) && session.HasCurrentResult &&
+                ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, expectedResult) &&
+                ReferenceEquals(_sourceItems, source) && _selectionVersion == selection;
+            string? Format(PanelGeometryActionResult result) => !result.Success ? result.Error :
+                result.Skipped > 0 || result.Exhausted
+                ? "Selection framed" + (result.Skipped > 0 ? "; " + result.Skipped + " skipped" : "") +
+                    (result.Exhausted ? "; inspection limit reached" : "") : null;
+            var result = PanelGeometryActions.FrameWithSnapshot(ordered.Select(position => source[position]).ToArray(), Current,
+                () => Current() && CapturedSnapshotCurrent(snapshot) && Current(),
+                value => completed?.Invoke(Format(value) ?? "Selection framed"));
+            return Format(result);
         }
 
         internal void HighlightRows(PanelSnapshot snapshot, IReadOnlyList<int> positions)
@@ -384,7 +582,7 @@ namespace BetterGhPanel
                 ClearHighlight();
                 return;
             }
-            var ordered = Array.Empty<int>();
+            IReadOnlyList<int> ordered = Array.Empty<int>();
             if (positions.Count > 0 && !TryGetActionPositions(snapshot, positions, out ordered))
             {
                 ClearHighlight();
@@ -392,7 +590,15 @@ namespace BetterGhPanel
             }
             var previewPositions = PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.RowPositions : ordered;
             _highlight.SetOrderResult(ShowItemOrder && previewPositions.Count > 0 ? session.Result : null);
-            _highlight.Set(_sourceItems, previewPositions, ordered);
+            var source = _sourceItems;
+            var expectedResult = session.Result;
+            var mode = PreviewMode;
+            long selection = _selectionVersion;
+            bool Current() => !_previewSuspended && !Locked && PreviewMode == mode &&
+                ReferenceEquals(_session, session) && session.HasCurrentResult && ReferenceEquals(session.Snapshot, snapshot) &&
+                ReferenceEquals(session.Result, expectedResult) && ReferenceEquals(_sourceItems, source) && _selectionVersion == selection;
+            _highlight.SetScopeChecked(source, expectedResult, mode == PanelPreviewMode.FilteredResults, ordered, Current, RowSelection);
+            InvalidatePreviewCaches();
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
 
@@ -400,14 +606,26 @@ namespace BetterGhPanel
         {
             bool visible = _highlight.PreviewCount > 0;
             _highlight.Clear();
-            if (visible) Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
+            if (visible) { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
+        }
+
+        private void InvalidatePreviewCaches()
+        {
+            // GH's registered PreviewExpired handler also destroys the document
+            // draw list and clipping box. Calling GH_Document.ExpirePreview here
+            // would additionally mark a selection-only gesture as a document edit.
+            ExpirePreview(false);
         }
 
         internal async Task<string> CopyValuesAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions)
         {
             CancelPendingCopy();
             if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
+            long clipboardGeneration = PanelGeometryActions.BeginClipboard();
             var session = _session!;
+            var result = session.Result;
+            var source = _sourceItems;
+            long selectionVersion = RowSelection.Version;
             var cancellation = new CancellationTokenSource();
             _copyCancellation = cancellation;
             bool measured = await session.MeasureGeometryAsync(snapshot, ordered, cancellation.Token);
@@ -416,31 +634,51 @@ namespace BetterGhPanel
             // callback. Live goo and the system clipboard belong to its UI thread.
             Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
             {
+                void Finish(PanelCommitOutcome outcome)
+                {
+                    string status = outcome == PanelCommitOutcome.Uncertain ? "Copy failed; clipboard state is uncertain." :
+                        outcome == PanelCommitOutcome.Committed && !PanelGeometryActions.ClipboardCurrent(clipboardGeneration)
+                            ? "Copy context changed during clipboard publication; clipboard state is uncertain." :
+                        outcome != PanelCommitOutcome.Committed ? "Copy cancelled" :
+                        ordered.Count == 1 ? "Value copied" : ordered.Count + " values copied";
+                    completion.TrySetResult(status);
+                    if (ReferenceEquals(_copyCancellation, cancellation)) { _copyCancellation = null; cancellation.Dispose(); }
+                }
                 try
                 {
-                    if (!measured || !ReferenceEquals(_copyCancellation, cancellation) || !ReferenceEquals(_session, session) ||
-                        !TryGetActionPositions(snapshot, ordered, out _)) completion.SetResult("Copy cancelled");
+                    bool SelectionCurrent() => PanelGeometryActions.ClipboardCurrent(clipboardGeneration) &&
+                        ReferenceEquals(_copyCancellation, cancellation) && !cancellation.IsCancellationRequested &&
+                        ReferenceEquals(_session, session) && session.HasCurrentResult &&
+                        ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, result) &&
+                        ReferenceEquals(_sourceItems, source) &&
+                        PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion);
+                    if (!measured || !SelectionCurrent()) Finish(PanelCommitOutcome.Stale);
                     else
                     {
                         var text = string.Join(Environment.NewLine, ordered.Select(position => CopyValue(snapshot, position)));
-                        using (var clipboard = new Eto.Forms.Clipboard()) clipboard.Text = text;
-                        completion.SetResult(ordered.Length == 1 ? "Value copied" : ordered.Length + " values copied");
+                        // Measurements cover only queued geometry; value-only
+                        // rows and unmeasured geometry can change too.
+                        bool Current() => SelectionCurrent() && CapturedSnapshotCurrent(snapshot) && SelectionCurrent() &&
+                            session.GeometrySourcesCurrent(snapshot) && SelectionCurrent();
+                        var state = PanelGeometryActions.CommitClipboard(Current,
+                            () => { using (var clipboard = new Eto.Forms.Clipboard()) clipboard.Text = text; }, Finish);
+                        if (state != PanelCommitOutcome.Deferred) Finish(state);
                     }
                 }
-                catch (Exception ex) { completion.SetResult("Copy failed: " + ex.Message); }
-                finally
+                catch (Exception ex)
                 {
-                    if (ReferenceEquals(_copyCancellation, cancellation))
-                    {
-                        _copyCancellation = null;
-                        cancellation.Dispose();
-                    }
+                    completion.TrySetResult("Copy failed: " + ex.Message);
+                    if (ReferenceEquals(_copyCancellation, cancellation)) { _copyCancellation = null; cancellation.Dispose(); }
                 }
             }));
             return await completion.Task;
         }
 
         internal bool TryCopyGeometry(PanelSnapshot snapshot, IReadOnlyList<int> positions, out string status)
+            => TryCopyGeometryWithCompletion(snapshot, positions, null, out status);
+
+        internal bool TryCopyGeometryWithCompletion(PanelSnapshot snapshot, IReadOnlyList<int> positions,
+            Action<string>? completed, out string status)
         {
             CancelPendingCopy();
             if (!TryGetActionPositions(snapshot, positions, out var ordered))
@@ -448,10 +686,21 @@ namespace BetterGhPanel
                 status = "Data changed; select rows again";
                 return false;
             }
-            var result = PanelGeometryActions.CopyGeometry(ordered.Select(position => _sourceItems[position]),
-                _geometryUnitSystem, _geometryTolerance);
-            status = result.Success ? result.Count + " geometries copied" +
-                (result.Skipped > 0 ? "; " + result.Skipped + " skipped" : "") : result.Error ?? "Copy geometry failed";
+            var session = _session!;
+            var expectedResult = session.Result;
+            var source = _sourceItems;
+            long selection = _selectionVersion;
+            bool Current() => ReferenceEquals(_session, session) && session.HasCurrentResult &&
+                ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, expectedResult) &&
+                ReferenceEquals(_sourceItems, source) && _selectionVersion == selection;
+            string Format(PanelGeometryActionResult result) => result.Success ? result.Count + " geometries copied" +
+                (result.Skipped > 0 ? "; " + result.Skipped + " skipped (" + (result.Detail ?? "unsupported geometry or unverified metadata") + ")" : "") +
+                (result.Exhausted ? "; preparation limit reached" : "") +
+                (result.UnverifiedMetadata ? "; custom metadata content not fully verified" : "") : result.Error ?? "Copy geometry failed";
+            var result = PanelGeometryActions.CopyGeometryWithSnapshot(ordered.Select(position => source[position]).ToArray(),
+                _geometryUnitSystem, _geometryTolerance, Current, () => Current() && CapturedSnapshotCurrent(snapshot) && Current(),
+                value => completed?.Invoke(Format(value)));
+            status = Format(result);
             return result.Success;
         }
 
@@ -477,7 +726,7 @@ namespace BetterGhPanel
             var session = _session;
             if (_solving || _restoringView || Locked || document == null || session == null || _queryTree == null) return;
             var options = session.Options;
-            if (!_outputPending && _outputOptions != null && SameOutputFilter(_outputOptions, options) &&
+            if (!_outputPending && _outputOptions != null && PanelQueryPolicy.SameOutputFilter(_outputOptions, options) &&
                 _publishedSelectionVersion == _selectionVersion && _publishedScope == OutputScope) return;
             var snapshot = session.Snapshot;
             long request = ++_outputRequest;
@@ -494,20 +743,10 @@ namespace BetterGhPanel
             });
         }
 
-        private static bool SameOutputFilter(PanelQueryOptions left, PanelQueryOptions right) =>
-            left.Search == right.Search && left.SearchMode == right.SearchMode && left.TypeName == right.TypeName &&
-            left.DisplayFilterValue == right.DisplayFilterValue &&
-            left.CreateSet == right.CreateSet &&
-            left.OnlyInvalid == right.OnlyInvalid && left.BranchPath == right.BranchPath && left.BranchPrefix == right.BranchPrefix &&
-            (left.DecimalPlaces == right.DecimalPlaces || !right.CreateSet && !PanelQueryEngine.UsesDisplayedText(right));
-
-        private static bool HasOutputFilter(PanelQueryOptions options) =>
-            options.CreateSet ||
-            (!options.DisplayFilterValue && (options.SearchMode == PanelSearchMode.Regex ? !string.IsNullOrEmpty(options.Search) : !string.IsNullOrWhiteSpace(options.Search))) ||
-            options.TypeName != null || options.OnlyInvalid || !string.IsNullOrWhiteSpace(options.BranchPath);
-
         public override void ClearData()
         {
+            ++_solveGeneration;
+            if (!_issuingCaptureRetry) _captureRetries = 0;
             // Grasshopper expires the component before collecting its next input.
             // Invalidate now, even when solving is deferred or an upstream node fails.
             if (!_preserveQuery)
@@ -515,7 +754,13 @@ namespace BetterGhPanel
                 ++_outputRequest;
                 _queryTree = null;
                 ClearOutputSources();
-                if (!_retainGeometryMeasurements) _sourceItems = Array.Empty<IGH_Goo?>();
+                if (!_retainGeometryMeasurements)
+                {
+                    _sourceItems = Array.Empty<IGH_Goo?>();
+                    _measurementSources = Array.Empty<CapturedMeasurementSource?>();
+                    _measurementSnapshot = null;
+                    _staleMeasurementSnapshot = null;
+                }
                 _reuseQuery = false;
                 CancelPendingCopy();
                 ClearHighlight();
@@ -528,49 +773,143 @@ namespace BetterGhPanel
 
         protected override void SolveInstance(IGH_DataAccess da)
         {
-            if (!da.GetDataTree(0, out GH_Structure<IGH_Goo> tree)) tree = new GH_Structure<IGH_Goo>();
-            // Any upstream expiration clears this flag through ClearData. GH may
-            // duplicate input goo during collection even when sources are unchanged,
-            // so ownership follows the captured solution, not recollected identity.
-            bool reuse = _reuseQuery && _queryTree != null;
-            _reuseQuery = false;
+            long generation = ++_solveGeneration;
+            var document = OnPingDocument();
+            bool previouslySolving = _solving;
+            bool rescheduleOutput = false;
             _solving = true;
             try
             {
+                if (Locked || !da.GetDataTree(0, out GH_Structure<IGH_Goo> tree)) tree = new GH_Structure<IGH_Goo>();
+                if (Locked || generation != _solveGeneration || !ReferenceEquals(document, OnPingDocument())) return;
+                var session = Session;
+                bool Current() => generation == _solveGeneration && !Locked && ReferenceEquals(document, OnPingDocument()) &&
+                    ReferenceEquals(session, _session) && !session.IsDisposed;
+                if (!Current()) return;
+                // GH may duplicate input goo during collection even when sources
+                // are unchanged. A publication solve reuses the committed snapshot.
+                bool reuse = _reuseQuery && _queryTree != null;
+                _reuseQuery = false;
                 if (!reuse)
                 {
                     CancelPendingCopy();
                     ClearHighlight();
-                    var options = Session.Options;
+                    var options = session.Options;
                     if (options.DecimalPlaces != DecimalPlaces)
                     {
                         options.DecimalPlaces = DecimalPlaces;
-                        Session.UpdateQuery(options);
+                        session.UpdateQuery(options);
                     }
-                    _inputTree = PanelTreeOperations.CopyStructure(tree);
-                    tree = PanelTreeOperations.ApplyWithSources(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out _retainedSources);
-                    _queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.Apply(tree, UnitConversion));
-                    CapturePairedInput(da);
-                    var previousSources = _sourceItems;
-                    var previousUnits = _geometryUnits;
-                    var rhinoDocument = Rhino.RhinoDoc.ActiveDoc;
-                    _geometryUnitSystem = rhinoDocument?.ModelUnitSystem ?? Rhino.UnitSystem.None;
-                    _geometryTolerance = rhinoDocument?.ModelAbsoluteTolerance ?? 0.001;
-                    _geometryUnits = rhinoDocument == null || rhinoDocument.ModelUnitSystem == Rhino.UnitSystem.None
-                        ? "units" : rhinoDocument.GetUnitSystemName(true, false, false, true);
-                    if (string.IsNullOrWhiteSpace(_geometryUnits)) _geometryUnits = "units";
-                    var snapshot = SnapshotCapture.CaptureWithSources(_queryTree, out _sourceItems, UnitConversion, _geometryUnits, _retainedSources);
-                    if (_retainGeometryMeasurements && previousUnits == _geometryUnits)
-                        Session.AttachConvertedSnapshot(snapshot, position => position < previousSources.Length &&
-                            position < _sourceItems.Length && ReferenceEquals(previousSources[position], _sourceItems[position]));
-                    else Session.AttachSnapshot(snapshot);
+                    if (!Current()) return;
+                    var liveInputTree = tree;
+                    var inputTree = PanelTreeOperations.CopyStructure(liveInputTree);
+                    tree = PanelTreeOperations.ApplyWithSources(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out var retainedSources);
+                    var preConversionTree = tree;
+                    var conversion = UnitConversion;
+                    var scalarInputs = CapturedScalar.Capture(preConversionTree);
+                    var queryScalars = CapturedScalar.Convert(scalarInputs, conversion);
+                    var queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.ApplyCaptured(preConversionTree, conversion, scalarInputs));
+                    var inputSeed = SnapshotCapture.PrepareInputs(queryTree);
+                    CapturePairedInput(da, inputTree, queryTree, retainedSources, out var pairedTree, out var pairedError,
+                        out var livePairedTree, out var capturedPairedTree, out bool pairedPresent);
+                    var context = ReadGeometryContext(out var unitSystem, out double tolerance, out string units);
+                    if (!Current()) return;
+                    var snapshot = SnapshotCapture.CaptureForMeasurements(queryTree, out var sources, out var measurementSources, out var graphs,
+                        conversion, units, retainedSources, CaptureObserverForTesting, GraphVisitObserverForTesting, queryScalars, inputSeed);
+                    StructureObserverForTesting?.Invoke(liveInputTree, livePairedTree);
+                    if (!Current()) return;
+                    bool hasGeometry = snapshot.Rows.Any(row => row.GeometryInfo != null);
+                    if (!SnapshotCapture.MeasurementSourcesCurrent(sources, measurementSources) || !SnapshotCapture.GraphSourcesCurrent(graphs) ||
+                        !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion) ||
+                        !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) || pairedPresent != PairedInputPresent() ||
+                        (pairedPresent && !PanelTreeOperations.StructureStillMatches(livePairedTree, capturedPairedTree)) ||
+                        (hasGeometry && !GeometryContextCurrent(context)))
+                    {
+                        if (Current()) InvalidateStaleCapture(session, document, generation);
+                        return;
+                    }
+                    if (!Current()) return;
+                    // All callback-bearing inspection has completed. Commit these
+                    // locals together only while this solve still owns the component.
+                    _inputTree = inputTree; _preConversionTree = preConversionTree; _queryTree = queryTree; _retainedSources = retainedSources;
+                    _liveInputTree = liveInputTree; _livePairedTree = livePairedTree; _pairedInputTree = capturedPairedTree; _pairedInputPresent = pairedPresent;
+                    _pairedQueryTree = pairedTree; _pairedError = pairedError;
+                    bool retainContext = _geometryContext.Equals(context);
+                    _geometryUnitSystem = unitSystem; _geometryTolerance = tolerance; _geometryUnits = units;
+                    _geometryContext = context; _captureHasGeometry = hasGeometry;
+                    _sourceItems = sources; _measurementSources = measurementSources; _captureGraphs = graphs;
+                    _measurementSnapshot = snapshot;
+                    _staleMeasurementSnapshot = null;
+                    if (_retainGeometryMeasurements)
+                        session.AttachConvertedSnapshot(snapshot, _ => retainContext);
+                    else session.AttachSnapshot(snapshot);
+                    if (!Current() || !ReferenceEquals(session.Snapshot, snapshot) || !ReferenceEquals(_queryTree, queryTree)) return;
+                }
+                var committedTree = _queryTree;
+                var committedSnapshot = session.Snapshot;
+                var committedResult = session.Result;
+                var committedScope = OutputScope;
+                var committedSelection = _selectionVersion;
+                bool committedResultCurrent = session.HasCurrentResult;
+                bool PublicationOwnerCurrent() => Current() && ReferenceEquals(committedTree, _queryTree) &&
+                    ReferenceEquals(committedSnapshot, session.Snapshot) && ReferenceEquals(committedResult, session.Result) &&
+                    committedScope == OutputScope && committedSelection == _selectionVersion &&
+                    committedResultCurrent == session.HasCurrentResult;
+                bool PublicationCurrent()
+                {
+                    if (!PublicationOwnerCurrent())
+                    {
+                        if (Current() && _queryTree != null) rescheduleOutput = true;
+                        return false;
+                    }
+                    bool inputsCurrent = CapturedSnapshotCurrent(committedSnapshot);
+                    bool ownerCurrent = PublicationOwnerCurrent();
+                    if (!ownerCurrent && Current() && _queryTree != null) rescheduleOutput = true;
+                    if (!inputsCurrent && ownerCurrent)
+                        InvalidateStaleCapture(session, document, generation);
+                    return inputsCurrent && ownerCurrent;
                 }
                 // Pending/failed filters expose no stale or unfiltered items. The
                 // completed query schedules another solution using this same tree.
-                PublishOutputs(da);
-                if (Session.Error != null) AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Filter: " + Session.Error);
+                if (!PublicationOwnerCurrent()) return;
+                PublishOutputs(da, PublicationCurrent);
+                if (PublicationOwnerCurrent())
+                {
+                    if (session.Error != null) AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Filter: " + session.Error);
+                }
             }
-            finally { _solving = false; }
+            finally
+            {
+                _solving = previouslySolving;
+                if (rescheduleOutput && !previouslySolving) ScheduleOutput();
+            }
+        }
+
+        private void InvalidateStaleCapture(PanelSession session, GH_Document? document, long generation)
+        {
+            if (generation != _solveGeneration || !ReferenceEquals(session, _session)) return;
+            long invalidated = ++_solveGeneration;
+            _queryTree = null;
+            ClearOutputSources();
+            _measurementSnapshot = null;
+            _measurementSources = Array.Empty<CapturedMeasurementSource?>();
+            _sourceItems = Array.Empty<IGH_Goo?>();
+            bool retry = _captureRetries++ == 0 && document != null && !Locked;
+            session.InvalidateInput(false, suspended: !retry);
+            if (invalidated != _solveGeneration || !ReferenceEquals(session, _session)) return;
+            if (!retry)
+            {
+                if (!Locked && document != null && _captureRetries > 1)
+                    AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Input kept changing during capture; expire the source to retry.");
+                return;
+            }
+            document!.ScheduleSolution(1, _ =>
+            {
+                if (invalidated != _solveGeneration || !ReferenceEquals(document, OnPingDocument()) || Locked) return;
+                _issuingCaptureRetry = true;
+                try { ExpireSolution(false); }
+                finally { _issuingCaptureRetry = false; }
+            });
         }
 
         public override void RemovedFromDocument(GH_Document document)
@@ -606,6 +945,7 @@ namespace BetterGhPanel
 
         private void ReleaseSession()
         {
+            ++_solveGeneration;
             ++_outputRequest;
             _queryTree = null;
             ClearOutputSources();
@@ -619,6 +959,9 @@ namespace BetterGhPanel
             _session?.Dispose();
             _session = null;
             _sourceItems = Array.Empty<IGH_Goo?>();
+            _measurementSources = Array.Empty<CapturedMeasurementSource?>();
+            _measurementSnapshot = null;
+            _staleMeasurementSnapshot = null;
         }
 
         protected override void AppendAdditionalComponentMenuItems(ToolStripDropDown menu)
@@ -679,11 +1022,15 @@ namespace BetterGhPanel
 
         public override bool Read(GH_IReader reader)
         {
+            ++_solveGeneration;
             ++_outputRequest;
             _queryTree = null;
             _reuseQuery = false;
             ClearOutputSources();
             _sourceItems = Array.Empty<IGH_Goo?>();
+            _measurementSources = Array.Empty<CapturedMeasurementSource?>();
+            _measurementSnapshot = null;
+            _staleMeasurementSnapshot = null;
             _session?.InvalidateInput(false, suspended: Locked);
             CancelPendingCopy();
             ClearHighlight();

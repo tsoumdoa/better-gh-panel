@@ -67,6 +67,7 @@ internal static class ItemOrderUiChecks
             document.SolutionEnd += (_, __) => solutions++;
             int baselineSolutions = solutions;
             Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Preview));
+            Paint(component, canvas);
             var menu = PanelTestAdapter.MenuBounds(component);
             Click(component, canvas, new RectangleF(menu.X + 4, menu.Y + 60, menu.Width - 8, 20));
             Check(PanelTestAdapter.ShowItemOrder(component) && Labels(component).Select(label => label.Text).SequenceEqual(new[] { "0", "0" }),
@@ -266,7 +267,8 @@ internal static class ItemOrderUiChecks
     private static List<(string Text, Point3d Anchor)> Labels(GH_Component component)
     {
         var labels = Field<object>(Field<object>(component, "_highlight"), "_orderLabels");
-        return new[] { "_selected", "_normal" }.SelectMany(name => Field<IEnumerable>(labels, name).Cast<object>())
+        return Field<IEnumerable>(labels, "_labels").Cast<object>()
+            .Select(pair => pair.GetType().GetProperty("Value")!.GetValue(pair)!)
             .Select(label => (Property<string>(label, "Text"), Property<Point3d>(label, "Anchor"))).ToList();
     }
 
@@ -304,8 +306,5 @@ internal static class ItemOrderUiChecks
         }
         if (!allowError) Check(Property<string?>(session, "Error") == null, "Order-label query completes successfully");
     }
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-    }
+    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }

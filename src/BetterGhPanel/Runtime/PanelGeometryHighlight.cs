@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using BetterGhPanel.Core;
+using BetterGhPanel.UI;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Types;
@@ -9,110 +10,650 @@ using Rhino.Geometry;
 
 namespace BetterGhPanel.Runtime
 {
-    // Participates in the component's own preview so Grasshopper controls hidden
-    // objects, preview modes, document switches, and the user's selected colors.
-    // Like normal GH preview, this borrows goo on the UI thread; it never bakes,
-    // modifies or disposes source geometry.
+    // One result-local generation supplies bounds, labels and drawing. Only
+    // independent third-party preview is borrowed (the GH best-effort contract).
     internal sealed class PanelGeometryHighlight
     {
-        private readonly List<IGH_PreviewData> _normal = new List<IGH_PreviewData>();
-        private readonly List<IGH_PreviewData> _selected = new List<IGH_PreviewData>();
-        private readonly PanelOrderLabels _orderLabels = new PanelOrderLabels();
+        internal const int MaxEntries = 1024;
+        internal const int MaxBuildRows = 20000;
+        internal const int MaxUpdateRows = 128;
+        internal const long MaxRetainedBytes = 16L * 1024 * 1024;
+        private readonly SortedDictionary<int, Entry> _entries = new SortedDictionary<int, Entry>();
+        private readonly Dictionary<int, Entry> _byPosition = new Dictionary<int, Entry>();
+        private readonly SortedSet<int> _unselected = new SortedSet<int>();
+        private readonly HashSet<int> _attempted = new HashSet<int>();
+        private readonly HashSet<int> _unavailablePositions = new HashSet<int>();
+        private readonly Queue<int> _attemptOrder = new Queue<int>();
+        private readonly Queue<Entry> _retired = new Queue<Entry>();
+        private readonly Queue<RetiredMeshes> _retiredMeshes = new Queue<RetiredMeshes>();
+        private readonly PanelPreviewMembership _membership = new PanelPreviewMembership();
+        private readonly PanelPreviewRecovery _recovery = new PanelPreviewRecovery();
+        private readonly PanelOrderLabels _orderLabels;
+        private readonly BoundsIndex _bounds = new BoundsIndex();
+        private Action<int, object>? _admissionObserver;
+        private IReadOnlyList<IGH_Goo?>? _source;
+        private IReadOnlyList<int>? _legacyPositions;
+        private PanelQueryResult? _result, _orderResult;
+        private bool _filtered, _partial;
+        private string? _partialReason;
+        private long _generation;
+        private object _scopeToken = new object();
+        private int _selectedCount, _unavailable, _meshFailures;
+        private long _bytes;
+        private long _retiredBytes;
+        private long _stagedBytes;
+        private int _activeDraws;
+        private bool _displayFlushFailed;
+        // Test seam: runs inside the lifetime guard, immediately before Flush.
+        internal Action? BeforeDisplayFlush { get; set; }
+        internal int CompletedDisplayFlushes { get; private set; }
+        private bool _flushingRetired;
+        private bool _releaseScheduled;
+        private bool _recoveryScheduled;
+        private long _recoveryGeneration;
+        private Func<bool>? _recoveryCurrent;
+        internal Action? PreviewChanged { get; set; }
 
-        internal int Count => _selected.Count;
-        internal int PreviewCount => _normal.Count + _selected.Count;
-        internal BoundingBox ClippingBox { get; private set; } = BoundingBox.Empty;
-        internal void SetOrderResult(PanelQueryResult? result) => _orderLabels.SetResult(result);
+        internal PanelGeometryHighlight() : this(null) { }
+        // A fixture can inject a reentrant callback at the exact ownership seam.
+        internal PanelGeometryHighlight(Action<int, object>? admissionObserver)
+        { _admissionObserver = admissionObserver; _orderLabels = new PanelOrderLabels(_membership); }
+        internal int Count => _selectedCount;
+        internal int PreviewCount => _entries.Count;
+        internal long RetainedBytes => _bytes + _retiredBytes + _stagedBytes;
+        internal int LastVisitedRows { get; private set; }
+        internal int LastVisitedNodes { get; private set; }
+        internal int DrawWireCalls { get; private set; }
+        internal int DrawMeshCalls { get; private set; }
+        internal int IdleReleases { get; private set; }
+        internal bool RetirementPending => _releaseScheduled;
+        internal BoundingBox ClippingBox => _bounds.Box;
+        internal string Status => _displayFlushFailed ? "Preview partial: display flush failed; drawn resources retained." :
+            _partial || _recovery.Pending || _unavailable > 0 || _meshFailures > 0
+            ? "Preview partial: " + (_partialReason ?? (_recovery.Pending ? "selected geometry is awaiting admission" :
+                "some geometry is unsupported or exceeds safety limits")) + "."
+            : string.Empty;
 
+        internal void SetOrderResult(PanelQueryResult? result)
+        {
+            if (ReferenceEquals(_orderResult, result)) return;
+            _generation++;
+            _orderResult = result;
+            _orderLabels.ClearEntries();
+            _orderLabels.SetResult(result);
+            if (result != null)
+                foreach (var entry in _entries.Values) _orderLabels.Add(entry.Order, entry.Position, entry.Bounds.Center);
+        }
+
+        internal void SetScope(IReadOnlyList<IGH_Goo?> sourceItems, PanelQueryResult result, bool filtered, IReadOnlyList<int> selectedPositions)
+            => SetScopeChecked(sourceItems, result, filtered, selectedPositions, () => true);
+
+        internal void SetScopeChecked(IReadOnlyList<IGH_Goo?> sourceItems, PanelQueryResult result, bool filtered,
+            IReadOnlyList<int> selectedPositions, Func<bool> current, PanelRowSelection? selection = null)
+        {
+            long generation = ++_generation;
+            bool fresh = !ReferenceEquals(_source, sourceItems) || !ReferenceEquals(_result, result) || _filtered != filtered || _legacyPositions != null;
+            if (fresh)
+            {
+                ClearGeometry();
+                if (!Current(generation, current)) return;
+                _source = sourceItems; _result = result; _filtered = filtered; _legacyPositions = null;
+            }
+            if (!filtered) { _partial = false; _partialReason = null; }
+            LastVisitedRows = LastVisitedNodes = 0;
+            var update = UpdateMembership(selectedPositions, result, selection);
+            if (!Current(generation, current)) return;
+            var budget = new PanelGeometrySources.Budget();
+            _recoveryGeneration = generation;
+            _recoveryCurrent = current;
+            // A newly selected row can evict an unselected preview. This allows
+            // later selections to recover without another source solution.
+            if (update.ScanSelection)
+            {
+                _recovery.Reset(selectedPositions);
+                PumpRecovery(budget, generation, current);
+                if (!Current(generation, current)) return;
+            }
+            else if (update.AddedPosition >= 0 && !_byPosition.ContainsKey(update.AddedPosition) && !_attempted.Contains(update.AddedPosition))
+            {
+                LastVisitedRows++;
+                if (result.TryGetViewIndex(update.AddedPosition, out int order))
+                    TryAdmit(update.AddedPosition, order, budget, true, generation, current);
+                if (!Current(generation, current)) return;
+                if (!_byPosition.ContainsKey(update.AddedPosition) && !_attempted.Contains(update.AddedPosition))
+                    _recovery.Reset(selectedPositions);
+            }
+            if (fresh && filtered)
+            {
+                int rows = 0;
+                foreach (int position in result.RowPositions)
+                {
+                    if (++rows > MaxBuildRows || budget.Remaining <= 0 || _entries.Count >= MaxEntries || RetainedBytes >= MaxRetainedBytes)
+                    { _partial = true; break; }
+                    LastVisitedRows++;
+                    if (_byPosition.ContainsKey(position) || _attempted.Contains(position)) continue;
+                    TryAdmit(position, rows - 1, budget, false, generation, current);
+                    if (!Current(generation, current)) return;
+                }
+            }
+            LastVisitedNodes = budget.Visits;
+            ScheduleRecovery();
+        }
+
+        private bool PumpRecovery(PanelGeometrySources.Budget budget, long generation, Func<bool> current)
+        {
+            bool progressed = false;
+            bool more = _recovery.Pump(MaxUpdateRows, _membership.Contains,
+                position => _byPosition.ContainsKey(position) || _attempted.Contains(position),
+                position =>
+                {
+                    if (budget.Remaining <= 0 || !Current(generation, current) ||
+                        (_entries.Count >= MaxEntries && _unselected.Count == 0)) return PanelPreviewRecovery.Admission.Blocked;
+                    LastVisitedRows++;
+                    if (_result == null || !_result.TryGetViewIndex(position, out int order)) return PanelPreviewRecovery.Admission.Complete;
+                    TryAdmit(position, order, budget, true, generation, current);
+                    if (!Current(generation, current)) return PanelPreviewRecovery.Admission.Blocked;
+                    if (_byPosition.ContainsKey(position) || _attempted.Contains(position))
+                    { progressed = true; return PanelPreviewRecovery.Admission.Complete; }
+                    return budget.Remaining <= 0 ? PanelPreviewRecovery.Admission.Blocked : PanelPreviewRecovery.Admission.Retry;
+                });
+            // A fresh per-turn budget can recover roots deferred after earlier
+            // admissions. A pass with no progress sleeps until an external
+            // selection/resource change, including for permanently costly roots.
+            return more || (_recovery.Pending && progressed);
+        }
+
+        private void ScheduleRecovery()
+        {
+            if (_recoveryScheduled || !_recovery.Pending || _recoveryCurrent == null) return;
+            _recoveryScheduled = true;
+            Rhino.RhinoApp.Idle += RecoverOnIdle;
+        }
+
+        private void RecoverOnIdle(object? sender, EventArgs args)
+        {
+            Rhino.RhinoApp.Idle -= RecoverOnIdle;
+            _recoveryScheduled = false;
+            long generation = _recoveryGeneration;
+            var current = _recoveryCurrent;
+            if (current == null || !Current(generation, current)) return;
+            if (_displayFlushFailed) return;
+            if (_activeDraws != 0 || _flushingRetired) { ScheduleRecovery(); return; }
+            generation = ++_generation;
+            _recoveryGeneration = generation;
+            if (!_filtered) { _partial = false; _partialReason = null; }
+            var budget = new PanelGeometrySources.Budget();
+            LastVisitedRows = LastVisitedNodes = 0;
+            bool pending = _recovery.Pending;
+            bool more = PumpRecovery(budget, generation, current);
+            if (!Current(generation, current)) return;
+            LastVisitedNodes = budget.Visits;
+            if (LastVisitedRows > 0 || pending != _recovery.Pending) PreviewChanged?.Invoke();
+            if (Current(generation, current) && more) ScheduleRecovery();
+        }
+
+        // Kept for native component-contract fixtures and callers without a query result.
         internal void Set(IReadOnlyList<IGH_Goo?> sourceItems, IReadOnlyList<int> previewPositions, IReadOnlyList<int> selectedPositions)
         {
+            long generation = ++_generation;
             ClearGeometry();
-            var selected = new HashSet<int>(selectedPositions);
-            var bounds = BoundingBox.Empty;
-            foreach (int position in previewPositions)
+            if (generation != _generation) return;
+            _source = sourceItems; _legacyPositions = previewPositions; _filtered = true;
+            LastVisitedRows = LastVisitedNodes = 0;
+            UpdateMembership(selectedPositions, null, null);
+            var budget = new PanelGeometrySources.Budget();
+            for (int i = 0; i < previewPositions.Count; i++)
             {
-                if (position < 0 || position >= sourceItems.Count) continue;
-                var item = sourceItems[position];
-                var box = PanelGeometryActions.GetBounds(item);
-                if (item == null || !box.IsValid) continue;
-                try
-                {
-                    // Share bounds with framing. Validate wrappers before converting
-                    // them so numbers and vectors cannot become artificial points.
-                    var preview = item as IGH_PreviewData ??
-                        GH_Convert.ToGeometricGoo(PanelGeometryActions.Unwrap(item)) as IGH_PreviewData;
-                    if (preview == null) continue;
-                    bounds.Union(box);
-                    bool isSelected = selected.Contains(position);
-                    (isSelected ? _selected : _normal).Add(preview);
-                    // Point goo uses its actual position even when custom preview bounds
-                    // include adornments. Other preview data reuses its cheap existing bounds.
-                    var anchor = preview is GH_Point point ? point.Value : box.Center;
-                    _orderLabels.Add(position, anchor, isSelected);
-                }
-                catch (Exception) { } // One third-party goo cannot disable the other previews.
+                if (i >= MaxBuildRows || budget.Remaining <= 0 || _entries.Count >= MaxEntries) { _partial = true; break; }
+                LastVisitedRows++;
+                TryAdmit(previewPositions[i], i, budget, false, generation, () => true);
+                if (generation != _generation) return;
             }
-            ClippingBox = bounds;
+            LastVisitedNodes = budget.Visits;
         }
 
-        internal void Clear()
+        private PanelPreviewMembership.SelectionUpdate UpdateMembership(IReadOnlyList<int> selected, PanelQueryResult? result,
+            PanelRowSelection? selection)
         {
-            ClearGeometry();
-            _orderLabels.Clear();
+            var removed = new List<Entry>();
+            void Changed(int position, bool isSelected)
+            {
+                if (_byPosition.TryGetValue(position, out var entry))
+                {
+                    if (isSelected) { _unselected.Remove(entry.Order); _selectedCount++; }
+                    else
+                    {
+                        if (_filtered) { _selectedCount--; _unselected.Add(entry.Order); }
+                        else { Remove(entry, false); removed.Add(entry); }
+                    }
+                }
+                if (!isSelected && !_filtered && _unavailablePositions.Remove(position))
+                { _attempted.Remove(position); _unavailable--; }
+            }
+            PanelPreviewMembership.SelectionUpdate update;
+            if (result == null) { _membership.Update(selected, Changed); update = new PanelPreviewMembership.SelectionUpdate(true, -1); }
+            else update = _membership.UpdateSelection(selection, result, selected, Changed);
+            // Disposal can call external code. Complete the membership update
+            // first, then release detached entries without enumerating live state.
+            foreach (var entry in removed) Retire(entry);
+            FlushRetired();
+            return update;
         }
 
+        private bool Current(long generation, Func<bool> current)
+        {
+            if (generation != _generation) return false;
+            if (current()) return true;
+            // The component can change selection or source while a native or
+            // standalone callback is running, without starting a nested build.
+            Clear();
+            return false;
+        }
+
+        private void TryAdmit(int position, int order, PanelGeometrySources.Budget budget, bool mayEvict, long generation, Func<bool> current)
+        {
+            try { TryAdmitCore(position, order, budget, mayEvict, generation, current); }
+            catch (Exception) { if (Current(generation, current)) RememberUnavailable(position); }
+        }
+
+        private void TryAdmitCore(int position, int order, PanelGeometrySources.Budget budget, bool mayEvict, long generation, Func<bool> current)
+        {
+            if (_source == null || position < 0 || position >= _source.Count || _byPosition.ContainsKey(position)) return;
+            var source = _source;
+            var root = source[position];
+            if (source is IGH_Goo?[] array && root?.GetType() == typeof(GH_Point) && ((GH_Point)root).ReferenceID == Guid.Empty && _admissionObserver == null &&
+                TryAdmitPoint(array, position, order, budget, mayEvict, generation, current)) return;
+            root = source[position];
+            var scopeToken = _scopeToken;
+            using var inspected = PanelGeometrySources.Inspect(root, budget, true,
+                bytes => ReserveInspectionValue(bytes, mayEvict, generation, current), ReleaseInspectionValue);
+            if (!Current(generation, current)) return;
+            if (inspected.Unavailable)
+            {
+                if (inspected.Exhausted) _partial = true;
+                else RememberUnavailable(position);
+                return;
+            }
+            if (inspected.Leaves.Count == 0) { Remember(position); return; }
+            long estimate = 0;
+            int remaining = inspected.Remaining;
+            var estimates = new List<long>(inspected.Leaves.Count);
+            var scans = new List<PanelNativeGeometry.Scan?>(inspected.Leaves.Count);
+            foreach (object leaf in inspected.Leaves)
+            {
+                bool estimated = PanelPreviewLeaf.TryEstimate(leaf, budget, ref remaining, out long bytes, out var scan,
+                    () => Current(generation, current));
+                if (!Current(generation, current)) return;
+                if (!estimated || (estimate += bytes) > MaxRetainedBytes)
+                {
+                    _partialReason ??= budget.Reason;
+                    if (budget.Limited) _partial = true;
+                    else RememberUnavailable(position);
+                    return;
+                }
+                estimates.Add(bytes);
+                scans.Add(scan);
+            }
+            while (mayEvict && (_entries.Count >= MaxEntries || RetainedBytes + estimate > MaxRetainedBytes) && _unselected.Count > 0)
+            {
+                Remove(_entries[_unselected.Max]);
+                if (!Current(generation, current)) return;
+            }
+            if (_entries.Count >= MaxEntries || RetainedBytes + estimate > MaxRetainedBytes)
+            { _partial = true; _partialReason ??= "preview memory or entry limit"; return; }
+            // Reserve the whole staged group before native construction. A
+            // callback can build another generation while these leaves are
+            // still alive; clearing the admitted cache must not release this.
+            _stagedBytes += estimate;
+            var leaves = new List<PanelPreviewLeaf>(inspected.Leaves.Count);
+            var bounds = BoundingBox.Empty;
+            bool admitted = false;
+            bool reserved = true;
+            try
+            {
+                for (int i = 0; i < inspected.Leaves.Count; i++)
+                {
+                    // Every leaf comes from this one bounded graph capture. Do
+                    // not resolve a later member from the live group here.
+                    var copy = PanelPreviewLeaf.Create(inspected.Leaves[i], estimates[i], scans[i], budget, ref remaining,
+                        delta => { if (ReferenceEquals(scopeToken, _scopeToken)) MeshStatusChanged(delta); },
+                        () => Current(generation, current), CanRetireMeshes, RetireMeshes);
+                    if (copy == null)
+                    {
+                        if (Current(generation, current))
+                        {
+                            _partialReason ??= budget.Reason ?? "native preview preparation failed";
+                            if (budget.Limited) _partial = true; else RememberUnavailable(position);
+                        }
+                        return;
+                    }
+                    leaves.Add(copy);
+                    if (!Current(generation, current)) return;
+                    _admissionObserver?.Invoke(i, copy);
+                    if (!Current(generation, current)) return;
+                    bounds.Union(copy.Bounds);
+                }
+                using var fresh = PanelGeometrySources.Inspect(root, budget, true,
+                    bytes => ReserveInspectionValue(bytes, false, generation, current), ReleaseInspectionValue);
+                if (!Current(generation, current)) return;
+                if (!PanelGeometrySources.SameGraph(inspected, fresh))
+                { _partial = true; _partialReason ??= fresh.Exhausted ? "inspection limit" : "group or wrapper changed during preparation"; return; }
+                var entry = new Entry(position, order, bounds, estimate, leaves);
+                _entries.Add(order, entry); _byPosition.Add(position, entry);
+                _bytes += estimate; _stagedBytes -= estimate; reserved = false; admitted = true;
+                _bounds.Add(bounds);
+                if (_membership.Contains(position)) _selectedCount++; else _unselected.Add(order);
+                _orderLabels.Add(order, position, bounds.Center);
+                if (!Current(generation, current)) return;
+            }
+            finally
+            {
+                if (!admitted) foreach (var leaf in leaves) leaf.Dispose();
+                if (reserved) _stagedBytes -= estimate;
+            }
+        }
+
+        private bool ReserveInspectionValue(long bytes, bool mayEvict, long generation, Func<bool> current)
+        {
+            while (mayEvict && bytes > MaxRetainedBytes - RetainedBytes && _unselected.Count > 0)
+            {
+                Remove(_entries[_unselected.Max]);
+                if (!Current(generation, current)) return false;
+            }
+            if (!Current(generation, current) || bytes < 0 || bytes > MaxRetainedBytes - RetainedBytes) return false;
+            _stagedBytes += bytes;
+            return true;
+        }
+
+        private void ReleaseInspectionValue(long bytes) { _stagedBytes -= bytes; }
+
+        // A direct exact GH_Point needs only managed value-field work after its
+        // single graph inspection. Evict first, because releasing an old entry
+        // can reenter; then capture, construct and attach without a callback in
+        // between. Wrappers, groups, observer-injected tests and native geometry
+        // still use the full post-preparation graph reinspection above.
+        private bool TryAdmitPoint(IGH_Goo?[] source, int position, int order, PanelGeometrySources.Budget budget,
+            bool mayEvict, long generation, Func<bool> current)
+        {
+            const long estimate = 512;
+            while (mayEvict && (_entries.Count >= MaxEntries || RetainedBytes + estimate > MaxRetainedBytes) && _unselected.Count > 0)
+            {
+                Remove(_entries[_unselected.Max]);
+                if (!Current(generation, current)) return true;
+            }
+            if (!Current(generation, current)) return true;
+            if (source[position]?.GetType() != typeof(GH_Point) || ((GH_Point)source[position]!).ReferenceID != Guid.Empty) return false;
+            if (!_orderLabels.CanAddWithoutEnabling) return false;
+            if (_entries.Count >= MaxEntries || RetainedBytes + estimate > MaxRetainedBytes)
+            { _partial = true; _partialReason ??= "preview memory or entry limit"; return true; }
+            using var inspected = PanelGeometrySources.Inspect(source[position], budget, true);
+            if (inspected.Unavailable)
+            {
+                if (inspected.Exhausted) _partial = true; else RememberUnavailable(position);
+                return true;
+            }
+            if (inspected.Leaves.Count != 1 || !(inspected.Leaves[0] is Point3d point))
+            { Remember(position); return true; }
+            int remaining = inspected.Remaining;
+            var leaf = PanelPreviewLeaf.Create(point, estimate, null, budget, ref remaining, _ => { });
+            if (leaf == null) { RememberUnavailable(position); return true; }
+            var entry = new Entry(position, order, leaf.Bounds, estimate, new List<PanelPreviewLeaf> { leaf });
+            _entries.Add(order, entry); _byPosition.Add(position, entry);
+            _bytes += estimate; _bounds.Add(entry.Bounds);
+            if (_membership.Contains(position)) _selectedCount++; else _unselected.Add(order);
+            _orderLabels.Add(order, position, entry.Bounds.Center);
+            return true;
+        }
+
+        private void MeshStatusChanged(int delta)
+        {
+            _meshFailures += delta;
+            Instances.ActiveCanvas?.Invalidate();
+        }
+
+        private void Remove(Entry entry, bool dispose = true)
+        {
+            _entries.Remove(entry.Order); _byPosition.Remove(entry.Position); _unselected.Remove(entry.Order);
+            _orderLabels.Remove(entry.Order);
+            if (_membership.Contains(entry.Position)) _selectedCount--;
+            _bytes -= entry.Bytes; _bounds.Remove(entry.Bounds);
+            if (dispose) { Retire(entry); FlushRetired(); }
+        }
+
+        private void Retire(Entry entry)
+        {
+            _retired.Enqueue(entry); _retiredBytes += entry.Bytes;
+            if (entry.WasDrawn || _activeDraws != 0) ScheduleRelease();
+        }
+
+        private bool CanRetireMeshes(long bytes) => bytes >= 0 && bytes <= MaxRetainedBytes - RetainedBytes;
+        private void RetireMeshes(Mesh[] meshes, int[][]? faces, long bytes)
+        {
+            _retiredMeshes.Enqueue(new RetiredMeshes(meshes, faces, bytes));
+            _retiredBytes += bytes;
+            ScheduleRelease();
+        }
+
+        private void ScheduleRelease()
+        {
+            if (_releaseScheduled) return;
+            _releaseScheduled = true;
+            Rhino.RhinoApp.Idle += ReleaseOnIdle;
+        }
+
+        private void ReleaseOnIdle(object? sender, EventArgs args)
+        {
+            if (_activeDraws != 0 || _flushingRetired || _displayFlushFailed) return;
+            Rhino.RhinoApp.Idle -= ReleaseOnIdle;
+            _releaseScheduled = false;
+            IdleReleases++;
+            FlushRetired();
+            ScheduleRecovery();
+        }
+
+        private void FlushRetired()
+        {
+            if (_activeDraws != 0 || _flushingRetired || _releaseScheduled || _displayFlushFailed) return;
+            _flushingRetired = true;
+            try
+            {
+                // Reentrant cleanup can add newly drawn resources. Leave those
+                // for a later idle turn rather than draining them immediately.
+                int entries = _retired.Count, caches = _retiredMeshes.Count;
+                while (entries-- > 0 && _retired.Count > 0 && _activeDraws == 0 && !_releaseScheduled)
+                {
+                    var entry = _retired.Dequeue();
+                    try { foreach (var leaf in entry.Leaves) try { leaf.Dispose(); } catch (Exception) { } }
+                    finally { _retiredBytes -= entry.Bytes; }
+                }
+                while (caches-- > 0 && _retiredMeshes.Count > 0 && _activeDraws == 0 && !_releaseScheduled)
+                {
+                    var cache = _retiredMeshes.Dequeue();
+                    try { PanelPreviewLeaf.DisposeGeneratedMeshes(cache.Meshes); }
+                    finally { GC.KeepAlive(cache.Faces); _retiredBytes -= cache.Bytes; }
+                }
+            }
+            finally
+            {
+                _flushingRetired = false;
+                if ((_retired.Count > 0 || _retiredMeshes.Count > 0) && !_releaseScheduled) ScheduleRelease();
+            }
+        }
+
+        private void RememberUnavailable(int position)
+        {
+            if (_unavailablePositions.Add(position)) _unavailable++;
+            Remember(position);
+        }
+
+        private void Remember(int position)
+        {
+            if (!_attempted.Add(position)) return;
+            _attemptOrder.Enqueue(position);
+            while (_attemptOrder.Count > MaxBuildRows)
+            {
+                int old = _attemptOrder.Dequeue();
+                if (_attempted.Remove(old) && _unavailablePositions.Remove(old)) _unavailable--;
+            }
+        }
+
+        internal void Clear() { _generation++; _orderLabels.Clear(); _orderResult = null; ClearGeometry(); }
         private void ClearGeometry()
         {
-            _normal.Clear();
-            _selected.Clear();
-            ClippingBox = BoundingBox.Empty;
-            _orderLabels.ClearEntries();
+            var old = new List<Entry>(_entries.Values);
+            if (_recoveryScheduled) Rhino.RhinoApp.Idle -= RecoverOnIdle;
+            _recoveryScheduled = false; _recoveryCurrent = null; _recovery.Clear();
+            _scopeToken = new object();
+            _entries.Clear(); _byPosition.Clear(); _unselected.Clear(); _attempted.Clear(); _unavailablePositions.Clear(); _attemptOrder.Clear(); _membership.Clear();
+            _bounds.Clear(); _orderLabels.ClearEntries(); _selectedCount = _unavailable = _meshFailures = 0; _bytes = 0; _partial = false; _partialReason = null;
+            _source = null; _result = null; _legacyPositions = null;
+            foreach (var entry in old) Retire(entry);
+            FlushRetired();
         }
 
         internal void DrawWires(IGH_PreviewArgs args, bool componentSelected)
         {
+            // A nested display callback can expire or replace this generation.
+            // Keep resources alive through our explicit pipeline flush, including
+            // reentrant idle, and suppress nested draws that could reset a cache.
+            if (_activeDraws != 0 || _displayFlushFailed) return;
+            _activeDraws++;
+            DrawWireCalls++;
+            try
+            {
+            long generation = _generation;
             var normal = new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour, args.DefaultCurveThickness);
             int thickness = args.DefaultCurveThickness + (componentSelected ? 0 : CentralSettings.PreviewSelectionThickening);
             var selected = new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour_Selected, thickness);
-            foreach (var item in _normal)
-                try { item.DrawViewportWires(normal); } catch (Exception) { }
-
+            DrawWires(normal, false);
+            if (generation != _generation) return;
             bool pushed = false;
             try
             {
-                if (!componentSelected && _selected.Count > 0 && args.Display != null)
+                if (!componentSelected && _selectedCount > 0 && args.Display != null)
                 {
-                    // Grasshopper pulls selected component wires slightly forward
-                    // in clip depth so coincident upstream previews cannot cover
-                    // them. Apply the same bias to row selections, keeping normal
-                    // depth testing and all source coordinates intact.
-                    var clipBias = Transform.Identity;
-                    clipBias.M22 = 0.995;
-                    clipBias.M23 = 0.01;
+                    var clipBias = Transform.Identity; clipBias.M22 = 0.995; clipBias.M23 = 0.01;
                     var bias = args.Viewport.GetTransform(CoordinateSystem.Clip, CoordinateSystem.World) * clipBias *
                         args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
-                    args.Display.PushModelTransform(bias * args.Display.ModelTransform);
-                    pushed = true;
+                    args.Display.PushModelTransform(bias * args.Display.ModelTransform); pushed = true;
                 }
-                foreach (var item in _selected)
-                    try { item.DrawViewportWires(selected); } catch (Exception) { }
+                DrawWires(selected, true);
             }
-            finally
-            {
-                if (pushed) args.Display.PopModelTransform();
-            }
+            finally { if (pushed) args.Display.PopModelTransform(); }
+            if (generation != _generation) return;
             _orderLabels.Arm(args);
+            }
+            finally { EndDraw(args.Display); }
+        }
+
+        private void DrawWires(GH_PreviewWireArgs args, bool selected)
+        {
+            long generation = _generation;
+            foreach (var entry in _entries.Values)
+            {
+                if (_membership.Contains(entry.Position) != selected) continue;
+                entry.WasDrawn = true;
+                foreach (var leaf in entry.Leaves)
+                {
+                    try { leaf.DrawWires(args, () => generation == _generation); } catch (Exception) { }
+                    if (generation != _generation) return;
+                }
+            }
         }
 
         internal void DrawMeshes(IGH_PreviewArgs args)
         {
             if (args.MeshingParameters == null) return;
+            if (_activeDraws != 0 || _displayFlushFailed) return;
+            _activeDraws++;
+            DrawMeshCalls++;
+            try
+            {
+            long generation = _generation;
             var normal = new GH_PreviewMeshArgs(args.Viewport, args.Display, args.ShadeMaterial, args.MeshingParameters);
             var selected = new GH_PreviewMeshArgs(args.Viewport, args.Display, args.ShadeMaterial_Selected, args.MeshingParameters);
-            foreach (var item in _normal)
-                try { item.DrawViewportMeshes(normal); } catch (Exception) { }
-            foreach (var item in _selected)
-                try { item.DrawViewportMeshes(selected); } catch (Exception) { }
+            // Fixed meshes need no remeshing. Brep/Surface/SubD entries manage
+            // their own bounded meshes and invalidate them on setting changes.
+            foreach (var entry in _entries.Values)
+            {
+                entry.WasDrawn = true;
+                foreach (var leaf in entry.Leaves)
+                {
+                    try { leaf.DrawMeshes(_membership.Contains(entry.Position) ? selected : normal, () => generation == _generation); } catch (Exception) { }
+                    if (generation != _generation) return;
+                }
+            }
+            }
+            finally { EndDraw(args.Display); }
+        }
+
+        private void EndDraw(Rhino.Display.DisplayPipeline? pipeline)
+        {
+            try
+            {
+                if (pipeline != null)
+                {
+                    BeforeDisplayFlush?.Invoke();
+                    // Flush drains RhinoCommon's managed MeshCache and invokes
+                    // the native flush while every submitted resource is alive.
+                    // Native consumption after return still needs host validation;
+                    // idle alone is not an end-of-frame or GPU completion fence.
+                    pipeline.Flush();
+                    CompletedDisplayFlushes++;
+                }
+            }
+            catch (Exception)
+            {
+                // A later pipeline cannot prove consumption by this pipeline.
+                // Quarantine this owner's bounded resources, keep the idle root,
+                // and stop drawing instead of retrying disposal after a delay.
+                _displayFlushFailed = true;
+                ScheduleRelease();
+            }
+            finally { _activeDraws--; FlushRetired(); }
+        }
+
+        private sealed class Entry
+        {
+            internal Entry(int position, int order, BoundingBox bounds, long bytes, List<PanelPreviewLeaf> leaves)
+            { Position = position; Order = order; Bounds = bounds; Bytes = bytes; Leaves = leaves; }
+            internal readonly int Position, Order;
+            internal readonly BoundingBox Bounds;
+            internal readonly long Bytes;
+            internal readonly List<PanelPreviewLeaf> Leaves;
+            internal bool WasDrawn;
+        }
+
+        private sealed class RetiredMeshes
+        {
+            internal RetiredMeshes(Mesh[] meshes, int[][]? faces, long bytes) { Meshes = meshes; Faces = faces; Bytes = bytes; }
+            internal readonly Mesh[] Meshes;
+            internal readonly int[][]? Faces;
+            internal readonly long Bytes;
+        }
+
+        // Incremental extrema avoid a full admitted-row scan on a sparse eviction.
+        private sealed class BoundsIndex
+        {
+            private readonly Axis _x = new Axis(), _y = new Axis(), _z = new Axis();
+            internal BoundingBox Box => _x.Empty ? BoundingBox.Empty : new BoundingBox(
+                new Point3d(_x.Min, _y.Min, _z.Min), new Point3d(_x.Max, _y.Max, _z.Max));
+            internal void Add(BoundingBox b) { _x.Add(b.Min.X, b.Max.X); _y.Add(b.Min.Y, b.Max.Y); _z.Add(b.Min.Z, b.Max.Z); }
+            internal void Remove(BoundingBox b) { _x.Remove(b.Min.X, b.Max.X); _y.Remove(b.Min.Y, b.Max.Y); _z.Remove(b.Min.Z, b.Max.Z); }
+            internal void Clear() { _x.Clear(); _y.Clear(); _z.Clear(); }
+            private sealed class Axis
+            {
+                private readonly SortedSet<double> _values = new SortedSet<double>();
+                private readonly Dictionary<double, int> _counts = new Dictionary<double, int>();
+                internal bool Empty => _values.Count == 0;
+                internal double Min => _values.Min;
+                internal double Max => _values.Max;
+                internal void Add(double a, double b) { Add(a); Add(b); }
+                internal void Remove(double a, double b) { Remove(a); Remove(b); }
+                internal void Clear() { _values.Clear(); _counts.Clear(); }
+                private void Add(double value) { if (!_counts.TryGetValue(value, out int count)) _values.Add(value); _counts[value] = count + 1; }
+                private void Remove(double value) { int count = _counts[value]; if (count == 1) { _counts.Remove(value); _values.Remove(value); } else _counts[value] = count - 1; }
+            }
         }
     }
 }

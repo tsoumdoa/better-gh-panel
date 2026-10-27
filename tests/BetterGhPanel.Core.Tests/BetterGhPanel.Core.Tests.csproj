@@ -1,18 +1,37 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../../src/BetterGhPanel.Core/BetterGhPanel.Core.csproj" />
+    <!-- Exercise fixture counting without starting Rhino. -->
+    <Compile Include="../BetterGhPanel.RhinoSmoke/SmokeAssertions.cs" Link="SmokeAssertions.cs" />
     <!-- Pure UI policy can be checked on Windows and Mac without loading Rhino. -->
     <Compile Include="../../src/BetterGhPanel/UI/CanvasPanelSize.cs" Link="CanvasPanelSize.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/CanvasMenu.cs" Link="CanvasMenu.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/CanvasRowActions.cs" Link="CanvasRowActions.cs" />
+    <Compile Include="../../src/BetterGhPanel/UI/PanelTextPreview.cs" Link="PanelTextPreview.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/CanvasStatistics.cs" Link="CanvasStatistics.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/CanvasSetDetails.cs" Link="CanvasSetDetails.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/PanelRowSelection.cs" Link="PanelRowSelection.cs" />
+    <Compile Include="../../src/BetterGhPanel/UI/PanelPreviewMembership.cs" Link="PanelPreviewMembership.cs" />
+    <Compile Include="../../src/BetterGhPanel/UI/PanelPreviewRecovery.cs" Link="PanelPreviewRecovery.cs" />
+    <Compile Include="../../src/BetterGhPanel/UI/PanelActionPositions.cs" Link="PanelActionPositions.cs" />
+    <Compile Include="../../src/BetterGhPanel/UI/PanelActionCommit.cs" Link="PanelActionCommit.cs" />
+    <Compile Include="../../src/BetterGhPanel/UI/PanelItemOrder.cs" Link="PanelItemOrder.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/LabelCollisionGrid.cs" Link="LabelCollisionGrid.cs" />
+    <Compile Include="../../src/BetterGhPanel/Runtime/PanelQueryPolicy.cs" Link="PanelQueryPolicy.cs" />
+    <Compile Include="../../src/BetterGhPanel/Runtime/PanelNurbsLimits.cs" Link="PanelNurbsLimits.cs" />
+    <Compile Include="../../src/BetterGhPanel/Runtime/GeometryMeasurementQueue.cs" Link="GeometryMeasurementQueue.cs" />
+    <Compile Include="../../src/BetterGhPanel/Runtime/LegacyMeasurementAdmission.cs" Link="LegacyMeasurementAdmission.cs" />
+    <Compile Include="../../src/BetterGhPanel/Runtime/MeasurementContextStamp.cs" Link="MeasurementContextStamp.cs" />
+    <Compile Include="../../src/BetterGhPanel/Runtime/NurbsCandidateLimits.cs" Link="NurbsCandidateLimits.cs" />
   </ItemGroup>
 </Project>
