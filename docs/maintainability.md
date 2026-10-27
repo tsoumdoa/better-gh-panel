@@ -73,6 +73,20 @@ therefore a failed fixture. The WinForms idle integration still failed the
 reentrant fixture's second `DrawToBitmap` call, so repeated-capture behavior
 remains unverified.
 
+An intermediate `0.1.21-beta` candidate archive with SHA-256
+`92ab5c6c50c28f49cfa517e8056107d34e6ea1b03edf377b1adcb327e467d1d5`
+was extracted and run through the isolated Rhino 8.36 inventory. The initial
+run passed 57 of 65 fixtures. Four failures involved the preview native display
+pipeline or resource lifecycle and remain unresolved. Four others exposed
+fixture integration issues: synthetic snapshots needed a test-only freshness
+resolver, the point-reference fixture used an old helper name, and the combined
+integration fixture needed painted targets and remeasurement after unit changes.
+After those fixture changes, separate reruns against the same extracted plugin
+and Core passed `recompute-presentation` (11 assertions),
+`geometry-canvas-viewport` (eight), `preview-metadata-safety` (70) and
+`integration` (363). These separate reruns do not make the initial full run a
+pass or establish the identity of a future merged release package.
+
 ## Current boundaries and remaining considerations
 
 - `PanelQueryPolicy` keeps query equality, downstream output equivalence and active-filter decisions separate. Output equivalence intentionally ignores sorting and sometimes decimal precision; preserve those distinctions when adding settings.

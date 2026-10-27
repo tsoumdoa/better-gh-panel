@@ -293,6 +293,7 @@ internal static class GeometryHintChecks
         using var canvas = new GH_Canvas { Size = new Size(500, 500) };
         var session = PanelTestAdapter.Session(component);
         var type = session.GetType();
+        PanelTestAdapter.UseSyntheticCapture(session);
         var attach = type.GetMethod("AttachSnapshot")!;
         var has = type.GetMethod("HasGeometryMeasurement", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var rows = Enumerable.Range(0, 3).Select(position => new PanelRow(position, "{0}", "Surface", "Srf", null,

@@ -398,15 +398,21 @@ internal static class Program
         var independentRows = snapshot.Rows.Select(row => new PanelRow(
             row.OriginalIndex, row.Path, row.TypeName, "cached summary", row.NumericValue, row.IsNull, row.IsValid)).ToArray();
         var independentSnapshot = new PanelSnapshot(independentRows, snapshot.Branches);
-        session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { independentSnapshot });
-        await WaitForQuery(session);
-        Assert(PanelTestAdapter.DisplayValue(component, independentSnapshot, 0) == "cached summary",
-            "Canvas presentation uses captured summaries instead of live goo formatting");
-        Assert(PanelTestAdapter.CopyValue(component, independentSnapshot, 0) == "10",
-            "Value copying uses captured full-precision numeric data");
-        session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { snapshot });
-        Assert(PanelTestAdapter.DisplayValue(component, independentSnapshot, 0) == "cached summary",
-            "Obsolete snapshots never resolve display values from a newer solution");
+        var restoreCapture = PanelTestAdapter.UseSyntheticCapture(session);
+        try
+        {
+            session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { independentSnapshot });
+            await WaitForQuery(session);
+            Assert(PanelTestAdapter.DisplayValue(component, independentSnapshot, 0) == "cached summary",
+                "Canvas presentation uses captured summaries instead of live goo formatting");
+            Assert(PanelTestAdapter.CopyValue(component, independentSnapshot, 0) == "10",
+                "Value copying uses captured full-precision numeric data");
+            session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { snapshot });
+            Assert(PanelTestAdapter.DisplayValue(component, independentSnapshot, 0) == "cached summary",
+                "Obsolete snapshots never resolve display values from a newer solution");
+            await WaitForQuery(session);
+        }
+        finally { restoreCapture(); }
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
         await WaitForQuery(session);
         UpdateQuery(session, new PanelQueryOptions { Search = "alpha", BranchPath = "{0;2}", SortMode = PanelSortMode.ValueDescending });
@@ -466,8 +472,13 @@ internal static class Program
         component.Attributes.ExpireLayout();
         component.Attributes.PerformLayout();
         using var canvas = new GH_Canvas { Size = new Size(1200, 900) };
+        canvas.Viewport.Size = canvas.Size;
+        canvas.Viewport.Target = Point.Empty;
+        canvas.Viewport.Zoom = 1;
+        canvas.Viewport.ComputeProjection();
         await VerifyCanvasTreeTools(component, canvas, assembly, session, input);
         await VerifyCanvasReset(component, canvas, assembly, session, input, document);
+        var restoreCanvasCapture = PanelTestAdapter.UseSyntheticCapture(session);
         var sampleRows = Enumerable.Range(0, 10000).Select(i => new PanelRow(i, "{0;0}", "Number", i.ToString(), i)).ToArray();
         session.GetType().GetMethod("AttachSnapshot")!.Invoke(session, new object[] { new PanelSnapshot(sampleRows, new[] { new PanelBranch("{0;0}", 10000) }) });
         session.GetType().GetMethod("ResetView")!.Invoke(session, Array.Empty<object>());
@@ -480,9 +491,10 @@ internal static class Program
         CanvasEditorAdapter.Active(assembly).Submit("5000");
         DrawCanvasPreview(component, canvas);
         var list = PanelTestAdapter.Bounds(component, CanvasControl.List);
+        var hitsBeforeClick = PanelTestAdapter.Hits(component, "_rowHits");
         component.Attributes.RespondToMouseDown(canvas, Mouse(new PointF(list.X + 40, list.Y + 24)));
         Assert(PanelTestAdapter.Offset(component) == 4999 && PanelTestAdapter.SelectedPosition(component) >= 0,
-            "Reset regression starts with scrolled, selected rows and default query options");
+            $"Reset regression starts with scrolled, selected rows and default query options (offset={PanelTestAdapter.Offset(component)}, selected={PanelTestAdapter.SelectedPosition(component)}, hits={hitsBeforeClick}/{PanelTestAdapter.Hits(component, "_rowHits")}, visible={canvas.Viewport.VisibleRegion}, list={list}, current={Get<bool>(session, "HasCurrentResult")})");
         var unchangedResult = Get<PanelQueryResult>(session, "Result");
         document.IsModified = false;
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Reset));
@@ -543,6 +555,7 @@ internal static class Program
         DrawCanvasPreview(component, canvas);
         DrawCanvasPreview(component, canvas, 192);
         AssertCanvasDpiInvariant();
+        restoreCanvasCapture();
         await VerifyCanvasUnits(component, canvas, assembly, session, input);
         await VerifyUndoRedo(component, document, session, input);
         // Review screenshot uses a real solved mixed tree with enough rows to show the compact layout.
@@ -598,10 +611,14 @@ internal static class Program
         PanelTestAdapter.Units(component, PanelUnitConversion.SquareMillimetersToSquareMeters, -1);
         await WaitForQuery(session);
         var convertedSurface = Get<PanelSnapshot>(session, "Snapshot");
+        // A new snapshot may need another measurement when no complete
+        // retention witness exists; request visible work before checking it.
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-converted-surface.png");
+        await WaitForMeasurement(session, convertedSurface, surfacePosition);
         Assert(GetGeometryMeasurement(session, convertedSurface, surfacePosition) == 100 &&
             PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("A 0.0001 m²") &&
             PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("untrimmed · planar"),
-            "Units converts the cached metric while preserving surface metadata and its raw area");
+            "Units displays converted area while preserving surface metadata and its raw value");
         PanelTestAdapter.Units(component, PanelUnitConversion.SquareMillimetersToSquareMeters, 6);
         Assert(ReferenceEquals(convertedSurface, Get<PanelSnapshot>(session, "Snapshot")) &&
             PanelTestAdapter.DisplayValue(component, convertedSurface, surfacePosition).Contains("0.000100 m²"),
@@ -624,9 +641,11 @@ internal static class Program
         PanelTestAdapter.Units(component, PanelUnitConversion.CubicMillimetersToCubicMeters, -1);
         await WaitForQuery(session);
         var convertedBrep = Get<PanelSnapshot>(session, "Snapshot");
+        DrawCanvasPreview(component, canvas, artifactName: "rhino-smoke-converted-brep.png");
+        await WaitForMeasurement(session, convertedBrep, brepPosition);
         Assert(Math.Abs((GetGeometryMeasurement(session, convertedBrep, brepPosition) ?? double.NaN) - 24) < 1e-9 &&
             PanelTestAdapter.DisplayValue(component, convertedBrep, brepPosition).Contains("2.4E-08 m³"),
-            "Units offers cubic conversion and retains the measured solid volume: " + PanelTestAdapter.DisplayValue(component, convertedBrep, brepPosition));
+            "Units displays converted solid volume: " + PanelTestAdapter.DisplayValue(component, convertedBrep, brepPosition));
         UpdateQuery(session, new PanelQueryOptions { TypeName = "Line" });
         PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, -1);
         await WaitForQuery(session);
@@ -679,6 +698,7 @@ internal static class Program
             Assert(component.Params.Input[0].Attributes.InputGrip == inputGrip &&
                 component.Params.Output[0].Attributes.OutputGrip == outputGrip,
                 "Folding keeps both native wire connections fixed");
+            DrawCanvasPreview(component, canvas);
         }
         Assert(PanelTestAdapter.Size(component) == new SizeF(360, 360) &&
             ReferenceEquals(result, Get<PanelQueryResult>(PanelTestAdapter.Session(component), "Result")) &&
@@ -708,7 +728,9 @@ internal static class Program
         document.UndoServer.PerformRedo();
         component.Attributes.PerformLayout();
         Assert(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Height == 360, "Native redo restores full display");
+        DrawCanvasPreview(component, canvas);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
+        DrawCanvasPreview(component, canvas);
         var corner = PanelTestAdapter.Bounds(component, CanvasControl.Resize);
         var start = new PointF(corner.X + 5, corner.Y + 5);
         float bottom = PanelTestAdapter.Bounds(component, CanvasControl.Panel).Bottom;
@@ -717,6 +739,7 @@ internal static class Program
         Assert(Math.Abs(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Bottom - bottom - 24) < 0.01f,
             "Half panel resize corner follows the cursor");
         component.Attributes.RespondToMouseUp(canvas, Mouse(start));
+        DrawCanvasPreview(component, canvas);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Display));
         PanelTestAdapter.Resize(component, 360, 360);
         component.Attributes.PerformLayout();
@@ -1109,6 +1132,9 @@ internal static class Program
         }
         throw new InvalidOperationException("Could not reach the requested painted menu row.");
     }
+    private static string CanvasArtifact(string name) => Path.Combine(
+        string.IsNullOrEmpty(_resultPath) ? Path.GetTempPath() : Path.GetDirectoryName(_resultPath)!, _runId + "-" + name);
+
     private static void DrawCanvasPreview(GH_Component component, GH_Canvas canvas, int dpi = 96, string? artifactName = null)
     {
         var bounds = component.Attributes.Bounds;
@@ -1132,14 +1158,14 @@ internal static class Program
             graphics.DrawBezier(wire, output, new PointF(output.X + 45, output.Y), new PointF(output.X + 55, output.Y + 20), new PointF(output.X + 100, output.Y + 20));
         }
         PanelTestAdapter.Render(component, canvas, graphics);
-        string artifact = Path.Combine(Path.GetDirectoryName(_plugin)!, artifactName ?? (dpi == 96 ? "rhino-smoke-canvas.png" : "rhino-smoke-canvas-dpi192.png"));
+        string artifact = CanvasArtifact(artifactName ?? (dpi == 96 ? "rhino-smoke-canvas.png" : "rhino-smoke-canvas-dpi192.png"));
         bitmap.Save(artifact);
         Console.WriteLine("Actual canvas Objects renderer preview (sample data and illustrative grid/wires): " + artifact);
     }
     private static void AssertCanvasDpiInvariant()
     {
-        using var normal = new Bitmap(Path.Combine(Path.GetDirectoryName(_plugin)!, "rhino-smoke-canvas.png"));
-        using var high = new Bitmap(Path.Combine(Path.GetDirectoryName(_plugin)!, "rhino-smoke-canvas-dpi192.png"));
+        using var normal = new Bitmap(CanvasArtifact("rhino-smoke-canvas.png"));
+        using var high = new Bitmap(CanvasArtifact("rhino-smoke-canvas-dpi192.png"));
         var rectangle = new Rectangle(0, 0, normal.Width, normal.Height);
         var first = normal.LockBits(rectangle, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
         var second = high.LockBits(rectangle, System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);

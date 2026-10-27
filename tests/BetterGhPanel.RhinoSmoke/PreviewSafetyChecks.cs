@@ -714,7 +714,7 @@ internal static class PreviewSafetyChecks
             object?[] captureArgs = { point, 20000, null };
             bool captured = (bool)witnessType.GetMethod("TryCapture", Static)!.Invoke(null, captureArgs)!;
             var witness = captureArgs[2]!;
-            Method(witness, "ResolveManagedContexts").Invoke(witness, Array.Empty<object>());
+            Method(witness, "ResolveContexts").Invoke(witness, Array.Empty<object>());
             var isCurrent = witnessType.GetMethod("IsCurrent", Instance, null, Type.EmptyTypes, null)!;
             Check(captured && (bool)isCurrent.Invoke(witness, Array.Empty<object>())!,
                 "the captured point witness accepts the original reference");

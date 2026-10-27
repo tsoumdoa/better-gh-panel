@@ -42,6 +42,7 @@ internal static class RecomputeChecks
         using var canvas = new GH_Canvas { Size = new Size(600, 500) };
         using var gate = new ManualResetEventSlim(false);
         var session = fixture.Session;
+        PanelTestAdapter.UseSyntheticCapture(session);
         var numbers = Enumerable.Range(0, 256).Select(i => new PanelRow(i, "{0}", "Number", i.ToString(), i)).ToArray();
         var small = new PanelSnapshot(numbers, new[] { new PanelBranch("{0}", numbers.Length) });
         Invoke(session, "AttachSnapshot", small);
@@ -75,7 +76,8 @@ internal static class RecomputeChecks
         {
             Query(session, new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 10" });
             await Wait(() => Volatile.Read(ref started) == 1);
-            Paint(fixture.Component, canvas, Path.Combine(Path.GetDirectoryName(assembly.Location)!, "rhino-smoke-recomputing.png"));
+            var reportPath = Environment.GetEnvironmentVariable("PANEL_SMOKE_RESULT");
+            Paint(fixture.Component, canvas, reportPath == null ? null : Path.ChangeExtension(reportPath, ".recomputing.png"));
             Check(!Current(session) && Hits(fixture.Component, "_rowHits") == 0 && Hits(fixture.Component, "_branchHits") == 0,
                 "Pending geometry filters hide old rows and branch hit regions");
             var timer = Field<System.Windows.Forms.Timer>(session, "_busyAnimation");

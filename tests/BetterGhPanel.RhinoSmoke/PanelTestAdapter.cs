@@ -16,6 +16,18 @@ internal static class PanelTestAdapter
     internal static bool HasSession(GH_Component component) => Field<object?>(component, "_session") != null;
     internal static bool GeometryRunning(object session) => Field<object?>(Field<object>(session, "_geometry"), "_running") != null;
 
+    // Only for fixtures that attach synthetic snapshots instead of solving a
+    // component. Real-solve fixtures retain the production capture witness.
+    internal static Action UseSyntheticCapture(object session)
+    {
+        var previous = Field<object?>(session, "_captureCurrent");
+        var setter = session.GetType().GetMethod("SetCaptureCurrentResolver", PrivateInstance)!;
+        var snapshotProperty = session.GetType().GetProperty("Snapshot", BindingFlags.Instance | BindingFlags.Public)!;
+        setter.Invoke(session, new object[] { (Func<BetterGhPanel.Core.PanelSnapshot, bool>)(snapshot =>
+            ReferenceEquals(snapshotProperty.GetValue(session), snapshot)) });
+        return () => setter.Invoke(session, new[] { previous });
+    }
+
     internal static Action SaveGeometryResolver(object session)
     {
         var preparation = Field<object?>(session, "_geometryPreparationResolver");
