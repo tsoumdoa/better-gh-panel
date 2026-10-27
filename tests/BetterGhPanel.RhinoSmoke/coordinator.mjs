@@ -9,11 +9,11 @@ const desktopFixtures = new Set([
   'highlight-overlap', 'item-order-capture', 'preview-safety', 'preview-reentrant-draw',
   'preview-native-resources', 'preview-conduit-resources', 'preview-single-pass-meshing', 'preview-single-pass-geometry',
   'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point',
-  'preview-additional-draw'
+  'preview-additional-draw', 'preview-live-framebuffer'
 ]);
 // These comparison captures are opt-in. Their results are diagnostic evidence
 // and must not replace any required Panel+ fixture.
-const diagnosticFixtures = new Set(['preview-stock-compatibility-draw', 'preview-compatibility-conduit', 'clipboard-interop-diagnostic']);
+const diagnosticFixtures = new Set(['preview-stock-compatibility-draw', 'preview-compatibility-conduit', 'clipboard-interop-diagnostic', 'preview-live-framebuffer']);
 
 export const fixtureHostMode = fixture => desktopFixtures.has(fixture) ? 'inactive-desktop' : 'hidden';
 export const fixtureCommand = (executable, fixture, plugin) =>

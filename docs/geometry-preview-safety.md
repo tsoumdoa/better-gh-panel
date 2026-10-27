@@ -369,3 +369,24 @@ evidence; it does not make the fixture pass.
 All original fixtures remain in the inventory. These failures, eventual idle
 cleanup, safe post-flush lifetimes, actual drawing of the larger compatibility
 curves, and final-package validation require further investigation and review.
+
+An opt-in `preview-live-framebuffer` diagnostic reads the actual OpenGL
+framebuffer from a Rhino display callback on an inactive desktop. The test
+explicitly calls `DisplayPipeline.Flush` before resolving and reading the
+multisampled framebuffer; it restores the OpenGL bindings and pixel-pack state.
+Run `Omv8av` passed five assertions on Rhino 8.36: a cached point after its
+wrapper became cyclic, three box-preview frames across mesh settings, and
+retirement after the observed frame and idle. The loaded plugin SHA-256 was
+`f31604610156b741c58e84b4fcdce052796949b4a74922acce6236311141d195` and Core
+was `347853480dd805fe7e31d25f4b62c5e9069f5976ef27014b3fe111789ae11e27`.
+This is supplemental evidence: the test-side flush can change timing, it does
+not cover all assertions of the required fixtures, and it does not prove that
+idle is a safe boundary after every nested native display call.
+
+The installed RhinoCommon 8.36 implementation can retain a mesh in its managed
+pipeline cache when the two-argument `DrawMeshShaded` overload is used; the
+face-index overload calls native drawing directly. That distinction does not
+establish the lifetime of geometry retained by native display code. A stock-only
+probe also reproduced a second `DrawToBitmap` failure after a 300 ms UI-loop
+interval. A separate `ViewCapture.CaptureToBitmap` probe drew its first frame
+but failed its second; neither probe establishes the cause of Panel+ failures.

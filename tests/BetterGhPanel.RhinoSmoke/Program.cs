@@ -84,6 +84,7 @@ internal static class Program
         ["preview-retirement-seam"] = PreviewSafetyChecks.RunRetirementSeam,
         ["preview-stock-compatibility-draw"] = PreviewSafetyChecks.RunStockCompatibilityDraw,
         ["preview-stock-point"] = PreviewSafetyChecks.RunStockPointDiagnostic,
+        ["preview-live-framebuffer"] = PreviewSafetyChecks.RunLiveFramebufferDiagnostic,
         ["nurbs-value-candidate"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryNurbsCandidateChecks.Run(assembly); },
         ["production-curve-measurement"] = assembly => { FixtureUserData.EnsureRegistered(); return ProductionCurveMeasurementChecks.Run(assembly); },
         ["standalone-compatibility"] = assembly => { Rhino.Runtime.HostUtils.InitializeRhinoCommon(); FixtureUserData.EnsureRegistered(); return StandaloneCompatibilityChecks.Run(assembly); },
