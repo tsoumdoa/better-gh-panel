@@ -354,7 +354,14 @@ internal static class Program
         Equal(false, menu.IsCurrent(PanelSnapshot.Empty));
         Equal(102, menu.Count);
         var next = new System.Drawing.PointF(menu.Bounds.Right - 5, menu.Bounds.Bottom - 5);
-        for (int i = 0; i < 50; i++) Equal(false, menu.TrySelect(next, out _));
+        var firstRow = new System.Drawing.PointF(menu.Bounds.X + 5, menu.Bounds.Y + 5);
+        Equal(false, menu.TrySelect(firstRow, out _)); // No page has been painted yet.
+        menu.MarkPainted();
+        Equal(false, menu.TrySelect(next, out _));
+        Equal(false, menu.TrySelect(firstRow, out _)); // The next page has not been painted.
+        Equal(false, menu.Hover(firstRow));
+        for (int i = 0; i < 50; i++) { menu.MarkPainted(); Equal(false, menu.TrySelect(next, out _)); }
+        menu.MarkPainted();
         Equal(menu.Count - menu.Visible, menu.Offset);
         Equal(true, menu.TrySelect(new System.Drawing.PointF(menu.Bounds.X + 5, menu.Bounds.Y + 5), out var choice));
         Equal(menu.Offset, choice);
@@ -428,6 +435,7 @@ internal static class Program
             var anchor = new System.Drawing.RectangleF(180, height - 24, 93, 17);
             menu.Toggle(CanvasMenuKind.Units, PanelSnapshot.Empty, new PanelQueryOptions());
             menu.Layout(panel, anchor, anchor, anchor, anchor);
+            menu.MarkPainted();
             Equal(PanelUnits.ConversionCount + 2, menu.Count);
             Equal(true, menu.Bounds.Top >= panel.Top + 25 && menu.Bounds.Bottom < anchor.Top && menu.Bounds.Right <= panel.Right);
             Equal(true, menu.Bounds.Width < 180 && menu.Bounds.Right == anchor.Right);
@@ -442,7 +450,10 @@ internal static class Program
             if (menu.Count > menu.Visible)
             {
                 while (menu.Offset + menu.Visible <= decimalsIndex)
+                {
                     menu.TrySelect(new System.Drawing.PointF(menu.Bounds.Right - 5, menu.Bounds.Bottom - 5), out _);
+                    menu.MarkPainted();
+                }
                 Equal(true, menu.TrySelect(new System.Drawing.PointF(menu.Bounds.Left + 5, menu.Bounds.Top + (decimalsIndex - menu.Offset) * 20 + 5), out int index));
                 Equal(decimalsIndex, index);
             }

@@ -33,6 +33,7 @@ internal static class CanvasMenuChoiceChecks
         while (menu.Offset != previousOffset)
         {
             previousOffset = menu.Offset;
+            menu.MarkPainted();
             for (int row = 0; row < menu.Visible && menu.Offset + row < menu.Count; row++)
             {
                 Check(menu.TrySelect(new PointF(menu.Bounds.Left + 10, menu.Bounds.Top + row * 20 + 10), out int index),

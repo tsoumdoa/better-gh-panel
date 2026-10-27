@@ -54,6 +54,15 @@ internal static partial class FilterUiChecks
             "The actual canvas menu retains the saved area mode while hiding unsupported earlier choices");
         Check(MenuIndex(menu, "List length · per branch") >= Property<int>(menu, "Visible"),
             "The compact canvas requires paging to reach the dynamically positioned list-length choice");
+        var menuBounds = PanelTestAdapter.MenuBounds(component);
+        int oldOffset = Property<int>(menu, "Offset");
+        Click(component, canvas, new RectangleF(menuBounds.X + menuBounds.Width / 2, menuBounds.Bottom - 20, menuBounds.Width / 2, 20));
+        Check(Property<int>(menu, "Offset") > oldOffset && !Property<bool>(menu, "HasPaintedTargets"),
+            "Paging invalidates the old menu targets before the next paint");
+        var before = Options(session);
+        Click(component, canvas, new RectangleF(menuBounds.X, menuBounds.Y, menuBounds.Width, 20));
+        Check(MenuKind(component) == "SearchMode" && Options(session).SearchMode == before.SearchMode &&
+            Options(session).Search == before.Search, "An unpainted menu page cannot apply a choice");
         MenuRow(component, canvas, MenuIndex(menu, "List length · per branch"));
         Check(MenuKind(component) == "Comparison", "Clicking the paged list-length choice opens its comparison menu");
         MenuRow(component, canvas, MenuIndex(menu, "At least  ≥"));

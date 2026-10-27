@@ -43,6 +43,7 @@ internal static class FilterCanvasChecks
         var options = new PanelQueryOptions();
         menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
         menu.Layout(panel, default, default, default, preview: anchor);
+        menu.MarkPainted();
         Require(panel.Contains(menu.Bounds) && menu.Visible == 4, "All preview scopes and the item-order toggle fit the minimum Half panel");
         foreach (PanelPreviewMode mode in Enum.GetValues(typeof(PanelPreviewMode)))
         {
@@ -69,6 +70,7 @@ internal static class FilterCanvasChecks
             var reachable = new System.Collections.Generic.HashSet<int>();
             for (int page = 0; page < menu.Count; page++)
             {
+                menu.MarkPainted();
                 for (int row = 0; row < menu.Visible; row++)
                 {
                     Require(menu.TrySelect(new PointF(menu.Bounds.X + 10, menu.Bounds.Y + row * 20 + 10), out int selected),

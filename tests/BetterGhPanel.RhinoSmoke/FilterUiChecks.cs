@@ -111,7 +111,7 @@ internal static partial class FilterUiChecks
         try
         {
             await Wait(session);
-            await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.ListLength, 0, "2");
+            await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.ListLength, "Greater than  >", "2");
             Check(Positions(session).Count == 3, "Display fixture starts with an active list-length comparison");
             document.UndoServer.Clear();
             await Display(PanelSearchMode.ListLength);
@@ -202,7 +202,7 @@ internal static partial class FilterUiChecks
                 PanelTestAdapter.DisplayValue(component, snapshot, 0) == "n/a" && Positions(session).Count == 5,
                 "Length display shows converted circumference and deferred curve length while retaining unsupported rows");
             SavePreview(component, canvas, "display-length");
-            await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Length, 0, "6");
+            await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Length, "Greater than  >", "6");
             Check(!Options(session).DisplayFilterValue && Positions(session).SequenceEqual(new[] { 3 }),
                 "Choosing a comparison leaves display mode and filters with the same full-precision metric");
             await Display(PanelSearchMode.Value);
@@ -217,8 +217,8 @@ internal static partial class FilterUiChecks
         {
             Paint(component, canvas);
             Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Filter));
-            MenuRow(component, canvas, (int)mode);
-            MenuRow(component, canvas, 6);
+            MenuRow(component, canvas, SearchModeIndex(component, mode));
+            MenuRow(component, canvas, MenuIndex(Field<object>(component.Attributes, "_menu"), "Display value"));
             await Wait(session);
             Paint(component, canvas);
         }
@@ -415,31 +415,31 @@ internal static partial class FilterUiChecks
     {
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Filter));
         SavePreview(component, canvas, "filter-modes");
-        MenuRow(component, canvas, (int)PanelSearchMode.Length);
+        MenuRow(component, canvas, SearchModeIndex(component, PanelSearchMode.Length));
         Check(MenuKind(component) == "Comparison", "Choosing a geometry mode opens a readable comparison menu");
         SavePreview(component, canvas, "filter-comparisons");
-        MenuRow(component, canvas, 0);
+        MenuRow(component, canvas, MenuIndex(Field<object>(component.Attributes, "_menu"), "Greater than  >"));
         CanvasEditorAdapter.Active(assembly).Submit("5");
         await Wait(session);
         Check(Options(session).SearchMode == PanelSearchMode.Length && Options(session).Search == "> 5" && Positions(session).SequenceEqual(new[] { 33 }),
             "Typing a bare threshold after Greater than retains the chosen comparison and matching geometry");
         Paint(component, canvas);
-        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Area, 1, "12");
+        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Area, "At least  ≥", "12");
         Check(Options(session).Search == ">= 12" && Positions(session).SequenceEqual(new[] { 35 }),
             "Typing a bare threshold after At least retains its comparison and isolates rectangle area");
         SavePreview(component, canvas, "filter-area");
-        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Volume, 4, "24");
+        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Volume, "Equal to  =", "24");
         Check(Positions(session).SequenceEqual(new[] { 36 }), "Volume comparison includes the matching box");
-        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Value, 0, "20");
+        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Value, "Greater than  >", "20");
         Check(Positions(session).SequenceEqual(new[] { 39 }), "Numeric value mode excludes geometry measurements");
-        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.ListLength, 1, "34");
+        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.ListLength, "At least  ≥", "34");
         Check(Positions(session).SequenceEqual(Enumerable.Range(0, 34)),
             "Per-branch list length selects all items of a qualifying branch through the canvas menu");
-        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.ListLength, 0, "<= 6");
+        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.ListLength, "Greater than  >", "<= 6");
         Check(Options(session).Search == "<= 6" && Positions(session).SequenceEqual(Enumerable.Range(34, 6)),
             "An explicit pasted comparison overrides the menu operator and selects the smaller branch");
         SavePreview(component, canvas, "filter-list-length");
-        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Regex, 0, "^wall-[ab]$");
+        await ChooseFilter(component, canvas, assembly, session, PanelSearchMode.Regex, "", "^wall-[ab]$");
         Check(Positions(session).SequenceEqual(new[] { 37, 38 }), "Regex menu searches row text case-insensitively");
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Search));
         CanvasEditorAdapter.Active(assembly).Submit("");
@@ -538,7 +538,7 @@ internal static partial class FilterUiChecks
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Filter));
         var panel = PanelTestAdapter.Bounds(component, CanvasControl.Panel);
         Check(panel.Contains(PanelTestAdapter.MenuBounds(component)), "Filter menu stays inside the minimum half-height panel");
-        MenuRow(component, canvas, (int)PanelSearchMode.Regex);
+        MenuRow(component, canvas, SearchModeIndex(component, PanelSearchMode.Regex));
         Check(CanvasEditorAdapter.Active(assembly).TextAreaWidth >= Grasshopper.Global_Proc.UiAdjust(100),
             "Minimum panel still opens a readable filter editor");
         CanvasEditorAdapter.Active(assembly).Submit("[");
@@ -562,8 +562,8 @@ internal static partial class FilterUiChecks
         Check(Positions(session).Count == 2, "Editing a failed filter recovers normally");
         Paint(component, canvas);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Filter));
-        MenuRow(component, canvas, (int)PanelSearchMode.ListLength);
-        MenuRow(component, canvas, 0);
+        MenuRow(component, canvas, SearchModeIndex(component, PanelSearchMode.ListLength));
+        MenuRow(component, canvas, MenuIndex(Field<object>(component.Attributes, "_menu"), "Greater than  >"));
         CanvasEditorAdapter.Active(assembly).Submit("not a count");
         await Wait(session, allowError: true);
         Paint(component, canvas);
@@ -614,12 +614,13 @@ internal static partial class FilterUiChecks
     }
 
     private static async Task ChooseFilter(GH_Component component, GH_Canvas canvas, Assembly assembly, object session,
-        PanelSearchMode mode, int comparison, string expression)
+        PanelSearchMode mode, string comparisonLabel, string expression)
     {
         Paint(component, canvas);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Filter));
-        MenuRow(component, canvas, (int)mode);
-        if (mode >= PanelSearchMode.Value) MenuRow(component, canvas, comparison);
+        MenuRow(component, canvas, SearchModeIndex(component, mode));
+        if (mode >= PanelSearchMode.Value)
+            MenuRow(component, canvas, MenuIndex(Field<object>(component.Attributes, "_menu"), comparisonLabel));
         CanvasEditorAdapter.Active(assembly).Submit(expression);
         await Wait(session);
         Paint(component, canvas);
@@ -630,6 +631,7 @@ internal static partial class FilterUiChecks
         var menu = Field<object>(component.Attributes, "_menu");
         for (int attempts = 0; attempts < 10; attempts++)
         {
+            Paint(component, canvas);
             int offset = Property<int>(menu, "Offset"), visible = Property<int>(menu, "Visible");
             var bounds = PanelTestAdapter.MenuBounds(component);
             if (index >= offset && index < offset + visible)
@@ -641,6 +643,15 @@ internal static partial class FilterUiChecks
                 bounds.Bottom - 20, bounds.Width / 2, 20));
         }
         throw new InvalidOperationException("Could not reach filter menu item");
+    }
+
+    private static int SearchModeIndex(GH_Component component, PanelSearchMode mode)
+    {
+        var menu = Field<object>(component.Attributes, "_menu");
+        int count = Property<int>(menu, "Count");
+        for (int index = 0; index < count; index++)
+            if ((PanelSearchMode)Invoke(menu, "SearchModeAt", index)! == mode) return index;
+        throw new InvalidOperationException("Search mode is not available: " + mode);
     }
 
     private static void Click(GH_Component component, GH_Canvas canvas, RectangleF bounds)

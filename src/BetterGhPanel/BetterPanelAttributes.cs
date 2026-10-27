@@ -616,6 +616,7 @@ namespace BetterGhPanel
                 Text(g, "Next ›", small, Accent, new RectangleF(_menu.Bounds.X + _menu.Bounds.Width / 2, y, _menu.Bounds.Width / 2 - 7, 20), trim);
             }
             using (var pen = new Pen(Color.FromArgb(194, 205, 194))) g.DrawRectangle(pen, _menu.Bounds.X, _menu.Bounds.Y, _menu.Bounds.Width, _menu.Bounds.Height);
+            _menu.MarkPainted();
         }
 
         private void OpenMenu(CanvasMenuKind kind, GH_Canvas canvas)
@@ -1059,6 +1060,7 @@ namespace BetterGhPanel
         public override void SetupTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             base.SetupTooltip(point, e);
+            if (_menu.Kind != CanvasMenuKind.None && _menu.Bounds.Contains(point) && !_menu.HasPaintedTargets) return;
             if (!PanelOwner.PanelMinimized && _menu.Kind == CanvasMenuKind.None && _rowMenuResult == null && SetDetailsTooltip(point, e)) return;
             if (_menu.Kind == CanvasMenuKind.Preview && _menu.Bounds.Contains(point))
             {

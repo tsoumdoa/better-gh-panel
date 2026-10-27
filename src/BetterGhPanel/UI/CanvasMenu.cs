@@ -99,6 +99,9 @@ namespace BetterGhPanel.UI
         private PanelQueryResult? _statisticsResult;
         private string[] _types = Array.Empty<string>();
         private CanvasChoice<PanelSearchMode>[] _searchChoices = Array.Empty<CanvasChoice<PanelSearchMode>>();
+        private CanvasMenuKind _paintedKind;
+        private RectangleF _paintedBounds;
+        private int _paintedOffset = -1, _paintedVisible = -1;
         internal CanvasMenuKind Kind { get; private set; }
         internal RectangleF Bounds { get; private set; }
         internal int Offset { get; private set; }
@@ -110,6 +113,17 @@ namespace BetterGhPanel.UI
             Kind == CanvasMenuKind.Preview ? PreviewChoices.Length :
             Kind == CanvasMenuKind.Statistics && _statisticsResult != null ? CanvasStatistics.OverviewRows + _statisticsResult.Statistics.UniqueValues.Count : 0;
         internal int Visible => Math.Min(Count, Math.Max(1, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
+        internal bool HasPaintedTargets => Kind != CanvasMenuKind.None && _paintedKind == Kind &&
+            _paintedBounds == Bounds && _paintedOffset == Offset && _paintedVisible == Visible;
+
+        // Hit testing is valid only for the page and layout the user actually saw.
+        internal void MarkPainted()
+        {
+            _paintedKind = Kind;
+            _paintedBounds = Bounds;
+            _paintedOffset = Offset;
+            _paintedVisible = Visible;
+        }
 
         internal static string TypeHint(PanelQueryResult result, PanelQueryOptions options)
         {
@@ -161,6 +175,7 @@ namespace BetterGhPanel.UI
         internal void Close()
         {
             Kind = CanvasMenuKind.None;
+            _paintedKind = CanvasMenuKind.None;
             HoveredIndex = -1;
             _statisticsResult = null;
             _snapshot = PanelSnapshot.Empty;
@@ -175,6 +190,7 @@ namespace BetterGhPanel.UI
             IEnumerable<PanelSearchMode>? supportedSearchModes = null)
         {
             Kind = Kind == kind ? CanvasMenuKind.None : kind;
+            _paintedKind = CanvasMenuKind.None;
             _snapshot = snapshot;
             _statisticsResult = Kind == CanvasMenuKind.Statistics && ReferenceEquals(result?.Snapshot, snapshot) ? result : null;
             if (Kind == CanvasMenuKind.Statistics && _statisticsResult == null) Kind = CanvasMenuKind.None;
@@ -225,11 +241,13 @@ namespace BetterGhPanel.UI
         {
             index = -1;
             if (!Bounds.Contains(point)) { Close(); return false; }
+            if (!HasPaintedTargets) return false;
             int row = (int)((point.Y - Bounds.Y) / 20);
             if (Count > Visible && row >= Visible)
             {
                 Offset = Math.Max(0, Math.Min(Count - Visible,
                     Offset + (point.X < Bounds.X + Bounds.Width / 2 ? -Visible : Visible)));
+                HoveredIndex = -1;
                 return false;
             }
             index = Offset + row;
@@ -239,7 +257,7 @@ namespace BetterGhPanel.UI
         internal bool Hover(PointF point)
         {
             int row = (int)((point.Y - Bounds.Y) / 20);
-            int index = Kind != CanvasMenuKind.None && Bounds.Contains(point) && row < Visible ? Offset + row : -1;
+            int index = HasPaintedTargets && Bounds.Contains(point) && row >= 0 && row < Visible ? Offset + row : -1;
             if (HoveredIndex == index) return false;
             HoveredIndex = index;
             return true;
