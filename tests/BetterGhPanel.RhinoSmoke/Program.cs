@@ -38,6 +38,7 @@ internal static class Program
     private static bool _completed;
     private static bool _passed;
     private static string _phase = "identity";
+    private static string _hostMode = "hidden";
     private static string? _failure;
 
     // This is also checked against fixtures.json, the coordinator's explicit inventory.
@@ -118,6 +119,12 @@ internal static class Program
         _fixture = treeOnly ? string.Empty : args[1];
         try
         {
+            string? desktop = Environment.GetEnvironmentVariable(InactiveDesktop.EnvironmentName);
+            if (!string.IsNullOrEmpty(desktop))
+            {
+                if (!InactiveDesktop.IsCurrent(desktop)) throw new InvalidOperationException("The fixture is not on its requested inactive desktop.");
+                _hostMode = "inactive-desktop";
+            }
             _system = Environment.GetEnvironmentVariable("RHINO_SYSTEM_PATH") ?? "C:/Program Files/Rhino 8/System";
             _grasshopper = Path.GetFullPath(Path.Combine(_system, "../Plug-ins/Grasshopper"));
             int pathIndex = treeOnly ? 1 : 2;
@@ -226,8 +233,9 @@ internal static class Program
     [MethodImpl(MethodImplOptions.NoInlining)]
     private static int RunHost()
     {
-        Console.WriteLine("Starting hidden Rhino 8 host; no plugin installation will be performed.");
-        using var host = new RhinoCore(new[] { "/nosplash", "/notemplate" }, WindowStyle.Hidden);
+        Console.WriteLine("Starting Rhino 8 host (" + _hostMode + "); no plugin installation will be performed.");
+        using var host = new RhinoCore(new[] { "/nosplash", "/notemplate" },
+            _hostMode == "inactive-desktop" ? WindowStyle.Normal : WindowStyle.Hidden);
         Console.WriteLine("Rhino initialized: " + Rhino.RhinoApp.Version);
         using var eto = new Eto.Forms.Application(new Eto.Wpf.Platform());
         var pluginId = Rhino.PlugIns.PlugIn.IdFromName("Grasshopper");
@@ -1147,7 +1155,7 @@ internal static class Program
         {
             schemaVersion = 1, fixture = _fixture, runId = _runId, startedUtc = _startedUtc,
             completed = _completed, passed = _passed, assertionCount = SmokeAssertions.Count,
-            phase = _phase, failure = _failure, canvasDrawingVerified = _canvasDrawingVerified,
+            phase = _phase, failure = _failure, canvasDrawingVerified = _canvasDrawingVerified, hostMode = _hostMode,
             plugin = new { path = _loadedPlugin!.Location, sha256 = _pluginSha256 },
             core = new { path = _loadedCore!.Location, sha256 = _coreSha256 }
         };

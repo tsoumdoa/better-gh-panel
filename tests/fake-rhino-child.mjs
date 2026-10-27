@@ -8,7 +8,7 @@ const core = join(dirname(plugin), 'BetterGhPanel.Core.dll');
 const hash = path => createHash('sha256').update(readFileSync(path)).digest('hex');
 const report = {
   schemaVersion: 1, fixture, runId: process.env.PANEL_SMOKE_RUN_ID, startedUtc: new Date().toISOString(),
-  completed: true, passed: true, assertionCount: 3, phase: 'fixture-completed',
+  completed: true, passed: true, assertionCount: 3, phase: 'fixture-completed', hostMode: 'hidden',
   plugin: { path: plugin, sha256: hash(plugin) }, core: { path: core, sha256: hash(core) }
 };
 const result = process.env.PANEL_SMOKE_RESULT;
@@ -17,6 +17,7 @@ switch (behavior) {
   case 'missing': process.exit(0); break;
   case 'malformed': writeFileSync(result, '{'); process.exit(0); break;
   case 'wrong-fixture': report.fixture = 'another-fixture'; break;
+  case 'wrong-host-mode': report.hostMode = 'inactive-desktop'; break;
   case 'wrong-id': report.runId = 'old-run'; break;
   case 'stale': report.startedUtc = '2001-01-01T00:00:00Z'; break;
   case 'incomplete': report.completed = false; report.phase = 'fixture'; break;

@@ -5,6 +5,11 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
+const desktopFixtures = new Set(['highlight-overlap', 'item-order-capture']);
+
+export const fixtureHostMode = fixture => desktopFixtures.has(fixture) ? 'inactive-desktop' : 'hidden';
+export const fixtureCommand = (executable, fixture, plugin) =>
+  [executable, [fixtureHostMode(fixture) === 'inactive-desktop' ? '--desktop-fixture' : '--fixture', fixture, plugin]];
 
 export function loadInventory() {
   const fixtures = JSON.parse(readFileSync(join(here, 'fixtures.json'), 'utf8'));
@@ -24,6 +29,7 @@ export function reportErrors(report, expected) {
   if (!report || typeof report !== 'object' || Array.isArray(report)) return ['malformed report'];
   if (report.schemaVersion !== 1) errors.push('wrong report schema');
   if (report.fixture !== expected.fixture) errors.push('wrong fixture');
+  if (report.hostMode !== expected.hostMode) errors.push('wrong host mode');
   if (report.runId !== expected.runId) errors.push('wrong or stale run id');
   const started = typeof report.startedUtc === 'string' ? Date.parse(report.startedUtc) : NaN;
   if (!Number.isFinite(started) || started < expected.started - 2000 || started > Date.now() + 2000) errors.push('stale or invalid start time');
@@ -75,7 +81,9 @@ export async function runFixtures({ fixtures, pluginPath, outputRoot, timeoutMs,
     const logPath = join(runDirectory, `${fixture}-${runId}.log`);
     const started = Date.now();
     const [command, args] = commandFor(fixture, plugin);
-    const child = await runChild(command, args, { ...process.env, PANEL_SMOKE_RESULT: resultPath, PANEL_SMOKE_RUN_ID: runId }, logPath, timeoutMs);
+    const childEnvironment = { ...process.env, PANEL_SMOKE_RESULT: resultPath, PANEL_SMOKE_RUN_ID: runId };
+    delete childEnvironment.PANEL_SMOKE_DESKTOP_NAME;
+    const child = await runChild(command, args, childEnvironment, logPath, timeoutMs);
     const errors = [];
     if (child.error) errors.push(`child failed to start: ${child.error}`);
     if (child.timedOut) errors.push(`timeout after ${timeoutMs} ms`);
@@ -83,7 +91,7 @@ export async function runFixtures({ fixtures, pluginPath, outputRoot, timeoutMs,
     let report;
     try { report = JSON.parse(readFileSync(resultPath, 'utf8')); }
     catch (error) { errors.push(error.code === 'ENOENT' ? 'missing report' : `malformed report: ${error.message}`); }
-    if (report !== undefined) errors.push(...reportErrors(report, { fixture, runId, started, ...payload }));
+    if (report !== undefined) errors.push(...reportErrors(report, { fixture, runId, started, hostMode: fixtureHostMode(fixture), ...payload }));
     const outcome = { fixture, runId, resultPath, logPath, report, errors };
     outcomes.push(outcome);
     if (!quiet) console.log(`${errors.length ? 'FAIL' : 'PASS'} ${fixture}: ${errors.length ? errors.join('; ') : `${report.assertionCount} fixture assertions`} (${basename(logPath)})`);
@@ -106,7 +114,7 @@ export async function main(args, overrides = {}) {
   const executable = join(here, 'bin/Release/net7.0-windows/BetterGhPanel.RhinoSmoke.exe');
   const summary = await runFixtures({ fixtures: selected.length ? selected : inventory, pluginPath,
     outputRoot: overrides.outputRoot ?? join(here, 'bin/Release/net7.0-windows/runs'), timeoutMs,
-    commandFor: overrides.commandFor ?? ((fixture, plugin) => [executable, ['--fixture', fixture, plugin]]) });
+    commandFor: overrides.commandFor ?? ((fixture, plugin) => fixtureCommand(executable, fixture, plugin)) });
   console.log(`${summary.outcomes.filter(result => result.errors.length === 0).length}/${summary.outcomes.length} fixtures passed`);
   return summary.passed ? 0 : 1;
 }

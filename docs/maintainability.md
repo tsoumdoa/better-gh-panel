@@ -49,6 +49,13 @@ hidden also produced native access violations at those respective capture
 stacks on Rhino 8.36. This diagnostic did not exercise an interactive viewport
 and does not replace either failed fixture.
 
+The same two fixtures subsequently passed their original pixel assertions on
+Rhino 8.36 when a normal host window ran on a separate inactive Windows desktop:
+10 item-order assertions and 9 overlap assertions. The coordinator now uses
+that desktop for those fixtures, without switching the user's desktop. The
+hidden-host crashes remain recorded above; the final package still needs its
+own full run.
+
 ## Deferred findings
 
 - Query option cloning and equality enumerate settings in multiple places. Centralizing this may help future additions, but output-filter equality intentionally ignores sorting and sometimes decimal precision. Preserve those distinctions.
@@ -66,7 +73,7 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 tests/BetterGhPanel.RhinoSmoke/run.ps1 -PluginPath <absolute-plugin-path>
 ```
 
-The full run starts one sequential Rhino process per entry in `tests/BetterGhPanel.RhinoSmoke/fixtures.json`; each has a timeout and unique result and log under `bin/Release/net7.0-windows/runs`. The result records the actual loaded plugin and Core paths and SHA-256 before Rhino starts, and a count of assertions performed in that fixture. It rejects incomplete, failed, stale, mismatched, empty or malformed reports and abnormal process exits while continuing the remaining fixtures. `-Fixture output,filter-metadata,filter-ui` selects individual fixtures for diagnosis; release validation requires the full inventory. `-TimeoutSeconds` changes the per-process timeout. `--identity-only <fixture> <plugin-path>` on the host executable writes the pre-start identity report without starting Rhino; it remains incomplete and is not a fixture pass. The build removes any stale host-local Core copy so the host can bind the Core next to the requested plugin.
+The full run starts one sequential Rhino process per entry in `tests/BetterGhPanel.RhinoSmoke/fixtures.json`; each has a timeout and unique result and log under `bin/Release/net7.0-windows/runs`. The two viewport-capture fixtures use a normal window on a private inactive desktop; the rest use a hidden Rhino host. A Windows job terminates the desktop fixture process when the coordinator times out. The result records the host mode and actual loaded plugin and Core paths and SHA-256 before Rhino starts, and a count of assertions performed in that fixture. It rejects incomplete, failed, stale, mismatched, empty or malformed reports and abnormal process exits while continuing the remaining fixtures. `-Fixture output,filter-metadata,filter-ui` selects individual fixtures for diagnosis; release validation requires the full inventory. `-TimeoutSeconds` changes the per-process timeout. `--identity-only <fixture> <plugin-path>` on the host executable writes the pre-start identity report without starting Rhino; it remains incomplete and is not a fixture pass. The build removes any stale host-local Core copy so the host can bind the Core next to the requested plugin.
 
 `OutputChecks` adds provenance checks across all tree-tool combinations, downstream S/B/F updates, scope Undo/Redo, strict paired-tree validation, original mask shape and legacy port identities. The `output` fixture runs the native cases; `--tree-only` includes the managed provenance cases.
 

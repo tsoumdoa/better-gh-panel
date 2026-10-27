@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { loadInventory, runFixtures } from './BetterGhPanel.RhinoSmoke/coordinator.mjs';
+import { fixtureCommand, fixtureHostMode, loadInventory, runFixtures } from './BetterGhPanel.RhinoSmoke/coordinator.mjs';
 
 const fakeChild = fileURLToPath(new URL('./fake-rhino-child.mjs', import.meta.url));
 
@@ -39,6 +39,15 @@ test('inventory includes every original fixture and the independently crash-pron
   ]);
 });
 
+test('pixel fixtures use an inactive desktop while other fixtures use the hidden host', () => {
+  for (const name of ['highlight-overlap', 'item-order-capture']) {
+    assert.equal(fixtureHostMode(name), 'inactive-desktop');
+    assert.deepEqual(fixtureCommand('host', name, 'plugin'), ['host', ['--desktop-fixture', name, 'plugin']]);
+  }
+  assert.equal(fixtureHostMode('output'), 'hidden');
+  assert.deepEqual(fixtureCommand('host', 'output', 'plugin'), ['host', ['--fixture', 'output', 'plugin']]);
+});
+
 test('successful children provide unique fixture-only evidence and unique files', async t => {
   const summary = await run(withPayload(t), 'pass');
   assert.equal(summary.passed, true);
@@ -54,7 +63,7 @@ test('successful children provide unique fixture-only evidence and unique files'
 });
 
 for (const [behavior, expected] of [
-  ['missing', 'missing report'], ['malformed', 'malformed report'], ['wrong-fixture', 'wrong fixture'],
+  ['missing', 'missing report'], ['malformed', 'malformed report'], ['wrong-fixture', 'wrong fixture'], ['wrong-host-mode', 'wrong host mode'],
   ['wrong-id', 'wrong or stale run id'], ['stale', 'stale or invalid start time'],
   ['incomplete', 'fixture did not complete'], ['no-assertions', 'no valid fixture assertions'],
   ['bad-assertions', 'no valid fixture assertions'], ['bad-schema', 'wrong report schema'],
@@ -95,7 +104,7 @@ test('coordinator CLI exits nonzero on a failed child after running the next fix
   const payload = withPayload(t);
   const driver = fileURLToPath(new URL('./fake-coordinator-driver.mjs', import.meta.url));
   for (const [behavior, expectedStatus] of [['pass', 0], ...[
-    'missing', 'malformed', 'wrong-fixture', 'wrong-id', 'stale', 'incomplete', 'no-assertions', 'bad-assertions',
+    'missing', 'malformed', 'wrong-fixture', 'wrong-host-mode', 'wrong-id', 'stale', 'incomplete', 'no-assertions', 'bad-assertions',
     'bad-schema', 'failed-check', 'wrong-plugin-path', 'wrong-plugin-hash', 'wrong-core-path', 'wrong-core-hash',
     'native-failure', 'timeout'
   ].map(name => [name, 1])]) {
