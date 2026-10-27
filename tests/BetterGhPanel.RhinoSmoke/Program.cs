@@ -39,6 +39,7 @@ internal static class Program
     private static bool _passed;
     private static string _phase = "identity";
     private static string _hostMode = "hidden";
+    private static bool _rhinoIdlePump;
     private static string? _failure;
 
     // This is also checked against fixtures.json, the coordinator's explicit inventory.
@@ -302,7 +303,26 @@ internal static class Program
             finally { Console.Out.Flush(); Console.Error.Flush(); context.ExitThread(); }
         };
         timer.Start();
-        System.Windows.Forms.Application.Run(context);
+        // A RhinoCore embedded host has a WinForms message loop, not Rhino's
+        // native application loop. Let Rhino process its own idle tasks when
+        // that loop becomes idle so deferred preview cleanup can run between
+        // actual display frames. This is not an end-of-frame guarantee.
+        bool pumpingIdle = false;
+        EventHandler? idlePump = _hostMode == "inactive-desktop" ? (_, __) =>
+        {
+            if (pumpingIdle) return;
+            pumpingIdle = true;
+            try { host.DoIdle(); }
+            finally { pumpingIdle = false; }
+        } : null;
+        if (idlePump != null)
+        {
+            System.Windows.Forms.Application.Idle += idlePump;
+            _rhinoIdlePump = true;
+            Console.WriteLine("The inactive-desktop host processes Rhino idle tasks from the WinForms idle loop.");
+        }
+        try { System.Windows.Forms.Application.Run(context); }
+        finally { if (idlePump != null) System.Windows.Forms.Application.Idle -= idlePump; }
         return exitCode;
     }
 
@@ -1172,6 +1192,7 @@ internal static class Program
             schemaVersion = 1, fixture = _fixture, runId = _runId, startedUtc = _startedUtc,
             completed = _completed, passed = _passed, assertionCount = SmokeAssertions.Count,
             phase = _phase, failure = _failure, canvasDrawingVerified = _canvasDrawingVerified, hostMode = _hostMode,
+            rhinoIdlePump = _rhinoIdlePump,
             plugin = new { path = _loadedPlugin!.Location, sha256 = _pluginSha256 },
             core = new { path = _loadedCore!.Location, sha256 = _coreSha256 }
         };

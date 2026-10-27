@@ -63,6 +63,16 @@ bounded runs timed out. The isolated processes were closed. These attempts do
 not establish whether an interactive Rhino host raises idle after the relevant
 display work, and they do not replace the required preview fixtures.
 
+In the embedded inactive-desktop host, explicitly processing Rhino's idle tasks
+from the WinForms idle loop delivered `RhinoApp.Idle` after a capture and allowed
+the single-pass meshing fixture to complete its seven assertions and exit cleanly.
+That host integration does not establish an end-of-frame guarantee. A separate
+experiment with RhinoCore's native message loop reached all seven reentrant-draw
+assertions, but the child exited abnormally after `Program.Run` returned; it is
+therefore a failed fixture. The WinForms idle integration still failed the
+reentrant fixture's second `DrawToBitmap` call, so repeated-capture behavior
+remains unverified.
+
 ## Current boundaries and remaining considerations
 
 - `PanelQueryPolicy` keeps query equality, downstream output equivalence and active-filter decisions separate. Output equivalence intentionally ignores sorting and sometimes decimal precision; preserve those distinctions when adding settings.
@@ -80,7 +90,7 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 tests/BetterGhPanel.RhinoSmoke/run.ps1 -PluginPath <absolute-plugin-path>
 ```
 
-The full run starts one sequential Rhino process per entry in `tests/BetterGhPanel.RhinoSmoke/fixtures.json`; each has a timeout and unique result and log under `bin/Release/net7.0-windows/runs`. Viewport drawing fixtures use a normal window on a private inactive desktop; the rest use a hidden Rhino host. A Windows job terminates the desktop fixture process when the coordinator times out. The result records the host mode and actual loaded plugin and Core paths and SHA-256 before Rhino starts, and a count of assertions performed in that fixture. It rejects incomplete, failed, stale, mismatched, empty or malformed reports and abnormal process exits while continuing the remaining fixtures. `-Fixture output,filter-metadata,filter-ui` selects individual fixtures for diagnosis; release validation requires the full inventory. `-TimeoutSeconds` changes the per-process timeout. `--identity-only <fixture> <plugin-path>` on the host executable writes the pre-start identity report without starting Rhino; it remains incomplete and is not a fixture pass. The build removes any stale host-local Core copy so the host can bind the Core next to the requested plugin.
+The full run starts one sequential Rhino process per entry in `tests/BetterGhPanel.RhinoSmoke/fixtures.json`; each has a timeout and unique result and log under `bin/Release/net7.0-windows/runs`. Viewport drawing fixtures use a normal window on a private inactive desktop and process Rhino idle tasks from the embedded host's WinForms idle loop; the rest use a hidden Rhino host. A Windows job terminates the desktop fixture process when the coordinator times out. The result records the host mode, idle integration and actual loaded plugin and Core paths and SHA-256, and a count of assertions performed in that fixture. It rejects incomplete, failed, stale, mismatched, empty or malformed reports and abnormal process exits while continuing the remaining fixtures. `-Fixture output,filter-metadata,filter-ui` selects individual fixtures for diagnosis; release validation requires the full inventory. `-TimeoutSeconds` changes the per-process timeout. `--identity-only <fixture> <plugin-path>` on the host executable writes the pre-start identity report without starting Rhino; it remains incomplete and is not a fixture pass. The build removes any stale host-local Core copy so the host can bind the Core next to the requested plugin.
 
 `OutputChecks` adds provenance checks across all tree-tool combinations, downstream S/B/F updates, scope Undo/Redo, strict paired-tree validation, original mask shape and legacy port identities. The `output` fixture runs the native cases; `--tree-only` includes the managed provenance cases.
 

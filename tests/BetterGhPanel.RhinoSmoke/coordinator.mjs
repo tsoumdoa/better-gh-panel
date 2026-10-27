@@ -39,6 +39,7 @@ export function reportErrors(report, expected) {
   if (report.schemaVersion !== 1) errors.push('wrong report schema');
   if (report.fixture !== expected.fixture) errors.push('wrong fixture');
   if (report.hostMode !== expected.hostMode) errors.push('wrong host mode');
+  if (report.rhinoIdlePump !== (expected.hostMode === 'inactive-desktop')) errors.push('wrong Rhino idle pump');
   if (report.runId !== expected.runId) errors.push('wrong or stale run id');
   const started = typeof report.startedUtc === 'string' ? Date.parse(report.startedUtc) : NaN;
   if (!Number.isFinite(started) || started < expected.started - 2000 || started > Date.now() + 2000) errors.push('stale or invalid start time');

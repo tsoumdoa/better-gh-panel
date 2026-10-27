@@ -96,6 +96,7 @@ test('successful children provide unique fixture-only evidence and unique files'
 
 for (const [behavior, expected] of [
   ['missing', 'missing report'], ['malformed', 'malformed report'], ['wrong-fixture', 'wrong fixture'], ['wrong-host-mode', 'wrong host mode'],
+  ['wrong-idle-pump', 'wrong Rhino idle pump'],
   ['wrong-id', 'wrong or stale run id'], ['stale', 'stale or invalid start time'],
   ['incomplete', 'fixture did not complete'], ['no-assertions', 'no valid fixture assertions'],
   ['bad-assertions', 'no valid fixture assertions'], ['bad-schema', 'wrong report schema'],
@@ -136,7 +137,7 @@ test('coordinator CLI exits nonzero on a failed child after running the next fix
   const payload = withPayload(t);
   const driver = fileURLToPath(new URL('./fake-coordinator-driver.mjs', import.meta.url));
   for (const [behavior, expectedStatus] of [['pass', 0], ...[
-    'missing', 'malformed', 'wrong-fixture', 'wrong-host-mode', 'wrong-id', 'stale', 'incomplete', 'no-assertions', 'bad-assertions',
+    'missing', 'malformed', 'wrong-fixture', 'wrong-host-mode', 'wrong-idle-pump', 'wrong-id', 'stale', 'incomplete', 'no-assertions', 'bad-assertions',
     'bad-schema', 'failed-check', 'wrong-plugin-path', 'wrong-plugin-hash', 'wrong-core-path', 'wrong-core-hash',
     'native-failure', 'timeout'
   ].map(name => [name, 1])]) {
