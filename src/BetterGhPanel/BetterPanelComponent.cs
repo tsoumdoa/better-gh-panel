@@ -598,6 +598,9 @@ namespace BetterGhPanel
             if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
             long clipboardGeneration = PanelGeometryActions.BeginClipboard();
             var session = _session!;
+            var result = session.Result;
+            var source = _sourceItems;
+            long selectionVersion = RowSelection.Version;
             var cancellation = new CancellationTokenSource();
             _copyCancellation = cancellation;
             bool measured = await session.MeasureGeometryAsync(snapshot, ordered, cancellation.Token);
@@ -618,20 +621,20 @@ namespace BetterGhPanel
                 }
                 try
                 {
-                    if (!measured || !PanelGeometryActions.ClipboardCurrent(clipboardGeneration) ||
-                        !ReferenceEquals(_copyCancellation, cancellation) || !ReferenceEquals(_session, session) ||
-                        !TryGetActionPositions(snapshot, ordered, out _)) Finish(PanelCommitOutcome.Stale);
+                    bool SelectionCurrent() => PanelGeometryActions.ClipboardCurrent(clipboardGeneration) &&
+                        ReferenceEquals(_copyCancellation, cancellation) && !cancellation.IsCancellationRequested &&
+                        ReferenceEquals(_session, session) && session.HasCurrentResult &&
+                        ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, result) &&
+                        ReferenceEquals(_sourceItems, source) &&
+                        PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion);
+                    if (!measured || !SelectionCurrent()) Finish(PanelCommitOutcome.Stale);
                     else
                     {
                         var text = string.Join(Environment.NewLine, ordered.Select(position => CopyValue(snapshot, position)));
-                        bool Current()
-                        {
-                            bool SelectionCurrent() => PanelGeometryActions.ClipboardCurrent(clipboardGeneration) &&
-                                ReferenceEquals(_copyCancellation, cancellation) && !cancellation.IsCancellationRequested &&
-                                ReferenceEquals(_session, session) && TryGetActionPositions(snapshot, ordered, out var current) &&
-                                ordered.SequenceEqual(current);
-                            return SelectionCurrent() && session.GeometrySourcesCurrent(snapshot) && SelectionCurrent();
-                        }
+                        // Measurements cover only queued geometry; value-only
+                        // rows and unmeasured geometry can change too.
+                        bool Current() => SelectionCurrent() && CapturedSnapshotCurrent(snapshot) && SelectionCurrent() &&
+                            session.GeometrySourcesCurrent(snapshot) && SelectionCurrent();
                         var state = PanelGeometryActions.CommitClipboard(Current,
                             () => { using (var clipboard = new Eto.Forms.Clipboard()) clipboard.Text = text; }, Finish);
                         if (state != PanelCommitOutcome.Deferred) Finish(state);

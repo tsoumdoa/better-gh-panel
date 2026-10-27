@@ -60,7 +60,7 @@ namespace BetterGhPanel.Runtime
         {
             long generation = Interlocked.Increment(ref _frameGeneration);
             var sourceCurrent = current;
-            current = () => FrameGeneration == generation && sourceCurrent();
+            current = () => FrameGeneration == generation && sourceCurrent() && FrameGeneration == generation;
             int count = 0, skipped = 0, rows = 0;
             bool exhausted = false;
             var budget = new PanelGeometrySources.Budget();
@@ -94,6 +94,7 @@ namespace BetterGhPanel.Runtime
                     if (++rows > MaxRowsPerAction || budget.Remaining <= 0) { exhausted = true; break; }
                     var inspected = PanelGeometrySources.Inspect(item, budget, true);
                     if (!current()) return Stale();
+                    sources.Add(new ActionSource(item, inspected));
                     if (inspected.Exhausted) exhausted = true;
                     BoundingBox box;
                     try { box = Bounds(inspected, budget); }
@@ -103,7 +104,6 @@ namespace BetterGhPanel.Runtime
                     if (!box.IsValid) { skipped++; if (budget.Remaining <= 0) break; continue; }
                     bounds.Union(box);
                     count++;
-                    sources.Add(new ActionSource(item, inspected));
                 }
                 if (count == 0 || !bounds.IsValid)
                     return Failure(exhausted ? "No geometry framed; inspection limit reached." : "No valid geometry to frame in the selected rows.", skipped, exhausted);
@@ -122,7 +122,9 @@ namespace BetterGhPanel.Runtime
                     if (!current() || !FrameTargetCurrent(document!, view, viewportId, detailId)) return false;
                     bool valid = StillCurrent(sources, budget, true, current, out bool limited);
                     commitLimit |= limited;
-                    return valid && current();
+                    // Source validation can reenter and change the active view or
+                    // lock its projection; recheck the target after it returns.
+                    return valid && current() && FrameTargetCurrent(document!, view, viewportId, detailId) && FrameGeneration == generation;
                 }
                 PanelGeometryActionResult Result(PanelCommitOutcome outcome) => outcome == PanelCommitOutcome.Deferred
                     ? new PanelGeometryActionResult(false, 0, 0, "Frame queued.", deferred: true)
@@ -195,8 +197,15 @@ namespace BetterGhPanel.Runtime
             Func<bool> current, Func<RhinoDoc?> activeDocument)
             => CopyGeometryCore(items, units, tolerance, current, activeDocument, null);
 
+        // Fixture-only observation of the exact archive handed to the production
+        // clipboard writer. The observer runs before the final freshness checks.
+        internal static PanelGeometryActionResult CopyGeometryWithArchiveObserver(IEnumerable<IGH_Goo?> items, UnitSystem units,
+            double tolerance, Action<byte[]> observer)
+            => CopyGeometryCore(items, units, tolerance, () => true, () => RhinoDoc.ActiveDoc, null, observer);
+
         private static PanelGeometryActionResult CopyGeometryCore(IEnumerable<IGH_Goo?> items, UnitSystem units, double tolerance,
-            Func<bool> current, Func<RhinoDoc?> activeDocument, Action<PanelGeometryActionResult>? completed)
+            Func<bool> current, Func<RhinoDoc?> activeDocument, Action<PanelGeometryActionResult>? completed,
+            Action<byte[]>? archiveObserver = null)
         {
             long generation = BeginClipboard();
             if (!Rhino.Runtime.HostUtils.RunningOnWindows) return Failure("Copy geometry into Rhino is currently supported on Windows only.");
@@ -209,18 +218,23 @@ namespace BetterGhPanel.Runtime
             if (units != documentUnits || BitConverter.DoubleToInt64Bits(tolerance) != documentTolerance)
                 return Failure("Rhino model units or tolerance changed; recompute the input before copying.");
             var sourceCurrent = current;
-            current = () =>
+            bool ContextCurrent()
             {
                 var active = activeDocument();
-                return ClipboardCurrent(generation) && active != null && active.RuntimeSerialNumber == documentSerial && active.ModelUnitSystem == documentUnits &&
-                    BitConverter.DoubleToInt64Bits(active.ModelAbsoluteTolerance) == documentTolerance && sourceCurrent();
-            };
+                return active != null && active.RuntimeSerialNumber == documentSerial && active.ModelUnitSystem == documentUnits &&
+                    BitConverter.DoubleToInt64Bits(active.ModelAbsoluteTolerance) == documentTolerance;
+            }
+            // The source predicate can itself reenter and change clipboard owner,
+            // document, units or tolerance. Fence both sides of that callback.
+            current = () => ClipboardCurrent(generation) && ContextCurrent() && sourceCurrent() &&
+                ClipboardCurrent(generation) && ContextCurrent() && ClipboardCurrent(generation);
             if (!current()) return Stale();
             int count = 0, skipped = 0, rows = 0;
             long bytes = 0;
             bool exhausted = false;
             var budget = new PanelGeometrySources.Budget();
             var metadata = new List<PanelNativeGeometry.Scan?>();
+            var archiveIds = new List<Guid>();
             var sources = new List<ActionSource>();
             try
             {
@@ -234,6 +248,7 @@ namespace BetterGhPanel.Runtime
                         if (++rows > MaxRowsPerAction || budget.Remaining <= 0) { exhausted = true; break; }
                         var inspected = PanelGeometrySources.Inspect(item, budget, false);
                         if (!current()) return Stale();
+                        sources.Add(new ActionSource(item, inspected));
                         if (inspected.Exhausted) exhausted = true;
                         bool graphLimit = false, graphChanged = false;
                         bool CurrentGraph()
@@ -288,11 +303,11 @@ namespace BetterGhPanel.Runtime
                                 if (scans[i] != null && !CurrentGraph()) return GraphFailure();
                                 if (added == Guid.Empty)
                                     return Failure("Rhino could not prepare one of the selected geometries for copying.", skipped, exhausted);
+                                archiveIds.Add(added);
                                 count++;
                             }
                             metadata.AddRange(scans);
                             bytes += estimate;
-                            sources.Add(new ActionSource(item, inspected));
                         }
                         finally { foreach (var copy in copies) copy.Dispose(); }
                     }
@@ -307,12 +322,13 @@ namespace BetterGhPanel.Runtime
                     return Failure("Geometry clipboard archive exceeded the preparation limit; clipboard was not changed.", skipped, true);
                 bool verifyMetadata = false;
                 foreach (var scan in metadata) if (scan?.HasMetadata == true) { verifyMetadata = true; break; }
-                if (verifyMetadata && !VerifyArchiveMetadata(archive, metadata, budget, current))
+                if (verifyMetadata && !VerifyArchiveMetadata(archive, metadata, archiveIds, budget, current, out string metadataError))
                 {
                     if (!current()) return Stale();
                     return Failure(budget.Limited ? "Copy metadata verification limit reached; clipboard was not changed." :
-                        "Rhino could not verify all copied metadata; clipboard was not changed.", skipped, exhausted || budget.Limited);
+                        "Rhino could not verify all copied metadata (" + metadataError + "); clipboard was not changed.", skipped, exhausted || budget.Limited);
                 }
+                archiveObserver?.Invoke(archive);
                 if (!current()) return Stale();
                 if (!StillCurrent(sources, budget, false, current, out bool limit)) return limit ?
                     Failure("Copy cancelled; source reinspection limit reached; clipboard was not changed.", skipped, true) : Stale();
@@ -383,20 +399,28 @@ namespace BetterGhPanel.Runtime
         }
 
         private static bool VerifyArchiveMetadata(byte[] archive, IReadOnlyList<PanelNativeGeometry.Scan?> expected,
-            PanelGeometrySources.Budget budget, Func<bool> current)
+            IReadOnlyList<Guid> objectIds, PanelGeometrySources.Budget budget, Func<bool> current, out string reason)
         {
+            reason = "archive could not be read";
             try
             {
                 using var file = File3dm.FromByteArray(archive);
-                if (file == null || file.Objects.Count != expected.Count) return false;
-                int index = 0;
-                foreach (var item in file.Objects)
+                if (file == null || file.Objects.Count != expected.Count || objectIds.Count != expected.Count) return false;
+                for (int index = 0; index < expected.Count; index++)
                 {
-                    var witness = expected[index++];
+                    // Object-table enumeration/indexing can produce null even
+                    // when Count is nonzero. Add returned the stable object ID;
+                    // use it to match each archive object to its own witness.
+                    var item = file.Objects.FindId(objectIds[index]);
+                    if (item == null) { reason = "archive object " + (index + 1) + " is unavailable"; return false; }
+                    var witness = expected[index];
                     if (witness?.HasMetadata != true) continue;
                     int remaining = PanelGeometrySources.MaxNodesPerRoot;
-                    if (!PanelNativeGeometry.TryScanForCopy(item.Geometry, budget, ref remaining, current, out var actual) || actual == null ||
-                        !PanelNativeGeometry.SameMetadata(witness, actual)) return false;
+                    var geometry = item.Geometry;
+                    if (geometry == null || !PanelNativeGeometry.TryScanForCopy(geometry, budget, ref remaining, current, out var actual) || actual == null)
+                    { reason = "archive object " + (index + 1) + " metadata could not be inspected"; return false; }
+                    if (!PanelNativeGeometry.SameMetadata(witness, actual))
+                    { reason = "archive object " + (index + 1) + " metadata differs"; return false; }
                 }
                 return true;
             }
@@ -438,7 +462,7 @@ namespace BetterGhPanel.Runtime
             {
                 var fresh = PanelGeometrySources.Inspect(source.Root, budget, standalone);
                 if (fresh.Exhausted) { limit = true; return false; }
-                if (!current() || !PanelGeometrySources.SameGraph(source.Inspection, fresh)) return false;
+                if (!current() || !PanelGeometrySources.SameActionGraph(source.Inspection, fresh)) return false;
             }
             return current();
         }

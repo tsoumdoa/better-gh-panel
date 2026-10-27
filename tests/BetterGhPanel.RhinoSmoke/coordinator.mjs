@@ -7,8 +7,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopFixtures = new Set([
   'highlight-overlap', 'item-order-capture', 'preview-safety', 'preview-reentrant-draw',
-  'preview-native-resources', 'preview-conduit-resources', 'preview-stock-point'
+  'preview-native-resources', 'preview-conduit-resources', 'preview-single-pass-meshing', 'preview-single-pass-geometry',
+  'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point'
 ]);
+// These comparison captures are opt-in. Their results are diagnostic evidence
+// and must not replace any required Panel+ fixture.
+const diagnosticFixtures = new Set(['preview-stock-compatibility-draw', 'preview-compatibility-conduit']);
 
 export const fixtureHostMode = fixture => desktopFixtures.has(fixture) ? 'inactive-desktop' : 'hidden';
 export const fixtureCommand = (executable, fixture, plugin) =>
@@ -20,6 +24,8 @@ export function loadInventory() {
     throw new Error('Invalid or duplicate native fixture inventory');
   return fixtures;
 }
+
+export const requiredFixtures = inventory => inventory.filter(name => !diagnosticFixtures.has(name));
 
 const fileHash = path => createHash('sha256').update(readFileSync(path)).digest('hex');
 const samePath = (a, b) => typeof a === 'string' && isAbsolute(a) &&
@@ -114,7 +120,8 @@ export async function main(args, overrides = {}) {
   }
   const inventory = loadInventory();
   if (selected.some(name => !inventory.includes(name))) throw new Error(`Unknown fixture: ${selected.find(name => !inventory.includes(name))}`);
-  const fixtures = selected.length ? selected : inventory;
+  const fixtures = selected.length ? selected : requiredFixtures(inventory);
+  if (!selected.length) console.log(`Optional preview diagnostics (run explicitly with --fixture): ${[...diagnosticFixtures].join(', ')}`);
   let desktopCheckPassed = true;
   if (fixtures.some(name => desktopFixtures.has(name))) {
     const checkDesktop = overrides.checkDesktop ?? (() => {

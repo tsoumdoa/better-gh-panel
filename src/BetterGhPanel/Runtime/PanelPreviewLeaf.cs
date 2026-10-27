@@ -23,14 +23,21 @@ namespace BetterGhPanel.Runtime
         private readonly GeometryBase? _owned;
         private readonly Mesh? _boxMesh;
         private readonly Action<int> _meshStatus;
+        private readonly Func<long, bool>? _canRetireMeshes;
+        private readonly Action<Mesh[], int[][]?, long>? _retireMeshes;
         private Mesh[]? _generatedMeshes;
         private int[][]? _generatedFaces;
         private MeshingParameters? _meshParameters;
         private int _meshDensity = -1;
+        private long _generatedBytes;
         private bool _meshUnavailable, _cacheLimited;
+        private bool _disposed;
+        internal int DisposeCount { get; private set; }
 
-        private PanelPreviewLeaf(object value, BoundingBox bounds, long bytes, GeometryBase? owned, Mesh? boxMesh, Action<int> meshStatus)
-        { _value = value; Bounds = bounds; Bytes = bytes; _owned = owned; _boxMesh = boxMesh; _meshStatus = meshStatus; }
+        private PanelPreviewLeaf(object value, BoundingBox bounds, long bytes, GeometryBase? owned, Mesh? boxMesh, Action<int> meshStatus,
+            Func<long, bool>? canRetireMeshes, Action<Mesh[], int[][]?, long>? retireMeshes)
+        { _value = value; Bounds = bounds; Bytes = bytes; _owned = owned; _boxMesh = boxMesh; _meshStatus = meshStatus;
+            _canRetireMeshes = canRetireMeshes; _retireMeshes = retireMeshes; }
         internal BoundingBox Bounds { get; }
         internal long Bytes { get; }
 
@@ -39,7 +46,7 @@ namespace BetterGhPanel.Runtime
         // invoking any native construction. Individual Rhino calls can still
         // have a platform-dependent peak; this is not a native sandbox.
         internal static bool TryEstimate(object value, PanelGeometrySources.Budget budget, ref int remaining,
-            out long bytes, out PanelNativeGeometry.Scan? scan)
+            out long bytes, out PanelNativeGeometry.Scan? scan, Func<bool>? current = null)
         {
             bytes = 512;
             scan = null;
@@ -52,16 +59,13 @@ namespace BetterGhPanel.Runtime
             if (value is NurbsCurve nurbs)
             {
                 bool admitted = PanelNurbsSnapshot.TryEstimate(nurbs, out bytes);
-                if (!admitted && nurbs.Points.Count > PanelNurbsLimits.MaxPoints) budget.MarkLimit();
-                return admitted;
+                if (admitted) return true;
             }
             if (value is PolylineCurve poly)
             {
                 int count = poly.PointCount;
-                if (count > MaxPolylinePoints) { budget.MarkLimit(); return false; }
                 if (count < 2 || poly.Dimension != 3) return false;
-                bytes = 4096L + count * 256L;
-                return true;
+                if (count <= MaxPolylinePoints) { bytes = 4096L + count * 256L; return true; }
             }
             if (value is Mesh mesh)
             {
@@ -73,7 +77,7 @@ namespace BetterGhPanel.Runtime
                 bytes = 8192L + (vertices + (long)faces) * 384L;
                 return true;
             }
-            if (!(value is GeometryBase geometry) || !PanelNativeGeometry.TryScan(geometry, budget, ref remaining, out scan) || scan == null)
+            if (!(value is GeometryBase geometry) || !PanelNativeGeometry.TryScanForPreview(geometry, budget, ref remaining, current, out scan) || scan == null)
                 return false;
             // Reserve for source duplication and the largest generated mesh.
             // A single native meshing call can exceed its estimate; the created
@@ -83,7 +87,8 @@ namespace BetterGhPanel.Runtime
         }
 
         internal static PanelPreviewLeaf? Create(object value, long bytes, PanelNativeGeometry.Scan? scan,
-            PanelGeometrySources.Budget budget, ref int remaining, Action<int> meshStatus, Func<bool>? current = null)
+            PanelGeometrySources.Budget budget, ref int remaining, Action<int> meshStatus, Func<bool>? current = null,
+            Func<long, bool>? canRetireMeshes = null, Action<Mesh[], int[][]?, long>? retireMeshes = null)
         {
             GeometryBase? owned = null;
             Mesh? boxMesh = null;
@@ -92,18 +97,18 @@ namespace BetterGhPanel.Runtime
                 if (value is PanelGeometrySources.StandalonePreview custom)
                 {
                     var customBounds = custom.Value.ClippingBox;
-                    return customBounds.IsValid ? new PanelPreviewLeaf(custom, customBounds, bytes, null, null, meshStatus) : null;
+                    return customBounds.IsValid ? new PanelPreviewLeaf(custom, customBounds, bytes, null, null, meshStatus, canRetireMeshes, retireMeshes) : null;
                 }
                 if (value is Point point) value = point.Location;
                 else if (value is LineCurve lineCurve) value = lineCurve.Line;
                 else if (value is ArcCurve arcCurve) value = arcCurve.Arc;
-                else if (value is NurbsCurve nurbs)
+                else if (value is NurbsCurve nurbs && scan == null)
                 {
                     owned = PanelNurbsSnapshot.Create(nurbs, bytes);
                     if (owned == null) return null;
                     value = owned;
                 }
-                else if (value is PolylineCurve poly)
+                else if (value is PolylineCurve poly && scan == null)
                 {
                     int count = poly.PointCount;
                     if (count < 2 || count > MaxPolylinePoints || poly.Dimension != 3 || 4096L + count * 256L > bytes) return null;
@@ -148,7 +153,7 @@ namespace BetterGhPanel.Runtime
                     owned = geometry.Duplicate();
                     if (current != null && !current()) return null;
                     if (owned == null || owned.GetType() != geometry.GetType() ||
-                        !PanelNativeGeometry.TryScan(owned, budget, ref remaining, out var copiedScan) || copiedScan == null ||
+                        !PanelNativeGeometry.TryScanForPreview(owned, budget, ref remaining, current, out var copiedScan) || copiedScan == null ||
                         !PanelNativeGeometry.SameMetadata(scan, copiedScan)) return null;
                     if (current != null && !current()) return null;
                     // Brep validity can scan unbounded hidden vertex adjacency;
@@ -161,7 +166,7 @@ namespace BetterGhPanel.Runtime
                     value is Circle c ? c.BoundingBox : value is Rectangle3d r ? r.BoundingBox :
                     value is Box b ? b.BoundingBox : value is GeometryBase g ? g.GetBoundingBox(false) : BoundingBox.Empty;
                 if (!bounds.IsValid) return null;
-                var result = new PanelPreviewLeaf(value, bounds, bytes, owned, boxMesh, meshStatus);
+                var result = new PanelPreviewLeaf(value, bounds, bytes, owned, boxMesh, meshStatus, canRetireMeshes, retireMeshes);
                 owned = null; boxMesh = null;
                 return result;
             }
@@ -225,7 +230,10 @@ namespace BetterGhPanel.Runtime
                     if (current()) SetMeshUnavailable(_cacheLimited);
                     return;
                 }
-                ClearGeneratedMeshes();
+                if (!current()) return;
+                if (_generatedMeshes != null && _retireMeshes != null && (_canRetireMeshes == null || !_canRetireMeshes(_generatedBytes)))
+                { SetMeshUnavailable(true); return; }
+                ClearGeneratedMeshes(defer: true);
                 if (!current()) return;
                 using var parameters = new MeshingParameters(args.MeshingParameters);
                 // Avoid pathological custom minimum grids and edge lengths before
@@ -267,6 +275,7 @@ namespace BetterGhPanel.Runtime
                     { SetMeshUnavailable(true); return; }
                 }
                 if (faces == 0) { SetMeshUnavailable(true); return; }
+                if (bytes + faces * sizeof(int) > MaxGeneratedBytes) { SetMeshUnavailable(true); return; }
                 var faceIndices = new int[meshes.Length][];
                 for (int index = 0; index < meshes.Length; index++)
                 {
@@ -277,6 +286,7 @@ namespace BetterGhPanel.Runtime
                 var requestedParameters = new MeshingParameters(args.MeshingParameters);
                 _meshParameters = requestedParameters; _meshDensity = requestedDensity;
                 _generatedMeshes = meshes; _generatedFaces = faceIndices; _cacheLimited = limited;
+                _generatedBytes = bytes + faces * sizeof(int);
                 meshes = null; counted = false; // ownership moved to this entry
                 Interlocked.Increment(ref _generatedMeshBuilds);
                 SetMeshUnavailable(limited);
@@ -306,12 +316,21 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        private void ClearGeneratedMeshes()
+        private void ClearGeneratedMeshes(bool defer)
         {
             var meshes = _generatedMeshes;
+            var faces = _generatedFaces;
+            long bytes = _generatedBytes;
             _generatedMeshes = null; _generatedFaces = null; _meshDensity = -1; _cacheLimited = false;
+            _generatedBytes = 0;
             _meshParameters?.Dispose(); _meshParameters = null;
             if (meshes == null) return;
+            if (defer && _retireMeshes != null) { _retireMeshes(meshes, faces, bytes); return; }
+            DisposeGeneratedMeshes(meshes);
+        }
+
+        internal static void DisposeGeneratedMeshes(Mesh[] meshes)
+        {
             foreach (var mesh in meshes)
             {
                 try { mesh.Dispose(); } catch (Exception) { }
@@ -328,8 +347,11 @@ namespace BetterGhPanel.Runtime
 
         public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
+            DisposeCount++;
             SetMeshUnavailable(false);
-            ClearGeneratedMeshes();
+            ClearGeneratedMeshes(defer: false);
             try { _owned?.Dispose(); }
             finally { _boxMesh?.Dispose(); }
         }

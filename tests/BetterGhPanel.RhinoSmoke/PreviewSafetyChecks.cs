@@ -25,6 +25,7 @@ internal static class PreviewSafetyChecks
 
     internal static async Task Run(Assembly assembly)
     {
+        Rhino.Runtime.HostUtils.InitializeRhinoCommon();
         var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
         bool previousModified = rhino.Modified;
         var view = rhino.Views.ActiveView ?? rhino.Views.Add("Preview safety", Rhino.Display.DefinedViewportProjection.Top,
@@ -35,6 +36,7 @@ internal static class PreviewSafetyChecks
             object highlight = Activator.CreateInstance(assembly.GetType("BetterGhPanel.Runtime.PanelGeometryHighlight", true)!, true)!;
             VerifyMutation(assembly, highlight);
             VerifyBudgets(highlight);
+            VerifyStagedAdmission(highlight);
             VerifyActions(assembly);
             VerifyResources(highlight);
             await VerifyDocumentCacheAndDrawing(assembly, rhino);
@@ -45,14 +47,28 @@ internal static class PreviewSafetyChecks
     internal static async Task RunMetadata(Assembly assembly)
     {
         var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
-        if (rhino.Views.ActiveView == null)
-            rhino.Views.ActiveView = rhino.Views.Add("Preview metadata", Rhino.Display.DefinedViewportProjection.Top,
-                new Rectangle(0, 0, 640, 480), false);
-        object highlight = Activator.CreateInstance(assembly.GetType("BetterGhPanel.Runtime.PanelGeometryHighlight", true)!, true)!;
-        VerifyMetadataAndActions(assembly, highlight);
-        VerifyReentrancy(assembly, highlight);
-        VerifyDenseSelectionGestures(assembly, highlight);
-        await VerifyCrossComponentActions(assembly, rhino);
+        bool modified = rhino.Modified;
+        var previous = rhino.Views.ActiveView;
+        var view = rhino.Views.Add("Preview metadata", Rhino.Display.DefinedViewportProjection.Top,
+            new Rectangle(0, 0, 640, 480), false);
+        try
+        {
+            rhino.Views.ActiveView = view;
+            object highlight = Activator.CreateInstance(assembly.GetType("BetterGhPanel.Runtime.PanelGeometryHighlight", true)!, true)!;
+            VerifyMetadataAndActions(assembly, highlight);
+            VerifyReentrancy(assembly, highlight);
+            VerifyLatePublicationContext(assembly, rhino);
+            VerifyReferencedPointFreshness(assembly, highlight, rhino);
+            await VerifyUnsupportedGeometry(assembly, highlight, rhino);
+            VerifyDenseSelectionGestures(assembly, highlight);
+            await VerifyCrossComponentActions(assembly, rhino);
+        }
+        finally
+        {
+            if (previous != null) rhino.Views.ActiveView = previous;
+            view.Close();
+            rhino.Modified = modified;
+        }
     }
 
     private static async Task VerifyCrossComponentActions(Assembly assembly, RhinoDoc rhino)
@@ -224,6 +240,210 @@ internal static class PreviewSafetyChecks
         }
     }
 
+    private static void VerifyReferencedPointFreshness(Assembly assembly, object highlight, RhinoDoc rhino)
+    {
+        var prior = Forms.Clipboard.GetDataObject(); bool modified = rhino.Modified;
+        Point3d value = new Point3d(4, 5, 6);
+        Guid first = rhino.Objects.AddPoint(value), second = rhino.Objects.AddPoint(value);
+        var point = new GH_Point(value) { ReferenceID = first };
+        point.ReferenceType(GH_PointRefType.point_object);
+        var observerField = highlight.GetType().GetField("_admissionObserver", Instance)!;
+        try
+        {
+            Check(point.IsReferencedGeometry && point.IsGeometryLoaded && point.ReferenceID == first,
+                "the point reference fixture starts with a loaded same-value source");
+            var witnessType = assembly.GetType("BetterGhPanel.Runtime.CaptureGraphWitness", true)!;
+            object?[] captureArgs = { point, 20000, null };
+            bool captured = (bool)witnessType.GetMethod("TryCapture", Static)!.Invoke(null, captureArgs)!;
+            var witness = captureArgs[2]!;
+            Check(captured && (bool)Method(witness, "IsCurrent").Invoke(witness, Array.Empty<object>())!,
+                "the captured point witness accepts the original reference");
+            point.ReferenceID = second;
+            Check(point.Value == value && !(bool)Method(witness, "IsCurrent").Invoke(witness, Array.Empty<object>())!,
+                "the captured point witness rejects a same-value reference retarget");
+            point.ReferenceID = first;
+            observerField.SetValue(highlight, (Action<int, object>)((_, __) => point.ReferenceID = second));
+            Set(highlight, new IGH_Goo?[] { point }, new[] { 0 }, new[] { 0 });
+            observerField.SetValue(highlight, null);
+            Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && point.Value == value,
+                "preview admission rejects a same-value point retarget during construction");
+            point.ReferenceID = first; Set(highlight, new IGH_Goo?[] { point }, new[] { 0 }, new[] { 0 });
+            Check(Count(highlight) == 1 && Box(highlight).Contains(value), "an unchanged referenced point previews normally");
+
+            var viewport = rhino.Views.ActiveView.ActiveViewport;
+            var target = viewport.CameraTarget;
+            var custom = new StandalonePointPreview();
+            custom.OnBounds = () => point.ReferenceID = second;
+            object framed = Frame(assembly, new IGH_Goo?[] { point, custom });
+            Check(!Property<bool>(framed, "Success") && viewport.CameraTarget == target && point.Value == value,
+                "a same-value point retarget during a later bounds callback cancels frame");
+            point.ReferenceID = first;
+            using var curve = new LineCurve(Point3d.Origin, new Point3d(3, 0, 0));
+            Check(curve.UserData.Add(new CopyRoundTripUserData { Value = 11 }), "point-reference copy callback data is attached");
+            Forms.Clipboard.SetText("keep point reference clipboard");
+            CopyRoundTripUserData.DuplicateAt = 1; CopyRoundTripUserData.TriggeredGeneration = 0;
+            CopyRoundTripUserData.OnDuplicateAction = () => point.ReferenceID = second;
+            object copied = Copy(assembly, new IGH_Goo?[] { point, new GH_Curve { Value = curve } });
+            Check(!Property<bool>(copied, "Success") && Forms.Clipboard.GetText() == "keep point reference clipboard" &&
+                point.Value == value && CopyRoundTripUserData.TriggeredGeneration > 0,
+                "a same-value point retarget during duplication cancels copy before publication");
+
+            point.ReferenceID = first;
+            uint serial = rhino.Objects.FindId(first).RuntimeSerialNumber;
+            bool replaced = false;
+            custom.OnBounds = () => replaced = rhino.Objects.Replace(first, value);
+            target = viewport.CameraTarget;
+            framed = Frame(assembly, new IGH_Goo?[] { point, custom });
+            Check(replaced && rhino.Objects.FindId(first).RuntimeSerialNumber != serial && !Property<bool>(framed, "Success") &&
+                viewport.CameraTarget == target && point.ReferenceID == first && point.Value == value,
+                "replacing the referenced Rhino object under the same ID cancels frame");
+            serial = rhino.Objects.FindId(first).RuntimeSerialNumber; replaced = false;
+            CopyRoundTripUserData.TriggeredGeneration = 0;
+            CopyRoundTripUserData.OnDuplicateAction = () => replaced = rhino.Objects.Replace(first, value);
+            copied = Copy(assembly, new IGH_Goo?[] { point, new GH_Curve { Value = curve } });
+            Check(replaced && rhino.Objects.FindId(first).RuntimeSerialNumber != serial && !Property<bool>(copied, "Success") &&
+                Forms.Clipboard.GetText() == "keep point reference clipboard" && point.ReferenceID == first && point.Value == value,
+                "replacing the referenced Rhino object under the same ID cancels copy");
+        }
+        finally
+        {
+            observerField.SetValue(highlight, null); CopyRoundTripUserData.OnDuplicateAction = null;
+            Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
+            rhino.Objects.Delete(first, true); rhino.Objects.Delete(second, true); rhino.Modified = modified;
+            if (prior == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(prior, true);
+        }
+    }
+
+    private static void VerifyLatePublicationContext(Assembly assembly, RhinoDoc rhino)
+    {
+        var previous = Forms.Clipboard.GetDataObject();
+        var actionType = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!;
+        var resultType = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActionResult", true)!;
+        var completionType = typeof(Action<>).MakeGenericType(resultType);
+        var viewport = rhino.Views.ActiveView.ActiveViewport;
+        bool originalLock = viewport.LockedProjection;
+        double tolerance = rhino.ModelAbsoluteTolerance;
+        bool modified = rhino.Modified;
+        try
+        {
+            viewport.LockedProjection = false;
+            var item = new IGH_Goo?[] { new GH_Point(new Point3d(19, 0, 0)) };
+            var normalFrame = Frame(assembly, item);
+            Check(Property<bool>(normalFrame, "Success"), "unchanged frame publication context remains valid");
+            var target = viewport.CameraTarget;
+            bool dispatching = false, lockChanged = false;
+            int checks = 0;
+            object? frameCompletion = null, frameStarted = null;
+            Action<object> frameDone = value => frameCompletion = value;
+            var typedFrameDone = Delegate.CreateDelegate(completionType, frameDone.Target, frameDone.Method);
+            Func<bool> frameCurrent = () =>
+            {
+                if (dispatching && ++checks == 4) { viewport.LockedProjection = true; lockChanged = true; }
+                return true;
+            };
+            Action frameWriter = () =>
+            {
+                frameStarted = actionType.GetMethod("FrameWithCompletion", Static)!.Invoke(null,
+                    new object?[] { new IGH_Goo?[] { new GH_Point(new Point3d(90, 0, 0)) }, frameCurrent, typedFrameDone });
+                dispatching = true;
+            };
+            actionType.GetMethod("CommitFrame", Static)!.Invoke(null,
+                new object?[] { viewport.Id, (Func<bool>)(() => true), frameWriter, null });
+            Check(frameStarted != null && Property<bool>(frameStarted, "Deferred") && lockChanged && frameCompletion != null &&
+                !Property<bool>(frameCompletion, "Success") && Property<string>(frameCompletion, "Error").Contains("cancelled") && viewport.CameraTarget == target,
+                $"a deferred frame rechecks a viewport lock changed by its final source predicate (checks={checks})");
+            viewport.LockedProjection = false;
+
+            var normalCopy = Copy(assembly, item);
+            Check(Property<bool>(normalCopy, "Success"), "unchanged clipboard publication context remains valid");
+            Forms.Clipboard.SetText("keep late-context clipboard");
+            dispatching = false; checks = 0;
+            bool toleranceChanged = false;
+            object? copyCompletion = null, copyStarted = null;
+            Action<object> copyDone = value => copyCompletion = value;
+            var typedCopyDone = Delegate.CreateDelegate(completionType, copyDone.Target, copyDone.Method);
+            Func<bool> copyCurrent = () =>
+            {
+                if (dispatching && ++checks == 4) { rhino.ModelAbsoluteTolerance = tolerance * 2; toleranceChanged = true; }
+                return true;
+            };
+            Action clipboardWriter = () =>
+            {
+                copyStarted = actionType.GetMethod("CopyGeometryWithCompletion", Static)!.Invoke(null,
+                    new object?[] { item, rhino.ModelUnitSystem, tolerance, copyCurrent, typedCopyDone });
+                dispatching = true;
+            };
+            actionType.GetMethod("CommitClipboard", Static)!.Invoke(null,
+                new object?[] { (Func<bool>)(() => true), clipboardWriter, null });
+            Check(copyStarted != null && Property<bool>(copyStarted, "Deferred") && toleranceChanged && copyCompletion != null &&
+                !Property<bool>(copyCompletion, "Success") && Property<string>(copyCompletion, "Error").Contains("cancelled") && Forms.Clipboard.GetText() == "keep late-context clipboard",
+                $"a deferred copy rechecks tolerance changed by its final source predicate (checks={checks})");
+        }
+        finally
+        {
+            viewport.LockedProjection = originalLock;
+            rhino.ModelAbsoluteTolerance = tolerance; rhino.Modified = modified;
+            if (previous == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(previous, true);
+        }
+    }
+
+    private static async Task VerifyUnsupportedGeometry(Assembly assembly, object highlight, RhinoDoc rhino)
+    {
+        var prior = Forms.Clipboard.GetDataObject();
+        bool modified = rhino.Modified;
+        var originalIds = rhino.Objects.Select(item => item.Id).ToHashSet();
+        using var cloud = new PointCloud(); cloud.Add(new Point3d(2, 3, 4));
+        using var profile = new Rectangle3d(Plane.WorldXY, 2, 3).ToNurbsCurve();
+        using var extrusion = Extrusion.Create(profile, 4, true) ?? throw new InvalidOperationException("Extrusion fixture failed");
+        var cloudHolder = new GH_PointCloud { Value = cloud };
+        var extrusionHolder = new GH_Extrusion { Value = extrusion };
+        var values = new IGH_Goo?[] { cloudHolder, extrusionHolder,
+            new GH_ObjectWrapper(new BoundingBox(Point3d.Origin, new Point3d(2, 3, 4))),
+            new GH_ObjectWrapper(new Sphere(Plane.WorldXY, 2)),
+            new GH_ObjectWrapper(new Polyline(new[] { Point3d.Origin, new Point3d(3, 0, 0) })) };
+        try
+        {
+            for (int i = 0; i < values.Length; i++)
+            {
+                Set(highlight, new[] { values[i] }, new[] { 0 }, new[] { 0 });
+                Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && !Bounds(assembly, values[i]!).IsValid,
+                    "unsupported standalone geometry " + i + " reports partial preview and unavailable bounds");
+                object framed = Frame(assembly, new IGH_Goo?[] { values[i], new GH_Point(new Point3d(10, 0, 0)) });
+                Check(Property<bool>(framed, "Success") && Property<int>(framed, "Skipped") == 1,
+                    "frame visibly skips unsupported standalone geometry " + i);
+                object copied = Copy(assembly, new IGH_Goo?[] { values[i], new GH_Point(new Point3d(10, 0, 0)) });
+                Check(Property<bool>(copied, "Success") && Property<int>(copied, "Count") == 1 && Property<int>(copied, "Skipped") == 1,
+                    "copy visibly skips unsupported standalone geometry " + i);
+            }
+            foreach (var unsupported in new IGH_GeometricGoo[] { cloudHolder, extrusionHolder })
+            {
+                var group = new GH_GeometryGroup(); group.Objects.Add(new GH_Point(Point3d.Origin)); group.Objects.Add(unsupported);
+                Set(highlight, new IGH_Goo?[] { group }, new[] { 0 }, new[] { 0 });
+                Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && !Bounds(assembly, group).IsValid,
+                    "a group with unsupported geometry is not silently admitted as a partial preview");
+                object framed = Frame(assembly, new IGH_Goo?[] { group, new GH_Point(new Point3d(10, 0, 0)) });
+                object copied = Copy(assembly, new IGH_Goo?[] { group, new GH_Point(new Point3d(10, 0, 0)) });
+                Check(Property<bool>(framed, "Success") && Property<int>(framed, "Skipped") == 1 &&
+                    Property<bool>(copied, "Success") && Property<int>(copied, "Skipped") == 1,
+                    "frame and copy report the skipped group and preserve the separate supported point");
+            }
+            Check(RhinoApp.RunScript(rhino.RuntimeSerialNumber, "_Paste", false), "Rhino accepts the partial-action clipboard");
+            var deadline = DateTime.UtcNow.AddSeconds(20);
+            while (!rhino.Objects.Any(item => !originalIds.Contains(item.Id)))
+            { if (DateTime.UtcNow >= deadline) throw new TimeoutException("Partial-action Paste did not add its point."); await Task.Delay(25); }
+            var pasted = rhino.Objects.Where(item => !originalIds.Contains(item.Id)).ToArray();
+            Check(pasted.Length == 1 && pasted[0].Geometry is Rhino.Geometry.Point point && point.Location == new Point3d(10, 0, 0),
+                "a partial action pastes only the explicitly supported point");
+        }
+        finally
+        {
+            Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
+            foreach (var item in rhino.Objects.Where(item => !originalIds.Contains(item.Id)).ToArray()) rhino.Objects.Delete(item.Id, true);
+            rhino.Modified = modified;
+            if (prior == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(prior, true);
+        }
+    }
+
     private static void VerifyDenseSelectionGestures(Assembly assembly, object highlight)
     {
         const int count = 5000;
@@ -257,7 +477,7 @@ internal static class PreviewSafetyChecks
         }
     }
 
-    internal static Task RunReentrantDraw(Assembly assembly)
+    internal static async Task RunReentrantDraw(Assembly assembly)
     {
         var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
         bool modified = rhino.Modified;
@@ -287,8 +507,11 @@ internal static class PreviewSafetyChecks
                 wireHeld = !ownedCurve.Disposed;
             };
             view.Redraw();
+            using (var bitmap = CapturePreview(view, highlight, "reentrant wire", conduit)) { }
+            await WaitForPreviewRetirement(highlight);
             Check(wireCalled && wireHeld && ownedCurve.Disposed && Count(highlight) == 0,
-                "clearing during a standalone wire callback keeps grouped geometry alive until the draw exits");
+                $"clearing during a standalone wire callback keeps grouped geometry alive until the draw exits " +
+                $"(called={wireCalled}, held={wireHeld}, disposed={ownedCurve.Disposed}, count={Count(highlight)}, draws={conduit.Draws})");
 
             using var brep = new Box(new BoundingBox(Point3d.Origin, new Point3d(2, 3, 4))).ToBrep();
             group = new GH_GeometryGroup(); group.Objects.Add(new GH_Brep { Value = brep });
@@ -305,9 +528,13 @@ internal static class PreviewSafetyChecks
                 meshHeld = !ownedBrep.Disposed && (int)live.GetValue(null)! > 0;
             };
             view.Redraw();
+            using (var bitmap = CapturePreview(view, highlight, "reentrant mesh", conduit)) { }
+            await WaitForPreviewRetirement(highlight);
             Check(meshCalled && meshHeld && ownedBrep.Disposed && (int)live.GetValue(null)! == 0 &&
                 Count(highlight) == 1 && Box(highlight).Contains(new Point3d(50, 0, 0)),
-                "meshing reset and replacement defer grouped Brep and generated mesh disposal until shading exits");
+                $"meshing reset and replacement defer grouped Brep and generated mesh disposal until shading exits " +
+                $"(called={meshCalled}, held={meshHeld}, disposed={ownedBrep.Disposed}, live={(int)live.GetValue(null)!}, " +
+                $"count={Count(highlight)}, bounds={Box(highlight)}, draws={conduit.Draws})");
             Method(component, "ClearHighlight").Invoke(component, Array.Empty<object>());
 
             var originalPoint = new GH_Point(new Point3d(5, 0, 0));
@@ -342,10 +569,11 @@ internal static class PreviewSafetyChecks
             Check(document.PreviewBoundingBox.Contains(new Point3d(5, 0, 0)) &&
                 !document.PreviewBoundingBox.Contains(new Point3d(300, 0, 0)), "host bounds refresh to the captured generation");
             int previousDraws = conduit.Draws; view.Redraw();
+            using (var bitmap = CapturePreview(view, highlight, "reentrant captured generation", conduit)) { }
             Check(conduit.Draws > previousDraws, "the captured generation reaches the actual viewport draw callback");
             Method(component, "ClearHighlight").Invoke(component, Array.Empty<object>());
+            await WaitForPreviewRetirement(highlight);
             Check(capturedOwned!.Disposed && !Box(highlight).IsValid, "clearing the captured generation disposes its owned geometry");
-            return Task.CompletedTask;
         }
         finally
         {
@@ -362,6 +590,160 @@ internal static class PreviewSafetyChecks
             object entry = pair.GetType().GetProperty("Value")!.GetValue(pair)!;
             foreach (object leaf in (IEnumerable)Field<object>(entry, "Leaves"))
                 if (Field<object?>(leaf, "_owned") is GeometryBase owned) yield return owned;
+        }
+    }
+
+    private static IEnumerable<Mesh> OwnedBoxMeshes(object highlight)
+    {
+        foreach (object pair in (IEnumerable)Field<object>(highlight, "_entries"))
+        {
+            object entry = pair.GetType().GetProperty("Value")!.GetValue(pair)!;
+            foreach (object leaf in (IEnumerable)Field<object>(entry, "Leaves"))
+                if (Field<object?>(leaf, "_boxMesh") is Mesh mesh) yield return mesh;
+        }
+    }
+
+    private static async Task WaitForPreviewRetirement(object highlight)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(20);
+        while (Property<bool>(highlight, "RetirementPending"))
+        { if (DateTime.UtcNow >= deadline) throw new TimeoutException("Preview resources did not retire on Rhino idle."); await Task.Delay(25); }
+    }
+
+    private static Bitmap CapturePreview(Rhino.Display.RhinoView view, object highlight, string phase, PreviewConduit? conduit)
+    {
+        string State() => $"{phase}: entries={Count(highlight)}, bounds={Box(highlight)}, bytes={Property<long>(highlight, "RetainedBytes")}, " +
+            $"wire={Property<int>(highlight, "DrawWireCalls")}, mesh={Property<int>(highlight, "DrawMeshCalls")}, " +
+            $"retirementPending={Property<bool>(highlight, "RetirementPending")}, idleReleases={Property<int>(highlight, "IdleReleases")}, " +
+            $"conduit={conduit?.Draws ?? 0}, mesh callbacks={conduit?.MeshesCompleted ?? 0}/{conduit?.MeshesStarted ?? 0}, " +
+            $"wire callbacks={conduit?.WiresCompleted ?? 0}/{conduit?.WiresStarted ?? 0}, status={Status(highlight)}";
+        Console.WriteLine("Before preview capture: " + State());
+        Console.Out.Flush();
+        try { return Rhino.Display.DisplayPipeline.DrawToBitmap(view.ActiveViewport, 640, 480); }
+        catch (Exception ex) { Console.WriteLine("Preview capture failed: " + State() + "; " + ex); Console.Out.Flush(); throw; }
+    }
+
+    // This is an explicit handler seam, not evidence that Rhino's real idle
+    // event is an end-of-frame notification. The separate idle counter reports
+    // what this embedded WinForms host actually delivered.
+    internal static async Task RunRetirementSeam(Assembly assembly)
+    {
+        var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
+        bool modified = rhino.Modified;
+        var previous = rhino.Views.ActiveView;
+        var view = rhino.Views.Add("Preview retirement seam", Rhino.Display.DefinedViewportProjection.Top,
+            new Rectangle(0, 0, 640, 480), false);
+        using var document = new GH_Document { Enabled = true };
+        using var brep = new Box(new BoundingBox(new Point3d(-2, -2, -1), new Point3d(2, 2, 1))).ToBrep();
+        var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
+        component.CreateAttributes();
+        using var conduit = new PreviewConduit(component, document);
+        int idleInCapture = 0, idleAfterCapture = 0;
+        bool captureActive = false;
+        EventHandler observeIdle = (_, _) => { if (captureActive) idleInCapture++; else idleAfterCapture++; };
+        RhinoApp.Idle += observeIdle;
+        try
+        {
+            rhino.Views.ActiveView = view;
+            view.ActiveViewport.ZoomBoundingBox(new BoundingBox(new Point3d(-4, -4, -2), new Point3d(4, 4, 2)));
+            document.Properties.KeepOpen = true; document.PreviewMode = GH_PreviewMode.Shaded;
+            document.AddObject(component, false);
+            object highlight = Field<object>(component, "_highlight");
+            var leafType = assembly.GetType("BetterGhPanel.Runtime.PanelPreviewLeaf", true)!;
+            var live = leafType.GetProperty("LiveGeneratedMeshes", Static)!;
+            var holder = new GH_Brep { Value = brep };
+            var group = new GH_GeometryGroup(); group.Objects.Add(holder);
+            GeometryBase? wireOwned = null, meshOwned = null, resetOwned = null;
+            Mesh[] resetMeshes = Array.Empty<Mesh>();
+            bool wireCalled = false, wireGuarded = false, wireFrameHeld = false;
+            bool meshCalled = false, meshGuarded = false, meshFrameHeld = false, resetHeld = false;
+            long heldBytes = 0;
+            string? error = null;
+            conduit.OnDraw = args =>
+            {
+                try
+                {
+                    var customWire = new StandalonePointPreview();
+                    Set(highlight, new IGH_Goo?[] { group, customWire }, new[] { 0, 1 }, new[] { 0, 1 });
+                    wireOwned = OwnedGeometry(highlight).OfType<Brep>().Single();
+                    customWire.OnWire = () =>
+                    {
+                        wireCalled = true;
+                        Method(component, "ClearHighlight").Invoke(component, Array.Empty<object>());
+                        int calls = Property<int>(highlight, "DrawWireCalls");
+                        Method(highlight, "ReleaseOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
+                        component.DrawViewportWires(args);
+                        wireGuarded = !wireOwned.Disposed && Property<bool>(highlight, "RetirementPending") &&
+                            Property<int>(highlight, "DrawWireCalls") == calls;
+                    };
+                    component.DrawViewportWires(args);
+                    wireFrameHeld = !wireOwned.Disposed;
+
+                    Set(highlight, new IGH_Goo?[] { group }, new[] { 0 }, new[] { 0 });
+                    resetOwned = OwnedGeometry(highlight).OfType<Brep>().Single();
+                    document.PreviewMeshType = GH_PreviewMesh.LowQuality;
+                    component.DrawViewportMeshes(args);
+                    var firstEntry = ((IEnumerable)Field<object>(highlight, "_entries")).Cast<object>().Single();
+                    object firstValue = firstEntry.GetType().GetProperty("Value")!.GetValue(firstEntry)!;
+                    object firstLeaf = ((IEnumerable)Field<object>(firstValue, "Leaves")).Cast<object>().Single();
+                    resetMeshes = Field<Mesh[]?>(firstLeaf, "_generatedMeshes") ?? Array.Empty<Mesh>();
+                    document.PreviewMeshType = GH_PreviewMesh.HighQuality;
+                    component.DrawViewportMeshes(args);
+                    resetHeld = resetMeshes.Length > 0 && resetMeshes.All(mesh => !mesh.Disposed) &&
+                        !resetOwned.Disposed && Property<bool>(highlight, "RetirementPending");
+
+                    var customMesh = new StandalonePointPreview();
+                    Set(highlight, new IGH_Goo?[] { group, customMesh }, new[] { 0, 1 }, new[] { 0, 1 });
+                    meshOwned = OwnedGeometry(highlight).OfType<Brep>().Single();
+                    customMesh.OnMesh = () =>
+                    {
+                        meshCalled = true;
+                        int calls = Property<int>(highlight, "DrawMeshCalls");
+                        component.DocumentContextChanged(document, GH_DocumentContext.Close);
+                        Method(highlight, "ReleaseOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
+                        component.DrawViewportMeshes(args);
+                        heldBytes = Property<long>(highlight, "RetainedBytes");
+                        meshGuarded = !wireOwned.Disposed && !resetOwned.Disposed && !meshOwned.Disposed &&
+                            resetMeshes.All(mesh => !mesh.Disposed) && (int)live.GetValue(null)! > 0 &&
+                            Property<bool>(highlight, "RetirementPending") && Property<int>(highlight, "DrawMeshCalls") == calls &&
+                            heldBytes > 0 && heldBytes <= 16L * 1024 * 1024;
+                    };
+                    component.DrawViewportMeshes(args);
+                    meshFrameHeld = !wireOwned.Disposed && !resetOwned.Disposed && !meshOwned.Disposed &&
+                        resetMeshes.All(mesh => !mesh.Disposed);
+                }
+                catch (Exception ex) { error = ex.ToString(); }
+            };
+            conduit.Enabled = true;
+            captureActive = true;
+            using var bitmap = CapturePreview(view, highlight, "retirement seam", conduit);
+            captureActive = false;
+            Check(error == null && bitmap != null && GreenPixels(bitmap) > 0,
+                "retirement seam executes an actual shaded draw: " + error);
+            Check(wireCalled && wireGuarded && wireFrameHeld && wireOwned != null && !wireOwned.Disposed,
+                "simulated idle and nested wire draw cannot release a cleared generation during its active callback");
+            Check(resetHeld && meshCalled && meshGuarded && meshFrameHeld && meshOwned != null && !meshOwned.Disposed,
+                "mesh reset and document close retain drawn geometry through callback and capture return, including simulated reentrant idle");
+            int releases = Property<int>(highlight, "IdleReleases");
+            Method(highlight, "ReleaseOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
+            Check(wireOwned!.Disposed && resetOwned!.Disposed && meshOwned!.Disposed && resetMeshes.All(mesh => mesh.Disposed) &&
+                (int)live.GetValue(null)! == 0 && Property<long>(highlight, "RetainedBytes") == 0 &&
+                !Property<bool>(highlight, "RetirementPending") && Property<int>(highlight, "IdleReleases") == releases + 1,
+                "the explicit post-capture retirement seam releases all retired resources and clears its pending subscription");
+            Method(highlight, "ReleaseOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
+            Check((int)live.GetValue(null)! == 0 && Property<long>(highlight, "RetainedBytes") == 0,
+                "repeated retirement does not dispose or account for the same resources twice");
+            await Task.Delay(1000);
+            Console.WriteLine($"RhinoApp.Idle observer: during capture={idleInCapture}, after capture={idleAfterCapture}; " +
+                "this is host evidence only, not an end-of-frame guarantee.");
+        }
+        finally
+        {
+            RhinoApp.Idle -= observeIdle;
+            conduit.Enabled = false;
+            document.Properties.KeepOpen = false; document.PreviewMode = GH_PreviewMode.Disabled;
+            if (previous != null) rhino.Views.ActiveView = previous;
+            view.Close(); rhino.Modified = modified;
         }
     }
 
@@ -460,9 +842,32 @@ internal static class PreviewSafetyChecks
             copy = Copy(assembly, ChangePointAfterPreparation(mutable));
             Check(!Property<bool>(copy, "Success") && Forms.Clipboard.GetText() == "preserve reentrant clipboard",
                 "changing a captured point value on the same holder cancels copy before publication");
+
+            var empty = new GH_GeometryGroup();
+            frame = Frame(assembly, new IGH_Goo?[] { empty, new GH_Point(new Point3d(12, 0, 0)) });
+            Check(Property<bool>(frame, "Success") && Property<int>(frame, "Skipped") == 1,
+                "an unchanged empty group is reported as skipped while a point frames");
+            copy = Copy(assembly, new IGH_Goo?[] { empty, new GH_Point(new Point3d(12, 0, 0)) });
+            Check(Property<bool>(copy, "Success") && Property<int>(copy, "Skipped") == 1,
+                "an unchanged empty group is reported as skipped while a point copies");
+            target = viewport.CameraTarget;
+            custom.OnBounds = () => empty.Objects.Add(new GH_Point(new Point3d(80, 0, 0)));
+            frame = Frame(assembly, new IGH_Goo?[] { empty, custom });
+            Check(!Property<bool>(frame, "Success") && viewport.CameraTarget == target && empty.Objects.Count == 1,
+                "a callback changing an earlier skipped empty group cancels frame without moving the camera");
+            empty.Objects.Clear(); Forms.Clipboard.SetText("keep skipped group clipboard");
+            using var withData = new LineCurve(Point3d.Origin, new Point3d(2, 0, 0));
+            Check(withData.UserData.Add(new CopyRoundTripUserData { Value = 9 }), "skipped-group copy callback data is attached");
+            CopyRoundTripUserData.DuplicateCalls = 0; CopyRoundTripUserData.TriggeredGeneration = 0; CopyRoundTripUserData.DuplicateAt = 1;
+            CopyRoundTripUserData.OnDuplicateAction = () => empty.Objects.Add(new GH_Point(new Point3d(80, 0, 0)));
+            copy = Copy(assembly, new IGH_Goo?[] { empty, new GH_Curve { Value = withData } });
+            Check(!Property<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep skipped group clipboard" &&
+                empty.Objects.Count == 1 && CopyRoundTripUserData.TriggeredGeneration > 0,
+                "a duplicate callback changing an earlier skipped empty group cancels copy before replacing the clipboard");
         }
         finally
         {
+            CopyRoundTripUserData.OnDuplicateAction = null;
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
             if (previous == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(previous, true);
         }
@@ -523,7 +928,7 @@ internal static class PreviewSafetyChecks
                 document.PreviewMeshType = mode;
                 component.ExpirePreview(false);
                 view.Redraw();
-                using var meshBitmap = Rhino.Display.DisplayPipeline.DrawToBitmap(view.ActiveViewport, 640, 480);
+                using var meshBitmap = CapturePreview(view, highlight, "native boxes " + mode, null);
                 Check(meshBitmap != null && Count(highlight) == 2 && Property<long>(highlight, "RetainedBytes") == bytes &&
                     Box(highlight).Contains(new Point3d(2, 2, 1)),
                     "mesh-setting changes retain bounded standalone and grouped box snapshots without regenerating caches");
@@ -545,7 +950,7 @@ internal static class PreviewSafetyChecks
                 component.ExpirePreview(false);
                 int before = (int)builds.GetValue(null)!;
                 view.Redraw();
-                using var bitmap = Rhino.Display.DisplayPipeline.DrawToBitmap(view.ActiveViewport, 640, 480);
+                using var bitmap = CapturePreview(view, highlight, "native Breps " + mode, null);
                 Check(bitmap != null && Count(highlight) == 2 && (int)builds.GetValue(null)! > before &&
                     (int)live.GetValue(null)! > 0 && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
                     "standalone and grouped Breps regenerate bounded shaded meshes after a meshing setting change");
@@ -622,7 +1027,7 @@ internal static class PreviewSafetyChecks
                 if (mode == GH_PreviewMesh.Custom) document.PreviewCustomMeshParameters = new MeshingParameters(0.4);
                 document.PreviewMeshType = mode;
                 int before = conduit.Draws;
-                using var bitmap = Rhino.Display.DisplayPipeline.DrawToBitmap(view.ActiveViewport, 640, 480);
+                using var bitmap = CapturePreview(view, highlight, "conduit boxes " + mode, conduit);
                 Check(bitmap != null && conduit.Draws > before && Count(highlight) == 2 &&
                     Property<long>(highlight, "RetainedBytes") == bytes && Box(highlight).Contains(new Point3d(2, 2, 1)),
                     "wire and shaded callbacks retain bounded standalone and grouped boxes across mesh resets");
@@ -632,6 +1037,381 @@ internal static class PreviewSafetyChecks
         finally
         {
             conduit.Enabled = false;
+            if (previous != null) rhino.Views.ActiveView = previous;
+            view.Close(); rhino.Modified = modified;
+        }
+        return Task.CompletedTask;
+    }
+
+    // Separate diagnostic coverage: multiple real preview callbacks run in a
+    // single native capture, so this does not turn the independently failing
+    // repeated-capture fixtures into passes.
+    internal static async Task RunSinglePassMeshing(Assembly assembly)
+    {
+        var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
+        bool modified = rhino.Modified;
+        var previous = rhino.Views.ActiveView;
+        var view = rhino.Views.Add("Single-pass preview meshing", Rhino.Display.DefinedViewportProjection.Top,
+            new Rectangle(0, 0, 640, 480), false);
+        using var document = new GH_Document { Enabled = true };
+        using var brep = new Box(new BoundingBox(new Point3d(-2, -2, -1), new Point3d(2, 2, 1))).ToBrep();
+        var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
+        component.CreateAttributes();
+        using var conduit = new PreviewConduit(component, document);
+        try
+        {
+            rhino.Views.ActiveView = view;
+            view.ActiveViewport.ConstructionGridVisible = view.ActiveViewport.ConstructionAxesVisible = view.ActiveViewport.WorldAxesVisible = false;
+            view.ActiveViewport.ZoomBoundingBox(new BoundingBox(new Point3d(-4, -4, -2), new Point3d(4, 4, 2)));
+            var shaded = Rhino.Display.DisplayModeDescription.FindByName("Shaded");
+            if (shaded != null) view.ActiveViewport.DisplayMode = shaded;
+            document.Properties.KeepOpen = true; document.PreviewMode = GH_PreviewMode.Shaded;
+            document.AddObject(component, false);
+            var highlight = Field<object>(component, "_highlight");
+            var leafType = assembly.GetType("BetterGhPanel.Runtime.PanelPreviewLeaf", true)!;
+            var live = leafType.GetProperty("LiveGeneratedMeshes", Static)!;
+            var builds = leafType.GetProperty("GeneratedMeshBuilds", Static)!;
+            var holder = new GH_Brep { Value = brep };
+            var group = new GH_GeometryGroup(); group.Objects.Add(holder);
+            var source = new IGH_Goo?[] { holder, group };
+            Set(highlight, source, new[] { 0, 1 }, new[] { 0, 1 });
+            var changed = new bool[3]; var reused = new bool[3];
+            bool callback = false, meshCalled = false, meshHeld = false, heldAfterCallback = false;
+            GeometryBase? reentrantOwned = null;
+            string? error = null;
+            conduit.OnDraw = args =>
+            {
+                callback = true;
+                try
+                {
+                    // Start with a fresh generation after any native GH draw.
+                    Set(highlight, source, new[] { 0, 1 }, new[] { 0, 1 });
+                    var modes = new[] { GH_PreviewMesh.LowQuality, GH_PreviewMesh.HighQuality, GH_PreviewMesh.Custom };
+                    for (int i = 0; i < modes.Length; i++)
+                    {
+                        if (modes[i] == GH_PreviewMesh.Custom) document.PreviewCustomMeshParameters = new MeshingParameters(0.35);
+                        document.PreviewMeshType = modes[i];
+                        int before = (int)builds.GetValue(null)!;
+                        int wires = Property<int>(highlight, "DrawWireCalls"), meshes = Property<int>(highlight, "DrawMeshCalls");
+                        component.DrawViewportMeshes(args); component.DrawViewportWires(args);
+                        int after = (int)builds.GetValue(null)!, cached = (int)live.GetValue(null)!;
+                        changed[i] = after > before && cached > 0 && Count(highlight) == 2 &&
+                            Property<int>(highlight, "DrawWireCalls") > wires && Property<int>(highlight, "DrawMeshCalls") > meshes &&
+                            Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024;
+                        component.DrawViewportMeshes(args);
+                        reused[i] = (int)builds.GetValue(null)! == after && (int)live.GetValue(null)! == cached;
+                    }
+
+                    var custom = new StandalonePointPreview();
+                    Set(highlight, new IGH_Goo?[] { group, custom }, new[] { 0, 1 }, new[] { 0, 1 });
+                    var owned = OwnedGeometry(highlight).OfType<Brep>().Single();
+                    reentrantOwned = owned;
+                    custom.OnMesh = () =>
+                    {
+                        meshCalled = true;
+                        document.PreviewMeshType = GH_PreviewMesh.HighQuality;
+                        Set(highlight, new IGH_Goo?[] { new GH_Point(new Point3d(50, 0, 0)) }, new[] { 0 }, new[] { 0 });
+                        component.ExpirePreview(false);
+                        meshHeld = !owned.Disposed && (int)live.GetValue(null)! > 0;
+                    };
+                    component.DrawViewportMeshes(args);
+                    heldAfterCallback = !owned.Disposed && Property<bool>(highlight, "RetirementPending") && Count(highlight) == 1 &&
+                        Box(highlight).Contains(new Point3d(50, 0, 0));
+                }
+                catch (Exception ex) { error = ex.ToString(); }
+            };
+            conduit.Enabled = true;
+            using var bitmap = CapturePreview(view, highlight, "single-pass meshing", conduit);
+            Check(callback && error == null && bitmap != null && GreenPixels(bitmap) > 0,
+                "one native capture executes the preview callbacks and renders shaded geometry: " + error);
+            for (int i = 0; i < changed.Length; i++)
+                Check(changed[i] && reused[i], "meshing mode " + i + " regenerates and reuses bounded meshes without a source solve");
+            Check(meshCalled && meshHeld && heldAfterCallback,
+                $"a reentrant shaded callback retains owned geometry until the native frame has returned (called={meshCalled}, held={meshHeld}, after={heldAfterCallback})");
+            await WaitForPreviewRetirement(highlight);
+            Check(reentrantOwned != null && reentrantOwned.Disposed && (int)live.GetValue(null)! == 0,
+                "the retired grouped Brep and generated meshes are released on Rhino idle");
+            Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
+            await WaitForPreviewRetirement(highlight);
+            Check((int)live.GetValue(null)! == 0, "the single-pass fixture leaves no generated preview meshes");
+        }
+        finally
+        {
+            conduit.Enabled = false;
+            document.Properties.KeepOpen = false; document.PreviewMode = GH_PreviewMode.Disabled;
+            if (previous != null) rhino.Views.ActiveView = previous;
+            view.Close(); rhino.Modified = modified;
+        }
+    }
+
+    // Draw disjoint standalone/grouped boxes and Breps in one capture. Distinct
+    // wire/shade colors identify the old post-mutation and rebuilt generations.
+    internal static async Task RunSinglePassGeometry(Assembly assembly)
+    {
+        var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
+        bool modified = rhino.Modified;
+        var previous = rhino.Views.ActiveView;
+        var view = rhino.Views.Add("Single-pass preview geometry", Rhino.Display.DefinedViewportProjection.Top,
+            new Rectangle(0, 0, 640, 480), false);
+        using var document = new GH_Document { Enabled = true };
+        var a = new BoundingBox(new Point3d(-11, -6, -1), new Point3d(-7, -2, 1));
+        var b = new BoundingBox(new Point3d(-5, -6, -1), new Point3d(-1, -2, 1));
+        var c = new BoundingBox(new Point3d(1, -6, -1), new Point3d(5, -2, 1));
+        var d = new BoundingBox(new Point3d(7, -6, -1), new Point3d(11, -2, 1));
+        using var first = new Box(c).ToBrep();
+        using var second = new Box(d).ToBrep();
+        using var oldMaterial = new Rhino.Display.DisplayMaterial(Color.Blue);
+        using var newMaterial = new Rhino.Display.DisplayMaterial(Color.Magenta);
+        var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
+        component.CreateAttributes();
+        using var conduit = new PreviewConduit(component, document);
+        try
+        {
+            rhino.Views.ActiveView = view;
+            view.ActiveViewport.ConstructionGridVisible = view.ActiveViewport.ConstructionAxesVisible = view.ActiveViewport.WorldAxesVisible = false;
+            view.ActiveViewport.ZoomBoundingBox(new BoundingBox(new Point3d(-13, -8, -2), new Point3d(13, 8, 2)));
+            var shaded = Rhino.Display.DisplayModeDescription.FindByName("Shaded");
+            if (shaded != null) view.ActiveViewport.DisplayMode = shaded;
+            document.Properties.KeepOpen = true; document.PreviewMode = GH_PreviewMode.Shaded;
+            document.AddObject(component, false);
+            var highlight = Field<object>(component, "_highlight");
+            var groupedBox = new GH_GeometryGroup(); groupedBox.Objects.Add(new GH_Box(new Box(b)));
+            var groupedBrep = new GH_GeometryGroup(); groupedBrep.Objects.Add(new GH_Brep { Value = second });
+            var source = new IGH_Goo?[] { new GH_Box(new Box(a)), groupedBox, new GH_Brep { Value = first }, groupedBrep };
+            Set(highlight, source, new[] { 0, 1, 2, 3 }, new[] { 0, 1, 2, 3 });
+            component.ExpirePreview(false);
+            Method(document, "CreatePreviewCaches").Invoke(document, Array.Empty<object>());
+            var initialBounds = Box(highlight);
+            var initialDocumentBounds = document.PreviewBoundingBox;
+            bool initialCache = initialDocumentBounds.Contains(initialBounds.Min) && initialDocumentBounds.Contains(initialBounds.Max);
+            bool[] boxesStable = new bool[3];
+            bool changed = false, oldCoherent = false, newCoherent = false, newCache = false;
+            string? error = null;
+            conduit.OnDraw = args =>
+            {
+                try
+                {
+                    var fixedMeshes = OwnedBoxMeshes(highlight).ToArray();
+                    var modes = new[] { GH_PreviewMesh.LowQuality, GH_PreviewMesh.HighQuality, GH_PreviewMesh.Custom };
+                    for (int i = 0; i < modes.Length; i++)
+                    {
+                        if (modes[i] == GH_PreviewMesh.Custom) document.PreviewCustomMeshParameters = new MeshingParameters(0.35);
+                        document.PreviewMeshType = modes[i];
+                        component.DrawViewportMeshes(args); component.DrawViewportWires(args);
+                        boxesStable[i] = Count(highlight) == 4 && fixedMeshes.Length == 2 && fixedMeshes.All(mesh => !mesh.Disposed) &&
+                            OwnedBoxMeshes(highlight).SequenceEqual(fixedMeshes) && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024 &&
+                            Box(highlight).Equals(initialBounds);
+                    }
+                    changed = first.Transform(Transform.Translation(0, 8, 0)) && second.Transform(Transform.Translation(0, 8, 0));
+                    oldCoherent = changed && Box(highlight).Equals(initialBounds) && document.PreviewBoundingBox.Equals(initialDocumentBounds);
+                    var oldArgs = new ColoredPreviewArgs(args, oldMaterial, Color.Yellow);
+                    component.DrawViewportMeshes(oldArgs); component.DrawViewportWires(oldArgs);
+                    Set(highlight, source, new[] { 0, 1, 2, 3 }, new[] { 0, 1, 2, 3 });
+                    component.ExpirePreview(false);
+                    Method(document, "CreatePreviewCaches").Invoke(document, Array.Empty<object>());
+                    var rebuilt = Box(highlight);
+                    newCoherent = Count(highlight) == 4 && rebuilt.Max.Y > initialBounds.Max.Y && rebuilt.Contains(new Point3d(3, 4, 1));
+                    var refreshed = document.PreviewBoundingBox;
+                    newCache = refreshed.Contains(rebuilt.Min) && refreshed.Contains(rebuilt.Max) && refreshed.Max.Y > initialDocumentBounds.Max.Y;
+                    var newArgs = new ColoredPreviewArgs(args, newMaterial, Color.Cyan);
+                    component.DrawViewportMeshes(newArgs); component.DrawViewportWires(newArgs);
+                }
+                catch (Exception ex) { error = ex.ToString(); }
+            };
+            conduit.Enabled = true;
+            using var bitmap = CapturePreview(view, highlight, "single-pass geometry", conduit);
+            Check(error == null && initialCache && boxesStable.All(value => value),
+                $"standalone and grouped boxes retain their bounds and resource estimates through low/high/custom draws " +
+                $"(initialCache={initialCache}, modes=[{string.Join(",", boxesStable)}], initial={initialBounds}, " +
+                $"document={document.PreviewBoundingBox}, error={error})");
+            Check(changed && oldCoherent && newCoherent && newCache,
+                "Brep mutation retains old bounds until rebuild and refreshed component/document bounds then match");
+            var movedC = new BoundingBox(new Point3d(1, 2, -1), new Point3d(5, 6, 1));
+            var movedD = new BoundingBox(new Point3d(7, 2, -1), new Point3d(11, 6, 1));
+            Check(RegionColors(bitmap, view.ActiveViewport, a, Color.Magenta, Color.Cyan), "standalone box has actual shaded and wire pixels");
+            Check(RegionColors(bitmap, view.ActiveViewport, b, Color.Magenta, Color.Cyan), "grouped box has actual shaded and wire pixels");
+            Check(RegionColors(bitmap, view.ActiveViewport, c, Color.Blue, Color.Yellow), "standalone old Brep draws after source mutation without expiration");
+            Check(RegionColors(bitmap, view.ActiveViewport, d, Color.Blue, Color.Yellow), "grouped old Brep draws after source mutation without expiration");
+            Check(RegionColors(bitmap, view.ActiveViewport, movedC, Color.Magenta, Color.Cyan), "standalone rebuilt Brep draws at its new bounds");
+            Check(RegionColors(bitmap, view.ActiveViewport, movedD, Color.Magenta, Color.Cyan), "grouped rebuilt Brep draws at its new bounds");
+            Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
+            await WaitForPreviewRetirement(highlight);
+            var leafType = assembly.GetType("BetterGhPanel.Runtime.PanelPreviewLeaf", true)!;
+            Check((int)leafType.GetProperty("LiveGeneratedMeshes", Static)!.GetValue(null)! == 0 &&
+                Property<long>(highlight, "RetainedBytes") == 0, "all single-pass geometry resources are released");
+        }
+        finally
+        {
+            conduit.Enabled = false;
+            document.Properties.KeepOpen = false; document.PreviewMode = GH_PreviewMode.Disabled;
+            if (previous != null) rhino.Views.ActiveView = previous;
+            view.Close(); rhino.Modified = modified;
+        }
+    }
+
+    internal static Task RunCompatibilityDraw(Assembly assembly) => RunCompatibilityDrawCore(assembly, false);
+
+    // Additional comparison: GH's document preview is disabled for the
+    // capture, while the exact same Panel+ conduit calls and pixel checks run.
+    // It does not replace the required GH-document fixture above.
+    internal static Task RunCompatibilityConduitDraw(Assembly assembly) => RunCompatibilityDrawCore(assembly, true);
+
+    private static async Task RunCompatibilityDrawCore(Assembly assembly, bool conduitOnly)
+    {
+        var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
+        bool modified = rhino.Modified; var previous = rhino.Views.ActiveView;
+        var view = rhino.Views.Add("Compatibility preview drawing", Rhino.Display.DefinedViewportProjection.Top,
+            new Rectangle(0, 0, 640, 480), false);
+        using var document = new GH_Document { Enabled = true };
+        using var first = LongNurbs(-6); using var second = LongNurbs(-2);
+        using var third = LongPolyline(2); using var fourth = LongPolyline(6);
+        using var rebuiltMaterial = new Rhino.Display.DisplayMaterial(Color.Cyan);
+        var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
+        component.CreateAttributes();
+        using var conduit = new PreviewConduit(component, document);
+        try
+        {
+            rhino.Views.ActiveView = view;
+            view.ActiveViewport.ConstructionGridVisible = view.ActiveViewport.ConstructionAxesVisible = view.ActiveViewport.WorldAxesVisible = false;
+            view.ActiveViewport.ZoomBoundingBox(new BoundingBox(new Point3d(-10, -9, -1), new Point3d(10, 9, 1)));
+            document.Properties.KeepOpen = true;
+            if (conduitOnly) document.PreviewMode = GH_PreviewMode.Disabled;
+            document.AddObject(component, false);
+            var highlight = Field<object>(component, "_highlight");
+            var nurbsGroup = new GH_GeometryGroup(); nurbsGroup.Objects.Add(new GH_Curve { Value = second });
+            var polyGroup = new GH_GeometryGroup(); polyGroup.Objects.Add(new GH_Curve { Value = fourth });
+            var source = new IGH_Goo?[] { new GH_Curve { Value = first }, nurbsGroup, new GH_Curve { Value = third }, polyGroup };
+            var snapshot = new PanelSnapshot(Enumerable.Range(0, 4).Select(i => new PanelRow(i, "{0}", "Curve", "curve", null)).ToArray(),
+                new[] { new PanelBranch("{0}", 4) });
+            var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
+            Scope(highlight, source, result, new[] { 0, 2 });
+            var oldBounds = Box(highlight);
+            bool initial = Count(highlight) == 4 && Property<int>(highlight, "Count") == 2;
+            bool changed = false, oldCoherent = false, rebuilt = false;
+            string? error = null;
+            conduit.OnDraw = args =>
+            {
+                try
+                {
+                    changed = first.Transform(Transform.Translation(0, 1, 0)) && second.Transform(Transform.Translation(0, 1, 0)) &&
+                        third.Transform(Transform.Translation(0, 1, 0)) && fourth.Transform(Transform.Translation(0, 1, 0));
+                    oldCoherent = changed && Box(highlight).Equals(oldBounds) && Count(highlight) == 4;
+                    component.DrawViewportWires(args);
+                    Method(component, "ClearHighlight").Invoke(component, Array.Empty<object>());
+                    Scope(highlight, source, result, new[] { 0, 2 });
+                    component.ExpirePreview(false);
+                    rebuilt = Count(highlight) == 4 && Property<int>(highlight, "Count") == 2 && Box(highlight).Min.Y > oldBounds.Min.Y &&
+                        Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024;
+                    component.DrawViewportWires(new ColoredPreviewArgs(args, rebuiltMaterial, Color.Cyan));
+                }
+                catch (Exception ex) { error = ex.ToString(); }
+            };
+            conduit.Enabled = true;
+            using var bitmap = CapturePreview(view, highlight, "compatibility curves", conduit);
+            Check(error == null && initial && oldCoherent && rebuilt,
+                "selected and filtered compatibility curves retain old bounds until source expiration and rebuild: " + error);
+            double[] ys = { -6, -2, 2, 6 };
+            for (int i = 0; i < ys.Length; i++)
+            {
+                var old = new BoundingBox(new Point3d(-8, ys[i] - 0.2, 0), new Point3d(8, ys[i] + 0.3, 0));
+                var current = new BoundingBox(new Point3d(-8, ys[i] + 0.8, 0), new Point3d(8, ys[i] + 1.3, 0));
+                Check(RegionHasColor(bitmap, view.ActiveViewport, old, i % 2 == 0 ? Color.Lime : Color.Red) &&
+                    RegionHasColor(bitmap, view.ActiveViewport, current, Color.Cyan),
+                    "compatibility curve " + i + " actually draws with selected/filtered colors before and after rebuild");
+            }
+            Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
+            if (conduitOnly)
+            {
+                // This exercises the managed cleanup seam after capture has
+                // returned; it does not claim Rhino actually raised Idle.
+                Method(highlight, "ReleaseOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
+                Check(Property<long>(highlight, "RetainedBytes") == 0, "the explicit post-capture seam releases compatibility snapshots");
+            }
+            else
+            {
+                await WaitForPreviewRetirement(highlight);
+                Check(Property<long>(highlight, "RetainedBytes") == 0, "compatibility preview snapshots are released after drawing");
+            }
+        }
+        finally
+        {
+            conduit.Enabled = false; document.Properties.KeepOpen = false; document.PreviewMode = GH_PreviewMode.Disabled;
+            if (previous != null) rhino.Views.ActiveView = previous;
+            view.Close(); rhino.Modified = modified;
+        }
+    }
+
+    private static NurbsCurve LongNurbs(double y)
+    {
+        var curve = new NurbsCurve(3, false, 2, 1025);
+        for (int i = 0; i < curve.Knots.Count; i++) curve.Knots[i] = i;
+        for (int i = 0; i < curve.Points.Count; i++) curve.Points.SetPoint(i, new Point3d(-8 + 16.0 * i / 1024, y + 0.1 * (i % 2), 0));
+        return curve;
+    }
+    private static PolylineCurve LongPolyline(double y) => new PolylineCurve(Enumerable.Range(0, 2049)
+        .Select(i => new Point3d(-8 + 16.0 * i / 2048, y + 0.1 * (i % 2), 0)));
+
+    // A Panel+-free comparison for the single-capture long-curve crash. It
+    // uses the same view, curves and before/after pixel regions, while stock GH
+    // parameters and Rhino's own DrawCurve supply the display work.
+    internal static Task RunStockCompatibilityDraw(Assembly assembly)
+    {
+        var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
+        bool modified = rhino.Modified; var previous = rhino.Views.ActiveView;
+        var view = rhino.Views.Add("Stock compatibility preview drawing", Rhino.Display.DefinedViewportProjection.Top,
+            new Rectangle(0, 0, 640, 480), false);
+        using var document = new GH_Document { Enabled = true };
+        using var first = LongNurbs(-6); using var second = LongNurbs(-2);
+        using var third = LongPolyline(2); using var fourth = LongPolyline(6);
+        Curve[] sources = { first, second, third, fourth };
+        var old = sources.Select(curve => curve.DuplicateCurve()).ToArray();
+        bool changed = false, callback = false;
+        string? error = null;
+        using var conduit = new StockCurveConduit();
+        try
+        {
+            rhino.Views.ActiveView = view;
+            view.ActiveViewport.ConstructionGridVisible = view.ActiveViewport.ConstructionAxesVisible = view.ActiveViewport.WorldAxesVisible = false;
+            view.ActiveViewport.ZoomBoundingBox(new BoundingBox(new Point3d(-10, -9, -1), new Point3d(10, 9, 1)));
+            document.Properties.KeepOpen = true;
+            for (int i = 0; i < sources.Length; i++)
+            {
+                var parameter = new Param_Curve(); parameter.CreateAttributes();
+                parameter.PersistentData.Append(new GH_Curve(sources[i]), new GH_Path(0));
+                document.AddObject(parameter, false);
+            }
+            document.NewSolution(false, GH_SolutionMode.Silent);
+            conduit.OnDraw = display =>
+            {
+                callback = true;
+                try
+                {
+                    changed = sources.All(curve => curve.Transform(Transform.Translation(0, 1, 0)));
+                    for (int i = 0; i < sources.Length; i++)
+                        display.DrawCurve(old[i], i % 2 == 0 ? Color.Lime : Color.Red, 3);
+                    foreach (var curve in sources) display.DrawCurve(curve, Color.Cyan, 3);
+                }
+                catch (Exception ex) { error = ex.ToString(); }
+            };
+            conduit.Enabled = true;
+            Console.WriteLine("Before stock compatibility capture: four stock Grasshopper curve parameters and a single Rhino draw conduit.");
+            Console.Out.Flush();
+            using var bitmap = Rhino.Display.DisplayPipeline.DrawToBitmap(view.ActiveViewport, 640, 480);
+            Check(bitmap != null && callback && changed && error == null, "stock long-curve control executes one native capture: " + error);
+            double[] ys = { -6, -2, 2, 6 };
+            for (int i = 0; i < ys.Length; i++)
+            {
+                var original = new BoundingBox(new Point3d(-8, ys[i] - 0.2, 0), new Point3d(8, ys[i] + 0.3, 0));
+                var current = new BoundingBox(new Point3d(-8, ys[i] + 0.8, 0), new Point3d(8, ys[i] + 1.3, 0));
+                Check(RegionHasColor(bitmap!, view.ActiveViewport, original, i % 2 == 0 ? Color.Lime : Color.Red) &&
+                    RegionHasColor(bitmap!, view.ActiveViewport, current, Color.Cyan),
+                    "stock long-curve control has before/after pixels for curve " + i);
+            }
+        }
+        finally
+        {
+            conduit.Enabled = false; document.Properties.KeepOpen = false; document.PreviewMode = GH_PreviewMode.Disabled;
+            foreach (var curve in old) curve.Dispose();
             if (previous != null) rhino.Views.ActiveView = previous;
             view.Close(); rhino.Modified = modified;
         }
@@ -757,7 +1537,9 @@ internal static class PreviewSafetyChecks
                 Scope(highlight, values, result, new[] { i });
                 Check(Box(highlight).Contains(new Point3d(i, 0, 0)) && Property<int>(highlight, "LastVisitedRows") <= 1 &&
                     Property<int>(highlight, "LastVisitedNodes") <= 1 && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
-                    "successive sparse selections evict and recover without walking filtered rows");
+                    $"successive sparse selections evict and recover without walking filtered rows " +
+                    $"(position={i}, labels={labels}, bounds={Box(highlight)}, rows={Property<int>(highlight, "LastVisitedRows")}, " +
+                    $"nodes={Property<int>(highlight, "LastVisitedNodes")}, bytes={Property<long>(highlight, "RetainedBytes")}, status={Status(highlight)})");
             }
         }
         var huge = new GH_GeometryGroup { Name = "many" };
@@ -771,11 +1553,53 @@ internal static class PreviewSafetyChecks
         Set(highlight, repeated, Enumerable.Range(0, repeated.Length).ToArray(), Array.Empty<int>());
         Check(Property<int>(highlight, "LastVisitedNodes") <= 20000 && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024 &&
             Status(highlight).Contains("partial"), "repeated groups share an aggregate visit and retained-byte limit");
-        using var oversized = new PolylineCurve(Enumerable.Range(0, 2049).Select(i => new Point3d(i, i % 2, 0)));
-        Set(highlight, new IGH_Goo?[] { new GH_Curve(oversized) }, new[] { 0 }, new[] { 0 });
+        using var beyondNarrow = new PolylineCurve(Enumerable.Range(0, 2049).Select(i => new Point3d(i, i % 2, 0)));
+        Set(highlight, new IGH_Goo?[] { new GH_Curve { Value = beyondNarrow } }, new[] { 0 }, new[] { 0 });
+        Check(Count(highlight) == 1 && Box(highlight).Max.X == 2048 && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+            "a 2049-point polyline outside the narrow reconstruction uses the bounded compatibility provider");
+        using var oversized = new PolylineCurve(Enumerable.Range(0, 32769).Select(i => new Point3d(i, i % 2, 0)));
+        Set(highlight, new IGH_Goo?[] { new GH_Curve { Value = oversized } }, new[] { 0 }, new[] { 0 });
         Check(Count(highlight) == 0 && Property<long>(highlight, "RetainedBytes") == 0 && Status(highlight).Contains("partial"),
-            "oversize geometry is rejected at preflight before constructing a preview copy");
+            "geometry beyond the compatibility provider limit is rejected before constructing a preview copy");
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
+    }
+
+    private static void VerifyStagedAdmission(object highlight)
+    {
+        using var brep = new Box(new BoundingBox(Point3d.Origin, new Point3d(2, 3, 4))).ToBrep();
+        var holder = new GH_Brep { Value = brep };
+        var outer = new GH_GeometryGroup(); var nested = new GH_GeometryGroup();
+        for (int i = 0; i < 5; i++) { outer.Objects.Add(holder); nested.Objects.Add(holder); }
+        object? stagedLeaf = null; GeometryBase? stagedGeometry = null;
+        bool aliveDuringCallback = false, cappedDuringCallback = false, nestedRejected = false;
+        var observerField = highlight.GetType().GetField("_admissionObserver", Instance)!;
+        observerField.SetValue(highlight, (Action<int, object>)((index, leaf) =>
+        {
+            if (index != 0) return;
+            observerField.SetValue(highlight, null);
+            stagedLeaf = leaf; stagedGeometry = Field<GeometryBase?>(leaf, "_owned");
+            long reserved = Property<long>(highlight, "RetainedBytes");
+            Set(highlight, new IGH_Goo?[] { nested }, new[] { 0 }, new[] { 0 });
+            aliveDuringCallback = stagedGeometry != null && !stagedGeometry.Disposed;
+            cappedDuringCallback = reserved > 0 && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024;
+            nestedRejected = Count(highlight) == 0 && Status(highlight).Contains("partial");
+        }));
+        try
+        {
+            Set(highlight, new IGH_Goo?[] { outer }, new[] { 0 }, new[] { 0 });
+            Check(aliveDuringCallback && cappedDuringCallback && nestedRejected,
+                "reentrant admission counts staged geometry and rejects a nested build over the live-memory cap");
+            Check(stagedLeaf != null && stagedGeometry != null && stagedGeometry.Disposed && Property<int>(stagedLeaf, "DisposeCount") == 1 &&
+                Property<long>(highlight, "RetainedBytes") == 0, "the abandoned staged leaf is disposed exactly once after reentry");
+            Set(highlight, new IGH_Goo?[] { nested }, new[] { 0 }, new[] { 0 });
+            var recovered = OwnedGeometry(highlight).ToArray();
+            Check(Count(highlight) == 1 && recovered.Length == 5 && recovered.All(item => !item.Disposed) &&
+                Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024, "a later build recovers after the staged reservation is released");
+            Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
+            Check(recovered.All(item => item.Disposed) && Property<long>(highlight, "RetainedBytes") == 0,
+                "clearing the recovered generation releases every owned geometry");
+        }
+        finally { observerField.SetValue(highlight, null); Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>()); }
     }
 
     private static void VerifyMetadataAndActions(Assembly assembly, object highlight)
@@ -806,8 +1630,8 @@ internal static class PreviewSafetyChecks
                 "nested segment UserData exists while the outer curve has none");
             PolylineSafetyUserData.Reset(true);
             Set(highlight, new IGH_Goo?[] { polyHolder }, new[] { 0 }, new[] { 0 });
-            Check(Count(highlight) == 0 && PolylineSafetyUserData.Callbacks == 0,
-                "automatic polycurve preview does not invoke nested custom-data callbacks");
+            Check(Count(highlight) == 0 && PolylineSafetyUserData.Callbacks > 0 && Status(highlight).Contains("partial") && segment.HasUserData,
+                "compatibility preview visibly rejects a throwing nested callback and preserves its metadata");
             object polyCopy = Copy(assembly, new IGH_Goo?[] { polyHolder });
             Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && !Property<bool>(polyCopy, "Success") &&
                 segment.HasUserData && !polyHolder.Value.HasUserData && PolylineSafetyUserData.Callbacks > 0,
@@ -823,10 +1647,11 @@ internal static class PreviewSafetyChecks
             var group = new GH_GeometryGroup(); group.Objects.Add(brepHolder);
             CaptureCountingUserData.Callbacks = CaptureBenignUserData.Callbacks = CaptureNonSerializableUserData.Callbacks = 0;
             Set(highlight, new IGH_Goo?[] { brepHolder, group }, new[] { 0, 1 }, new[] { 0, 1 });
+            int beforeFrame = CaptureCountingUserData.Callbacks + CaptureBenignUserData.Callbacks + CaptureNonSerializableUserData.Callbacks;
             var frame = Bounds(assembly, group);
-            Check(Count(highlight) == 0 && frame.IsValid && CaptureCountingUserData.Callbacks == 0 &&
-                CaptureBenignUserData.Callbacks == 0 && CaptureNonSerializableUserData.Callbacks == 0,
-                "preview and framing avoid nested custom-data callbacks");
+            Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && frame.IsValid && beforeFrame > 0 &&
+                CaptureCountingUserData.Callbacks + CaptureBenignUserData.Callbacks + CaptureNonSerializableUserData.Callbacks == beforeFrame,
+                "unserializable nested metadata is visibly unavailable for preview and framing does not invoke callbacks");
             object result = Copy(assembly, new IGH_Goo?[] { brepHolder, group });
             Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && frame.IsValid && !Property<bool>(result, "Success") &&
                 Property<int>(result, "Skipped") == 2 && brep.UserData.Count == 0 && brep.Curves3D[0].HasUserData &&
@@ -1018,6 +1843,40 @@ internal static class PreviewSafetyChecks
         { var color = bitmap.GetPixel(x, y); if (color.G > color.R + 40 && color.G > color.B + 40) count++; }
         return count;
     }
+    private static bool RegionColors(Bitmap bitmap, Rhino.Display.RhinoViewport viewport, BoundingBox bounds, Color shade, Color wire)
+    {
+        var p = viewport.WorldToClient(new Point3d(bounds.Min.X, bounds.Min.Y, bounds.Max.Z));
+        var q = viewport.WorldToClient(new Point3d(bounds.Max.X, bounds.Max.Y, bounds.Max.Z));
+        var size = viewport.Size;
+        double sx = bitmap.Width / (double)Math.Max(1, size.Width), sy = bitmap.Height / (double)Math.Max(1, size.Height);
+        int x0 = Math.Max(0, (int)(Math.Min(p.X, q.X) * sx) - 5), x1 = Math.Min(bitmap.Width, (int)(Math.Max(p.X, q.X) * sx) + 6);
+        int y0 = Math.Max(0, (int)(Math.Min(p.Y, q.Y) * sy) - 5), y1 = Math.Min(bitmap.Height, (int)(Math.Max(p.Y, q.Y) * sy) + 6);
+        bool Matches(Color c, Color target) => target == Color.Blue ? c.B > c.R + 15 && c.B > c.G + 15 :
+            target == Color.Yellow ? c.R > c.B + 15 && c.G > c.B + 15 :
+            target == Color.Magenta ? c.R > c.G + 15 && c.B > c.G + 15 : c.G > c.R + 15 && c.B > c.R + 15;
+        int shadePixels = 0, wirePixels = 0;
+        for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++)
+        { var color = bitmap.GetPixel(x, y); if (Matches(color, shade)) shadePixels++; if (Matches(color, wire)) wirePixels++; }
+        Console.WriteLine($"Preview region {bounds}: {shade.Name}={shadePixels}, {wire.Name}={wirePixels}, pixels={x0},{y0}-{x1},{y1}");
+        return shadePixels > 20 && wirePixels > 2;
+    }
+    private static bool RegionHasColor(Bitmap bitmap, Rhino.Display.RhinoViewport viewport, BoundingBox bounds, Color target)
+    {
+        var p = viewport.WorldToClient(bounds.Min); var q = viewport.WorldToClient(bounds.Max); var size = viewport.Size;
+        double sx = bitmap.Width / (double)Math.Max(1, size.Width), sy = bitmap.Height / (double)Math.Max(1, size.Height);
+        int x0 = Math.Max(0, (int)(Math.Min(p.X, q.X) * sx) - 4), x1 = Math.Min(bitmap.Width, (int)(Math.Max(p.X, q.X) * sx) + 5);
+        int y0 = Math.Max(0, (int)(Math.Min(p.Y, q.Y) * sy) - 4), y1 = Math.Min(bitmap.Height, (int)(Math.Max(p.Y, q.Y) * sy) + 5);
+        int count = 0;
+        for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++)
+        {
+            var c = bitmap.GetPixel(x, y);
+            bool match = target == Color.Lime ? c.G > c.R + 25 && c.G > c.B + 25 :
+                target == Color.Red ? c.R > c.G + 25 && c.R > c.B + 25 : c.G > c.R + 25 && c.B > c.R + 25;
+            if (match) count++;
+        }
+        Console.WriteLine($"Compatibility region {bounds}: {target.Name}={count}, pixels={x0},{y0}-{x1},{y1}");
+        return count > 10;
+    }
     private static MethodInfo Method(object value, string name) => value.GetType().GetMethod(name, Instance)!;
     private static T Property<T>(object value, string name) => (T)value.GetType().GetProperty(name, Instance)!.GetValue(value)!;
     private static T Field<T>(object value, string name) => (T)value.GetType().GetField(name, Instance)!.GetValue(value)!;
@@ -1057,6 +1916,22 @@ internal static class PreviewSafetyChecks
         { var callback = OnMesh; OnMesh = null; callback?.Invoke(); }
     }
 
+    private sealed class ColoredPreviewArgs : IGH_PreviewArgs
+    {
+        private readonly IGH_PreviewArgs _inner;
+        internal ColoredPreviewArgs(IGH_PreviewArgs inner, Rhino.Display.DisplayMaterial material, Color wire)
+        { _inner = inner; ShadeMaterial = ShadeMaterial_Selected = material; WireColour = WireColour_Selected = wire; }
+        public int DefaultCurveThickness => _inner.DefaultCurveThickness;
+        public Color WireColour { get; }
+        public Color WireColour_Selected { get; }
+        public Rhino.Display.DisplayMaterial ShadeMaterial { get; }
+        public Rhino.Display.DisplayMaterial ShadeMaterial_Selected { get; }
+        public Rhino.Display.RhinoViewport Viewport => _inner.Viewport;
+        public Rhino.Display.DisplayPipeline Display => _inner.Display;
+        public GH_Document Document => _inner.Document;
+        public MeshingParameters MeshingParameters => _inner.MeshingParameters;
+    }
+
     private sealed class PreviewConduit : Rhino.Display.DisplayConduit, IDisposable
     {
         private readonly GH_Component _component;
@@ -1065,12 +1940,15 @@ internal static class PreviewSafetyChecks
         private readonly Rhino.Display.DisplayMaterial _selected = new Rhino.Display.DisplayMaterial(Color.Lime);
         internal PreviewConduit(GH_Component component, GH_Document document) { _component = component; _document = document; }
         internal int Draws;
+        internal int MeshesStarted, MeshesCompleted, WiresStarted, WiresCompleted;
+        internal Action<IGH_PreviewArgs>? OnDraw;
         protected override void DrawForeground(Rhino.Display.DrawEventArgs e)
         {
             Draws++;
             var args = new Arguments(_document, e, _normal, _selected);
-            _component.DrawViewportMeshes(args);
-            _component.DrawViewportWires(args);
+            if (OnDraw != null) { var callback = OnDraw; OnDraw = null; callback(args); return; }
+            MeshesStarted++; _component.DrawViewportMeshes(args); MeshesCompleted++;
+            WiresStarted++; _component.DrawViewportWires(args); WiresCompleted++;
         }
         public void Dispose() { Enabled = false; _normal.Dispose(); _selected.Dispose(); }
 
@@ -1090,5 +1968,13 @@ internal static class PreviewSafetyChecks
             public GH_Document Document { get; }
             public MeshingParameters MeshingParameters => Document.PreviewCurrentMeshParameters();
         }
+    }
+
+    private sealed class StockCurveConduit : Rhino.Display.DisplayConduit, IDisposable
+    {
+        internal Action<Rhino.Display.DisplayPipeline>? OnDraw;
+        protected override void DrawForeground(Rhino.Display.DrawEventArgs e)
+        { var callback = OnDraw; OnDraw = null; callback?.Invoke(e.Display); }
+        public void Dispose() { Enabled = false; }
     }
 }

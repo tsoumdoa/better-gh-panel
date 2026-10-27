@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { fixtureCommand, fixtureHostMode, loadInventory, main, runFixtures } from './BetterGhPanel.RhinoSmoke/coordinator.mjs';
+import { fixtureCommand, fixtureHostMode, loadInventory, main, requiredFixtures, runFixtures } from './BetterGhPanel.RhinoSmoke/coordinator.mjs';
 
 const fakeChild = fileURLToPath(new URL('./fake-rhino-child.mjs', import.meta.url));
 
@@ -29,7 +29,8 @@ test('inventory includes every original fixture and the independently crash-pron
     'recompute-output', 'recompute-regex', 'recompute-local-preview', 'recompute-disabled',
     'geometry-hint', 'analytic-curve-details', 'geometry-group-persistent', 'geometry-group-volatile', 'geometry-group-cycles',
     'capture-safety', 'polyline-safety', 'preview-safety', 'preview-geometry', 'preview-reentrant-draw',
-    'preview-metadata-safety', 'preview-native-resources', 'preview-conduit-resources', 'preview-stock-point',
+    'preview-metadata-safety', 'preview-native-resources', 'preview-conduit-resources', 'preview-single-pass-meshing',
+    'preview-single-pass-geometry', 'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point',
     'nurbs-value-candidate', 'production-curve-measurement', 'standalone-compatibility', 'capture-transaction',
     'geometry-canvas-viewport', 'measurement-priority', 'measurement-cancellation',
     'measurement-invalidation', 'measurement-failures', 'row-actions', 'highlight-overlap',
@@ -41,9 +42,21 @@ test('inventory includes every original fixture and the independently crash-pron
   ]);
 });
 
+test('comparison diagnostics are opt-in and do not replace required preview fixtures', () => {
+  const inventory = loadInventory();
+  const required = requiredFixtures(inventory);
+  assert.ok(inventory.includes('preview-stock-compatibility-draw'));
+  assert.ok(!required.includes('preview-stock-compatibility-draw'));
+  assert.ok(inventory.includes('preview-compatibility-conduit'));
+  assert.ok(!required.includes('preview-compatibility-conduit'));
+  for (const fixture of ['preview-compatibility-draw', 'preview-native-resources', 'preview-conduit-resources'])
+    assert.ok(required.includes(fixture));
+});
+
 test('pixel fixtures use an inactive desktop while other fixtures use the hidden host', () => {
   for (const name of ['highlight-overlap', 'item-order-capture', 'preview-safety', 'preview-reentrant-draw',
-    'preview-native-resources', 'preview-conduit-resources', 'preview-stock-point']) {
+    'preview-native-resources', 'preview-conduit-resources', 'preview-single-pass-meshing', 'preview-single-pass-geometry',
+    'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point']) {
     assert.equal(fixtureHostMode(name), 'inactive-desktop');
     assert.deepEqual(fixtureCommand('host', name, 'plugin'), ['host', ['--desktop-fixture', name, 'plugin']]);
   }

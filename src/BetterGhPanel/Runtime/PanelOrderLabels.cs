@@ -36,11 +36,15 @@ namespace BetterGhPanel.Runtime
         }
         internal void Clear() { ClearEntries(); SetResult(null); }
 
+        // Enabling a native display conduit can reenter. Point admission may
+        // use its callback-free path only when Add will not enable it.
+        internal bool CanAddWithoutEnabling => _result == null || Enabled;
+
         internal void Add(int viewIndex, int sourcePosition, Point3d anchor)
         {
             if (!anchor.IsValid || !PanelItemOrder.TryGetNumber(_result, sourcePosition, out int number)) return;
             _labels[viewIndex] = new Label(sourcePosition, number, anchor);
-            Enabled = true;
+            if (!Enabled) Enabled = true;
         }
 
         internal void Remove(int viewIndex)

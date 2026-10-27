@@ -16,6 +16,7 @@ namespace BetterGhPanel.Runtime
         internal const int MaxComponents = 1024;
         internal const int MaxCollection = 256;
         internal const int MaxMetadataBytes = 64 * 1024;
+        internal const int MaxLegacyCurvePoints = 32768;
         private const int MaxVertexEstimate = 16 * 1024;
         private static readonly Type? SharedDictionaryType = typeof(UserData).Assembly.GetType("Rhino.DocObjects.Custom.SharedUserDictionary");
 
@@ -29,8 +30,12 @@ namespace BetterGhPanel.Runtime
             internal bool UnverifiedCustom { get; }
         }
 
-        internal static bool TryScan(GeometryBase geometry, PanelGeometrySources.Budget budget, ref int rootRemaining, out Scan? scan)
-            => TryScan(geometry, budget, ref rootRemaining, false, false, null, out scan);
+        // Compatibility preview uses Rhino's normal duplication callbacks after
+        // bounded structural preflight. Individual native/callback work is not
+        // a hard sandbox; the retained snapshot still has a reserved size cap.
+        internal static bool TryScanForPreview(GeometryBase geometry, PanelGeometrySources.Budget budget, ref int rootRemaining,
+            Func<bool>? current, out Scan? scan)
+            => TryScan(geometry, budget, ref rootRemaining, false, true, current, out scan);
 
         internal static bool TryScanForCopy(GeometryBase geometry, PanelGeometrySources.Budget budget, ref int rootRemaining,
             Func<bool> current, out Scan? scan)
@@ -135,7 +140,9 @@ namespace BetterGhPanel.Runtime
                     else if (type == typeof(NurbsCurve))
                     {
                         var curve = (NurbsCurve)value;
-                        if (!PanelNurbsLimits.Curve(curve.Dimension, curve.Order, curve.Points.Count, curve.Knots.Count, out _))
+                        int dimension = curve.Dimension, order = curve.Order, count = curve.Points.Count, knots = curve.Knots.Count;
+                        if ((dimension != 2 && dimension != 3) || order < 2 || order > 64 || count < order ||
+                            count > MaxLegacyCurvePoints || (long)knots != (long)count + order - 2)
                         { budget.MarkLimit(); return false; }
                     }
                     else if (type == typeof(NurbsSurface))
@@ -151,7 +158,7 @@ namespace BetterGhPanel.Runtime
                     else if (type == typeof(PolylineCurve))
                     {
                         int count = ((PolylineCurve)value).PointCount;
-                        if (count < 2 || count > PanelPreviewLeaf.MaxPolylinePoints) { budget.MarkLimit(); return false; }
+                        if (count < 2 || count > MaxLegacyCurvePoints) { budget.MarkLimit(); return false; }
                     }
                     else if (type == typeof(Mesh))
                     {

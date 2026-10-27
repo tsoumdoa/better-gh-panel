@@ -6,6 +6,26 @@ namespace BetterGhPanel.UI
 {
     internal static class PanelActionPositions
     {
+        // TryGet also accepts arbitrary position lists. Their positions can all
+        // remain in the result after the user's selection has changed, so an
+        // action must separately bind them to the selection revision it began with.
+        internal static bool IsCurrent(PanelQueryResult result, int sourceCount, PanelRowSelection selection,
+            IReadOnlyList<int> positions, long selectionVersion)
+        {
+            if (selection.Version != selectionVersion ||
+                !TryGet(result, sourceCount, selection, positions, out var ordered) || positions.Count != ordered.Count)
+                return false;
+            if (!ReferenceEquals(positions, ordered))
+            {
+                using var expected = positions.GetEnumerator();
+                using var actual = ordered.GetEnumerator();
+                while (expected.MoveNext())
+                    if (!actual.MoveNext() || expected.Current != actual.Current) return false;
+                if (actual.MoveNext()) return false;
+            }
+            return selection.Version == selectionVersion;
+        }
+
         internal static bool TryGet(PanelQueryResult result, int sourceCount, PanelRowSelection selection,
             IReadOnlyList<int> positions, out IReadOnlyList<int> ordered, Action? rowVisited = null)
         {

@@ -82,6 +82,8 @@ internal static class RowActionChecks
             await VerifyBranchHighlight(component, session, document, rhino);
             await VerifyGeometryClipboard(component, session, rhino, items.Length);
             await VerifyCopyDuringDeselection(component, session);
+            await VerifyCopyDuringProgrammaticSelectionChange(component, session);
+            await VerifyValueCopyCaptureMutation(assembly);
             await VerifyCopyDuringDocumentSwitch(component, session, document);
             await VerifyFailuresAndCancellation(component, session);
 
@@ -387,9 +389,9 @@ internal static class RowActionChecks
         }
         finally { CultureInfo.CurrentCulture = culture; }
 
-        await CopyValues(component, snapshot, 3, 2);
+        string textStatus = await CopyValues(component, snapshot, 3, 2);
         Check(ClipboardText() == "full\ntext" + Environment.NewLine + "<null>",
-            "Text and null values retain full content in a mixed selection");
+            $"Text and null values retain full content in a mixed selection (status={textStatus}, clipboard={ClipboardText()})");
         string coordinateExpected = PanelTestAdapter.DisplayValue(component, snapshot, 4) + Environment.NewLine +
             PanelTestAdapter.DisplayValue(component, snapshot, 11);
         string coordinateCopy = await CopyValues(component, snapshot, 4, 11);
@@ -831,6 +833,93 @@ internal static class RowActionChecks
         {
             gate.Set();
             restoreResolver();
+        }
+    }
+
+    private static async Task VerifyCopyDuringProgrammaticSelectionChange(GH_Component component, object session)
+    {
+        component.ExpireSolution(true);
+        await WaitForQuery(session);
+        using var gate = new ManualResetEventSlim(false);
+        var restoreResolver = PanelTestAdapter.SaveGeometryResolver(session);
+        Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
+        {
+            (Func<int, Func<PanelGeometryInfo?>?>)(_ => () =>
+            {
+                if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+                return new PanelGeometryInfo("Srf", 100, 2, "mm", "Area", "A");
+            })
+        });
+        try
+        {
+            var selection = Property<object>(component, "RowSelection");
+            var result = Result(session);
+            Method(selection, "SelectAt").Invoke(selection, new object[] { result, 8, 8, false, false, false });
+            Forms.Clipboard.SetText("keep programmatic selection clipboard");
+            var pending = CopyValues(component, Snapshot(session), 8);
+            await WaitUntil(() => PanelTestAdapter.GeometryRunning(session));
+            // This changes membership without going through canvas cancellation.
+            Method(selection, "SelectAt").Invoke(selection, new object[] { result, 4, 4, false, false, false });
+            gate.Set();
+            string status = await pending;
+            Check(status == "Copy cancelled" && ClipboardText() == "keep programmatic selection clipboard",
+                "a selection revision change cancels value copy even while the old row remains in the result: " + status);
+        }
+        finally
+        {
+            gate.Set();
+            restoreResolver();
+        }
+    }
+
+    private static async Task VerifyValueCopyCaptureMutation(Assembly assembly)
+    {
+        foreach (string change in new[] { "none", "number", "group" })
+        {
+            using var fixture = new OutputChecks.Fixture(assembly);
+            using var surface = new PlaneSurface(Plane.WorldXY, new Interval(0, 3), new Interval(0, 4)).ToBrep();
+            fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
+            var path = new GH_Path(0);
+            var group = new GH_GeometryGroup { Name = "Before" }; group.Objects.Add(new GH_Point(Point3d.Origin));
+            fixture.Source.PersistentData.Append(new GH_Number(7), path);
+            fixture.Source.PersistentData.Append(group, path);
+            fixture.Source.PersistentData.Append(new GH_Surface(surface), path);
+            for (int i = 0; i < 3; i++) fixture.Paired.PersistentData.Append(new GH_String("paired"), path);
+            fixture.Solve();
+            await fixture.Ready(() => Snapshot(fixture.Session).Rows.Count == 3);
+            var session = fixture.Session;
+            var snapshot = Snapshot(session);
+            var sources = Field<IGH_Goo?[]>(fixture.Component, "_sourceItems");
+            var number = (GH_Number)sources[0]!;
+            var currentGroup = (GH_GeometryGroup)sources[1]!;
+            using var gate = new ManualResetEventSlim(false);
+            bool callback = false;
+            Method(session, "SetGeometryDetailResolver").Invoke(session, new object[]
+            {
+                (Func<int, Func<PanelGeometryInfo?>?>)(_ =>
+                {
+                    callback = true;
+                    if (change == "number") number.Value = 99;
+                    if (change == "group") currentGroup.Name = "After";
+                    return () => { if (!gate.Wait(TimeSpan.FromSeconds(15))) throw new TimeoutException();
+                        return new PanelGeometryInfo("Srf", 12, 2, "mm", "Area", "A"); };
+                })
+            });
+            try
+            {
+                Forms.Clipboard.SetText("keep captured value clipboard");
+                var pending = CopyValues(fixture.Component, snapshot, 0, 1, 2);
+                await WaitUntil(() => callback && PanelTestAdapter.GeometryRunning(session));
+                gate.Set();
+                string status = await pending;
+                if (change == "none")
+                    Check(status == "3 values copied" && ClipboardText() != "keep captured value clipboard",
+                        "unchanged selected scalar and group values copy after the gated measurement: " + status);
+                else
+                    Check(status == "Copy cancelled" && ClipboardText() == "keep captured value clipboard",
+                        "a gated geometry preparation changing the selected " + change + " cancels clipboard publication: " + status);
+            }
+            finally { gate.Set(); await WaitUntil(() => !PanelTestAdapter.GeometryRunning(session)); }
         }
     }
 

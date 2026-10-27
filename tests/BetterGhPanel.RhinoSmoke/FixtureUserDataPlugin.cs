@@ -14,6 +14,10 @@ internal static class FixtureUserData
 {
     internal static void EnsureRegistered()
     {
+        // A standalone Rhino.Inside test process does not necessarily run the
+        // normal RhinoCommon plug-in loader. Its public bootstrap registers the
+        // built-in UserDictionary serializers as well as callback dispatch.
+        Rhino.Runtime.HostUtils.InitializeRhinoCommon();
         var assembly = typeof(FixtureUserDataPlugin).Assembly;
         if (PlugIn.Find(assembly) != null) return;
         var create = typeof(PlugIn).GetMethod("Create", BindingFlags.Static | BindingFlags.NonPublic)

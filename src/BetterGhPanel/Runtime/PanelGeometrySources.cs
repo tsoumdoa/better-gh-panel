@@ -48,7 +48,17 @@ namespace BetterGhPanel.Runtime
 
         internal static bool SameGraph(Inspection left, Inspection right)
         {
-            if (left.Unavailable || right.Unavailable || left.Graph.Count != right.Graph.Count || left.Leaves.Count != right.Leaves.Count) return false;
+            return SameGraphCore(left, right, false);
+        }
+
+        // For an action, an unchanged skipped prefix is still meaningful: it
+        // remains skipped. A truncated budget cannot establish that witness.
+        internal static bool SameActionGraph(Inspection left, Inspection right) => SameGraphCore(left, right, true);
+
+        private static bool SameGraphCore(Inspection left, Inspection right, bool allowUnavailable)
+        {
+            if (left.Exhausted || right.Exhausted || left.Unavailable != right.Unavailable ||
+                (left.Unavailable && !allowUnavailable) || left.Graph.Count != right.Graph.Count || left.Leaves.Count != right.Leaves.Count) return false;
             for (int i = 0; i < left.Graph.Count; i++)
             {
                 object a = left.Graph[i], b = right.Graph[i];
@@ -84,19 +94,10 @@ namespace BetterGhPanel.Runtime
                         frame.Entered = true;
                         if (frame.Depth >= MaxDepth || !budget.Take(ref rootRemaining))
                         { result.Unavailable = result.Exhausted = true; break; }
-                        if (!active.Add(frame.Node)) { result.Unavailable = true; break; }
+                        if (!active.Add(frame.Node)) { budget.MarkUnavailable("cyclic group or wrapper"); result.Unavailable = true; break; }
                         result.Graph.Add(frame.Node);
                         Type type = frame.Node.GetType();
-                        if (IsKnownGeometryGoo(type) && frame.Node is IGH_GeometricGoo known)
-                        {
-                            int component = type == typeof(GH_Curve) ? ((GH_Curve)frame.Node).ReferenceEdge :
-                                type == typeof(GH_Point) ? ((GH_Point)frame.Node).ReferenceIndex() : -1;
-                            var point = type == typeof(GH_Point) ? (GH_Point)frame.Node : null;
-                            result.Graph.Add(new ReferenceState(known.ReferenceID, known.IsReferencedGeometry, known.IsGeometryLoaded,
-                                component, point == null ? -1 : (int)point.ReferenceType(),
-                                point == null ? 0 : BitConverter.DoubleToInt64Bits(point.ReferenceParam(0)),
-                                point == null ? 0 : BitConverter.DoubleToInt64Bits(point.ReferenceParam(1))));
-                        }
+                        if (TryReferenceState(frame.Node, out var reference)) result.Graph.Add(reference);
                         if (type == typeof(GH_ObjectWrapper))
                         {
                             object? child = ((GH_ObjectWrapper)frame.Node).Value;
@@ -113,8 +114,10 @@ namespace BetterGhPanel.Runtime
                         }
                         if (type != typeof(GH_GeometryGroup))
                         {
-                            object? leaf = CaptureLeaf(frame.Node, allowStandalonePreview && frame.Depth == 0, frame.Depth > 0, out bool unavailable);
-                            if (unavailable) { result.Unavailable = true; break; }
+                            object? leaf = CaptureLeaf(frame.Node, allowStandalonePreview && frame.Depth == 0, frame.Depth > 0,
+                                out bool unavailable, out object? capturedValue);
+                            if (capturedValue != null) result.Graph.Add(capturedValue);
+                            if (unavailable) { budget.MarkUnavailable("unsupported geometry: " + type.Name); result.Unavailable = true; break; }
                             if (leaf != null)
                             {
                                 if (result.Leaves.Count >= MaxLeavesPerRoot)
@@ -149,9 +152,10 @@ namespace BetterGhPanel.Runtime
             return result;
         }
 
-        private static object? CaptureLeaf(object node, bool allowStandalonePreview, bool nested, out bool unavailable)
+        private static object? CaptureLeaf(object node, bool allowStandalonePreview, bool nested, out bool unavailable, out object? capturedValue)
         {
             unavailable = false;
+            capturedValue = null;
             Type type = node.GetType();
             object? value;
             if (type == typeof(GH_Point)) value = ((GH_Point)node).Value;
@@ -163,17 +167,22 @@ namespace BetterGhPanel.Runtime
             else if (type == typeof(GH_SubD))
             {
                 var subd = ((GH_SubD)node).Value;
-                if (subd != null && subd.GetType() != typeof(SubD)) { unavailable = true; return null; }
+                if (subd != null && subd.GetType() != typeof(SubD)) { capturedValue = subd; unavailable = true; return null; }
                 value = subd;
             }
+            else if (type == typeof(GH_Extrusion))
+            { capturedValue = ((GH_Extrusion)node).Value ?? NullSlot; unavailable = true; return null; }
+            else if (type == typeof(GH_PointCloud))
+            { capturedValue = ((GH_PointCloud)node).Value ?? NullSlot; unavailable = true; return null; }
             else if (node is IGH_Goo goo && SafeGooInspection.IsGeometryHolder(type))
             {
-                if (!SafeGooInspection.TryGetTrustedGeometry(goo, out var geometry)) { unavailable = true; return null; }
+                if (!SafeGooInspection.TryGetTrustedGeometry(goo, out var geometry))
+                { capturedValue = geometry ?? NullSlot; unavailable = true; return null; }
                 value = geometry;
             }
             else if (node is GeometryBase geometry)
             {
-                if (!SafeGooInspection.IsTrustedGeometry(geometry)) { unavailable = true; return null; }
+                if (!SafeGooInspection.IsTrustedGeometry(geometry)) { capturedValue = geometry; unavailable = true; return null; }
                 value = geometry;
             }
             else if (node is Point3d || node is Line || node is Arc || node is Circle || node is Rectangle3d || node is Box)
@@ -192,9 +201,11 @@ namespace BetterGhPanel.Runtime
             {
                 // Known non-geometry is not a preview failure. An unknown value,
                 // including an SDK geometry type without a safe provider, is.
-                unavailable = SafeGooInspection.TrustedTypeName(type) == null;
+                unavailable = node is IGH_GeometricGoo || node is BoundingBox || node is Sphere || node is Polyline ||
+                    SafeGooInspection.TrustedTypeName(type) == null;
                 return null;
             }
+            capturedValue = value ?? NullSlot;
             if (value == null) { unavailable = nested; return null; }
             // GeometryBase validity can traverse native topology or nested
             // payloads. Keep only the captured reference here; callers first
@@ -216,12 +227,38 @@ namespace BetterGhPanel.Runtime
 
         private static bool IsKnownGeometryGoo(Type type) => type == typeof(GH_Point) || type == typeof(GH_Line) ||
             type == typeof(GH_Arc) || type == typeof(GH_Circle) || type == typeof(GH_Rectangle) || type == typeof(GH_Box) ||
-            type == typeof(GH_Curve) || type == typeof(GH_Surface) || type == typeof(GH_Brep) || type == typeof(GH_Mesh) || type == typeof(GH_SubD);
+            type == typeof(GH_Curve) || type == typeof(GH_Surface) || type == typeof(GH_Brep) || type == typeof(GH_Mesh) || type == typeof(GH_SubD) ||
+            type == typeof(GH_Extrusion) || type == typeof(GH_PointCloud);
 
-        private readonly struct ReferenceState : IEquatable<ReferenceState>
+        internal static bool TryReferenceState(object node, out ReferenceState reference)
         {
-            internal ReferenceState(Guid id, bool referenced, bool loaded, int component, int pointType, long u, long v)
-            { Id = id; Referenced = referenced; Loaded = loaded; Component = component; PointType = pointType; U = u; V = v; }
+            reference = default;
+            Type type = node.GetType();
+            if (!IsKnownGeometryGoo(type) || !(node is IGH_GeometricGoo known)) return false;
+            int component = type == typeof(GH_Curve) ? ((GH_Curve)node).ReferenceEdge :
+                type == typeof(GH_Point) ? ((GH_Point)node).ReferenceIndex() : -1;
+            var point = type == typeof(GH_Point) ? (GH_Point)node : null;
+            Guid id = known.ReferenceID;
+            uint documentSerial = 0, objectSerial = 0;
+            if (id != Guid.Empty)
+            {
+                var document = Rhino.RhinoDoc.ActiveDoc;
+                documentSerial = document?.RuntimeSerialNumber ?? 0;
+                objectSerial = document?.Objects.FindId(id)?.RuntimeSerialNumber ?? 0;
+            }
+            reference = new ReferenceState(id, known.IsReferencedGeometry, known.IsGeometryLoaded, component,
+                point == null ? -1 : (int)point.ReferenceType(),
+                point == null ? 0 : BitConverter.DoubleToInt64Bits(point.ReferenceParam(0)),
+                point == null ? 0 : BitConverter.DoubleToInt64Bits(point.ReferenceParam(1)), documentSerial, objectSerial);
+            return true;
+        }
+
+        internal readonly struct ReferenceState : IEquatable<ReferenceState>
+        {
+            internal ReferenceState(Guid id, bool referenced, bool loaded, int component, int pointType, long u, long v,
+                uint documentSerial, uint objectSerial)
+            { Id = id; Referenced = referenced; Loaded = loaded; Component = component; PointType = pointType; U = u; V = v;
+                DocumentSerial = documentSerial; ObjectSerial = objectSerial; }
             private Guid Id { get; }
             private bool Referenced { get; }
             private bool Loaded { get; }
@@ -229,8 +266,11 @@ namespace BetterGhPanel.Runtime
             private int PointType { get; }
             private long U { get; }
             private long V { get; }
+            private uint DocumentSerial { get; }
+            private uint ObjectSerial { get; }
             public bool Equals(ReferenceState other) => Id == other.Id && Referenced == other.Referenced && Loaded == other.Loaded &&
-                Component == other.Component && PointType == other.PointType && U == other.U && V == other.V;
+                Component == other.Component && PointType == other.PointType && U == other.U && V == other.V &&
+                DocumentSerial == other.DocumentSerial && ObjectSerial == other.ObjectSerial;
             public override bool Equals(object? obj) => obj is ReferenceState other && Equals(other);
             public override int GetHashCode()
             {
@@ -239,7 +279,8 @@ namespace BetterGhPanel.Runtime
                     int hash = Id.GetHashCode();
                     hash = hash * 397 ^ Referenced.GetHashCode(); hash = hash * 397 ^ Loaded.GetHashCode();
                     hash = hash * 397 ^ Component; hash = hash * 397 ^ PointType;
-                    hash = hash * 397 ^ U.GetHashCode(); return hash * 397 ^ V.GetHashCode();
+                    hash = hash * 397 ^ U.GetHashCode(); hash = hash * 397 ^ V.GetHashCode();
+                    hash = hash * 397 ^ DocumentSerial.GetHashCode(); return hash * 397 ^ ObjectSerial.GetHashCode();
                 }
             }
         }
