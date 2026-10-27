@@ -834,6 +834,7 @@ namespace BetterGhPanel
                 var menuResult = _rowMenuResult;
                 if (!_rowMenuPainted || !RowsAreCurrent(menuResult))
                 {
+                    CloseRowMenu();
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }

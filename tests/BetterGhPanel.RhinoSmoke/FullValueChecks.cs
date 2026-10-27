@@ -57,7 +57,6 @@ internal static class FullValueChecks
         var session = PanelTestAdapter.Session(component);
         await WaitForQuery(session);
         var result = (PanelQueryResult)session.GetType().GetProperty("Result")!.GetValue(session)!;
-        var output = component.Params.Output.Select(param => param.VolatileData.AllData(true).ToArray()).ToArray();
         string copiedValue = PanelTestAdapter.CopyValue(component, result.Snapshot, 0);
         var selection = Field<object>(component.Attributes, "_selection");
         var select = selection.GetType().GetMethod("Select", Instance)!;
@@ -74,6 +73,15 @@ internal static class FullValueChecks
         try
         {
             Paint();
+            // Selection schedules a separate Grasshopper solution. Let the
+            // attached canvas process it before taking the viewer's baseline.
+            var outputTimeout = Stopwatch.StartNew();
+            while (component.Params.Output[1].VolatileData.AllData(true).Count() != 2)
+            {
+                if (outputTimeout.Elapsed.TotalSeconds > 20) throw new TimeoutException("Selected output did not settle before opening the full-value viewer");
+                await Task.Delay(10);
+            }
+            var output = component.Params.Output.Select(param => param.VolatileData.AllData(true).ToArray()).ToArray();
             Open();
             var first = MenuItem(3); // the full-panel viewer has not been painted yet
             Check(Tooltip(first).Title != "View full value", "Unpainted row actions do not supply a tooltip");
@@ -106,10 +114,14 @@ internal static class FullValueChecks
             Check(native.VerticalOffset > 0 && !finalRect.IsEmpty && finalRect.Top < native.ActualHeight &&
                 finalRect.Bottom > 0 && native.SelectedText == "𐐷", "Scrolling reaches and displays the final supplementary Unicode character");
             window.Close();
-            Check(Selected().SequenceEqual(selected) && PanelTestAdapter.CopyValue(component, result.Snapshot, 0) == copiedValue &&
-                copiedValue == value && component.Params.Output.Select((param, i) => param.VolatileData.AllData(true).SequenceEqual(output[i])).All(ok => ok),
-                "Viewing the clicked row preserves multi-selection, copy formatting and all outputs");
+            bool sameSelection = Selected().SequenceEqual(selected);
+            bool sameCopy = PanelTestAdapter.CopyValue(component, result.Snapshot, 0) == copiedValue && copiedValue == value;
+            var sameOutputs = component.Params.Output.Select((param, i) => param.VolatileData.AllData(true).SequenceEqual(output[i])).ToArray();
+            Check(sameSelection && sameCopy && sameOutputs.All(ok => ok),
+                "Viewing the clicked row preserves multi-selection, copy formatting and all outputs " +
+                $"(selection {sameSelection}, copy {sameCopy}, outputs {string.Join(",", sameOutputs)})");
 
+            Paint(); // the scheduled selection solution can invalidate hit regions while the window is open
             Open(2);
             Paint();
             Click(MenuItem(Find("View full value")));
@@ -136,6 +148,7 @@ internal static class FullValueChecks
             Click(pending);
             Check(Windows().Length == 0 && Field<object?>(component.Attributes, "_rowMenuResult") == null && Selected().SequenceEqual(selected),
                 "Clicking an unpainted page invokes neither the old viewer nor the new action");
+            Paint();
             Open();
             Paint();
             Click(MenuItem(Find("More actions…")));
