@@ -3,7 +3,10 @@ using System.Drawing;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 using BetterGhPanel.Core;
+using GH_IO.Serialization;
+using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 using Rhino.DocObjects.Custom;
@@ -97,6 +100,7 @@ internal static class CaptureSafetyChecks
         var typeFilter = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = "{Group}", Search = "Facade A" });
         Check(typeFilter.RowPositions.SequenceEqual(new[] { 4 }), "Saved wrapped group filter retains exact membership");
         VerifyOutputs(assembly, tree, snapshot, typeFilter, geometric);
+        VerifyStockIdentities(assembly, Capture);
 
         var unitTree = new GH_Structure<IGH_Goo>();
         var unset = new GH_Number(Rhino.RhinoMath.UnsetValue);
@@ -144,8 +148,112 @@ internal static class CaptureSafetyChecks
         string last = longSnapshot.Rows[1099].DisplayValue;
         Check(longSnapshot.RetainedGroupSummaryBytes <= 1024 * 1024 && longSnapshot.CachedGroupSummaryCount <= 16384 &&
             last.StartsWith("Empty Group (1099", StringComparison.Ordinal) &&
-            !ReferenceEquals(last, longSnapshot.Rows[1099].DisplayValue),
-            "Long distinct names preserve full summaries without retaining unbounded formatted copies");
+            ReferenceEquals(last, longSnapshot.Rows[1099].DisplayValue),
+            "Long distinct names preserve full summaries with only weak reuse outside the retained budget");
+    }
+
+    private static void VerifyStockIdentities(Assembly assembly, CaptureTree capture)
+    {
+        var method = assembly.GetType("BetterGhPanel.Runtime.SafeGooInspection", true)!.GetMethod("TrustedTypeName", Static)!;
+        var gh = typeof(IGH_Goo).Assembly;
+        int audited = 0;
+        foreach (var type in gh.GetTypes().Where(type => type.Namespace == "Grasshopper.Kernel.Types" &&
+            !type.IsAbstract && !type.ContainsGenericParameters && typeof(IGH_Goo).IsAssignableFrom(type)))
+        {
+            if (type == typeof(GH_ObjectWrapper) || type == typeof(GH_GeometricGooWrapper)) continue;
+            var getter = type.GetProperty("TypeName")!.GetMethod!;
+            byte[]? il = getter.GetMethodBody()?.GetILAsByteArray();
+            if (il == null || il.Length != 6 || il[0] != 0x72 || il[5] != 0x2a) continue;
+            string stockName = getter.Module.ResolveString(BitConverter.ToInt32(il, 1));
+            Check((string?)method.Invoke(null, new object[] { type }) == stockName,
+                "Exact stock identity matches the constant SDK getter: " + type.FullName);
+            audited++;
+        }
+        Check(audited >= 46, "The complete stock kernel goo identity table is audited against assembly metadata");
+        int modelConstants = 0, modelAttributes = 0;
+        foreach (var type in gh.GetTypes().Where(type => type.Namespace != null &&
+            type.Namespace.StartsWith("Grasshopper.Rhinoceros", StringComparison.Ordinal) && !type.IsAbstract &&
+            !type.ContainsGenericParameters && typeof(IGH_Goo).IsAssignableFrom(type)))
+        {
+            var map = type.GetInterfaceMap(typeof(IGH_Goo));
+            int index = Array.FindIndex(map.InterfaceMethods, member => member.Name == "get_TypeName");
+            if (index < 0) continue;
+            var getter = map.TargetMethods[index];
+            if (getter.DeclaringType?.FullName == "Grasshopper.Rhinoceros.ModelData" ||
+                getter.DeclaringType?.FullName == "Grasshopper.Rhinoceros.ModelValue")
+            {
+                var attribute = type.GetCustomAttributesData().SingleOrDefault(item => item.AttributeType.FullName == "Grasshopper.Kernel.Types.TypeNameAttribute");
+                if (attribute != null && attribute.ConstructorArguments.Count == 1 && attribute.ConstructorArguments[0].Value is string attributeName)
+                {
+                    Check((string?)method.Invoke(null, new object[] { type }) == attributeName,
+                        "Exact model identity matches installed SDK metadata: " + type.FullName);
+                    modelAttributes++;
+                }
+            }
+            byte[]? il = getter.GetMethodBody()?.GetILAsByteArray();
+            if (il == null || il.Length != 6 || il[0] != 0x72 || il[5] != 0x2a) continue;
+            string stockName = getter.Module.ResolveString(BitConverter.ToInt32(il, 1));
+            Check((string?)method.Invoke(null, new object[] { type }) == stockName,
+                "Exact model identity matches the constant SDK getter: " + type.FullName);
+            modelConstants++;
+        }
+        Check(modelConstants >= 7 && modelAttributes >= 20,
+            "Stock model goo constant and attribute-based identities are audited");
+        // The model metadata changes across Rhino 8 builds. Read its literal
+        // attribute from the installed assembly without invoking any goo getter.
+        foreach (string fullName in new[] { "Grasshopper.Rhinoceros.Model.ModelLayer",
+            "Grasshopper.Rhinoceros.Display.ModelPageViewport", "Grasshopper.Rhinoceros.ModelMeshingParameters" })
+        {
+            var type = gh.GetType(fullName, true)!;
+            var attribute = type.GetCustomAttributesData().Single(item => item.AttributeType.FullName == "Grasshopper.Kernel.Types.TypeNameAttribute");
+            Check((string?)method.Invoke(null, new object[] { type }) == (string?)attribute.ConstructorArguments[0].Value,
+                "Stock model identity follows the installed SDK attribute: " + fullName);
+        }
+
+        // Uninitialized exact stock instances exercise identity even when their
+        // native value is absent; the expanded identity table must not call validity.
+        var types = new[] { typeof(GH_Transform), typeof(GH_MeshFace), typeof(GH_ComplexNumber), typeof(GH_SubD), typeof(GH_Extrusion) };
+        var values = types.Select(type => (IGH_Goo)RuntimeHelpers.GetUninitializedObject(type)).ToArray();
+        var subd = (GH_SubD)values[3]; var extrusion = (GH_Extrusion)values[4];
+        var wrappedSubd = new GH_GeometricGooWrapper(subd);
+        var wrappedExtrusion = new GH_GeometricGooWrapper(extrusion);
+        var objects = values.Concat(new IGH_Goo[] { wrappedSubd, wrappedExtrusion,
+            new GH_GeometricGooWrapper(wrappedSubd), new GH_ObjectWrapper(values[0]) }).ToArray();
+        var tree = new GH_Structure<IGH_Goo>(); tree.AppendRange(objects, new GH_Path(0));
+        var snapshot = capture(tree, out _);
+        string[] names = { "Transform", "Meshface", "Complex", "SubD", "Extrusion", "{SubD}", "{Extrusion}", "{{SubD}}", "Goo" };
+        Check(snapshot.Rows.Select(row => row.TypeName).SequenceEqual(names) &&
+            snapshot.Rows.All(row => row.TypeIdentityAvailable && row.Validity == PanelValidity.Unverified),
+            "Missing stock names and exact wrapper layers remain known even for invalid or unsupported values");
+        for (int i = 0; i < names.Length; i++)
+        {
+            var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = names[i] });
+            Check(result.RowPositions.SequenceEqual(new[] { i }), "Stock type filter membership: " + names[i]);
+            VerifyIdentityOutputs(assembly, tree, snapshot, result, objects[i], i);
+            var set = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = names[i], CreateSet = true });
+            Check(set.RowPositions.SequenceEqual(new[] { i }) && set.SetOccurrencesAt(i)!.Locations.Single().ItemIndex == i,
+                "Stock type filter and set retain the original occurrence: " + names[i]);
+            VerifyIdentityOutputs(assembly, tree, snapshot, set, objects[i], i);
+        }
+    }
+
+    private static void VerifyIdentityOutputs(Assembly assembly, GH_Structure<IGH_Goo> tree, PanelSnapshot snapshot,
+        PanelQueryResult result, IGH_Goo expected, int position)
+    {
+        var treeOps = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!;
+        var outputOps = assembly.GetType("BetterGhPanel.Runtime.PanelOutputOperations", true)!;
+        var filtered = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Filter", Static)!.Invoke(null, new object[] { tree, result })!;
+        var selected = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Select", Static)!.Invoke(null, new object[] { tree, result.RowPositions })!;
+        var addresses = snapshot.Rows.Select((_, i) => snapshot.SourceAddressAt(i)).ToArray();
+        var mask = (GH_Structure<GH_Boolean>)outputOps.GetMethod("Mask", Static)!.Invoke(null, new object[] { tree, addresses, result.RowPositions })!;
+        var paired = new GH_Structure<IGH_Goo>();
+        for (int i = 0; i < tree.DataCount; i++) paired.Append(new GH_String("F" + i), new GH_Path(0));
+        var pairs = (GH_Structure<IGH_Goo>)outputOps.GetMethod("Pair", Static)!.Invoke(null, new object?[] { tree, paired, tree, addresses, null })!;
+        var filteredPairs = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Filter", Static)!.Invoke(null, new object[] { pairs, result })!;
+        Check(ReferenceEquals(filtered.Branches[0][0], expected) && ReferenceEquals(selected.Branches[0][0], expected) &&
+            mask.Branches[0].Count(item => item.Value) == 1 && mask.Branches[0][position].Value &&
+            ((GH_String)filteredPairs.Branches[0][0]).Value == "F" + position,
+            "Stock identity keeps D/S/B/F membership at source position " + position);
     }
 
     private static void VerifyOutputs(Assembly assembly, GH_Structure<IGH_Goo> tree, PanelSnapshot snapshot,
@@ -245,7 +353,60 @@ internal static class CaptureSafetyChecks
         Check(HostileLineCurve.Calls == 0 && untrusted.Rows[0].Validity == PanelValidity.Unverified &&
             untrusted.Rows[1].Validity == PanelValidity.Unverified && !untrusted.SupportsSearchMode(PanelSearchMode.Length),
             "Exact holders with hostile inner subclasses stay typed and unverified without native validity or metric access");
+        VerifyNativeSavedTypeFilters(assembly, capture);
         Console.WriteLine("PASS: Plugin-controlled exact input search capability and hostile inner geometry checks.");
+    }
+
+    private static void VerifyNativeSavedTypeFilters(Assembly assembly, MethodInfo capture)
+    {
+        var subd = new GH_SubD(); var extrusion = new GH_Extrusion();
+        var values = new IGH_Goo[] { new GH_Transform(Transform.Identity), new GH_MeshFace(0, 1, 2),
+            new GH_ComplexNumber(), subd, extrusion, new GH_GeometricGooWrapper(subd), new GH_GeometricGooWrapper(extrusion) };
+        string[] names = { "Transform", "Meshface", "Complex", "SubD", "Extrusion", "{SubD}", "{Extrusion}" };
+        var tree = new GH_Structure<IGH_Goo>(); tree.AppendRange(values, new GH_Path(0));
+        var snapshot = (PanelSnapshot)capture.Invoke(null, new object?[] { tree, null, PanelUnitConversion.None, "mm" })!;
+        var validityTree = new GH_Structure<IGH_Goo>();
+        validityTree.AppendRange(new IGH_Goo[] { new GH_Transform(Transform.Identity), new GH_Transform(Transform.Unset),
+            new GH_MeshFace(0, 1, 2), new GH_MeshFace() }, new GH_Path(0));
+        var validitySnapshot = (PanelSnapshot)capture.Invoke(null, new object?[] { validityTree, null, PanelUnitConversion.None, "mm" })!;
+        Check(validitySnapshot.Rows.Select(row => row.TypeName).SequenceEqual(new[] { "Transform", "Transform", "Meshface", "Meshface" }) &&
+            validitySnapshot.Rows.All(row => row.TypeIdentityAvailable), "Native stock identity is independent of validity or unset values");
+
+        using var document = new GH_Document { Enabled = true };
+        var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
+        component.CreateAttributes(); document.AddObject(component, false);
+        var session = PanelTestAdapter.Session(component);
+        void Query(string name) => session.GetType().GetMethod("UpdateQuery")!.Invoke(session, new object[] { new PanelQueryOptions { TypeName = name } });
+        PanelQueryOptions Options(object target) => (PanelQueryOptions)target.GetType().GetProperty("Options")!.GetValue(target)!;
+        try
+        {
+            for (int i = 0; i < names.Length; i++)
+            {
+                Query(names[i]);
+                var archive = new GH_Archive();
+                var restored = (GH_Component)Activator.CreateInstance(component.GetType())!;
+                restored.CreateAttributes();
+                Check(archive.AppendObject(component, "Panel") && archive.ExtractObject(restored, "Panel"),
+                    "Save and load stock type filter: " + names[i]);
+                var saved = Options(PanelTestAdapter.Session(restored));
+                var savedResult = PanelQueryEngine.Execute(snapshot, saved);
+                Check(saved.TypeName == names[i] && savedResult.RowPositions.SequenceEqual(new[] { i }),
+                    "Saved stock filter retains its matching row: " + names[i]);
+                VerifyIdentityOutputs(assembly, tree, snapshot, savedResult, values[i], i);
+                restored.RemovedFromDocument(document);
+
+                document.UndoServer.Clear();
+                component.RecordUndoEvent("Change type filter");
+                Query("different type");
+                document.UndoServer.PerformUndo();
+                var undone = Options(session);
+                var undoneResult = PanelQueryEngine.Execute(snapshot, undone);
+                Check(undone.TypeName == names[i] && undoneResult.RowPositions.SequenceEqual(new[] { i }),
+                    "Undo restores stock type filter membership: " + names[i]);
+                VerifyIdentityOutputs(assembly, tree, snapshot, undoneResult, values[i], i);
+            }
+        }
+        finally { component.DocumentContextChanged(document, GH_DocumentContext.Close); }
     }
 
     private static GH_GeometryGroup Group(string name, int count)

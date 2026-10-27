@@ -16,23 +16,62 @@ namespace BetterGhPanel.Core
     {
         private readonly string _name;
         private readonly int _count;
+        private readonly string _prefix, _suffix;
         private readonly string? _retainedText;
+        private WeakReference<string>? _transientText, _transientInvalidText;
+        private int _hash, _invalidHash;
+        private int _hashComputations;
+        private volatile bool _hasHash, _hasInvalidHash;
 
         public PanelGroupSummary(string? name, int count, bool retainFormattedText)
         {
             if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
             _name = name ?? string.Empty;
             _count = count;
+            _prefix = count == 0 ? "Empty Group" : "Group";
+            _suffix = count == 0 ? "" : " with " + count.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                (count == 1 ? " object" : " objects");
             if (retainFormattedText) _retainedText = FormatCore();
         }
 
-        public string Format() => _retainedText ?? FormatCore();
-        private string FormatCore()
+        public string Format() => Format(false);
+        internal string Format(bool invalid)
         {
-            string label = _name.Length == 0 ? "" : " (" + _name + ")";
-            return _count == 0 ? "Empty Group" + label : "Group" + label + " with " +
-                _count.ToString(System.Globalization.CultureInfo.InvariantCulture) + (_count == 1 ? " object" : " objects");
+            if (!invalid && _retainedText != null) return _retainedText;
+            var weak = invalid ? _transientInvalidText : _transientText;
+            if (weak != null && weak.TryGetTarget(out string? cached)) return cached;
+            string text = FormatCore(invalid);
+            // Weak references allow immediate repeated display/copy to reuse one
+            // allocation without adding to the capture's retained-text budget.
+            if (invalid) _transientInvalidText = new WeakReference<string>(text);
+            else _transientText = new WeakReference<string>(text);
+            return text;
         }
+        private string FormatCore(bool invalid = false) => string.Concat(invalid ? "Invalid · " : "", _prefix,
+            _name.Length == 0 ? "" : " (", _name, _name.Length == 0 ? "" : ")", _suffix);
+
+        internal string Part(int index, bool invalid) => index switch
+        {
+            0 => invalid ? "Invalid · " : "",
+            1 => _prefix,
+            2 => _name.Length == 0 ? "" : " (",
+            3 => _name,
+            4 => _name.Length == 0 ? "" : ")",
+            5 => _suffix,
+            _ => ""
+        };
+
+        internal int Hash(bool invalid)
+        {
+            if (invalid ? _hasInvalidHash : _hasHash) return invalid ? _invalidHash : _hash;
+            int hash = PanelText.HashParts(new PanelText(this, invalid));
+            System.Threading.Interlocked.Increment(ref _hashComputations);
+            if (invalid) { _invalidHash = hash; _hasInvalidHash = true; }
+            else { _hash = hash; _hasHash = true; }
+            return hash;
+        }
+        internal int HashComputationCount => _hashComputations;
+        internal PanelGroupKey Key(bool invalid) => new PanelGroupKey(_name, _count, invalid);
     }
 
     /// <summary>A lightweight presentation record. It never contains a live Rhino object.</summary>
@@ -73,6 +112,7 @@ namespace BetterGhPanel.Core
         public string TypeName { get; }
         private readonly string _displayValue;
         private readonly PanelGroupSummary? _groupSummary;
+        internal PanelGroupSummary? GroupSummary => _groupSummary;
         public string DisplayValue => _groupSummary?.Format() ?? _displayValue;
         public double? NumericValue { get; }
         public bool IsNull { get; }
@@ -264,15 +304,16 @@ namespace BetterGhPanel.Core
     /// <summary>One exact numeric or string value, ordered by its first occurrence in the source.</summary>
     public sealed class PanelValueFrequency
     {
-        internal PanelValueFrequency(double? numericValue, string? stringValue, int count)
+        private readonly PanelText? _stringValue;
+        internal PanelValueFrequency(double? numericValue, PanelText? stringValue, int count)
         {
             NumericValue = numericValue;
-            StringValue = stringValue;
+            _stringValue = stringValue;
             Count = count;
         }
 
         public double? NumericValue { get; }
-        public string? StringValue { get; }
+        public string? StringValue => _stringValue?.ToString();
         public int Count { get; }
     }
 

@@ -16,6 +16,11 @@ namespace BetterGhPanel.Runtime
     /// </summary>
     internal static class SafeGooInspection
     {
+        // GH_Light exists in the SDK but is not publicly exposed to C#.
+        private static readonly Type? GhLightType = typeof(IGH_Goo).Assembly.GetType("Grasshopper.Kernel.Types.GH_Light");
+        private static readonly Type? ModelDataType = typeof(IGH_Goo).Assembly.GetType("Grasshopper.Rhinoceros.ModelData");
+        private static readonly Type? ModelValueType = typeof(IGH_Goo).Assembly.GetType("Grasshopper.Rhinoceros.ModelValue");
+        private static readonly Dictionary<Type, string> ModelTypeNames = new Dictionary<Type, string>();
         internal const int MaxDepth = 64;
         internal const int MaxNodesPerRoot = 4096;
         internal const int MaxNodesPerCapture = 100000;
@@ -171,7 +176,9 @@ namespace BetterGhPanel.Runtime
             {
                 if (node is IGH_Goo goo)
                 {
-                    if (TrustedTypeName(node.GetType()) == null) return PanelValidity.Unverified;
+                    // A constant stock TypeName does not make a goo's validity path safe:
+                    // some stock holders can contain externally supplied implementations.
+                    if (!HasTrustedLeafValidity(node.GetType())) return PanelValidity.Unverified;
                     // GH_Arc exposes a more specific validity check than the
                     // inherited IGH_Goo implementation on Rhino 8.
                     if (node.GetType() == typeof(GH_Arc))
@@ -259,6 +266,16 @@ namespace BetterGhPanel.Runtime
         internal static bool IsGeometryHolder(Type type) => type == typeof(GH_Curve) || type == typeof(GH_Surface) ||
             type == typeof(GH_Brep) || type == typeof(GH_Mesh);
 
+        // Keep the previously audited validity allowlist independent of the broader
+        // identity table. Newly recognized identities are not evidence of safe validity.
+        private static bool HasTrustedLeafValidity(Type type) =>
+            type == typeof(GH_Number) || type == typeof(GH_Integer) || type == typeof(GH_String) ||
+            type == typeof(GH_Boolean) || type == typeof(GH_Colour) || type == typeof(GH_Interval) ||
+            type == typeof(GH_Interval2D) || type == typeof(GH_Guid) || type == typeof(GH_Time) ||
+            type == typeof(GH_Point) || type == typeof(GH_Plane) || type == typeof(GH_Vector) ||
+            type == typeof(GH_Line) || type == typeof(GH_Arc) || type == typeof(GH_Circle) ||
+            type == typeof(GH_Rectangle) || type == typeof(GH_Box) || IsGeometryHolder(type);
+
         internal static string? TrustedTypeName(Type type)
         {
             if (type == typeof(GH_GeometryGroup)) return "Group";
@@ -283,7 +300,77 @@ namespace BetterGhPanel.Runtime
             if (type == typeof(GH_Surface)) return "Surface";
             if (type == typeof(GH_Brep)) return "Brep";
             if (type == typeof(GH_Mesh)) return "Mesh";
-            return null;
+            // These are constant TypeName getters in the Grasshopper 8 SDK and the
+            // installed Rhino 8 assembly. Do not call the getters on arbitrary goo.
+            if (type == typeof(GH_Transform)) return "Transform";
+            if (type == typeof(GH_MeshFace)) return "Meshface";
+            if (type == typeof(GH_ComplexNumber)) return "Complex";
+            if (type == typeof(GH_SubD)) return "SubD";
+            if (type == typeof(GH_Extrusion)) return "Extrusion";
+            if (type == typeof(GH_AngularDimension)) return "Angular Dimension";
+            if (type == typeof(GH_Centermark)) return "Radial Centermark";
+            if (type == typeof(GH_Hatch)) return "Hatch";
+            if (type == typeof(GH_InstanceReference)) return "Block Instance";
+            if (type == typeof(GH_Leader)) return "Leader";
+            if (type == GhLightType) return "Light";
+            if (type == typeof(GH_LinearDimension)) return "Linear Dimension";
+            if (type == typeof(GH_OrdinateDimension)) return "Ordinate Dimension";
+            if (type == typeof(GH_RadialDimension)) return "Radial Dimension";
+            if (type == typeof(GH_TextDot)) return "Text Dot";
+            if (type == typeof(GH_TextEntity)) return "Text Entity";
+            if (type == typeof(GH_Culture)) return "Culture";
+            if (type == typeof(GH_DetailView)) return "Detail View";
+            if (type == typeof(GH_Field)) return "Field";
+            if (type == typeof(GH_LonLatCoordinate)) return "Location";
+            if (type == typeof(GH_Material)) return "Material";
+            if (type == typeof(GH_Matrix)) return "Matrix";
+            if (type == typeof(GH_MeshingParameters)) return "MeshParameters";
+            if (type == typeof(GH_PointCloud)) return "Point Cloud";
+            if (type == typeof(GH_Predicate)) return "Predicate";
+            if (type == typeof(GH_StructurePath)) return "Path";
+            return TrustedModelTypeName(type);
+        }
+
+        // Rhino model goo names are either constant getters or attributes consumed
+        // by the stock ModelData/ModelValue getter. SDK releases change some of
+        // those attributes, so read their metadata without constructing attributes
+        // or invoking a goo. Dynamic model object/material getters remain unknown.
+        private static string? TrustedModelTypeName(Type type)
+        {
+            if (type.Assembly != typeof(IGH_Goo).Assembly || type.FullName == null ||
+                !type.FullName.StartsWith("Grasshopper.Rhinoceros.", StringComparison.Ordinal)) return null;
+            lock (ModelTypeNames)
+            {
+                if (ModelTypeNames.TryGetValue(type, out string? cached)) return string.IsNullOrEmpty(cached) ? null : cached;
+                string? name = null;
+                switch (type.FullName)
+                {
+                    case "Grasshopper.Rhinoceros.Annotations.AnnotationDateTimeFormat": name = "Text"; break;
+                    case "Grasshopper.Rhinoceros.Display.DisplayColorGradient": name = "Colour Gradient"; break;
+                    case "Grasshopper.Rhinoceros.Display.DisplayColorStop": name = "Colour Stop"; break;
+                    case "Grasshopper.Rhinoceros.Display.ModelView": name = "View"; break;
+                    case "Grasshopper.Rhinoceros.Drafting.ModelLineWidth": name = "Print Width"; break;
+                    case "Grasshopper.Rhinoceros.ModelColor": name = "Model Colour"; break;
+                    case "Grasshopper.Rhinoceros.ModelFont": name = "Font"; break;
+                    default:
+                        try
+                        {
+                            Type? declaring = type.GetProperty("TypeName")?.GetMethod?.DeclaringType;
+                            if (declaring != null && (declaring == ModelDataType || declaring == ModelValueType))
+                            {
+                                foreach (var attribute in type.GetCustomAttributesData())
+                                    if (attribute.AttributeType.Assembly == typeof(IGH_Goo).Assembly &&
+                                        attribute.AttributeType.FullName == "Grasshopper.Kernel.Types.TypeNameAttribute" &&
+                                        attribute.ConstructorArguments.Count == 1 && attribute.ConstructorArguments[0].Value is string value)
+                                    { name = value; break; }
+                            }
+                        }
+                        catch (Exception) { /* Treat inaccessible or malformed metadata as unknown. */ }
+                        break;
+                }
+                ModelTypeNames[type] = name ?? "";
+                return name;
+            }
         }
 
         private static string SafeName(Type type) => type.Name.Length == 0 ? "Unknown" : type.Name;

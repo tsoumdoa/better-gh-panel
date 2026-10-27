@@ -9,31 +9,33 @@ namespace BetterGhPanel.Core
     /// <summary>A frozen displayed value. Numeric values carry the displayed precision.</summary>
     public sealed class PanelDisplayedValue
     {
-        internal PanelDisplayedValue(string text, string copyText, double? number)
-        { Text = text; CopyText = copyText; Number = number; }
-        public string Text { get; }
-        public string CopyText { get; }
+        private readonly PanelText _text, _copyText;
+        internal PanelDisplayedValue(PanelText text, PanelText copyText, double? number)
+        { _text = text; _copyText = copyText; Number = number; }
+        public string Text => _text.ToString();
+        public string CopyText => _copyText.ToString();
         public double? Number { get; }
+        internal PanelText SemanticText => _text;
 
         internal static PanelDisplayedValue Capture(PanelSnapshot snapshot, PanelRow row, PanelQueryOptions query,
             PanelGeometryInfo? measured, IFormatProvider culture)
         {
-            string text, copy;
+            PanelText text, copy;
             bool numeric;
             if (query.DisplayFilterValue)
             {
-                text = PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured);
-                copy = PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false);
+                text = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured));
+                copy = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false));
                 numeric = true; // Status labels fail the finite-number parse below.
             }
             else
             {
-                text = PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture);
+                text = PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture);
                 numeric = !row.IsNull && row.IsValid && row.NumericValue.HasValue;
-                copy = numeric ? PanelUnits.Format(row.NumericValue!.Value, PanelUnitConversion.None,
-                    query.DecimalPlaces, CultureInfo.InvariantCulture) : text;
+                copy = numeric ? new PanelText(PanelUnits.Format(row.NumericValue!.Value, PanelUnitConversion.None,
+                    query.DecimalPlaces, CultureInfo.InvariantCulture)) : text;
             }
-            double? number = numeric && double.TryParse(copy, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) &&
+            double? number = numeric && double.TryParse(copy.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) &&
                 !double.IsNaN(parsed) && !double.IsInfinity(parsed) ? parsed : (double?)null;
             return new PanelDisplayedValue(text, copy, number);
         }
@@ -65,7 +67,8 @@ namespace BetterGhPanel.Core
         private readonly PanelSnapshot _snapshot;
         private readonly PanelQueryOptions _query;
         private readonly IFormatProvider _culture;
-        private readonly Dictionary<string, Dictionary<string, int>> _seen = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal);
+        private readonly PanelTextComparer _textComparer = new PanelTextComparer();
+        private readonly Dictionary<string, Dictionary<PanelText, int>> _seen = new Dictionary<string, Dictionary<PanelText, int>>(StringComparer.Ordinal);
         private readonly Dictionary<int, PanelDisplayedValue> _values = new Dictionary<int, PanelDisplayedValue>();
         private readonly Dictionary<int, List<PanelSourceAddress>> _locations = new Dictionary<int, List<PanelSourceAddress>>();
         private readonly Dictionary<int, PanelSourceStatusCounts> _statuses = new Dictionary<int, PanelSourceStatusCounts>();
@@ -109,17 +112,17 @@ namespace BetterGhPanel.Core
             var value = PanelDisplayedValue.Capture(_snapshot, row, _query, measured, _culture);
             if (!_seen.TryGetValue(row.Path, out var branch))
             {
-                branch = new Dictionary<string, int>(StringComparer.Ordinal);
+                branch = new Dictionary<PanelText, int>(_textComparer);
                 _seen.Add(row.Path, branch);
             }
             var address = _snapshot.SourceAddressAt(position);
-            if (branch.TryGetValue(value.Text, out int first))
+            if (branch.TryGetValue(value.SemanticText, out int first))
             {
                 _locations[first].Add(address);
                 _statuses[first] = _statuses[first].Add(row.Validity);
                 return false;
             }
-            branch.Add(value.Text, position);
+            branch.Add(value.SemanticText, position);
             _values.Add(position, value);
             _locations.Add(position, new List<PanelSourceAddress> { address });
             _statuses.Add(position, default(PanelSourceStatusCounts).Add(row.Validity));
