@@ -56,10 +56,10 @@ that desktop for those fixtures, without switching the user's desktop. The
 hidden-host crashes remain recorded above; the final package still needs its
 own full run.
 
-## Deferred findings
+## Current boundaries and remaining considerations
 
-- Query option cloning and equality enumerate settings in multiple places. Centralizing this may help future additions, but output-filter equality intentionally ignores sorting and sometimes decimal precision. Preserve those distinctions.
-- Geometry scheduling could move out of `PanelSession`, but a useful extraction needs to preserve UI dispatch, in-flight measurement identity, cache retention across unit changes and cancellation. A file move alone does not improve those ownership boundaries.
+- `PanelQueryPolicy` keeps query equality, downstream output equivalence and active-filter decisions separate. Output equivalence intentionally ignores sorting and sometimes decimal precision; preserve those distinctions when adding settings.
+- `GeometryMeasurementQueue` owns prepared work, cancellation and worker handoff; `PanelSession` retains query state and publication. New measurement providers must preserve UI dispatch, copy ownership, context checks and safe retention across unit changes.
 - Selection gestures repeat cancellation, highlighting and repaint side effects. Consolidate only after distinguishing gesture updates from query-completion synchronization and document changes.
 - The archived HTML prototype is documented as a visual reference and has an independent data engine. Removing it is a product/documentation decision, not dead-code cleanup in the native plugin.
 
