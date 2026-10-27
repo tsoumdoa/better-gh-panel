@@ -142,6 +142,50 @@ namespace BetterGhPanel.Core
                 foreach (var step in SortBranches(positions, snapshot, branchCounts, sortText!,
                     query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work, set?.Values))
                     yield return step;
+            // Build the scroll index as part of the cooperative query, not in a
+            // paint or gesture. The first row of the next retained non-empty
+            // branch anchors each empty path without changing item numbering.
+            var firstRows = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int index = 0; index < positions.Length; index++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, cancellationToken);
+                string path = snapshot.Rows[positions[index]].Path;
+                if (!firstRows.ContainsKey(path)) firstRows.Add(path, index);
+            }
+            var orderedBranches = new List<string>();
+            for (int index = 0; index < snapshot.Branches.Count; index++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, cancellationToken);
+                string path = snapshot.Branches[index].Path;
+                if (branches.Contains(path)) orderedBranches.Add(path);
+            }
+            var reverseEmptyPaths = new List<string>();
+            var reverseEmptyOffsets = new List<int>();
+            int nextRow = positions.Length;
+            for (int index = orderedBranches.Count - 1; index >= 0; index--)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, cancellationToken);
+                string path = orderedBranches[index];
+                if (firstRows.TryGetValue(path, out int first)) nextRow = first;
+                else { reverseEmptyPaths.Add(path); reverseEmptyOffsets.Add(nextRow); }
+            }
+            var emptyPaths = new List<string>();
+            var emptyOffsets = new List<int>();
+            int previousOffset = 0;
+            for (int index = reverseEmptyPaths.Count - 1; index >= 0; index--)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(index, cancellationToken);
+                // Actual tree rows are branch-ordered. Preserve item order even
+                // for a synthetic snapshot with interleaved branch records.
+                previousOffset = Math.Max(previousOffset, reverseEmptyOffsets[index]);
+                emptyPaths.Add(reverseEmptyPaths[index]);
+                emptyOffsets.Add(previousOffset);
+            }
+            var viewIndex = new PanelViewIndex(positions.Length, emptyOffsets, emptyPaths);
             if (set?.IsBranchSet == true)
             {
                 // One displayed/output number per retained branch. Membership still
@@ -192,7 +236,7 @@ namespace BetterGhPanel.Core
                 viewIndices.Add(positions[index], index);
             }
             cancellationToken.ThrowIfCancellationRequested();
-            yield return new PanelQueryResult(snapshot, positions, viewIndices, statistics, branches, displaySet);
+            yield return new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet);
         }
 
         public static bool RequiresGeometryMeasurements(PanelQueryOptions options)

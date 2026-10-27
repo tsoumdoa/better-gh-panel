@@ -135,7 +135,12 @@ namespace BetterGhPanel
         private bool HandleSetDetailsClick(GH_Canvas canvas, GH_CanvasMouseEvent e)
         {
             var point = e.CanvasLocation;
-            LayoutSetDetails();
+            if (!RowsAreCurrent(PanelOwner.Session.Result))
+            {
+                if (!_setDetails.Bounds.Contains(point)) return false;
+                canvas.Invalidate();
+                return true;
+            }
             bool handled = _setDetails.Bounds.Contains(point);
             if (handled)
             {
@@ -155,6 +160,7 @@ namespace BetterGhPanel
             }
             if (!handled) return false;
             SuppressTrailingDoubleClick();
+            InvalidatePaintedHits();
             LayoutSetDetails();
             CanvasDoubleClickGuard.Start(canvas, e);
             canvas.Invalidate();
@@ -163,7 +169,7 @@ namespace BetterGhPanel
 
         private bool SetDetailsTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
-            if (!_setControlsVisible || PanelOwner.Locked || !PanelOwner.Session.HasCurrentResult) return false;
+            if (!_setControlsVisible || !RowsAreCurrent(PanelOwner.Session.Result)) return false;
             if (_setDetails.Bounds.Contains(point))
             {
                 var location = _setDetails.LocationAt(point);
@@ -172,7 +178,6 @@ namespace BetterGhPanel
                 e.Description = CanvasSetDetails.Scope;
                 return true;
             }
-            if (!RowsAreCurrent(PanelOwner.Session.Result)) return false;
             foreach (var hit in _setHits)
             {
                 if (!hit.Bounds.Contains(point)) continue;

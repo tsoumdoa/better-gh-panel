@@ -262,6 +262,7 @@ internal static partial class FilterUiChecks
         Paint(component, canvas);
         Click(component, canvas, PanelTestAdapter.RowBounds(component, 34));
         Mode(0);
+        Paint(component, canvas);
         var list = PanelTestAdapter.Bounds(component, CanvasControl.List);
         Click(component, canvas, new RectangleF(list.X, list.Bottom - 18, list.Width, 16));
         Check(Selected(component, session).Count == 0 && PreviewCount() == 0,

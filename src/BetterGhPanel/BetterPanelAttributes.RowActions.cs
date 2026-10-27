@@ -27,13 +27,18 @@ namespace BetterGhPanel
         private bool _copyPending;
         private long _actionGeneration;
         private bool _rowContextHandled;
+        private bool _rowMenuPainted;
 
         private void CloseRowMenu()
         {
+            bool coveredRows = _rowMenuResult != null && _rowMenuPainted;
+            if (coveredRows) _staleRowMenu = _rowMenuBounds;
             _rowMenuResult = null;
             _rowMenuHovered = -1;
             _rowMenuActions = Array.Empty<CanvasRowAction>();
             _rowMenuPendingActions = Array.Empty<CanvasRowAction>();
+            _rowMenuPainted = false;
+            if (coveredRows) InvalidatePaintedHits(closeRowMenu: false);
         }
 
         private void SuppressTrailingDoubleClick() =>
@@ -41,7 +46,7 @@ namespace BetterGhPanel
 
         private void RenderRowMenu(Graphics g, Font font, StringFormat trim)
         {
-            if (_rowMenuResult == null || !RowsAreCurrent(_rowMenuResult)) return;
+            if (_rowMenuResult == null || !ResultIsCurrent(_rowMenuResult)) return;
             Fill(g, Color.FromArgb(32, 49, 55, 53), new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + 2, _rowMenuBounds.Width, _rowMenuBounds.Height));
             Fill(g, Color.White, _rowMenuBounds);
             var actions = _rowMenuPendingActions;
@@ -57,6 +62,7 @@ namespace BetterGhPanel
             }
             using (var pen = new Pen(Color.FromArgb(194, 205, 194)))
                 g.DrawRectangle(pen, _rowMenuBounds.X, _rowMenuBounds.Y, _rowMenuBounds.Width, _rowMenuBounds.Height);
+            _rowMenuPainted = _rowMenuActions.Any(action => action.Action != PanelRowAction.Unpainted);
         }
 
         private static bool FullyVisible(Graphics graphics, RectangleF bounds)
@@ -78,6 +84,7 @@ namespace BetterGhPanel
                 _rowContextHandled = true;
                 CloseRowMenu();
                 _menu.Close();
+                InvalidatePaintedHits();
                 canvas.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
@@ -113,6 +120,7 @@ namespace BetterGhPanel
         private void ShowRowMenu(PanelQueryResult result, int page)
         {
             _rowMenuResult = result;
+            _rowMenuPainted = false;
             _rowMenuHovered = -1;
             _rowMenuPendingActions = _rowMenuPaged ? CanvasRowActions.Page(_rowMenuAllActions, page) : _rowMenuAllActions;
             _rowMenuActions = Enumerable.Repeat(new CanvasRowAction(PanelRowAction.Unpainted, "", ""), _rowMenuPendingActions.Length).ToArray();
@@ -198,7 +206,7 @@ namespace BetterGhPanel
             catch (Exception) { status = "Could not copy values. Try again."; }
             Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
             {
-                if (generation != _actionGeneration || canvas.IsDisposed || !RowsAreCurrent(result) ||
+                if (generation != _actionGeneration || canvas.IsDisposed || !ResultIsCurrent(result) ||
                     !positions.SequenceEqual(_selection.OrderedPositions(result))) return;
                 _copyPending = false;
                 _actionStatus = status;
@@ -209,7 +217,7 @@ namespace BetterGhPanel
 
         private bool RowActionTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
-            if (_rowMenuResult == null || !_rowMenuBounds.Contains(point)) return false;
+            if (_rowMenuResult == null || !_rowMenuPainted || !_rowMenuBounds.Contains(point)) return false;
             int index = (int)((point.Y - _rowMenuBounds.Y) / CanvasRowActions.RowHeight);
             if (RowsAreCurrent(_rowMenuResult) && index >= 0 && index < _rowMenuActions.Length &&
                 _rowMenuActions[index].Action != PanelRowAction.Unpainted)

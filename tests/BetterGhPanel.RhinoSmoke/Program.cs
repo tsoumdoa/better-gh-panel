@@ -79,6 +79,7 @@ internal static class Program
         ["filter-ui"] = FilterUiChecks.Run,
         ["filter-ui-choices"] = FilterUiChecks.VerifyTypedChoicesAndStaleEditors,
         ["full-value"] = FullValueChecks.Run,
+        ["view-freshness"] = ViewFreshnessChecks.Run,
         ["filter-footer-statistics"] = FilterUiChecks.VerifyFooterStatistics,
         ["filter-preview-undo"] = FilterUiChecks.VerifyPreviewUndo,
         ["filter-display-values"] = FilterUiChecks.VerifyDisplayValues,

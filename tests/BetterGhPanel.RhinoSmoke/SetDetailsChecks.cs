@@ -59,9 +59,13 @@ internal static class SetDetailsChecks
             var textRow = PanelTestAdapter.RowBounds(component, 2);
             PanelTestAdapter.CanvasClick(canvas, new PointF(textRow.X + 42, textRow.Y + 8));
             Check(PanelTestAdapter.SelectedPosition(component) == 2, "Set fixture selects a different row before inspecting occurrences");
-            Click(CountBounds(0));
+            var firstBadge = CountBounds(0);
+            RawClick(firstBadge);
             Check(!Bounds("Bounds").IsEmpty && Property<int>(details, "SourcePosition") == 0,
                 "Native count badge expands an occurrence table below the panel");
+            DirectClick(firstBadge);
+            Check(Property<bool>(details, "IsOpen"), "A badge cannot toggle twice before its new state is painted");
+            Paint();
             var badge = CountBounds(0);
             PanelTestAdapter.CanvasClick(canvas, new PointF(badge.X + badge.Width / 2, badge.Y + badge.Height / 2), clicks: 2);
             Check(!Bounds("Bounds").IsEmpty && PanelTestAdapter.SelectedPosition(component) == 2,
@@ -69,8 +73,18 @@ internal static class SetDetailsChecks
             Check(component.Attributes.Bounds.Contains(Bounds("Bounds")) && component.Params.Input[0].Attributes.InputGrip == inputGrip &&
                 component.Params.Output[0].Attributes.OutputGrip == outputGrip, "Expanded table participates in hit testing without moving wire grips");
             Paint("set-occurrences");
-            Click(Bounds("Next"));
+            var nextPage = Bounds("Next");
+            RawClick(nextPage);
             Check(Property<int>(details, "Offset") == 4, "Native dispatch reaches Next below the original panel bounds");
+            DirectClick(nextPage);
+            Check(Property<int>(details, "Offset") == 4, "A second page click before repaint cannot use stale occurrence targets");
+            var staleTable = Bounds("Table");
+            var stalePoint = new PointF(staleTable.X + 5, staleTable.Y + 8);
+            var staleTooltip = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(stalePoint) }, null)!;
+            component.Attributes.SetupTooltip(stalePoint, staleTooltip);
+            Check(staleTooltip.Title != "Original input locations", "Occurrence tooltips wait for the new page to be painted");
+            Paint();
             Click(Bounds("Next"));
             Check(Property<int>(details, "Offset") == 8 && Property<int>(details, "Visible") == 1, "Occurrence paging reaches the last original location");
             var table = Bounds("Table");
@@ -123,9 +137,37 @@ internal static class SetDetailsChecks
                 "Flatten plus Reverse shows all eleven occurrences and their original branch addresses");
             Check(!Bounds("Bounds").IsEmpty && Bounds("Bounds").Top > PanelTestAdapter.Bounds(component, CanvasControl.Panel).Bottom,
                 "Occurrence table remains readable below minimum Half layout");
+            var oldBadge = CountBounds(0);
+            var oldCollapse = Bounds("Collapse");
+            var track = PanelTestAdapter.Bounds(component, CanvasControl.Track);
+            int oldOffset = PanelTestAdapter.Offset(component);
+            DirectClick(new RectangleF(track.X, track.Bottom - 1, track.Width, 1));
+            Check(PanelTestAdapter.Offset(component) > oldOffset, "A Half scroll changes the visible set rows");
+            DirectClick(oldBadge);
+            DirectClick(oldCollapse);
+            Check(Property<bool>(details, "IsOpen"), "Scrolling rejects old badge and occurrence targets until repaint");
+            Paint();
+            DirectClick(PanelTestAdapter.Bounds(component, CanvasControl.Jump));
+            CanvasEditorAdapter.Active(assembly).Submit("1");
+            DirectClick(Bounds("Collapse"));
+            Check(Property<bool>(details, "IsOpen"), "Jumping rejects occurrence targets until the new viewport is painted");
+            Paint();
+            oldCollapse = Bounds("Collapse");
+            PanelTestAdapter.Resize(component, 310, 220);
+            component.Attributes.PerformLayout();
+            DirectClick(oldCollapse);
+            Check(Property<bool>(details, "IsOpen"), "Resizing rejects the previous occurrence target before repaint");
+            Paint();
+            PanelTestAdapter.Resize(component, 300, 220);
+            component.Attributes.PerformLayout();
             Paint("set-occurrences-half");
             canvas.Viewport.Zoom = 0.4f;
             canvas.Viewport.ComputeProjection();
+            var staleBadgePoint = new PointF(CountBounds(0).X + 5, CountBounds(0).Y + 8);
+            var hiddenTooltip = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs),
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(staleBadgePoint) }, null)!;
+            component.Attributes.SetupTooltip(staleBadgePoint, hiddenTooltip);
+            Check(hiddenTooltip.Title != "Collapse occurrences", "A zoom change invalidates badge tooltips before repaint");
             Paint();
             Check(((ICollection)Field<object>(component.Attributes, "_setHits")).Count == 0,
                 "Low zoom clears hidden set count hit targets");
@@ -185,8 +227,17 @@ internal static class SetDetailsChecks
         }
         void Click(RectangleF bounds)
         {
-            PanelTestAdapter.CanvasClick(canvas, new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2));
+            RawClick(bounds);
             Paint();
+        }
+        void RawClick(RectangleF bounds) =>
+            PanelTestAdapter.CanvasClick(canvas, new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2));
+        void DirectClick(RectangleF bounds)
+        {
+            var point = new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+            var mouse = new GH_CanvasMouseEvent(Point.Empty, point, System.Windows.Forms.MouseButtons.Left, 1, 0);
+            component.Attributes.RespondToMouseDown(canvas, mouse);
+            component.Attributes.RespondToMouseUp(canvas, mouse);
         }
         void Paint(string? name = null)
         {

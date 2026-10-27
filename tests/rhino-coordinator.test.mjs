@@ -30,7 +30,7 @@ test('inventory includes every original fixture and the independently crash-pron
     'geometry-hint', 'capture-safety', 'polyline-safety', 'nurbs-value-candidate', 'geometry-canvas-viewport', 'measurement-priority', 'measurement-cancellation',
     'measurement-invalidation', 'measurement-failures', 'row-actions', 'highlight-overlap',
     'filter-metadata', 'filter-measurements', 'filter-cancellation', 'filter-snapshot-replacement',
-    'filter-lifecycle-paths', 'filter-displayed-output', 'filter-displayed-geometry', 'filter-ui', 'filter-ui-choices', 'full-value',
+    'filter-lifecycle-paths', 'filter-displayed-output', 'filter-displayed-geometry', 'filter-ui', 'filter-ui-choices', 'full-value', 'view-freshness',
     'filter-footer-statistics', 'filter-preview-undo', 'filter-display-values', 'statistics-ui',
     'create-set', 'set-details', 'display-set', 'item-order-ui',
     'item-order-capture', 'integration'

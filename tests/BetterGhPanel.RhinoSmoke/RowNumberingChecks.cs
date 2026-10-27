@@ -169,6 +169,7 @@ internal static class RowNumberingChecks
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
             Check(!menu.IsEmpty && ReferenceEquals(Field<object>(component.Attributes, "_rowMenuResult"), result),
                 "Sorted value copy opens a context menu for the current query");
+            using (Capture(component, canvas)) { }
             string beforeCopy = RowActionChecks.ClipboardState();
             Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
             var timer = Stopwatch.StartNew();

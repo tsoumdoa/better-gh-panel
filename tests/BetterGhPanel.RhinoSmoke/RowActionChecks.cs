@@ -484,6 +484,7 @@ internal static class RowActionChecks
         Click(component, canvas, row, Forms.MouseButtons.Right);
         Paint(component, canvas);
         var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+        Paint(component, canvas);
         Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
         await WaitUntil(() => !Field<bool>(component.Attributes, "_copyPending"));
         Check(ClipboardText() == "42" + Environment.NewLine + "1234.56789",
@@ -620,9 +621,9 @@ internal static class RowActionChecks
         Method(selection, "Clear").Invoke(selection, Array.Empty<object>());
         Forms.Clipboard.SetText("keep menu gesture clipboard");
         var target = viewport.CameraTarget;
+        var pointRow = PanelTestAdapter.RowBounds(component, 4);
         Click(component, canvas, PanelTestAdapter.Bounds(component, CanvasControl.Sort));
         var sort = PanelTestAdapter.MenuBounds(component);
-        var pointRow = PanelTestAdapter.RowBounds(component, 4);
         var overlap = new PointF(sort.X + 45, Math.Max(sort.Top, pointRow.Top) + 0.5f);
         Check(pointRow.Contains(overlap) && overlap.Y < sort.Top + 20,
             "Unchanged Source order menu entry overlaps a live geometry row for the regression");
@@ -667,6 +668,7 @@ internal static class RowActionChecks
         Click(component, canvas, number, Forms.MouseButtons.Right);
         Paint(component, canvas);
         var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+        Paint(component, canvas);
         Click(component, canvas, new RectangleF(menu.X, menu.Y, menu.Width, 20));
         Check(Field<string>(component.Attributes, "_actionStatus").Contains("No valid geometry"),
             "Explicit Frame selection explains why a numeric selection cannot move the camera");
@@ -812,9 +814,11 @@ internal static class RowActionChecks
             Click(component, canvas, row, Forms.MouseButtons.Right);
             Paint(component, canvas);
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+            Paint(component, canvas);
             Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
             await WaitUntil(() => Field<bool>(session, "_geometryRunning"));
             Check(Field<bool>(component.Attributes, "_copyPending"), "Context-menu value copy is pending during geometry measurement");
+            Paint(component, canvas);
             var point = new PointF(row.X + 45, row.Y + row.Height / 2);
             MouseDown(component, canvas, point, 1);
             TrailingDoubleClick(component, canvas, point);
@@ -855,6 +859,7 @@ internal static class RowActionChecks
             Click(component, canvas, PanelTestAdapter.RowBounds(component, 8), Forms.MouseButtons.Right);
             Paint(component, canvas);
             var menu = Field<RectangleF>(component.Attributes, "_rowMenuBounds");
+            Paint(component, canvas);
             Click(component, canvas, new RectangleF(menu.X, menu.Y + 20, menu.Width, 20));
             await WaitUntil(() => Field<bool>(session, "_geometryRunning"));
             Check(Field<bool>(component.Attributes, "_copyPending"), "Value copy is pending while its geometry is measured");

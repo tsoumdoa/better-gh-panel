@@ -152,6 +152,8 @@ internal static class IndexSelectionChecks
             selectedAction = MenuItem(ReachIndex());
             session.GetType().GetMethod("UpdateQuery")!.Invoke(session, new object[] { new PanelQueryOptions { Search = "does not match" } });
             Click(selectedAction);
+            Check(!PanelTestAdapter.TreeFlag(component, "Reverse"),
+                "A stale row menu overlapping the footer cannot activate a tree tool before repaint");
             await Wait(session);
             Paint();
             Expect();
@@ -164,13 +166,21 @@ internal static class IndexSelectionChecks
             Check(Selected().Length <= 1, "Disabled components cannot expand a captured row selection");
             component.Locked = false;
             component.ExpireSolution(true);
+            document.NewSolution(false, GH_SolutionMode.Silent);
             await Wait(session);
             Paint();
             Expect();
-            Check(source.PersistentData.AllData(true).SequenceEqual(upstream) &&
-                component.Params.Output[0].VolatileData.AllData(true).Cast<GH_Point>().Select(point => point.Value)
-                    .SequenceEqual(output.Cast<GH_Point>().Select(point => point.Value)),
-                "Index actions preserve upstream identities and output geometry values/order through recomputation");
+            var currentUpstream = source.PersistentData.AllData(true).ToArray();
+            var currentOutput = component.Params.Output[0].VolatileData.AllData(true).Cast<GH_Point>().Select(point => point.Value).ToArray();
+            var originalOutput = output.Cast<GH_Point>().Select(point => point.Value).ToArray();
+            int mismatch = Enumerable.Range(0, Math.Min(currentOutput.Length, originalOutput.Length))
+                .FirstOrDefault(index => currentOutput[index] != originalOutput[index], -1);
+            Check(currentUpstream.SequenceEqual(upstream) && currentOutput.SequenceEqual(originalOutput),
+                $"Index actions preserve upstream identities and output geometry values/order through recomputation " +
+                $"(upstream {currentUpstream.Length}/{upstream.Length}, identical {currentUpstream.SequenceEqual(upstream)}; " +
+                $"output {currentOutput.Length}/{originalOutput.Length}, first mismatch {mismatch}" +
+                (mismatch < 0 ? "" : $": {currentOutput[mismatch]} vs {originalOutput[mismatch]}") +
+                $", current {(bool)session.GetType().GetProperty("HasCurrentResult")!.GetValue(session)!})");
             await SelectAllChecks();
         }
         finally
@@ -185,10 +195,11 @@ internal static class IndexSelectionChecks
         string Label() => PanelTestAdapter.RowMenuLabel(component, ReachIndex());
         void Open(int position)
         {
+            Paint();
             Click(PanelTestAdapter.RowBounds(component, position), Forms.MouseButtons.Right);
             Paint();
         }
-        void Choose() => Click(MenuItem(ReachIndex()));
+        void Choose() { Click(MenuItem(ReachIndex())); Paint(); }
         RectangleF MenuItem(int index)
         {
             var bounds = Field<RectangleF>(component.Attributes, "_rowMenuBounds");

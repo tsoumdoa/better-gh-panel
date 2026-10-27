@@ -103,6 +103,7 @@ namespace BetterGhPanel
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
+                        (Attributes as BetterPanelAttributes)?.OnQueryStarted();
                         (Attributes as BetterPanelAttributes)?.InvalidateStatistics();
                         CancelPendingCopy();
                         ClearHighlight();
@@ -118,6 +119,7 @@ namespace BetterGhPanel
                         (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
                         if (!_solving && !_restoringView) ScheduleOutput();
                     };
+                    (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
                 }
                 return _session;
             }
@@ -197,6 +199,7 @@ namespace BetterGhPanel
 
         internal void SetCanvasSize(float width, float height)
         {
+            (Attributes as BetterPanelAttributes)?.InvalidatePaintedHits();
             CanvasWidth = CanvasPanelSize.Width(width);
             CanvasHeight = CanvasPanelSize.Height(height);
             Attributes.ExpireLayout();
@@ -232,6 +235,7 @@ namespace BetterGhPanel
         internal void SetCanvasDisplay(CanvasPanelDisplay display)
         {
             if (!Enum.IsDefined(typeof(CanvasPanelDisplay), display) || CanvasDisplay == display) return;
+            (Attributes as BetterPanelAttributes)?.InvalidatePaintedHits();
             RecordUndoEvent("Panel+ display size");
             CanvasTextInput.CloseActive();
             CanvasDisplay = display;

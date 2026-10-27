@@ -327,15 +327,16 @@ namespace BetterGhPanel.Core
         private readonly HashSet<string> _branchPaths;
 
         internal PanelQueryResult(PanelSnapshot snapshot, int[] rowPositions, PanelResultPositionIndex viewIndices,
-            PanelStatistics statistics, HashSet<string> branchPaths,
-            PanelDisplaySetResult? displaySet = null)
+            PanelStatistics statistics, List<string> orderedBranches, HashSet<string> branchPaths,
+            PanelViewIndex viewIndex, PanelDisplaySetResult? displaySet = null)
         {
             Snapshot = snapshot;
             RowPositions = Array.AsReadOnly(rowPositions);
             _viewIndices = viewIndices;
             _branchPaths = branchPaths;
             Statistics = statistics;
-            BranchPaths = Array.AsReadOnly(new List<string>(branchPaths).ToArray());
+            BranchPaths = orderedBranches.AsReadOnly();
+            ViewIndex = viewIndex;
             DisplaySet = displaySet;
         }
 
@@ -349,6 +350,7 @@ namespace BetterGhPanel.Core
         public IReadOnlyList<string> BranchPaths { get; }
         /// <summary>Whether a path, including a retained empty path, is present in this result.</summary>
         public bool ContainsBranchPath(string path) => _branchPaths.Contains(path);
+        public PanelViewIndex ViewIndex { get; }
         public PanelDisplaySetResult? DisplaySet { get; }
         public PanelSetOccurrences? SetOccurrencesAt(int position) =>
             DisplaySet != null && DisplaySet.Occurrences.TryGetValue(position, out var occurrences) ? occurrences : Snapshot.Rows[position].SetOccurrences;
