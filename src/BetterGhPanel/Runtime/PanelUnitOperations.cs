@@ -19,8 +19,16 @@ namespace BetterGhPanel.Runtime
                     IGH_Goo converted = item;
                     // Invalid scalar goo can contain finite unset sentinels. Scaling
                     // those would turn an invalid input into an ordinary valid number.
-                    if (item is GH_Number number && number.IsValid) converted = new GH_Number(PanelUnits.Convert(number.Value, conversion));
-                    else if (item is GH_Integer integer && integer.IsValid) converted = new GH_Number(PanelUnits.Convert(integer.Value, conversion));
+                    if (item?.GetType() == typeof(GH_Number))
+                    {
+                        var number = (GH_Number)item;
+                        if (number.IsValid) converted = new GH_Number(PanelUnits.Convert(number.Value, conversion));
+                    }
+                    else if (item?.GetType() == typeof(GH_Integer))
+                    {
+                        var integer = (GH_Integer)item;
+                        if (integer.IsValid) converted = new GH_Number(PanelUnits.Convert(integer.Value, conversion));
+                    }
                     result.Append(converted, path);
                 }
             }

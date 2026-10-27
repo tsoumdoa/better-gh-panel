@@ -9,7 +9,7 @@ namespace BetterGhPanel.Core
             PanelGeometryInfo? measuredGeometry = null, IFormatProvider? culture = null)
         {
             if (row == null) throw new ArgumentNullException(nameof(row));
-            if (!row.IsValid) return "Invalid · " + row.DisplayValue;
+            if (row.Validity == PanelValidity.VerifiedInvalid) return "Invalid · " + row.DisplayValue;
             var geometry = measuredGeometry ?? row.GeometryInfo;
             if (geometry != null) return geometry.FormatCompact(conversion, decimals) +
                 (geometry.MeasurementUnavailable ? " · measurement unavailable" : "");
@@ -17,5 +17,8 @@ namespace BetterGhPanel.Core
                 ? PanelUnits.Format(row.NumericValue.Value, conversion, decimals, culture)
                 : row.DisplayValue;
         }
+
+        /// <summary>Visual indicator only; search, copy and set keys use the unmodified semantic value.</summary>
+        public static string Visualize(string semanticValue) => semanticValue.Length == 0 ? "<empty>" : semanticValue;
     }
 }

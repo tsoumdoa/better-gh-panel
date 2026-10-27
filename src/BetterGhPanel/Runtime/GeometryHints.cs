@@ -10,27 +10,32 @@ namespace BetterGhPanel.Runtime
         // Only analytic measurements and stored properties belong in the snapshot.
         internal static PanelGeometryInfo? Describe(IGH_Goo goo, string units)
         {
-            switch (goo)
+            if (SafeGooInspection.IsGeometryHolder(goo.GetType()))
             {
-                case GH_Line line: return Length("Ln", line.Value.Length, units);
-                case GH_Arc arc: return ArcInfo(arc.Value, units);
-                case GH_Circle circle: return new PanelGeometryInfo("Cir", circle.Value.Radius, units: units, metricName: "Radius", metricLabel: "R");
-                case GH_Rectangle rectangle: return new PanelGeometryInfo("Rect", rectangle.Value.Area, 2, units, "Area", "A");
-                case GH_Box box: return new PanelGeometryInfo("Box", box.Value.Volume, 3, units, "Volume", "V");
-                case GH_Curve curve when curve.Value is LineCurve line: return Length("Ln", line.Line.Length, units);
-                case GH_Curve curve when curve.Value is ArcCurve arc: return ArcInfo(arc.Arc, units);
-                case GH_Curve curve when curve.Value is PolylineCurve polyline:
-                    return CurveInfo(polyline);
-                case GH_Curve curve when curve.Value != null:
-                    return CurveInfo(curve.Value);
-                case GH_Surface surface when surface.Value != null:
-                    return SurfaceInfo(surface.Value);
-                case GH_Brep brep when brep.Value != null:
-                    return BrepInfo(brep.Value);
-                case GH_Mesh mesh when mesh.Value != null:
-                    return new PanelGeometryInfo("Mesh · " + mesh.Value.Vertices.Count + " vertices · " + Count(mesh.Value.Faces.Count, "face"));
-                default: return null;
+                if (!SafeGooInspection.TryGetTrustedGeometry(goo, out GeometryBase? geometry) || geometry == null || !geometry.IsValid) return null;
+                return DescribeCaptured(goo, geometry, units);
             }
+            return DescribeCaptured(goo, null, units);
+        }
+
+        // The caller validates this exact inner object before this method. Never read
+        // a mutable holder again after checking it, and never dispatch through a subclass.
+        internal static PanelGeometryInfo? DescribeCaptured(IGH_Goo goo, GeometryBase? geometry, string units)
+        {
+            Type type = goo.GetType();
+            if (type == typeof(GH_Line)) return Length("Ln", ((GH_Line)goo).Value.Length, units);
+            if (type == typeof(GH_Arc)) return ArcInfo(((GH_Arc)goo).Value, units);
+            if (type == typeof(GH_Circle)) return new PanelGeometryInfo("Cir", ((GH_Circle)goo).Value.Radius, units: units, metricName: "Radius", metricLabel: "R");
+            if (type == typeof(GH_Rectangle)) return new PanelGeometryInfo("Rect", ((GH_Rectangle)goo).Value.Area, 2, units, "Area", "A");
+            if (type == typeof(GH_Box)) return new PanelGeometryInfo("Box", ((GH_Box)goo).Value.Volume, 3, units, "Volume", "V");
+            if (type == typeof(GH_Curve) && geometry is LineCurve line) return Length("Ln", line.Line.Length, units);
+            if (type == typeof(GH_Curve) && geometry is ArcCurve arc) return ArcInfo(arc.Arc, units);
+            if (type == typeof(GH_Curve) && geometry is Curve curve) return CurveInfo(curve);
+            if (type == typeof(GH_Surface) && geometry is Brep surface) return SurfaceInfo(surface);
+            if (type == typeof(GH_Brep) && geometry is Brep brep) return BrepInfo(brep);
+            if (type == typeof(GH_Mesh) && geometry is Mesh mesh)
+                return new PanelGeometryInfo("Mesh · " + mesh.Vertices.Count + " vertices · " + Count(mesh.Faces.Count, "face"));
+            return null;
         }
 
         // Capture an owned deep copy on the UI thread, outside painting. The returned

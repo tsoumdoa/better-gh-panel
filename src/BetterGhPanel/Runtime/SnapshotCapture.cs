@@ -4,6 +4,7 @@ using System.Globalization;
 using BetterGhPanel.Core;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
+using Rhino.Geometry;
 
 namespace BetterGhPanel.Runtime
 {
@@ -19,6 +20,13 @@ namespace BetterGhPanel.Runtime
             var rows = new List<PanelRow>(tree.DataCount);
             var branches = new List<PanelBranch>(tree.PathCount);
             var source = new List<IGH_Goo?>(tree.DataCount);
+            var budget = new SafeGooInspection.Budget();
+            // A summary is immutable for this capture generation and may be shared
+            // across references; no ancestor-dependent validity is memoized.
+            var groupSummaries = new Dictionary<GH_GeometryGroup, PanelGroupSummary>();
+            const long maxRetainedSummaryBytes = 1024 * 1024;
+            const int maxCachedGroupSummaries = 16384;
+            long retainedSummaryBytes = 0;
             for (var b = 0; b < tree.PathCount; b++)
             {
                 var path = tree.Paths[b].ToString();
@@ -26,68 +34,133 @@ namespace BetterGhPanel.Runtime
                 branches.Add(new PanelBranch(path, items.Count));
                 for (var i = 0; i < items.Count; i++)
                 {
-                    var item = items[i];
-                    string type, display;
-                    double? number;
-                    bool valid;
+                    IGH_Goo? item = items[i];
+                    string type = item?.GetType().Name ?? "Null", display = "<unavailable value>", reason;
+                    string? stringValue = null;
+                    double? number = null;
+                    bool typeAvailable = false;
+                    PanelValidity validity;
                     PanelGeometryInfo? geometry = null;
-                    string invalidReason = "";
+                    PanelGroupSummary? groupSummary = null;
+                    PanelSearchCapabilities capabilities;
                     try
                     {
-                        type = item?.TypeName ?? "Null";
-                        valid = item == null || item.IsValid;
-                        display = FormatSummary(item, out number);
-                        if (valid && item != null)
+                        var identity = SafeGooInspection.ResolveIdentity(item, budget);
+                        type = identity.Name;
+                        typeAvailable = identity.Available;
+                        if (identity.Group != null)
                         {
-                            geometry = GeometryHints.Describe(item, geometryUnits);
+                            if (!groupSummaries.TryGetValue(identity.Group, out groupSummary))
+                            {
+                                string name = identity.Group.Name ?? string.Empty;
+                                int count = identity.Group.Objects.Count;
+                                long estimatedBytes = ((long)name.Length + 64) * sizeof(char);
+                                bool retain = estimatedBytes <= maxRetainedSummaryBytes - retainedSummaryBytes;
+                                groupSummary = new PanelGroupSummary(name, count, retain);
+                                if (retain) retainedSummaryBytes += estimatedBytes;
+                                if (groupSummaries.Count < maxCachedGroupSummaries) groupSummaries.Add(identity.Group, groupSummary);
+                            }
+                        }
+                        validity = SafeGooInspection.Validity(item, budget, out reason, out GeometryBase? capturedGeometry);
+                        if (identity.Group == null) display = FormatSummary(item, type, out number, out stringValue);
+
+                        if (item != null && validity == PanelValidity.VerifiedValid)
+                        {
+                            geometry = GeometryHints.DescribeCaptured(item, capturedGeometry, geometryUnits);
+                            // No bounded, callback-free copy path is established for
+                            // arbitrary curve/Brep user data (including nested data).
+                            // Preserve stored summaries and explicitly mark deferred
+                            // measurements unavailable until such a path is proven.
+                            if (geometry?.CanMeasure == true) geometry = geometry.WithUnavailableMeasurement();
                             display = geometry?.FormatCompact(PanelUnitConversion.None, PanelUnits.AutomaticDecimals) ?? display;
                         }
-                        else if (item != null)
-                        {
-                            try { invalidReason = item.IsValidWhyNot; }
-                            catch (Exception) { invalidReason = "Validity details unavailable."; }
-                        }
+                        capabilities = Capabilities(item, validity, capturedGeometry);
                     }
                     catch (Exception)
                     {
-                        type = item?.GetType().Name ?? "Null";
-                        display = "<unavailable value>";
+                        validity = PanelValidity.Unverified;
+                        reason = "Value could not be safely inspected.";
                         number = null;
-                        valid = false;
-                        invalidReason = "Value could not be read.";
+                        stringValue = null;
+                        geometry = null;
+                        capabilities = PanelSearchCapabilities.None;
                     }
-                    rows.Add(new PanelRow(i, path, type, display, number, item == null, valid, geometry, invalidReason,
-                        item is GH_String text ? text.Value : null));
+                    rows.Add(new PanelRow(i, path, type, display, number, validity,
+                        typeIdentityAvailable: typeAvailable, searchCapabilities: capabilities, isNull: item == null,
+                        geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary));
                     source.Add(item);
                 }
             }
             sourceItems = source.ToArray();
-            return new PanelSnapshot(rows, branches, conversion, sourceAddresses);
+            return new PanelSnapshot(rows, branches, conversion, sourceAddresses, budget.Visits,
+                (int)retainedSummaryBytes, groupSummaries.Count);
         }
 
-        private static string FormatSummary(IGH_Goo? goo, out double? numeric)
+        private static PanelSearchCapabilities Capabilities(IGH_Goo? item, PanelValidity validity, GeometryBase? geometry)
+        {
+            if (item == null) return PanelSearchCapabilities.None;
+            Type type = item.GetType();
+            if (type == typeof(GH_Number) || type == typeof(GH_Integer)) return PanelSearchCapabilities.Value;
+            if (validity == PanelValidity.Unverified) return PanelSearchCapabilities.None;
+            if (type == typeof(GH_Line) || type == typeof(GH_Arc) || type == typeof(GH_Circle) || type == typeof(GH_Curve))
+                return PanelSearchCapabilities.Length;
+            if (type == typeof(GH_Rectangle) || type == typeof(GH_Surface)) return PanelSearchCapabilities.Area;
+            if (type == typeof(GH_Box)) return PanelSearchCapabilities.Volume;
+            if (type == typeof(GH_Brep) && validity == PanelValidity.VerifiedValid && geometry is Brep brep)
+                return brep.IsSolid ? PanelSearchCapabilities.Volume : PanelSearchCapabilities.Area;
+            return PanelSearchCapabilities.None;
+        }
+
+        private static string FormatSummary(IGH_Goo? goo, string type, out double? numeric, out string? stringValue)
         {
             numeric = null;
+            stringValue = null;
             if (goo == null) return "<null>";
-            if (goo is GH_Number number)
+            Type runtime = goo.GetType();
+            if (runtime == typeof(GH_Number))
             {
-                numeric = number.Value;
-                return number.Value.ToString("G12", CultureInfo.InvariantCulture);
+                double value = ((GH_Number)goo).Value;
+                numeric = value;
+                return value.ToString("G12", CultureInfo.InvariantCulture);
             }
-            if (goo is GH_Integer integer)
+            if (runtime == typeof(GH_Integer))
             {
-                numeric = integer.Value;
-                return integer.Value.ToString(CultureInfo.InvariantCulture);
+                int value = ((GH_Integer)goo).Value;
+                numeric = value;
+                return value.ToString(CultureInfo.InvariantCulture);
             }
-            if (goo is GH_String text) return text.Value ?? "<null text>";
-            if (goo is GH_Boolean boolean) return boolean.Value ? "True" : "False";
-            if (goo is GH_Point point)
-                return string.Format(CultureInfo.InvariantCulture, "({0:G8}, {1:G8}, {2:G8})", point.Value.X, point.Value.Y, point.Value.Z);
-            if (goo is GH_Vector vector)
-                return string.Format(CultureInfo.InvariantCulture, "<{0:G8}, {1:G8}, {2:G8}>", vector.Value.X, vector.Value.Y, vector.Value.Z);
-            // Keep third-party ToString implementations off the display and query
-            // paths; geometry uses captured descriptions and owned measurements.
-            return "<" + goo.TypeName + ">";
+            if (runtime == typeof(GH_String))
+            {
+                stringValue = ((GH_String)goo).Value;
+                return stringValue ?? "<null text>";
+            }
+            if (runtime == typeof(GH_Boolean)) return ((GH_Boolean)goo).Value ? "True" : "False";
+            if (runtime == typeof(GH_Point))
+            {
+                var value = ((GH_Point)goo).Value;
+                return string.Format(CultureInfo.InvariantCulture, "({0:G8}, {1:G8}, {2:G8})", value.X, value.Y, value.Z);
+            }
+            if (runtime == typeof(GH_Vector))
+            {
+                var value = ((GH_Vector)goo).Value;
+                return string.Format(CultureInfo.InvariantCulture, "<{0:G8}, {1:G8}, {2:G8}>", value.X, value.Y, value.Z);
+            }
+            if (runtime == typeof(GH_Colour))
+            {
+                var value = ((GH_Colour)goo).Value;
+                return string.Format(CultureInfo.InvariantCulture, "{0},{1},{2} ({3})", value.R, value.G, value.B, value.A);
+            }
+            if (runtime == typeof(GH_Interval)) return IntervalText(((GH_Interval)goo).Value);
+            if (runtime == typeof(GH_Interval2D))
+            {
+                var value = ((GH_Interval2D)goo).Value;
+                return "u:{" + IntervalText(value.U) + "} v:{" + IntervalText(value.V) + "}";
+            }
+            if (runtime == typeof(GH_Guid)) return ((GH_Guid)goo).Value.ToString("D");
+            if (runtime == typeof(GH_Time)) return ((GH_Time)goo).Value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            return "<" + type + ">";
         }
+
+        private static string IntervalText(Interval value) => string.Format(CultureInfo.InvariantCulture, "{0:G12} To {1:G12}", value.T0, value.T1);
     }
 }

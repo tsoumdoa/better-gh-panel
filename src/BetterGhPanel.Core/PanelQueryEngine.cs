@@ -66,6 +66,8 @@ namespace BetterGhPanel.Core
             var numericCount = 0;
             var nullCount = 0;
             var invalidCount = 0;
+            var unverifiedCount = 0;
+            var filteredSourceStatuses = default(PanelSourceStatusCounts);
             var minimum = double.PositiveInfinity;
             var maximum = double.NegativeInfinity;
             var mean = 0.0;
@@ -78,6 +80,7 @@ namespace BetterGhPanel.Core
                 PanelGeometryInfo? measured = null;
                 measuredGeometry?.TryGetValue(i, out measured);
                 if (!search.Matches(row, snapshot.UnitConversion, measured, cancellationToken)) continue;
+                filteredSourceStatuses = filteredSourceStatuses.Add(row.Validity);
                 if (set != null && !set.IncludeRow(i, measured)) continue;
 
                 rowPositions.Add(i);
@@ -91,7 +94,8 @@ namespace BetterGhPanel.Core
                 var text = projected != null ? projected.Number.HasValue ? null : projected.Text : row.StringValue;
                 Increment(typeCounts, projected == null ? row.TypeName : projected.Number.HasValue ? "Number" : "Text");
                 if (projected == null && row.IsNull) nullCount++;
-                if (projected == null && !row.IsValid) invalidCount++;
+                if (projected == null && row.Validity == PanelValidity.VerifiedInvalid) invalidCount++;
+                if (projected == null && row.Validity == PanelValidity.Unverified) unverifiedCount++;
                 if (projected != null || !row.IsNull && row.IsValid)
                 {
                     if (numeric.HasValue)
@@ -172,7 +176,7 @@ namespace BetterGhPanel.Core
                 invalidCount, numericCount == 0 ? (double?)null : minimum,
                 numericCount == 0 ? (double?)null : maximum, numericCount == 0 ? (double?)null : mean,
                 new ReadOnlyDictionary<string, int>(typeCounts), new ReadOnlyDictionary<string, int>(branchCounts),
-                Array.AsReadOnly(frequencies), scalarCount);
+                Array.AsReadOnly(frequencies), scalarCount, unverifiedCount, filteredSourceStatuses);
             PanelDisplaySetResult? displaySet = null;
             if (set != null)
                 foreach (var step in set.Complete(work, cancellationToken))

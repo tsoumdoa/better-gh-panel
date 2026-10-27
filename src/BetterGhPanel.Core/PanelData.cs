@@ -4,6 +4,37 @@ using System.Collections.ObjectModel;
 
 namespace BetterGhPanel.Core
 {
+    /// <summary>Whether capture could establish validity without invoking untrusted code.</summary>
+    public enum PanelValidity { VerifiedValid, VerifiedInvalid, Unverified }
+
+    /// <summary>Input-derived optional search modes. Text, regex and list length are always available.</summary>
+    [Flags]
+    public enum PanelSearchCapabilities { None = 0, Value = 1, Length = 2, Area = 4, Volume = 8 }
+
+    /// <summary>Captured group name and direct count, with optional bounded formatted-text retention.</summary>
+    public sealed class PanelGroupSummary
+    {
+        private readonly string _name;
+        private readonly int _count;
+        private readonly string? _retainedText;
+
+        public PanelGroupSummary(string? name, int count, bool retainFormattedText)
+        {
+            if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
+            _name = name ?? string.Empty;
+            _count = count;
+            if (retainFormattedText) _retainedText = FormatCore();
+        }
+
+        public string Format() => _retainedText ?? FormatCore();
+        private string FormatCore()
+        {
+            string label = _name.Length == 0 ? "" : " (" + _name + ")";
+            return _count == 0 ? "Empty Group" + label : "Group" + label + " with " +
+                _count.ToString(System.Globalization.CultureInfo.InvariantCulture) + (_count == 1 ? " object" : " objects");
+        }
+    }
+
     /// <summary>A lightweight presentation record. It never contains a live Rhino object.</summary>
     public sealed class PanelRow
     {
@@ -11,32 +42,63 @@ namespace BetterGhPanel.Core
             string displayValue, double? numericValue, bool isNull = false, bool isValid = true,
             PanelGeometryInfo? geometryInfo = null, string invalidReason = "", string? stringValue = null,
             PanelSetOccurrences? setOccurrences = null)
+            : this(originalIndex, path, typeName, displayValue, numericValue,
+                isValid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid,
+                isNull: isNull, geometryInfo: geometryInfo, invalidReason: invalidReason,
+                stringValue: stringValue, setOccurrences: setOccurrences) { }
+
+        public PanelRow(int originalIndex, string path, string typeName, string displayValue, double? numericValue,
+            PanelValidity validity, bool typeIdentityAvailable = true, PanelSearchCapabilities? searchCapabilities = null,
+            bool isNull = false, PanelGeometryInfo? geometryInfo = null, string invalidReason = "", string? stringValue = null,
+            PanelSetOccurrences? setOccurrences = null, PanelGroupSummary? groupSummary = null)
         {
             OriginalIndex = originalIndex;
             Path = path ?? string.Empty;
             TypeName = typeName ?? string.Empty;
-            DisplayValue = displayValue ?? string.Empty;
+            _displayValue = displayValue ?? string.Empty;
+            _groupSummary = groupSummary;
             NumericValue = numericValue;
             IsNull = isNull;
-            IsValid = isValid;
+            Validity = validity;
             GeometryInfo = geometryInfo;
             InvalidReason = invalidReason;
             StringValue = stringValue;
             SetOccurrences = setOccurrences;
+            TypeIdentityAvailable = typeIdentityAvailable;
+            SearchCapabilities = searchCapabilities ?? InferCapabilities(numericValue, geometryInfo);
         }
 
         public int OriginalIndex { get; }
         public string Path { get; }
         public string TypeName { get; }
-        public string DisplayValue { get; }
+        private readonly string _displayValue;
+        private readonly PanelGroupSummary? _groupSummary;
+        public string DisplayValue => _groupSummary?.Format() ?? _displayValue;
         public double? NumericValue { get; }
         public bool IsNull { get; }
-        public bool IsValid { get; }
+        /// <summary>True only when validity was verified. Use Validity to distinguish invalid from unverified.</summary>
+        public bool IsValid => Validity == PanelValidity.VerifiedValid;
+        public PanelValidity Validity { get; }
+        /// <summary>False if the original filter identity could not be determined without delegated metadata.</summary>
+        public bool TypeIdentityAvailable { get; }
+        public PanelSearchCapabilities SearchCapabilities { get; }
         public PanelGeometryInfo? GeometryInfo { get; }
         public string InvalidReason { get; }
         /// <summary>The exact captured string scalar, not an arbitrary goo's display summary.</summary>
         public string? StringValue { get; }
         public PanelSetOccurrences? SetOccurrences { get; }
+
+        private static PanelSearchCapabilities InferCapabilities(double? numeric, PanelGeometryInfo? geometry)
+        {
+            var result = numeric.HasValue ? PanelSearchCapabilities.Value : PanelSearchCapabilities.None;
+            if (geometry != null)
+            {
+                if (PanelFilterValue.MatchesGeometry(PanelSearchMode.Length, geometry)) result |= PanelSearchCapabilities.Length;
+                if (PanelFilterValue.MatchesGeometry(PanelSearchMode.Area, geometry)) result |= PanelSearchCapabilities.Area;
+                if (PanelFilterValue.MatchesGeometry(PanelSearchMode.Volume, geometry)) result |= PanelSearchCapabilities.Volume;
+            }
+            return result;
+        }
     }
 
     public sealed class PanelBranch
@@ -61,6 +123,15 @@ namespace BetterGhPanel.Core
 
         public PanelSnapshot(IReadOnlyList<PanelRow> rows, IReadOnlyList<PanelBranch> branches,
             PanelUnitConversion unitConversion = PanelUnitConversion.None, IReadOnlyList<PanelSourceAddress>? sourceAddresses = null)
+            : this(rows, branches, unitConversion, sourceAddresses, 0) { }
+
+        public PanelSnapshot(IReadOnlyList<PanelRow> rows, IReadOnlyList<PanelBranch> branches,
+            PanelUnitConversion unitConversion, IReadOnlyList<PanelSourceAddress>? sourceAddresses, int inspectionVisitCount)
+            : this(rows, branches, unitConversion, sourceAddresses, inspectionVisitCount, 0, 0) { }
+
+        public PanelSnapshot(IReadOnlyList<PanelRow> rows, IReadOnlyList<PanelBranch> branches,
+            PanelUnitConversion unitConversion, IReadOnlyList<PanelSourceAddress>? sourceAddresses, int inspectionVisitCount,
+            int retainedGroupSummaryBytes, int cachedGroupSummaryCount)
         {
             if (rows == null) throw new ArgumentNullException(nameof(rows));
             if (branches == null) throw new ArgumentNullException(nameof(branches));
@@ -72,6 +143,8 @@ namespace BetterGhPanel.Core
             var rowCopy = new PanelRow[rows.Count];
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             bool hasMeasurableGeometry = false;
+            var capabilities = PanelSearchCapabilities.None;
+            int unverifiedCount = 0, unavailableTypeIdentityCount = 0;
             for (var i = 0; i < rowCopy.Length; i++)
             {
                 var row = rows[i] ?? throw new ArgumentException("Rows must not contain null records.", nameof(rows));
@@ -79,6 +152,9 @@ namespace BetterGhPanel.Core
                 typeCounts.TryGetValue(row.TypeName, out var count);
                 typeCounts[row.TypeName] = count + 1;
                 if (row.IsValid && !row.IsNull && row.GeometryInfo?.CanMeasure == true) hasMeasurableGeometry = true;
+                capabilities |= row.SearchCapabilities;
+                if (row.Validity == PanelValidity.Unverified) unverifiedCount++;
+                if (!row.TypeIdentityAvailable) unavailableTypeIdentityCount++;
             }
             var branchCopy = new PanelBranch[branches.Count];
             var branchCounts = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -89,7 +165,13 @@ namespace BetterGhPanel.Core
                 branchCounts[branch.Path] = branch.ItemCount;
             }
             UnitConversion = unitConversion;
+            InspectionVisitCount = inspectionVisitCount;
+            RetainedGroupSummaryBytes = retainedGroupSummaryBytes;
+            CachedGroupSummaryCount = cachedGroupSummaryCount;
             HasMeasurableGeometry = hasMeasurableGeometry;
+            SearchCapabilities = capabilities;
+            UnverifiedCount = unverifiedCount;
+            UnavailableTypeIdentityCount = unavailableTypeIdentityCount;
             Rows = Array.AsReadOnly(rowCopy);
             Branches = Array.AsReadOnly(branchCopy);
             TypeCounts = new ReadOnlyDictionary<string, int>(typeCounts);
@@ -99,6 +181,26 @@ namespace BetterGhPanel.Core
         public PanelUnitConversion UnitConversion { get; }
         /// <summary>Whether any valid captured row can require a deferred geometry measurement.</summary>
         public bool HasMeasurableGeometry { get; }
+        /// <summary>Union captured from transformed, unfiltered primary D; it does not change the saved query.</summary>
+        public PanelSearchCapabilities SearchCapabilities { get; }
+        /// <summary>Input-level diagnostics before any query filter or set projection.</summary>
+        public int UnverifiedCount { get; }
+        public int UnavailableTypeIdentityCount { get; }
+        /// <summary>Bounded capture graph visits, for diagnostics and performance verification.</summary>
+        public int InspectionVisitCount { get; }
+        /// <summary>Estimated retained formatted group-text bytes and identity-cache entries for this capture.</summary>
+        public int RetainedGroupSummaryBytes { get; }
+        public int CachedGroupSummaryCount { get; }
+        /// <summary>Reports choices for this input only. A caller must retain an already saved unavailable mode.</summary>
+        public bool SupportsSearchMode(PanelSearchMode mode) => mode switch
+        {
+            PanelSearchMode.Text or PanelSearchMode.Regex or PanelSearchMode.ListLength => true,
+            PanelSearchMode.Value => (SearchCapabilities & PanelSearchCapabilities.Value) != 0,
+            PanelSearchMode.Length => (SearchCapabilities & PanelSearchCapabilities.Length) != 0,
+            PanelSearchMode.Area => (SearchCapabilities & PanelSearchCapabilities.Area) != 0,
+            PanelSearchMode.Volume => (SearchCapabilities & PanelSearchCapabilities.Volume) != 0,
+            _ => false
+        };
         public IReadOnlyList<PanelRow> Rows { get; }
         public IReadOnlyList<PanelBranch> Branches { get; }
         /// <summary>Source type counts for populating filters without another full-tree scan.</summary>
@@ -179,13 +281,16 @@ namespace BetterGhPanel.Core
         internal PanelStatistics(int itemCount, int branchCount, int numericCount, int nullCount,
             int invalidCount, double? minimum, double? maximum, double? mean,
             IReadOnlyDictionary<string, int> typeCounts, IReadOnlyDictionary<string, int> branchItemCounts,
-            IReadOnlyList<PanelValueFrequency> uniqueValues, int scalarCount)
+            IReadOnlyList<PanelValueFrequency> uniqueValues, int scalarCount, int unverifiedCount,
+            PanelSourceStatusCounts filteredSourceStatuses)
         {
             ItemCount = itemCount;
             BranchCount = branchCount;
             NumericCount = numericCount;
             NullCount = nullCount;
             InvalidCount = invalidCount;
+            UnverifiedCount = unverifiedCount;
+            FilteredSourceStatuses = filteredSourceStatuses;
             Minimum = minimum;
             Maximum = maximum;
             Mean = mean;
@@ -200,6 +305,10 @@ namespace BetterGhPanel.Core
         public int NumericCount { get; }
         public int NullCount { get; }
         public int InvalidCount { get; }
+        /// <summary>Unverified projected rows, separate from verified invalid rows.</summary>
+        public int UnverifiedCount { get; }
+        /// <summary>Filtered input occurrences before Create set, independent of representatives.</summary>
+        public PanelSourceStatusCounts FilteredSourceStatuses { get; }
         public double? Minimum { get; }
         public double? Maximum { get; }
         public double? Mean { get; }

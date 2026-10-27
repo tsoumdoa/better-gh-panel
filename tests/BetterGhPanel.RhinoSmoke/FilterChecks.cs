@@ -265,13 +265,23 @@ internal static class FilterChecks
             fixture.Source.PersistentData.Clear();
             fixture.Source.PersistentData.Append(new InvalidNumber(1500), new GH_Path(0));
             fixture.Source.PersistentData.Append(new InvalidInteger(3000), new GH_Path(0));
-            fixture.Query(new PanelQueryOptions { OnlyInvalid = true, DecimalPlaces = 5 });
+            fixture.Query(new PanelQueryOptions { DecimalPlaces = 5 });
             fixture.Solve();
             await fixture.WaitForOutput(2);
-            Check(fixture.Sink.VolatileData.AllData(true).All(item => !item.IsValid) &&
-                fixture.Snapshot.Rows.All(row => !row.IsValid) &&
-                PanelTestAdapter.CopyValue(fixture.Component, fixture.Snapshot, 0).StartsWith("Invalid ·", StringComparison.Ordinal),
-                "Conversion preserves invalid scalar types and validity, and copying keeps their invalid marker");
+            Check(fixture.Sink.VolatileData.AllData(true).All(item => item is InvalidNumber || item is InvalidInteger) &&
+                fixture.Snapshot.Rows.All(row => row.Validity == PanelValidity.Unverified) && fixture.Snapshot.UnverifiedCount == 2,
+                "Scalar subclasses remain typed and unconverted while their validity is explicitly unverified");
+            fixture.Query(new PanelQueryOptions { OnlyInvalid = true, DecimalPlaces = 5 });
+            await fixture.WaitForOutput(0);
+            Check(fixture.Snapshot.UnverifiedCount == 2, "Invalid-only excludes uncertain subclasses and retains input diagnostics");
+            fixture.Source.PersistentData.Append(new GH_Number(Rhino.RhinoMath.UnsetValue), new GH_Path(0));
+            fixture.Solve();
+            await fixture.WaitForOutput(1);
+            Check(fixture.Result.RowPositions.Count == 1 && fixture.Snapshot.Rows[2].Validity == PanelValidity.VerifiedInvalid &&
+                fixture.Sink.VolatileData.AllData(true).Single() is GH_Number unset && unset.Value == Rhino.RhinoMath.UnsetValue,
+                "An exact trusted finite unset number remains invalid and unconverted through invalid-only output");
+            fixture.Query(new PanelQueryOptions { DecimalPlaces = 5 });
+            await fixture.WaitForOutput(3);
             fixture.Component.ClearData();
             Check(((Array)fixture.Component.GetType().GetField("_sourceItems", BindingFlags.Instance | BindingFlags.NonPublic)!
                     .GetValue(fixture.Component)!).Length == 0 && fixture.Result.Snapshot.Rows.Count == 0,

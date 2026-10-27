@@ -32,7 +32,7 @@ namespace BetterGhPanel.Core
             if (_search.IsBranchFilter && _search.HasFilter &&
                 (!_snapshot.BranchItemCounts.TryGetValue(row.Path, out var count) || !_search.MatchesBranchCount(count))) return false;
             return (_query.TypeName == null || string.Equals(row.TypeName, _query.TypeName, StringComparison.OrdinalIgnoreCase)) &&
-                (!_query.OnlyInvalid || !row.IsValid);
+                (!_query.OnlyInvalid || row.Validity == PanelValidity.VerifiedInvalid);
         }
 
         private bool MatchesPath(string path) => _selectedBranch == null ||

@@ -59,6 +59,7 @@ internal static class Program
         ["recompute-local-preview"] = RecomputeChecks.RunLocalPreview,
         ["recompute-disabled"] = RecomputeChecks.RunDisabled,
         ["geometry-hint"] = GeometryHintChecks.Run,
+        ["capture-safety"] = assembly => { CaptureSafetyChecks.VerifyManaged(assembly); CaptureSafetyChecks.VerifyNativeUserData(assembly); return Task.CompletedTask; },
         ["geometry-canvas-viewport"] = GeometryHintChecks.VerifyCanvasViewport,
         ["measurement-priority"] = GeometryMeasurementBatchChecks.VerifyPriority,
         ["measurement-cancellation"] = GeometryMeasurementBatchChecks.VerifyCancellation,
@@ -139,6 +140,7 @@ internal static class Program
                 CreateSetChecks.VerifyTree(_loadedPlugin);
                 OutputChecks.VerifyTree(_loadedPlugin);
                 VerifyUnitOperations(_loadedPlugin);
+                CaptureSafetyChecks.VerifyManaged(_loadedPlugin);
                 Console.WriteLine("PASS: Managed Grasshopper tree and unit operation checks completed (Rhino host not started).");
                 return 0;
             }
