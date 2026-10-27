@@ -81,7 +81,7 @@ namespace BetterGhPanel
             _outputOptions = session.Options;
             _outputPending = session.IsBusy;
             bool current = session.HasCurrentResult;
-            bool filtering = HasOutputFilter(_outputOptions);
+            bool filtering = PanelQueryPolicy.HasOutputFilter(_outputOptions);
             var empty = new GH_Structure<IGH_Goo>();
             if (current && _queryTree != null && _inputTree != null && !ReferenceEquals(_cachedOutputResult, session.Result))
             {

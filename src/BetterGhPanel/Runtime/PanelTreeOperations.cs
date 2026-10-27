@@ -70,8 +70,11 @@ namespace BetterGhPanel.Runtime
             if (trimDepth == 0 && !simplify && !flatten && !reverse)
             {
                 for (int b = 0; b < source.PathCount; b++)
+                {
+                    var pathText = source.Paths[b].ToString();
                     for (int i = 0; i < source.Branches[b].Count; i++)
-                        retained.Add(new PanelSourceAddress(source.Paths[b].ToString(), i));
+                        retained.Add(new PanelSourceAddress(pathText, i));
+                }
                 retainedSources = retained.AsReadOnly();
                 return source;
             }
@@ -82,12 +85,13 @@ namespace BetterGhPanel.Runtime
             for (int b = 0; b < source.PathCount; b++)
             {
                 var path = new GH_Path(source.Paths[b]);
+                var pathText = path.ToString();
                 var positions = markers.EnsurePath(path);
                 positions.Capacity = source.Branches[b].Count;
                 for (int i = 0; i < source.Branches[b].Count; i++)
                 {
                     positions.Add(new GH_Integer(inputs.Count));
-                    inputs.Add((source.Branches[b][i], new PanelSourceAddress(path.ToString(), i)));
+                    inputs.Add((source.Branches[b][i], new PanelSourceAddress(pathText, i)));
                 }
             }
             markers = Transform(markers, trimDepth, simplify, flatten, reverse);

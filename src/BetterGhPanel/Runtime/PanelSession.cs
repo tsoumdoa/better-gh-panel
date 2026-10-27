@@ -341,11 +341,7 @@ namespace BetterGhPanel.Runtime
             // error state as any other invalid filter, without throwing from UI edits.
             try { next.BranchPath = PanelQueryEngine.NormalizeBranchPath(next.BranchPath); }
             catch (ArgumentException) { }
-            var changed = _options.Search != next.Search || _options.TypeName != next.TypeName ||
-                _options.BranchPath != next.BranchPath || _options.BranchPrefix != next.BranchPrefix ||
-                _options.OnlyInvalid != next.OnlyInvalid || _options.SortMode != next.SortMode ||
-                _options.SearchMode != next.SearchMode || _options.DecimalPlaces != next.DecimalPlaces ||
-                _options.DisplayFilterValue != next.DisplayFilterValue || _options.CreateSet != next.CreateSet;
+            var changed = !PanelQueryPolicy.SameQuery(_options, next);
             _options = next;
             if (changed)
             {

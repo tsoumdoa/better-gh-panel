@@ -40,7 +40,8 @@ internal static class Program
             UnitConversionChecks.Run,
             UnitMenuLayout,
             GeometryMetricConversions,
-            FilterQueryChecks.Run
+            FilterQueryChecks.Run,
+            QueryPolicyChecks.Run
         };
         var failures = 0;
         foreach (var test in tests)

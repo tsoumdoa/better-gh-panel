@@ -14,5 +14,6 @@
     <Compile Include="../../src/BetterGhPanel/UI/CanvasSetDetails.cs" Link="CanvasSetDetails.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/PanelRowSelection.cs" Link="PanelRowSelection.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/LabelCollisionGrid.cs" Link="LabelCollisionGrid.cs" />
+    <Compile Include="../../src/BetterGhPanel/Runtime/PanelQueryPolicy.cs" Link="PanelQueryPolicy.cs" />
   </ItemGroup>
 </Project>

@@ -477,7 +477,7 @@ namespace BetterGhPanel
             var session = _session;
             if (_solving || _restoringView || Locked || document == null || session == null || _queryTree == null) return;
             var options = session.Options;
-            if (!_outputPending && _outputOptions != null && SameOutputFilter(_outputOptions, options) &&
+            if (!_outputPending && _outputOptions != null && PanelQueryPolicy.SameOutputFilter(_outputOptions, options) &&
                 _publishedSelectionVersion == _selectionVersion && _publishedScope == OutputScope) return;
             var snapshot = session.Snapshot;
             long request = ++_outputRequest;
@@ -493,18 +493,6 @@ namespace BetterGhPanel
                 finally { _preserveQuery = false; }
             });
         }
-
-        private static bool SameOutputFilter(PanelQueryOptions left, PanelQueryOptions right) =>
-            left.Search == right.Search && left.SearchMode == right.SearchMode && left.TypeName == right.TypeName &&
-            left.DisplayFilterValue == right.DisplayFilterValue &&
-            left.CreateSet == right.CreateSet &&
-            left.OnlyInvalid == right.OnlyInvalid && left.BranchPath == right.BranchPath && left.BranchPrefix == right.BranchPrefix &&
-            (left.DecimalPlaces == right.DecimalPlaces || !right.CreateSet && !PanelQueryEngine.UsesDisplayedText(right));
-
-        private static bool HasOutputFilter(PanelQueryOptions options) =>
-            options.CreateSet ||
-            (!options.DisplayFilterValue && (options.SearchMode == PanelSearchMode.Regex ? !string.IsNullOrEmpty(options.Search) : !string.IsNullOrWhiteSpace(options.Search))) ||
-            options.TypeName != null || options.OnlyInvalid || !string.IsNullOrWhiteSpace(options.BranchPath);
 
         public override void ClearData()
         {
