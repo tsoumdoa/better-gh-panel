@@ -11,6 +11,7 @@ internal static class Bootstrap
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args.Length == 1 && args[0] == "--clipboard-raw-probe") return RawClipboardProbe.RunChild();
         // Exercise the desktop and job lifetime without starting Rhino.
         if (args.Length == 2 && args[0] == "--desktop-probe" && args[1] is "ok" or "fail" or "wait")
         {

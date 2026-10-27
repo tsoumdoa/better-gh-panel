@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading;
 using BetterGhPanel.UI;
 using Grasshopper.Kernel.Types;
@@ -352,11 +353,23 @@ namespace BetterGhPanel.Runtime
                         detail: budget.Reason, unverifiedMetadata: unverifiedCustom);
                 var state = CommitClipboard(
                     CanCommit,
-                    () => { using (var clipboard = new Eto.Forms.Clipboard()) clipboard.SetData(archive, "Rhino 8 3DM Geometry"); },
+                    () => PublishGeometryArchive(archive),
                     outcome => completed?.Invoke(Result(outcome)));
                 return Result(state);
             }
             catch (Exception ex) { return Failure("Could not copy geometry: " + ex.Message, skipped, exhausted); }
+        }
+
+        private static void PublishGeometryArchive(byte[] archive)
+        {
+            // Eto's WPF byte[] clipboard path can serialize the array as a
+            // managed object when a native consumer requests it. Rhino's 3DM
+            // format needs the raw stream, including across process boundaries.
+            // Flush the WinForms data object while the stream is still alive.
+            using var stream = new MemoryStream(archive, false);
+            var data = new System.Windows.Forms.DataObject();
+            data.SetData("Rhino 8 3DM Geometry", false, stream);
+            System.Windows.Forms.Clipboard.SetDataObject(data, true);
         }
 
         private static bool TryEstimateCopy(object value, PanelGeometrySources.Budget budget, ref int remaining,

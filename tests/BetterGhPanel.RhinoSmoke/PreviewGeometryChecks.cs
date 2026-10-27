@@ -307,6 +307,9 @@ internal static class PreviewGeometryChecks
                     archive.Settings.ModelAbsoluteTolerance == doc.ModelAbsoluteTolerance,
                     "clipboard archive retains user strings, dictionary data and the source document unit context");
             }
+            string rawClipboard = await RawClipboardProbe.ReadInChildAsync();
+            Check(preparedDigest != null && rawClipboard == preparedLength + ":" + Convert.ToHexString(preparedDigest),
+                "a separate process reads the exact raw 3DM clipboard bytes: " + rawClipboard);
             Check(RhinoApp.RunScript(doc.RuntimeSerialNumber, "_Paste", false), "Rhino accepts Paste for the user-string clipboard");
             await WaitForAddedObjects(doc, originalIds, 1);
             var pasted = doc.Objects.Single(item => !originalIds.Contains(item.Id)).Geometry as Brep;
