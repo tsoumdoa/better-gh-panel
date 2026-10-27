@@ -59,8 +59,8 @@ namespace BetterGhPanel.Runtime
     // it alone executes and disposes the resource, including on exception.
     internal sealed class PreparedMeasurement<TResult> : IDisposable where TResult : class
     {
-        private readonly Func<TResult?> _compute;
-        private readonly IDisposable? _resource;
+        private Func<TResult?>? _compute;
+        private IDisposable? _resource;
         private int _state; // 0 unclaimed, 1 claimed, 2 abandoned/completed
 
         internal PreparedMeasurement(Func<TResult?> compute, IDisposable? resource, MeasurementWitness? witness)
@@ -69,16 +69,20 @@ namespace BetterGhPanel.Runtime
             _resource = resource;
             Witness = witness;
         }
-        internal MeasurementWitness? Witness { get; }
+        internal MeasurementWitness? Witness { get; private set; }
         internal bool TryRun(out TResult? result)
         {
             result = null;
             if (Interlocked.CompareExchange(ref _state, 1, 0) != 0) return false;
-            try { result = _compute(); }
+            try { result = _compute!(); }
             finally
             {
                 try { _resource?.Dispose(); }
-                finally { Volatile.Write(ref _state, 2); }
+                finally
+                {
+                    _compute = null; _resource = null; Witness = null;
+                    Volatile.Write(ref _state, 2);
+                }
             }
             return true;
         }
@@ -87,6 +91,7 @@ namespace BetterGhPanel.Runtime
             if (Interlocked.CompareExchange(ref _state, 2, 0) != 0) return false;
             try { _resource?.Dispose(); }
             catch (Exception) { /* The resource was still claimed for disposal exactly once. */ }
+            finally { _compute = null; _resource = null; Witness = null; }
             return true;
         }
         public void Dispose() => TryAbandon();
@@ -413,9 +418,18 @@ namespace BetterGhPanel.Runtime
             if (entry?.Work == null) return;
             bool needed = _snapshot != null && (_visible.Contains(entry.Position) ||
                 _batches.Exists(batch => !batch.Token.IsCancellationRequested && batch.Pending.Contains(entry.Position)));
-            if (!needed && entry.Work.TryAbandon() && _entries.TryGetValue(entry.Position, out var current) && ReferenceEquals(current, entry))
-                RemoveEntry(entry.Position, entry);
+            if (!needed && TryAbandon(entry)) RemoveEntry(entry.Position, entry);
         }
+
+        // Only a successful atomic abandonment proves that no worker claimed
+        // this copy. Its accepted callback may arrive much later and is stale.
+        private bool TryAbandon(Entry entry)
+        {
+            if (entry.Work?.TryAbandon() != true) return false;
+            if (ReferenceEquals(_running, entry)) _running = null;
+            return true;
+        }
+
         private void RemoveEntry(int position, Entry entry)
         {
             if (!_entries.TryGetValue(position, out var current) || !ReferenceEquals(current, entry)) return;
@@ -424,8 +438,10 @@ namespace BetterGhPanel.Runtime
             {
                 _witnessBytes -= entry.Witness.ByteCount; _witnessCount--;
                 MeasurementRetentionBudget.Release(entry.Witness.ByteCount);
+                entry.Witness = null;
             }
-            entry.Work?.TryAbandon();
+            entry.Value = null;
+            TryAbandon(entry);
         }
         private void ClearEntries()
         {

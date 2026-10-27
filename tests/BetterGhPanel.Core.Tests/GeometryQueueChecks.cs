@@ -14,6 +14,9 @@ internal static class GeometryQueueChecks
         SharedBeforeClaim();
         SharedAfterClaim();
         AbandonedLateWorker();
+        DelayedAcceptedWorkerDoesNotBlock();
+        DelayedWorkerAfterReplacementAndVisibilityChange();
+        AbandonReleasesPreparedReferences();
         RejectedWorker();
         ThrowingWorkerSubmission();
         ReplacementAndDisposal();
@@ -178,6 +181,113 @@ internal static class GeometryQueueChecks
         fixture.Worker(); fixture.Ui();
         Check(fixture.Computations == 0 && fixture.Resources[0].Disposals == 1 && !fixture.Queue.Has(fixture.Current, 0),
             "late worker cannot claim or dispose abandoned work");
+    }
+
+    private static void DelayedAcceptedWorkerDoesNotBlock()
+    {
+        using var fixture = new Fixture();
+        fixture.Attach(new Snapshot(new Source(1), new Source(2), new Source(3), new Source(4)), false);
+        using var cancellation = new CancellationTokenSource();
+        var obsolete = fixture.Measure(cancellation.Token, 0);
+        fixture.Ui(); fixture.Delay();
+        var lateCallback = fixture.TakeWorker(); // accepted, but not yet claimed
+        cancellation.Cancel(); fixture.Ui();
+        Check(obsolete.IsCompleted && !obsolete.Result && fixture.Resources[0].Disposals == 1,
+            "canceling the sole consumer abandons the accepted unclaimed copy");
+
+        var next = fixture.Measure(CancellationToken.None, 1);
+        fixture.Ui();
+        Check(fixture.Delays.Count == 1, "a delayed obsolete callback does not occupy the worker slot");
+        fixture.Delay(); fixture.Worker(); fixture.Ui();
+        Check(next.IsCompleted && next.Result && fixture.Queue.Get(fixture.Current, 1)?.Value == 2 &&
+            fixture.Computations == 1, "a different item completes before the obsolete callback executes");
+
+        using var sharedCancellation = new CancellationTokenSource();
+        using var gate = new ManualResetEventSlim(false);
+        fixture.Gate = gate;
+        fixture.Started.Reset();
+        var canceledShared = fixture.Measure(sharedCancellation.Token, 2);
+        var shared = fixture.Measure(CancellationToken.None, 2);
+        fixture.Ui(); fixture.Delay();
+        var claimedWorker = Task.Run(fixture.Worker);
+        Check(fixture.Started.Wait(TimeSpan.FromSeconds(5)), "shared work has been claimed by its worker");
+        try
+        {
+            sharedCancellation.Cancel(); fixture.Ui();
+            var following = fixture.Measure(CancellationToken.None, 3);
+            fixture.Ui();
+            Check(canceledShared.IsCompleted && !canceledShared.Result && !shared.IsCompleted &&
+                fixture.Resources[2].Disposals == 0 && fixture.Delays.Count == 0 && fixture.Workers.Count == 0,
+                "a shared consumer keeps claimed work alive and a following item waits");
+
+            fixture.RunWorker(lateCallback); fixture.Ui();
+            Check(fixture.Resources[0].Disposals == 1 && fixture.Computations == 2 &&
+                !fixture.Queue.Has(fixture.Current, 0) && !shared.IsCompleted && !following.IsCompleted &&
+                fixture.Delays.Count == 0 && fixture.Workers.Count == 0,
+                "late abandoned callback neither disposes twice nor publishes or releases a claimed worker slot");
+
+            gate.Set();
+            Check(claimedWorker.Wait(TimeSpan.FromSeconds(5)), "shared claimed worker completed");
+            fixture.Ui();
+            Check(shared.IsCompleted && shared.Result && fixture.Queue.Get(fixture.Current, 2)?.Value == 3 &&
+                fixture.Resources[2].Disposals == 1 && fixture.Delays.Count == 1,
+                "the remaining shared consumer receives exactly one result before the next worker starts");
+            fixture.Gate = null;
+            fixture.Delay(); fixture.Worker(); fixture.Ui();
+            Check(following.IsCompleted && following.Result && fixture.Queue.Get(fixture.Current, 3)?.Value == 4 &&
+                fixture.Computations == 3 && fixture.Resources.TrueForAll(resource => resource.Disposals == 1) &&
+                !fixture.Queue.Has(fixture.Current, 0), "later work completes with exactly-once disposal and no stale result");
+        }
+        finally { gate.Set(); }
+    }
+
+    private static void DelayedWorkerAfterReplacementAndVisibilityChange()
+    {
+        foreach (bool retain in new[] { false, true })
+        {
+            using var fixture = new Fixture();
+            var old = fixture.Measure(CancellationToken.None, 0);
+            fixture.Ui(); fixture.Delay();
+            var late = fixture.TakeWorker();
+            fixture.Queue.Suspend(retain);
+            fixture.Attach(new Snapshot(new Source(42)), false);
+            Check(old.IsCompleted && !old.Result && fixture.Resources[0].Disposals == 1,
+                "suspending an unclaimed worker releases it whether retained entries are requested or not");
+            var replacement = fixture.Measure(CancellationToken.None, 0);
+            fixture.Ui();
+            Check(fixture.Delays.Count == 1, "replacement generation schedules before the old callback");
+            fixture.Delay();
+            fixture.RunWorker(late); fixture.Ui();
+            Check(!replacement.IsCompleted && fixture.Resources[1].Disposals == 0 && !fixture.Queue.Has(fixture.Current, 0),
+                "the old callback cannot release or publish over the new entry at the same position");
+            fixture.Worker(); fixture.Ui();
+            Check(replacement.Result && fixture.Queue.Get(fixture.Current, 0)?.Value == 42 &&
+                fixture.Resources.TrueForAll(resource => resource.Disposals == 1),
+                "replacement computes its own value with exactly-once disposal");
+        }
+
+        using var visible = new Fixture();
+        visible.Queue.RequestVisible(visible.Current, new[] { 0 });
+        visible.Delay();
+        var oldVisible = visible.TakeWorker();
+        visible.Queue.RequestVisible(visible.Current, new[] { 1 });
+        Check(visible.Resources[0].Disposals == 1 && visible.Delays.Count == 1,
+            "changing visible demand releases an unclaimed worker without waiting for its callback");
+        visible.Delay(); visible.Worker(); visible.Ui();
+        visible.RunWorker(oldVisible); visible.Ui();
+        Check(!visible.Queue.Has(visible.Current, 0) && visible.Queue.Get(visible.Current, 1)?.Value == 2 &&
+            visible.Resources.TrueForAll(resource => resource.Disposals == 1), "a late visible callback cannot publish stale work");
+    }
+
+    private static void AbandonReleasesPreparedReferences()
+    {
+        var resource = new Resource();
+        var work = new PreparedMeasurement<Result>(() => new Result(1), resource,
+            new MeasurementWitness("test", new byte[1024]));
+        Check(work.Witness != null && work.TryAbandon() && work.Witness == null && resource.Disposals == 1,
+            "abandonment releases the prepared proof and resource before a delayed callback");
+        Check(!work.TryRun(out _) && !work.TryAbandon() && resource.Disposals == 1,
+            "late claims and repeated abandonment cannot run or dispose the work again");
     }
 
     private static void RejectedWorker()
@@ -479,7 +589,15 @@ internal static class GeometryQueueChecks
         internal void Delay() { var next = Delays.Dequeue(); next.action(); }
         internal void Worker()
         {
+            RunWorker(TakeWorker());
+        }
+        internal Action TakeWorker()
+        {
             if (!Workers.TryDequeue(out var action)) throw new InvalidOperationException("no worker");
+            return action;
+        }
+        internal void RunWorker(Action action)
+        {
             _onWorker.Value = true;
             try { action(); } finally { _onWorker.Value = false; }
         }

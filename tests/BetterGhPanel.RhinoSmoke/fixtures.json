@@ -12,6 +12,7 @@
   "recompute-local-preview",
   "recompute-disabled",
   "geometry-hint",
+  "analytic-curve-details",
   "capture-safety",
   "polyline-safety",
   "nurbs-value-candidate",

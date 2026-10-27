@@ -22,6 +22,8 @@ namespace BetterGhPanel.Runtime
                 {
                     if ((geometry.GetType() == typeof(PolylineCurve) || geometry.GetType() == typeof(NurbsCurve)) &&
                         !SafeGooInspection.CurveCandidatePreflight(geometry)) return null;
+                    if ((geometry.GetType() == typeof(LineCurve) || geometry.GetType() == typeof(ArcCurve)) &&
+                        !SafeGooInspection.CurveSourceCanRead(geometry)) return null;
                     return geometry.IsValid ? DescribeCaptured(goo, geometry, units) : null;
                 }
                 finally { GC.KeepAlive(geometry); }
@@ -34,12 +36,12 @@ namespace BetterGhPanel.Runtime
         internal static PanelGeometryInfo? DescribeCaptured(IGH_Goo goo, GeometryBase? geometry, string units)
         {
             Type type = goo.GetType();
-            if (type == typeof(GH_Line)) return Length("Ln", ((GH_Line)goo).Value.Length, units);
+            if (type == typeof(GH_Line)) return LineInfo(((GH_Line)goo).Value, units);
             if (type == typeof(GH_Arc)) return ArcInfo(((GH_Arc)goo).Value, units);
-            if (type == typeof(GH_Circle)) return new PanelGeometryInfo("Cir", ((GH_Circle)goo).Value.Radius, units: units, metricName: "Radius", metricLabel: "R");
+            if (type == typeof(GH_Circle)) return CircleInfo(((GH_Circle)goo).Value, units);
             if (type == typeof(GH_Rectangle)) return new PanelGeometryInfo("Rect", ((GH_Rectangle)goo).Value.Area, 2, units, "Area", "A");
             if (type == typeof(GH_Box)) return new PanelGeometryInfo("Box", ((GH_Box)goo).Value.Volume, 3, units, "Volume", "V");
-            if (type == typeof(GH_Curve) && geometry is LineCurve line) return Length("Ln", line.Line.Length, units);
+            if (type == typeof(GH_Curve) && geometry is LineCurve line) return LineInfo(line.Line, units);
             if (type == typeof(GH_Curve) && geometry is ArcCurve arc) return ArcInfo(arc.Arc, units);
             if (type == typeof(GH_Curve) && geometry is Curve curve) return CurveInfo(curve);
             if (type == typeof(GH_Surface) && geometry is Brep surface) return SurfaceInfo(surface);
@@ -49,9 +51,8 @@ namespace BetterGhPanel.Runtime
             return null;
         }
 
-        // Reconstruct only bounded, exact polylines from value fields. This never
-        // duplicates or serializes the source (which may carry hostile UserData).
-        // Other curves and Breps require a separately proven bounded snapshot path.
+        // Analytic details use captured value structs; other supported curves are
+        // reconstructed from bounded values. Source geometry is never duplicated.
         internal static PreparedMeasurement<PanelGeometryInfo>? PrepareMeasurement(IGH_Goo? goo, string units,
             int unitSystem, double tolerance)
         {
@@ -68,12 +69,41 @@ namespace BetterGhPanel.Runtime
         {
             try
             {
-                if (source == null || units == null || units.Length > 128 || !RhinoMath.IsValidDouble(tolerance) ||
-                    !SafeGooInspection.CurveCandidatePreflight(source)) return null;
+                if (source == null || units == null || units.Length > 128 || !RhinoMath.IsValidDouble(tolerance)) return null;
+                if (source.GetType() == typeof(LineCurve) || source.GetType() == typeof(ArcCurve))
+                    return PrepareAnalyticCurve(source, units);
+                if (source.GetType() != typeof(NurbsCurve) && source.GetType() != typeof(PolylineCurve)) return null;
+                if (!SafeGooInspection.CurveCandidatePreflight(source)) return null;
                 if (source.GetType() == typeof(NurbsCurve))
                     return NurbsMeasurementCandidate.PrepareCapturedCurve((NurbsCurve)source, units, unitSystem, tolerance, retryCapacity);
                 if (source.GetType() != typeof(PolylineCurve)) return null;
                 return PreparePolyline((PolylineCurve)source, units, unitSystem, tolerance, retryCapacity);
+            }
+            finally { GC.KeepAlive(source); }
+        }
+
+        private static PreparedMeasurement<PanelGeometryInfo>? PrepareAnalyticCurve(GeometryBase source, string units)
+        {
+            try
+            {
+                if (!SafeGooInspection.CurveSourceCanRead(source)) return null;
+                PanelGeometryInfo info;
+                if (source.GetType() == typeof(LineCurve))
+                {
+                    Line line = ((LineCurve)source).Line;
+                    if (!line.IsValid || !RhinoMath.IsValidDouble(line.Length) || line.Length <= 0) return null;
+                    info = LineInfo(line, units);
+                }
+                else if (source.GetType() == typeof(ArcCurve))
+                {
+                    Arc arc = ((ArcCurve)source).Arc;
+                    if (!arc.IsValid || !RhinoMath.IsValidDouble(arc.Length) || arc.Length <= 0) return null;
+                    info = new PanelGeometryInfo(arc.IsCircle ? "Cir" : "Arc", arc.Length, units: units,
+                        metricName: "Length", metricLabel: "L", details: ArcDetails(arc));
+                }
+                else return null;
+                // Only immutable managed presentation crosses the worker boundary.
+                return new PreparedMeasurement<PanelGeometryInfo>(() => info, null, null);
             }
             finally { GC.KeepAlive(source); }
         }
@@ -208,10 +238,17 @@ namespace BetterGhPanel.Runtime
                 summary.Description + (shape == null ? "" : " · " + shape), value, power, units, name, label,
                 details: summary.Details + (details == null ? "" : "\n" + details));
 
-        private static PanelGeometryInfo Length(string description, double length, string units) => new PanelGeometryInfo(description, length, units: units);
+        private static PanelGeometryInfo LineInfo(Line line, string units) => new PanelGeometryInfo("Ln", line.Length, units: units,
+            details: "Degree: 1\nTopology: Open\nShape: Linear\nPlanarity: Planar");
+        private static string ArcDetails(Arc arc) => "Degree: 2\nTopology: " + (arc.IsCircle ? "Closed" : "Open") +
+            "\nShape: " + (arc.IsCircle ? "Circle" : "Arc") + "\nPlanarity: Planar";
+        private static PanelGeometryInfo CircleInfo(Circle circle, string units) =>
+            new PanelGeometryInfo("Cir", circle.Radius, units: units, metricName: "Radius", metricLabel: "R",
+                details: "Degree: 2\nTopology: Closed\nShape: Circle\nPlanarity: Planar").WithAdditionalLength(circle.Circumference);
         private static PanelGeometryInfo ArcInfo(Arc arc, string units) => arc.IsCircle
-            ? new PanelGeometryInfo("Cir", arc.Radius, units: units, metricName: "Radius", metricLabel: "R")
-            : Length("Arc", arc.Length, units);
+            ? new PanelGeometryInfo("Cir", arc.Radius, units: units, metricName: "Radius", metricLabel: "R", details: ArcDetails(arc))
+                .WithAdditionalLength(arc.Length)
+            : new PanelGeometryInfo("Arc", arc.Length, units: units, details: ArcDetails(arc));
         private static string Closed(bool closed) => closed ? "closed" : "open";
         private static string Count(int count, string noun) => count + " " + noun + (count == 1 ? "" : "s");
     }

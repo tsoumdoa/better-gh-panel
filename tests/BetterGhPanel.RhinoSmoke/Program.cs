@@ -59,6 +59,7 @@ internal static class Program
         ["recompute-local-preview"] = RecomputeChecks.RunLocalPreview,
         ["recompute-disabled"] = RecomputeChecks.RunDisabled,
         ["geometry-hint"] = GeometryHintChecks.Run,
+        ["analytic-curve-details"] = assembly => { FixtureUserData.EnsureRegistered(); return AnalyticCurveDetailsChecks.Run(assembly); },
         ["capture-safety"] = assembly => { FixtureUserData.EnsureRegistered(); CaptureSafetyChecks.VerifyManaged(assembly); CaptureSafetyChecks.VerifyNativeCapabilities(assembly); CaptureSafetyChecks.VerifyNativeUserData(assembly); return Task.CompletedTask; },
         ["polyline-safety"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryPolylineSafetyChecks.Run(assembly); },
         ["nurbs-value-candidate"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryNurbsCandidateChecks.Run(assembly); },

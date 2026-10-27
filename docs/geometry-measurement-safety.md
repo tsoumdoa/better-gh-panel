@@ -8,6 +8,15 @@ Analytic line, arc, circle, rectangle and box values continue to use the
 existing snapshot presentation. Existing native expectations for unsupported
 geometry are retained and are not evidence that those paths have been restored.
 
+Exact line and arc curves also capture shape, topology and planarity details
+from their analytic value structs. Preparing those details for a caller returns
+an immutable managed result; it does not duplicate native geometry or perform
+worker-side native reads. A full-circle snapshot still displays its radius,
+while its unit-aware details and separately requested curve length include the
+circumference.
+Referenced, document-controlled, disposed and corruption-testing curve sources
+are gated before their native value or validity is read.
+
 Capture reads the exact inner geometry once and keeps that reference with the
 snapshot generation. Referenced Grasshopper holders and document-controlled,
 disposed or corruption-testing sources are rejected. For candidate curves,
@@ -56,10 +65,11 @@ The registered `production-curve-measurement` Rhino fixture uses an actual
 measurements, metadata and output identity, preflight gates, replacement and
 disposal, unit-only retention, cancellation, and shared capacity recovery across
 panels. The existing isolated fixtures cover UserData, weighted and periodic
-NURBS and explicitly reparameterized/arc-length polylines. Managed tests cover
-the production queue and shared budget with deterministic boundaries. Earlier
-isolated Windows Rhino 8.36 runs passed 27 capture-safety, 28 polyline-safety,
-and 67 NURBS-candidate assertions. The integrated production fixture and the
-updated polyline cases have been compiled but still require a sequential Rhino
+NURBS and explicitly reparameterized/arc-length polylines; the separate
+`analytic-curve-details` fixture covers captured line/arc details and their
+source gates. Managed tests cover the production queue and shared budget with
+deterministic boundaries. Isolated Windows Rhino 8.36 runs passed 27
+capture-safety, 37 polyline-safety, 67 NURBS-candidate and 36 production-curve
+assertions before the analytic-details follow-up. That follow-up still needs a
 host run. Managed UserData counters do not detect all possible native virtual
 or UserData calls.

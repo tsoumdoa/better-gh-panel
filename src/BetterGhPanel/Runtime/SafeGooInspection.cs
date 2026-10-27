@@ -192,6 +192,8 @@ namespace BetterGhPanel.Runtime
                             // corruption checking. Bound and gate candidates first.
                             if ((geometry.GetType() == typeof(PolylineCurve) || geometry.GetType() == typeof(NurbsCurve)) &&
                                 !CurveCandidatePreflight(geometry)) return PanelValidity.Unverified;
+                            if ((geometry.GetType() == typeof(LineCurve) || geometry.GetType() == typeof(ArcCurve)) &&
+                                !CurveSourceCanRead(geometry)) return PanelValidity.Unverified;
                             return geometry.IsValid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
                         }
                         finally { GC.KeepAlive(geometry); }
@@ -211,7 +213,8 @@ namespace BetterGhPanel.Runtime
         {
             try
             {
-                if (CommonObject.PerformCorruptionTesting || source.Disposed || source.IsDocumentControlled) return false;
+                if (source.GetType() != typeof(PolylineCurve) && source.GetType() != typeof(NurbsCurve)) return false;
+                if (!CurveSourceCanRead(source)) return false;
                 if (source.GetType() == typeof(PolylineCurve))
                 {
                     var curve = (PolylineCurve)source;
@@ -224,6 +227,12 @@ namespace BetterGhPanel.Runtime
                 }
                 return false;
             }
+            finally { GC.KeepAlive(source); }
+        }
+
+        internal static bool CurveSourceCanRead(GeometryBase source)
+        {
+            try { return !CommonObject.PerformCorruptionTesting && !source.Disposed && !source.IsDocumentControlled; }
             finally { GC.KeepAlive(source); }
         }
 
