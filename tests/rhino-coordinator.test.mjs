@@ -28,7 +28,7 @@ test('inventory includes every original fixture and the independently crash-pron
     'index-selection', 'capsule', 'capsule-double-click', 'recompute-presentation',
     'recompute-output', 'recompute-regex', 'recompute-local-preview', 'recompute-disabled',
     'geometry-hint', 'analytic-curve-details', 'geometry-group-persistent', 'geometry-group-volatile', 'geometry-group-cycles',
-    'capture-safety', 'polyline-safety', 'preview-safety', 'preview-geometry', 'preview-additional-geometry', 'preview-additional-draw', 'clipboard-interop-diagnostic', 'preview-reentrant-draw',
+    'capture-safety', 'polyline-safety', 'preview-safety', 'preview-admission-freshness', 'preview-geometry', 'preview-additional-geometry', 'preview-additional-draw', 'clipboard-interop-diagnostic', 'preview-reentrant-draw',
     'preview-metadata-safety', 'preview-native-resources', 'preview-conduit-resources', 'preview-single-pass-meshing',
     'preview-single-pass-geometry', 'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point',
     'nurbs-value-candidate', 'production-curve-measurement', 'standalone-compatibility', 'capture-transaction', 'capture-stock-geometry',
@@ -51,7 +51,7 @@ test('comparison diagnostics are opt-in and do not replace required preview fixt
   assert.ok(!required.includes('preview-compatibility-conduit'));
   assert.ok(inventory.includes('clipboard-interop-diagnostic'));
   assert.ok(!required.includes('clipboard-interop-diagnostic'));
-  for (const fixture of ['preview-compatibility-draw', 'preview-native-resources', 'preview-conduit-resources'])
+  for (const fixture of ['preview-compatibility-draw', 'preview-native-resources', 'preview-conduit-resources', 'preview-admission-freshness'])
     assert.ok(required.includes(fixture));
 });
 

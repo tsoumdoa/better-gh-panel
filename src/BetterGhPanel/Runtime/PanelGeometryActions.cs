@@ -58,6 +58,14 @@ namespace BetterGhPanel.Runtime
 
         internal static PanelGeometryActionResult FrameWithCompletion(IEnumerable<IGH_Goo?> items, Func<bool> current,
             Action<PanelGeometryActionResult>? completed)
+            => FrameCore(items, current, null, completed);
+
+        internal static PanelGeometryActionResult FrameWithSnapshot(IEnumerable<IGH_Goo?> items, Func<bool> current,
+            Func<bool> snapshotCurrent, Action<PanelGeometryActionResult>? completed)
+            => FrameCore(items, current, snapshotCurrent, completed);
+
+        private static PanelGeometryActionResult FrameCore(IEnumerable<IGH_Goo?> items, Func<bool> current,
+            Func<bool>? snapshotCurrent, Action<PanelGeometryActionResult>? completed)
         {
             long generation = Interlocked.Increment(ref _frameGeneration);
             var sourceCurrent = current;
@@ -98,7 +106,7 @@ namespace BetterGhPanel.Runtime
                     sources.Add(new ActionSource(item, inspected));
                     if (inspected.Exhausted) exhausted = true;
                     BoundingBox box;
-                    try { box = Bounds(inspected, budget); }
+                    try { box = Bounds(inspected, budget, current); }
                     catch (Exception) { box = BoundingBox.Empty; }
                     if (!current()) return Stale();
                     if (budget.Limited) exhausted = true;
@@ -123,6 +131,10 @@ namespace BetterGhPanel.Runtime
                     if (!current() || !FrameTargetCurrent(document!, view, viewportId, detailId)) return false;
                     bool valid = StillCurrent(sources, budget, true, current, out bool limited);
                     commitLimit |= limited;
+                    // Only actions need the complete semantic witness: a native
+                    // callback can rename a filtered group or change another
+                    // row's set representative without changing this selection.
+                    if (!valid || (snapshotCurrent != null && !snapshotCurrent())) return false;
                     // Source validation can reenter and change the active view or
                     // lock its projection; recheck the target after it returns.
                     return valid && current() && FrameTargetCurrent(document!, view, viewportId, detailId) && FrameGeneration == generation;
@@ -158,7 +170,7 @@ namespace BetterGhPanel.Runtime
             catch (Exception) { return BoundingBox.Empty; }
         }
 
-        private static BoundingBox Bounds(PanelGeometrySources.Inspection inspected, PanelGeometrySources.Budget budget)
+        private static BoundingBox Bounds(PanelGeometrySources.Inspection inspected, PanelGeometrySources.Budget budget, Func<bool>? current = null)
         {
             if (inspected.Unavailable) return BoundingBox.Empty;
             var bounds = BoundingBox.Empty;
@@ -177,9 +189,10 @@ namespace BetterGhPanel.Runtime
                 if (value is GeometryBase geometry)
                 {
                     if (!PanelNativeGeometry.TryScanForBounds(geometry, budget, ref remaining)) return BoundingBox.Empty;
-                    var current = geometry.GetBoundingBox(false);
-                    if (!current.IsValid) return BoundingBox.Empty;
-                    bounds.Union(current);
+                    if (!geometry.IsValid || (current != null && !current())) return BoundingBox.Empty;
+                    var sourceBounds = geometry.GetBoundingBox(false);
+                    if (!sourceBounds.IsValid) return BoundingBox.Empty;
+                    bounds.Union(sourceBounds);
                     continue;
                 }
                 if (!PanelPreviewLeaf.TryEstimate(value, budget, ref remaining, out long bytes, out var scan)) return BoundingBox.Empty;
@@ -200,6 +213,10 @@ namespace BetterGhPanel.Runtime
             double tolerance, Func<bool> current, Action<PanelGeometryActionResult>? completed)
             => CopyGeometryCore(items, units, tolerance, current, () => RhinoDoc.ActiveDoc, completed);
 
+        internal static PanelGeometryActionResult CopyGeometryWithSnapshot(IEnumerable<IGH_Goo?> items, UnitSystem units,
+            double tolerance, Func<bool> current, Func<bool> snapshotCurrent, Action<PanelGeometryActionResult>? completed)
+            => CopyGeometryCore(items, units, tolerance, current, () => RhinoDoc.ActiveDoc, completed, snapshotCurrent: snapshotCurrent);
+
         internal static PanelGeometryActionResult CopyGeometryWithContext(IEnumerable<IGH_Goo?> items, UnitSystem units, double tolerance,
             Func<bool> current, Func<RhinoDoc?> activeDocument)
             => CopyGeometryCore(items, units, tolerance, current, activeDocument, null);
@@ -212,7 +229,7 @@ namespace BetterGhPanel.Runtime
 
         private static PanelGeometryActionResult CopyGeometryCore(IEnumerable<IGH_Goo?> items, UnitSystem units, double tolerance,
             Func<bool> current, Func<RhinoDoc?> activeDocument, Action<PanelGeometryActionResult>? completed,
-            Action<byte[]>? archiveObserver = null)
+            Action<byte[]>? archiveObserver = null, Func<bool>? snapshotCurrent = null)
         {
             long generation = BeginClipboard();
             if (!Rhino.Runtime.HostUtils.RunningOnWindows) return Failure("Copy geometry into Rhino is currently supported on Windows only.");
@@ -347,7 +364,7 @@ namespace BetterGhPanel.Runtime
                     if (!current()) return false;
                     bool valid = StillCurrent(sources, budget, false, current, out bool limited);
                     commitLimit |= limited;
-                    return valid && current();
+                    return valid && (snapshotCurrent == null || snapshotCurrent()) && current();
                 }
                 PanelGeometryActionResult Result(PanelCommitOutcome outcome) => outcome == PanelCommitOutcome.Deferred
                     ? new PanelGeometryActionResult(false, 0, 0, "Copy queued.", deferred: true)
@@ -400,6 +417,7 @@ namespace BetterGhPanel.Runtime
                 { budget.MarkUnavailable("point-cloud hidden flags cannot be preserved in the Rhino clipboard archive"); return false; }
             }
             if (!PanelNativeGeometry.TryScanForCopy(geometry, budget, ref remaining, current, out scan) || scan == null) return false;
+            if (!geometry.IsValid || !current()) return false;
             bytes = 65536L + scan.NativeBytes * 8L;
             return bytes <= MaxPreparedBytes;
         }
@@ -426,7 +444,7 @@ namespace BetterGhPanel.Runtime
                     { budget.MarkUnavailable("point-cloud hidden flags cannot be preserved in the Rhino clipboard archive"); return null; }
                     if (copy != null && copy.GetType() == g.GetType() &&
                         PanelNativeGeometry.TryScanForCopy(copy, budget, ref remaining, current, out var copied) && copied != null &&
-                        PanelNativeGeometry.SameMetadata(scan, copied) && (copy is Brep || copy.IsValid))
+                        PanelNativeGeometry.SameMetadata(scan, copied) && copy.IsValid && current() && currentGraph())
                     { var result = copy; copy = null; return result; }
                 }
                 catch (Exception) { }

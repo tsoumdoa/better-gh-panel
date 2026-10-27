@@ -22,6 +22,7 @@
     <Compile Include="../../src/BetterGhPanel/UI/CanvasSetDetails.cs" Link="CanvasSetDetails.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/PanelRowSelection.cs" Link="PanelRowSelection.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/PanelPreviewMembership.cs" Link="PanelPreviewMembership.cs" />
+    <Compile Include="../../src/BetterGhPanel/UI/PanelPreviewRecovery.cs" Link="PanelPreviewRecovery.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/PanelActionPositions.cs" Link="PanelActionPositions.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/PanelActionCommit.cs" Link="PanelActionCommit.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/PanelItemOrder.cs" Link="PanelItemOrder.cs" />

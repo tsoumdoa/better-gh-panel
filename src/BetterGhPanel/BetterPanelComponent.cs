@@ -95,6 +95,12 @@ namespace BetterGhPanel
             "Inspect and manipulate data trees on the canvas. Tree tools, units and filters change output. Create set emits unique displayed numbers or text at the displayed precision; otherwise output retains original types and precision. Sorting changes view order.",
             "Params", "Util")
         {
+            _highlight.PreviewChanged = () =>
+            {
+                InvalidatePreviewCaches();
+                Instances.ActiveCanvas?.Invalidate();
+                Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
+            };
             RowSelection.Changed += (_, __) =>
             {
                 ++_selectionVersion;
@@ -561,7 +567,8 @@ namespace BetterGhPanel
                 result.Skipped > 0 || result.Exhausted
                 ? "Selection framed" + (result.Skipped > 0 ? "; " + result.Skipped + " skipped" : "") +
                     (result.Exhausted ? "; inspection limit reached" : "") : null;
-            var result = PanelGeometryActions.FrameWithCompletion(ordered.Select(position => source[position]).ToArray(), Current,
+            var result = PanelGeometryActions.FrameWithSnapshot(ordered.Select(position => source[position]).ToArray(), Current,
+                () => Current() && CapturedSnapshotCurrent(snapshot) && Current(),
                 value => completed?.Invoke(Format(value) ?? "Selection framed"));
             return Format(result);
         }
@@ -690,8 +697,9 @@ namespace BetterGhPanel
                 (result.Skipped > 0 ? "; " + result.Skipped + " skipped (" + (result.Detail ?? "unsupported geometry or unverified metadata") + ")" : "") +
                 (result.Exhausted ? "; preparation limit reached" : "") +
                 (result.UnverifiedMetadata ? "; custom metadata content not fully verified" : "") : result.Error ?? "Copy geometry failed";
-            var result = PanelGeometryActions.CopyGeometryWithCompletion(ordered.Select(position => source[position]).ToArray(),
-                _geometryUnitSystem, _geometryTolerance, Current, value => completed?.Invoke(Format(value)));
+            var result = PanelGeometryActions.CopyGeometryWithSnapshot(ordered.Select(position => source[position]).ToArray(),
+                _geometryUnitSystem, _geometryTolerance, Current, () => Current() && CapturedSnapshotCurrent(snapshot) && Current(),
+                value => completed?.Invoke(Format(value)));
             status = Format(result);
             return result.Success;
         }

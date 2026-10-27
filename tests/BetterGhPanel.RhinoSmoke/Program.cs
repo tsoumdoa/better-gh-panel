@@ -68,6 +68,7 @@ internal static class Program
         ["capture-safety"] = assembly => { FixtureUserData.EnsureRegistered(); CaptureSafetyChecks.VerifyManaged(assembly); CaptureSafetyChecks.VerifyNativeCapabilities(assembly); CaptureSafetyChecks.VerifyNativeUserData(assembly); return Task.CompletedTask; },
         ["polyline-safety"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryPolylineSafetyChecks.Run(assembly); },
         ["preview-safety"] = PreviewSafetyChecks.Run,
+        ["preview-admission-freshness"] = PreviewSafetyChecks.RunAdmissionFreshness,
         ["preview-geometry"] = PreviewGeometryChecks.Run,
         ["preview-additional-geometry"] = PreviewSafetyChecks.RunAdditionalGeometry,
         ["preview-additional-draw"] = PreviewSafetyChecks.RunAdditionalGeometryDraw,

@@ -56,6 +56,16 @@ namespace BetterGhPanel.Runtime
         internal static bool TryEstimate(object value, PanelGeometrySources.Budget budget, ref int remaining,
             out long bytes, out PanelNativeGeometry.Scan? scan, Func<bool>? current = null)
         {
+            if (!TryEstimateCore(value, budget, ref remaining, out bytes, out scan, current)) return false;
+            // Finite bounds and readable topology do not establish validity.
+            // Apply the plugin-controlled preflight first; this ordinary Rhino
+            // validity call is best effort and can invoke third-party callbacks.
+            return !(value is GeometryBase geometry) || (geometry.IsValid && (current == null || current()));
+        }
+
+        private static bool TryEstimateCore(object value, PanelGeometrySources.Budget budget, ref int remaining,
+            out long bytes, out PanelNativeGeometry.Scan? scan, Func<bool>? current)
+        {
             bytes = 512;
             scan = null;
             if (value is PanelGeometrySources.StandalonePreview) return true;
@@ -182,11 +192,9 @@ namespace BetterGhPanel.Runtime
                         !PanelNativeGeometry.TryScanForPreview(owned, budget, ref remaining, current, out var copiedScan) || copiedScan == null ||
                         !PanelNativeGeometry.SameMetadata(scan, copiedScan)) return null;
                     if (current != null && !current()) return null;
-                    // Brep validity can scan unbounded hidden vertex adjacency;
-                    // the public managed API does not provide a bounded count.
-                    if (owned is not Brep && !owned.IsValid) return null;
                     value = owned;
                 }
+                if (owned != null && (!owned.IsValid || (current != null && !current()))) return null;
                 BoundingBox? cloudBounds = null;
                 if (value is PointCloud cloud)
                 {
@@ -352,6 +360,18 @@ namespace BetterGhPanel.Runtime
                 { SetMeshUnavailable(true); return; }
                 if (_value is Sphere && _owned is Brep sphereBrep) meshes = Mesh.CreateFromBrep(sphereBrep, parameters);
                 else if (_value is Brep brep) meshes = Mesh.CreateFromBrep(brep, parameters);
+                else if (_value is Extrusion extrusion)
+                {
+                    // Meshing only the Surface view of an extrusion omits its
+                    // caps and inner profiles. Mesh the complete owned object.
+                    // This temporary conversion has the ordinary native-call
+                    // limits; only checked meshes enter the retained cache.
+                    using var extrusionBrep = extrusion.ToBrep();
+                    bool valid = extrusionBrep != null && extrusionBrep.IsValid;
+                    if (!current()) return;
+                    if (!valid) { SetMeshUnavailable(true); return; }
+                    meshes = Mesh.CreateFromBrep(extrusionBrep, parameters);
+                }
                 else if (_value is Surface surface)
                 {
                     var mesh = Mesh.CreateFromSurface(surface, parameters);

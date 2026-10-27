@@ -19,6 +19,7 @@
   "capture-safety",
   "polyline-safety",
   "preview-safety",
+  "preview-admission-freshness",
   "preview-geometry",
   "preview-additional-geometry",
   "preview-additional-draw",

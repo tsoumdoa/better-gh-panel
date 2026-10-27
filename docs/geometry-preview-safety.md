@@ -47,17 +47,20 @@ native or nested metadata and arbitrary callback behavior cannot be completely
 classified or bounded by this inspection.
 Borrowed NURBS surface preflight reads control counts, knot counts and orders;
 it never calls `PointSize`, which can duplicate a borrowed surface on Rhino 8.36.
-The preflight does not call native Brep `IsValid`: the public API does not
+The structural preflight does not establish native validity. After that scan,
+preview, frame and copy check native `IsValid`, including for Breps, and reject
+invalid geometry even when its bounds are finite. Owned preview/copy geometry
+is checked again after construction or duplication. These best-effort validity
+calls have the same native/callback limits as duplication: the public API does not
 provide a proven, allocation-free count of hidden vertex adjacency, and the
 [openNURBS validity implementation](https://github.com/mcneel/opennurbs/blob/8.x/opennurbs_brep_isvalid.cpp)
 can perform nested scans of that adjacency. A vertex `MemoryEstimate` cap is
 only a heuristic, because it is not a documented adjacency-count contract and
 native size arithmetic or implementation may change. In particular, these
-limits do **not** prove that a malformed Brep's duplication, bounds, meshing,
+limits do **not** prove that a malformed Brep's validity, duplication, bounds, meshing,
 or clipboard serialization will stay within a fixed time or memory bound.
-The snapshot classifier in the base tree separately calls `Brep.IsValid` during
-capture, before this preview/copy preflight; the parent must resolve that path
-as well. The unpublished mangled C++ adjacency export is not used.
+The snapshot classifier separately calls `Brep.IsValid` during capture as well.
+The unpublished mangled C++ adjacency export is not used.
 
 Owned Brep and SubD preview meshes are generated from the current meshing
 parameters and kept inside the reserved generated-mesh limit. They are reused
@@ -86,6 +89,15 @@ Oversized detail is reported as partial. One native duplication or meshing
 call can still have an implementation-dependent allocation peak; the estimates
 are not a hard process-memory guarantee.
 
+The coordinator additionally reports that installed RhinoCommon 8.36
+decompilation shows the two-argument `DrawMeshShaded` can retain a Mesh in a
+managed pipeline cache until a later material/transform/flush, while the
+face-index overload calls native `DrawShadedMesh2` immediately. This patch
+leaves the two-argument calls for standalone Mesh and `_boxMesh` unchanged and
+keeps the face-index path for generated meshes, including extrusion meshes.
+Neither observation proves native post-call consumption or an end-of-frame
+lifetime boundary; that issue remains unresolved.
+
 Each root has a 4,096-visit, 1,024-leaf and depth-64 limit. Builds and actions
 share a 20,000-visit budget. At most 1,024 root preview entries and an estimated
 16 MiB are admitted. The accounting includes admitted entries, estimates reserved
@@ -96,6 +108,12 @@ after its owned leaves are disposed. Retired resources remain charged until
 release. These are estimates rather than a cap on all native or callback
 allocations. A later selected row may evict an unselected preview;
 sparse selection classification examines selected membership, not all results.
+An unvisited selected suffix remains visibly partial across sparse toggles.
+Recovery visits at most 128 selection positions per idle turn and retains its
+cursor without copying the selection or rescanning it on each sparse click.
+Capacity exhaustion stops the pump; selection changes or retired-resource
+release retry it. Clearing the generation cancels its idle subscription.
+Successful recovery refreshes component/document bounds, labels and drawing.
 The component's `ExpirePreview(false)` event invalidates its owning document's
 draw list and clipping cache without marking selection as a document edit.
 
@@ -158,7 +176,7 @@ callback exits; nested draws are suppressed, retired bytes count against the
 same live-memory cap, and stale subsequent draws and labels stop. The additional
 native-flush lifetime caveat above still applies after the callback exits. If deferred
 retirement occupies the cap, a replacement can remain visibly partial until a
-later selection or source refresh. Reinspection can
+retired-resource release, selection change or source refresh. Reinspection can
 compare native object identity but has no complete bounded value witness for an
 in-place mutation of the same Brep, surface, polycurve, SubD, point cloud or
 extrusion. Cloud count and hidden-flag-array changes are rechecked, but a change
@@ -174,13 +192,27 @@ and wrapper while an earlier leaf is being prepared, check the retained value
 against its bounds, and check host cache refresh and disposal.
 
 The existing `row-actions` fixture and its mixed-geometry clipboard assertions
-remain intact. Value copy currently revalidates the captured snapshot before
-publication; this can scan all captured rows even for a sparse selection. The
-parent's capture work provides the full `CapturedSnapshotCurrent` fence; it must
-remain in the value-copy predicate after callback-bearing work, including for
-deferred commits. A selected-row-only witness cannot prove that filtering or
-set membership remains unchanged. The selection and clipboard action generation
-are checked around that fence as well.
+remain intact. Value copy, geometry copy and frame revalidate the complete
+captured snapshot immediately before publication, including deferred commits.
+This can scan all captured rows even for a sparse action: a selected-row-only
+witness cannot prove filtering or set membership remains unchanged. A group
+rename can remove a filtered row, and an unselected earlier row can become a
+displayed set's representative. The full semantic fence runs at the action
+commit boundary, with cheap generation/selection guards in the preparation
+loops; it adds no full snapshot scan to ordinary sparse preview clicks.
+
+`preview-admission-freshness` adds deterministic host fixtures for invalid
+nonnull finite-bounds mesh/Brep admission and valid controls, dense selected
+preview recovery and capacity release, and callback-triggered group renames
+and changes to an earlier set representative during frame/copy. The
+`preview-additional-draw` fixture retains its wire assertions and additionally
+requires different shade and wire colors for selected/normal standalone/group
+extrusions. It checks cap-interior fill and absence of fill in inner-profile
+holes. Extrusions are meshed through their complete Brep representation rather
+than their Surface view, which omits caps and inner profiles. These new native
+fixtures were built here but not executed; the parent must run them on the
+exact candidate package. No native post-flush lifetime guarantee follows from
+these changes or from the managed checks.
 
 The result-local compressed selection index preserves immutable ordered lists
 and updates a single toggle in logarithmic index work. Preview membership uses
