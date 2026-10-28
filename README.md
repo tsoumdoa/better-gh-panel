@@ -14,6 +14,8 @@ Created in [T3 Code](https://t3.codes).
 
 ## Native MVP
 
+**Patch `0.1.23-beta`:** maintenance release with unchanged application behavior. Routine native smoke/UI tests and obsolete probes were removed; the release archive passed the retained 18 geometry safety and integrity regressions. Published on Yak and [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.1.23-beta).
+
 **Beta `0.1.22-beta`:** version-only successor to `0.1.21-beta`, with the same connected-data inspection features and fixes. Published on Yak and [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.1.22-beta); the new archive passed all 66 required Windows Rhino fixtures.
 
 **Beta `0.1.21-beta` — connected-data inspection and maintenance:** the search menu offers comparison modes supported by the primary input and retains an active saved mode when the input changes. Geometry groups show their name and direct object count. Empty branches remain visible, empty text is displayed as **<empty>** while its value stays empty, and a read-only full-value window makes long rows scrollable. Values whose validity cannot be verified are distinguished from invalid values; saved filters are preserved and can show an input warning. This candidate also reorganizes measurement ownership, selection indexing and native test isolation. Published on Yak and [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.1.21-beta). The exact archive passed all 66 required Windows Rhino fixtures; earlier intermittent clipboard failures and remaining host coverage gaps are recorded in the release notes and [PR #37](https://github.com/tsoumdoa/better-gh-panel/pull/37).
@@ -83,7 +85,7 @@ Panel+ hides old rows, counts, type summaries and statistics behind **Recomputin
 
 [See the native recomputing state](docs/images/panel-recomputing.png).
 
-The public Yak beta is **`better-gh-panel 0.1.20-beta.7`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.20-beta.7`, then restart. Core and focused native checks cover display values, typed outputs, saved settings and stale-result rejection. See [release validation](docs/packaging.md) for the existing Rhino 8.36 hidden-host viewport crash and remaining platform coverage.
+The public Yak beta is **`better-gh-panel 0.1.23-beta`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.23-beta`, then restart. See [release validation](docs/packaging.md) for the retained native regression coverage, known intermittent host/clipboard failures and remaining platform coverage.
 
 Beta **`0.1.15-beta`** adds current-result loading states, resumable queries with a 120 ms time budget, and filters on typed output after tree tools and unit conversion. Whitespace-only regex patterns filter output correctly; internalised geometry preview respects filters.
 
@@ -153,7 +155,7 @@ dotnet test BetterGhPanel.sln -c Release
 node scripts/package.mjs
 ```
 
-The published beta artifact is `artifacts/better-gh-panel-0.1.22-beta/better-gh-panel-0.1.22-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The published beta artifact is `artifacts/better-gh-panel-0.1.23-beta/better-gh-panel-0.1.23-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino.
 
