@@ -9,7 +9,7 @@ namespace BetterGhPanel.UI
     internal enum CanvasMenuKind { None, Type, Sort, Branch, Units, SearchMode, Comparison, Preview, Statistics }
     internal enum PanelPreviewMode { Selected, FilteredResults, Off }
     internal enum CanvasComparison { GreaterThan, AtLeast, LessThan, AtMost, Equal, NotEqual }
-    internal enum CanvasDecimalChoice { Automatic, Custom, RoundingOff, RoundingFactor }
+    internal enum CanvasNumberSetting { Automatic, Custom, RoundingOff, RoundingFactor }
 
     internal readonly struct CanvasChoice<T>
     {
@@ -28,10 +28,10 @@ namespace BetterGhPanel.UI
 
     internal readonly struct CanvasUnitChoice
     {
-        internal CanvasUnitChoice(PanelUnitConversion conversion) { Conversion = conversion; Decimals = null; }
-        internal CanvasUnitChoice(CanvasDecimalChoice decimals) { Conversion = null; Decimals = decimals; }
+        internal CanvasUnitChoice(PanelUnitConversion conversion) { Conversion = conversion; Setting = null; }
+        internal CanvasUnitChoice(CanvasNumberSetting decimals) { Conversion = null; Setting = decimals; }
         internal PanelUnitConversion? Conversion { get; }
-        internal CanvasDecimalChoice? Decimals { get; }
+        internal CanvasNumberSetting? Setting { get; }
     }
 
     internal readonly struct CanvasComparisonChoice
@@ -95,10 +95,10 @@ namespace BetterGhPanel.UI
             new CanvasUnitChoice(PanelUnitConversion.DegreesToRadians),
             new CanvasUnitChoice(PanelUnitConversion.CubicMillimetersToCubicMeters),
             new CanvasUnitChoice(PanelUnitConversion.CubicMetersToCubicMillimeters),
-            new CanvasUnitChoice(CanvasDecimalChoice.Automatic),
-            new CanvasUnitChoice(CanvasDecimalChoice.Custom),
-            new CanvasUnitChoice(CanvasDecimalChoice.RoundingOff),
-            new CanvasUnitChoice(CanvasDecimalChoice.RoundingFactor)
+            new CanvasUnitChoice(CanvasNumberSetting.Automatic),
+            new CanvasUnitChoice(CanvasNumberSetting.Custom),
+            new CanvasUnitChoice(CanvasNumberSetting.RoundingOff),
+            new CanvasUnitChoice(CanvasNumberSetting.RoundingFactor)
         };
         private PanelSnapshot _snapshot = PanelSnapshot.Empty;
         private PanelQueryResult? _statisticsResult;
@@ -307,10 +307,10 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.Units)
             {
                 var choice = UnitChoiceAt(index);
-                if (choice.Decimals == CanvasDecimalChoice.RoundingOff) return roundUpFactor == 0;
-                if (choice.Decimals == CanvasDecimalChoice.RoundingFactor) return roundUpFactor > 0;
+                if (choice.Setting == CanvasNumberSetting.RoundingOff) return roundUpFactor == 0;
+                if (choice.Setting == CanvasNumberSetting.RoundingFactor) return roundUpFactor > 0;
                 return choice.Conversion.HasValue ? choice.Conversion == conversion :
-                    choice.Decimals == CanvasDecimalChoice.Automatic ? decimals < 0 : decimals >= 0;
+                    choice.Setting == CanvasNumberSetting.Automatic ? decimals < 0 : decimals >= 0;
             }
             if (Kind == CanvasMenuKind.Sort) return SortModeAt(index) == options.SortMode;
             if (Kind == CanvasMenuKind.SearchMode) return SearchModeAt(index) == options.SearchMode;
@@ -337,7 +337,7 @@ namespace BetterGhPanel.UI
         internal CanvasUnitChoice UnitChoiceAt(int index) => UnitChoices[index];
         internal CanvasComparisonChoice ComparisonChoiceAt(int index) => ComparisonChoices[index];
         internal bool IsSectionStart(int index) =>
-            Kind == CanvasMenuKind.Units && (UnitChoiceAt(index).Decimals == CanvasDecimalChoice.Automatic || UnitChoiceAt(index).Decimals == CanvasDecimalChoice.RoundingOff) ||
+            Kind == CanvasMenuKind.Units && (UnitChoiceAt(index).Setting == CanvasNumberSetting.Automatic || UnitChoiceAt(index).Setting == CanvasNumberSetting.RoundingOff) ||
             Kind == CanvasMenuKind.Statistics && index == CanvasStatistics.OverviewRows ||
             Kind == CanvasMenuKind.Preview && PreviewChoiceAt(index).IsItemOrder ||
             Kind == CanvasMenuKind.Comparison && ComparisonChoiceAt(index).IsDisplayValue;
@@ -410,10 +410,10 @@ namespace BetterGhPanel.UI
             {
                 var choice = UnitChoiceAt(index);
                 if (choice.Conversion.HasValue) return PanelUnits.Label(choice.Conversion.Value);
-                if (choice.Decimals == CanvasDecimalChoice.RoundingOff) return "Rounding: off";
-                if (choice.Decimals == CanvasDecimalChoice.RoundingFactor) return "Round up by factor…" +
+                if (choice.Setting == CanvasNumberSetting.RoundingOff) return "Rounding: off";
+                if (choice.Setting == CanvasNumberSetting.RoundingFactor) return "Round up by factor…" +
                     (roundUpFactor > 0 ? " (" + roundUpFactor.ToString("G6", System.Globalization.CultureInfo.InvariantCulture) + ")" : "");
-                if (choice.Decimals == CanvasDecimalChoice.Automatic) return "Decimals: automatic";
+                if (choice.Setting == CanvasNumberSetting.Automatic) return "Decimals: automatic";
                 return "Decimal places…" + (decimals >= 0 ? " (" + decimals + ")" : "");
             }
             if (Kind == CanvasMenuKind.Type)

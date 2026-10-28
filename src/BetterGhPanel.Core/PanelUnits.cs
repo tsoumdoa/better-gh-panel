@@ -53,14 +53,18 @@ namespace BetterGhPanel.Core
         {
             value = Convert(value, conversion);
             if (!IsRoundingFactor(roundUpFactor) || double.IsNaN(value) || double.IsInfinity(value)) return value;
-            // Decimal arithmetic preserves entered multiples such as 0.07 / 0.01.
-            if (decimal.TryParse(value.ToString("R", CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out decimal number) &&
-                decimal.TryParse(roundUpFactor.ToString("R", CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out decimal factor) &&
-                factor > 0 && (double)number == value && (double)factor == roundUpFactor)
+            // Decimal remainder preserves ordinary entered multiples (0.07 / 0.01)
+            // without allocating strings, dividing tiny values to zero or overflowing a quotient.
+            try
             {
-                try { return (double)(decimal.Ceiling(number / factor) * factor); }
-                catch (OverflowException) { }
+                decimal number = (decimal)value, factor = (decimal)roundUpFactor;
+                if (factor > 0 && (double)number == value && (double)factor == roundUpFactor)
+                {
+                    decimal remainder = number % factor;
+                    return (double)(remainder == 0 ? number : number - remainder + (number > 0 ? factor : 0));
+                }
             }
+            catch (OverflowException) { }
             double quotient = value / roundUpFactor;
             // A factor below the value's floating-point resolution cannot change it.
             if (Math.Abs(quotient) >= 4503599627370496d) return value;

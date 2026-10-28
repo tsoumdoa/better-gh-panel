@@ -1075,11 +1075,11 @@ namespace BetterGhPanel
             {
                 if (selectedUnit!.Value.Conversion.HasValue)
                     PanelOwner.SetUnits(selectedUnit.Value.Conversion!.Value, PanelOwner.DecimalPlaces);
-                else if (selectedUnit.Value.Decimals == CanvasDecimalChoice.Automatic)
+                else if (selectedUnit.Value.Setting == CanvasNumberSetting.Automatic)
                     PanelOwner.SetUnits(PanelOwner.UnitConversion, PanelUnits.AutomaticDecimals);
-                else if (selectedUnit.Value.Decimals == CanvasDecimalChoice.RoundingOff)
+                else if (selectedUnit.Value.Setting == CanvasNumberSetting.RoundingOff)
                     PanelOwner.SetUnits(PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, 0);
-                else if (selectedUnit.Value.Decimals == CanvasDecimalChoice.RoundingFactor)
+                else if (selectedUnit.Value.Setting == CanvasNumberSetting.RoundingFactor)
                     CanvasTextInput.Show(canvas, PanelOwner, _units,
                         (PanelOwner.RoundUpFactor > 0 ? PanelOwner.RoundUpFactor : 1).ToString("R", System.Globalization.CultureInfo.InvariantCulture), text =>
                     {

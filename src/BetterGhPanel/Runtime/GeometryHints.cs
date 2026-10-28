@@ -294,11 +294,15 @@ namespace BetterGhPanel.Runtime
                     "\nEdges: " + brep.Edges.Count + "\nVertices: " + brep.Vertices.Count);
         }
 
-        private static PanelGeometryInfo MeshInfo(Mesh mesh) => new PanelGeometryInfo(
-            "Mesh · " + Closed(mesh.IsClosed) + " · " + mesh.Vertices.Count + " vertices · " + Count(mesh.Faces.Count, "face"),
-            power: mesh.IsClosed ? 3 : 2, metricName: mesh.IsClosed ? "Volume" : "Area", metricLabel: mesh.IsClosed ? "V" : "A",
-            canMeasure: true, hasArea: mesh.IsClosed,
-            details: "Topology: " + (mesh.IsClosed ? "Closed" : "Open") + "\nVertices: " + mesh.Vertices.Count + "\nFaces: " + mesh.Faces.Count);
+        private static PanelGeometryInfo MeshInfo(Mesh mesh)
+        {
+            bool closed = mesh.IsClosed;
+            int vertices = mesh.Vertices.Count, faces = mesh.Faces.Count;
+            return new PanelGeometryInfo("Mesh · " + Closed(closed) + " · " + vertices + " vertices · " + Count(faces, "face"),
+                power: closed ? 3 : 2, metricName: closed ? "Volume" : "Area", metricLabel: closed ? "V" : "A",
+                canMeasure: true, hasArea: closed,
+                details: "Topology: " + (closed ? "Closed" : "Open") + "\nVertices: " + vertices + "\nFaces: " + faces);
+        }
 
         private static PanelGeometryInfo SolidMetric(PanelGeometryInfo summary, double? volume, double? area, string units,
             string? shape = null, string? details = null) => new PanelGeometryInfo(

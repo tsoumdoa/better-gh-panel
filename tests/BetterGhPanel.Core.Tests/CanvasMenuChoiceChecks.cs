@@ -139,8 +139,8 @@ internal static class CanvasMenuChoiceChecks
             Check(menu.Label(index) == PanelUnits.Label(conversion) && menu.IsSelected(index, options, conversion, -1),
                 "Each unit choice retains the corresponding conversion and label");
         }
-        int automatic = Enumerable.Range(0, menu.Count).Single(i => menu.UnitChoiceAt(i).Decimals == CanvasDecimalChoice.Automatic);
-        int custom = Enumerable.Range(0, menu.Count).Single(i => menu.UnitChoiceAt(i).Decimals == CanvasDecimalChoice.Custom);
+        int automatic = Enumerable.Range(0, menu.Count).Single(i => menu.UnitChoiceAt(i).Setting == CanvasNumberSetting.Automatic);
+        int custom = Enumerable.Range(0, menu.Count).Single(i => menu.UnitChoiceAt(i).Setting == CanvasNumberSetting.Custom);
         Check(menu.IsSectionStart(automatic) && menu.IsSelected(automatic, options, PanelUnitConversion.None, -1) &&
             menu.IsSelected(custom, options, PanelUnitConversion.None, 2) && menu.Label(custom, 2) == "Decimal places… (2)",
             "Decimal actions do not alias a unit conversion");
