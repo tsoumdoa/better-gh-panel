@@ -359,7 +359,7 @@ internal static class CaptureStockGeometryChecks
 
     private static async Task VerifyNativeSolve(Assembly assembly, PointCloud cloud, Extrusion extrusion)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         var inputs = new IGH_Goo[] { new GH_PointCloud(cloud), new GH_PointCloud(), new GH_Extrusion(extrusion), new GH_Extrusion(),
             Group("valid", new GH_PointCloud(cloud), new GH_Extrusion(extrusion)), Group("invalid", new GH_PointCloud()),
@@ -413,7 +413,7 @@ internal static class CaptureStockGeometryChecks
 
     private static void VerifyNativeUnresolvedSolve(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         var cloud = new GH_PointCloud(Guid.NewGuid()); var extrusion = new GH_Extrusion(Guid.NewGuid());
         var access = new NestedCaptureDataAccess();
         access.Primary.AppendRange(new IGH_Goo[] { cloud, extrusion, Group("unresolved", cloud, extrusion) }, new GH_Path(0));
@@ -428,7 +428,7 @@ internal static class CaptureStockGeometryChecks
 
     private static async Task VerifyNativeSolveReplacement(Assembly assembly, PointCloud cloud, Extrusion extrusion, bool isExtrusion, bool grouped)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         IGH_GeometricGoo holder = isExtrusion ? new GH_Extrusion() : new GH_PointCloud();
         IGH_Goo input = grouped ? Group("replacement", holder) : holder;

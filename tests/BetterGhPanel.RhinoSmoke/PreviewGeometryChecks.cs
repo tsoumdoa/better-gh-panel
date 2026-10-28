@@ -43,57 +43,6 @@ internal static class PreviewGeometryChecks
         }
     }
 
-    // Opt-in comparison of the former Eto/WPF byte[] writer. A child reads
-    // the native HGLOBAL before either managed reader can take an in-process
-    // shortcut. The diagnostic records Rhino's actual Paste result as well.
-    internal static async Task RunClipboardInteropDiagnostic(Assembly assembly)
-    {
-        FixtureUserData.EnsureRegistered();
-        var doc = RhinoDoc.ActiveDoc ?? throw new InvalidOperationException("Clipboard diagnostic needs a Rhino document.");
-        bool modified = doc.Modified;
-        var prior = Forms.Clipboard.GetDataObject();
-        var originalIds = doc.Objects.Select(item => item.Id).ToHashSet();
-        try
-        {
-            byte[]? prepared = null;
-            Action<byte[]> observe = value => prepared = (byte[])value.Clone();
-            object copy = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!
-                .GetMethod("CopyGeometryWithArchiveObserver", Static)!.Invoke(null,
-                    new object[] { new IGH_Goo?[] { new GH_Point(new Point3d(3, 4, 5)) }, doc.ModelUnitSystem, doc.ModelAbsoluteTolerance, observe })!;
-            Check(Property<bool>(copy, "Success") && prepared != null, "the diagnostic prepared a real production 3DM archive");
-            using (var archive = File3dm.FromByteArray(prepared!))
-                Check(archive != null && archive.Objects.Count == 1, "the diagnostic source archive is readable");
-            using var oldClipboard = new Eto.Forms.Clipboard();
-            oldClipboard.SetData(prepared!, "Rhino 8 3DM Geometry");
-            string raw = await RawClipboardProbe.ReadInChildAsync();
-            object? forms = Forms.Clipboard.GetData("Rhino 8 3DM Geometry");
-            byte[]? eto = oldClipboard.GetData("Rhino 8 3DM Geometry");
-            byte[]? formsBytes = forms as byte[];
-            if (forms is Stream stream)
-            {
-                using var buffer = new MemoryStream();
-                stream.Position = 0; stream.CopyTo(buffer); formsBytes = buffer.ToArray();
-            }
-            string Digest(byte[]? value) => value == null ? "<null>" : value.Length + ":" + Convert.ToHexString(SHA256.HashData(value));
-            Console.WriteLine("Former Eto clipboard diagnostic: prepared=" + Digest(prepared) + ", raw=" + raw +
-                ", WinFormsType=" + (forms?.GetType().FullName ?? "<null>") + ", WinForms=" + Digest(formsBytes) + ", Eto=" + Digest(eto));
-            Check(!string.IsNullOrEmpty(raw) && forms != null && eto != null, "native, WinForms and Eto clipboard reads were obtained");
-            bool accepted = RhinoApp.RunScript(doc.RuntimeSerialNumber, "_Paste", false);
-            var deadline = DateTime.UtcNow.AddSeconds(5);
-            while (accepted && !doc.Objects.Any(item => !originalIds.Contains(item.Id)) && DateTime.UtcNow < deadline)
-                await Task.Delay(25);
-            var pasted = doc.Objects.Where(item => !originalIds.Contains(item.Id)).ToArray();
-            Check(accepted && pasted.Length == 1 && pasted[0].Geometry is Point point && point.Location == new Point3d(3, 4, 5),
-                "Rhino Paste reads the former Eto clipboard format");
-        }
-        finally
-        {
-            foreach (var item in doc.Objects.Where(item => !originalIds.Contains(item.Id)).ToArray()) doc.Objects.Delete(item.Id, true);
-            doc.Modified = modified;
-            if (prior == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(prior, true);
-        }
-    }
-
     private static void VerifyOrdinaryGeometry(Assembly assembly, object highlight)
     {
         using var nurbs = RationalCurve();

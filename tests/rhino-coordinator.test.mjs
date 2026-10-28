@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { fixtureCommand, fixtureHostMode, loadInventory, main, reportErrors, requiredFixtures, runFixtures } from './BetterGhPanel.RhinoSmoke/coordinator.mjs';
+import { fixtureCommand, fixtureHostMode, main, reportErrors, runFixtures } from './BetterGhPanel.RhinoSmoke/coordinator.mjs';
 
 const fakeChild = fileURLToPath(new URL('./fake-rhino-child.mjs', import.meta.url));
 
@@ -22,64 +22,28 @@ function run(payload, behavior, timeoutMs = 2000) {
     commandFor: (fixture, plugin) => [process.execPath, [fakeChild, fixture === 'first' ? behavior : 'pass', fixture, plugin]] });
 }
 
-test('inventory includes every original fixture and the independently crash-prone portions', () => {
-  assert.deepEqual(loadInventory(), [
-    'panel-handle', 'output', 'output-pending', 'row-numbering',
-    'index-selection', 'capsule', 'capsule-double-click', 'recompute-presentation',
-    'recompute-output', 'recompute-regex', 'recompute-local-preview', 'recompute-disabled',
-    'geometry-hint', 'analytic-curve-details', 'geometry-group-persistent', 'geometry-group-volatile', 'geometry-group-cycles',
-    'capture-safety', 'polyline-safety', 'preview-safety', 'preview-admission-freshness', 'preview-geometry', 'preview-additional-geometry', 'preview-additional-draw', 'clipboard-interop-diagnostic', 'preview-reentrant-draw',
-    'preview-metadata-safety', 'preview-native-resources', 'preview-conduit-resources', 'preview-single-pass-meshing',
-    'preview-single-pass-geometry', 'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point', 'preview-live-framebuffer',
-    'nurbs-value-candidate', 'production-curve-measurement', 'standalone-compatibility', 'capture-transaction', 'capture-stock-geometry',
-    'geometry-canvas-viewport', 'measurement-priority', 'measurement-cancellation',
-    'measurement-invalidation', 'measurement-failures', 'row-actions', 'highlight-overlap',
-    'filter-metadata', 'filter-measurements', 'filter-cancellation', 'filter-snapshot-replacement',
-    'filter-lifecycle-paths', 'filter-displayed-output', 'filter-displayed-geometry', 'filter-ui', 'filter-ui-choices', 'full-value', 'view-freshness',
-    'filter-footer-statistics', 'filter-preview-undo', 'filter-display-values', 'statistics-ui',
-    'create-set', 'set-details', 'display-set', 'item-order-ui',
-    'item-order-capture', 'integration'
-  ]);
-});
-
-test('comparison diagnostics are opt-in and do not replace required preview fixtures', () => {
-  const inventory = loadInventory();
-  const required = requiredFixtures(inventory);
-  assert.ok(inventory.includes('preview-stock-compatibility-draw'));
-  assert.ok(!required.includes('preview-stock-compatibility-draw'));
-  assert.ok(inventory.includes('preview-compatibility-conduit'));
-  assert.ok(!required.includes('preview-compatibility-conduit'));
-  assert.ok(inventory.includes('clipboard-interop-diagnostic'));
-  assert.ok(!required.includes('clipboard-interop-diagnostic'));
-  assert.ok(inventory.includes('preview-live-framebuffer'));
-  assert.ok(!required.includes('preview-live-framebuffer'));
-  for (const fixture of ['preview-compatibility-draw', 'preview-native-resources', 'preview-conduit-resources', 'preview-admission-freshness'])
-    assert.ok(required.includes(fixture));
-});
-
 test('pixel fixtures use an inactive desktop while other fixtures use the hidden host', () => {
-  for (const name of ['highlight-overlap', 'item-order-capture', 'preview-safety', 'preview-reentrant-draw',
-    'preview-native-resources', 'preview-conduit-resources', 'preview-single-pass-meshing', 'preview-single-pass-geometry',
-    'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point', 'preview-additional-draw', 'preview-live-framebuffer']) {
+  for (const name of ['preview-safety', 'preview-reentrant-draw', 'preview-native-resources',
+    'preview-conduit-resources', 'preview-compatibility-draw', 'preview-retirement-seam', 'preview-additional-draw']) {
     assert.equal(fixtureHostMode(name), 'inactive-desktop');
     assert.deepEqual(fixtureCommand('host', name, 'plugin'), ['host', ['--desktop-fixture', name, 'plugin']]);
   }
-  assert.equal(fixtureHostMode('output'), 'hidden');
-  assert.deepEqual(fixtureCommand('host', 'output', 'plugin'), ['host', ['--fixture', 'output', 'plugin']]);
+  assert.equal(fixtureHostMode('preview-geometry'), 'hidden');
+  assert.deepEqual(fixtureCommand('host', 'preview-geometry', 'plugin'), ['host', ['--fixture', 'preview-geometry', 'plugin']]);
 });
 
 test('a failed desktop launcher check fails the run without skipping other fixtures', async t => {
   const payload = withPayload(t);
   const started = [];
-  const code = await main(['--plugin', payload.pluginPath, '--fixture', 'highlight-overlap', '--fixture', 'output'], {
+  const code = await main(['--plugin', payload.pluginPath, '--fixture', 'preview-safety', '--fixture', 'preview-geometry'], {
     outputRoot: payload.outputRoot, checkDesktop: () => false,
     commandFor: (fixture, plugin) => {
       started.push(fixture);
-      return [process.execPath, [fakeChild, fixture === 'highlight-overlap' ? 'pass-desktop' : 'pass', fixture, plugin]];
+      return [process.execPath, [fakeChild, fixture === 'preview-safety' ? 'pass-desktop' : 'pass', fixture, plugin]];
     }
   });
   assert.equal(code, 1);
-  assert.deepEqual(started, ['highlight-overlap', 'output']);
+  assert.deepEqual(started, ['preview-safety', 'preview-geometry']);
   const [runDirectory] = readdirSync(payload.outputRoot);
   const status = JSON.parse(readFileSync(join(payload.outputRoot, runDirectory, 'coordinator-status.json'), 'utf8'));
   assert.equal(status.desktopCheckRequired, true);
@@ -175,7 +139,7 @@ test('rejects invalid fixture lists and timeout before starting children', async
 test('CLI rejects unknown modes without starting Rhino', async () => {
   const { spawnSync } = await import('node:child_process');
   const coordinator = resolve(fileURLToPath(new URL('./BetterGhPanel.RhinoSmoke/coordinator.mjs', import.meta.url)));
-  for (const args of [['--bad-mode'], ['--fixture', 'bogus']]) {
+  for (const args of [['--bad-mode'], ['--fixture', 'bogus'], ['--suite', 'typo']]) {
     const result = spawnSync(process.execPath, [coordinator, ...args], { encoding: 'utf8' });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Unknown/);
@@ -193,8 +157,8 @@ test('coordinator CLI exits nonzero on a failed child after running the next fix
   ].map(name => [name, 1])]) {
     const result = spawnSync(process.execPath, [driver, behavior, payload.pluginPath, payload.outputRoot], { encoding: 'utf8' });
     assert.equal(result.status, expectedStatus, result.stderr);
-    assert.match(result.stdout, /PASS output/);
-    if (expectedStatus) assert.match(result.stdout, /FAIL panel-handle/);
+    assert.match(result.stdout, /PASS preview-geometry/);
+    if (expectedStatus) assert.match(result.stdout, /FAIL capture-safety/);
   }
 });
 
@@ -207,4 +171,50 @@ test('a child that cannot start fails without suppressing the next fixture', asy
   assert.equal(summary.passed, false);
   assert.ok(summary.outcomes[0].errors.some(error => error.includes('failed to start')));
   assert.deepEqual(summary.outcomes[1].errors, []);
+});
+
+for (const behavior of ['startup-failure', 'startup-timeout']) {
+  test(`${behavior} stops further Rhino launches and preserves an incomplete failed run`, async t => {
+    const payload = withPayload(t);
+    const started = [];
+    const summary = await runFixtures({ ...payload, fixtures: ['preview-reentrant-draw', 'preview-geometry'],
+      timeoutMs: behavior === 'startup-timeout' ? 1000 : 2000, quiet: true,
+      commandFor: (fixture, plugin) => {
+        started.push(fixture);
+        return [process.execPath, [fakeChild, behavior, fixture, plugin]];
+      }
+    });
+    assert.deepEqual(started, ['preview-reentrant-draw']);
+    assert.equal(summary.passed, false);
+    assert.equal(summary.completed, false);
+    assert.deepEqual(summary.notRunFixtures, ['preview-geometry']);
+    assert.match(summary.outcomes[0].errors[0], /Rhino host failed before fixture execution/);
+    assert.ok(!summary.outcomes[0].errors.includes('wrong Rhino idle pump'));
+    const persisted = JSON.parse(readFileSync(summary.outcomes[0].outcomePath, 'utf8'));
+    assert.equal(persisted.assertionCount, 0);
+    assert.equal(persisted.phase, behavior === 'startup-failure' ? 'host-startup-failed' : 'host-startup');
+    if (behavior === 'startup-failure') assert.match(persisted.failure, /COMException: E_FAIL/);
+    else assert.equal(persisted.child.timedOut, true);
+    const runReport = JSON.parse(readFileSync(join(summary.runDirectory, 'run-summary.json'), 'utf8'));
+    assert.equal(runReport.completed, false);
+    assert.equal(runReport.passed, false);
+    assert.deepEqual(runReport.notRunFixtures, ['preview-geometry']);
+    assert.match(runReport.stopReason, /Rhino startup failed/);
+  });
+}
+
+test('CLI marks a startup-aborted inventory incomplete and exits unsuccessfully', async t => {
+  const payload = withPayload(t);
+  const code = await main(['--plugin', payload.pluginPath, '--fixture', 'preview-reentrant-draw', '--fixture', 'preview-geometry'], {
+    outputRoot: payload.outputRoot, checkDesktop: () => true,
+    commandFor: (fixture, plugin) => [process.execPath, [fakeChild, 'startup-failure', fixture, plugin]]
+  });
+  assert.equal(code, 1);
+  const [runDirectory] = readdirSync(payload.outputRoot);
+  const status = JSON.parse(readFileSync(join(payload.outputRoot, runDirectory, 'coordinator-status.json'), 'utf8'));
+  assert.equal(status.passed, false);
+  assert.equal(status.completed, false);
+  assert.equal(status.fixtureCount, 1);
+  assert.equal(status.requestedFixtureCount, 2);
+  assert.deepEqual(status.notRunFixtures, ['preview-geometry']);
 });

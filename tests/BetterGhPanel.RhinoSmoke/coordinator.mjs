@@ -6,14 +6,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopFixtures = new Set([
-  'highlight-overlap', 'item-order-capture', 'preview-safety', 'preview-reentrant-draw',
-  'preview-native-resources', 'preview-conduit-resources', 'preview-single-pass-meshing', 'preview-single-pass-geometry',
-  'preview-compatibility-draw', 'preview-compatibility-conduit', 'preview-retirement-seam', 'preview-stock-compatibility-draw', 'preview-stock-point',
-  'preview-additional-draw', 'preview-live-framebuffer'
+  'preview-safety', 'preview-reentrant-draw', 'preview-native-resources', 'preview-conduit-resources',
+  'preview-compatibility-draw', 'preview-retirement-seam', 'preview-additional-draw'
 ]);
-// These comparison captures are opt-in. Their results are diagnostic evidence
-// and must not replace any required Panel+ fixture.
-const diagnosticFixtures = new Set(['preview-stock-compatibility-draw', 'preview-compatibility-conduit', 'clipboard-interop-diagnostic', 'preview-live-framebuffer']);
+const startupPhases = new Set(['identity', 'host-startup', 'host-startup-failed', 'grasshopper-startup', 'host-preparation-failed']);
 
 export const fixtureHostMode = fixture => desktopFixtures.has(fixture) ? 'inactive-desktop' : 'hidden';
 export const fixtureCommand = (executable, fixture, plugin) =>
@@ -25,8 +21,6 @@ export function loadInventory() {
     throw new Error('Invalid or duplicate native fixture inventory');
   return fixtures;
 }
-
-export const requiredFixtures = inventory => inventory.filter(name => !diagnosticFixtures.has(name));
 
 const fileHash = path => createHash('sha256').update(readFileSync(path)).digest('hex');
 const samePath = (a, b) => {
@@ -45,7 +39,9 @@ export function reportErrors(report, expected) {
   if (report.schemaVersion !== 1) errors.push('wrong report schema');
   if (report.fixture !== expected.fixture) errors.push('wrong fixture');
   if (report.hostMode !== expected.hostMode) errors.push('wrong host mode');
-  if (report.rhinoIdlePump !== (expected.hostMode === 'inactive-desktop')) errors.push('wrong Rhino idle pump');
+  // A host that never reached its message loop has no idle pump to validate yet.
+  if ((!startupPhases.has(report.phase) || report.completed === true || report.rhinoIdlePump === true) &&
+      report.rhinoIdlePump !== (expected.hostMode === 'inactive-desktop')) errors.push('wrong Rhino idle pump');
   if (report.runId !== expected.runId) errors.push('wrong or stale run id');
   const started = typeof report.startedUtc === 'string' ? Date.parse(report.startedUtc) : NaN;
   if (!Number.isFinite(started) || started < expected.started - 2000 || started > Date.now() + 2000) errors.push('stale or invalid start time');
@@ -93,6 +89,7 @@ export async function runFixtures({ fixtures, pluginPath, outputRoot, timeoutMs,
   const runDirectory = mkdtempSync(join(resolve(outputRoot), 'run-'));
   const payload = { plugin: { path: plugin, sha256: fileHash(plugin) }, core: { path: core, sha256: fileHash(core) } };
   const outcomes = [];
+  let stopReason = null;
   if (!quiet) console.log(`Native fixture results: ${runDirectory}`);
   for (const fixture of fixtures) {
     const runId = randomUUID();
@@ -111,20 +108,31 @@ export async function runFixtures({ fixtures, pluginPath, outputRoot, timeoutMs,
     try { report = JSON.parse(readFileSync(resultPath, 'utf8')); }
     catch (error) { errors.push(error.code === 'ENOENT' ? 'missing report' : `malformed report: ${error.message}`); }
     if (report !== undefined) errors.push(...reportErrors(report, { fixture, runId, started, hostMode: fixtureHostMode(fixture), ...payload }));
+    const startupFailed = errors.length > 0 && report?.completed === false && report.assertionCount === 0 &&
+      report.runId === runId && report.fixture === fixture && startupPhases.has(report.phase);
+    if (startupFailed) errors.unshift(`Rhino host failed before fixture execution (${report.phase})${typeof report.failure === 'string' && report.failure ? `: ${report.failure.split(/\r?\n/)[0]}` : ''}`);
     const outcomePath = join(runDirectory, `${fixture}-${runId}.outcome.json`);
     const outcome = { fixture, runId, resultPath, logPath, outcomePath, child, report, errors };
     // The report is written by the host before shutdown, so it cannot attest
     // to the host's exit code. Persist the coordinator's assessment as well;
     // terminal output can disappear when an orchestration session reconnects.
     writeFileSync(outcomePath, JSON.stringify({ schemaVersion: 1, fixture, runId, resultPath, logPath,
-      child, errors, payload, assertionCount: report?.assertionCount ?? null }), { flag: 'wx' });
+      child, errors, payload, phase: report?.phase ?? null, failure: report?.failure ?? null,
+      assertionCount: report?.assertionCount ?? null }), { flag: 'wx' });
     outcomes.push(outcome);
     if (!quiet) console.log(`${errors.length ? 'FAIL' : 'PASS'} ${fixture}: ${errors.length ? errors.join('; ') : `${report.assertionCount} fixture assertions`} (${basename(logPath)})`);
+    if (startupFailed) {
+      stopReason = `Rhino startup failed in ${fixture}; remaining fixtures were not launched. Resolve the host startup failure before rerunning.`;
+      if (!quiet) console.error(stopReason);
+      break;
+    }
   }
-  const passed = outcomes.every(outcome => outcome.errors.length === 0);
-  writeFileSync(join(runDirectory, 'run-summary.json'), JSON.stringify({ schemaVersion: 1, completed: true,
-    passed, payload, outcomes: outcomes.map(({ fixture, runId, outcomePath }) => ({ fixture, runId, outcomePath })) }), { flag: 'wx' });
-  return { runDirectory, outcomes, passed };
+  const notRunFixtures = fixtures.slice(outcomes.length);
+  const completed = notRunFixtures.length === 0;
+  const passed = completed && outcomes.every(outcome => outcome.errors.length === 0);
+  writeFileSync(join(runDirectory, 'run-summary.json'), JSON.stringify({ schemaVersion: 1, completed,
+    passed, payload, stopReason, notRunFixtures, outcomes: outcomes.map(({ fixture, runId, outcomePath }) => ({ fixture, runId, outcomePath })) }), { flag: 'wx' });
+  return { runDirectory, outcomes, passed, completed, notRunFixtures, stopReason };
 }
 
 export async function main(args, overrides = {}) {
@@ -139,8 +147,7 @@ export async function main(args, overrides = {}) {
   }
   const inventory = loadInventory();
   if (selected.some(name => !inventory.includes(name))) throw new Error(`Unknown fixture: ${selected.find(name => !inventory.includes(name))}`);
-  const fixtures = selected.length ? selected : requiredFixtures(inventory);
-  if (!selected.length) console.log(`Optional preview diagnostics (run explicitly with --fixture): ${[...diagnosticFixtures].join(', ')}`);
+  const fixtures = selected.length ? selected : inventory;
   let desktopCheckPassed = true;
   if (fixtures.some(name => desktopFixtures.has(name))) {
     const checkDesktop = overrides.checkDesktop ?? (() => {
@@ -156,8 +163,10 @@ export async function main(args, overrides = {}) {
     commandFor: overrides.commandFor ?? ((fixture, plugin) => fixtureCommand(executable, fixture, plugin)) });
   writeFileSync(join(summary.runDirectory, 'coordinator-status.json'), JSON.stringify({ schemaVersion: 1,
     desktopCheckRequired: fixtures.some(name => desktopFixtures.has(name)), desktopCheckPassed,
-    passed: summary.passed && desktopCheckPassed, fixtureCount: summary.outcomes.length }), { flag: 'wx' });
-  console.log(`${summary.outcomes.filter(result => result.errors.length === 0).length}/${summary.outcomes.length} fixtures passed`);
+    passed: summary.passed && desktopCheckPassed, completed: summary.completed,
+    fixtureCount: summary.outcomes.length, requestedFixtureCount: fixtures.length,
+    notRunFixtures: summary.notRunFixtures, stopReason: summary.stopReason }), { flag: 'wx' });
+  console.log(`${summary.outcomes.filter(result => result.errors.length === 0).length}/${fixtures.length} fixtures passed${summary.notRunFixtures.length ? `; ${summary.notRunFixtures.length} not run after Rhino startup failure` : ''}`);
   return summary.passed && desktopCheckPassed ? 0 : 1;
 }
 

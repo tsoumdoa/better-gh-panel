@@ -15,7 +15,7 @@ using Forms = System.Windows.Forms;
 
 internal static partial class PreviewSafetyChecks
 {
-    internal static Task RunAdmissionFreshness(Assembly assembly) => OutputChecks.RunWithEditor(assembly, async loaded =>
+    internal static Task RunAdmissionFreshness(Assembly assembly) => PanelHostFixture.RunWithEditor(assembly, async loaded =>
     {
         FixtureUserData.EnsureRegistered();
         var rhino = RhinoDoc.ActiveDoc ?? throw new InvalidOperationException("Admission fixture needs a Rhino document.");
@@ -230,7 +230,7 @@ internal static partial class PreviewSafetyChecks
 
     private static async Task VerifySemanticAction(Assembly assembly, bool copy, bool set, RhinoDoc rhino)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         using var curve = new LineCurve(new Point3d(20, 0, 0), new Point3d(22, 0, 0));
         Check(curve.UserData.Add(new CopyRoundTripUserData { Value = 701 }), "semantic action callback metadata is attached");
@@ -241,7 +241,7 @@ internal static partial class PreviewSafetyChecks
         // Persistent generic collection duplicates groups and can erase Name.
         // Reuse the stock-group fixture's verified volatile delivery path, so
         // both initial capture and a real recapture receive the intended names.
-        var producer = new GeometryGroupChecks.VolatileSource(input);
+        var producer = new NativeGroupFixture.VolatileSource(input);
         producer.CreateAttributes(); fixture.Document.AddObject(producer, false);
         fixture.Component.Params.Input[0].RemoveAllSources();
         fixture.Component.Params.Input[0].AddSource(producer);
@@ -375,7 +375,7 @@ internal static partial class PreviewSafetyChecks
             "Selected scope binds recovered typed D/S and original-shape B/F to the selected representative with set=" + set);
     }
 
-    private static void DumpSemanticDelivery(OutputChecks.Fixture fixture, GeometryGroupChecks.VolatileSource producer,
+    private static void DumpSemanticDelivery(PanelHostFixture.Fixture fixture, NativeGroupFixture.VolatileSource producer,
         bool copy, bool set, string phase)
     {
         static string Describe(IGH_Goo? item) => item is GH_GeometryGroup group

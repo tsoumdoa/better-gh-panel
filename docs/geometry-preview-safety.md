@@ -1,5 +1,7 @@
 # Geometry preview and row actions
 
+The current native inventory retains 18 geometry safety and integrity regressions. Routine UI/behavior smoke fixtures and obsolete diagnostic probes were removed; run tables and fixture references below record the historical investigations.
+
 This document describes preview ownership and row-action limits. Historical
 failures are retained below; they are not the status of every later build.
 Final-package validation and independent review are required before merging.

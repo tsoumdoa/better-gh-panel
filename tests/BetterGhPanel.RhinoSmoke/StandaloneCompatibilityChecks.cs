@@ -52,7 +52,7 @@ internal static class StandaloneCompatibilityChecks
         bool oldModified = doc.Modified;
         try
         {
-            using var fixture = new OutputChecks.Fixture(assembly);
+            using var fixture = new PanelHostFixture.Fixture(assembly);
             Clear(fixture); Append(fixture, new GH_Brep(Triangle())); fixture.Solve();
             await fixture.Ready(() => Snapshot(fixture).Rows.Count == 1);
             var snapshot = Snapshot(fixture);
@@ -90,7 +90,7 @@ internal static class StandaloneCompatibilityChecks
 
     private static async Task MetricsAndOutput(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         Clear(fixture);
         var poly = Poly();
         var triangle = Triangle();
@@ -140,7 +140,7 @@ internal static class StandaloneCompatibilityChecks
 
     private static async Task UnitOnlyAndReentrantReplacement(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         Clear(fixture); Append(fixture, new GH_Brep(Triangle())); fixture.Solve();
         await fixture.Ready(() => Snapshot(fixture).Rows.Count == 1);
         var initial = Snapshot(fixture);
@@ -179,7 +179,7 @@ internal static class StandaloneCompatibilityChecks
 
     private static async Task CallbackException(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         Clear(fixture); Append(fixture, new GH_Brep(Triangle())); fixture.Solve();
         await fixture.Ready(() => Snapshot(fixture).Rows.Count == 1);
         var snapshot = Snapshot(fixture);
@@ -237,7 +237,7 @@ internal static class StandaloneCompatibilityChecks
             double expectedEdgeLength = loadedEdge.Value.GetLength();
             Check(loadedEdge.Value.GetType() == typeof(NurbsCurve) && expectedEdgeLength > 0,
                 "the actual loaded document edge is a measurable NURBS curve");
-            using var fixture = new OutputChecks.Fixture(assembly);
+            using var fixture = new PanelHostFixture.Fixture(assembly);
             Clear(fixture);
             Append(fixture, loadedCurve);
             Append(fixture, loadedSurface);
@@ -283,7 +283,7 @@ internal static class StandaloneCompatibilityChecks
         }
     }
 
-    private static void LogReferencedRows(OutputChecks.Fixture fixture, PanelSnapshot snapshot, IGH_Goo?[] sources, bool allValid, bool measured)
+    private static void LogReferencedRows(PanelHostFixture.Fixture fixture, PanelSnapshot snapshot, IGH_Goo?[] sources, bool allValid, bool measured)
     {
         static string? Number(double? value) => value?.ToString("G17", CultureInfo.InvariantCulture);
         Console.WriteLine("REFERENCE_BATCH " + System.Text.Json.JsonSerializer.Serialize(new { allValid, measured }));
@@ -419,8 +419,8 @@ internal static class StandaloneCompatibilityChecks
         }
     }
 
-    private static void Clear(OutputChecks.Fixture f) { f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear(); }
-    private static void Append(OutputChecks.Fixture f, IGH_Goo value)
+    private static void Clear(PanelHostFixture.Fixture f) { f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear(); }
+    private static void Append(PanelHostFixture.Fixture f, IGH_Goo value)
     { f.Source.PersistentData.Append(value, new GH_Path(0)); f.Paired.PersistentData.Append(new GH_String("paired"), new GH_Path(0)); }
     private static PolyCurve Poly()
     {
@@ -433,11 +433,11 @@ internal static class StandaloneCompatibilityChecks
     private static Brep Triangle() => Brep.CreatePlanarBreps(new PolylineCurve(new[] { Point3d.Origin, new Point3d(10, 0, 0),
         new Point3d(0, 10, 0), Point3d.Origin }), 1e-8).Single();
     private static bool Near(double? actual, double expected) => actual.HasValue && Math.Abs(actual.Value - expected) < Math.Max(1e-7, Math.Abs(expected) * 1e-7);
-    private static PanelSnapshot Snapshot(OutputChecks.Fixture f) => (PanelSnapshot)f.Session.GetType().GetProperty("Snapshot")!.GetValue(f.Session)!;
-    private static IGH_Goo?[] Sources(OutputChecks.Fixture f) => (IGH_Goo?[])f.Component.GetType().GetField("_sourceItems", Private)!.GetValue(f.Component)!;
-    private static bool Has(OutputChecks.Fixture f, PanelSnapshot s, int i) => (bool)f.Session.GetType().GetMethod("HasGeometryMeasurement", Private)!.Invoke(f.Session, new object[] { s, i })!;
-    private static PanelGeometryInfo? Details(OutputChecks.Fixture f, PanelSnapshot s, int i) => (PanelGeometryInfo?)f.Session.GetType().GetMethod("GetGeometryDetails", Private)!.Invoke(f.Session, new object[] { s, i });
-    private static Task<bool> Measure(OutputChecks.Fixture f, PanelSnapshot s, params int[] positions) =>
+    private static PanelSnapshot Snapshot(PanelHostFixture.Fixture f) => (PanelSnapshot)f.Session.GetType().GetProperty("Snapshot")!.GetValue(f.Session)!;
+    private static IGH_Goo?[] Sources(PanelHostFixture.Fixture f) => (IGH_Goo?[])f.Component.GetType().GetField("_sourceItems", Private)!.GetValue(f.Component)!;
+    private static bool Has(PanelHostFixture.Fixture f, PanelSnapshot s, int i) => (bool)f.Session.GetType().GetMethod("HasGeometryMeasurement", Private)!.Invoke(f.Session, new object[] { s, i })!;
+    private static PanelGeometryInfo? Details(PanelHostFixture.Fixture f, PanelSnapshot s, int i) => (PanelGeometryInfo?)f.Session.GetType().GetMethod("GetGeometryDetails", Private)!.Invoke(f.Session, new object[] { s, i });
+    private static Task<bool> Measure(PanelHostFixture.Fixture f, PanelSnapshot s, params int[] positions) =>
         (Task<bool>)f.Session.GetType().GetMethod("MeasureGeometryAsync", Private)!.Invoke(f.Session, new object[] { s, positions, CancellationToken.None })!;
     private static async Task<bool> Result(Task<bool> task) { await Wait(() => task.IsCompleted); return await task; }
     private static async Task Wait(Func<bool> condition)

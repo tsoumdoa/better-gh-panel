@@ -95,7 +95,7 @@ internal static class CaptureTransactionChecks
 
     private static async Task VerifyScalarRetargetFilter(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         fixture.Source.PersistentData.Append(new GH_Curve { Value = new LineCurve(Point3d.Origin, new Point3d(1, 0, 0)) }, new GH_Path(0));
         fixture.Source.PersistentData.Append(new GH_Number(1), new GH_Path(0));
@@ -128,7 +128,7 @@ internal static class CaptureTransactionChecks
 
     private static async Task VerifyGeometryHolderRecovery(Assembly assembly, bool curve)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         fixture.Source.PersistentData.Append(curve ? new GH_Curve() : new GH_Mesh(Mesh(false)), new GH_Path(0));
         fixture.Source.PersistentData.Append(new GH_Number(2), new GH_Path(0));
@@ -238,7 +238,7 @@ internal static class CaptureTransactionChecks
 
     private static async Task VerifyOutputFence(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         fixture.Source.PersistentData.Append(new GH_Point(new Point3d(1, 2, 3)), new GH_Path(0));
         fixture.Paired.PersistentData.Append(new GH_String("point"), new GH_Path(0));
@@ -268,7 +268,7 @@ internal static class CaptureTransactionChecks
     private static async Task VerifySelectionPublicationVisits(Assembly assembly, bool measuredGeometry = false)
     {
         int count = measuredGeometry ? 2048 : 80000;
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         var source = fixture.Source.PersistentData.EnsurePath(new GH_Path(0));
         var paired = fixture.Paired.PersistentData.EnsurePath(new GH_Path(0));
@@ -413,7 +413,7 @@ internal static class CaptureTransactionChecks
 
     private static async Task VerifyMeasuredOutputFence(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         fixture.Source.PersistentData.Append(new GH_Curve { Value = new PolylineCurve(new[] {
             Point3d.Origin, new Point3d(3, 0, 0), new Point3d(3, 4, 0) }) }, new GH_Path(0));
@@ -486,7 +486,7 @@ internal static class CaptureTransactionChecks
 
     private static async Task VerifyStructureSolve(Assembly assembly, int mode)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         fixture.Source.PersistentData.Append(new GH_Number(1), new GH_Path(0));
         fixture.Source.PersistentData.Append(new GH_Curve { Value = new PolylineCurve(new[] { Point3d.Origin,
@@ -515,7 +515,7 @@ internal static class CaptureTransactionChecks
 
     private static async Task VerifyRetryLimit(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         fixture.Source.PersistentData.Append(new GH_Number(1), new GH_Path(0));
         int attempts = 0;
@@ -688,7 +688,7 @@ internal static class CaptureTransactionChecks
 
     private static async Task VerifyScalarMutationAndOutputs(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         fixture.Source.PersistentData.Append(new GH_Number(1), new GH_Path(0));
         fixture.Source.PersistentData.Append(new GH_Curve { Value = new PolylineCurve(new[] { Point3d.Origin,
@@ -723,7 +723,7 @@ internal static class CaptureTransactionChecks
 
     private static async Task VerifyReplacementSolve(Assembly assembly, bool wrappedGroup)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         fixture.Source.PersistentData.Append(wrappedGroup ? new GH_ObjectWrapper(Group()) : new GH_Curve
         { Value = new PolylineCurve(new[] { Point3d.Origin, new Point3d(2, 0, 0), new Point3d(2, 3, 0) }) }, new GH_Path(0));
@@ -777,7 +777,7 @@ internal static class CaptureTransactionChecks
 
     private static async Task VerifyRemoval(Assembly assembly, bool wrappedGroup, bool closeDocument)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear();
         fixture.Source.PersistentData.Append(wrappedGroup ? new GH_ObjectWrapper(Group()) : new GH_Curve
         { Value = new PolylineCurve(new[] { Point3d.Origin, new Point3d(1, 0, 0), new Point3d(1, 1, 0) }) }, new GH_Path(0));
@@ -807,7 +807,7 @@ internal static class CaptureTransactionChecks
 
     private static async Task VerifyLock(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Source.PersistentData.Append(new GH_Curve
         { Value = new PolylineCurve(new[] { Point3d.Origin, new Point3d(1, 0, 0), new Point3d(1, 1, 0) }) }, new GH_Path(0));
         bool called = false;
@@ -820,7 +820,7 @@ internal static class CaptureTransactionChecks
 
     private static async Task VerifyUnchanged(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Source.PersistentData.Append(new GH_ObjectWrapper(Group()), new GH_Path(0));
         fixture.Paired.PersistentData.Clear();
         int callbacks = 0; SetObserver(fixture, (_, __) => callbacks++);
@@ -839,16 +839,16 @@ internal static class CaptureTransactionChecks
         group.Objects.Add(new GH_Point(new Point3d(2, 0, 0)));
         return group;
     }
-    private static void SetObserver(OutputChecks.Fixture f, Action<int, IGH_Goo?>? observer) =>
+    private static void SetObserver(PanelHostFixture.Fixture f, Action<int, IGH_Goo?>? observer) =>
         f.Component.GetType().GetProperty("CaptureObserverForTesting", Private)!.SetValue(f.Component, observer);
-    private static void SetStructureObserver(OutputChecks.Fixture f, Action<GH_Structure<IGH_Goo>, GH_Structure<IGH_Goo>?>? observer) =>
+    private static void SetStructureObserver(PanelHostFixture.Fixture f, Action<GH_Structure<IGH_Goo>, GH_Structure<IGH_Goo>?>? observer) =>
         f.Component.GetType().GetProperty("StructureObserverForTesting", Private)!.SetValue(f.Component, observer);
     private static async Task Wait(Func<bool> condition)
     {
         var timer = Stopwatch.StartNew();
         while (!condition()) { if (timer.Elapsed.TotalSeconds > 20) throw new TimeoutException("Capture fixture timed out"); await Task.Delay(10); }
     }
-    private static object? Field(OutputChecks.Fixture f, string name) => f.Component.GetType().GetField(name, Private)!.GetValue(f.Component);
+    private static object? Field(PanelHostFixture.Fixture f, string name) => f.Component.GetType().GetField(name, Private)!.GetValue(f.Component);
     private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }
 

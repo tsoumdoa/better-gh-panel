@@ -106,7 +106,7 @@ internal static class ProductionCurveMeasurementChecks
 
     private static async Task VerifyCaptureAndRetention(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         var polyline = Polyline();
         polyline.SetParameter(0, -5); polyline.SetParameter(1, 2); polyline.SetParameter(2, 20);
@@ -169,7 +169,7 @@ internal static class ProductionCurveMeasurementChecks
 
     private static async Task VerifyReplacementAndDisposal(Assembly assembly)
     {
-        using var fixture = new OutputChecks.Fixture(assembly);
+        using var fixture = new PanelHostFixture.Fixture(assembly);
         OneCurve(fixture, Polyline());
         fixture.Solve();
         await fixture.Ready(() => Snapshot(fixture).Rows.Count == 1);
@@ -197,8 +197,8 @@ internal static class ProductionCurveMeasurementChecks
 
     private static async Task VerifyCapacityAcrossPanels(Assembly assembly)
     {
-        using var first = new OutputChecks.Fixture(assembly);
-        using var second = new OutputChecks.Fixture(assembly);
+        using var first = new PanelHostFixture.Fixture(assembly);
+        using var second = new PanelHostFixture.Fixture(assembly);
         OneCurve(first, Polyline()); OneCurve(second, Nurbs());
         first.Solve(); second.Solve();
         await first.Ready(() => Snapshot(first).Rows.Count == 1);
@@ -248,25 +248,25 @@ internal static class ProductionCurveMeasurementChecks
 
     private static PolylineCurve Polyline() => new PolylineCurve(new[] { Point3d.Origin, new Point3d(3, 0, 0), new Point3d(3, 4, 0) });
     private static NurbsCurve Nurbs() => NurbsCurve.Create(false, 2, new[] { Point3d.Origin, new Point3d(5, 5, 0), new Point3d(10, 0, 0) });
-    private static void OneCurve(OutputChecks.Fixture fixture, Curve curve)
+    private static void OneCurve(PanelHostFixture.Fixture fixture, Curve curve)
     {
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         fixture.Source.PersistentData.Append(new GH_Curve { Value = curve }, new GH_Path(0));
         fixture.Paired.PersistentData.Append(new GH_String("paired"), new GH_Path(0));
     }
-    private static PanelSnapshot Snapshot(OutputChecks.Fixture fixture) =>
+    private static PanelSnapshot Snapshot(PanelHostFixture.Fixture fixture) =>
         (PanelSnapshot)fixture.Session.GetType().GetProperty("Snapshot")!.GetValue(fixture.Session)!;
-    private static IGH_Goo?[] Sources(OutputChecks.Fixture fixture) =>
+    private static IGH_Goo?[] Sources(PanelHostFixture.Fixture fixture) =>
         (IGH_Goo?[])fixture.Component.GetType().GetField("_sourceItems", Private)!.GetValue(fixture.Component)!;
-    private static bool Has(OutputChecks.Fixture fixture, PanelSnapshot snapshot, int position) =>
+    private static bool Has(PanelHostFixture.Fixture fixture, PanelSnapshot snapshot, int position) =>
         (bool)fixture.Session.GetType().GetMethod("HasGeometryMeasurement", Private)!.Invoke(fixture.Session, new object[] { snapshot, position })!;
-    private static PanelGeometryInfo? Details(OutputChecks.Fixture fixture, PanelSnapshot snapshot, int position) =>
+    private static PanelGeometryInfo? Details(PanelHostFixture.Fixture fixture, PanelSnapshot snapshot, int position) =>
         (PanelGeometryInfo?)fixture.Session.GetType().GetMethod("GetGeometryDetails", Private)!.Invoke(fixture.Session, new object[] { snapshot, position });
-    private static void RequestVisible(OutputChecks.Fixture fixture, PanelSnapshot snapshot, params int[] positions) =>
+    private static void RequestVisible(PanelHostFixture.Fixture fixture, PanelSnapshot snapshot, params int[] positions) =>
         fixture.Session.GetType().GetMethod("RequestGeometryMeasurements", Private)!.Invoke(fixture.Session, new object[] { snapshot, positions });
-    private static Task<bool> Measure(OutputChecks.Fixture fixture, PanelSnapshot snapshot, CancellationToken token, params int[] positions) =>
+    private static Task<bool> Measure(PanelHostFixture.Fixture fixture, PanelSnapshot snapshot, CancellationToken token, params int[] positions) =>
         (Task<bool>)fixture.Session.GetType().GetMethod("MeasureGeometryAsync", Private)!.Invoke(fixture.Session, new object[] { snapshot, positions, token })!;
-    private static bool WaitingForCapacity(OutputChecks.Fixture fixture)
+    private static bool WaitingForCapacity(PanelHostFixture.Fixture fixture)
     {
         var queue = fixture.Session.GetType().GetField("_geometry", Private)!.GetValue(fixture.Session)!;
         return queue.GetType().GetField("_capacityWait", Private)!.GetValue(queue) != null;

@@ -33,8 +33,15 @@ switch (behavior) {
   case 'wrong-core-hash': report.core.sha256 = '0'.repeat(64); break;
   case 'native-failure': break;
   case 'timeout': report.completed = false; report.phase = 'fixture'; break;
+  case 'startup-failure':
+  case 'startup-timeout':
+    report.completed = false; report.passed = false; report.assertionCount = 0;
+    report.phase = behavior === 'startup-failure' ? 'host-startup-failed' : 'host-startup';
+    report.failure = behavior === 'startup-failure' ? 'COMException: E_FAIL\nStartupInProcess' : null;
+    report.hostMode = 'inactive-desktop';
+    break;
   default: throw new Error(`Unknown fake child behavior ${behavior}`);
 }
 writeFileSync(result, JSON.stringify(report));
-if (behavior === 'timeout') setTimeout(() => {}, 30000);
-else if (behavior === 'native-failure' || behavior === 'failed-check') process.exitCode = 7;
+if (behavior === 'timeout' || behavior === 'startup-timeout') setTimeout(() => {}, 30000);
+else if (behavior === 'native-failure' || behavior === 'failed-check' || behavior === 'startup-failure') process.exitCode = 7;
