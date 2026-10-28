@@ -9,7 +9,7 @@ namespace BetterGhPanel.UI
     internal enum CanvasMenuKind { None, Type, Sort, Branch, Units, SearchMode, Comparison, Preview, Statistics }
     internal enum PanelPreviewMode { Selected, FilteredResults, Off }
     internal enum CanvasComparison { GreaterThan, AtLeast, LessThan, AtMost, Equal, NotEqual }
-    internal enum CanvasDecimalChoice { Automatic, Custom }
+    internal enum CanvasNumberSetting { Automatic, Custom, RoundingOff, RoundingFactor }
 
     internal readonly struct CanvasChoice<T>
     {
@@ -28,10 +28,10 @@ namespace BetterGhPanel.UI
 
     internal readonly struct CanvasUnitChoice
     {
-        internal CanvasUnitChoice(PanelUnitConversion conversion) { Conversion = conversion; Decimals = null; }
-        internal CanvasUnitChoice(CanvasDecimalChoice decimals) { Conversion = null; Decimals = decimals; }
+        internal CanvasUnitChoice(PanelUnitConversion conversion) { Conversion = conversion; Setting = null; }
+        internal CanvasUnitChoice(CanvasNumberSetting decimals) { Conversion = null; Setting = decimals; }
         internal PanelUnitConversion? Conversion { get; }
-        internal CanvasDecimalChoice? Decimals { get; }
+        internal CanvasNumberSetting? Setting { get; }
     }
 
     internal readonly struct CanvasComparisonChoice
@@ -69,6 +69,9 @@ namespace BetterGhPanel.UI
             new CanvasChoice<PanelSearchMode>(PanelSearchMode.Length, "Geometry · length"),
             new CanvasChoice<PanelSearchMode>(PanelSearchMode.Area, "Geometry · area"),
             new CanvasChoice<PanelSearchMode>(PanelSearchMode.Volume, "Geometry · volume"),
+            new CanvasChoice<PanelSearchMode>(PanelSearchMode.X, "Point / vector · X"),
+            new CanvasChoice<PanelSearchMode>(PanelSearchMode.Y, "Point / vector · Y"),
+            new CanvasChoice<PanelSearchMode>(PanelSearchMode.Z, "Point / vector · Z"),
             new CanvasChoice<PanelSearchMode>(PanelSearchMode.ListLength, "List length · per branch")
         };
         private static readonly CanvasComparisonChoice[] ComparisonChoices =
@@ -92,8 +95,10 @@ namespace BetterGhPanel.UI
             new CanvasUnitChoice(PanelUnitConversion.DegreesToRadians),
             new CanvasUnitChoice(PanelUnitConversion.CubicMillimetersToCubicMeters),
             new CanvasUnitChoice(PanelUnitConversion.CubicMetersToCubicMillimeters),
-            new CanvasUnitChoice(CanvasDecimalChoice.Automatic),
-            new CanvasUnitChoice(CanvasDecimalChoice.Custom)
+            new CanvasUnitChoice(CanvasNumberSetting.Automatic),
+            new CanvasUnitChoice(CanvasNumberSetting.Custom),
+            new CanvasUnitChoice(CanvasNumberSetting.RoundingOff),
+            new CanvasUnitChoice(CanvasNumberSetting.RoundingFactor)
         };
         private PanelSnapshot _snapshot = PanelSnapshot.Empty;
         private PanelQueryResult? _statisticsResult;
@@ -291,7 +296,7 @@ namespace BetterGhPanel.UI
             return true;
         }
 
-        internal bool IsSelected(int index, PanelQueryOptions options, PanelUnitConversion conversion, int decimals, PanelPreviewMode preview = PanelPreviewMode.Selected, bool showItemOrder = false)
+        internal bool IsSelected(int index, PanelQueryOptions options, PanelUnitConversion conversion, int decimals, PanelPreviewMode preview = PanelPreviewMode.Selected, bool showItemOrder = false, double roundUpFactor = 0)
         {
             if (Kind == CanvasMenuKind.Statistics) return false;
             if (Kind == CanvasMenuKind.Preview)
@@ -302,8 +307,10 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.Units)
             {
                 var choice = UnitChoiceAt(index);
+                if (choice.Setting == CanvasNumberSetting.RoundingOff) return roundUpFactor == 0;
+                if (choice.Setting == CanvasNumberSetting.RoundingFactor) return roundUpFactor > 0;
                 return choice.Conversion.HasValue ? choice.Conversion == conversion :
-                    choice.Decimals == CanvasDecimalChoice.Automatic ? decimals < 0 : decimals >= 0;
+                    choice.Setting == CanvasNumberSetting.Automatic ? decimals < 0 : decimals >= 0;
             }
             if (Kind == CanvasMenuKind.Sort) return SortModeAt(index) == options.SortMode;
             if (Kind == CanvasMenuKind.SearchMode) return SearchModeAt(index) == options.SearchMode;
@@ -330,7 +337,7 @@ namespace BetterGhPanel.UI
         internal CanvasUnitChoice UnitChoiceAt(int index) => UnitChoices[index];
         internal CanvasComparisonChoice ComparisonChoiceAt(int index) => ComparisonChoices[index];
         internal bool IsSectionStart(int index) =>
-            Kind == CanvasMenuKind.Units && UnitChoiceAt(index).Decimals == CanvasDecimalChoice.Automatic ||
+            Kind == CanvasMenuKind.Units && (UnitChoiceAt(index).Setting == CanvasNumberSetting.Automatic || UnitChoiceAt(index).Setting == CanvasNumberSetting.RoundingOff) ||
             Kind == CanvasMenuKind.Statistics && index == CanvasStatistics.OverviewRows ||
             Kind == CanvasMenuKind.Preview && PreviewChoiceAt(index).IsItemOrder ||
             Kind == CanvasMenuKind.Comparison && ComparisonChoiceAt(index).IsDisplayValue;
@@ -340,7 +347,8 @@ namespace BetterGhPanel.UI
             PreviewChoices.FirstOrDefault(choice => choice.Mode == mode).Label ?? mode.ToString();
         internal static bool IsComparisonMode(PanelSearchMode mode) =>
             mode == PanelSearchMode.Value || mode == PanelSearchMode.Length || mode == PanelSearchMode.Area ||
-            mode == PanelSearchMode.Volume || mode == PanelSearchMode.ListLength;
+            mode == PanelSearchMode.Volume || mode == PanelSearchMode.ListLength ||
+            mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z;
         internal static string SearchHint(PanelQueryOptions options)
         {
             string prefix = options.SearchMode == PanelSearchMode.Regex ? ".* " :
@@ -394,7 +402,7 @@ namespace BetterGhPanel.UI
             return "";
         }
 
-        internal string Label(int index, int decimals = PanelUnits.AutomaticDecimals)
+        internal string Label(int index, int decimals = PanelUnits.AutomaticDecimals, double roundUpFactor = 0)
         {
             if (Kind == CanvasMenuKind.Statistics) return CanvasStatistics.Label(_statisticsResult!, index, decimals);
             if (Kind == CanvasMenuKind.Preview) return PreviewChoiceAt(index).Label;
@@ -402,7 +410,10 @@ namespace BetterGhPanel.UI
             {
                 var choice = UnitChoiceAt(index);
                 if (choice.Conversion.HasValue) return PanelUnits.Label(choice.Conversion.Value);
-                if (choice.Decimals == CanvasDecimalChoice.Automatic) return "Decimals: automatic";
+                if (choice.Setting == CanvasNumberSetting.RoundingOff) return "Rounding: off";
+                if (choice.Setting == CanvasNumberSetting.RoundingFactor) return "Round up by factor…" +
+                    (roundUpFactor > 0 ? " (" + roundUpFactor.ToString("G6", System.Globalization.CultureInfo.InvariantCulture) + ")" : "");
+                if (choice.Setting == CanvasNumberSetting.Automatic) return "Decimals: automatic";
                 return "Decimal places…" + (decimals >= 0 ? " (" + decimals + ")" : "");
             }
             if (Kind == CanvasMenuKind.Type)

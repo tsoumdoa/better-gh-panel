@@ -7,13 +7,14 @@ namespace BetterGhPanel.Core
 
         public PanelGeometryInfo(string description, double? value = null, int power = 1, string units = "units",
             string metricName = "Length", string metricLabel = "L", bool canMeasure = false, string? details = null,
-            bool measurementUnavailable = false)
-            : this(description, value, power, units, metricName, metricLabel, canMeasure, details, measurementUnavailable, null)
+            bool measurementUnavailable = false, bool hasArea = false, double? areaValue = null)
+            : this(description, value, power, units, metricName, metricLabel, canMeasure, details, measurementUnavailable, null, hasArea, areaValue)
         {
         }
 
         private PanelGeometryInfo(string description, double? value, int power, string units,
-            string metricName, string metricLabel, bool canMeasure, string? details, bool measurementUnavailable, double? additionalLength)
+            string metricName, string metricLabel, bool canMeasure, string? details, bool measurementUnavailable, double? additionalLength,
+            bool hasArea, double? areaValue)
         {
             Description = description;
             Value = value;
@@ -25,6 +26,8 @@ namespace BetterGhPanel.Core
             Details = details ?? description;
             MeasurementUnavailable = measurementUnavailable;
             _additionalLength = additionalLength;
+            HasArea = hasArea;
+            AreaValue = areaValue;
         }
 
         public string Description { get; }
@@ -37,19 +40,22 @@ namespace BetterGhPanel.Core
         public string Details { get; }
         /// <summary>A completed measurement failed; unlike a pending status, this belongs to stable row presentation.</summary>
         public bool MeasurementUnavailable { get; }
+        public bool HasArea { get; }
+        public double? AreaValue { get; }
 
         public PanelGeometryInfo WithUnavailableMeasurement() =>
-            new PanelGeometryInfo(Description, null, Power, Units, MetricName, MetricLabel, false, Details, true, _additionalLength);
+            new PanelGeometryInfo(Description, null, Power, Units, MetricName, MetricLabel, false, Details, true, _additionalLength, HasArea, null);
 
         /// <summary>Includes a second, unit-aware length in details without changing the compact metric.</summary>
         public PanelGeometryInfo WithAdditionalLength(double length) =>
-            new PanelGeometryInfo(Description, Value, Power, Units, MetricName, MetricLabel, CanMeasure, Details, MeasurementUnavailable, length);
+            new PanelGeometryInfo(Description, Value, Power, Units, MetricName, MetricLabel, CanMeasure, Details, MeasurementUnavailable, length, HasArea, AreaValue);
 
         public string FormatCompact(PanelUnitConversion conversion, int decimals) => Description +
             (Value.HasValue ? " · " + MetricLabel + " " + FormatValue(conversion, decimals) : "");
 
         public string FormatDetails(PanelUnitConversion conversion, int decimals) =>
             (Value.HasValue ? MetricName + ": " + FormatValue(conversion, decimals) + "\n" : "") +
+            (AreaValue.HasValue ? "Area: " + PanelUnits.FormatGeometry(AreaValue.Value, 2, Units, conversion, decimals) + "\n" : "") +
             (_additionalLength.HasValue ? "Length: " + PanelUnits.FormatGeometry(_additionalLength.Value, 1, Units, conversion, decimals) + "\n" : "") +
             Details;
 

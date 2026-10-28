@@ -11,9 +11,9 @@ namespace BetterGhPanel.Runtime
             => conversion == PanelUnitConversion.None ? source : ApplyCaptured(source, conversion, CapturedScalar.Capture(source));
 
         internal static GH_Structure<IGH_Goo> ApplyCaptured(GH_Structure<IGH_Goo> source, PanelUnitConversion conversion,
-            CapturedScalar[] captured)
+            CapturedScalar[] captured, double roundUpFactor = 0)
         {
-            if (conversion == PanelUnitConversion.None) return source;
+            if (conversion == PanelUnitConversion.None && roundUpFactor == 0) return source;
             var result = new GH_Structure<IGH_Goo>();
             int position = 0;
             for (int b = 0; b < source.PathCount; b++)
@@ -26,18 +26,18 @@ namespace BetterGhPanel.Runtime
                     // Invalid scalar goo can contain finite unset sentinels. Scaling
                     // those would turn an invalid input into an ordinary valid number.
                     var value = captured[position++];
-                    if (value.IsNumeric && value.IsValid) converted = new GH_Number(PanelUnits.Convert(value.NumericValue, conversion));
+                    if (value.IsNumeric && value.IsValid) converted = new GH_Number(PanelUnits.Transform(value.NumericValue, conversion, roundUpFactor));
                     result.Append(converted, path);
                 }
             }
             return result;
         }
 
-        internal static bool InputsStillMatch(GH_Structure<IGH_Goo>? source, GH_Structure<IGH_Goo>? converted, PanelUnitConversion conversion)
-            => InputsStillMatchWithVisits(source, converted, conversion, out _);
+        internal static bool InputsStillMatch(GH_Structure<IGH_Goo>? source, GH_Structure<IGH_Goo>? converted, PanelUnitConversion conversion, double roundUpFactor = 0)
+            => InputsStillMatchWithVisits(source, converted, conversion, out _, roundUpFactor);
 
         internal static bool InputsStillMatchWithVisits(GH_Structure<IGH_Goo>? source, GH_Structure<IGH_Goo>? converted,
-            PanelUnitConversion conversion, out int visits)
+            PanelUnitConversion conversion, out int visits, double roundUpFactor = 0)
         {
             visits = 0;
             if (source == null || converted == null || source.PathCount != converted.PathCount) return false;
@@ -48,20 +48,20 @@ namespace BetterGhPanel.Runtime
                 {
                     visits++;
                     var original = source.Branches[b][i]; var result = converted.Branches[b][i];
-                    if (conversion == PanelUnitConversion.None) { if (!ReferenceEquals(original, result)) return false; continue; }
+                    if (conversion == PanelUnitConversion.None && roundUpFactor == 0) { if (!ReferenceEquals(original, result)) return false; continue; }
                     if (original?.GetType() == typeof(GH_Number))
                     {
                         var number = (GH_Number)original;
                         if (!number.IsValid) { if (!ReferenceEquals(original, result)) return false; continue; }
                         if (result?.GetType() != typeof(GH_Number) ||
-                            BitConverter.DoubleToInt64Bits(((GH_Number)result).Value) != BitConverter.DoubleToInt64Bits(PanelUnits.Convert(number.Value, conversion))) return false;
+                            BitConverter.DoubleToInt64Bits(((GH_Number)result).Value) != BitConverter.DoubleToInt64Bits(PanelUnits.Transform(number.Value, conversion, roundUpFactor))) return false;
                     }
                     else if (original?.GetType() == typeof(GH_Integer))
                     {
                         var integer = (GH_Integer)original;
                         if (!integer.IsValid) { if (!ReferenceEquals(original, result)) return false; continue; }
                         if (result?.GetType() != typeof(GH_Number) ||
-                            BitConverter.DoubleToInt64Bits(((GH_Number)result).Value) != BitConverter.DoubleToInt64Bits(PanelUnits.Convert(integer.Value, conversion))) return false;
+                            BitConverter.DoubleToInt64Bits(((GH_Number)result).Value) != BitConverter.DoubleToInt64Bits(PanelUnits.Transform(integer.Value, conversion, roundUpFactor))) return false;
                     }
                     else if (!ReferenceEquals(original, result)) return false;
                 }

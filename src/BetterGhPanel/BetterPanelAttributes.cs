@@ -663,7 +663,7 @@ namespace BetterGhPanel
             Control(g, _selectAll, "Select all", small, trim, current && selectableCount > 0 && selected == selectableCount);
             Control(g, _statistics, "Stats", small, trim, current && _menu.Kind == CanvasMenuKind.Statistics);
             string output = result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count
-                ? "out: filtered" : PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None ? "out: tools" : "out: source";
+                ? "out: filtered" : PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.RoundUpFactor > 0 ? "out: tools" : "out: source";
             string status = PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
                 _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
                 !string.IsNullOrEmpty(PanelOwner.PreviewStatus) ? PanelOwner.PreviewStatus :
@@ -678,9 +678,10 @@ namespace BetterGhPanel
             TreeToolIcons.Draw(g, _reverse, TreeToolIcon.Reverse, PanelOwner.ReverseTree);
             TreeToolIcons.Draw(g, _createSet, TreeToolIcon.CreateSet, PanelOwner.CreateSetTree);
             string unitLabel = PanelOwner.UnitConversion == PanelUnitConversion.None ? "Units" : PanelUnits.Label(PanelOwner.UnitConversion).Replace(" → ", "→");
-            string precision = PanelOwner.DecimalPlaces < 0 ? "" : $" · {PanelOwner.DecimalPlaces}dp";
+            string precision = (PanelOwner.DecimalPlaces < 0 ? "" : $" · {PanelOwner.DecimalPlaces}dp") +
+                (PanelOwner.RoundUpFactor > 0 ? " · ↑" + PanelOwner.RoundUpFactor.ToString("G4", System.Globalization.CultureInfo.InvariantCulture) : "");
             DropdownControl(g, _units, unitLabel + precision, small, trim,
-                PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.DecimalPlaces >= 0);
+                PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor > 0);
         }
 
         private RectangleF Thumb()
@@ -713,7 +714,7 @@ namespace BetterGhPanel
             {
                 int index = i + _menu.Offset;
                 var row = new RectangleF(_menu.Bounds.X + 1, _menu.Bounds.Y + i * 20, _menu.Bounds.Width - 2, 20);
-                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder);
+                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor);
                 if (index == _menu.HoveredIndex || selected)
                     Fill(g, index == _menu.HoveredIndex ? Color.FromArgb(226, 236, 226) : Color.FromArgb(242, 247, 241), row);
                 if (_menu.IsSectionStart(index))
@@ -723,7 +724,7 @@ namespace BetterGhPanel
                     using (var check = new Pen(Accent, 1.3f))
                         g.DrawLines(check, new[] { new PointF(row.X + 7, row.Y + 10), new PointF(row.X + 10, row.Y + 13), new PointF(row.X + 16, row.Y + 7) });
                 float inset = _menu.Kind == CanvasMenuKind.Statistics ? 7 : 23;
-                Text(g, _menu.Label(index, PanelOwner.DecimalPlaces), _menu.Kind == CanvasMenuKind.Branch ? mono : small,
+                Text(g, _menu.Label(index, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor), _menu.Kind == CanvasMenuKind.Branch ? mono : small,
                     selected ? Accent : Ink, new RectangleF(row.X + inset, row.Y, row.Width - inset - 7, 20), trim);
                 var target = new RectangleF(_menu.Bounds.X, row.Y, _menu.Bounds.Width, row.Height);
                 if (TargetPainted(g, target)) _menu.MarkRowPainted(i);
@@ -1074,8 +1075,18 @@ namespace BetterGhPanel
             {
                 if (selectedUnit!.Value.Conversion.HasValue)
                     PanelOwner.SetUnits(selectedUnit.Value.Conversion!.Value, PanelOwner.DecimalPlaces);
-                else if (selectedUnit.Value.Decimals == CanvasDecimalChoice.Automatic)
+                else if (selectedUnit.Value.Setting == CanvasNumberSetting.Automatic)
                     PanelOwner.SetUnits(PanelOwner.UnitConversion, PanelUnits.AutomaticDecimals);
+                else if (selectedUnit.Value.Setting == CanvasNumberSetting.RoundingOff)
+                    PanelOwner.SetUnits(PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, 0);
+                else if (selectedUnit.Value.Setting == CanvasNumberSetting.RoundingFactor)
+                    CanvasTextInput.Show(canvas, PanelOwner, _units,
+                        (PanelOwner.RoundUpFactor > 0 ? PanelOwner.RoundUpFactor : 1).ToString("R", System.Globalization.CultureInfo.InvariantCulture), text =>
+                    {
+                        if (double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double factor) &&
+                            PanelUnits.IsRoundingFactor(factor))
+                            PanelOwner.SetUnits(PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, factor);
+                    });
                 else CanvasTextInput.Show(canvas, PanelOwner, _units, Math.Max(0, PanelOwner.DecimalPlaces).ToString(), text =>
                 {
                     if (int.TryParse(text, out var decimals) && decimals >= 0 && decimals <= PanelUnits.MaximumDecimals)
@@ -1368,7 +1379,7 @@ namespace BetterGhPanel
             {
                 e.Title = "Units and decimals";
                 e.Text = "Numeric output conversion · geometry metric display";
-                e.Description = "Choose length (mm ↔ m), area (mm² ↔ m²), volume (mm³ ↔ m³), or angle (rad ↔ deg). Geometry metrics convert only matching model units and dimensions; the geometry itself is unchanged. Decimal places (0–12 or automatic) format metrics, numeric rows, copied numeric values and statistics without changing output precision.";
+                e.Description = "Choose length (mm ↔ m), area (mm² ↔ m²), volume (mm³ ↔ m³), or angle (rad ↔ deg). Geometry metrics and XYZ components convert only matching model units and dimensions. Round up by factor changes numeric output after conversion: 12.1 → 15 and −12.1 → −10 with factor 5. Enter a positive finite factor using a decimal point; Rounding: off disables it. Decimals (0–12 or automatic) format values without changing output precision.";
             }
             else if (_trim.Contains(point) || _simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point) || _createSet.Contains(point))
             {
@@ -1414,7 +1425,7 @@ namespace BetterGhPanel
                     ? "Match displayed row text with a case-insensitive regular expression, such as ^Wall or beam-[0-9]+. Matches use the selected units and decimal formatting. Empty text clears the filter."
                     : options.SearchMode == PanelSearchMode.ListLength
                     ? "Compare the number of items in each branch using >, >=, <, <=, = or !=. A number alone means equal. Counts include all items after tree tools and before type or invalid-only filters. Matching branches keep their items subject to those filters; = 0 keeps empty branches when no item filters are active. Empty text clears the filter."
-                    : "Compare full-precision values using >, >=, <, <=, = or !=. A number alone means equal. Geometry uses the selected display units. Length: curves, including circle circumference. Area: rectangles, surfaces and open Breps. Volume: boxes and closed Breps. Rows without that measurement are excluded. Empty text clears the filter.";
+                    : "Compare full-precision values using >, >=, <, <=, = or !=. A number alone means equal. Geometry uses matching display units. Length: curves, including circle circumference. Area: rectangles, surfaces, Breps and meshes. Volume: boxes, closed Breps and closed meshes. X/Y/Z: point or vector components. Rows without that property are excluded. Empty text clears the filter.";
                 if (options.DisplayFilterValue)
                     e.Description = "Display the selected value without a comparison. List length shows one count per branch after tree tools, including empty branches. Other modes show a value per item; n/a means the item has no eligible value. Type and Paths filters still apply. Outputs retain their typed data. Choose a comparison or edit the search to filter again.";
                 else e.Description += " Choose Display value in the operator menu to inspect values without a comparison.";

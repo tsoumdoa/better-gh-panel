@@ -43,7 +43,7 @@ namespace BetterGhPanel.Runtime
             if (type == typeof(GH_Surface) && geometry is Brep surface) return SurfaceInfo(surface);
             if (type == typeof(GH_Brep) && geometry is Brep brep) return BrepInfo(brep);
             if (type == typeof(GH_Mesh) && geometry is Mesh mesh)
-                return new PanelGeometryInfo("Mesh · " + mesh.Vertices.Count + " vertices · " + Count(mesh.Faces.Count, "face"));
+                return MeshInfo(mesh);
             return null;
         }
 
@@ -102,6 +102,7 @@ namespace BetterGhPanel.Runtime
             {
                 if (holder.GetType() == typeof(GH_Curve)) owned = ((Curve)source).DuplicateCurve();
                 else if (holder.GetType() == typeof(GH_Surface) || holder.GetType() == typeof(GH_Brep)) owned = ((Brep)source).DuplicateBrep();
+                else if (holder.GetType() == typeof(GH_Mesh)) owned = ((Mesh)source).DuplicateMesh();
                 if (owned == null || !SafeGooInspection.IsCurrentMeasurementSource(holder, source, reference)) return null;
                 bool surface = holder.GetType() == typeof(GH_Surface);
                 var worker = owned;
@@ -238,7 +239,17 @@ namespace BetterGhPanel.Runtime
                     string? surfaceDetails = surfaceShape == null ? null : "Planarity: " + (surfaceShape == "planar" ? "Planar" : "Nonplanar");
                     if (surface || !brep.IsSolid) return Area(summary, brep, units, surfaceShape, surfaceDetails);
                     using (var mass = VolumeMassProperties.Compute(brep, true, false, false, false))
-                        return mass == null ? null : Metric(summary, Math.Abs(mass.Volume), 3, units, "Volume", "V", surfaceShape, surfaceDetails);
+                    using (var area = AreaMassProperties.Compute(brep, true, false, false, false))
+                        return SolidMetric(summary, mass?.Volume, area?.Area, units, surfaceShape, surfaceDetails);
+                case Mesh mesh:
+                    var meshSummary = MeshInfo(mesh);
+                    using (var area = AreaMassProperties.Compute(mesh, true, false, false, false))
+                    {
+                        if (!mesh.IsClosed)
+                            return area == null ? null : Metric(meshSummary, area.Area, 2, units, "Area", "A");
+                        using (var mass = VolumeMassProperties.Compute(mesh, true, false, false, false))
+                            return SolidMetric(meshSummary, mass?.Volume, area?.Area, units);
+                    }
                 default: return null;
             }
         }
@@ -278,9 +289,26 @@ namespace BetterGhPanel.Runtime
             return new PanelGeometryInfo(
                 "Brep · " + Closed(solid) + " · " + Count(brep.Faces.Count, "face"), power: solid ? 3 : 2,
                 metricName: solid ? "Volume" : "Area", metricLabel: solid ? "V" : "A", canMeasure: true,
+                hasArea: solid,
                 details: "Topology: " + (solid ? "Closed solid" : "Open") + "\nFaces: " + brep.Faces.Count +
                     "\nEdges: " + brep.Edges.Count + "\nVertices: " + brep.Vertices.Count);
         }
+
+        private static PanelGeometryInfo MeshInfo(Mesh mesh)
+        {
+            bool closed = mesh.IsClosed;
+            int vertices = mesh.Vertices.Count, faces = mesh.Faces.Count;
+            return new PanelGeometryInfo("Mesh · " + Closed(closed) + " · " + vertices + " vertices · " + Count(faces, "face"),
+                power: closed ? 3 : 2, metricName: closed ? "Volume" : "Area", metricLabel: closed ? "V" : "A",
+                canMeasure: true, hasArea: closed,
+                details: "Topology: " + (closed ? "Closed" : "Open") + "\nVertices: " + vertices + "\nFaces: " + faces);
+        }
+
+        private static PanelGeometryInfo SolidMetric(PanelGeometryInfo summary, double? volume, double? area, string units,
+            string? shape = null, string? details = null) => new PanelGeometryInfo(
+                summary.Description + (shape == null ? "" : " · " + shape), volume.HasValue ? Math.Abs(volume.Value) : (double?)null,
+                3, units, "Volume", "V", details: summary.Details + (details == null ? "" : "\n" + details),
+                measurementUnavailable: !volume.HasValue || !area.HasValue, hasArea: true, areaValue: area);
 
         private static PanelGeometryInfo Metric(PanelGeometryInfo summary, double value, int power, string units,
             string name, string label, string? shape = null, string? details = null) => new PanelGeometryInfo(

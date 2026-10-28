@@ -410,6 +410,7 @@ namespace BetterGhPanel.Runtime
                      inner == typeof(NurbsCurve) || inner == typeof(PolyCurve)) && ReferenceEquals(((GH_Curve)holder).Value, source);
                 if (type == typeof(GH_Surface) && inner == typeof(Brep)) current = ReferenceEquals(((GH_Surface)holder).Value, source);
                 if (type == typeof(GH_Brep) && inner == typeof(Brep)) current = ReferenceEquals(((GH_Brep)holder).Value, source);
+                if (type == typeof(GH_Mesh) && inner == typeof(Mesh)) current = ReferenceEquals(((GH_Mesh)holder).Value, source);
                 return current && MeasurementSourceCanRead(source);
             }
             catch (Exception) { return false; }
