@@ -16,12 +16,12 @@ Packaging finds Yak in the standard Rhino 8 installation. On a machine without R
 
 McNeel's separate public Yak registry still serves the original packages. Published registry versions cannot be overwritten; yanking hides them from searches but retains direct installation. Removing those stored copies requires McNeel support. See the [public-repository cleanup notes](maintainability.md#public-repository-cleanup).
 
-The current published beta is [`0.1.21-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.1.21-beta), available on Yak and GitHub Releases. The resulting `artifacts/better-gh-panel-0.1.21-beta/` contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `better-gh-panel-0.1.21-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
+The current release candidate is `0.1.22-beta`, a version-only successor to the published `0.1.21-beta`. Final-package validation and publication are pending. The resulting `artifacts/better-gh-panel-0.1.22-beta/` contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `better-gh-panel-0.1.22-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
 ```text
-yak install --source artifacts/better-gh-panel-0.1.21-beta better-gh-panel 0.1.21-beta
+yak install --source artifacts/better-gh-panel-0.1.22-beta better-gh-panel 0.1.22-beta
 ```
 
 Replace `yak` with the full executable path if it is not on PATH. On Windows it is normally `C:\Program Files\Rhino 8\System\Yak.exe`; on Mac it is normally `/Applications/Rhino 8.app/Contents/Resources/bin/yak`. Restart Rhino and open Grasshopper afterward. Local install uses Yak's package directory and avoids copying a second `.gha` into the Grasshopper Libraries folder.

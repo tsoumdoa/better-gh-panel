@@ -14,6 +14,8 @@ Created in [T3 Code](https://t3.codes).
 
 ## Native MVP
 
+**Release candidate `0.1.22-beta`:** version-only successor to `0.1.21-beta`, with the same connected-data inspection features and fixes. Final-package validation and publication are pending.
+
 **Beta `0.1.21-beta` — connected-data inspection and maintenance:** the search menu offers comparison modes supported by the primary input and retains an active saved mode when the input changes. Geometry groups show their name and direct object count. Empty branches remain visible, empty text is displayed as **<empty>** while its value stays empty, and a read-only full-value window makes long rows scrollable. Values whose validity cannot be verified are distinguished from invalid values; saved filters are preserved and can show an input warning. This candidate also reorganizes measurement ownership, selection indexing and native test isolation. Published on Yak and [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.1.21-beta). The exact archive passed all 66 required Windows Rhino fixtures; earlier intermittent clipboard failures and remaining host coverage gaps are recorded in the release notes and [PR #37](https://github.com/tsoumdoa/better-gh-panel/pull/37).
 
 **Patch `0.1.20-beta.7` — sets of displayed values:** after filters, unit conversion and decimal formatting, equal displayed values become one entry. D and S output the displayed numbers themselves (or displayed text for nonnumeric rows). For example, displayed curve lengths `6.28, 6.28, 2.00` become numeric `6.28, 2`; displayed list lengths `3, 3, 5, 0, 0` become `3, 5, 0`, including the zero from an empty branch. Item sets stay per branch; Flatten combines them. List-length sets group across branch rows and keep the first matching path for each count. Turn Create set off to restore the original typed values and precision. [List-length set](docs/images/panel-display-set-list-length.png) · [Geometry-length set](docs/images/panel-display-set-length.png).
@@ -151,7 +153,7 @@ dotnet test BetterGhPanel.sln -c Release
 node scripts/package.mjs
 ```
 
-The published beta artifact is `artifacts/better-gh-panel-0.1.21-beta/better-gh-panel-0.1.21-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The current candidate artifact is `artifacts/better-gh-panel-0.1.22-beta/better-gh-panel-0.1.22-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino.
 
