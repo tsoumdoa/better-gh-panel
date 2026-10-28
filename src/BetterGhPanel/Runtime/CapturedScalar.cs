@@ -50,15 +50,15 @@ namespace BetterGhPanel.Runtime
             return values;
         }
 
-        internal static CapturedScalar[] Convert(CapturedScalar[] source, PanelUnitConversion conversion)
+        internal static CapturedScalar[] Convert(CapturedScalar[] source, PanelUnitConversion conversion, double roundUpFactor = 0)
         {
-            if (conversion == PanelUnitConversion.None) return source;
+            if (conversion == PanelUnitConversion.None && roundUpFactor == 0) return source;
             var result = (CapturedScalar[])source.Clone();
             for (int i = 0; i < result.Length; i++)
             {
                 var value = source[i];
                 if (!value.IsNumeric || !value.IsValid) continue;
-                double converted = PanelUnits.Convert(value._number, conversion);
+                double converted = PanelUnits.Transform(value._number, conversion, roundUpFactor);
                 result[i] = new CapturedScalar(Number, converted, null, RhinoMath.IsValidDouble(converted));
             }
             return result;

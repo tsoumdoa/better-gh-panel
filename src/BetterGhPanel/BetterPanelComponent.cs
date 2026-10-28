@@ -90,6 +90,7 @@ namespace BetterGhPanel
         internal bool HasTreeOperations => TrimDepth > 0 || FlattenTree || ReverseTree || SimplifyTree || CreateSetTree;
         internal PanelUnitConversion UnitConversion { get; private set; }
         internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
+        internal double RoundUpFactor { get; private set; }
 
         public BetterPanelComponent() : base("Panel+", "Panel+",
             "Inspect and manipulate data trees on the canvas. Tree tools, units and filters change output. Create set emits unique displayed numbers or text at the displayed precision; otherwise output retains original types and precision. Sorting changes view order.",
@@ -266,7 +267,7 @@ namespace BetterGhPanel
             }
             bool UnitsCurrent()
             {
-                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count);
+                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count, RoundUpFactor);
                 visits += count; return result;
             }
             bool StructuresCurrent()
@@ -360,7 +361,7 @@ namespace BetterGhPanel
         internal void ResetPanel()
         {
             var options = Session.Options;
-            bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None;
+            bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0;
             bool settingsChanged = outputChanged || OutputScope != PanelOutputScope.Filtered || DecimalPlaces != PanelUnits.AutomaticDecimals ||
                 !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.TypeName != null || options.BranchPath != null ||
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
@@ -368,6 +369,7 @@ namespace BetterGhPanel
             TrimDepth = 0;
             FlattenTree = ReverseTree = SimplifyTree = CreateSetTree = false;
             UnitConversion = PanelUnitConversion.None;
+            RoundUpFactor = 0;
             DecimalPlaces = PanelUnits.AutomaticDecimals;
             OutputScope = PanelOutputScope.Filtered;
             ResetPanelView();
@@ -458,15 +460,18 @@ namespace BetterGhPanel
                 (doc.FindObject(_component, false) as BetterPanelComponent)?.ApplyPanelMinimized(minimized);
         }
 
-        internal void SetUnits(PanelUnitConversion conversion, int decimals)
+        internal void SetUnits(PanelUnitConversion conversion, int decimals, double? roundUpFactor = null)
         {
             if (!Enum.IsDefined(typeof(PanelUnitConversion), conversion)) conversion = PanelUnitConversion.None;
             decimals = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, decimals));
-            bool conversionChanged = UnitConversion != conversion;
+            double factor = roundUpFactor ?? RoundUpFactor;
+            if (!PanelUnits.IsRoundingFactor(factor)) factor = 0;
+            bool conversionChanged = UnitConversion != conversion || RoundUpFactor != factor;
             if (!conversionChanged && DecimalPlaces == decimals) return;
             CancelPendingCopy();
-            RecordUndoEvent("Panel+ units and decimals");
+            RecordUndoEvent("Panel+ units, rounding and decimals");
             UnitConversion = conversion;
+            RoundUpFactor = factor;
             DecimalPlaces = decimals;
             OnPingDocument()?.Modified();
             if (conversionChanged)
@@ -806,9 +811,10 @@ namespace BetterGhPanel
                     tree = PanelTreeOperations.ApplyWithSources(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out var retainedSources);
                     var preConversionTree = tree;
                     var conversion = UnitConversion;
+                    var roundUpFactor = RoundUpFactor;
                     var scalarInputs = CapturedScalar.Capture(preConversionTree);
-                    var queryScalars = CapturedScalar.Convert(scalarInputs, conversion);
-                    var queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.ApplyCaptured(preConversionTree, conversion, scalarInputs));
+                    var queryScalars = CapturedScalar.Convert(scalarInputs, conversion, roundUpFactor);
+                    var queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.ApplyCaptured(preConversionTree, conversion, scalarInputs, roundUpFactor));
                     var inputSeed = SnapshotCapture.PrepareInputs(queryTree);
                     CapturePairedInput(da, inputTree, queryTree, retainedSources, out var pairedTree, out var pairedError,
                         out var livePairedTree, out var capturedPairedTree, out bool pairedPresent);
@@ -818,9 +824,9 @@ namespace BetterGhPanel
                         conversion, units, retainedSources, CaptureObserverForTesting, GraphVisitObserverForTesting, queryScalars, inputSeed);
                     StructureObserverForTesting?.Invoke(liveInputTree, livePairedTree);
                     if (!Current()) return;
-                    bool hasGeometry = snapshot.Rows.Any(row => row.GeometryInfo != null);
+                    bool hasGeometry = snapshot.Rows.Any(row => row.GeometryInfo != null || row.Components != null);
                     if (!SnapshotCapture.MeasurementSourcesCurrent(sources, measurementSources) || !SnapshotCapture.GraphSourcesCurrent(graphs) ||
-                        !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion) ||
+                        !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor) ||
                         !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) || pairedPresent != PairedInputPresent() ||
                         (pairedPresent && !PanelTreeOperations.StructureStillMatches(livePairedTree, capturedPairedTree)) ||
                         (hasGeometry && !GeometryContextCurrent(context)))
@@ -1015,6 +1021,7 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelCreateSet", CreateSetTree);
             writer.SetInt32("PanelUnitConversion", (int)UnitConversion);
             writer.SetInt32("PanelDecimalPlaces", DecimalPlaces);
+            writer.SetDouble("PanelRoundUpFactor", RoundUpFactor);
             writer.SetInt32("PanelOutputScope", (int)OutputScope);
             writer.SetInt32("PanelOutputSchema", 1);
             return base.Write(writer);
@@ -1092,6 +1099,9 @@ namespace BetterGhPanel
             UnitConversion = Enum.IsDefined(typeof(PanelUnitConversion), conversion)
                 ? (PanelUnitConversion)conversion : PanelUnitConversion.None;
             DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, decimals));
+            double roundUpFactor = 0;
+            reader.TryGetDouble("PanelRoundUpFactor", ref roundUpFactor);
+            RoundUpFactor = PanelUnits.IsRoundingFactor(roundUpFactor) ? roundUpFactor : 0;
             int outputScope = 0;
             reader.TryGetInt32("PanelOutputScope", ref outputScope);
             OutputScope = Enum.IsDefined(typeof(PanelOutputScope), outputScope) ? (PanelOutputScope)outputScope : PanelOutputScope.Filtered;

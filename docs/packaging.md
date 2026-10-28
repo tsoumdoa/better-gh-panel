@@ -1,5 +1,7 @@
 # Build and Yak packaging
 
+Patch `0.1.24-beta` adds mesh area and closed-mesh volume, point/vector X/Y/Z properties, solid-Brep surface area, and saved upward rounding of numeric output by a positive factor after unit conversion. Geometry measurements use the existing owned-copy background queue. Rounding affects numeric inputs; geometry coordinates and measured properties retain their precision. No new tests are added; the existing menu expectations and reflective units adapter follow the new choices/signature.
+
 BetterGhPanel follows HopperWire's Rhino 8 package layout and AECTooling metadata. The package contains `net48/` for Rhino's .NET Framework mode on Windows and `net7.0/` for Rhino's .NET mode on Windows and Mac. The pure data engine targets `netstandard2.0` and is shipped beside each `.gha`. Rhino supplies Grasshopper, RhinoCommon, Eto, System.Drawing, and WinForms; those SDK assemblies are compile references and are not copied into the package.
 
 Run these commands from the repository root:

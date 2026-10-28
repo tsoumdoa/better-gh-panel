@@ -46,6 +46,28 @@ namespace BetterGhPanel.Core
             return definition.Scale == 1 ? value : definition.Divide ? value / definition.Scale : value * definition.Scale;
         }
 
+        public static bool IsRoundingFactor(double factor) => factor > 0 && !double.IsInfinity(factor);
+
+        /// <summary>Rounds numeric output toward positive infinity after unit conversion. Zero disables rounding.</summary>
+        public static double Transform(double value, PanelUnitConversion conversion, double roundUpFactor = 0)
+        {
+            value = Convert(value, conversion);
+            if (!IsRoundingFactor(roundUpFactor) || double.IsNaN(value) || double.IsInfinity(value)) return value;
+            // Decimal arithmetic preserves entered multiples such as 0.07 / 0.01.
+            if (decimal.TryParse(value.ToString("R", CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out decimal number) &&
+                decimal.TryParse(roundUpFactor.ToString("R", CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out decimal factor) &&
+                factor > 0 && (double)number == value && (double)factor == roundUpFactor)
+            {
+                try { return (double)(decimal.Ceiling(number / factor) * factor); }
+                catch (OverflowException) { }
+            }
+            double quotient = value / roundUpFactor;
+            // A factor below the value's floating-point resolution cannot change it.
+            if (Math.Abs(quotient) >= 4503599627370496d) return value;
+            if (quotient == 0 && value > 0) return roundUpFactor;
+            return Math.Ceiling(quotient) * roundUpFactor;
+        }
+
         public static string Label(PanelUnitConversion conversion) => Definition(conversion).Label;
 
         public static string Symbol(PanelUnitConversion conversion) => Definition(conversion).Symbol;

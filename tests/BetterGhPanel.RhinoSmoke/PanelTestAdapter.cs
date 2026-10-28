@@ -68,7 +68,7 @@ internal static class PanelTestAdapter
     internal static bool MenuOpen(GH_Component component) => Property<object>(Field<object>(component.Attributes, "_menu"), "Kind").ToString() != "None";
     internal static void ResetView(GH_Component component) => component.GetType().GetMethod("ResetPanelView", PrivateInstance)!.Invoke(component, Array.Empty<object>());
     internal static void Units(GH_Component component, BetterGhPanel.Core.PanelUnitConversion conversion, int decimals) =>
-        component.GetType().GetMethod("SetUnits", PrivateInstance)!.Invoke(component, new object[] { conversion, decimals });
+        component.GetType().GetMethod("SetUnits", PrivateInstance)!.Invoke(component, new object?[] { conversion, decimals, null });
     internal static string CopyValue(GH_Component component, BetterGhPanel.Core.PanelSnapshot snapshot, int position) =>
         (string)component.GetType().GetMethod("CopyValue", PrivateInstance)!.Invoke(component, new object[] { snapshot, position })!;
 

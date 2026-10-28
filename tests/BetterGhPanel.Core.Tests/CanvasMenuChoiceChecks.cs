@@ -93,8 +93,9 @@ internal static class CanvasMenuChoiceChecks
         menu.Close();
         menu.Toggle(CanvasMenuKind.SearchMode, snapshot, new PanelQueryOptions());
         Check(Enumerable.Range(0, menu.Count).Select(menu.SearchModeAt).SequenceEqual(
-            new[] { PanelSearchMode.Text, PanelSearchMode.Regex, PanelSearchMode.Value, PanelSearchMode.Length, PanelSearchMode.Area, PanelSearchMode.Volume, PanelSearchMode.ListLength }),
-            "The default remains the existing complete search menu");
+            new[] { PanelSearchMode.Text, PanelSearchMode.Regex, PanelSearchMode.Value, PanelSearchMode.Length, PanelSearchMode.Area, PanelSearchMode.Volume,
+                PanelSearchMode.X, PanelSearchMode.Y, PanelSearchMode.Z, PanelSearchMode.ListLength }),
+            "The default includes the complete search menu");
     }
 
     private static void ChoiceIdentityAndPersistedValues()

@@ -9,7 +9,18 @@ namespace BetterGhPanel.Core
 
     /// <summary>Input-derived optional search modes. Text, regex and list length are always available.</summary>
     [Flags]
-    public enum PanelSearchCapabilities { None = 0, Value = 1, Length = 2, Area = 4, Volume = 8 }
+    public enum PanelSearchCapabilities { None = 0, Value = 1, Length = 2, Area = 4, Volume = 8, Components = 16 }
+
+    /// <summary>Captured point/vector components; contains no live geometry.</summary>
+    public sealed class PanelComponents
+    {
+        public PanelComponents(double x, double y, double z, string units)
+        { X = x; Y = y; Z = z; Units = units; }
+        public double X { get; }
+        public double Y { get; }
+        public double Z { get; }
+        public string Units { get; }
+    }
 
     /// <summary>Captured group name and direct count, with optional bounded formatted-text retention.</summary>
     public sealed class PanelGroupSummary
@@ -89,7 +100,7 @@ namespace BetterGhPanel.Core
         public PanelRow(int originalIndex, string path, string typeName, string displayValue, double? numericValue,
             PanelValidity validity, bool typeIdentityAvailable = true, PanelSearchCapabilities? searchCapabilities = null,
             bool isNull = false, PanelGeometryInfo? geometryInfo = null, string invalidReason = "", string? stringValue = null,
-            PanelSetOccurrences? setOccurrences = null, PanelGroupSummary? groupSummary = null)
+            PanelSetOccurrences? setOccurrences = null, PanelGroupSummary? groupSummary = null, PanelComponents? components = null)
         {
             OriginalIndex = originalIndex;
             Path = path ?? string.Empty;
@@ -97,6 +108,7 @@ namespace BetterGhPanel.Core
             _displayValue = displayValue ?? string.Empty;
             _groupSummary = groupSummary;
             NumericValue = numericValue;
+            Components = components;
             IsNull = isNull;
             Validity = validity;
             GeometryInfo = geometryInfo;
@@ -104,7 +116,8 @@ namespace BetterGhPanel.Core
             StringValue = stringValue;
             SetOccurrences = setOccurrences;
             TypeIdentityAvailable = typeIdentityAvailable;
-            SearchCapabilities = searchCapabilities ?? InferCapabilities(numericValue, geometryInfo);
+            SearchCapabilities = searchCapabilities ?? (InferCapabilities(numericValue, geometryInfo) |
+                (components == null ? PanelSearchCapabilities.None : PanelSearchCapabilities.Components));
         }
 
         public int OriginalIndex { get; }
@@ -115,6 +128,7 @@ namespace BetterGhPanel.Core
         internal PanelGroupSummary? GroupSummary => _groupSummary;
         public string DisplayValue => _groupSummary?.Format() ?? _displayValue;
         public double? NumericValue { get; }
+        public PanelComponents? Components { get; }
         public bool IsNull { get; }
         /// <summary>True only when validity was verified. Use Validity to distinguish invalid from unverified.</summary>
         public bool IsValid => Validity == PanelValidity.VerifiedValid;
@@ -239,6 +253,7 @@ namespace BetterGhPanel.Core
             PanelSearchMode.Length => (SearchCapabilities & PanelSearchCapabilities.Length) != 0,
             PanelSearchMode.Area => (SearchCapabilities & PanelSearchCapabilities.Area) != 0,
             PanelSearchMode.Volume => (SearchCapabilities & PanelSearchCapabilities.Volume) != 0,
+            PanelSearchMode.X or PanelSearchMode.Y or PanelSearchMode.Z => (SearchCapabilities & PanelSearchCapabilities.Components) != 0,
             _ => false
         };
         public IReadOnlyList<PanelRow> Rows { get; }
@@ -266,7 +281,10 @@ namespace BetterGhPanel.Core
         Area,
         Volume,
         // Append modes so saved definitions retain their existing values.
-        ListLength
+        ListLength,
+        X,
+        Y,
+        Z
     }
 
     public sealed class PanelQueryOptions

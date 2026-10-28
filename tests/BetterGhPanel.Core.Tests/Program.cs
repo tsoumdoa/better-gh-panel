@@ -387,7 +387,7 @@ internal static class Program
             menu.Toggle(CanvasMenuKind.Units, PanelSnapshot.Empty, new PanelQueryOptions());
             menu.Layout(panel, anchor, anchor, anchor, anchor);
             menu.MarkPainted();
-            Equal(PanelUnits.ConversionCount + 2, menu.Count);
+            Equal(PanelUnits.ConversionCount + 4, menu.Count);
             Equal(true, menu.Bounds.Top >= panel.Top + 25 && menu.Bounds.Bottom < anchor.Top && menu.Bounds.Right <= panel.Right);
             Equal(true, menu.Bounds.Width < 180 && menu.Bounds.Right == anchor.Right);
             Equal("mm² → m²", menu.Label(3));

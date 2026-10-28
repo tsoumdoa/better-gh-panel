@@ -137,7 +137,7 @@ namespace BetterGhPanel.Runtime
                 var unavailable = new PanelGeometryInfo(summary.Description, power: summary.Power, units: summary.Units,
                     metricName: summary.MetricName, metricLabel: summary.MetricLabel,
                     details: summary.Details + "\nMeasurement unavailable: geometry could not be prepared.",
-                    canMeasure: summary.CanMeasure, measurementUnavailable: true);
+                    canMeasure: summary.CanMeasure, measurementUnavailable: true, hasArea: summary.HasArea);
                 return new PreparedMeasurement<PanelGeometryInfo>(() => unavailable, null, null);
             }
             return null;

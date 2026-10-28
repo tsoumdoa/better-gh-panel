@@ -96,7 +96,7 @@ namespace BetterGhPanel.Core
                     Contains(row.Path, _text) || Contains(row.TypeName, _text);
             }
             if (!IsGeometry)
-                return !row.IsNull && row.IsValid && row.NumericValue.HasValue && IsFinite(row.NumericValue.Value) && _comparison(row.NumericValue.Value);
+                return PanelFilterValue.TryScalarValue(row, _mode, conversion, out double scalarValue) && _comparison(scalarValue);
             return PanelFilterValue.TryGeometryValue(row, _mode, conversion, measured, out double geometryValue) && _comparison(geometryValue);
         }
 

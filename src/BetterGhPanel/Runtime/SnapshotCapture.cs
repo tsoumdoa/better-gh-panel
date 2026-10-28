@@ -85,6 +85,7 @@ namespace BetterGhPanel.Runtime
                     bool typeAvailable = false;
                     PanelValidity validity;
                     PanelGeometryInfo? geometry = null;
+                    PanelComponents? components = null;
                     PanelGroupSummary? groupSummary = null;
                     PanelSearchCapabilities capabilities;
                     GeometryBase? capturedGeometry = null;
@@ -143,6 +144,16 @@ namespace BetterGhPanel.Runtime
 
                         if (inspected != null && validity == PanelValidity.VerifiedValid)
                         {
+                            if (inspected.GetType() == typeof(GH_Point))
+                            {
+                                var point = ((GH_Point)inspected).Value;
+                                components = new PanelComponents(point.X, point.Y, point.Z, geometryUnits);
+                            }
+                            else if (inspected.GetType() == typeof(GH_Vector))
+                            {
+                                var vector = ((GH_Vector)inspected).Value;
+                                components = new PanelComponents(vector.X, vector.Y, vector.Z, geometryUnits);
+                            }
                             geometry = GeometryHints.DescribeCaptured(inspected!, capturedGeometry, geometryUnits);
                             // Only a standalone exact holder and its captured inner object
                             // can enter either reconstruction or the compatibility fallback.
@@ -160,12 +171,13 @@ namespace BetterGhPanel.Runtime
                         number = null;
                         stringValue = null;
                         geometry = null;
+                        components = null;
                         capabilities = PanelSearchCapabilities.None;
                     }
                     finally { GC.KeepAlive(capturedGeometry); }
                     rows.Add(new PanelRow(i, path, type, display, number, validity,
                         typeIdentityAvailable: typeAvailable, searchCapabilities: capabilities, isNull: item == null,
-                        geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary));
+                        geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary, components: components));
                     source.Add(item);
                     geometrySources.Add(directLeaf.HasValue ? new CapturedMeasurementSource(directLeaf.Value) : null);
                     if (graph != null) graphs.Add((rows.Count - 1, graph));
@@ -301,12 +313,15 @@ namespace BetterGhPanel.Runtime
             Type type = item.GetType();
             if (type == typeof(GH_Number) || type == typeof(GH_Integer)) return PanelSearchCapabilities.Value;
             if (validity == PanelValidity.Unverified) return PanelSearchCapabilities.None;
+            if (type == typeof(GH_Point) || type == typeof(GH_Vector)) return PanelSearchCapabilities.Components;
             if (type == typeof(GH_Line) || type == typeof(GH_Arc) || type == typeof(GH_Circle) || type == typeof(GH_Curve))
                 return PanelSearchCapabilities.Length;
             if (type == typeof(GH_Rectangle) || type == typeof(GH_Surface)) return PanelSearchCapabilities.Area;
             if (type == typeof(GH_Box)) return PanelSearchCapabilities.Volume;
             if (type == typeof(GH_Brep) && validity == PanelValidity.VerifiedValid && geometry is Brep brep)
-                return brep.IsSolid ? PanelSearchCapabilities.Volume : PanelSearchCapabilities.Area;
+                return PanelSearchCapabilities.Area | (brep.IsSolid ? PanelSearchCapabilities.Volume : PanelSearchCapabilities.None);
+            if (type == typeof(GH_Mesh) && validity == PanelValidity.VerifiedValid && geometry is Mesh mesh)
+                return PanelSearchCapabilities.Area | (mesh.IsClosed ? PanelSearchCapabilities.Volume : PanelSearchCapabilities.None);
             return PanelSearchCapabilities.None;
         }
 
