@@ -79,7 +79,10 @@ namespace BetterGhPanel.Runtime
                 if (transforms.Count == 0 || transforms.Count == 1 && transforms[0]?.GetType() == typeof(Grasshopper.Kernel.Types.Transforms.Generic))
                 {
                     var transform = transforms.Count == 0 ? Transform.Identity : ((Grasshopper.Kernel.Types.Transforms.Generic)transforms[0]).Transform;
-                    N(PanelSearchMode.Determinant, transform.Determinant);
+                    // Determinant enters Rhino's native runtime; matrix fields and
+                    // verified validity remain usable before that runtime starts.
+                    try { N(PanelSearchMode.Determinant, transform.Determinant); }
+                    catch (DllNotFoundException) { N(PanelSearchMode.Determinant, double.NaN); }
                     for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) N(PanelSearchMode.M00 + r * 4 + c, transform[r, c]);
                 }
             }
