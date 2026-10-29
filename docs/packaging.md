@@ -1,5 +1,7 @@
 # Build and Yak packaging
 
+Patch `0.1.25-beta` adds selectable inspection properties and `property-inspection` to the native inventory (19 fixtures). It checks scalar and geometry property capture, offscreen planarity filtering, typed D/F outputs, numeric property sets and copying, display-mode persistence, subclass rejection and SubD/complex capture freshness.
+
 Patch `0.1.24-beta` adds mesh area and closed-mesh volume, point/vector X/Y/Z properties, solid-Brep surface area, and saved upward rounding of numeric output by a positive factor after unit conversion. Geometry measurements use the existing owned-copy background queue. Rounding affects numeric inputs; geometry coordinates and measured properties retain their precision. No new tests are added; the existing menu expectations and reflective units adapter follow the new choices/signature.
 
 BetterGhPanel follows HopperWire's Rhino 8 package layout and AECTooling metadata. The package contains `net48/` for Rhino's .NET Framework mode on Windows and `net7.0/` for Rhino's .NET mode on Windows and Mac. The pure data engine targets `netstandard2.0` and is shipped beside each `.gha`. Rhino supplies Grasshopper, RhinoCommon, Eto, System.Drawing, and WinForms; those SDK assemblies are compile references and are not copied into the package.
@@ -18,21 +20,23 @@ Packaging finds Yak in the standard Rhino 8 installation. On a machine without R
 
 McNeel's separate public Yak registry still serves the original packages. Published registry versions cannot be overwritten; yanking hides them from searches but retains direct installation. Removing those stored copies requires McNeel support. See the [public-repository cleanup notes](maintainability.md#public-repository-cleanup).
 
-The current beta is [`0.1.24-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.1.24-beta), following `0.1.23-beta`, distributed through Yak and GitHub Releases. The resulting `artifacts/better-gh-panel-0.1.24-beta/` contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `better-gh-panel-0.1.24-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
+The current beta is [`0.1.25-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.1.25-beta), following `0.1.24-beta`, distributed through Yak and GitHub Releases. The resulting `artifacts/better-gh-panel-0.1.25-beta/` contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `better-gh-panel-0.1.25-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
 ```text
-yak install --source artifacts/better-gh-panel-0.1.24-beta better-gh-panel 0.1.24-beta
+yak install --source artifacts/better-gh-panel-0.1.25-beta better-gh-panel 0.1.25-beta
 ```
 
 Replace `yak` with the full executable path if it is not on PATH. On Windows it is normally `C:\Program Files\Rhino 8\System\Yak.exe`; on Mac it is normally `/Applications/Rhino 8.app/Contents/Resources/bin/yak`. Restart Rhino and open Grasshopper afterward. Local install uses Yak's package directory and avoids copying a second `.gha` into the Grasshopper Libraries folder.
 
 For native validation, run `tests/BetterGhPanel.RhinoSmoke/run.ps1 -PluginPath <extracted net7.0/BetterGhPanel.gha>`. The coordinator stops launching fixtures when an identified Rhino host fails or times out before fixture execution. Its failed outcome retains the startup phase and exception, and the run summary lists every unrun fixture; an incomplete run cannot pass. Failures inside a fixture still allow the remaining fixtures to run. Host reports also record the process ID and actual .NET runtime.
 
-The current native inventory contains 18 focused regressions for capture safety, geometry ownership, reentrant drawing, resource disposal and native clipboard integrity. Routine UI, layout, menu, formatting, selection and general behavior smoke tests have been removed, together with the obsolete diagnostic probes. There is no separate smoke suite. Each remaining fixture starts a fresh Rhino process to isolate native crashes; use `-Fixture <name>` for a targeted check. The historical 66-fixture release results below describe the previous inventory.
+The current native inventory contains 19 focused regressions for capture safety, geometry ownership, reentrant drawing, resource disposal and native clipboard integrity. Routine UI, layout, menu, formatting, selection and general behavior smoke tests have been removed, together with the obsolete diagnostic probes. There is no separate smoke suite. Each remaining fixture starts a fresh Rhino process to isolate native crashes; use `-Fixture <name>` for a targeted check. The historical 66-fixture release results below describe the previous inventory.
 
 If a host fails in `host-startup`, save the run directory and check for a startup dialog or Windows Application Error before rerunning. After saving work and closing interactive Rhino sessions, reproduce just the affected fixture with `run.ps1 -PluginPath <path> -Fixture preview-admission-freshness -TimeoutSeconds 45` (substitute the recorded fixture name). A passing repeat establishes recovery only; it does not establish the earlier cause. Run the complete inventory against the same extracted package before treating validation as complete. Do not change installed runtimes, plug-ins or user settings solely because startup failed.
+
+Release `0.1.25-beta` validation passed 57 managed tests, 29 coordinator checks, one packaging check, both runtime builds, unused-code diagnostics, managed capture checks, and all 19 isolated Windows Rhino 8.36 .NET 7 fixtures against the extracted final Yak archive (`run-npki4E`, 1,459 fixture assertions). The adversarial review fixed valid stock transforms becoming unverified when the native determinant runtime is unavailable; matrix entries and validity now remain usable while that optional property reports unavailable. Sorting reuses set keys and avoids building unused summary keys. Existing checks were extended for property sorting in both directions, sorted sets and managed transform capture. CodeRabbit supplied a summary, not a line-by-line review. Artifact source commit: `aa861d7`. Archive SHA-256: `1887d2b9571583f8d9a6dbae98ecde9ba73c4a66daad2c100bd98bdb6e63a9a0`. Mac and Windows .NET Framework host execution remain unvalidated.
 
 Release `0.1.24-beta` validation passed 51 managed tests, 29 coordinator tests, one packaging test, both runtime builds, unused-code diagnostics, managed capture checks, and all 18 retained Windows Rhino 8.36 .NET 7 fixtures against the extracted final Yak archive (`run-mkKzmI`, 1,310 fixture assertions). A temporary local Rhino validation run (28 assertions; no added repository tests) confirmed open/closed mesh area, closed mesh/Brep volume and surface area, square-unit conversion of secondary area, signed XYZ comparisons/display and Create set, rounded D output, save/load and Reset, and the owned-copy mesh measurement queue. The adversarial review found and fixed tiny-positive/huge-factor rounding underflow; the re-review simplified rounding to decimal remainder with a double fallback, removed string allocation and consolidated mesh property reads. CodeRabbit was rate-limited and did not provide an independent review. Build commit: `1a7031361c793f0470111c178bc8b9aabfd5d9b3`. Archive SHA-256: `7586a6ea68bf610a2f193bd0d1c1efd7f019cee2612029d0630c453d0ea40d7f`. Mac and Windows .NET Framework host execution remain unvalidated.
 
@@ -52,7 +56,7 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 Install the current public beta with:
 
 ```text
-yak install better-gh-panel 0.1.24-beta
+yak install better-gh-panel 0.1.25-beta
 ```
 
 The release notes below record the validation and host modes used at the time. For the current isolated fixture runner, see [validation](maintainability.md#validation).

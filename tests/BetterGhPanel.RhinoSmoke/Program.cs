@@ -58,6 +58,7 @@ internal static class Program
         ["standalone-compatibility"] = assembly => { Rhino.Runtime.HostUtils.InitializeRhinoCommon(); FixtureUserData.EnsureRegistered(); return StandaloneCompatibilityChecks.Run(assembly); },
         ["capture-transaction"] = CaptureTransactionChecks.Run,
         ["capture-stock-geometry"] = CaptureStockGeometryChecks.RunNative,
+        ["property-inspection"] = PropertyInspectionChecks.Run,
     };
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]

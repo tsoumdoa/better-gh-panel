@@ -155,6 +155,9 @@ internal static class CaptureBudgetChecks
         Check(snapshot.Rows.Select(row => row.Validity).SequenceEqual(new[] { PanelValidity.VerifiedValid, PanelValidity.VerifiedInvalid,
             PanelValidity.VerifiedValid, PanelValidity.VerifiedInvalid, PanelValidity.Unverified }) && hostile.Calls == 0,
             "simple stock transform and mesh-face values retain valid/invalid status without dispatching third-party transforms");
+        Check(PanelProperties.TryGet(snapshot.Rows[0], PanelSearchMode.M00, null, out var entry) && entry?.Number == 1 &&
+            snapshot.Rows[0].Properties.Count == 17,
+            "stock matrix entries remain available before the native determinant runtime is loaded");
         var invalidResult = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { OnlyInvalid = true });
         Check(invalidResult.RowPositions.SequenceEqual(new[] { 1, 3 }), "invalid-only filtering finds the exact invalid stock values");
         VerifyOutputs(assembly, tree, snapshot, invalidResult, 1);

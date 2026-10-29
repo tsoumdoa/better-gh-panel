@@ -45,6 +45,8 @@ namespace BetterGhPanel.Core
             if (retainFormattedText) _retainedText = FormatCore();
         }
 
+        public string Name => _name;
+        public int Count => _count;
         public string Format() => Format(false);
         internal string Format(bool invalid)
         {
@@ -100,7 +102,8 @@ namespace BetterGhPanel.Core
         public PanelRow(int originalIndex, string path, string typeName, string displayValue, double? numericValue,
             PanelValidity validity, bool typeIdentityAvailable = true, PanelSearchCapabilities? searchCapabilities = null,
             bool isNull = false, PanelGeometryInfo? geometryInfo = null, string invalidReason = "", string? stringValue = null,
-            PanelSetOccurrences? setOccurrences = null, PanelGroupSummary? groupSummary = null, PanelComponents? components = null)
+            PanelSetOccurrences? setOccurrences = null, PanelGroupSummary? groupSummary = null, PanelComponents? components = null,
+            IReadOnlyDictionary<PanelSearchMode, PanelPropertyValue?>? properties = null)
         {
             OriginalIndex = originalIndex;
             Path = path ?? string.Empty;
@@ -109,6 +112,7 @@ namespace BetterGhPanel.Core
             _groupSummary = groupSummary;
             NumericValue = numericValue;
             Components = components;
+            Properties = PanelProperties.Freeze(properties);
             IsNull = isNull;
             Validity = validity;
             GeometryInfo = geometryInfo;
@@ -129,6 +133,7 @@ namespace BetterGhPanel.Core
         public string DisplayValue => _groupSummary?.Format() ?? _displayValue;
         public double? NumericValue { get; }
         public PanelComponents? Components { get; }
+        public IReadOnlyDictionary<PanelSearchMode, PanelPropertyValue?> Properties { get; }
         public bool IsNull { get; }
         /// <summary>True only when validity was verified. Use Validity to distinguish invalid from unverified.</summary>
         public bool IsValid => Validity == PanelValidity.VerifiedValid;
@@ -172,6 +177,7 @@ namespace BetterGhPanel.Core
     public sealed class PanelSnapshot
     {
         private readonly IReadOnlyList<PanelSourceAddress>? _sourceAddresses;
+        private readonly HashSet<PanelSearchMode> _properties = new HashSet<PanelSearchMode>();
         public static PanelSnapshot Empty { get; } =
             new PanelSnapshot(Array.Empty<PanelRow>(), Array.Empty<PanelBranch>());
 
@@ -207,6 +213,8 @@ namespace BetterGhPanel.Core
                 typeCounts[row.TypeName] = count + 1;
                 if (row.IsValid && !row.IsNull && row.GeometryInfo?.CanMeasure == true) hasMeasurableGeometry = true;
                 capabilities |= row.SearchCapabilities;
+                foreach (var mode in row.Properties.Keys) _properties.Add(mode);
+                if (row.GeometryInfo != null) foreach (var mode in row.GeometryInfo.Properties.Keys) _properties.Add(mode);
                 if (row.Validity == PanelValidity.Unverified) unverifiedCount++;
                 if (!row.TypeIdentityAvailable) unavailableTypeIdentityCount++;
             }
@@ -254,7 +262,7 @@ namespace BetterGhPanel.Core
             PanelSearchMode.Area => (SearchCapabilities & PanelSearchCapabilities.Area) != 0,
             PanelSearchMode.Volume => (SearchCapabilities & PanelSearchCapabilities.Volume) != 0,
             PanelSearchMode.X or PanelSearchMode.Y or PanelSearchMode.Z => (SearchCapabilities & PanelSearchCapabilities.Components) != 0,
-            _ => false
+            _ => PanelProperties.IsMetadata(mode) || _properties.Contains(mode)
         };
         public IReadOnlyList<PanelRow> Rows { get; }
         public IReadOnlyList<PanelBranch> Branches { get; }
@@ -284,7 +292,88 @@ namespace BetterGhPanel.Core
         ListLength,
         X,
         Y,
-        Z
+        Z,
+        Radius,
+        Degree,
+        Closed,
+        Solid,
+        Planar,
+        Shape,
+        VertexCount,
+        EdgeCount,
+        FaceCount,
+        SegmentCount,
+        Trimmed,
+        DegreeU,
+        DegreeV,
+        GroupName,
+        ObjectCount,
+        Red,
+        Green,
+        Blue,
+        Alpha,
+        ColourName,
+        DomainStart,
+        DomainEnd,
+        UStart,
+        UEnd,
+        VStart,
+        VEnd,
+        BooleanValue,
+        DateTime,
+        Year,
+        Month,
+        Day,
+        Hour,
+        Minute,
+        Second,
+        Magnitude,
+        Width,
+        Height,
+        Depth,
+        Perimeter,
+        Angle,
+        OriginX,
+        OriginY,
+        OriginZ,
+        AxisXX,
+        AxisXY,
+        AxisXZ,
+        AxisYX,
+        AxisYY,
+        AxisYZ,
+        AxisZX,
+        AxisZY,
+        AxisZZ,
+        TextValue,
+        CharacterCount,
+        GuidValue,
+        Real,
+        Imaginary,
+        Phase,
+        Determinant,
+        ProfileCount,
+        PointCount,
+        DataType,
+        Validity,
+        BranchPath,
+        ItemIndex,
+        M00,
+        M01,
+        M02,
+        M03,
+        M10,
+        M11,
+        M12,
+        M13,
+        M20,
+        M21,
+        M22,
+        M23,
+        M30,
+        M31,
+        M32,
+        M33
     }
 
     public sealed class PanelQueryOptions

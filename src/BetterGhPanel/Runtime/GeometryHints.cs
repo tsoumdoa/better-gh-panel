@@ -31,12 +31,23 @@ namespace BetterGhPanel.Runtime
         // a mutable holder again after checking it, and never dispatch through a subclass.
         internal static PanelGeometryInfo? DescribeCaptured(IGH_Goo goo, GeometryBase? geometry, string units)
         {
+            var info = DescribeCapturedCore(goo, geometry, units);
+            return info != null && geometry != null ? info.WithProperties(PanelPropertyCapture.Geometry(geometry, goo.GetType() == typeof(GH_Surface), units, false)) : info;
+        }
+
+        private static PanelGeometryInfo? DescribeCapturedCore(IGH_Goo goo, GeometryBase? geometry, string units)
+        {
             Type type = goo.GetType();
             if (type == typeof(GH_Line)) return LineInfo(((GH_Line)goo).Value, units);
             if (type == typeof(GH_Arc)) return ArcInfo(((GH_Arc)goo).Value, units);
             if (type == typeof(GH_Circle)) return CircleInfo(((GH_Circle)goo).Value, units);
             if (type == typeof(GH_Rectangle)) return new PanelGeometryInfo("Rect", ((GH_Rectangle)goo).Value.Area, 2, units, "Area", "A");
-            if (type == typeof(GH_Box)) return new PanelGeometryInfo("Box", ((GH_Box)goo).Value.Volume, 3, units, "Volume", "V");
+            if (type == typeof(GH_Box))
+            {
+                var box = ((GH_Box)goo).Value;
+                double x = Math.Abs(box.X.Length), y = Math.Abs(box.Y.Length), z = Math.Abs(box.Z.Length);
+                return new PanelGeometryInfo("Box", box.Volume, 3, units, "Volume", "V", hasArea: true, areaValue: 2 * (x * y + y * z + z * x));
+            }
             if (type == typeof(GH_Curve) && geometry is LineCurve line) return LineInfo(line.Line, units);
             if (type == typeof(GH_Curve) && geometry is ArcCurve arc) return ArcInfo(arc.Arc, units);
             if (type == typeof(GH_Curve) && geometry is Curve curve) return CurveInfo(curve);
@@ -44,6 +55,9 @@ namespace BetterGhPanel.Runtime
             if (type == typeof(GH_Brep) && geometry is Brep brep) return BrepInfo(brep);
             if (type == typeof(GH_Mesh) && geometry is Mesh mesh)
                 return MeshInfo(mesh);
+            if (type == typeof(GH_SubD) && geometry is SubD) return new PanelGeometryInfo("<SubD>");
+            if (type == typeof(GH_Extrusion) && geometry is Extrusion) return new PanelGeometryInfo("<Extrusion>");
+            if (type == typeof(GH_PointCloud) && geometry is PointCloud) return new PanelGeometryInfo("<Point Cloud>");
             return null;
         }
 
@@ -152,6 +166,7 @@ namespace BetterGhPanel.Runtime
                         metricName: "Length", metricLabel: "L", details: ArcDetails(arc));
                 }
                 else return null;
+                info = info.WithProperties(PanelPropertyCapture.Geometry(source, false, units, true));
                 // Only immutable managed presentation crosses the worker boundary.
                 return new PreparedMeasurement<PanelGeometryInfo>(() => info, null, null);
             }
@@ -219,6 +234,12 @@ namespace BetterGhPanel.Runtime
             BitConverter.DoubleToInt64Bits(first) == BitConverter.DoubleToInt64Bits(second);
 
         internal static PanelGeometryInfo? Measure(GeometryBase geometry, bool surface, string units)
+        {
+            var info = MeasureCore(geometry, surface, units);
+            return info?.WithProperties(PanelPropertyCapture.Geometry(geometry, surface, units, true));
+        }
+
+        private static PanelGeometryInfo? MeasureCore(GeometryBase geometry, bool surface, string units)
         {
             switch (geometry)
             {

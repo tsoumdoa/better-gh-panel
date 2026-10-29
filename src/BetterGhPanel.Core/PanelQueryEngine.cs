@@ -38,7 +38,11 @@ namespace BetterGhPanel.Core
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
-            var sortText = query.SortMode == PanelSortMode.SourceOrder ? null : new Dictionary<int, PanelText>();
+            var propertySortValues = set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplayFilterValue && PanelProperties.IsProperty(query.SearchMode)
+                ? new Dictionary<int, PanelDisplayedValue>() : null;
+            // Sets and property views already supply complete displayed sort keys.
+            var sortText = query.SortMode != PanelSortMode.SourceOrder && set == null && propertySortValues == null
+                ? new Dictionary<int, PanelText>() : null;
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var branchCounts = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -84,6 +88,7 @@ namespace BetterGhPanel.Core
                 if (set != null && !set.IncludeRow(i, measured)) continue;
 
                 rowPositions.Add(i);
+                if (propertySortValues != null) propertySortValues.Add(i, PanelDisplayedValue.Capture(snapshot, row, query, measured, culture));
                 if (sortText != null && !row.IsNull && !HasFiniteNumber(row))
                     sortText.Add(i, PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture));
                 branches.Add(row.Path);
@@ -141,7 +146,7 @@ namespace BetterGhPanel.Core
             var positions = rowPositions.ToArray();
             if (query.SortMode != PanelSortMode.SourceOrder && set?.IsBranchSet != true)
                 foreach (var step in SortBranches(positions, snapshot, branchCounts, sortText!,
-                    query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work, set?.Values))
+                    query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work, set?.Values ?? propertySortValues))
                     yield return step;
             // Build the scroll index as part of the cooperative query, not in a
             // paint or gesture. The first row of the next retained non-empty
@@ -247,7 +252,7 @@ namespace BetterGhPanel.Core
             if (SetNeedsGeometry(options)) return true;
             bool hasSearch = !(options.DisplayFilterValue && options.SearchMode >= PanelSearchMode.Value) && !string.IsNullOrWhiteSpace(options.Search);
             if (hasSearch && (options.SearchMode == PanelSearchMode.Length ||
-                options.SearchMode == PanelSearchMode.Area || options.SearchMode == PanelSearchMode.Volume)) return true;
+                options.SearchMode == PanelSearchMode.Area || options.SearchMode == PanelSearchMode.Volume || PanelProperties.IsProperty(options.SearchMode))) return true;
             // Active scalar comparisons cannot return geometry or need geometry sort keys.
             return options.SortMode != PanelSortMode.SourceOrder &&
                 (!hasSearch || options.SearchMode != PanelSearchMode.Value && options.SearchMode != PanelSearchMode.Text);
@@ -283,7 +288,8 @@ namespace BetterGhPanel.Core
                 CheckCancellation(index, cancellationToken);
                 var row = snapshot.Rows[index];
                 bool forSet = setGeometry && (!query.DisplayFilterValue || row.GeometryInfo != null && PanelFilterValue.MatchesGeometry(query.SearchMode, row.GeometryInfo));
-                if (!scope.MatchesRow(row) || !filter.CanMeasure(row, sorting || forSet)) continue;
+                bool propertySummary = PanelProperties.IsProperty(query.SearchMode) && !query.DisplayFilterValue && (sorting || forSet);
+                if (!scope.MatchesRow(row) || !filter.CanMeasure(row, sorting || forSet, propertySummary)) continue;
                 candidates.Add(index);
             }
             cancellationToken.ThrowIfCancellationRequested();
@@ -291,7 +297,7 @@ namespace BetterGhPanel.Core
         }
 
         private static bool SetNeedsGeometry(PanelQueryOptions query) => query.CreateSet &&
-            (!query.DisplayFilterValue || query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume);
+            (!query.DisplayFilterValue || query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(query.SearchMode));
 
         /// <summary>Accepts a semicolon-separated path with or without braces. Blank means all branches.</summary>
         public static string? NormalizeBranchPath(string? path)

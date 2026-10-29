@@ -14,6 +14,26 @@ Created in [T3 Code](https://t3.codes).
 
 ## Native MVP
 
+**Patch `0.1.25-beta` — selectable inspection properties:** The search dropdown now offers captured properties appropriate to the connected input. Select a property, then **Display value** or a comparison. Numeric/date properties support `>`, `>=`, `<`, `<=`, `=` and `!=`; Boolean/text properties support `=` and `!=`. Boolean thresholds are `True`/`False`. Text comparisons are exact and case-sensitive; quote text to preserve surrounding spaces (`= " 001 "`). Dates accept `yyyy-MM-dd` or `yyyy-MM-dd HH:mm:ss`, including fractional seconds, and compare stored calendar time without timezone conversion.
+
+| Input | Additional selectable properties |
+| --- | --- |
+| Curves, lines, arcs, circles | Degree, closed, shape and planar; polyline segment count; radius for arcs/circles and arc angle |
+| Breps / meshes | Face and vertex counts, closed; Brep edge count and solid; planarity for single-face Breps |
+| Surfaces | Face count; trimmed, U/V degree and planar for single-face surfaces |
+| Rectangles / boxes | Width (X) and height (Y); rectangle perimeter; box depth (Z) and surface area |
+| Vectors / planes | Vector magnitude; plane origin XYZ and individual XYZ components of each axis |
+| Groups | Name and direct object count |
+| Colours / domains | R/G/B/alpha and named colour where available; domain endpoints or separate U/V endpoints |
+| Text / Boolean / GUID / time | Text value and UTF-16 character count; Boolean/GUID value; date-time and year/month/day/hour/minute/second |
+| Complex numbers / transforms | Real, imaginary, magnitude, phase; determinant and 16 matrix entries for empty or single stock matrix transforms |
+| SubD / extrusion / point cloud | SubD vertex/edge/face counts and solid/closed; extrusion height, profile count and solid/closed; point-cloud count |
+| Every input | Data type, validity, branch path and zero-based item index |
+
+Captured counts stay unitless. Geometry distances/areas use matching model-unit conversions; arc angles and complex phase are radians, with radians-to-degrees conversion available. General-curve shape/planarity and surface planarity use the existing owned-copy measurement queue, including offscreen rows needed by filters and sets. Unsupported properties show `n/a`; pending/failed measurements and invalid/unverified inputs retain distinct labels. Saved properties remain visible when an input changes.
+
+**Copy values** copies the displayed property. **Create set** emits displayed numbers for numeric properties and text for Boolean/text/date properties, preserving numeric-looking text such as `001`. Property display sorting uses the selected values; wire outputs retain transformed tree order. With Create set off, the original typed output and its statistics remain intact. Property display modes, including X/Y/Z, survive save/load and Undo. Third-party objects and compound/custom transforms retain safe summaries; this is not arbitrary property reflection.
+
 **Patch `0.1.24-beta`:** [Release notes](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.1.24-beta). Input-aware properties now include mesh area, closed-mesh volume, and X/Y/Z components for points and vectors. Solid Breps expose both volume and surface area. Choose a property in the search menu to compare or display it; Copy values copies that property, and Create set emits its displayed numbers. Geometry output stays typed with Create set off. **Units → Round up by factor…** rounds Number/Integer output toward positive infinity after conversion (factor `5`: `12.1 → 15`, `−12.1 → −10`). Enter a positive finite factor with a decimal point; **Rounding: off** disables it. Rounding affects numeric input values, filters, statistics and D/S output. Settings save with the definition and support Undo; Reset disables rounding. Geometry coordinates and measured properties retain their precision; rounding applies to numeric input values. Decimal places remain a separate display setting.
 
 **Patch `0.1.23-beta`:** maintenance release with unchanged application behavior. Routine native smoke/UI tests and obsolete probes were removed; the release archive passed the retained 18 geometry safety and integrity regressions. Published on Yak and [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.1.23-beta).
@@ -87,7 +107,7 @@ Panel+ hides old rows, counts, type summaries and statistics behind **Recomputin
 
 [See the native recomputing state](docs/images/panel-recomputing.png).
 
-The public Yak beta is **`better-gh-panel 0.1.23-beta`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.23-beta`, then restart. See [release validation](docs/packaging.md) for the retained native regression coverage, known intermittent host/clipboard failures and remaining platform coverage.
+The public Yak beta is **`better-gh-panel 0.1.25-beta`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.25-beta`, then restart. See [release validation](docs/packaging.md) for the retained native regression coverage, known intermittent host/clipboard failures and remaining platform coverage.
 
 Beta **`0.1.15-beta`** adds current-result loading states, resumable queries with a 120 ms time budget, and filters on typed output after tree tools and unit conversion. Whitespace-only regex patterns filter output correctly; internalised geometry preview respects filters.
 
@@ -157,7 +177,7 @@ dotnet test BetterGhPanel.sln -c Release
 node scripts/package.mjs
 ```
 
-The published beta artifact is `artifacts/better-gh-panel-0.1.24-beta/better-gh-panel-0.1.24-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The published beta artifact is `artifacts/better-gh-panel-0.1.25-beta/better-gh-panel-0.1.25-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino.
 

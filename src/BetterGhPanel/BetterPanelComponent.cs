@@ -518,7 +518,9 @@ namespace BetterGhPanel
                 var metric = Session.GetGeometryDetails(snapshot, position);
                 if (metric == null && Session.HasGeometryMeasurement(snapshot, position)) metric = row.GeometryInfo?.WithUnavailableMeasurement();
                 var value = PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, metric, includeUnits: false);
-                if (value == "measuring…" || value == "unavailable") throw new InvalidOperationException("A selected measurement is unavailable.");
+                bool literalProperty = PanelProperties.IsProperty(options.SearchMode) &&
+                    PanelProperties.TryGet(row, options.SearchMode, metric, out var property) && property != null && property.Kind != PanelPropertyKind.Number;
+                if (!literalProperty && (value == "measuring…" || value == "unavailable")) throw new InvalidOperationException("A selected measurement is unavailable.");
                 return value;
             }
             if (!row.IsValid)
@@ -633,7 +635,10 @@ namespace BetterGhPanel
             long selectionVersion = RowSelection.Version;
             var cancellation = new CancellationTokenSource();
             _copyCancellation = cancellation;
-            bool measured = await session.MeasureGeometryAsync(snapshot, ordered, cancellation.Token);
+            var measurementPositions = session.Options.DisplayFilterValue && PanelProperties.IsProperty(session.Options.SearchMode)
+                ? ordered.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
+                    session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray() : ordered;
+            bool measured = await session.MeasureGeometryAsync(snapshot, measurementPositions, cancellation.Token);
             var completion = new TaskCompletionSource<string>();
             // Rhino does not guarantee a SynchronizationContext for every canvas
             // callback. Live goo and the system clipboard belong to its UI thread.
@@ -1056,7 +1061,7 @@ namespace BetterGhPanel
             reader.TryGetInt32("PanelSort", ref sort);
             bool hasLegacySize = reader.TryGetInt32("PanelSize", ref size);
             _savedOptions = new PanelQueryOptions { Search = search, TypeName = string.IsNullOrEmpty(type) ? null : type,
-                DisplayFilterValue = displayFilterValue && searchMode >= (int)PanelSearchMode.Value && searchMode <= (int)PanelSearchMode.ListLength,
+                DisplayFilterValue = displayFilterValue && searchMode >= (int)PanelSearchMode.Value && Enum.IsDefined(typeof(PanelSearchMode), searchMode),
                 SearchMode = Enum.IsDefined(typeof(PanelSearchMode), searchMode) ? (PanelSearchMode)searchMode : PanelSearchMode.Text,
                 BranchPath = string.IsNullOrEmpty(branch) ? null : branch, BranchPrefix = prefix, OnlyInvalid = invalid,
                 SortMode = Enum.IsDefined(typeof(PanelSortMode), sort) ? (PanelSortMode)sort : PanelSortMode.SourceOrder };

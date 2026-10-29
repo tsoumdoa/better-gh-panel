@@ -11,6 +11,7 @@ namespace BetterGhPanel.Core
     internal sealed class PanelSearchFilter
     {
         private readonly PanelSearchMode _mode;
+        private readonly PanelPropertyFilter? _propertyFilter;
         private readonly string _text;
         private readonly Func<double, bool>? _comparison;
         private readonly Regex? _regex;
@@ -32,7 +33,11 @@ namespace BetterGhPanel.Core
             // Spaces in a regular expression are significant.
             if (_mode != PanelSearchMode.Regex) _text = _text.Trim();
             if (_text.Length == 0) return;
-            if (_mode == PanelSearchMode.Regex)
+            if (PanelProperties.IsProperty(_mode))
+            {
+                _propertyFilter = new PanelPropertyFilter(_mode, _text);
+            }
+            else if (_mode == PanelSearchMode.Regex)
             {
                 try { _regex = new Regex(_text, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100)); }
                 catch (ArgumentException) { throw new ArgumentException("Invalid regular expression. Check the pattern and try again."); }
@@ -47,17 +52,20 @@ namespace BetterGhPanel.Core
         }
 
         internal bool HasFilter => _text.Length != 0;
-        internal bool IsGeometry => _mode >= PanelSearchMode.Length && _mode <= PanelSearchMode.Volume;
+        internal bool IsGeometry => (_mode >= PanelSearchMode.Length && _mode <= PanelSearchMode.Volume) || PanelProperties.IsProperty(_mode);
         internal bool IsBranchFilter => _mode == PanelSearchMode.ListLength;
-        internal bool UsesDisplayText => HasFilter && !IsBranchFilter && (_regex != null || _comparison == null);
+        internal bool UsesDisplayText => HasFilter && !IsBranchFilter && !PanelProperties.IsProperty(_mode) && (_regex != null || _comparison == null);
         internal static bool IsNumericComparison(string text) => ParseComparison(text.Trim(), false) != null;
 
         internal bool MatchesBranchCount(int itemCount) => !HasFilter || !IsBranchFilter || _comparison!(itemCount);
 
-        internal bool CanMeasure(PanelRow row, bool forSorting = false)
+        internal bool CanMeasure(PanelRow row, bool forSorting = false, bool forPresentation = false)
         {
             var geometry = row.GeometryInfo;
             if (!row.IsValid || row.IsNull || geometry?.CanMeasure != true) return false;
+            if (forPresentation) return true;
+            if (PanelProperties.IsProperty(_mode))
+                return geometry.Properties.TryGetValue(_mode, out var property) && property == null;
             if (HasFilter)
             {
                 if (UsesDisplayText) return true;
@@ -72,6 +80,8 @@ namespace BetterGhPanel.Core
         internal bool Matches(PanelRow row, PanelUnitConversion conversion, PanelGeometryInfo? measured, CancellationToken token)
         {
             if (!HasFilter || IsBranchFilter) return true;
+            if (_propertyFilter != null)
+                return PanelProperties.TryGet(row, _mode, measured, out var property) && property != null && _propertyFilter.Matches(property, conversion);
             if (_regex != null)
             {
                 token.ThrowIfCancellationRequested();

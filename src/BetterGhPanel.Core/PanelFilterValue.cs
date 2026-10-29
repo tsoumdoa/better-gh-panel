@@ -7,6 +7,7 @@ namespace BetterGhPanel.Core
     public static class PanelFilterValue
     {
         public static bool MatchesGeometry(PanelSearchMode mode, PanelGeometryInfo geometry) =>
+            PanelProperties.IsProperty(mode) ? geometry.Properties.ContainsKey(mode) :
             mode >= PanelSearchMode.Length && mode <= PanelSearchMode.Volume &&
             (mode == PanelSearchMode.Area && geometry.HasArea ||
                 string.Equals(geometry.MetricName, mode.ToString(), StringComparison.OrdinalIgnoreCase) ||
@@ -35,6 +36,12 @@ namespace BetterGhPanel.Core
             PanelGeometryInfo? measured, out double value)
         {
             value = 0;
+            if (PanelProperties.IsProperty(mode))
+            {
+                if (!PanelProperties.TryGet(row, mode, measured, out var property) || property == null || property.Kind != PanelPropertyKind.Number) return false;
+                value = property.Converted(conversion);
+                return IsFinite(value);
+            }
             var geometry = measured ?? row.GeometryInfo;
             if (row.IsNull || !row.IsValid || geometry == null || !MatchesGeometry(mode, geometry) ||
                 !MetricValue(mode, geometry).HasValue) return false;
@@ -49,6 +56,12 @@ namespace BetterGhPanel.Core
         {
             if (mode == PanelSearchMode.ListLength)
                 return snapshot.BranchItemCounts.TryGetValue(row.Path, out int count) ? count.ToString(CultureInfo.InvariantCulture) : "unavailable";
+            if (PanelProperties.IsProperty(mode))
+            {
+                if (PanelProperties.TryGet(row, mode, measured, out var property))
+                    return property?.Format(snapshot.UnitConversion, decimals, includeUnits) ?? ((measured ?? row.GeometryInfo)?.MeasurementUnavailable == true ? "unavailable" : "measuring…");
+                if (row.IsValid && !row.IsNull) return "n/a";
+            }
             if (row.IsNull) return "null";
             if (row.Validity == PanelValidity.Unverified) return "unverified";
             if (row.Validity == PanelValidity.VerifiedInvalid) return "invalid";
