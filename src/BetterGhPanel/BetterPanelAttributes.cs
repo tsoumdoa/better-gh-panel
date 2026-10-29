@@ -749,7 +749,7 @@ namespace BetterGhPanel
             var modes = kind == CanvasMenuKind.SearchMode
                 ? Enum.GetValues(typeof(PanelSearchMode)).Cast<PanelSearchMode>().Where(session.Snapshot.SupportsSearchMode)
                 : null;
-            _menu.Toggle(kind, session.Snapshot, session.Options, session.Result, modes);
+            _menu.Toggle(kind, session.Snapshot, session.Options, session.Result, modes, _editingSearchMode);
             InvalidatePaintedHits();
             LayoutMenu();
             canvas.Invalidate();
@@ -1123,7 +1123,7 @@ namespace BetterGhPanel
                 }
                 var comparisonChoice = selectedComparison.Value.Comparison!.Value;
                 string comparison = CanvasMenu.ComparisonOperator(comparisonChoice);
-                string value = CanvasMenu.WithComparison(options.Search, comparisonChoice).Substring(comparison.Length).Trim();
+                string value = CanvasMenu.WithComparison(options.SearchMode == _editingSearchMode ? options.Search : "", comparisonChoice, _editingSearchMode).Substring(comparison.Length).Trim();
                 var mode = _editingSearchMode;
                 ShowQueryEditor(canvas, _search, value, text =>
                 {
@@ -1425,6 +1425,7 @@ namespace BetterGhPanel
                     ? "Match displayed row text with a case-insensitive regular expression, such as ^Wall or beam-[0-9]+. Matches use the selected units and decimal formatting. Empty text clears the filter."
                     : options.SearchMode == PanelSearchMode.ListLength
                     ? "Compare the number of items in each branch using >, >=, <, <=, = or !=. A number alone means equal. Counts include all items after tree tools and before type or invalid-only filters. Matching branches keep their items subject to those filters; = 0 keeps empty branches when no item filters are active. Empty text clears the filter."
+                    : PanelProperties.IsProperty(options.SearchMode) ? CanvasMenu.PropertyHelp(options.SearchMode)
                     : "Compare full-precision values using >, >=, <, <=, = or !=. A number alone means equal. Geometry uses matching display units. Length: curves, including circle circumference. Area: rectangles, surfaces, Breps and meshes. Volume: boxes, closed Breps and closed meshes. X/Y/Z: point or vector components. Rows without that property are excluded. Empty text clears the filter.";
                 if (options.DisplayFilterValue)
                     e.Description = "Display the selected value without a comparison. List length shows one count per branch after tree tools, including empty branches. Other modes show a value per item; n/a means the item has no eligible value. Type and Paths filters still apply. Outputs retain their typed data. Choose a comparison or edit the search to filter again.";

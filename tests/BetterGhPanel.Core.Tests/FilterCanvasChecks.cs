@@ -117,9 +117,9 @@ internal static class FilterCanvasChecks
                 }
                 menu.TrySelect(new PointF(menu.Bounds.Right - 10, menu.Bounds.Bottom - 5), out _);
             }
-            int count = kind == CanvasMenuKind.SearchMode ? 10 : 7;
+            int count = kind == CanvasMenuKind.SearchMode ? Enum.GetValues(typeof(PanelSearchMode)).Length : 7;
             Require(reachable.Count == count && menu.Label(count - 1).Length > 0, "Every filter and comparison remains reachable through compact paging");
-            Require(menu.IsSelected(kind == CanvasMenuKind.SearchMode ? count - 1 : 5, options, PanelUnitConversion.None, -1), "Saved mode and comparison remain visibly checked");
+            Require(menu.IsSelected(kind == CanvasMenuKind.SearchMode ? 9 : 5, options, PanelUnitConversion.None, -1), "Saved mode and comparison remain visibly checked");
             if (kind == CanvasMenuKind.Comparison)
             {
                 options.DisplayFilterValue = true;

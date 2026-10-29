@@ -239,7 +239,8 @@ internal static class CaptureSafetyChecks
         }
 
         // Uninitialized exact stock instances exercise identity even when their
-        // native value is absent. The plain mesh-face and null extrusion are safely invalid.
+        // native value is absent. Mesh-face and null SubD/extrusion are safely invalid;
+        // the captured default complex number is the valid value zero.
         var types = new[] { typeof(GH_Transform), typeof(GH_MeshFace), typeof(GH_ComplexNumber), typeof(GH_SubD), typeof(GH_Extrusion) };
         var values = types.Select(type => (IGH_Goo)RuntimeHelpers.GetUninitializedObject(type)).ToArray();
         var subd = (GH_SubD)values[3]; var extrusion = (GH_Extrusion)values[4];
@@ -250,11 +251,12 @@ internal static class CaptureSafetyChecks
         var tree = new GH_Structure<IGH_Goo>(); tree.AppendRange(objects, new GH_Path(0));
         var snapshot = capture(tree, out _);
         string[] names = { "Transform", "Meshface", "Complex", "SubD", "Extrusion", "{SubD}", "{Extrusion}", "{{SubD}}", "Goo" };
-        int[] invalidPositions = { 1, 4, 6 };
+        int[] invalidPositions = { 1, 3, 4, 5, 6, 7 };
+        Console.WriteLine("Stock identity statuses: " + string.Join(", ", snapshot.Rows.Select(row => row.TypeName + "=" + row.Validity)));
         Check(snapshot.Rows.Select(row => row.TypeName).SequenceEqual(names) &&
             snapshot.Rows.All(row => row.TypeIdentityAvailable) &&
             snapshot.Rows.Select((row, i) => row.Validity == (invalidPositions.Contains(i) ?
-                PanelValidity.VerifiedInvalid : PanelValidity.Unverified)).All(value => value),
+                PanelValidity.VerifiedInvalid : i == 2 ? PanelValidity.VerifiedValid : PanelValidity.Unverified)).All(value => value),
             "Missing stock names and exact wrapper layers remain known even for invalid or unsupported values");
         for (int i = 0; i < names.Length; i++)
         {

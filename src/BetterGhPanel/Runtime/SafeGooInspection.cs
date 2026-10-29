@@ -327,6 +327,8 @@ namespace BetterGhPanel.Runtime
             { var holder = (GH_Brep)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
             else if (type == typeof(GH_Mesh))
             { var holder = (GH_Mesh)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
+            else if (type == typeof(GH_SubD))
+            { var holder = (GH_SubD)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
             else if (type == typeof(GH_PointCloud))
             { var holder = (GH_PointCloud)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
             else if (type == typeof(GH_Extrusion))
@@ -452,6 +454,8 @@ namespace BetterGhPanel.Runtime
             else if (type == typeof(GH_Surface)) geometry = ((GH_Surface)goo).Value;
             else if (type == typeof(GH_Brep)) geometry = ((GH_Brep)goo).Value;
             else if (type == typeof(GH_Mesh)) geometry = ((GH_Mesh)goo).Value;
+            else if (type == typeof(GH_SubD))
+            { geometry = ((GH_SubD)goo).Value; return geometry == null || geometry.GetType() == typeof(SubD); }
             else if (type == typeof(GH_PointCloud))
             { geometry = ((GH_PointCloud)goo).Value; return geometry == null || geometry.GetType() == typeof(PointCloud); }
             else if (type == typeof(GH_Extrusion))
@@ -476,7 +480,7 @@ namespace BetterGhPanel.Runtime
         // Capture these stock types without expanding the independent preview or
         // measurement provider allowlists in this change.
         internal static bool IsExtendedCapturedGeometryHolder(Type type) =>
-            type == typeof(GH_PointCloud) || type == typeof(GH_Extrusion);
+            type == typeof(GH_PointCloud) || type == typeof(GH_Extrusion) || type == typeof(GH_SubD);
 
         internal static bool IsCapturedGeometryHolder(Type type) =>
             IsGeometryHolder(type) || IsExtendedCapturedGeometryHolder(type);
@@ -484,7 +488,7 @@ namespace BetterGhPanel.Runtime
         // Keep the previously audited validity allowlist independent of the broader
         // identity table. Newly recognized identities are not evidence of safe validity.
         private static bool HasTrustedLeafValidity(Type type) =>
-            type == typeof(GH_Number) || type == typeof(GH_Integer) || type == typeof(GH_String) ||
+            type == typeof(GH_Number) || type == typeof(GH_Integer) || type == typeof(GH_String) || type == typeof(GH_ComplexNumber) ||
             type == typeof(GH_Boolean) || type == typeof(GH_Colour) || type == typeof(GH_Interval) ||
             type == typeof(GH_Interval2D) || type == typeof(GH_Guid) || type == typeof(GH_Time) ||
             type == typeof(GH_Point) || type == typeof(GH_Plane) || type == typeof(GH_Vector) ||

@@ -26,7 +26,7 @@ namespace BetterGhPanel.Core
             {
                 text = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured));
                 copy = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false));
-                numeric = true; // Status labels fail the finite-number parse below.
+                numeric = !PanelProperties.IsProperty(query.SearchMode) || PanelProperties.Kind(query.SearchMode) == PanelPropertyKind.Number;
             }
             else
             {

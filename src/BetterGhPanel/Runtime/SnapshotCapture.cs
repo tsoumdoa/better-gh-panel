@@ -86,6 +86,7 @@ namespace BetterGhPanel.Runtime
                     PanelValidity validity;
                     PanelGeometryInfo? geometry = null;
                     PanelComponents? components = null;
+                    IReadOnlyDictionary<PanelSearchMode, PanelPropertyValue?>? properties = null;
                     PanelGroupSummary? groupSummary = null;
                     PanelSearchCapabilities capabilities;
                     GeometryBase? capturedGeometry = null;
@@ -154,6 +155,24 @@ namespace BetterGhPanel.Runtime
                                 var vector = ((GH_Vector)inspected).Value;
                                 components = new PanelComponents(vector.X, vector.Y, vector.Z, geometryUnits);
                             }
+                            if (scalar.Available && scalar.IsNumeric) properties = PanelProperties.Empty;
+                            else if (scalar.Available)
+                            {
+                                var captured = new Dictionary<PanelSearchMode, PanelPropertyValue?>();
+                                if (stringValue != null)
+                                {
+                                    captured[PanelSearchMode.TextValue] = PanelPropertyValue.String(stringValue);
+                                    captured[PanelSearchMode.CharacterCount] = PanelPropertyValue.Numeric(stringValue.Length);
+                                }
+                                else if (inspected.GetType() == typeof(GH_Boolean)) captured[PanelSearchMode.BooleanValue] = PanelPropertyValue.Boolean(display == "True");
+                                properties = captured;
+                            }
+                            else properties = PanelPropertyCapture.Scalar(inspected, geometryUnits);
+                            if (groupSummary != null) properties = new Dictionary<PanelSearchMode, PanelPropertyValue?>
+                            {
+                                [PanelSearchMode.GroupName] = PanelPropertyValue.String(groupSummary.Name),
+                                [PanelSearchMode.ObjectCount] = PanelPropertyValue.Numeric(groupSummary.Count)
+                            };
                             geometry = GeometryHints.DescribeCaptured(inspected!, capturedGeometry, geometryUnits);
                             // Only a standalone exact holder and its captured inner object
                             // can enter either reconstruction or the compatibility fallback.
@@ -172,12 +191,13 @@ namespace BetterGhPanel.Runtime
                         stringValue = null;
                         geometry = null;
                         components = null;
+                        properties = null;
                         capabilities = PanelSearchCapabilities.None;
                     }
                     finally { GC.KeepAlive(capturedGeometry); }
                     rows.Add(new PanelRow(i, path, type, display, number, validity,
                         typeIdentityAvailable: typeAvailable, searchCapabilities: capabilities, isNull: item == null,
-                        geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary, components: components));
+                        geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary, components: components, properties: properties));
                     source.Add(item);
                     geometrySources.Add(directLeaf.HasValue ? new CapturedMeasurementSource(directLeaf.Value) : null);
                     if (graph != null) graphs.Add((rows.Count - 1, graph));
@@ -317,7 +337,7 @@ namespace BetterGhPanel.Runtime
             if (type == typeof(GH_Line) || type == typeof(GH_Arc) || type == typeof(GH_Circle) || type == typeof(GH_Curve))
                 return PanelSearchCapabilities.Length;
             if (type == typeof(GH_Rectangle) || type == typeof(GH_Surface)) return PanelSearchCapabilities.Area;
-            if (type == typeof(GH_Box)) return PanelSearchCapabilities.Volume;
+            if (type == typeof(GH_Box)) return PanelSearchCapabilities.Volume | PanelSearchCapabilities.Area;
             if (type == typeof(GH_Brep) && validity == PanelValidity.VerifiedValid && geometry is Brep brep)
                 return PanelSearchCapabilities.Area | (brep.IsSolid ? PanelSearchCapabilities.Volume : PanelSearchCapabilities.None);
             if (type == typeof(GH_Mesh) && validity == PanelValidity.VerifiedValid && geometry is Mesh mesh)

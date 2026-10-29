@@ -408,6 +408,8 @@ namespace BetterGhPanel.Runtime
             else if (type == typeof(GH_Colour)) copy = new GH_Colour(((GH_Colour)value).Value);
             else if (type == typeof(GH_Interval)) copy = new GH_Interval(((GH_Interval)value).Value);
             else if (type == typeof(GH_Interval2D)) copy = new GH_Interval2D(((GH_Interval2D)value).Value);
+            else if (type == typeof(GH_ComplexNumber))
+            { var c = ((GH_ComplexNumber)value).Value; copy = new GH_ComplexNumber(new Complex(c.Real, c.Imaginary)); }
             else if (type == typeof(GH_Guid)) copy = new GH_Guid(((GH_Guid)value).Value);
             else if (type == typeof(GH_Time)) copy = new GH_Time(((GH_Time)value).Value);
             else if (type == typeof(GH_Plane)) copy = new GH_Plane(((GH_Plane)value).Value);
@@ -431,7 +433,7 @@ namespace BetterGhPanel.Runtime
         internal static bool IsManagedValueType(Type type) => type == typeof(GH_Number) || type == typeof(GH_Integer) ||
             type == typeof(GH_String) || type == typeof(GH_Boolean) || type == typeof(GH_Point) || type == typeof(GH_Vector) ||
             type == typeof(GH_Colour) || type == typeof(GH_Interval) || type == typeof(GH_Interval2D) || type == typeof(GH_Guid) ||
-            type == typeof(GH_Time) || type == typeof(GH_Plane) || type == typeof(GH_Line) || type == typeof(GH_Arc) ||
+            type == typeof(GH_ComplexNumber) || type == typeof(GH_Time) || type == typeof(GH_Plane) || type == typeof(GH_Line) || type == typeof(GH_Arc) ||
             type == typeof(GH_Circle) || type == typeof(GH_Rectangle) || type == typeof(GH_Box) || type == typeof(GH_MeshFace);
 
         private static bool SameManagedValue(object value, IGH_Goo copy)
@@ -448,6 +450,8 @@ namespace BetterGhPanel.Runtime
             if (type == typeof(GH_Interval)) return Same(((GH_Interval)value).Value, ((GH_Interval)copy).Value);
             if (type == typeof(GH_Interval2D))
             { var a = ((GH_Interval2D)value).Value; var b = ((GH_Interval2D)copy).Value; return Same(a.U, b.U) && Same(a.V, b.V); }
+            if (type == typeof(GH_ComplexNumber))
+            { var a = ((GH_ComplexNumber)value).Value; var b = ((GH_ComplexNumber)copy).Value; return Same(a.Real, b.Real) && Same(a.Imaginary, b.Imaginary); }
             if (type == typeof(GH_Guid)) return ((GH_Guid)value).Value == ((GH_Guid)copy).Value;
             if (type == typeof(GH_Time)) return ((GH_Time)value).Value.ToBinary() == ((GH_Time)copy).Value.ToBinary();
             if (type == typeof(GH_Plane)) return Same(((GH_Plane)value).Value, ((GH_Plane)copy).Value);

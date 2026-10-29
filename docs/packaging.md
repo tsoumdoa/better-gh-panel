@@ -1,5 +1,8 @@
 # Build and Yak packaging
 
+Unreleased property inspection adds `property-inspection` to the native inventory (19 fixtures). It checks scalar and geometry property capture, offscreen planarity filtering, typed D/F outputs, numeric property sets and copying, display-mode persistence, subclass rejection and SubD/complex capture freshness. The published `0.1.24-beta` artifacts and release validation below predate these additions.
+
+
 Patch `0.1.24-beta` adds mesh area and closed-mesh volume, point/vector X/Y/Z properties, solid-Brep surface area, and saved upward rounding of numeric output by a positive factor after unit conversion. Geometry measurements use the existing owned-copy background queue. Rounding affects numeric inputs; geometry coordinates and measured properties retain their precision. No new tests are added; the existing menu expectations and reflective units adapter follow the new choices/signature.
 
 BetterGhPanel follows HopperWire's Rhino 8 package layout and AECTooling metadata. The package contains `net48/` for Rhino's .NET Framework mode on Windows and `net7.0/` for Rhino's .NET mode on Windows and Mac. The pure data engine targets `netstandard2.0` and is shipped beside each `.gha`. Rhino supplies Grasshopper, RhinoCommon, Eto, System.Drawing, and WinForms; those SDK assemblies are compile references and are not copied into the package.
