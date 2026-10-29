@@ -38,9 +38,11 @@ namespace BetterGhPanel.Core
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
-            var propertySortValues = query.SortMode != PanelSortMode.SourceOrder && query.DisplayFilterValue && PanelProperties.IsProperty(query.SearchMode)
+            var propertySortValues = set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplayFilterValue && PanelProperties.IsProperty(query.SearchMode)
                 ? new Dictionary<int, PanelDisplayedValue>() : null;
-            var sortText = query.SortMode == PanelSortMode.SourceOrder ? null : new Dictionary<int, PanelText>();
+            // Sets and property views already supply complete displayed sort keys.
+            var sortText = query.SortMode != PanelSortMode.SourceOrder && set == null && propertySortValues == null
+                ? new Dictionary<int, PanelText>() : null;
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var branchCounts = new Dictionary<string, int>(StringComparer.Ordinal);

@@ -57,6 +57,10 @@ public sealed class PropertyChecks
         Assert.Null(result.DisplaySet!.Values[0].Number);
         Assert.Equal("001", result.DisplaySet.Values[0].CopyText);
         Assert.Equal(2, result.SetOccurrencesAt(0)!.Count);
+        query.SortMode = PanelSortMode.ValueDescending;
+        result = PanelQueryEngine.Execute(snapshot, query);
+        Assert.Equal(new[] { 2, 0 }, result.RowPositions);
+        Assert.Equal(2, result.SetOccurrencesAt(0)!.Count);
         var numbers = Snapshot(Row(0, PanelSearchMode.Radius, PanelPropertyValue.Numeric(1.234)), Row(1, PanelSearchMode.Radius, PanelPropertyValue.Numeric(1.233)));
         query.SearchMode = PanelSearchMode.Radius; query.DecimalPlaces = 2;
         result = PanelQueryEngine.Execute(numbers, query);
@@ -119,5 +123,11 @@ public sealed class PropertyChecks
         var result = PanelQueryEngine.Execute(snapshot, query);
         Assert.Equal(new[] { 1, 0, 2 }, result.RowPositions);
         Assert.Equal(0, result.Statistics.NumericCount); // Typed input statistics remain intact without Create set.
+        query.SortMode = PanelSortMode.ValueDescending;
+        Assert.Equal(new[] { 0, 1, 2 }, PanelQueryEngine.Execute(snapshot, query).RowPositions);
+        query.CreateSet = true;
+        result = PanelQueryEngine.Execute(snapshot, query);
+        Assert.Equal(new[] { 0, 1, 2 }, result.RowPositions);
+        Assert.Equal(2, result.Statistics.NumericCount);
     }
 }

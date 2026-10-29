@@ -14,7 +14,7 @@ Created in [T3 Code](https://t3.codes).
 
 ## Native MVP
 
-**Unreleased — selectable inspection properties:** The search dropdown now offers captured properties appropriate to the connected input. Select a property, then **Display value** or a comparison. Numeric/date properties support `>`, `>=`, `<`, `<=`, `=` and `!=`; Boolean/text properties support `=` and `!=`. Boolean thresholds are `True`/`False`. Text comparisons are exact and case-sensitive; quote text to preserve surrounding spaces (`= " 001 "`). Dates accept `yyyy-MM-dd` or `yyyy-MM-dd HH:mm:ss`, including fractional seconds, and compare stored calendar time without timezone conversion.
+**Patch `0.1.25-beta` — selectable inspection properties:** The search dropdown now offers captured properties appropriate to the connected input. Select a property, then **Display value** or a comparison. Numeric/date properties support `>`, `>=`, `<`, `<=`, `=` and `!=`; Boolean/text properties support `=` and `!=`. Boolean thresholds are `True`/`False`. Text comparisons are exact and case-sensitive; quote text to preserve surrounding spaces (`= " 001 "`). Dates accept `yyyy-MM-dd` or `yyyy-MM-dd HH:mm:ss`, including fractional seconds, and compare stored calendar time without timezone conversion.
 
 | Input | Additional selectable properties |
 | --- | --- |
@@ -107,7 +107,7 @@ Panel+ hides old rows, counts, type summaries and statistics behind **Recomputin
 
 [See the native recomputing state](docs/images/panel-recomputing.png).
 
-The public Yak beta is **`better-gh-panel 0.1.23-beta`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.23-beta`, then restart. See [release validation](docs/packaging.md) for the retained native regression coverage, known intermittent host/clipboard failures and remaining platform coverage.
+The public Yak beta is **`better-gh-panel 0.1.25-beta`**. In Rhino 8, run `PackageManager`, enable prereleases, and search for `better-gh-panel`. Or close Rhino and run `yak install better-gh-panel 0.1.25-beta`, then restart. See [release validation](docs/packaging.md) for the retained native regression coverage, known intermittent host/clipboard failures and remaining platform coverage.
 
 Beta **`0.1.15-beta`** adds current-result loading states, resumable queries with a 120 ms time budget, and filters on typed output after tree tools and unit conversion. Whitespace-only regex patterns filter output correctly; internalised geometry preview respects filters.
 
@@ -177,7 +177,7 @@ dotnet test BetterGhPanel.sln -c Release
 node scripts/package.mjs
 ```
 
-The published beta artifact is `artifacts/better-gh-panel-0.1.24-beta/better-gh-panel-0.1.24-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
+The published beta artifact is `artifacts/better-gh-panel-0.1.25-beta/better-gh-panel-0.1.25-beta-rh8_0-any.yak`. Packaging follows HopperWire's AECTooling metadata and `net48` / `net7.0` layout. See [installation and publishing preparation](docs/packaging.md). The packaging script builds locally; public publication uses an explicit Yak push.
 
 The native plug-in compiles for both Rhino runtime modes; the C# query harness covers filters, stats, stable sorting, empty branches, cancellation, and large data. Mac runtime validation requires a Mac with Rhino.
 
