@@ -115,8 +115,12 @@ namespace BetterGhPanel.UI
         internal RectangleF Bounds { get; private set; }
         internal int Offset { get; private set; }
         internal int HoveredIndex { get; private set; } = -1;
+        // Typing digits in a focused Paths menu narrows the branch list.
+        private string _branchFilter = string.Empty;
+        private int[]? _branchMatches;
+        internal string BranchFilter => _branchFilter;
         internal int Count => Kind == CanvasMenuKind.Type ? _types.Length + 2 :
-            Kind == CanvasMenuKind.Sort ? SortChoices.Length : Kind == CanvasMenuKind.Branch ? _snapshot.Branches.Count + 2 :
+            Kind == CanvasMenuKind.Sort ? SortChoices.Length : Kind == CanvasMenuKind.Branch ? (_branchMatches?.Length ?? _snapshot.Branches.Count) + 2 :
             Kind == CanvasMenuKind.Units ? UnitChoices.Length :
             Kind == CanvasMenuKind.SearchMode ? _searchChoices.Length : Kind == CanvasMenuKind.Comparison ? _comparisonChoices.Length :
             Kind == CanvasMenuKind.Preview ? PreviewChoices.Length :
@@ -216,6 +220,8 @@ namespace BetterGhPanel.UI
             _snapshot = PanelSnapshot.Empty;
             _types = Array.Empty<string>();
             _searchChoices = Array.Empty<CanvasChoice<PanelSearchMode>>();
+            _branchFilter = string.Empty;
+            _branchMatches = null;
         }
         internal bool IsCurrent(PanelSnapshot snapshot) => ReferenceEquals(_snapshot, snapshot);
         internal bool IsCurrent(PanelQueryResult result) => Kind != CanvasMenuKind.Statistics || ReferenceEquals(_statisticsResult, result);
@@ -231,6 +237,8 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.Statistics && _statisticsResult == null) Kind = CanvasMenuKind.None;
             Offset = 0;
             HoveredIndex = -1;
+            _branchFilter = string.Empty;
+            _branchMatches = null;
             if (Kind == CanvasMenuKind.Type)
             {
                 var keys = snapshot.TypeCounts.Keys;
@@ -339,7 +347,42 @@ namespace BetterGhPanel.UI
         }
 
         internal string TypeNameAt(int index) => _types[index - 2];
-        internal string BranchPathAt(int index) => _snapshot.Branches[index - 2].Path;
+        internal string BranchPathAt(int index) => _snapshot.Branches[BranchIndex(index)].Path;
+        private int BranchIndex(int index) => _branchMatches == null ? index - 2 : _branchMatches[index - 2];
+
+        internal void SetBranchFilter(string filter)
+        {
+            if (Kind != CanvasMenuKind.Branch) return;
+            _branchFilter = filter ?? string.Empty;
+            string wanted = Unbraced(_branchFilter);
+            _branchMatches = wanted.Length == 0 ? null : Enumerable.Range(0, _snapshot.Branches.Count)
+                .Where(i => Unbraced(_snapshot.Branches[i].Path).IndexOf(wanted, StringComparison.Ordinal) >= 0).ToArray();
+            Offset = 0;
+            HoveredIndex = _branchMatches == null ? -1 : _branchMatches.Length > 0 ? 2 : 1;
+            InvalidatePaint();
+        }
+
+        private static string Unbraced(string path) => path.Replace("{", "").Replace("}", "").Replace(" ", "");
+
+        // Keyboard and wheel navigation. The hovered row is the keyboard cursor.
+        internal void MoveHover(int step)
+        {
+            if (Kind == CanvasMenuKind.None || Count == 0) return;
+            HoveredIndex = HoveredIndex < 0 ? (step > 0 ? 0 : Count - 1) : Math.Max(0, Math.Min(Count - 1, HoveredIndex + step));
+            if (HoveredIndex < Offset) Offset = HoveredIndex;
+            else if (HoveredIndex >= Offset + Visible) Offset = HoveredIndex - Visible + 1;
+            InvalidatePaint();
+        }
+
+        internal bool Scroll(int rows)
+        {
+            int next = Math.Max(0, Math.Min(Math.Max(0, Count - Visible), Offset + rows));
+            if (next == Offset) return false;
+            Offset = next;
+            HoveredIndex = -1;
+            InvalidatePaint();
+            return true;
+        }
         internal PanelSortMode SortModeAt(int index) => SortChoices[index].Value;
         internal PanelSearchMode SearchModeAt(int index) => _searchChoices[index].Value;
         internal CanvasPreviewChoice PreviewChoiceAt(int index) => PreviewChoices[index];
@@ -444,8 +487,9 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.SearchMode) return _searchChoices[index].Label;
             if (Kind == CanvasMenuKind.Comparison) return ComparisonChoiceAt(index).Label;
             if (index == 0) return "All branches";
-            if (index == 1) return "Jump to exact path…";
-            var branch = _snapshot.Branches[index - 2];
+            if (index == 1) return _branchFilter.Length == 0 ? "Jump to exact path…" :
+                "Jump to {" + Unbraced(_branchFilter) + "}  ·  " + (_branchMatches?.Length ?? 0).ToString("N0") + " matching";
+            var branch = _snapshot.Branches[BranchIndex(index)];
             var path = branch.Path.Length <= 150 ? branch.Path : branch.Path.Substring(0, 149) + "…";
             return path + "   ·   " + branch.ItemCount.ToString("N0");
         }

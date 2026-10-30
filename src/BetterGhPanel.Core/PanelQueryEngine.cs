@@ -15,6 +15,20 @@ namespace BetterGhPanel.Core
             return work.Complete();
         }
 
+        // Live editors preview only searches that parse; a half-typed comparison or
+        // regular expression keeps the previous view instead of flashing an error.
+        public static bool IsValidSearch(PanelQueryOptions options)
+        {
+            if (options == null) return false;
+            try
+            {
+                _ = new PanelSearchFilter(options, CultureInfo.CurrentCulture);
+                if (options.BranchPath != null) _ = NormalizeBranchPath(options.BranchPath);
+                return true;
+            }
+            catch (ArgumentException) { return false; }
+        }
+
         public static PanelQueryWork Start(PanelSnapshot snapshot, PanelQueryOptions options,
             CancellationToken cancellationToken = default, IReadOnlyDictionary<int, PanelGeometryInfo>? measuredGeometry = null)
         {

@@ -12,6 +12,7 @@ public sealed class CoreTests
     [Fact] public void SetOccurrencesChecks() => global::SetOccurrencesChecks.Run();
     [Fact] public void DisplaySetChecks() => global::DisplaySetChecks.Run();
     [Fact] public void ItemOrderChecks() => global::ItemOrderChecks.Run();
+    [Fact] public void UxAuditChecks() => global::UxAuditChecks.Run();
     [Fact] public void SearchMatchesValuePathAndType() => Program.SearchMatchesValuePathAndType();
     [Fact] public void NumericComparisonsUseInvariantCulture() => Program.NumericComparisonsUseInvariantCulture();
     [Fact] public void BranchSelectionPreservesTreeSemantics() => Program.BranchSelectionPreservesTreeSemantics();

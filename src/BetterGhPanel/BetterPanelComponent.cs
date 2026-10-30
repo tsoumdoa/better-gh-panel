@@ -73,6 +73,13 @@ namespace BetterGhPanel
         private bool _outputPending;
         private PanelQueryOptions _savedOptions = new PanelQueryOptions();
         private bool _restoringView;
+        private bool _selectionChangedWhileSolving;
+        // Tree tools and Reset change what each address holds; their recompute
+        // starts with a fresh view instead of carrying over row selection.
+        private bool _discardViewRestore;
+        // A live search edit previews the view only. Wire outputs, document
+        // modification and downstream solutions wait for Enter.
+        internal bool QueryPreviewActive { get; private set; }
         internal int PreviewSize => CanvasPanelSize.PresetIndex(CanvasWidth, CanvasHeight);
         internal float CanvasWidth { get; private set; } = CanvasPanelSize.DefaultWidth;
         internal float CanvasHeight { get; private set; } = CanvasPanelSize.DefaultHeight;
@@ -105,7 +112,8 @@ namespace BetterGhPanel
             RowSelection.Changed += (_, __) =>
             {
                 ++_selectionVersion;
-                ScheduleOutput();
+                if (_solving) _selectionChangedWhileSolving = true;
+                if (!QueryPreviewActive) ScheduleOutput();
             };
         }
 
@@ -154,7 +162,7 @@ namespace BetterGhPanel
                         (Attributes as BetterPanelAttributes)?.InvalidateStatistics();
                         CancelPendingCopy();
                         ClearHighlight();
-                        if (!_restoringView)
+                        if (!_restoringView && !QueryPreviewActive)
                         {
                             var document = OnPingDocument();
                             document?.Modified();
@@ -164,7 +172,7 @@ namespace BetterGhPanel
                     _session.ResultChanged += (_, __) =>
                     {
                         (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
-                        if (!_solving && !_restoringView) ScheduleOutput();
+                        if (!_solving && !_restoringView && !QueryPreviewActive) ScheduleOutput();
                     };
                     (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
                 }
@@ -358,8 +366,31 @@ namespace BetterGhPanel
                 (doc.FindObject(_component, false) as BetterPanelComponent)?.ApplyShowItemOrder(show);
         }
 
+        internal void BeginQueryPreview() => QueryPreviewActive = true;
+
+        // Ends a live edit. A committed edit publishes like any other query change;
+        // an abandoned one already restored the original query, so outputs and the
+        // document never changed.
+        internal void EndQueryPreview(bool committed)
+        {
+            if (!QueryPreviewActive) return;
+            QueryPreviewActive = false;
+            if (!committed) return;
+            OnPingDocument()?.Modified();
+            ScheduleOutput();
+        }
+
+        internal bool SelectionHasGeometry(IReadOnlyList<int> positions)
+        {
+            var source = _sourceItems;
+            foreach (int position in positions)
+                if (position >= 0 && position < source.Length && source[position] is IGH_GeometricGoo) return true;
+            return false;
+        }
+
         internal void ResetPanel()
         {
+            _discardViewRestore = true;
             var options = Session.Options;
             bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0;
             bool settingsChanged = outputChanged || OutputScope != PanelOutputScope.Filtered || DecimalPlaces != PanelUnits.AutomaticDecimals ||
@@ -374,8 +405,12 @@ namespace BetterGhPanel
             OutputScope = PanelOutputScope.Filtered;
             ResetPanelView();
             if (settingsChanged) OnPingDocument()?.Modified();
-            if (outputChanged) ExpireSolution(true);
-            else ScheduleOutput();
+            try
+            {
+                if (outputChanged) ExpireSolution(true);
+                else ScheduleOutput();
+            }
+            finally { _discardViewRestore = false; }
             Instances.ActiveCanvas?.Invalidate();
         }
 
@@ -410,7 +445,9 @@ namespace BetterGhPanel
             }
             else Session.UpdateQuery(Session.Options);
             OnPingDocument()?.Modified();
-            ExpireSolution(true);
+            _discardViewRestore = true;
+            try { ExpireSolution(true); }
+            finally { _discardViewRestore = false; }
             Instances.ActiveCanvas?.Invalidate();
         }
 
@@ -774,7 +811,11 @@ namespace BetterGhPanel
                 _reuseQuery = false;
                 CancelPendingCopy();
                 ClearHighlight();
-                (Attributes as BetterPanelAttributes)?.ResetViewState();
+                // An upstream recompute keeps the reader's place: selection and scroll
+                // return when the new tree has exactly the same paths and lengths.
+                var attributes = Attributes as BetterPanelAttributes;
+                if (!_discardViewRestore) attributes?.StashViewForRestore();
+                attributes?.ResetViewState(keepViewRestore: !_discardViewRestore);
                 RowSelection.Clear();
                 _session?.InvalidateInput(_retainGeometryMeasurements, suspended: Locked);
             }
@@ -892,7 +933,11 @@ namespace BetterGhPanel
             finally
             {
                 _solving = previouslySolving;
-                if (rescheduleOutput && !previouslySolving) ScheduleOutput();
+                // A selection restored or changed by a callback during this solve
+                // may have missed its own publication request.
+                bool selectionChanged = _selectionChangedWhileSolving && !previouslySolving;
+                if (!previouslySolving) _selectionChangedWhileSolving = false;
+                if ((rescheduleOutput || selectionChanged) && !previouslySolving) ScheduleOutput();
             }
         }
 
@@ -964,8 +1009,10 @@ namespace BetterGhPanel
             CancelPendingCopy();
             ClearHighlight();
             (Attributes as BetterPanelAttributes)?.ResetViewState();
+            (Attributes as BetterPanelAttributes)?.ReleaseKeyboardFocus();
             RowSelection.Clear();
             CanvasTextInput.CloseActive();
+            QueryPreviewActive = false;
             if (_session != null) _savedOptions = _session.Options;
             _session?.Dispose();
             _session = null;

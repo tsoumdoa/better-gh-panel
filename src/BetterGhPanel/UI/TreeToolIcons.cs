@@ -11,8 +11,8 @@ namespace BetterGhPanel.UI
     // Draw in canvas units so the glyphs stay crisp at every zoom and host DPI.
     internal static class TreeToolIcons
     {
-        private static readonly Color Muted = Color.FromArgb(120, 127, 123);
-        private static readonly Color Accent = Color.FromArgb(77, 115, 94);
+        private static Color Muted => PanelTheme.Muted;
+        private static Color Accent => PanelTheme.Accent;
 
         internal static void Draw(Graphics g, RectangleF bounds, TreeToolIcon icon, bool active)
         {
@@ -20,10 +20,9 @@ namespace BetterGhPanel.UI
             if (size <= 0) return;
             if (active)
             {
-                using (var brush = new SolidBrush(Color.FromArgb(227, 237, 223))) g.FillRectangle(brush, bounds);
+                using (var brush = new SolidBrush(PanelTheme.Rgb(227, 237, 223))) g.FillRectangle(brush, bounds);
                 using (var pen = new Pen(Accent)) g.DrawLine(pen, bounds.Left, bounds.Bottom - 1, bounds.Right, bounds.Bottom - 1);
             }
-
             var state = g.Save();
             try
             {
@@ -57,12 +56,12 @@ namespace BetterGhPanel.UI
                             g.DrawLine(pen, 5.5f, 13.5f, 10.5f, 13.5f);
                             break;
                         case TreeToolIcon.Simplify:
-                            // Keep the familiar taper to a single, shorter path.
-                            g.DrawLines(pen, new[]
-                            {
-                                new PointF(2.5f, 3), new PointF(13.5f, 3), new PointF(9, 8),
-                                new PointF(9, 12), new PointF(7, 13), new PointF(7, 8), new PointF(2.5f, 3)
-                            });
+                            // Paths compress toward a shorter address. A funnel would read as "filter".
+                            g.DrawLine(pen, 8, 3, 8, 13);
+                            g.DrawLine(pen, 1.5f, 8, 5.5f, 8);
+                            g.DrawLines(pen, new[] { new PointF(3.5f, 6), new PointF(5.5f, 8), new PointF(3.5f, 10) });
+                            g.DrawLine(pen, 14.5f, 8, 10.5f, 8);
+                            g.DrawLines(pen, new[] { new PointF(12.5f, 6), new PointF(10.5f, 8), new PointF(12.5f, 10) });
                             break;
                         case TreeToolIcon.Flatten:
                             g.DrawLine(pen, 8, 2.5f, 8, 10);
