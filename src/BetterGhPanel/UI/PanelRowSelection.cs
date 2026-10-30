@@ -32,6 +32,16 @@ namespace BetterGhPanel.UI
         internal long Version => _version;
         internal event EventHandler? Changed;
 
+        // A live query may prune its own selection without changing committed
+        // membership or notifying the component's output scheduler.
+        internal PanelRowSelection CopyForPreview()
+        {
+            var copy = new PanelRowSelection(_rowVisited) { _result = _result, _index = _index, _anchor = _anchor };
+            copy._positions.UnionWith(_positions);
+            copy._emptyBranches.UnionWith(_emptyBranches);
+            return copy;
+        }
+
         private void NotifyChanged(int? position = null, bool selected = false)
         {
             _singleFrom = position.HasValue ? _version : -1;

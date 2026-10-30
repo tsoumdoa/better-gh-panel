@@ -14,6 +14,7 @@ internal static class UxAuditChecks
         BranchMenuFind();
         MenuKeyboardAndWheel();
         LiveSearchValidation();
+        PreviewSelectionIsolation();
     }
 
     private static void RowActionAvailability()
@@ -56,6 +57,16 @@ internal static class UxAuditChecks
         menu.Close();
         menu.Toggle(CanvasMenuKind.Branch, snapshot, new PanelQueryOptions());
         Check(menu.BranchFilter.Length == 0 && menu.Count == 7, "Reopening the menu starts without a stale filter");
+
+        var ambiguous = Enumerable.Range(0, 20).Select(i => new PanelBranch("{" + i + ";1}", 0))
+            .Concat(new[] { new PanelBranch("{1}", 0) }).ToArray();
+        menu.Close();
+        menu.Toggle(CanvasMenuKind.Branch, new PanelSnapshot(Array.Empty<PanelRow>(), ambiguous), new PanelQueryOptions());
+        menu.Layout(new RectangleF(0, 0, 360, 140), default, default, new RectangleF(9, 60, 64, 22));
+        menu.SetBranchFilter("1");
+        Check(menu.BranchPathAt(menu.HoveredIndex) == "{1}", "Enter prefers an exact path over earlier substring matches");
+        Check(menu.HoveredIndex >= menu.Offset && menu.HoveredIndex < menu.Offset + menu.Visible,
+            "The exact match stays visible when it is on a later menu page");
     }
 
     private static void MenuKeyboardAndWheel()
@@ -90,6 +101,34 @@ internal static class UxAuditChecks
         Check(!PanelQueryEngine.IsValidSearch(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "beam-[0-" }),
             "A half-typed regular expression keeps the previous view");
         Check(!PanelQueryEngine.IsValidSearch(new PanelQueryOptions { BranchPath = "0;x" }), "A malformed path is not previewed");
+    }
+
+    private static void PreviewSelectionIsolation()
+    {
+        var rows = Enumerable.Range(0, 20).Select(i => new PanelRow(i, "{0}", "Number", i.ToString(), i)).ToArray();
+        var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", rows.Length), new PanelBranch("{1}", 0) });
+        var original = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
+        var filtered = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SearchMode = PanelSearchMode.Value, Search = "> 10" });
+        var selection = new PanelRowSelection();
+        int changes = 0;
+        selection.Changed += (_, __) => changes++;
+        selection.Select(original, 0);
+        int before = changes;
+        var preview = selection.CopyForPreview();
+        preview.Synchronize(filtered);
+        Check(preview.Count == 0 && selection.Count == 1 && selection.Anchor == 0 && changes == before,
+            "A preview can hide selected rows without changing committed selection or scheduling outputs");
+        preview.Select(filtered, 19);
+        selection.Synchronize(PanelQueryEngine.Execute(snapshot, new PanelQueryOptions()));
+        Check(selection.OrderedPositions(original).SequenceEqual(new[] { 0 }) && changes == before,
+            "Cancelling a preview retains original membership, order and notifications");
+        selection.Synchronize(filtered);
+        Check(selection.Count == 0 && changes == before + 1, "Committing a filter prunes hidden selections and notifies outputs once");
+        selection.SelectAll(PanelQueryEngine.Execute(snapshot, new PanelQueryOptions
+            { SearchMode = PanelSearchMode.ListLength, DisplayFilterValue = true, CreateSet = true }), includeEmptyBranches: true);
+        preview = selection.CopyForPreview();
+        preview.Clear();
+        Check(selection.Count == 21, "A preview also isolates selected empty branches");
     }
 
     private static CanvasRowAction Find(CanvasRowAction[] actions, PanelRowAction action) => actions.Single(item => item.Action == action);

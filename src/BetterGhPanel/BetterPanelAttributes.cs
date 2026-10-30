@@ -47,7 +47,7 @@ namespace BetterGhPanel
         private long _queryEditorGeneration;
         private PanelQueryOptions? _previewOriginal;
         private object? _previewOwner;
-        private Guid _previewUndo;
+        private int _previewOffset;
         private int _offset, _shown, _firstShownItem, _lastShownItem;
         private PanelQueryResult? _lastResult;
         private PanelQueryResult? _paintedResult;
@@ -60,7 +60,7 @@ namespace BetterGhPanel
         private PointF _paintedPivot;
         private float _paintedZoom;
         private int _paintedOffset;
-        private readonly PanelRowSelection _selection;
+        private PanelRowSelection _selection;
         private GH_Canvas? _selectionCanvas;
         private readonly CanvasMenu _menu = new CanvasMenu();
         private bool _resizing, _scrolling;
@@ -103,6 +103,8 @@ namespace BetterGhPanel
 
         internal BetterPanelAttributes(BetterPanelComponent owner) : base(owner) { _selection = owner.RowSelection; }
 
+        internal void UseRowSelection(PanelRowSelection selection) => _selection = selection;
+
         internal void ResetViewState(bool keepViewRestore = false)
         {
             // An unconfirmed live search never survives a reset or a new input.
@@ -129,6 +131,7 @@ namespace BetterGhPanel
 
         internal void ClearRowSelection()
         {
+            _keyboardCursor = -1;
             _selection.Clear();
             DetachSelectionCanvas();
             InvalidateCopyStatus();
@@ -164,6 +167,7 @@ namespace BetterGhPanel
 
         private void SelectionCanvasMouseDown(object? sender, MouseEventArgs e)
         {
+            if (!CanvasTextInput.IsCurrent(_queryEditor)) CancelQueryEditor();
             if (sender is not GH_Canvas canvas || e.Button != MouseButtons.Left ||
                 !ReferenceEquals(canvas.Document, Owner.OnPingDocument()) || canvas.Document == null) return;
             if (e.Clicks > 1 && DateTime.UtcNow < _rowActionDismissedUntil) return;
@@ -244,6 +248,7 @@ namespace BetterGhPanel
                 InvalidatePaintedHits();
                 InvalidateCopyStatus();
                 _selection.Synchronize(result);
+                _keyboardCursor = -1;
                 _lastResult = result;
                 _offset = 0;
                 _menu.Close();
@@ -325,7 +330,7 @@ namespace BetterGhPanel
             _move = new RectangleF(_panel.X + 14, _panel.Y + 1, _reset.Left - _panel.X - 18, 23);
             // Reserve the corner for resizing rather than overlaying footer controls.
             // Wide panels fit status, selection, statistics, tools and Units on one line.
-            _singleLineFooter = _panel.Width >= 500;
+            _singleLineFooter &= _panel.Width >= 500;
             float footerHeight = _singleLineFooter ? 20 : 36;
             _footer = new RectangleF(x + 2, _panel.Bottom - footerHeight - 2, _panel.Width - 34, footerHeight);
             // Share one row so status text, tool glyphs and Units have the same center.
@@ -427,6 +432,14 @@ namespace BetterGhPanel
                     RenderCapsule(canvas, graphics, bold, small, trim);
                     session.RequestGeometryMeasurements(session.Snapshot, Array.Empty<int>());
                     return;
+                }
+                bool singleLine = _panel.Width >= 500 &&
+                    graphics.MeasureString(FooterStatus(result, singleLine: true), small).Width <= _panel.Width - 357;
+                if (singleLine != _singleLineFooter)
+                {
+                    _singleLineFooter = singleLine;
+                    Layout();
+                    _preservePaintedTargets = false;
                 }
                 Fill(graphics, PanelTheme.Background, _panel);
                 Fill(graphics, Accent, new RectangleF(_panel.X, _panel.Y, 3, HeaderHeight));
@@ -764,15 +777,7 @@ namespace BetterGhPanel
             int selectableCount = DisplayListLengths ? result.BranchPaths.Count : result.RowPositions.Count;
             Control(g, _selectAll, "Select all", small, trim, current && selectableCount > 0 && selected == selectableCount);
             Control(g, _statistics, "Stats", small, trim, current && _menu.Kind == CanvasMenuKind.Statistics);
-            string output = OutputLabel(result);
-            string status = PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
-                _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
-                !string.IsNullOrEmpty(PanelOwner.PreviewStatus) ? PanelOwner.PreviewStatus :
-                selected > 0 ? $"{selected:N0} selected" + (DisplayListLengths ? " branches" : " · right-click to copy") :
-                _singleLineFooter ? CanvasStatistics.Summary(result) + " · " + output :
-                DisplayListLengths ? $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} branches · {output}" :
-                _firstShownItem < 0 ? $"{result.RowPositions.Count:N0} items · {output}" :
-                $"{_firstShownItem + 1:N0}–{_lastShownItem + 1:N0}/{result.RowPositions.Count:N0} · {output}";
+            string status = FooterStatus(result, _singleLineFooter);
             float statusRight = _singleLineFooter ? _selectAll.Left - 6 : _trim.Left - 6;
             Text(g, status, small, Muted, new RectangleF(_footer.X, _units.Y, statusRight - _footer.X, _units.Height), trim);
             TreeToolIcons.Draw(g, _trim, TreeToolIcon.Trim, PanelOwner.TrimDepth > 0);
@@ -785,6 +790,21 @@ namespace BetterGhPanel
                 (PanelOwner.RoundUpFactor > 0 ? " · round " + PanelOwner.RoundUpFactor.ToString("G4", System.Globalization.CultureInfo.InvariantCulture) : "");
             DropdownControl(g, _units, unitLabel + precision, small, trim,
                 PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor > 0);
+        }
+
+        private string FooterStatus(PanelQueryResult result, bool singleLine)
+        {
+            var session = PanelOwner.Session;
+            int selected = PanelOwner.Locked || !session.HasCurrentResult ? 0 : DisplayListLengths ? _selection.BranchPaths(result).Count : _selection.Count;
+            string output = OutputLabel(result);
+            return PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
+                _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
+                !string.IsNullOrEmpty(PanelOwner.PreviewStatus) ? PanelOwner.PreviewStatus :
+                selected > 0 ? $"{selected:N0} selected" + (DisplayListLengths ? " branches" : " · right-click to copy") :
+                singleLine ? CanvasStatistics.Summary(result) + " · " + output :
+                DisplayListLengths ? $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} branches · {output}" :
+                _firstShownItem < 0 ? $"{result.RowPositions.Count:N0} items · {output}" :
+                $"{_firstShownItem + 1:N0}–{_lastShownItem + 1:N0}/{result.RowPositions.Count:N0} · {output}";
         }
 
         private RectangleF Thumb()
@@ -909,6 +929,8 @@ namespace BetterGhPanel
 
         public override GH_ObjectResponse RespondToMouseDown(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
+            CancelQueryEditor();
+            if (e.Button == MouseButtons.Left || e.Button == MouseButtons.Right) _keyboardCursor = -1;
             if (_paintedCanvas != null && !ReferenceEquals(_paintedCanvas, sender)) InvalidatePaintedHits();
             if (PanelOwner.PanelMinimized)
             {
@@ -1317,11 +1339,11 @@ namespace BetterGhPanel
         {
             object? token = null;
             ShowQueryEditor(canvas, _search, current, text => CommitQuery(token, undoName, build(text)),
-                text => PreviewQuery(token!, undoName, build(text)), () => EndQueryPreview(token));
+                text => PreviewQuery(token!, build(text)), () => EndQueryPreview(token));
             token = _queryEditor;
         }
 
-        private void PreviewQuery(object token, string undoName, PanelQueryOptions options)
+        private void PreviewQuery(object token, PanelQueryOptions options)
         {
             var session = PanelOwner.Session;
             if (!ReferenceEquals(token, _queryEditor) || !ReferenceEquals(_queryEditorSnapshot, session.Snapshot) ||
@@ -1330,8 +1352,7 @@ namespace BetterGhPanel
             {
                 _previewOriginal = session.Options;
                 _previewOwner = token;
-                // Recorded before the first change, so Undo restores the original query.
-                _previewUndo = PanelOwner.RecordUndoEvent(undoName);
+                _previewOffset = _offset;
                 PanelOwner.BeginQueryPreview();
             }
             session.UpdateQuery(options);
@@ -1342,27 +1363,31 @@ namespace BetterGhPanel
             var session = PanelOwner.Session;
             if (_previewOriginal == null || !ReferenceEquals(_previewOwner, token))
             {
-                PanelOwner.RecordUndoEvent(undoName);
+                PanelOwner.RecordQueryUndo(undoName, session.Options, options);
                 session.UpdateQuery(options);
                 return;
             }
             var original = _previewOriginal;
-            var undo = _previewUndo;
+            if (PanelQueryPolicy.SameQuery(original, options))
+            {
+                EndQueryPreview(token);
+                return;
+            }
+            PanelOwner.RecordQueryUndo(undoName, original, options);
             ClearPreviewState();
             session.UpdateQuery(options);
             PanelOwner.EndQueryPreview(committed: true);
-            if (PanelQueryPolicy.SameQuery(original, options)) PanelOwner.OnPingDocument()?.UndoServer.RemoveRecord(undo);
         }
 
         private void EndQueryPreview(object? token)
         {
             if (_previewOriginal == null || !ReferenceEquals(_previewOwner, token)) return;
             var original = _previewOriginal;
-            var undo = _previewUndo;
+            _viewRestore = new ViewRestore(PanelOwner.Session.Snapshot, _previewOffset,
+                original.DisplayFilterValue && original.SearchMode == PanelSearchMode.ListLength);
             ClearPreviewState();
             PanelOwner.Session.UpdateQuery(original);
             PanelOwner.EndQueryPreview(committed: false);
-            PanelOwner.OnPingDocument()?.UndoServer.RemoveRecord(undo);
             Grasshopper.Instances.ActiveCanvas?.Invalidate();
         }
 
@@ -1370,7 +1395,7 @@ namespace BetterGhPanel
         {
             _previewOriginal = null;
             _previewOwner = null;
-            _previewUndo = Guid.Empty;
+            _previewOffset = 0;
         }
 
         private void ShowQueryEditor(GH_Canvas canvas, RectangleF bounds, string current, Action<string> accepted,
@@ -1403,9 +1428,10 @@ namespace BetterGhPanel
             _queryEditor = editor;
         }
 
-        private void CancelQueryEditor()
+        internal void CancelQueryEditor()
         {
             ++_queryEditorGeneration;
+            EndQueryPreview(_previewOwner);
             CanvasTextInput.Close(_queryEditor);
             _queryEditor = null;
             _queryEditorSnapshot = null;

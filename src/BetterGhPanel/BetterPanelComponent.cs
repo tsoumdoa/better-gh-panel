@@ -79,6 +79,7 @@ namespace BetterGhPanel
         // A live search edit previews the view only. Wire outputs, document
         // modification and downstream solutions wait for Enter.
         internal bool QueryPreviewActive { get; private set; }
+        private PanelQueryOptions? _queryPreviewOptions;
         internal int PreviewSize => CanvasPanelSize.PresetIndex(CanvasWidth, CanvasHeight);
         internal float CanvasWidth { get; private set; } = CanvasPanelSize.DefaultWidth;
         internal float CanvasHeight { get; private set; } = CanvasPanelSize.DefaultHeight;
@@ -364,7 +365,38 @@ namespace BetterGhPanel
                 (doc.FindObject(_component, false) as BetterPanelComponent)?.ApplyShowItemOrder(show);
         }
 
-        internal void BeginQueryPreview() => QueryPreviewActive = true;
+        internal void BeginQueryPreview()
+        {
+            _queryPreviewOptions = Session.Options;
+            _queryPreviewSelection = _committedSelection.CopyForPreview();
+            QueryPreviewActive = true;
+            (Attributes as BetterPanelAttributes)?.UseRowSelection(RowSelection);
+        }
+
+        internal void RecordQueryUndo(string name, PanelQueryOptions before, PanelQueryOptions after)
+        {
+            if (!PanelQueryPolicy.SameQuery(before, after))
+                RecordUndoEvent(name, new QueryUndo(InstanceGuid, before, after));
+        }
+
+        private sealed class QueryUndo : GH_UndoAction
+        {
+            private readonly Guid _component;
+            private readonly PanelQueryOptions _before, _after;
+            internal QueryUndo(Guid component, PanelQueryOptions before, PanelQueryOptions after)
+            { _component = component; _before = before.Clone(); _after = after.Clone(); }
+            public override bool ExpiresSolution => false;
+            public override bool ExpiresDisplay => false;
+            protected override void Internal_Undo(GH_Document doc) => Apply(doc, _before);
+            protected override void Internal_Redo(GH_Document doc) => Apply(doc, _after);
+            private void Apply(GH_Document doc, PanelQueryOptions options)
+            {
+                var component = doc.FindObject(_component, false) as BetterPanelComponent;
+                if (component == null) return;
+                (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor();
+                component.Session.UpdateQuery(options);
+            }
+        }
 
         // Ends a live edit. A committed edit publishes like any other query change;
         // an abandoned one already restored the original query, so outputs and the
@@ -372,17 +404,32 @@ namespace BetterGhPanel
         internal void EndQueryPreview(bool committed)
         {
             if (!QueryPreviewActive) return;
+            _queryPreviewSelection = null;
+            _queryPreviewOptions = null;
             QueryPreviewActive = false;
-            if (!committed) return;
-            OnPingDocument()?.Modified();
+            (Attributes as BetterPanelAttributes)?.UseRowSelection(RowSelection);
+            (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
+            if (committed) OnPingDocument()?.Modified();
             ScheduleOutput();
         }
 
         internal bool SelectionHasGeometry(IReadOnlyList<int> positions)
         {
             var source = _sourceItems;
+            var budget = new PanelGeometrySources.Budget();
             foreach (int position in positions)
-                if (position >= 0 && position < source.Length && source[position] is IGH_GeometricGoo) return true;
+            {
+                if (position < 0 || position >= source.Length) continue;
+                var item = source[position];
+                if (item is GH_ObjectWrapper)
+                {
+                    using var inspected = PanelGeometrySources.Inspect(item, budget, allowStandalonePreview: true);
+                    // Uncertain wrappers stay available; the action performs its
+                    // full freshness and capability checks when invoked.
+                    if (inspected.Unavailable || inspected.Leaves.Count > 0) return true;
+                }
+                else if (item is IGH_GeometricGoo || item is IGH_PreviewData) return true;
+            }
             return false;
         }
 
@@ -780,7 +827,7 @@ namespace BetterGhPanel
             document.ScheduleSolution(1, _ =>
             {
                 if (request != _outputRequest || !ReferenceEquals(document, OnPingDocument()) ||
-                    !ReferenceEquals(session, _session) || !ReferenceEquals(snapshot, session.Snapshot) || _queryTree == null) return;
+                    !ReferenceEquals(session, _session) || !ReferenceEquals(snapshot, session.Snapshot) || _queryTree == null || QueryPreviewActive) return;
                 _preserveQuery = true;
                 _reuseQuery = true;
                 try { ExpireSolution(false); }
@@ -1043,7 +1090,7 @@ namespace BetterGhPanel
 
         public override bool Write(GH_IWriter writer)
         {
-            var options = _session?.Options ?? _savedOptions;
+            var options = _queryPreviewOptions ?? _session?.Options ?? _savedOptions;
             writer.SetString("PanelSearch", options.Search ?? "");
             writer.SetInt32("PanelSearchMode", (int)options.SearchMode);
             writer.SetBoolean("PanelDisplayFilterValue", options.DisplayFilterValue);

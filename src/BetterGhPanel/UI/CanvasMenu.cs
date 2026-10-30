@@ -359,6 +359,12 @@ namespace BetterGhPanel.UI
                 .Where(i => Unbraced(_snapshot.Branches[i].Path).IndexOf(wanted, StringComparison.Ordinal) >= 0).ToArray();
             Offset = 0;
             HoveredIndex = _branchMatches == null ? -1 : _branchMatches.Length > 0 ? 2 : 1;
+            if (_branchMatches != null)
+            {
+                int exact = Array.FindIndex(_branchMatches, i => Unbraced(_snapshot.Branches[i].Path) == wanted);
+                if (exact >= 0) HoveredIndex = exact + 2;
+                Offset = Math.Max(0, HoveredIndex - Visible + 1);
+            }
             InvalidatePaint();
         }
 

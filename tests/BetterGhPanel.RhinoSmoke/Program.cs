@@ -59,6 +59,7 @@ internal static class Program
         ["capture-transaction"] = CaptureTransactionChecks.Run,
         ["capture-stock-geometry"] = CaptureStockGeometryChecks.RunNative,
         ["property-inspection"] = PropertyInspectionChecks.Run,
+        ["ui-ux"] = UxInteractionChecks.Run,
     };
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
