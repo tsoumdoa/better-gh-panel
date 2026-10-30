@@ -73,6 +73,13 @@ namespace BetterGhPanel
         private bool _outputPending;
         private PanelQueryOptions _savedOptions = new PanelQueryOptions();
         private bool _restoringView;
+        // Tree tools and Reset change what each address holds; their recompute
+        // starts at the top instead of keeping the scroll position.
+        private bool _discardViewRestore;
+        // A live search edit previews the view only. Wire outputs, document
+        // modification and downstream solutions wait for Enter.
+        internal bool QueryPreviewActive { get; private set; }
+        private PanelQueryOptions? _queryPreviewOptions;
         internal int PreviewSize => CanvasPanelSize.PresetIndex(CanvasWidth, CanvasHeight);
         internal float CanvasWidth { get; private set; } = CanvasPanelSize.DefaultWidth;
         internal float CanvasHeight { get; private set; } = CanvasPanelSize.DefaultHeight;
@@ -105,7 +112,7 @@ namespace BetterGhPanel
             RowSelection.Changed += (_, __) =>
             {
                 ++_selectionVersion;
-                ScheduleOutput();
+                if (!QueryPreviewActive) ScheduleOutput();
             };
         }
 
@@ -154,7 +161,7 @@ namespace BetterGhPanel
                         (Attributes as BetterPanelAttributes)?.InvalidateStatistics();
                         CancelPendingCopy();
                         ClearHighlight();
-                        if (!_restoringView)
+                        if (!_restoringView && !QueryPreviewActive)
                         {
                             var document = OnPingDocument();
                             document?.Modified();
@@ -164,7 +171,7 @@ namespace BetterGhPanel
                     _session.ResultChanged += (_, __) =>
                     {
                         (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
-                        if (!_solving && !_restoringView) ScheduleOutput();
+                        if (!_solving && !_restoringView && !QueryPreviewActive) ScheduleOutput();
                     };
                     (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
                 }
@@ -358,8 +365,77 @@ namespace BetterGhPanel
                 (doc.FindObject(_component, false) as BetterPanelComponent)?.ApplyShowItemOrder(show);
         }
 
+        internal void BeginQueryPreview()
+        {
+            _queryPreviewOptions = Session.Options;
+            _queryPreviewSelection = _committedSelection.CopyForPreview();
+            QueryPreviewActive = true;
+            (Attributes as BetterPanelAttributes)?.UseRowSelection(RowSelection);
+        }
+
+        internal void RecordQueryUndo(string name, PanelQueryOptions before, PanelQueryOptions after)
+        {
+            if (!PanelQueryPolicy.SameQuery(before, after))
+                RecordUndoEvent(name, new QueryUndo(InstanceGuid, before, after));
+        }
+
+        private sealed class QueryUndo : GH_UndoAction
+        {
+            private readonly Guid _component;
+            private readonly PanelQueryOptions _before, _after;
+            internal QueryUndo(Guid component, PanelQueryOptions before, PanelQueryOptions after)
+            { _component = component; _before = before.Clone(); _after = after.Clone(); }
+            public override bool ExpiresSolution => false;
+            public override bool ExpiresDisplay => false;
+            protected override void Internal_Undo(GH_Document doc) => Apply(doc, _before);
+            protected override void Internal_Redo(GH_Document doc) => Apply(doc, _after);
+            private void Apply(GH_Document doc, PanelQueryOptions options)
+            {
+                var component = doc.FindObject(_component, false) as BetterPanelComponent;
+                if (component == null) return;
+                (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor();
+                component.Session.UpdateQuery(options);
+            }
+        }
+
+        // Ends a live edit. A committed edit publishes like any other query change;
+        // an abandoned one already restored the original query, so outputs and the
+        // document never changed.
+        internal void EndQueryPreview(bool committed)
+        {
+            if (!QueryPreviewActive) return;
+            _queryPreviewSelection = null;
+            _queryPreviewOptions = null;
+            QueryPreviewActive = false;
+            (Attributes as BetterPanelAttributes)?.UseRowSelection(RowSelection);
+            (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
+            if (committed) OnPingDocument()?.Modified();
+            ScheduleOutput();
+        }
+
+        internal bool SelectionHasGeometry(IReadOnlyList<int> positions)
+        {
+            var source = _sourceItems;
+            var budget = new PanelGeometrySources.Budget();
+            foreach (int position in positions)
+            {
+                if (position < 0 || position >= source.Length) continue;
+                var item = source[position];
+                if (item is GH_ObjectWrapper)
+                {
+                    using var inspected = PanelGeometrySources.Inspect(item, budget, allowStandalonePreview: true);
+                    // Uncertain wrappers stay available; the action performs its
+                    // full freshness and capability checks when invoked.
+                    if (inspected.Unavailable || inspected.Leaves.Count > 0) return true;
+                }
+                else if (item is IGH_GeometricGoo || item is IGH_PreviewData) return true;
+            }
+            return false;
+        }
+
         internal void ResetPanel()
         {
+            _discardViewRestore = true;
             var options = Session.Options;
             bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0;
             bool settingsChanged = outputChanged || OutputScope != PanelOutputScope.Filtered || DecimalPlaces != PanelUnits.AutomaticDecimals ||
@@ -374,8 +450,12 @@ namespace BetterGhPanel
             OutputScope = PanelOutputScope.Filtered;
             ResetPanelView();
             if (settingsChanged) OnPingDocument()?.Modified();
-            if (outputChanged) ExpireSolution(true);
-            else ScheduleOutput();
+            try
+            {
+                if (outputChanged) ExpireSolution(true);
+                else ScheduleOutput();
+            }
+            finally { _discardViewRestore = false; }
             Instances.ActiveCanvas?.Invalidate();
         }
 
@@ -410,7 +490,9 @@ namespace BetterGhPanel
             }
             else Session.UpdateQuery(Session.Options);
             OnPingDocument()?.Modified();
-            ExpireSolution(true);
+            _discardViewRestore = true;
+            try { ExpireSolution(true); }
+            finally { _discardViewRestore = false; }
             Instances.ActiveCanvas?.Invalidate();
         }
 
@@ -745,7 +827,7 @@ namespace BetterGhPanel
             document.ScheduleSolution(1, _ =>
             {
                 if (request != _outputRequest || !ReferenceEquals(document, OnPingDocument()) ||
-                    !ReferenceEquals(session, _session) || !ReferenceEquals(snapshot, session.Snapshot) || _queryTree == null) return;
+                    !ReferenceEquals(session, _session) || !ReferenceEquals(snapshot, session.Snapshot) || _queryTree == null || QueryPreviewActive) return;
                 _preserveQuery = true;
                 _reuseQuery = true;
                 try { ExpireSolution(false); }
@@ -774,7 +856,11 @@ namespace BetterGhPanel
                 _reuseQuery = false;
                 CancelPendingCopy();
                 ClearHighlight();
-                (Attributes as BetterPanelAttributes)?.ResetViewState();
+                // An upstream recompute keeps the scroll position when the new tree
+                // has exactly the same paths and lengths. Selection always clears.
+                var attributes = Attributes as BetterPanelAttributes;
+                if (!_discardViewRestore) attributes?.StashViewForRestore();
+                attributes?.ResetViewState(keepViewRestore: !_discardViewRestore);
                 RowSelection.Clear();
                 _session?.InvalidateInput(_retainGeometryMeasurements, suspended: Locked);
             }
@@ -964,8 +1050,10 @@ namespace BetterGhPanel
             CancelPendingCopy();
             ClearHighlight();
             (Attributes as BetterPanelAttributes)?.ResetViewState();
+            (Attributes as BetterPanelAttributes)?.ReleaseKeyboardFocus();
             RowSelection.Clear();
             CanvasTextInput.CloseActive();
+            QueryPreviewActive = false;
             if (_session != null) _savedOptions = _session.Options;
             _session?.Dispose();
             _session = null;
@@ -1002,7 +1090,7 @@ namespace BetterGhPanel
 
         public override bool Write(GH_IWriter writer)
         {
-            var options = _session?.Options ?? _savedOptions;
+            var options = _queryPreviewOptions ?? _session?.Options ?? _savedOptions;
             writer.SetString("PanelSearch", options.Search ?? "");
             writer.SetInt32("PanelSearchMode", (int)options.SearchMode);
             writer.SetBoolean("PanelDisplayFilterValue", options.DisplayFilterValue);

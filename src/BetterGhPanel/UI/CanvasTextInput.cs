@@ -1,16 +1,27 @@
 using System;
 using System.Drawing;
+using System.Linq;
+using System.Windows.Forms;
 using Grasshopper.GUI.Base;
 using Grasshopper.GUI.Canvas;
 
+// Grasshopper's text overlay is a WinForms control on Windows and Mac.
+#pragma warning disable CA1416
 namespace BetterGhPanel.UI
 {
     // Uses the same host-owned text overlay as Grasshopper's native sliders.
     // Bounds are projected once when the editor opens; the host owns keyboard focus.
+    // Optional live editors report debounced edits, then exactly one outcome:
+    // Enter accepts; Escape, focus loss or a programmatic close abandons.
     internal sealed class CanvasTextInput : GH_TextBoxInputBase
     {
+        private const int LiveDelay = 250;
         private static WeakReference<CanvasTextInput>? _active;
         private Action<string>? _accepted;
+        private Action<string>? _changed;
+        private Action? _abandoned;
+        private Timer? _timer;
+        private bool _completed;
         private object? _owner;
         private WeakReference<GH_Canvas>? _canvas;
         private RectangleF _canvasBounds;
@@ -19,7 +30,8 @@ namespace BetterGhPanel.UI
 
         private CanvasTextInput(Action<string> accepted) { _accepted = accepted; }
 
-        internal static CanvasTextInput Show(GH_Canvas canvas, object owner, RectangleF canvasBounds, string current, Action<string> accepted)
+        internal static CanvasTextInput Show(GH_Canvas canvas, object owner, RectangleF canvasBounds, string current, Action<string> accepted,
+            Action<string>? changed = null, Action? abandoned = null)
         {
             CloseActive();
             var projected = Rectangle.Round(canvas.Viewport.ProjectRectangle(canvasBounds));
@@ -40,7 +52,54 @@ namespace BetterGhPanel.UI
             };
             _active = new WeakReference<CanvasTextInput>(editor);
             editor.ShowTextInputBox(canvas, current ?? string.Empty, true, true);
+            if (changed != null || abandoned != null) editor.AttachLive(canvas, changed, abandoned);
             return editor;
+        }
+
+        private void AttachLive(GH_Canvas canvas, Action<string>? changed, Action? abandoned)
+        {
+            // The host adds one panel containing its TextBox on top of the canvas.
+            var host = canvas.Controls.Cast<Control>().LastOrDefault(control => control.Controls.OfType<TextBox>().Any());
+            var box = host?.Controls.OfType<TextBox>().FirstOrDefault();
+            if (host == null || box == null) return;
+            _changed = changed;
+            _abandoned = abandoned;
+            if (changed != null)
+            {
+                _timer = new Timer { Interval = LiveDelay };
+                _timer.Tick += (_, __) =>
+                {
+                    _timer?.Stop();
+                    if (!_completed && _accepted != null && !box.IsDisposed) _changed?.Invoke(box.Text);
+                };
+                box.TextChanged += (_, __) =>
+                {
+                    if (_completed || _timer == null) return;
+                    _timer.Stop();
+                    _timer.Start();
+                };
+            }
+            void Hidden(object? sender, EventArgs e)
+            {
+                if (host.Parent != null) return;
+                host.ParentChanged -= Hidden;
+                _timer?.Stop();
+                _timer?.Dispose();
+                _timer = null;
+                // The host hides the box before it reports Enter, so decide afterwards.
+                void Decide()
+                {
+                    if (_completed) return;
+                    _completed = true;
+                    var callback = _abandoned;
+                    _abandoned = null;
+                    _changed = null;
+                    callback?.Invoke();
+                }
+                if (canvas.IsHandleCreated && !canvas.IsDisposed) canvas.BeginInvoke((Action)Decide);
+                else Decide();
+            }
+            host.ParentChanged += Hidden;
         }
 
         protected override void HandleTextInputAccepted(string text)
@@ -48,6 +107,9 @@ namespace BetterGhPanel.UI
             if (_active != null && _active.TryGetTarget(out var current) && ReferenceEquals(current, this)) _active = null;
             var accepted = _accepted;
             _accepted = null;
+            _completed = true;
+            _changed = null;
+            _abandoned = null;
             _accepting = true;
             try { accepted?.Invoke(text); }
             finally { _accepting = false; }
@@ -84,3 +146,4 @@ namespace BetterGhPanel.UI
         }
     }
 }
+#pragma warning restore CA1416

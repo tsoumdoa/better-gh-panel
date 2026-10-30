@@ -58,12 +58,12 @@ namespace BetterGhPanel
             bool expanded = _setDetails.SourcePosition == sourcePosition && _setDetails.IsOpen;
             bool repeated = occurrences.Count > 1;
             DrawSetBadge(g, new RectangleF(countBounds.X + 2, bounds.Y + 1.5f, countBounds.Width - 18, bounds.Height - 3), repeated, expanded);
-            renderer.DrawValue(g, $"{occurrences.Count:N0}", small, expanded || repeated ? Accent : Color.FromArgb(139, 148, 132),
+            renderer.DrawValue(g, $"{occurrences.Count:N0}", small, expanded || repeated ? Accent : PanelTheme.Rgb(139, 148, 132),
                 new RectangleF(countBounds.X + 6, bounds.Y, countBounds.Width - 36, bounds.Height), true);
-            renderer.DrawCell(g, "×", small, expanded ? Accent : repeated ? Color.FromArgb(130, 149, 117) : Color.FromArgb(161, 171, 153),
+            renderer.DrawCell(g, "×", small, expanded ? Accent : repeated ? PanelTheme.Rgb(130, 149, 117) : PanelTheme.Rgb(161, 171, 153),
                 new RectangleF(countBounds.Right - 28, bounds.Y, 8, bounds.Height));
             DrawSetChevron(g, new RectangleF(countBounds.Right - 12, bounds.Y, 10, bounds.Height), expanded,
-                expanded ? Accent : Color.FromArgb(152, 167, 141));
+                expanded ? Accent : PanelTheme.Rgb(152, 167, 141));
             if (TargetPainted(g, countBounds) && !_setHits.Any(hit => hit.Bounds == countBounds && hit.SourcePosition == sourcePosition))
                 _setHits.Add(new RowHit(countBounds, sourcePosition, viewNumber));
         }
@@ -77,10 +77,10 @@ namespace BetterGhPanel
             shape.AddArc(bounds.Right - corner, bounds.Bottom - corner, corner, corner, 0, 90);
             shape.AddArc(bounds.X, bounds.Bottom - corner, corner, corner, 90, 90);
             shape.CloseFigure();
-            using var fill = new SolidBrush(expanded ? Color.FromArgb(220, 233, 210) :
-                repeated ? Color.FromArgb(237, 243, 232) : Color.FromArgb(250, 251, 249));
-            using var border = new Pen(expanded ? Color.FromArgb(158, 182, 141) :
-                repeated ? Color.FromArgb(210, 223, 203) : Color.FromArgb(228, 233, 223));
+            using var fill = new SolidBrush(expanded ? PanelTheme.Rgb(220, 233, 210) :
+                repeated ? PanelTheme.Rgb(237, 243, 232) : PanelTheme.Rgb(250, 251, 249));
+            using var border = new Pen(expanded ? PanelTheme.Rgb(158, 182, 141) :
+                repeated ? PanelTheme.Rgb(210, 223, 203) : PanelTheme.Rgb(228, 233, 223));
             var state = g.Save();
             try
             {
@@ -97,8 +97,8 @@ namespace BetterGhPanel
             var occurrences = _setDetails.Occurrences;
             if (bounds.IsEmpty || occurrences == null) return;
             var row = result.Snapshot.Rows[_setDetails.SourcePosition];
-            Fill(g, Color.White, bounds);
-            Fill(g, Color.FromArgb(236, 241, 235), new RectangleF(bounds.X, bounds.Y, bounds.Width, 23));
+            Fill(g, PanelTheme.Background, bounds);
+            Fill(g, PanelTheme.Rgb(236, 241, 235), new RectangleF(bounds.X, bounds.Y, bounds.Width, 23));
             Text(g, "Occurrences: " + PanelOwner.DisplayValue(result.Snapshot, row, _setDetails.SourcePosition), small, Ink,
                 new RectangleF(bounds.X + 7, bounds.Y + 1, bounds.Width - 34, 21), trim);
             DrawSetChevron(g, _setDetails.Collapse, true);
@@ -112,7 +112,7 @@ namespace BetterGhPanel
             {
                 var address = occurrences.Locations[_setDetails.Offset + i];
                 var line = new RectangleF(_setDetails.Table.X, _setDetails.Table.Y + i * RowHeight, _setDetails.Table.Width, RowHeight);
-                Fill(g, (i & 1) == 0 ? Color.FromArgb(247, 249, 246) : Color.White, line);
+                Fill(g, (i & 1) == 0 ? PanelTheme.Rgb(247, 249, 246) : PanelTheme.Background, line);
                 Text(g, address.Path, mono, Ink, new RectangleF(line.X + 3, line.Y, line.Width - indexWidth - 9, line.Height), trim);
                 Text(g, address.ItemIndex.ToString(), mono, Ink, new RectangleF(line.Right - indexWidth, line.Y, indexWidth - 3, line.Height), trim);
                 MarkDetailTarget(g, line);
@@ -126,7 +126,7 @@ namespace BetterGhPanel
                 MarkDetailTarget(g, _setDetails.Previous);
                 MarkDetailTarget(g, _setDetails.Next);
             }
-            using var border = new Pen(Color.FromArgb(164, 171, 164));
+            using var border = new Pen(PanelTheme.Rgb(164, 171, 164));
             g.DrawRectangle(border, bounds.X, bounds.Y, bounds.Width, bounds.Height);
         }
 

@@ -48,8 +48,8 @@ namespace BetterGhPanel
         private void RenderRowMenu(Graphics g, Font font, StringFormat trim)
         {
             if (_rowMenuResult == null || !ResultIsCurrent(_rowMenuResult)) return;
-            Fill(g, Color.FromArgb(32, 49, 55, 53), new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + 2, _rowMenuBounds.Width, _rowMenuBounds.Height));
-            Fill(g, Color.White, _rowMenuBounds);
+            Fill(g, PanelTheme.Shadow, new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + 2, _rowMenuBounds.Width, _rowMenuBounds.Height));
+            Fill(g, PanelTheme.Background, _rowMenuBounds);
             var actions = _rowMenuPendingActions;
             if (!_preservePaintedTargets)
                 _rowMenuActions = Enumerable.Repeat(new CanvasRowAction(PanelRowAction.Unpainted, "", ""), actions.Length).ToArray();
@@ -57,14 +57,15 @@ namespace BetterGhPanel
             {
                 var bounds = new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + i * CanvasRowActions.RowHeight,
                     _rowMenuBounds.Width - 2, CanvasRowActions.RowHeight);
-                if (i == _rowMenuHovered) Fill(g, Color.FromArgb(226, 236, 226), bounds);
-                Text(g, actions[i].Label, font, Ink, new RectangleF(bounds.X + 8, bounds.Y, bounds.Width - 16, bounds.Height), trim);
+                if (i == _rowMenuHovered) Fill(g, PanelTheme.Rgb(226, 236, 226), bounds);
+                Text(g, actions[i].Label, font, actions[i].Enabled ? Ink : PanelTheme.Rgb(176, 182, 178),
+                    new RectangleF(bounds.X + 8, bounds.Y, bounds.Width - 16, bounds.Height), trim);
                 // Partial invalidations must not activate a row that has not
                 // actually been painted at its new position.
                 var target = new RectangleF(_rowMenuBounds.X, bounds.Y, _rowMenuBounds.Width, bounds.Height);
                 if (TargetPainted(g, target)) _rowMenuActions[i] = actions[i];
             }
-            using (var pen = new Pen(Color.FromArgb(194, 205, 194)))
+            using (var pen = new Pen(PanelTheme.Rgb(194, 205, 194)))
                 g.DrawRectangle(pen, _rowMenuBounds.X, _rowMenuBounds.Y, _rowMenuBounds.Width, _rowMenuBounds.Height);
             _rowMenuPainted = _rowMenuActions.Any(action => action.Action != PanelRowAction.Unpainted);
         }
@@ -117,7 +118,8 @@ namespace BetterGhPanel
                 TrackSelectionCanvas(canvas);
                 var options = PanelOwner.Session.Options;
                 bool filtered = options.Search.Length > 0 || options.TypeName != null || options.OnlyInvalid || options.BranchPath != null;
-                _rowMenuAllActions = CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered);
+                _rowMenuAllActions = CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered,
+                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX);
                 _rowMenuAnchor = e.CanvasLocation;
                 _rowMenuSourcePosition = hit.SourcePosition;
                 _rowMenuPaged = CanvasRowActions.NeedsPages(_panel.Height - HeaderHeight - 6);
@@ -253,7 +255,7 @@ namespace BetterGhPanel
                 var action = _rowMenuActions[index];
                 e.Title = action.Label;
                 e.Text = action.Action == PanelRowAction.ViewFullValue ? "The row you right-clicked" : $"{_selection.Count:N0} selected";
-                e.Description = PanelTextPreview.ForTooltip(action.Description);
+                e.Description = PanelTextPreview.ForTooltip(action.Enabled ? action.Description : "Unavailable: " + action.DisabledReason);
             }
             return true;
         }

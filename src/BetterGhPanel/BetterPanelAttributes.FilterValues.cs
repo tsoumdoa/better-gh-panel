@@ -19,7 +19,7 @@ namespace BetterGhPanel
             // leaves room for a branch and its explicitly labeled count.
             if (_list.Height >= BranchHeight + RowHeight)
             {
-                Fill(graphics, Color.FromArgb(236, 241, 235), new RectangleF(_list.X, y, _list.Width, BranchHeight));
+                Fill(graphics, PanelTheme.Rgb(236, 241, 235), new RectangleF(_list.X, y, _list.Width, BranchHeight));
                 Text(graphics, "Branch", small, Accent, new RectangleF(_list.X + 6, y, _list.Width / 2, BranchHeight), trim);
                 Text(graphics, "List length", small, Accent, new RectangleF(_list.Right - 90 - (set ? 40 : 0), y, 84, BranchHeight), trim);
                 y += BranchHeight;
@@ -28,11 +28,11 @@ namespace BetterGhPanel
             {
                 string path = result.BranchPaths[index];
                 var bounds = new RectangleF(_list.X, y, _list.Width, RowHeight);
-                Fill(graphics, selected.Contains(path) ? Color.FromArgb(216, 232, 219) : (_shown & 1) == 0 ? Color.White : Color.FromArgb(247, 249, 246), bounds);
+                Fill(graphics, selected.Contains(path) ? PanelTheme.Rgb(216, 232, 219) : (_shown & 1) == 0 ? PanelTheme.Background : PanelTheme.Rgb(247, 249, 246), bounds);
                 if (set && result.DisplaySet!.BranchSourceStatuses.TryGetValue(path, out var statuses))
                 {
-                    if (statuses.VerifiedInvalid > 0) Fill(graphics, Color.FromArgb(180, 106, 67), new RectangleF(bounds.X, bounds.Y + 3, 2, bounds.Height - 6));
-                    if (statuses.Unverified > 0) Fill(graphics, Color.FromArgb(103, 112, 166), new RectangleF(bounds.X + (statuses.VerifiedInvalid > 0 ? 2 : 0), bounds.Y + 3, 2, bounds.Height - 6));
+                    if (statuses.VerifiedInvalid > 0) Fill(graphics, PanelTheme.Rgb(180, 106, 67), new RectangleF(bounds.X, bounds.Y + 3, 2, bounds.Height - 6));
+                    if (statuses.Unverified > 0) Fill(graphics, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (statuses.VerifiedInvalid > 0 ? 2 : 0), bounds.Y + 3, 2, bounds.Height - 6));
                 }
                 float badgeWidth = set ? 40 : 0;
                 renderer.DrawCell(graphics, path, mono, Accent, new RectangleF(bounds.X + 6, y, Math.Max(0, bounds.Width - 102 - badgeWidth), RowHeight));
@@ -51,8 +51,8 @@ namespace BetterGhPanel
                     small, Muted, new RectangleF(_list.X + 6, _list.Y, _list.Width - 12, RowHeight), trim);
             if (Count > _shown)
             {
-                Fill(graphics, Color.FromArgb(232, 236, 229), _track);
-                Fill(graphics, Color.FromArgb(153, 174, 156), Thumb());
+                Fill(graphics, PanelTheme.Rgb(232, 236, 229), _track);
+                Fill(graphics, PanelTheme.Rgb(153, 174, 156), Thumb());
             }
         }
     }

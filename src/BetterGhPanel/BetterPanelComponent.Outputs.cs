@@ -14,7 +14,9 @@ namespace BetterGhPanel
 {
     public sealed partial class BetterPanelComponent
     {
-        internal PanelRowSelection RowSelection { get; } = new PanelRowSelection();
+        private readonly PanelRowSelection _committedSelection = new PanelRowSelection();
+        private PanelRowSelection? _queryPreviewSelection;
+        internal PanelRowSelection RowSelection => _queryPreviewSelection ?? _committedSelection;
         internal PanelOutputScope OutputScope { get; private set; }
         private GH_Structure<IGH_Goo>? _inputTree, _preConversionTree, _pairedQueryTree;
         private GH_Structure<IGH_Goo>? _liveInputTree, _livePairedTree, _pairedInputTree;

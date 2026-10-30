@@ -17,5 +17,6 @@
   "standalone-compatibility",
   "capture-transaction",
   "capture-stock-geometry",
-  "property-inspection"
+  "property-inspection",
+  "ui-ux"
 ]

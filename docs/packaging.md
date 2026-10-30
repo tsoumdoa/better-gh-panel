@@ -1,5 +1,7 @@
 # Build and Yak packaging
 
+The unreleased UI/UX fixes add `ui-ux` to the native inventory (20 fixtures). It exercises debounced host textbox previews, cancellation and no-op commits with synchronous and asynchronous queries, selection and scroll restoration, unchanged outputs and Undo/Redo history, committed-query serialization, search commit/Undo/Redo, mouse-to-keyboard selection, footer sizing and wrapped geometry action availability.
+
 Patch `0.1.25-beta` adds selectable inspection properties and `property-inspection` to the native inventory (19 fixtures). It checks scalar and geometry property capture, offscreen planarity filtering, typed D/F outputs, numeric property sets and copying, display-mode persistence, subclass rejection and SubD/complex capture freshness.
 
 Patch `0.1.24-beta` adds mesh area and closed-mesh volume, point/vector X/Y/Z properties, solid-Brep surface area, and saved upward rounding of numeric output by a positive factor after unit conversion. Geometry measurements use the existing owned-copy background queue. Rounding affects numeric inputs; geometry coordinates and measured properties retain their precision. No new tests are added; the existing menu expectations and reflective units adapter follow the new choices/signature.

@@ -47,17 +47,17 @@ namespace BetterGhPanel.UI
 
         internal void DrawAddress(Graphics graphics, RectangleF row, int viewNumber, int originalIndex, bool sorted, bool selected)
         {
-            using (var brush = new SolidBrush(selected ? Color.FromArgb(209, 225, 211) : Color.FromArgb(238, 242, 236)))
+            using (var brush = new SolidBrush(selected ? PanelTheme.Rgb(209, 225, 211) : PanelTheme.Rgb(238, 242, 236)))
                 graphics.FillRectangle(brush, row.X, row.Y, GutterWidth, row.Height);
-            using (var pen = new Pen(selected ? Color.FromArgb(194, 213, 195) : Color.FromArgb(223, 230, 220)))
+            using (var pen = new Pen(selected ? PanelTheme.Rgb(194, 213, 195) : PanelTheme.Rgb(223, 230, 220)))
                 graphics.DrawLine(pen, row.X + GutterWidth - 0.5f, row.Y, row.X + GutterWidth - 0.5f, row.Bottom);
             float indexStart = row.X + GutterWidth - 8 - _indexWidth;
             DrawCell(graphics, (sorted ? viewNumber : originalIndex).ToString(CultureInfo.InvariantCulture),
-                _number, Color.FromArgb(78, 92, 82),
+                _number, PanelTheme.Rgb(78, 92, 82),
                 new RectangleF(row.X + 6, row.Y, sorted ? indexStart - row.X - 10 : GutterWidth - 12, row.Height), true);
             if (sorted)
                 DrawCell(graphics, "[" + originalIndex.ToString(CultureInfo.InvariantCulture) + "]",
-                    _index, Color.FromArgb(107, 120, 111),
+                    _index, PanelTheme.Rgb(107, 120, 111),
                     new RectangleF(indexStart, row.Y, _indexWidth, row.Height), true, 2);
         }
 
