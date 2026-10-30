@@ -5,8 +5,7 @@ using BetterGhPanel.Core;
 using BetterGhPanel.UI;
 
 // Pure policy behind the UI/UX audit fixes: greyed-out row actions, Paths
-// type-to-find, keyboard/wheel menu navigation, selection restored across an
-// identical upstream recompute, and live-search validation.
+// type-to-find, keyboard/wheel menu navigation and live-search validation.
 internal static class UxAuditChecks
 {
     internal static void Run()
@@ -14,7 +13,6 @@ internal static class UxAuditChecks
         RowActionAvailability();
         BranchMenuFind();
         MenuKeyboardAndWheel();
-        SelectionRestore();
         LiveSearchValidation();
     }
 
@@ -82,33 +80,6 @@ internal static class UxAuditChecks
         Check(menu.Offset == menu.Count - menu.Visible && !menu.Scroll(1), "Scrolling down clamps at the last page");
     }
 
-    private static void SelectionRestore()
-    {
-        var before = Sample(1);
-        var after = Sample(2);
-        var oldResult = PanelQueryEngine.Execute(before, new PanelQueryOptions());
-        var newResult = PanelQueryEngine.Execute(after, new PanelQueryOptions());
-        var selection = new PanelRowSelection();
-        selection.Select(oldResult, 1);
-        selection.Select(oldResult, 3, toggle: true);
-        var positions = selection.PositionsSnapshot();
-        int anchor = selection.Anchor;
-        selection.Clear();
-        int notifications = 0;
-        selection.Changed += (_, __) => notifications++;
-        selection.Restore(newResult, positions, Array.Empty<string>(), anchor);
-        Check(selection.OrderedPositions(newResult).SequenceEqual(new[] { 1, 3 }) && selection.Anchor == 3 && notifications == 1,
-            "An identical tree shape restores the same branch/index selection and notifies outputs once");
-        var filtered = PanelQueryEngine.Execute(after, new PanelQueryOptions { Search = "> 25" });
-        selection.Clear();
-        selection.Restore(filtered, positions, Array.Empty<string>(), anchor);
-        Check(selection.OrderedPositions(filtered).SequenceEqual(new[] { 3 }), "Rows hidden by the current filter are not restored");
-        selection.Clear();
-        notifications = 0;
-        selection.Restore(newResult, new[] { -1, 99 }, Array.Empty<string>(), -1);
-        Check(selection.Count == 0 && notifications == 0, "Out-of-range positions are ignored without notifying outputs");
-    }
-
     private static void LiveSearchValidation()
     {
         Check(PanelQueryEngine.IsValidSearch(new PanelQueryOptions { Search = "wall" }), "Plain text is always a valid live search");
@@ -120,12 +91,6 @@ internal static class UxAuditChecks
             "A half-typed regular expression keeps the previous view");
         Check(!PanelQueryEngine.IsValidSearch(new PanelQueryOptions { BranchPath = "0;x" }), "A malformed path is not previewed");
     }
-
-    // Two branches, five numeric items; the seed changes values but not the shape.
-    private static PanelSnapshot Sample(int seed) => new PanelSnapshot(
-        Enumerable.Range(0, 5).Select(i => new PanelRow(i < 3 ? i : i - 3, i < 3 ? "{0}" : "{1}", "Number",
-            (i * 10 * seed).ToString(System.Globalization.CultureInfo.InvariantCulture), i * 10.0 * seed)).ToArray(),
-        new[] { new PanelBranch("{0}", 3), new PanelBranch("{1}", 2) });
 
     private static CanvasRowAction Find(CanvasRowAction[] actions, PanelRowAction action) => actions.Single(item => item.Action == action);
 

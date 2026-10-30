@@ -224,27 +224,8 @@ namespace BetterGhPanel.UI
             Replace(next, anchor);
         }
 
+        // The keyboard cursor continues from the last clicked or moved-to row.
         internal int Anchor => _anchor;
-        internal int[] PositionsSnapshot() => _positions.ToArray();
-        internal string[] EmptyBranchesSnapshot() => _emptyBranches.ToArray();
-
-        // Reapplies a selection captured from an earlier snapshot. Callers must only
-        // pass positions from a tree with identical paths and branch lengths, so each
-        // position still names the same branch path and item index.
-        internal void Restore(PanelQueryResult result, IEnumerable<int> positions, IEnumerable<string> emptyBranches, int anchor)
-        {
-            Synchronize(result);
-            var next = new HashSet<int>();
-            foreach (int position in positions)
-            {
-                _rowVisited?.Invoke();
-                if (position >= 0 && position < result.Snapshot.Rows.Count && result.TryGetViewIndex(position, out _)) next.Add(position);
-            }
-            var empty = result.DisplaySet?.IsBranchSet == true
-                ? new HashSet<string>(emptyBranches.Where(result.ContainsBranchPath), StringComparer.Ordinal) : null;
-            if (next.Count == 0 && (empty == null || empty.Count == 0)) return;
-            Replace(next, next.Contains(anchor) ? anchor : -1, empty);
-        }
 
         internal void SelectAll(PanelQueryResult result, string? branchPath = null, bool includeEmptyBranches = false)
         {

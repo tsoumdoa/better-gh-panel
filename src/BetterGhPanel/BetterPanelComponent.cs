@@ -73,9 +73,8 @@ namespace BetterGhPanel
         private bool _outputPending;
         private PanelQueryOptions _savedOptions = new PanelQueryOptions();
         private bool _restoringView;
-        private bool _selectionChangedWhileSolving;
         // Tree tools and Reset change what each address holds; their recompute
-        // starts with a fresh view instead of carrying over row selection.
+        // starts at the top instead of keeping the scroll position.
         private bool _discardViewRestore;
         // A live search edit previews the view only. Wire outputs, document
         // modification and downstream solutions wait for Enter.
@@ -112,7 +111,6 @@ namespace BetterGhPanel
             RowSelection.Changed += (_, __) =>
             {
                 ++_selectionVersion;
-                if (_solving) _selectionChangedWhileSolving = true;
                 if (!QueryPreviewActive) ScheduleOutput();
             };
         }
@@ -811,8 +809,8 @@ namespace BetterGhPanel
                 _reuseQuery = false;
                 CancelPendingCopy();
                 ClearHighlight();
-                // An upstream recompute keeps the reader's place: selection and scroll
-                // return when the new tree has exactly the same paths and lengths.
+                // An upstream recompute keeps the scroll position when the new tree
+                // has exactly the same paths and lengths. Selection always clears.
                 var attributes = Attributes as BetterPanelAttributes;
                 if (!_discardViewRestore) attributes?.StashViewForRestore();
                 attributes?.ResetViewState(keepViewRestore: !_discardViewRestore);
@@ -933,11 +931,7 @@ namespace BetterGhPanel
             finally
             {
                 _solving = previouslySolving;
-                // A selection restored or changed by a callback during this solve
-                // may have missed its own publication request.
-                bool selectionChanged = _selectionChangedWhileSolving && !previouslySolving;
-                if (!previouslySolving) _selectionChangedWhileSolving = false;
-                if ((rescheduleOutput || selectionChanged) && !previouslySolving) ScheduleOutput();
+                if (rescheduleOutput && !previouslySolving) ScheduleOutput();
             }
         }
 

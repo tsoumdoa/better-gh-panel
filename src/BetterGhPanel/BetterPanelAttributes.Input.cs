@@ -302,15 +302,16 @@ namespace BetterGhPanel
             if (had) canvas?.Invalidate();
         }
 
-        // Upstream recomputes keep selection and scroll position when the new tree
-        // has the same paths and branch lengths; otherwise the view starts fresh.
+        // Upstream recomputes keep the scroll position when the new tree has the
+        // same paths and branch lengths; otherwise the view starts at the top.
+        // Selection deliberately still clears: an address may now hold different
+        // data, and S/B/F must never silently emit items the user did not pick.
         internal void StashViewForRestore()
         {
             var result = _lastResult;
             // A second expiry before the next result keeps the original stash.
             if (result == null) return;
-            _viewRestore = _selection.Count == 0 && _offset == 0 ? null : new ViewRestore(result.Snapshot,
-                _selection.PositionsSnapshot(), _selection.EmptyBranchesSnapshot(), _selection.Anchor, _offset, DisplayListLengths);
+            _viewRestore = _offset == 0 ? null : new ViewRestore(result.Snapshot, _offset, DisplayListLengths);
         }
 
         private void RestoreView(PanelQueryResult result)
@@ -319,7 +320,6 @@ namespace BetterGhPanel
             if (restore == null) return;
             _viewRestore = null;
             if (restore.ListLengths != DisplayListLengths || !SameStructure(restore.Snapshot, result.Snapshot)) return;
-            _selection.Restore(result, restore.Positions, restore.EmptyBranches, restore.Anchor);
             _offset = restore.Offset;
         }
 
@@ -333,14 +333,11 @@ namespace BetterGhPanel
 
         private sealed class ViewRestore
         {
-            internal ViewRestore(PanelSnapshot snapshot, int[] positions, string[] emptyBranches, int anchor, int offset, bool listLengths)
+            internal ViewRestore(PanelSnapshot snapshot, int offset, bool listLengths)
             {
-                Snapshot = snapshot; Positions = positions; EmptyBranches = emptyBranches; Anchor = anchor; Offset = offset; ListLengths = listLengths;
+                Snapshot = snapshot; Offset = offset; ListLengths = listLengths;
             }
             internal PanelSnapshot Snapshot { get; }
-            internal int[] Positions { get; }
-            internal string[] EmptyBranches { get; }
-            internal int Anchor { get; }
             internal int Offset { get; }
             internal bool ListLengths { get; }
         }
