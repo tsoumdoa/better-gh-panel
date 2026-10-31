@@ -58,7 +58,7 @@ Type in the search field: rows update as you type, **Enter** applies the query a
 | List length · per branch | `>= 3`, `= 0` |
 | Input-specific properties (below) | `>= 2`, `>= 2026-01-01` |
 
-Comparisons use full precision in the units shown. Picking a mode shows its value (or list length) in each row; click the search field to filter by it — Validity and true/false properties are picked from a list (Valid, Invalid, Unverified, Null / True, False). Combine searches with the **Types** filter (including *invalid only*) and **Paths** (`0;2;4` or `{0;2;4}`, including descendants). **Asc/Desc** sorts within each branch and adds Excel-style row numbers; wire outputs always keep tree order.
+Comparisons use full precision in the units shown. Pick a comparison mode to show its values, then click the search field to filter. Validity offers Valid/Invalid/Unverified/Null; Boolean properties offer True/False. **×** clears the filter, then the values. Combine searches with the **Types** filter (including *invalid only*) and **Paths** (`0;2;4` or `{0;2;4}`, including descendants). **Asc/Desc** sorts within each branch and adds Excel-style row numbers; wire outputs always keep tree order.
 
 <details>
 <summary>Selectable properties by input type</summary>

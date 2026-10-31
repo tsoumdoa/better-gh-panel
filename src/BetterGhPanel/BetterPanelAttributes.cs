@@ -35,7 +35,7 @@ namespace BetterGhPanel
             get
             {
                 var options = PanelOwner.Session.Options;
-                return !_searchClear.IsEmpty && (!string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue);
+                return !_searchClear.IsEmpty && (!string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue || CanvasMenu.IsComparisonMode(options.SearchMode));
             }
         }
         private bool BranchClearVisible => !_branchClear.IsEmpty && PanelOwner.Session.Options.BranchPath != null;
@@ -1306,14 +1306,7 @@ namespace BetterGhPanel
                 {
                     if (options.SearchMode == _editingSearchMode && (options.DisplayFilterValue || !string.IsNullOrEmpty(options.Search)))
                     { canvas.Invalidate(); return; }
-                    PanelOwner.RecordUndoEvent("Display filter value");
-                    options.SearchMode = _editingSearchMode;
-                    options.DisplayFilterValue = true;
-                    options.Search = string.Empty;
-                    _offset = _pairedOffset = 0;
-                    PanelOwner.Session.UpdateQuery(options);
-                    PanelOwner.OnPingDocument()?.Modified();
-                    canvas.Invalidate();
+                    SetSearch(canvas, _editingSearchMode, string.Empty, true);
                 }
                 else EditSearch(canvas, _editingSearchMode, options.SearchMode == _editingSearchMode ? options.Search : string.Empty);
                 return;
@@ -1322,26 +1315,12 @@ namespace BetterGhPanel
             {
                 if (selectedComparison!.Value.IsDisplayValue)
                 {
-                    PanelOwner.RecordUndoEvent("Display filter value");
-                    options.SearchMode = _editingSearchMode;
-                    options.DisplayFilterValue = true;
-                    options.Search = string.Empty;
-                    _offset = _pairedOffset = 0;
-                    PanelOwner.Session.UpdateQuery(options);
-                    canvas.Invalidate();
+                    SetSearch(canvas, _editingSearchMode, string.Empty, true);
                     return;
                 }
                 if (selectedComparison.Value.IsValue)
                 {
-                    options.SearchMode = _editingSearchMode;
-                    options.DisplayFilterValue = false;
-                    options.Search = "= " + selectedComparison.Value.Value;
-                    if (PanelQueryPolicy.SameQuery(oldOptions, options)) { canvas.Invalidate(); return; }
-                    PanelOwner.RecordUndoEvent("Panel filter");
-                    _offset = _pairedOffset = 0;
-                    PanelOwner.Session.UpdateQuery(options);
-                    PanelOwner.OnPingDocument()?.Modified();
-                    canvas.Invalidate();
+                    SetSearch(canvas, _editingSearchMode, "= " + selectedComparison.Value.Value, false);
                     return;
                 }
                 var comparisonChoice = selectedComparison.Value.Comparison!.Value;
@@ -1351,9 +1330,9 @@ namespace BetterGhPanel
                 ShowLiveQueryEditor(canvas, value, "Panel comparison", text =>
                 {
                     var query = PanelOwner.Session.Options;
-                    query.DisplayFilterValue = false;
                     query.SearchMode = mode;
                     query.Search = CanvasMenu.ApplyComparison(text, comparison);
+                    query.DisplayFilterValue = query.Search.Length == 0;
                     return query;
                 });
                 return;
@@ -1385,6 +1364,20 @@ namespace BetterGhPanel
             canvas.Invalidate();
         }
 
+        private void SetSearch(GH_Canvas canvas, PanelSearchMode mode, string search, bool showValues)
+        {
+            var options = PanelOwner.Session.Options;
+            var before = options.Clone();
+            options.SearchMode = mode;
+            options.Search = search;
+            options.DisplayFilterValue = showValues;
+            if (PanelQueryPolicy.SameQuery(before, options)) { canvas.Invalidate(); return; }
+            PanelOwner.RecordQueryUndo(showValues ? "Show Panel+ values" : "Panel+ filter", before, options);
+            _offset = _pairedOffset = 0;
+            PanelOwner.Session.UpdateQuery(options);
+            canvas.Invalidate();
+        }
+
         private void EditSearch(GH_Canvas canvas)
         {
             var options = PanelOwner.Session.Options;
@@ -1401,9 +1394,9 @@ namespace BetterGhPanel
             ShowLiveQueryEditor(canvas, current, "Panel search", text =>
             {
                 var options = PanelOwner.Session.Options;
-                options.DisplayFilterValue = false;
+                options.DisplayFilterValue = CanvasMenu.IsComparisonMode(mode) && string.IsNullOrWhiteSpace(text);
                 options.SearchMode = mode;
-                options.Search = text;
+                options.Search = options.DisplayFilterValue ? string.Empty : text;
                 return options;
             });
 
@@ -1415,7 +1408,7 @@ namespace BetterGhPanel
             if (CanvasMenu.IsComparisonMode(options.SearchMode))
             {
                 if (!string.IsNullOrEmpty(options.Search)) options.DisplayFilterValue = true;
-                else if (options.DisplayFilterValue) { options.SearchMode = PanelSearchMode.Text; options.DisplayFilterValue = false; }
+                else { options.SearchMode = PanelSearchMode.Text; options.DisplayFilterValue = false; }
             }
             else options.DisplayFilterValue = false;
             options.Search = string.Empty;
@@ -1703,7 +1696,9 @@ namespace BetterGhPanel
             if (SearchClearVisible && _searchClear.Contains(point))
             {
                 e.Title = "Clear search";
-                e.Description = "Remove the search filter. Undo restores it.";
+                e.Description = CanvasMenu.IsComparisonMode(PanelOwner.Session.Options.SearchMode)
+                    ? "Clear the filter to show values, then clear values to return to Text search. Undo restores each step."
+                    : "Remove the search filter. Undo restores it.";
                 return;
             }
             if (BranchClearVisible && _branchClear.Contains(point))
@@ -1777,7 +1772,7 @@ namespace BetterGhPanel
                     : "Compare with >, >=, <, <=, = or != (a bare number means =) at full precision. Rows without this value are excluded.";
                 if (options.DisplayFilterValue)
                     e.Description = "Shows each item's value; n/a means none. Click the search field to filter by it.";
-                else e.Description += " Rows update as you type; Enter applies, Esc cancels.";
+                else if (!CanvasMenu.HasValueChoices(options.SearchMode)) e.Description += " Rows update as you type; Enter applies, Esc cancels.";
                 if (PanelOwner.Session.Error != null) e.Description = PanelOwner.Session.Error + "\n\n" + e.Description;
             }
             else if (_jump.Contains(point))

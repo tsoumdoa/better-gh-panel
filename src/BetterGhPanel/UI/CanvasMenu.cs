@@ -253,12 +253,12 @@ namespace BetterGhPanel.UI
             {
                 _comparisonMode = comparisonMode ?? options.SearchMode;
                 var propertyKind = PanelProperties.Kind(_comparisonMode);
-                var values = HasValueChoices(_comparisonMode)
-                    ? _comparisonMode == PanelSearchMode.Validity ? new[] { "Valid", "Invalid", "Unverified", "Null" } : new[] { "True", "False" }
-                    : Array.Empty<string>();
-                _comparisonChoices = values.Length > 0
-                    ? values.Select(value => new CanvasComparisonChoice(null, value, value)).Concat(ComparisonChoices.Where(choice => choice.IsDisplayValue)).ToArray()
-                    : propertyKind == PanelPropertyKind.Text
+                if (HasValueChoices(_comparisonMode))
+                {
+                    var values = _comparisonMode == PanelSearchMode.Validity ? new[] { "Valid", "Invalid", "Unverified", "Null" } : new[] { "True", "False" };
+                    _comparisonChoices = values.Select(value => new CanvasComparisonChoice(null, value, value)).Concat(ComparisonChoices.Where(choice => choice.IsDisplayValue)).ToArray();
+                }
+                else _comparisonChoices = propertyKind == PanelPropertyKind.Text
                     ? ComparisonChoices.Where(choice => choice.IsDisplayValue || choice.Comparison == CanvasComparison.Equal || choice.Comparison == CanvasComparison.NotEqual).ToArray()
                     : ComparisonChoices;
             }
@@ -348,9 +348,12 @@ namespace BetterGhPanel.UI
                 string comparison = ComparisonPrefix(options.Search);
                 if (choice.IsValue)
                 {
-                    if (options.SearchMode != _comparisonMode || comparison != "=") return false;
+                    if (options.SearchMode != _comparisonMode || comparison.Length > 0 && comparison != "=") return false;
                     string search = options.Search.Trim();
-                    return string.Equals(search.Substring(search.StartsWith("==", StringComparison.Ordinal) ? 2 : 1).Trim(), choice.Value,
+                    if (comparison.Length > 0) search = search.Substring(search.StartsWith("==", StringComparison.Ordinal) ? 2 : 1).Trim();
+                    if (_comparisonMode == PanelSearchMode.Validity && search.Length >= 2 && search[0] == '"' && search[search.Length - 1] == '"')
+                        search = search.Substring(1, search.Length - 2);
+                    return string.Equals(search, choice.Value,
                         PanelProperties.Kind(_comparisonMode) == PanelPropertyKind.Boolean ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
                 }
                 if (comparison.Length == 0 && IsComparisonMode(options.SearchMode) && IsFiniteNumber(options.Search))

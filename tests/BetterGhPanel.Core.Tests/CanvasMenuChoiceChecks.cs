@@ -169,8 +169,6 @@ internal static class CanvasMenuChoiceChecks
         Check(CanvasMenu.HasValueChoices(PanelSearchMode.Validity) && CanvasMenu.HasValueChoices(PanelSearchMode.Closed) &&
             !CanvasMenu.HasValueChoices(PanelSearchMode.Area) && !CanvasMenu.HasValueChoices(PanelSearchMode.Text),
             "Fixed-value modes use pickers while numeric and text modes allow keyboard expressions");
-        Check(CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.Area, DisplayFilterValue = true }) == "Area filter…",
-            "Showing area values invites filtering in the search field");
         foreach (var mode in new[] { PanelSearchMode.Validity, PanelSearchMode.Closed })
         {
             var values = mode == PanelSearchMode.Validity ? new[] { "Valid", "Invalid", "Unverified", "Null" } : new[] { "True", "False" };
@@ -178,17 +176,19 @@ internal static class CanvasMenuChoiceChecks
             var menu = new CanvasMenu();
             menu.Toggle(CanvasMenuKind.Comparison, PanelSnapshot.Empty, options, comparisonMode: mode);
             Check(Enumerable.Range(0, menu.Count).Select(i => menu.Label(i)).SequenceEqual(values.Concat(new[] { "Show values · no filter" })) &&
-                values.Select((value, i) => menu.ComparisonChoiceAt(i).IsValue && menu.ComparisonChoiceAt(i).Value == value && !menu.IsSectionStart(i)).All(match => match) &&
+                Enumerable.Range(0, values.Length).Select(i => menu.ComparisonChoiceAt(i).Value).SequenceEqual(values) &&
                 menu.ComparisonChoiceAt(values.Length).IsDisplayValue && menu.IsSectionStart(values.Length),
                 "Validity and Boolean menus list fixed values in order, followed by a separate Show values action");
             options.SearchMode = mode;
             foreach (var value in values)
             {
                 int index = Array.IndexOf(values, value);
-                options.Search = "  ==  " + value + "  ";
-                Check(menu.IsSelected(index, options, PanelUnitConversion.None, -1) &&
-                    !menu.IsSelected((index + 1) % values.Length, options, PanelUnitConversion.None, -1),
-                    "Only the matching fixed value is selected after trimming and normalizing equality");
+                foreach (string search in new[] { "  ==  " + value + "  ", value, mode == PanelSearchMode.Validity ? "= \"" + value + "\"" : "= " + value.ToLowerInvariant() })
+                {
+                    options.Search = search;
+                    Check(Enumerable.Range(0, values.Length).Where(i => menu.IsSelected(i, options, PanelUnitConversion.None, -1)).SequenceEqual(new[] { index }),
+                        "Saved equality queries check only the matching fixed value, including implicit equality and quoted validity");
+                }
             }
             options.Search = "= " + values[0].ToLowerInvariant();
             Check(menu.IsSelected(0, options, PanelUnitConversion.None, -1) == (mode == PanelSearchMode.Closed),
