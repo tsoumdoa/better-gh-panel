@@ -112,6 +112,7 @@ def frame(t):
     d.rectangle((x, y, x+5, y+42), fill="#5d886c")
     text(d, (x+17, y+8), "P+", 22, "#4c785a", "bold")
     filtered = t >= 6.5
+    visible_count = 2 if filtered else 4
     count = "2 / 4 items · 1 branch" if filtered else "4 items · 1 branch"
     text(d, (x+68, y+13), count, 13, "#778b7e")
     if connected:
@@ -135,7 +136,7 @@ def frame(t):
     caption_h = 30 if split else 0
     if split:
         text(d, (x+18,y+89), "D", 14, "#4c785a", "bold")
-        text(d, (x+40,y+89), "Data  4 · Crv", 14, "#778b7e")
+        text(d, (x+40,y+89), f"Data  {visible_count} · Crv", 14, "#778b7e")
     text(d, (x+18, y+91+caption_h), "{0}    2 items" if filtered else "{0}    4 items", 13, "#73867a", "mono")
     values = [("0", "2,350"), ("1", "4,850"), ("2", "3,120"), ("3", "6,400")]
     shown = [values[1], values[3]] if filtered else values
@@ -153,7 +154,7 @@ def frame(t):
         paired = Image.new("RGB", (412, 175), "#f7f9f4")
         pd = ImageDraw.Draw(paired)
         text(pd, (18,0), "F", 14, "#4c785a", "bold")
-        text(pd, (40,0), "Paired  4 · Text", 14, "#778b7e")
+        text(pd, (40,0), f"Paired  {visible_count} · Text", 14, "#778b7e")
         text(pd, (18,32), "{0}    2 items", 13, "#73867a", "mono")
         for idx, (number,name) in enumerate([("1","Facade A-02"),("3","Facade A-04")]):
             ry = 62+idx*30

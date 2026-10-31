@@ -249,7 +249,7 @@ function chain(x, y, linked) {
 }
 function splitView(chapter,t){
   const connected=t>.55, opened=t>1.2, mismatch=t>=7.7;
-  const opening=ease((t-1.2)/.55), pw=425, w=pw*(1+opening), x=1490-w, y=215, h=500;
+  const opening=ease((t-1.2)/.55), pw=425, w=pw*(1+opening), x=640, y=215, h=500;
   const filtered=t>=2.5 && t<3.6, independent=t>=4.5 && !mismatch, partner=t>=6.1;
   const scrolling=t>=3.6 && t<4.5;
   const linked=!independent, sourceOffset=(scrolling||(independent&&partner))?12:0, pairedOffset=independent?12:sourceOffset;
@@ -261,17 +261,17 @@ function splitView(chapter,t){
     type:i%5===2?'Text':i%5===1||i%5===4?'Num':'Pt',
     paired:`Facade ${i<12?'A':'B'}-${String((i<12?i:i-12)+1).padStart(2,'0')}`
   }));
-  // The entire panel grows to twice its ordinary width; input F is optional.
+  // Grow the right edge and its ports together; input F is optional.
   rect(x,y,w,h,C.white,3,'#aebca7');rect(x+1,y+1,5,45,C.green);
   text('P+',x+20,y+32,25,C.green,700);
   if(!connected)text('40 items · 2 branches',x+75,y+31,17,C.muted);
-  const chipX=x+w-(opened?420:205);
+  const chipX=x+w-mix(205,420,opening);
   if(connected){
-    rect(chipX,y+8,55,32,opened&&!mismatch?C.light:C.white,0);
-    text('D|F',chipX+28,y+31,19,mismatch?'#a8b0a5':C.green,500,'center');
-    if(opened&&!mismatch)line(chipX,y+41,chipX+55,y+41,C.green,2);
+    rect(chipX,y+8,55,32,opened?C.light:C.white,0);
+    text('D|F',chipX+28,y+31,19,C.green,500,'center');
+    if(opened)line(chipX,y+41,chipX+55,y+41,C.green,2);
   }
-  text('↺',x+w-(opened?335:123),y+33,27,C.muted);
+  text('↺',x+w-mix(123,335,opening),y+33,27,C.muted);
   if(opening>.95){rect(x+w-300,y+8,204,32,C.light);text('Preview: Selected',x+w-290,y+31,18,C.green);chevron(x+w-111,y+23);}
   text('⌃',x+w-67,y+32,23,C.muted);text('−',x+w-26,y+32,23,C.muted);
   const gy=y+175;
@@ -307,6 +307,8 @@ function splitView(chapter,t){
     });
     ctx.restore();
   }
+  // Keep row content clear of the moving border, scrollbar, and output grips.
+  ctx.save();ctx.beginPath();ctx.rect(x+8,y+98,w-36,h-150);ctx.clip();
   pane(x,false,sourceOffset);
   if(opened){
     ctx.save();ctx.beginPath();ctx.rect(x+pw,y+98,Math.max(0,w-pw),h-150);ctx.clip();
@@ -320,6 +322,9 @@ function splitView(chapter,t){
     } else pane(x+pw,true,pairedOffset);
     ctx.restore();
     if(!mismatch)chain(x+pw-9,y+115,linked);
+  }
+  ctx.restore();
+  if(opened){
     // Linked mode has one right-edge track; unlinked mode has one per pane.
     const track=(tx,offset)=>{rect(tx,top,5,303,'#e5eade',1);rect(tx,top+offset*7,5,105,'#98ae99',1);};
     track(x+w-15,pairedOffset);if(independent)track(x+pw-15,partner?sourceOffset:0);
