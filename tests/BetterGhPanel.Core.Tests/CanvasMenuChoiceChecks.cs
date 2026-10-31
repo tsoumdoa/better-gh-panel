@@ -161,21 +161,26 @@ internal static class CanvasMenuChoiceChecks
         int display = Enumerable.Range(0, menu.Count).Single(i => menu.ComparisonChoiceAt(i).IsDisplayValue);
         options.DisplayFilterValue = true;
         Check(menu.IsSectionStart(display) && menu.IsSelected(display, options, PanelUnitConversion.None, -1),
-            "Display value has its own action identity");
+            "Show values has its own action identity");
     }
 
     private static void FixedValueChoices()
     {
+        Check(CanvasMenu.HasValueChoices(PanelSearchMode.Validity) && CanvasMenu.HasValueChoices(PanelSearchMode.Closed) &&
+            !CanvasMenu.HasValueChoices(PanelSearchMode.Area) && !CanvasMenu.HasValueChoices(PanelSearchMode.Text),
+            "Fixed-value modes use pickers while numeric and text modes allow keyboard expressions");
+        Check(CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.Area, DisplayFilterValue = true }) == "Area filter…",
+            "Showing area values invites filtering in the search field");
         foreach (var mode in new[] { PanelSearchMode.Validity, PanelSearchMode.Closed })
         {
             var values = mode == PanelSearchMode.Validity ? new[] { "Valid", "Invalid", "Unverified", "Null" } : new[] { "True", "False" };
             var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Text };
             var menu = new CanvasMenu();
             menu.Toggle(CanvasMenuKind.Comparison, PanelSnapshot.Empty, options, comparisonMode: mode);
-            Check(Enumerable.Range(0, menu.Count).Select(i => menu.Label(i)).SequenceEqual(values.Concat(new[] { "Display value" })) &&
+            Check(Enumerable.Range(0, menu.Count).Select(i => menu.Label(i)).SequenceEqual(values.Concat(new[] { "Show values · no filter" })) &&
                 values.Select((value, i) => menu.ComparisonChoiceAt(i).IsValue && menu.ComparisonChoiceAt(i).Value == value && !menu.IsSectionStart(i)).All(match => match) &&
                 menu.ComparisonChoiceAt(values.Length).IsDisplayValue && menu.IsSectionStart(values.Length),
-                "Validity and Boolean menus list fixed values in order, followed by a separate Display value action");
+                "Validity and Boolean menus list fixed values in order, followed by a separate Show values action");
             options.SearchMode = mode;
             foreach (var value in values)
             {
@@ -193,7 +198,7 @@ internal static class CanvasMenuChoiceChecks
                 "Legacy inequality queries do not select a fixed value");
             options.Search = "= " + values[0];
             options.DisplayFilterValue = true;
-            Check(!menu.IsSelected(0, options, PanelUnitConversion.None, -1), "Display value suppresses fixed-value checkmarks");
+            Check(!menu.IsSelected(0, options, PanelUnitConversion.None, -1), "Show values suppresses fixed-value checkmarks");
             options.DisplayFilterValue = false;
             options.SearchMode = PanelSearchMode.Text;
             Check(!menu.IsSelected(0, options, PanelUnitConversion.None, -1), "A matching query in a different mode does not select a fixed value");

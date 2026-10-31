@@ -135,7 +135,9 @@ namespace BetterGhPanel
                 case Keys.F when control:
                 case Keys.OemQuestion when none:
                 case Keys.Divide when none:
-                    EditSearch(canvas);
+                    var options = PanelOwner.Session.Options;
+                    if (CanvasMenu.HasValueChoices(options.SearchMode)) EditSearch(canvas);
+                    else EditSearch(canvas, options.SearchMode, options.Search);
                     return true;
             }
             return false;

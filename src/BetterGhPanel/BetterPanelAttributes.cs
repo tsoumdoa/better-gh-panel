@@ -1304,8 +1304,16 @@ namespace BetterGhPanel
                 _editingSearchMode = selectedSearch!.Value;
                 if (CanvasMenu.IsComparisonMode(_editingSearchMode))
                 {
-                    OpenMenu(CanvasMenuKind.Comparison, canvas);
-                    SuppressTrailingDoubleClick();
+                    if (options.SearchMode == _editingSearchMode && (options.DisplayFilterValue || !string.IsNullOrEmpty(options.Search)))
+                    { canvas.Invalidate(); return; }
+                    PanelOwner.RecordUndoEvent("Display filter value");
+                    options.SearchMode = _editingSearchMode;
+                    options.DisplayFilterValue = true;
+                    options.Search = string.Empty;
+                    _offset = _pairedOffset = 0;
+                    PanelOwner.Session.UpdateQuery(options);
+                    PanelOwner.OnPingDocument()?.Modified();
+                    canvas.Invalidate();
                 }
                 else EditSearch(canvas, _editingSearchMode, options.SearchMode == _editingSearchMode ? options.Search : string.Empty);
                 return;
@@ -1380,7 +1388,13 @@ namespace BetterGhPanel
         private void EditSearch(GH_Canvas canvas)
         {
             var options = PanelOwner.Session.Options;
-            EditSearch(canvas, options.SearchMode, options.Search);
+            if (CanvasMenu.IsComparisonMode(options.SearchMode))
+            {
+                _editingSearchMode = options.SearchMode;
+                OpenMenu(CanvasMenuKind.Comparison, canvas);
+                SuppressTrailingDoubleClick();
+            }
+            else EditSearch(canvas, options.SearchMode, options.Search);
         }
 
         private void EditSearch(GH_Canvas canvas, PanelSearchMode mode, string current) =>
@@ -1397,9 +1411,14 @@ namespace BetterGhPanel
         {
             CancelQueryEditor();
             var options = PanelOwner.Session.Options;
-            options.Search = string.Empty;
-            options.DisplayFilterValue = false;
             PanelOwner.RecordUndoEvent("Clear Panel+ search");
+            if (CanvasMenu.IsComparisonMode(options.SearchMode))
+            {
+                if (!string.IsNullOrEmpty(options.Search)) options.DisplayFilterValue = true;
+                else if (options.DisplayFilterValue) { options.SearchMode = PanelSearchMode.Text; options.DisplayFilterValue = false; }
+            }
+            else options.DisplayFilterValue = false;
+            options.Search = string.Empty;
             PanelOwner.Session.UpdateQuery(options);
             canvas.Invalidate();
         }
@@ -1747,7 +1766,7 @@ namespace BetterGhPanel
             {
                 var options = PanelOwner.Session.Options;
                 e.Title = CanvasMenu.SearchModeLabel(options.SearchMode);
-                e.Text = options.DisplayFilterValue ? "Display value · no comparison" : string.IsNullOrEmpty(options.Search) ? "Click to search · arrow chooses the mode" : options.Search;
+                e.Text = options.DisplayFilterValue ? "Showing values · click to filter" : string.IsNullOrEmpty(options.Search) ? "Click to search · arrow chooses the mode" : options.Search;
                 e.Description = options.SearchMode == PanelSearchMode.Text
                     ? "Search displayed values, paths and types; > 800 or <= 25 compares numbers."
                     : options.SearchMode == PanelSearchMode.Regex
@@ -1757,7 +1776,7 @@ namespace BetterGhPanel
                     : PanelProperties.IsProperty(options.SearchMode) ? CanvasMenu.PropertyHelp(options.SearchMode)
                     : "Compare with >, >=, <, <=, = or != (a bare number means =) at full precision. Rows without this value are excluded.";
                 if (options.DisplayFilterValue)
-                    e.Description = "Shows the value for each item without filtering; n/a means none. Choose a comparison or edit the search to filter.";
+                    e.Description = "Shows each item's value; n/a means none. Click the search field to filter by it.";
                 else e.Description += " Rows update as you type; Enter applies, Esc cancels.";
                 if (PanelOwner.Session.Error != null) e.Description = PanelOwner.Session.Error + "\n\n" + e.Description;
             }
