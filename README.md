@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.2.1-beta
+yak install panel-plus 0.2.2-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -27,6 +27,11 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 <sub>Captioned, silent, illustrated sample data. [MP4](docs/demo/panel-plus-demo.mp4) · [日本語版 / Japanese](docs/demo/panel-plus-demo-ja.mp4) · run `npm run demo` for the editable animation ([source and recording notes](docs/demo/README.md)).</sub>
 
 ## What's new
+
+**[`0.2.2-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.2-beta)**
+
+- **Pick a property to see it.** Choosing Area, Validity, Closed, … in the filter dropdown shows its value in every row; click the search field to filter by it.
+- **Pick values from a list.** Validity offers **Valid · Invalid · Unverified · Null** and true/false properties offer **True · False**, applied in one click instead of typed.
 
 **[`0.2.1-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.1-beta)**
 

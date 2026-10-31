@@ -1,5 +1,7 @@
 # Build and Yak packaging
 
+Patch `0.2.2-beta` makes picking a filter mode show its values immediately, with filtering as an optional second step from the search field, and replaces typed Validity and Boolean comparisons with one-click value choices (Valid/Invalid/Unverified/Null, True/False). Clear (×) removes the filter first, then the displayed values. Saved query formats are unchanged.
+
 Patch `0.2.1-beta` adds the D | F split view and fixes rows that could ignore clicks at fractional canvas zoom. It adds `row-selection` to the native inventory (21 fixtures), covering hit registration across zoom levels, subpixel pans, viewport edges, partial repaints and stale-result guards; `ui-ux` gains split-view interactions with distinct D/F values. `npm run check` also rejects C# sources that are not valid UTF-8.
 
 Patch `0.1.26-beta` adds focused keyboard/wheel navigation, safe live search, clearer controls and responsive styling. It adds `ui-ux` to the native inventory (20 fixtures), exercising debounced host textbox previews, cancellation and no-op commits with synchronous and asynchronous queries, selection and scroll restoration, unchanged outputs and Undo/Redo history, committed-query serialization, search commit/Undo/Redo, mouse-to-keyboard selection, footer sizing and wrapped geometry action availability.
@@ -26,12 +28,12 @@ McNeel's separate public Yak registry still serves the original packages. Publis
 
 New builds use the Yak package name `panel-plus` and stage to `artifacts/panel-plus-<version>/`. The old published package retains its original name; installing the renamed package may require removing the old package first to avoid loading both copies.
 
-The current beta is [`0.2.1-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.1-beta), following `0.2.0-beta`, distributed through Yak and GitHub Releases. The `artifacts/panel-plus-0.2.1-beta/` stage contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `panel-plus-0.2.1-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
+The current beta is [`0.2.2-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.2-beta), following `0.2.1-beta`, distributed through Yak and GitHub Releases. The `artifacts/panel-plus-0.2.2-beta/` stage contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `panel-plus-0.2.2-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
 ```text
-yak install --source artifacts/panel-plus-0.2.1-beta panel-plus 0.2.1-beta
+yak install --source artifacts/panel-plus-0.2.2-beta panel-plus 0.2.2-beta
 ```
 
 Replace `yak` with the full executable path if it is not on PATH. On Windows it is normally `C:\Program Files\Rhino 8\System\Yak.exe`; on Mac it is normally `/Applications/Rhino 8.app/Contents/Resources/bin/yak`. Restart Rhino and open Grasshopper afterward. Local install uses Yak's package directory and avoids copying a second `.gha` into the Grasshopper Libraries folder.
