@@ -1,5 +1,9 @@
 # Panel+ · See what flows
 
+The [15-second short demo](panel-plus-short.mp4) follows a single example: inspect four curve lengths, filter for lengths greater than 4,000 mm, then select and preview the two matches. It is silent and uses illustrated sample data. Its clickable thumbnail is [short-poster.jpg](short-poster.jpg).
+
+To regenerate it on Windows, install Pillow and ffmpeg, then run `python scripts/render-short-demo.py` from the repository root. The renderer uses Windows Segoe UI and Consolas fonts and produces a 1280 × 720 H.264 video at 24 fps, plus the poster.
+
 A 60-second, silent, captioned explainer for the native Panel+ plugin. The graphics illustrate current behavior with sample data; they are not a recording of Rhino. The design uses the plugin's muted green palette and native tree-tool glyphs.
 
 **Share:** [`panel-plus-demo.mp4`](panel-plus-demo.mp4). 1600 × 900, 30 fps, exactly 60 seconds, approximately 2.0 MB. H.264 video with captions burned into the image, suitable for viewing without sound. [`poster.jpg`](poster.jpg) is a still for a thumbnail or link preview.
