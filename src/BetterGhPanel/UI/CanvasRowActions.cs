@@ -24,16 +24,18 @@ namespace BetterGhPanel.UI
         internal const string NoGeometry = "The selection contains no geometry.";
         internal const string GeometryCopyUnsupported = "Copying geometry is not supported on Mac yet.";
 
-        internal static CanvasRowAction[] Create(int selectedCount, int[] indices, bool filtered, bool hasGeometry = true, bool canCopyGeometry = true) => new[]
+        internal static CanvasRowAction[] Create(int selectedCount, int[] indices, bool filtered, bool hasGeometry = true, bool canCopyGeometry = true,
+            bool paired = false) => new[]
         {
             new CanvasRowAction(PanelRowAction.FrameSelection, "Frame selection in Rhino",
                 "Zoom Rhino's active viewport to the selected geometry.", hasGeometry ? null : NoGeometry),
-            new CanvasRowAction(PanelRowAction.CopyValues, selectedCount == 1 ? "Copy value" : "Copy values",
+            // Value actions on the F pane read F; geometry actions always use D.
+            new CanvasRowAction(PanelRowAction.CopyValues, (paired ? "Copy F value" : "Copy value") + (selectedCount == 1 ? "" : "s"),
                 "One value per line, in displayed order and formatting. Measurements copy as plain numbers."),
             new CanvasRowAction(PanelRowAction.CopyGeometry, "Copy geometry for Rhino",
                 "Copy the selected geometry, then Paste in Rhino. Other rows are skipped.",
                 !canCopyGeometry ? GeometryCopyUnsupported : hasGeometry ? null : NoGeometry),
-            new CanvasRowAction(PanelRowAction.ViewFullValue, "View full value",
+            new CanvasRowAction(PanelRowAction.ViewFullValue, paired ? "View full F value" : "View full value",
                 "Open the value of the row you right-clicked in a scrollable, read-only window."),
             new CanvasRowAction(PanelRowAction.SelectIndices,
                 "Select " + IndexLabel(indices).ToLowerInvariant() + (filtered ? " across filtered results" : " across branches"),

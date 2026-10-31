@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
 using BetterGhPanel.Core;
@@ -21,6 +22,7 @@ namespace BetterGhPanel
         private CanvasRowAction[] _rowMenuAllActions = Array.Empty<CanvasRowAction>();
         private PointF _rowMenuAnchor;
         private int _rowMenuSourcePosition = -1;
+        private bool _rowMenuPaired;
         private bool _rowMenuPaged;
         private DateTime _copiedUntil;
         private DateTime _rowActionDismissedUntil;
@@ -79,10 +81,20 @@ namespace BetterGhPanel
 
         private static bool FullyVisible(Graphics graphics, RectangleF bounds)
         {
-            if (!graphics.VisibleClipBounds.Contains(bounds)) return false;
+            if (!graphics.IsVisible(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2)) return false;
+            // Canvas projection is scale/translation. GDI+ can round a clip edge
+            // inward when converting it back to canvas units at fractional zoom.
+            // Test the interior with one device pixel of tolerance, retaining the
+            // region check so real partial paints (including clip holes) stay inert.
+            var pixel = new[] { PointF.Empty, new PointF(1, 1) };
+            graphics.TransformPoints(CoordinateSpace.World, CoordinateSpace.Device, pixel);
+            float dx = Math.Abs(pixel[1].X - pixel[0].X), dy = Math.Abs(pixel[1].Y - pixel[0].Y);
+            // Tiny viewport slivers must retain their full coverage requirement.
+            bounds.Inflate(bounds.Width > 2 * dx ? -dx : 0, bounds.Height > 2 * dy ? -dy : 0);
             using (var unpainted = new Region(bounds))
             using (var clip = graphics.Clip)
             {
+                clip.Intersect(graphics.VisibleClipBounds);
                 unpainted.Exclude(clip);
                 return unpainted.IsEmpty(graphics);
             }
@@ -101,7 +113,7 @@ namespace BetterGhPanel
                 return GH_ObjectResponse.Handled;
             }
             var result = PanelOwner.Session.Result;
-            if (_list.Contains(e.CanvasLocation) && !RowsAreCurrent(result))
+            if (ListContains(e.CanvasLocation) && !RowsAreCurrent(result))
             {
                 _rowContextHandled = true;
                 _rowHits.Clear();
@@ -112,14 +124,16 @@ namespace BetterGhPanel
             {
                 if (!hit.Bounds.Contains(e.CanvasLocation)) continue;
                 _rowContextHandled = true;
+                RevealPartner(canvas, hit.SourcePosition, null, e.CanvasLocation);
                 InvalidateCopyStatus();
                 _selection.SelectAt(result, hit.SourcePosition, hit.ViewNumber - 1, preserveSelected: true);
                 PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
                 TrackSelectionCanvas(canvas);
                 var options = PanelOwner.Session.Options;
                 bool filtered = options.Search.Length > 0 || options.TypeName != null || options.OnlyInvalid || options.BranchPath != null;
+                _rowMenuPaired = _copyPaired = _pairedList.Contains(e.CanvasLocation);
                 _rowMenuAllActions = CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered,
-                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX);
+                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX, _rowMenuPaired);
                 _rowMenuAnchor = e.CanvasLocation;
                 _rowMenuSourcePosition = hit.SourcePosition;
                 _rowMenuPaged = CanvasRowActions.NeedsPages(_panel.Height - HeaderHeight - 6);
@@ -154,11 +168,13 @@ namespace BetterGhPanel
             }
             else if (action == PanelRowAction.ViewFullValue)
             {
+                if (!PanelOwner.CapturedSnapshotCurrent(result.Snapshot)) return;
                 int position = _rowMenuSourcePosition;
                 if (position < 0 || position >= result.Snapshot.Rows.Count || !_selection.Contains(position)) return;
                 var row = result.Snapshot.Rows[position];
                 bool projected = result.DisplaySet?.Values.ContainsKey(position) == true;
-                string value = !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
+                string value = _rowMenuPaired && PanelOwner.PairedSnapshot != null ? PairedDisplayValue(PanelOwner.PairedSnapshot.Rows[position]) :
+                    !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
                     ? row.StringValue : PanelOwner.DisplayValue(result.Snapshot, row, position);
                 try { PanelFullValueWindow.Show(value); }
                 catch (Exception)
@@ -181,7 +197,7 @@ namespace BetterGhPanel
                 if (PanelGeometryActions.FrameGeneration <= before + 1)
                 { _actionStatus = status ?? "Selection framed"; _copiedUntil = DateTime.UtcNow.AddSeconds(5); }
             }
-            else if (action == PanelRowAction.CopyValues) CopySelectedValues(result, canvas);
+            else if (action == PanelRowAction.CopyValues) CopySelectedValues(result, canvas, _rowMenuPaired);
             else if (action == PanelRowAction.CopyGeometry)
             {
                 InvalidateCopyStatus();
@@ -220,7 +236,7 @@ namespace BetterGhPanel
             _actionStatus = string.Empty;
         }
 
-        private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas)
+        private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas, bool paired = false)
         {
             var positions = _selection.OrderedPositions(result);
             if (positions.Count == 0) return;
@@ -231,7 +247,7 @@ namespace BetterGhPanel
             canvas.Invalidate();
             long before = PanelGeometryActions.ClipboardGeneration;
             string status;
-            try { status = await PanelOwner.CopyValuesAsync(result.Snapshot, positions); }
+            try { status = await (paired ? PanelOwner.CopyPairedValuesAsync(result.Snapshot, positions) : PanelOwner.CopyValuesAsync(result.Snapshot, positions)); }
             catch (Exception) { status = "Could not copy values. Try again."; }
             Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
             {

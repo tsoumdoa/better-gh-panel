@@ -23,6 +23,9 @@ namespace BetterGhPanel
         private bool _pairedInputPresent;
         private IReadOnlyList<PanelSourceAddress> _retainedSources = Array.Empty<PanelSourceAddress>();
         private string? _pairedError;
+        internal PanelSnapshot? PairedSnapshot { get; private set; }
+        internal string? PairedError => _pairedError;
+        internal bool CanSplit => _pairedInputPresent && _pairedQueryTree != null && _pairedError == null && Session.HasCurrentResult;
         private long _selectionVersion, _publishedSelectionVersion;
         private PanelOutputScope _publishedScope;
         private PanelQueryResult? _cachedOutputResult;
@@ -40,6 +43,7 @@ namespace BetterGhPanel
         private void ApplyOutputScope(PanelOutputScope scope)
         {
             OutputScope = scope;
+            Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             ScheduleOutput();
             Instances.ActiveCanvas?.Invalidate();
@@ -65,9 +69,13 @@ namespace BetterGhPanel
             _liveInputTree = _livePairedTree = _pairedInputTree = null;
             _pairedInputPresent = false;
             _captureGraphs = Array.Empty<CaptureGraphWitness>();
-            _captureHasGeometry = false;
+            _captureHasGeometry = _pairedHasGeometry = false;
             _retainedSources = Array.Empty<PanelSourceAddress>();
             _pairedError = null;
+            PairedSnapshot = null;
+            _pairedSourceItems = Array.Empty<IGH_Goo?>();
+            _pairedMeasurementSources = Array.Empty<CapturedMeasurementSource?>();
+            _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
             _cachedOutputResult = null;
             _filteredData = _filteredPair = null;
             _filteredMask = null;
@@ -88,7 +96,7 @@ namespace BetterGhPanel
             pairedTree = PanelOutputOperations.Pair(inputTree, capturedPairedTree, queryTree, retainedSources, out error);
         }
 
-        private bool PairedInputPresent() => Params.Input[1].SourceCount != 0 ||
+        internal bool PairedInputPresent() => Params.Input[1].SourceCount != 0 ||
             !(Params.Input[1] is Param_GenericObject input) || input.PersistentData.PathCount != 0;
 
         private void PublishOutputs(IGH_DataAccess da, Func<bool> solveCurrent)

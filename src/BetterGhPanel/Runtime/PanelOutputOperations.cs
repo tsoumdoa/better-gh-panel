@@ -57,22 +57,12 @@ namespace BetterGhPanel.Runtime
         internal static GH_Structure<IGH_Goo>? Pair(GH_Structure<IGH_Goo> input, GH_Structure<IGH_Goo> paired,
             GH_Structure<IGH_Goo> transformed, IReadOnlyList<PanelSourceAddress> retainedSources, out string? error)
         {
-            error = null;
-            if (input.PathCount != paired.PathCount)
-            {
-                error = "Paired F input must have the same paths and item counts per branch as D before tree tools.";
-                return null;
-            }
+            error = PanelPairing.Diagnose(BranchShape(input), BranchShape(paired));
+            if (error != null) return null;
             var branches = new Dictionary<string, IList<IGH_Goo>>(StringComparer.Ordinal);
             for (int b = 0; b < input.PathCount; b++)
             {
-                if (input.Paths[b].CompareTo(paired.Paths[b]) != 0 || input.Branches[b].Count != paired.Branches[b].Count)
-                {
-                    error = "Paired F input does not match D at " + input.Paths[b] +
-                        ". Pair by original path and item index; paths and branch lengths must match exactly.";
-                    return null;
-                }
-                branches.Add(input.Paths[b].ToString(), paired.Branches[b]);
+                branches.Add(paired.Paths[b].ToString(), paired.Branches[b]);
             }
             var result = new GH_Structure<IGH_Goo>();
             int position = 0;
@@ -86,6 +76,13 @@ namespace BetterGhPanel.Runtime
                 }
             }
             return result;
+        }
+
+        private static PanelBranch[] BranchShape(GH_Structure<IGH_Goo> tree)
+        {
+            var branches = new PanelBranch[tree.PathCount];
+            for (int b = 0; b < branches.Length; b++) branches[b] = new PanelBranch(tree.Paths[b].ToString(), tree.Branches[b].Count);
+            return branches;
         }
     }
 }
