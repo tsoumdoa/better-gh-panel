@@ -126,7 +126,7 @@ internal static class FilterCanvasChecks
                 int display = Enumerable.Range(0, menu.Count).Single(index => menu.ComparisonChoiceAt(index).IsDisplayValue);
                 Require(menu.IsSelected(display, options, PanelUnitConversion.None, -1) &&
                     !menu.IsSelected(5, options, PanelUnitConversion.None, -1) &&
-                    CanvasMenu.SearchHint(options) == "List · display", "Display value has its own checkmark and a clear search hint");
+                    CanvasMenu.SearchHint(options) == "List filter…", "Show values has its own checkmark and invites filtering");
                 options.DisplayFilterValue = false;
                 options.Search = "5";
                 Require(menu.IsSelected(4, options, PanelUnitConversion.None, -1),
