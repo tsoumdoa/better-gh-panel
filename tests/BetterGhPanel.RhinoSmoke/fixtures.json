@@ -18,5 +18,6 @@
   "capture-transaction",
   "capture-stock-geometry",
   "property-inspection",
-  "ui-ux"
+  "ui-ux",
+  "row-selection"
 ]
