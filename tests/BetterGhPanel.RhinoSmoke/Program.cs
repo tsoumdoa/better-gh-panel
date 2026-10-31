@@ -50,7 +50,6 @@ internal static class Program
         ["preview-reentrant-draw"] = PreviewSafetyChecks.RunReentrantDraw,
         ["preview-metadata-safety"] = assembly => { FixtureUserData.EnsureRegistered(); return PreviewSafetyChecks.RunMetadata(assembly); },
         ["preview-native-resources"] = PreviewSafetyChecks.RunNativeResources,
-        ["preview-conduit-resources"] = PreviewSafetyChecks.RunConduitResources,
         ["preview-compatibility-draw"] = PreviewSafetyChecks.RunCompatibilityDraw,
         ["preview-retirement-seam"] = PreviewSafetyChecks.RunRetirementSeam,
         ["nurbs-value-candidate"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryNurbsCandidateChecks.Run(assembly); },

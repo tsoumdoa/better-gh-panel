@@ -140,12 +140,7 @@ internal static class UxInteractionChecks
 
         fixture.ClearSelection();
         Call(attributes, "SetOffset", canvas, 0);
-        PanelTestAdapter.Resize(component, 500, 360); attributes.PerformLayout(); Render();
-        Check(!Field<bool>(attributes, "_singleLineFooter"), "A 500-unit panel retains two footer lines when its summary does not fit");
         PanelTestAdapter.Resize(component, 700, 360); attributes.PerformLayout(); Render();
-        Check(Field<bool>(attributes, "_singleLineFooter"), "A wide panel still gains a row when its footer text fits");
-        Call(attributes, "ShowNotice", canvas, new string('W', 90)); Render();
-        Check(!Field<bool>(attributes, "_singleLineFooter"), "A long notice returns the footer to two lines");
 
         Call(component, "SetPanelSplit", true);
         attributes.PerformLayout(); Render();

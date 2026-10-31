@@ -42,23 +42,23 @@ internal static class PropertyInspectionChecks
             new GH_Arc(new Arc(Plane.WorldXY, 5, Math.PI / 2)), new GH_Circle(new Circle(5)),
             new GH_ComplexNumber(new Complex(3, 4)), new GH_Transform(Transform.Translation(2, 3, 4)), group);
         Check(snapshot.Rows.All(row => row.IsValid), "all scalar property fixtures are verified valid");
+        // One representative property per capture handler; query/formatting policy
+        // is covered in Core. Keep native admission and freshness checks below.
         Number(snapshot, 0, PanelSearchMode.Magnitude, 5);
-        Number(snapshot, 1, PanelSearchMode.Red, 10); Number(snapshot, 1, PanelSearchMode.Green, 20); Number(snapshot, 1, PanelSearchMode.Blue, 30); Number(snapshot, 1, PanelSearchMode.Alpha, 40);
-        Number(snapshot, 2, PanelSearchMode.DomainStart, -2); Number(snapshot, 2, PanelSearchMode.DomainEnd, 8);
-        Number(snapshot, 3, PanelSearchMode.UStart, -1); Number(snapshot, 3, PanelSearchMode.UEnd, 2); Number(snapshot, 3, PanelSearchMode.VStart, 3); Number(snapshot, 3, PanelSearchMode.VEnd, 4);
-        Number(snapshot, 4, PanelSearchMode.Year, 2026); Number(snapshot, 4, PanelSearchMode.Month, 10); Number(snapshot, 4, PanelSearchMode.Day, 29);
-        Number(snapshot, 4, PanelSearchMode.Hour, 12); Number(snapshot, 4, PanelSearchMode.Minute, 34); Number(snapshot, 4, PanelSearchMode.Second, 56);
-        Text(snapshot, 5, PanelSearchMode.BooleanValue, "False"); Text(snapshot, 6, PanelSearchMode.TextValue, "001"); Number(snapshot, 6, PanelSearchMode.CharacterCount, 3);
-        Number(snapshot, 7, PanelSearchMode.OriginX, -10); Number(snapshot, 7, PanelSearchMode.OriginY, 20); Number(snapshot, 7, PanelSearchMode.OriginZ, 30);
-        Number(snapshot, 7, PanelSearchMode.AxisXX, 1); Number(snapshot, 7, PanelSearchMode.AxisYY, 1); Number(snapshot, 7, PanelSearchMode.AxisZZ, 1);
-        Number(snapshot, 8, PanelSearchMode.Width, 2); Number(snapshot, 8, PanelSearchMode.Height, 3); Number(snapshot, 8, PanelSearchMode.Perimeter, 10);
-        Number(snapshot, 9, PanelSearchMode.Width, 2); Number(snapshot, 9, PanelSearchMode.Height, 3); Number(snapshot, 9, PanelSearchMode.Depth, 4);
+        Number(snapshot, 1, PanelSearchMode.Red, 10);
+        Number(snapshot, 2, PanelSearchMode.DomainStart, -2);
+        Number(snapshot, 3, PanelSearchMode.VEnd, 4);
+        Number(snapshot, 4, PanelSearchMode.Year, 2026);
+        Text(snapshot, 5, PanelSearchMode.BooleanValue, "False");
+        Text(snapshot, 6, PanelSearchMode.TextValue, "001");
+        Number(snapshot, 7, PanelSearchMode.OriginX, -10);
+        Number(snapshot, 8, PanelSearchMode.Width, 2);
         Check(PanelFilterValue.TryGeometryValue(snapshot.Rows[9], PanelSearchMode.Area, PanelUnitConversion.None, null, out double area) && area == 52, "box surface area is selectable");
-        Number(snapshot, 10, PanelSearchMode.Radius, 5); Number(snapshot, 10, PanelSearchMode.Angle, Math.PI / 2);
-        Number(snapshot, 11, PanelSearchMode.Radius, 5); Text(snapshot, 11, PanelSearchMode.Closed, "True");
-        Number(snapshot, 12, PanelSearchMode.Real, 3); Number(snapshot, 12, PanelSearchMode.Imaginary, 4); Number(snapshot, 12, PanelSearchMode.Magnitude, 5);
-        Number(snapshot, 13, PanelSearchMode.M03, 2); Number(snapshot, 13, PanelSearchMode.M13, 3); Number(snapshot, 13, PanelSearchMode.M23, 4); Number(snapshot, 13, PanelSearchMode.Determinant, 1);
-        Text(snapshot, 14, PanelSearchMode.GroupName, "001"); Number(snapshot, 14, PanelSearchMode.ObjectCount, 1);
+        Number(snapshot, 10, PanelSearchMode.Angle, Math.PI / 2);
+        Number(snapshot, 11, PanelSearchMode.Radius, 5);
+        Number(snapshot, 12, PanelSearchMode.Magnitude, 5);
+        Number(snapshot, 13, PanelSearchMode.Determinant, 1);
+        Text(snapshot, 14, PanelSearchMode.GroupName, "001");
 
         using var mesh = Mesh.CreateFromBox(box, 1, 1, 1);
         using var brep = box.ToBrep();
@@ -70,12 +70,12 @@ internal static class PropertyInspectionChecks
         using var cloud = new PointCloud(new[] { Point3d.Origin, new Point3d(1, 2, 3) });
         snapshot = Capture(assembly, new GH_Mesh(mesh), new GH_Brep(brep), new GH_Surface(surface), new GH_Curve(polyline), new GH_SubD(subd), new GH_Extrusion(extrusion), new GH_PointCloud(cloud));
         Check(snapshot.Rows.All(row => row.IsValid), "all geometry property fixtures are verified valid");
-        Number(snapshot, 0, PanelSearchMode.VertexCount, mesh.Vertices.Count); Number(snapshot, 0, PanelSearchMode.FaceCount, 6); Text(snapshot, 0, PanelSearchMode.Closed, "True");
-        Number(snapshot, 1, PanelSearchMode.FaceCount, 6); Number(snapshot, 1, PanelSearchMode.EdgeCount, 12); Number(snapshot, 1, PanelSearchMode.VertexCount, 8); Text(snapshot, 1, PanelSearchMode.Solid, "True");
-        Number(snapshot, 2, PanelSearchMode.DegreeU, 1); Number(snapshot, 2, PanelSearchMode.DegreeV, 1); Text(snapshot, 2, PanelSearchMode.Trimmed, "False");
-        Number(snapshot, 3, PanelSearchMode.SegmentCount, 2); Number(snapshot, 3, PanelSearchMode.Degree, 1);
-        Number(snapshot, 4, PanelSearchMode.FaceCount, subd.Faces.Count); Number(snapshot, 4, PanelSearchMode.EdgeCount, subd.Edges.Count); Number(snapshot, 4, PanelSearchMode.VertexCount, subd.Vertices.Count);
-        Number(snapshot, 5, PanelSearchMode.Height, 5); Number(snapshot, 5, PanelSearchMode.ProfileCount, 1); Text(snapshot, 5, PanelSearchMode.Solid, "True");
+        Number(snapshot, 0, PanelSearchMode.FaceCount, 6);
+        Text(snapshot, 1, PanelSearchMode.Solid, "True");
+        Text(snapshot, 2, PanelSearchMode.Trimmed, "False");
+        Number(snapshot, 3, PanelSearchMode.SegmentCount, 2);
+        Number(snapshot, 4, PanelSearchMode.VertexCount, subd.Vertices.Count);
+        Number(snapshot, 5, PanelSearchMode.Height, 5);
         Number(snapshot, 6, PanelSearchMode.PointCount, 2);
         var rejected = Capture(assembly, new HostileSubD(), new HostileComplex());
         Check(rejected.Rows.All(row => row.Validity == PanelValidity.Unverified && row.Properties.Count == 0 && row.GeometryInfo == null),
@@ -116,16 +116,12 @@ internal static class PropertyInspectionChecks
         string copied = (string)fixture.Component.GetType().GetMethod("CopyValue", Instance)!.Invoke(fixture.Component, new object[] { fixture.Result.Snapshot, 1 })!;
         Check(copied == "6", "Copy values uses selected property numbers");
 
-        foreach (var mode in new[] { PanelSearchMode.X, PanelSearchMode.FaceCount, PanelSearchMode.Closed, PanelSearchMode.GroupName, PanelSearchMode.DateTime })
-        {
-            fixture.Query(new PanelQueryOptions { SearchMode = mode, DisplayFilterValue = true });
-            var chunk = new GH_IO.Serialization.GH_LooseChunk("Panel"); Check(fixture.Component.Write(chunk), "property settings write");
-            var restored = (GH_Component)Activator.CreateInstance(fixture.Component.GetType())!;
-            restored.CreateAttributes(); Check(restored.Read(chunk), "property settings read");
-            var saved = (PanelQueryOptions)restored.GetType().GetField("_savedOptions", Instance)!.GetValue(restored)!;
-            Check(saved.SearchMode == mode && saved.DisplayFilterValue, mode + " display survives save/load");
-            restored.DocumentContextChanged(fixture.Document, GH_DocumentContext.Close);
-        }
+        var chunk = new GH_IO.Serialization.GH_LooseChunk("Panel"); Check(fixture.Component.Write(chunk), "property settings write");
+        var restored = (GH_Component)Activator.CreateInstance(fixture.Component.GetType())!;
+        restored.CreateAttributes(); Check(restored.Read(chunk), "property settings read");
+        var saved = (PanelQueryOptions)restored.GetType().GetField("_savedOptions", Instance)!.GetValue(restored)!;
+        Check(saved.SearchMode == PanelSearchMode.FaceCount && saved.DisplayFilterValue, "property display survives save/load");
+        restored.DocumentContextChanged(fixture.Document, GH_DocumentContext.Close);
     }
     private sealed class HostileSubD : GH_SubD
     {

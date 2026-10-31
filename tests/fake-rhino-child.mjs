@@ -15,22 +15,9 @@ const result = process.env.PANEL_SMOKE_RESULT;
 switch (behavior) {
   case 'pass': break;
   case 'pass-desktop': report.hostMode = 'inactive-desktop'; report.rhinoIdlePump = true; break;
-  case 'wrong-idle-pump': report.rhinoIdlePump = true; break;
   case 'missing': process.exit(0); break;
   case 'malformed': writeFileSync(result, '{'); process.exit(0); break;
   case 'wrong-fixture': report.fixture = 'another-fixture'; break;
-  case 'wrong-host-mode': report.hostMode = 'inactive-desktop'; break;
-  case 'wrong-id': report.runId = 'old-run'; break;
-  case 'stale': report.startedUtc = '2001-01-01T00:00:00Z'; break;
-  case 'incomplete': report.completed = false; report.phase = 'fixture'; break;
-  case 'no-assertions': report.assertionCount = 0; break;
-  case 'bad-assertions': report.assertionCount = '3'; break;
-  case 'bad-schema': report.schemaVersion = 2; break;
-  case 'failed-check': report.passed = false; report.phase = 'fixture-failed'; break;
-  case 'wrong-plugin-path': report.plugin.path += '.other'; break;
-  case 'wrong-plugin-hash': report.plugin.sha256 = '0'.repeat(64); break;
-  case 'wrong-core-path': report.core.path += '.other'; break;
-  case 'wrong-core-hash': report.core.sha256 = '0'.repeat(64); break;
   case 'native-failure': break;
   case 'timeout': report.completed = false; report.phase = 'fixture'; break;
   case 'startup-failure':
@@ -44,4 +31,4 @@ switch (behavior) {
 }
 writeFileSync(result, JSON.stringify(report));
 if (behavior === 'timeout' || behavior === 'startup-timeout') setTimeout(() => {}, 30000);
-else if (behavior === 'native-failure' || behavior === 'failed-check' || behavior === 'startup-failure') process.exitCode = 7;
+else if (behavior === 'native-failure' || behavior === 'startup-failure') process.exitCode = 7;

@@ -1129,9 +1129,8 @@ internal static partial class PreviewSafetyChecks
     }
 
     // This is an explicit handler seam, not evidence that Rhino's real idle
-    // event is an end-of-frame notification. The separate idle counter reports
-    // what this embedded WinForms host actually delivered.
-    internal static async Task RunRetirementSeam(Assembly assembly)
+    // event is an end-of-frame notification.
+    internal static Task RunRetirementSeam(Assembly assembly)
     {
         var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
         bool modified = rhino.Modified;
@@ -1144,11 +1143,7 @@ internal static partial class PreviewSafetyChecks
         var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
         component.CreateAttributes();
         using var conduit = new PreviewConduit(component, document);
-        int idleInCapture = 0, idleAfterCapture = 0;
-        bool captureActive = false;
         Rhino.Display.RhinoViewport? capturedViewport = null;
-        EventHandler observeIdle = (_, _) => { if (captureActive) idleInCapture++; else idleAfterCapture++; };
-        RhinoApp.Idle += observeIdle;
         try
         {
             Grasshopper.CentralSettings.PreviewMeshEdges = true;
@@ -1229,9 +1224,7 @@ internal static partial class PreviewSafetyChecks
                 catch (Exception ex) { error = ex.ToString(); }
             };
             conduit.Enabled = true;
-            captureActive = true;
             using var bitmap = CapturePreview(view, highlight, "retirement seam", conduit);
-            captureActive = false;
             Check(error == null && bitmap != null && GreenPixels(bitmap) > 0,
                 "retirement seam executes an actual shaded draw: " + error);
             Check(postCallbackChecks, "post-component retirement, negative meshing cache and failed-flush regressions execute inside the enclosing display callback");
@@ -1252,13 +1245,9 @@ internal static partial class PreviewSafetyChecks
             Method(highlight, "ReleaseOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
             Check((int)live.GetValue(null)! == 0 && Property<long>(highlight, "RetainedBytes") == 0,
                 "repeated retirement does not dispose or account for the same resources twice");
-            await Task.Delay(1000);
-            Console.WriteLine($"RhinoApp.Idle observer: during capture={idleInCapture}, after capture={idleAfterCapture}; " +
-                "this is host evidence only, not an end-of-frame guarantee.");
         }
         finally
         {
-            RhinoApp.Idle -= observeIdle;
             capturedViewport?.Dispose();
             conduit.Enabled = false;
             Grasshopper.CentralSettings.PreviewMeshEdges = meshEdges;
@@ -1266,6 +1255,7 @@ internal static partial class PreviewSafetyChecks
             if (previous != null) rhino.Views.ActiveView = previous;
             view.Close(); rhino.Modified = modified;
         }
+        return Task.CompletedTask;
     }
 
     private static void VerifyReentrancy(Assembly assembly, object highlight)
@@ -1430,6 +1420,7 @@ internal static partial class PreviewSafetyChecks
             var highlight = Field<object>(component, "_highlight");
             var wrappedPoint = new GH_ObjectWrapper(new Point3d(0, 0, 0));
             Set(highlight, new IGH_Goo?[] { wrappedPoint }, new[] { 0 }, new[] { 0 });
+            wrappedPoint.Value = wrappedPoint; // Drawing must use the admitted snapshot, not the now-cyclic source.
             component.ExpirePreview(false);
             view.ActiveViewport.ZoomBoundingBox(new BoundingBox(new Point3d(-4, -4, -1), new Point3d(4, 4, 1)));
             view.Redraw();
@@ -1437,7 +1428,8 @@ internal static partial class PreviewSafetyChecks
             int pointGreen = 0;
             for (int y = 0; y < pointBitmap.Height; y++) for (int x = 0; x < pointBitmap.Width; x++)
             { var c = pointBitmap.GetPixel(x, y); if (c.G > c.R + 40 && c.G > c.B + 40) pointGreen++; }
-            Check(pointGreen > 0, "an object-wrapped point actually draws in the Rhino viewport");
+            Check(pointGreen > 0 && Box(highlight).Contains(Point3d.Origin),
+                "an object-wrapped point draws from its admitted generation after its wrapper becomes cyclic");
 
             var box = new GH_Box(new Box(new BoundingBox(new Point3d(-2, -2, -1), new Point3d(2, 2, 1))));
             var boxGroup = new GH_GeometryGroup(); boxGroup.Objects.Add(box);
@@ -1509,61 +1501,6 @@ internal static partial class PreviewSafetyChecks
             if (previous != null) rhino.Views.ActiveView = previous;
             view.Close(); rhino.Modified = modified;
         }
-    }
-
-    // Directly exercise the plugin's preview callbacks in a Rhino display
-    // conduit as well as retaining the separate GH-document draw fixture above.
-    internal static Task RunConduitResources(Assembly assembly)
-    {
-        var rhino = RhinoDoc.ActiveDoc ?? RhinoDoc.Create(null);
-        bool modified = rhino.Modified;
-        var previous = rhino.Views.ActiveView;
-        var view = rhino.Views.Add("Preview conduit fixture", Rhino.Display.DefinedViewportProjection.Top, new Rectangle(0, 0, 640, 480), false);
-        using var document = new GH_Document();
-        var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
-        component.CreateAttributes(); component.Attributes.Selected = true;
-        using var conduit = new PreviewConduit(component, document);
-        try
-        {
-            rhino.Views.ActiveView = view;
-            view.ActiveViewport.ConstructionGridVisible = view.ActiveViewport.ConstructionAxesVisible = view.ActiveViewport.WorldAxesVisible = false;
-            view.ActiveViewport.ZoomBoundingBox(new BoundingBox(new Point3d(-4, -4, -1), new Point3d(4, 4, 1)));
-            var highlight = Field<object>(component, "_highlight");
-            var wrapper = new GH_ObjectWrapper(new Point3d(0, 0, 0));
-            Set(highlight, new IGH_Goo?[] { wrapper }, new[] { 0 }, new[] { 0 });
-            wrapper.Value = wrapper;
-            conduit.Enabled = true;
-            using (var bitmap = Rhino.Display.DisplayPipeline.DrawToBitmap(view.ActiveViewport, 640, 480))
-            {
-                int green = 0;
-                for (int y = 0; y < bitmap.Height; y++) for (int x = 0; x < bitmap.Width; x++)
-                { var c = bitmap.GetPixel(x, y); if (c.G > c.R + 40 && c.G > c.B + 40) green++; }
-                Check(green > 0 && conduit.Draws > 0 && Box(highlight).Contains(Point3d.Origin),
-                    "a wrapped point actually draws from its old coherent generation after its wrapper becomes cyclic");
-            }
-            var box = new GH_Box(new Box(new BoundingBox(new Point3d(-2, -2, -1), new Point3d(2, 2, 1))));
-            var group = new GH_GeometryGroup(); group.Objects.Add(box);
-            Set(highlight, new IGH_Goo?[] { box, group }, new[] { 0, 1 }, new[] { 0 });
-            long bytes = Property<long>(highlight, "RetainedBytes");
-            foreach (var mode in new[] { GH_PreviewMesh.LowQuality, GH_PreviewMesh.HighQuality, GH_PreviewMesh.Custom })
-            {
-                if (mode == GH_PreviewMesh.Custom) document.PreviewCustomMeshParameters = new MeshingParameters(0.4);
-                document.PreviewMeshType = mode;
-                int before = conduit.Draws;
-                using var bitmap = CapturePreview(view, highlight, "conduit boxes " + mode, conduit);
-                Check(bitmap != null && conduit.Draws > before && Count(highlight) == 2 &&
-                    Property<long>(highlight, "RetainedBytes") == bytes && Box(highlight).Contains(new Point3d(2, 2, 1)),
-                    "wire and shaded callbacks retain bounded standalone and grouped boxes across mesh resets");
-            }
-            Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
-        }
-        finally
-        {
-            conduit.Enabled = false;
-            if (previous != null) rhino.Views.ActiveView = previous;
-            view.Close(); rhino.Modified = modified;
-        }
-        return Task.CompletedTask;
     }
 
     internal static async Task RunCompatibilityDraw(Assembly assembly)

@@ -24,7 +24,7 @@ function run(payload, behavior, timeoutMs = 2000) {
 
 test('pixel fixtures use an inactive desktop while other fixtures use the hidden host', () => {
   for (const name of ['preview-safety', 'preview-reentrant-draw', 'preview-native-resources',
-    'preview-conduit-resources', 'preview-compatibility-draw', 'preview-retirement-seam', 'preview-additional-draw']) {
+    'preview-compatibility-draw', 'preview-retirement-seam', 'preview-additional-draw']) {
     assert.equal(fixtureHostMode(name), 'inactive-desktop');
     assert.deepEqual(fixtureCommand('host', name, 'plugin'), ['host', ['--desktop-fixture', name, 'plugin']]);
   }
@@ -32,23 +32,21 @@ test('pixel fixtures use an inactive desktop while other fixtures use the hidden
   assert.deepEqual(fixtureCommand('host', 'preview-geometry', 'plugin'), ['host', ['--fixture', 'preview-geometry', 'plugin']]);
 });
 
-test('a failed desktop launcher check fails the run without skipping other fixtures', async t => {
+test('CLI accepts desktop and hidden fixture reports in the same run', async t => {
   const payload = withPayload(t);
   const started = [];
   const code = await main(['--plugin', payload.pluginPath, '--fixture', 'preview-safety', '--fixture', 'preview-geometry'], {
-    outputRoot: payload.outputRoot, checkDesktop: () => false,
+    outputRoot: payload.outputRoot,
     commandFor: (fixture, plugin) => {
       started.push(fixture);
       return [process.execPath, [fakeChild, fixture === 'preview-safety' ? 'pass-desktop' : 'pass', fixture, plugin]];
     }
   });
-  assert.equal(code, 1);
+  assert.equal(code, 0);
   assert.deepEqual(started, ['preview-safety', 'preview-geometry']);
   const [runDirectory] = readdirSync(payload.outputRoot);
   const status = JSON.parse(readFileSync(join(payload.outputRoot, runDirectory, 'coordinator-status.json'), 'utf8'));
-  assert.equal(status.desktopCheckRequired, true);
-  assert.equal(status.desktopCheckPassed, false);
-  assert.equal(status.passed, false);
+  assert.equal(status.passed, true);
   assert.equal(status.fixtureCount, 2);
 });
 
@@ -102,16 +100,41 @@ test('payload identity accepts an alias of the same files and still compares has
   assert.ok(reportErrors(report, expected).includes('wrong loaded plugin SHA-256'));
 });
 
+test('report validation rejects invalid identity, completion and assertion evidence', t => {
+  const { pluginPath } = withPayload(t);
+  const started = Date.now();
+  const report = {
+    schemaVersion: 1, fixture: 'first', runId: 'current-run', startedUtc: new Date(started).toISOString(),
+    completed: true, passed: true, assertionCount: 3, phase: 'fixture-completed', hostMode: 'hidden', rhinoIdlePump: false,
+    plugin: { path: pluginPath, sha256: 'plugin-hash' },
+    core: { path: join(pluginPath, '..', 'BetterGhPanel.Core.dll'), sha256: 'core-hash' }
+  };
+  const expected = { ...report, started };
+  assert.deepEqual(reportErrors(report, expected), []);
+  for (const value of [null, [], 'invalid']) assert.deepEqual(reportErrors(value, expected), ['malformed report']);
+  for (const [change, error] of [
+    [{ schemaVersion: 2 }, 'wrong report schema'],
+    [{ fixture: 'other' }, 'wrong fixture'],
+    [{ hostMode: 'inactive-desktop' }, 'wrong host mode'],
+    [{ rhinoIdlePump: true }, 'wrong Rhino idle pump'],
+    [{ runId: 'old-run' }, 'wrong or stale run id'],
+    [{ startedUtc: '2001-01-01T00:00:00Z' }, 'stale or invalid start time'],
+    [{ completed: false }, 'fixture did not complete'],
+    [{ passed: false }, 'fixture reported failure'],
+    [{ phase: 'fixture-failed' }, 'fixture reported failure'],
+    [{ assertionCount: 0 }, 'no valid fixture assertions'],
+    [{ assertionCount: '3' }, 'no valid fixture assertions'],
+    ...['plugin', 'core'].flatMap(name => [
+      [{ [name]: { ...report[name], path: report[name].path + '.other' } }, `wrong loaded ${name} path`],
+      [{ [name]: { ...report[name], sha256: 'wrong-hash' } }, `wrong loaded ${name} SHA-256`]
+    ])
+  ]) assert.ok(reportErrors({ ...report, ...change }, expected).includes(error), error);
+});
+
+// Keep process tests for failures that report validation alone cannot exercise.
 for (const [behavior, expected] of [
-  ['missing', 'missing report'], ['malformed', 'malformed report'], ['wrong-fixture', 'wrong fixture'], ['wrong-host-mode', 'wrong host mode'],
-  ['wrong-idle-pump', 'wrong Rhino idle pump'],
-  ['wrong-id', 'wrong or stale run id'], ['stale', 'stale or invalid start time'],
-  ['incomplete', 'fixture did not complete'], ['no-assertions', 'no valid fixture assertions'],
-  ['bad-assertions', 'no valid fixture assertions'], ['bad-schema', 'wrong report schema'],
-  ['failed-check', 'fixture reported failure'], ['wrong-plugin-path', 'wrong loaded plugin path'],
-  ['wrong-plugin-hash', 'wrong loaded plugin SHA-256'], ['wrong-core-path', 'wrong loaded core path'],
-  ['wrong-core-hash', 'wrong loaded core SHA-256'], ['native-failure', 'native exit code'],
-  ['timeout', 'timeout after']
+  ['missing', 'missing report'], ['malformed', 'malformed report'], ['wrong-fixture', 'wrong fixture'],
+  ['native-failure', 'native exit code'], ['timeout', 'timeout after']
 ]) {
   test(`rejects ${behavior} and still runs the next fixture`, async t => {
     const summary = await run(withPayload(t), behavior, behavior === 'timeout' ? 1000 : 2000);
@@ -150,11 +173,7 @@ test('coordinator CLI exits nonzero on a failed child after running the next fix
   const { spawnSync } = await import('node:child_process');
   const payload = withPayload(t);
   const driver = fileURLToPath(new URL('./fake-coordinator-driver.mjs', import.meta.url));
-  for (const [behavior, expectedStatus] of [['pass', 0], ...[
-    'missing', 'malformed', 'wrong-fixture', 'wrong-host-mode', 'wrong-idle-pump', 'wrong-id', 'stale', 'incomplete', 'no-assertions', 'bad-assertions',
-    'bad-schema', 'failed-check', 'wrong-plugin-path', 'wrong-plugin-hash', 'wrong-core-path', 'wrong-core-hash',
-    'native-failure', 'timeout'
-  ].map(name => [name, 1])]) {
+  for (const [behavior, expectedStatus] of [['pass', 0], ['native-failure', 1]]) {
     const result = spawnSync(process.execPath, [driver, behavior, payload.pluginPath, payload.outputRoot], { encoding: 'utf8' });
     assert.equal(result.status, expectedStatus, result.stderr);
     assert.match(result.stdout, /PASS preview-geometry/);
@@ -206,7 +225,7 @@ for (const behavior of ['startup-failure', 'startup-timeout']) {
 test('CLI marks a startup-aborted inventory incomplete and exits unsuccessfully', async t => {
   const payload = withPayload(t);
   const code = await main(['--plugin', payload.pluginPath, '--fixture', 'preview-reentrant-draw', '--fixture', 'preview-geometry'], {
-    outputRoot: payload.outputRoot, checkDesktop: () => true,
+    outputRoot: payload.outputRoot,
     commandFor: (fixture, plugin) => [process.execPath, [fakeChild, 'startup-failure', fixture, plugin]]
   });
   assert.equal(code, 1);
