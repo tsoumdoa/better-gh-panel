@@ -1014,8 +1014,6 @@ namespace BetterGhPanel
             }
             if (ListContains(e.CanvasLocation) || _trackHit.Contains(e.CanvasLocation) || _pairedTrackHit.Contains(e.CanvasLocation))
                 _keyboardPaired = _pairedList.Contains(e.CanvasLocation) || _pairedTrackHit.Contains(e.CanvasLocation);
-            // Only clicking rows chooses which pane Ctrl+C copies; scrolling never does.
-            if (ListContains(e.CanvasLocation)) _copyPaired = _pairedList.Contains(e.CanvasLocation);
             if (e.Button == MouseButtons.Right) return RespondToRowContextMenu(sender, e);
             if (e.Button != MouseButtons.Left) return base.RespondToMouseDown(sender, e);
             var point = e.CanvasLocation;
@@ -1202,6 +1200,8 @@ namespace BetterGhPanel
                 if (hit.Bounds.Contains(point))
                 {
                     InvalidateCopyStatus();
+                    // Only an accepted row or heading selection chooses which pane Ctrl+C copies.
+                    _copyPaired = _pairedList.Contains(point);
                     _selection.SelectAll(currentResult, hit.Path, includeEmptyBranches: DisplayListLengths);
                     RevealPartner(sender, -1, hit.Path, point);
                     PanelOwner.HighlightRows(currentResult.Snapshot, _selection.OrderedPositions(currentResult));
@@ -1212,6 +1212,7 @@ namespace BetterGhPanel
             foreach (var hit in _rowHits)
                 if (hit.Bounds.Contains(point) && hit.SourcePosition >= 0 && hit.SourcePosition < currentResult.Snapshot.Rows.Count)
                 {
+                    _copyPaired = _pairedList.Contains(point);
                     RevealPartner(sender, hit.SourcePosition, null, point);
                     var modifiers = RowModifiers();
                     if (modifiers.AcrossBranches)

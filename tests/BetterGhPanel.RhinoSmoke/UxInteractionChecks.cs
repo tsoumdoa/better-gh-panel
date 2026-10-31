@@ -197,6 +197,16 @@ internal static class UxInteractionChecks
             pairedValue.Value = "F raw 74";
             fixture.Solve();
             await fixture.Ready(() => fixture.Result.RowPositions.Count == 70);
+
+            // A D row menu that extends over F must not make Ctrl+C switch to F.
+            Render();
+            PanelTestAdapter.CanvasClick(canvas, new PointF(dataList.Right - 10, dataRow.Y + dataRow.Height / 2), Forms.MouseButtons.Right);
+            Render();
+            var dataMenu = Field<RectangleF>(attributes, "_rowMenuBounds");
+            PanelTestAdapter.CanvasClick(canvas, new PointF(Math.Max(dataMenu.X + 30, pairedList.X + 10), dataMenu.Y + copyIndex * 20 + 10));
+            await fixture.Ready(() => !Field<bool>(attributes, "_copyPending"));
+            Check(dataMenu.Right > pairedList.X + 10 && !Field<bool>(attributes, "_copyPaired"),
+                "Clicking a D row menu where it overlaps F keeps Ctrl+C copying D");
         }
         finally
         {
