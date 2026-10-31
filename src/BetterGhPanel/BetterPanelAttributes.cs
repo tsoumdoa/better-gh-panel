@@ -1012,7 +1012,9 @@ namespace BetterGhPanel
                 _rowContextHandled = true;
                 return GH_ObjectResponse.Handled;
             }
-            if (ListContains(e.CanvasLocation) || _trackHit.Contains(e.CanvasLocation) || _pairedTrackHit.Contains(e.CanvasLocation))
+            // A click on an open menu belongs to the menu, not to the pane underneath it.
+            if (_menu.Kind == CanvasMenuKind.None && _rowMenuResult == null &&
+                (ListContains(e.CanvasLocation) || _trackHit.Contains(e.CanvasLocation) || _pairedTrackHit.Contains(e.CanvasLocation)))
                 _keyboardPaired = _pairedList.Contains(e.CanvasLocation) || _pairedTrackHit.Contains(e.CanvasLocation);
             if (e.Button == MouseButtons.Right) return RespondToRowContextMenu(sender, e);
             if (e.Button != MouseButtons.Left) return base.RespondToMouseDown(sender, e);
