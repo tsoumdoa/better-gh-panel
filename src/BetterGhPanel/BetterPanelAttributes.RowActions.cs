@@ -129,11 +129,11 @@ namespace BetterGhPanel
                 TrackSelectionCanvas(canvas);
                 var options = PanelOwner.Session.Options;
                 bool filtered = options.Search.Length > 0 || options.TypeName != null || options.OnlyInvalid || options.BranchPath != null;
+                _rowMenuPaired = _pairedList.Contains(e.CanvasLocation);
                 _rowMenuAllActions = CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered,
-                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX);
+                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX, _rowMenuPaired);
                 _rowMenuAnchor = e.CanvasLocation;
                 _rowMenuSourcePosition = hit.SourcePosition;
-                _rowMenuPaired = _pairedList.Contains(e.CanvasLocation);
                 _rowMenuPaged = CanvasRowActions.NeedsPages(_panel.Height - HeaderHeight - 6);
                 ShowRowMenu(result, 0);
                 canvas.Invalidate();

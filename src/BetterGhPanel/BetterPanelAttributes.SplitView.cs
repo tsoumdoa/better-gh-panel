@@ -50,11 +50,15 @@ namespace BetterGhPanel
         {
             if (!_split.IsEmpty)
             {
-                Control(graphics, _split, PanelOwner.CanSplit ? "D|F" : "", small, trim, PanelOwner.PanelSplit && PanelOwner.CanSplit);
-                if (!PanelOwner.CanSplit)
+                // An open split stays an active chip, so a mismatch never greys out the way back.
+                bool available = PanelOwner.CanSplit || PanelOwner.PanelSplit;
+                Control(graphics, _split, available ? "D|F" : "", small, trim, PanelOwner.PanelSplit);
+                if (!available)
                     Text(graphics, "D|F", small, PanelTheme.Rgb(180, 185, 178), new RectangleF(_split.X + 3, _split.Y, _split.Width - 6, _split.Height), trim);
             }
             if (!PanelOwner.PanelSplit) return;
+            // Linking has nothing to act on while F does not match D.
+            if (PanelOwner.CanSplit)
             using (var pen = new Pen(_scrollLocked ? Accent : Muted, 1))
             {
                 var state = graphics.Save();
@@ -148,7 +152,7 @@ namespace BetterGhPanel
                     PanelOwner.PairedError ?? "Connect F with exactly the same paths and branch lengths as D to enable split view.";
                 return true;
             }
-            if (_scrollLock.Contains(point))
+            if (_scrollLock.Contains(point) && PanelOwner.CanSplit)
             {
                 e.Title = "Linked scrolling";
                 e.Text = _scrollLocked ? "Linked" : "Independent";
@@ -200,6 +204,7 @@ namespace BetterGhPanel
                 return true;
             }
             if (!_scrollLock.Contains(e.CanvasLocation)) return false;
+            if (!PanelOwner.CanSplit) return true;
             _scrollLocked = !_scrollLocked;
             if (_scrollLocked) _pairedOffset = _offset;
             ExpireLayout();
