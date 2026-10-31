@@ -1012,17 +1012,22 @@ namespace BetterGhPanel
                 _rowContextHandled = true;
                 return GH_ObjectResponse.Handled;
             }
-            // A click on an open menu belongs to the menu, not to the pane underneath it.
-            if (_menu.Kind == CanvasMenuKind.None && _rowMenuResult == null &&
-                (ListContains(e.CanvasLocation) || _trackHit.Contains(e.CanvasLocation) || _pairedTrackHit.Contains(e.CanvasLocation)))
-                _keyboardPaired = _pairedList.Contains(e.CanvasLocation) || _pairedTrackHit.Contains(e.CanvasLocation);
-            if (e.Button == MouseButtons.Right) return RespondToRowContextMenu(sender, e);
+            // A click on an open menu, or a suppressed trailing click, belongs to the
+            // gesture it finishes, not to the pane underneath it.
+            void TrackKeyboardPane()
+            {
+                if (_menu.Kind == CanvasMenuKind.None && _rowMenuResult == null &&
+                    (ListContains(e.CanvasLocation) || _trackHit.Contains(e.CanvasLocation) || _pairedTrackHit.Contains(e.CanvasLocation)))
+                    _keyboardPaired = _pairedList.Contains(e.CanvasLocation) || _pairedTrackHit.Contains(e.CanvasLocation);
+            }
+            if (e.Button == MouseButtons.Right) { TrackKeyboardPane(); return RespondToRowContextMenu(sender, e); }
             if (e.Button != MouseButtons.Left) return base.RespondToMouseDown(sender, e);
             var point = e.CanvasLocation;
             // A fresh gesture may start elsewhere before the prior menu's
             // double-click interval expires. Only its trailing click is blocked.
             if (e.Clicks == 1) _rowActionDismissedUntil = default;
             if (e.Clicks > 1 && DateTime.UtcNow < _rowActionDismissedUntil) return GH_ObjectResponse.Handled;
+            TrackKeyboardPane();
             if (_rowMenuResult != null)
             {
                 var menuResult = _rowMenuResult;

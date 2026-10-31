@@ -203,8 +203,11 @@ internal static class UxInteractionChecks
             PanelTestAdapter.CanvasClick(canvas, new PointF(dataList.Right - 10, dataRow.Y + dataRow.Height / 2), Forms.MouseButtons.Right);
             Render();
             var dataMenu = Field<RectangleF>(attributes, "_rowMenuBounds");
-            PanelTestAdapter.CanvasClick(canvas, new PointF(Math.Max(dataMenu.X + 30, pairedList.X + 10), dataMenu.Y + copyIndex * 20 + 10));
+            var menuPoint = new PointF(Math.Max(dataMenu.X + 30, pairedList.X + 10), dataMenu.Y + copyIndex * 20 + 10);
+            PanelTestAdapter.CanvasClick(canvas, menuPoint);
             await fixture.Ready(() => !Field<bool>(attributes, "_copyPending"));
+            // The suppressed second click of a double-click lands on F once the menu has closed.
+            Render(); PanelTestAdapter.CanvasClick(canvas, menuPoint, clicks: 2);
             Check(dataMenu.Right > pairedList.X + 10 && !Field<bool>(attributes, "_copyPaired") && !Field<bool>(attributes, "_keyboardPaired"),
                 "Clicking a D row menu where it overlaps F keeps Ctrl+C and keyboard scrolling on D");
         }
