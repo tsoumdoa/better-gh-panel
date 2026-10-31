@@ -539,12 +539,28 @@ namespace BetterGhPanel
             (Attributes as BetterPanelAttributes)?.ClosePresentationControls();
             PanelSplit = split;
             if (split && PairedSnapshot == null && _pairedQueryTree != null)
+            {
                 PairedSnapshot = SnapshotCapture.CaptureForMeasurements(_pairedQueryTree, out _pairedSourceItems,
                     out _pairedMeasurementSources, out _pairedCaptureGraphs, PanelUnitConversion.None, _geometryUnits, null, null, null, null, null);
+                // F geometry captured against the stored units joins the document-context fence,
+                // so a unit change since the last solve recaptures instead of showing stale labels.
+                _captureHasGeometry |= HasGeometry(PairedSnapshot);
+            }
+            else if (!split)
+            {
+                // A closed split stops paying for F presentation and its freshness checks.
+                PairedSnapshot = null;
+                _pairedSourceItems = Array.Empty<IGH_Goo?>();
+                _pairedMeasurementSources = Array.Empty<CapturedMeasurementSource?>();
+                _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
+            }
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
         }
+
+        private static bool HasGeometry(PanelSnapshot snapshot) =>
+            snapshot.Rows.Any(row => row.GeometryInfo != null || row.Components != null);
 
         private sealed class SplitUndo : GH_UndoAction
         {
@@ -970,7 +986,7 @@ namespace BetterGhPanel
                         out pairedSources, out pairedMeasurements, out pairedGraphs, PanelUnitConversion.None, units, null, null, null, null, null) : null;
                     StructureObserverForTesting?.Invoke(liveInputTree, livePairedTree);
                     if (!Current()) return;
-                    bool hasGeometry = snapshot.Rows.Any(row => row.GeometryInfo != null || row.Components != null);
+                    bool hasGeometry = HasGeometry(snapshot) || pairedSnapshot != null && HasGeometry(pairedSnapshot);
                     if (!SnapshotCapture.MeasurementSourcesCurrent(sources, measurementSources) || !SnapshotCapture.GraphSourcesCurrent(graphs) ||
                         !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor) ||
                         (pairedSnapshot != null && (!SnapshotCapture.MeasurementSourcesCurrent(pairedSources, pairedMeasurements) ||

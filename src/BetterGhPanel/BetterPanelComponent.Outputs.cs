@@ -96,7 +96,7 @@ namespace BetterGhPanel
             pairedTree = PanelOutputOperations.Pair(inputTree, capturedPairedTree, queryTree, retainedSources, out error);
         }
 
-        private bool PairedInputPresent() => Params.Input[1].SourceCount != 0 ||
+        internal bool PairedInputPresent() => Params.Input[1].SourceCount != 0 ||
             !(Params.Input[1] is Param_GenericObject input) || input.PersistentData.PathCount != 0;
 
         private void PublishOutputs(IGH_DataAccess da, Func<bool> solveCurrent)

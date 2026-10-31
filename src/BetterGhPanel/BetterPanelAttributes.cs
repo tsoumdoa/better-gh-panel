@@ -330,7 +330,7 @@ namespace BetterGhPanel
             _jump = new RectangleF(_display.Left - 24, _panel.Y + 2, 20, 18);
             _preview = new RectangleF(_jump.Left - 108, _jump.Y, 104, 18);
             _reset = new RectangleF(_preview.Left - 26, _jump.Y, 20, 18);
-            _split = PanelOwner.PanelSplit || Owner.Params.Input[1].SourceCount > 0 ? new RectangleF(_reset.Left - 32, _reset.Y, 28, 18) : RectangleF.Empty;
+            _split = PanelOwner.PanelSplit || PanelOwner.PairedInputPresent() ? new RectangleF(_reset.Left - 32, _reset.Y, 28, 18) : RectangleF.Empty;
             _move = new RectangleF(_panel.X + 14, _panel.Y + 1, (_split.IsEmpty ? _reset.Left : _split.Left) - _panel.X - 18, 23);
             // Reserve the corner for resizing rather than overlaying footer controls.
             // Wide panels fit status, selection, statistics, tools and Units on one line.
