@@ -8,13 +8,14 @@ const C = { bg: '#f1f3ed', ink: '#273d35', muted: '#788477', green: '#4d735e', l
 const font = japanese ? '"Segoe UI", "Yu Gothic", Meiryo, sans-serif' : '"Segoe UI", system-ui, sans-serif';
 const mono = 'Consolas, "Courier New", monospace';
 const chapters = [
-  { name: 'Meet Panel+', duration: 6, title: ['See what', 'flows.'], body: 'A clearer view of your Grasshopper data. Right on the canvas.', captions: [[0, 'Connect any typed data tree to D. Start exploring.']], transcript: 'Find Panel+ in Params → Util in Grasshopper for Rhino 8. Connect a typed data tree to D. The panel groups items by branch and shows compact type hints. With tree tools, units and filters off, the output forwards the incoming tree unchanged.' },
-  { name: 'Find & filter', duration: 8, title: ['Less scrolling.', 'More finding.'], body: 'Find matching data. Pass those typed items downstream.', captions: [[0, 'Choose Value and enter > 800 to find matching numbers.'], [4.2, 'Filters change typed output. Sorting changes only the view.']], transcript: 'Search text, use regular expressions, or compare numeric values. Filter by type or invalid data, sort values, and choose an exact branch. In this example, Value > 800 leaves three visible numbers and passes those same three typed items downstream. Sorting changes the displayed order within each branch while output retains transformed tree order. Upstream data stays intact.' },
-  { name: 'Measure', duration: 8, title: ['Geometry.', 'With context.'], body: 'Length, area, and volume appear alongside the details that matter.', captions: [[0, 'Visible curves, surfaces, and Breps measure automatically in the background.'], [4.2, 'Filter by Length, Area, or Volume using full-precision measurements.']], transcript: 'Visible curves, surfaces, and Breps measure automatically in the background. Rows retain geometry metadata while adding length, area, or solid volume. Invalid geometry has a visible label and a reason in its tooltip. Length, Area, and Volume filters compare supported primary metrics at full precision, including eligible offscreen rows. This example filters for surface area of at least 2,000,000 mm².' },
-  { name: 'Select & copy', duration: 8, title: ['From a row', 'to your model.'], body: 'Select geometry. See exactly where it belongs.', captions: [[0, 'Click to highlight; the camera stays still. Ctrl / Cmd-click adds rows.'], [4.3, 'Right-click to frame or copy. Native geometry copying: Windows.']], transcript: 'Click a geometry row to highlight it in Grasshopper’s selected preview color while keeping the Rhino camera still. Ctrl / Cmd-click toggles rows; Shift-click selects a range. Branch headings select matching rows, including offscreen items. Right-click for Frame selection, Copy value(s), or Copy geometry for Rhino. Frame selection explicitly zooms to selected geometry. Native geometry clipboard copying is supported on Windows and does not bake objects.' },
-  { name: 'Shape the tree', duration: 10, title: ['A little structure.', 'A lot of control.'], body: 'Four tools. One predictable order.', captions: [[0, 'Simplify removes shared path indices. Trim removes trailing path levels.'], [5, 'Flatten merges branches. Reverse flips item order within each branch.']], transcript: 'Tree tools change the typed output, preserving upstream data. They run in this order: Simplify, Trim, Flatten, Reverse. The example removes a shared leading 7, trims one trailing level and merges matching paths, flattens to {0}, then reverses the items to 40, 30, 20, 10. Settings are saved with the definition and support undo.' },
-  { name: 'Units & precision', duration: 8, title: ['The right units.', 'The right detail.'], body: 'Convert values. Format decimals. Keep the precision.', captions: [[0, 'Units converts numeric output. Matching geometry metrics change display units only.'], [4.2, 'Decimal places change displayed and copied text, preserving output precision.']], transcript: 'The Units menu converts numbers between mm and m, square or cubic units, and radians and degrees. Matching geometry measurements use converted display units without scaling the geometry. In this example, 1500.125 becomes 1.500125 with mm → m. Two decimal places displays 1.50, while the numeric output remains 1.500125. Integers become Numbers when converted. Decimal changes can update Text/Regex filter membership because those filters match displayed text; numeric wire precision is preserved.' },
-  { name: 'Make room', duration: 6, title: ['More room', 'to think.'], body: 'Switch between Full and Half. Keep every connection in place.', captions: [[0, 'One chevron toggles Full / Half. Wire grips stay fixed.']], transcript: 'The header chevron toggles Full and Half height. Both wire grips stay fixed. Filters, selection, and data remain intact, and the display mode is saved with the definition. Drag the corner to resize.' },
+  { name: 'Meet Panel+', duration: 5, title: ['See what', 'flows.'], body: 'A clearer view of your Grasshopper data. Right on the canvas.', captions: [[0, 'Connect any typed data tree to D. Start exploring.']], transcript: 'Find Panel+ in Params → Util in Grasshopper for Rhino 8. Connect a typed data tree to D. The panel groups items by branch and shows compact type hints. With tree tools, units and filters off, the output forwards the incoming tree unchanged.' },
+  { name: 'Find & filter', duration: 7, title: ['Less scrolling.', 'More finding.'], body: 'Find matching data. Pass those typed items downstream.', captions: [[0, 'Choose Value and enter > 800 to find matching numbers.'], [4.2, 'Filters change typed output. Sorting changes only the view.']], transcript: 'Search text, use regular expressions, or compare numeric values. Filter by type or invalid data, sort values, and choose an exact branch. In this example, Value > 800 leaves three visible numbers and passes those same three typed items downstream. Sorting changes the displayed order within each branch while output retains transformed tree order. Upstream data stays intact.' },
+  { name: 'Measure', duration: 7, title: ['Geometry.', 'With context.'], body: 'Length, area, and volume appear alongside the details that matter.', captions: [[0, 'Visible curves, surfaces, and Breps measure automatically in the background.'], [4.2, 'Filter by Length, Area, or Volume using full-precision measurements.']], transcript: 'Visible curves, surfaces, and Breps measure automatically in the background. Rows retain geometry metadata while adding length, area, or solid volume. Invalid geometry has a visible label and a reason in its tooltip. Length, Area, and Volume filters compare supported primary metrics at full precision, including eligible offscreen rows. This example filters for surface area of at least 2,000,000 mm².' },
+  { name: 'Select & copy', duration: 7, title: ['From a row', 'to your model.'], body: 'Select geometry. See exactly where it belongs.', captions: [[0, 'Click to highlight; the camera stays still. Ctrl / Cmd-click adds rows.'], [4.3, 'Right-click to frame or copy. Native geometry copying: Windows.']], transcript: 'Click a geometry row to highlight it in Grasshopper’s selected preview color while keeping the Rhino camera still. Ctrl / Cmd-click toggles rows; Shift-click selects a range. Branch headings select matching rows, including offscreen items. Right-click for Frame selection, Copy value(s), or Copy geometry for Rhino. Frame selection explicitly zooms to selected geometry. Native geometry clipboard copying is supported on Windows and does not bake objects.' },
+  { name: 'Shape the tree', duration: 8, title: ['A little structure.', 'A lot of control.'], body: 'Four tools. One predictable order.', captions: [[0, 'Simplify removes shared path indices. Trim removes trailing path levels.'], [5, 'Flatten merges branches. Reverse flips item order within each branch.']], transcript: 'Tree tools change the typed output, preserving upstream data. They run in this order: Simplify, Trim, Flatten, Reverse. The example removes a shared leading 7, trims one trailing level and merges matching paths, flattens to {0}, then reverses the items to 40, 30, 20, 10. Settings are saved with the definition and support undo.' },
+  { name: 'Units & precision', duration: 7, title: ['The right units.', 'The right detail.'], body: 'Convert values. Format decimals. Keep the precision.', captions: [[0, 'Units converts numeric output. Matching geometry metrics change display units only.'], [4.2, 'Decimal places change displayed and copied text, preserving output precision.']], transcript: 'The Units menu converts numbers between mm and m, square or cubic units, and radians and degrees. Matching geometry measurements use converted display units without scaling the geometry. In this example, 1500.125 becomes 1.500125 with mm → m. Two decimal places displays 1.50, while the numeric output remains 1.500125. Integers become Numbers when converted. Decimal changes can update Text/Regex filter membership because those filters match displayed text; numeric wire precision is preserved.' },
+  { name: 'D | F split view', duration: 10, title: ['Every value.', 'Its partner.'], body: 'Connect names to F. Keep the context beside your data.', captions: [[0, 'Connect matching paths and branch lengths to F, then click D|F.'], [2.5, 'F follows D’s tree tools, filters, and sorting. Selection is shared.'], [4.5, 'Unlink to scroll separately. Click a row to reveal its partner.'], [7.7, 'A mismatch names the branch and the item counts to fix.']], transcript: 'Connect a paired tree to optional input F, using the same branch paths and item counts as D before tree tools. The D|F chip appears when F is connected; click it to double the panel width. F shows raw values aligned with D through tree tools, filters, and sorting. Both panes share selection. Linked scrolling uses a single scrollbar at the far right. Click the chain between the pane captions to scroll independently; clicking a row reveals its partner. A mismatched tree shows Paired · mismatch and a diagnostic such as Branch {0;1}: D has 28 items, F has 27.' },
+  { name: 'Make room', duration: 3, title: ['More room', 'to think.'], body: 'Switch between Full and Half. Keep every connection in place.', captions: [[0, 'One chevron toggles Full / Half. Wire grips stay fixed.']], transcript: 'The header chevron toggles Full and Half height. Both wire grips stay fixed. Filters, selection, and data remain intact, and the display mode is saved with the definition. Drag the corner to resize.' },
   { name: 'Reset & go', duration: 6, title: ['Keep the flow.', 'Find the signal.'], body: 'Everything you need to understand what is passing through.', captions: [[0, 'Reset clears view settings, tree tools, and conversion. One Undo brings them back.'], [3.5, 'Panel+ for Rhino 8 · Params → Util · Connect to D']], transcript: 'Reset restores the original incoming data by clearing tree tools, unit conversion, decimal formatting, search, filters, sorting, and selection. It keeps panel size, display mode, and wire connections. One Undo restores the previous settings. Install panel-plus in Rhino’s PackageManager with prereleases enabled, then find Panel+ in Params → Util.' },
 ];
 if (localization) chapters.forEach((chapter, index) => Object.assign(chapter, localization.chapters[index]));
@@ -72,7 +73,7 @@ function toolIcon(kind, x, y, active) {
   ctx.save(); ctx.translate(x, y); ctx.scale(1.35, 1.35);
   const col = active ? C.green : C.muted;
   if (active) { rect(-5, -5, 26, 26, C.light, 3); line(-5, 21, 21, 21, C.green, 1.3); }
-  if (kind === 'Simplify') { const p = [[2.5,3],[13.5,3],[9,8],[9,12],[7,13],[7,8],[2.5,3]]; for (let i=1;i<p.length;i++) line(...p[i-1], ...p[i], col, 1.3); }
+  if (kind === 'Simplify') { line(8,3,8,13,col,1.3); line(1.5,8,5.5,8,col,1.3); line(3.5,6,5.5,8,col,1.3); line(5.5,8,3.5,10,col,1.3); line(14.5,8,10.5,8,col,1.3); line(12.5,6,10.5,8,col,1.3); line(10.5,8,12.5,10,col,1.3); }
   if (kind === 'Trim') { for (const a of [2,7,12]) line(a,2.5,a+2,2.5,col,1.3); line(8,5,8,13.5,col,1.3); line(3,5,8,9,col,1.3); line(8,9,13,5,col,1.3); line(5.5,13.5,10.5,13.5,col,1.3); }
   if (kind === 'Flatten') { line(8,2.5,8,10,col,1.3); line(4,6.5,8,10.5,col,1.3); line(8,10.5,12,6.5,col,1.3); line(2.5,13.5,13.5,13.5,col,1.3); }
   if (kind === 'Reverse') { line(4.5,13,4.5,3,col,1.3); line(1.5,6,4.5,3,col,1.3); line(4.5,3,7.5,6,col,1.3); line(11.5,3,11.5,13,col,1.3); line(8.5,10,11.5,13,col,1.3); line(11.5,13,14.5,10,col,1.3); }
@@ -201,7 +202,7 @@ function treeCard(x,y,w,label,groups,accent=false) {
 }
 function tree(chapter,t){
   // Each stage shows the actual cumulative order used by PanelTreeOperations.
-  const stage=t<1.4?0:t<3.3?1:t<5.2?2:t<7.1?3:4;
+  const stage=t<1?0:t<2.5?1:t<4?2:t<5.7?3:4;
   const stages=[
     [['{7;0;0}',[10,20]],['{7;0;1}',[30]],['{7;1;0}',[40]]],
     [['{0;0}',[10,20]],['{0;1}',[30]],['{1;0}',[40]]],
@@ -221,7 +222,7 @@ function tree(chapter,t){
   treeCard(80,495,625,'UPSTREAM / PRESERVED',stages[0]);
   text('→',764,650,36,C.green,400,'center');
   treeCard(820,495,690,stage?`OUTPUT / ${names[stage-1].toUpperCase()} APPLIED`:'OUTPUT / ORIGINAL TREE',stages[stage],stage>0);
-  if(stage>0) cursor(80+(stage-1)*357+235,441,t-[0,1.4,3.3,5.2,7.1][stage]);
+  if(stage>0) cursor(80+(stage-1)*357+235,441,t-[0,1,2.5,4,5.7][stage]);
 }
 function units(chapter,t){
   const converted=t>2.1,formatted=t>4.6;
@@ -238,14 +239,110 @@ function units(chapter,t){
   if(formatted){note('Displayed: 1.50 m');pill('OUTPUT  /  1.500125',1125,151,C.white,C.green,19);}
   else if(converted)note('1500.125 mm → 1.500125 m');
 }
+function chain(x, y, linked) {
+  ctx.save(); ctx.translate(x,y); ctx.rotate(-.65);
+  ctx.strokeStyle=linked?C.green:C.muted; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.roundRect(-17, -5, 19, 10, 5); ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(linked?-1:7, -5, 19, 10, 5); ctx.stroke();
+  if(linked) line(-3,0,5,0,C.green,2);
+  ctx.restore();
+}
+function splitView(chapter,t){
+  const connected=t>.55, opened=t>1.2, mismatch=t>=7.7;
+  const opening=ease((t-1.2)/.55), pw=425, w=pw*(1+opening), x=1490-w, y=215, h=500;
+  const filtered=t>=2.5 && t<3.6, independent=t>=4.5 && !mismatch, partner=t>=6.1;
+  const scrolling=t>=3.6 && t<4.5;
+  const linked=!independent, sourceOffset=(scrolling||(independent&&partner))?12:0, pairedOffset=independent?12:sourceOffset;
+  const selections=mismatch?[]:filtered?[1,4]:independent?[15]:scrolling?[15,18]:[2,5];
+  const entries=Array.from({length:40},(_,i)=>({
+    index:i<12?i:i-12,
+    value:i%5===2?`Facade ${i<12?'A':'B'} / bay ${String((i<12?12:40)-i).padStart(2,'0')}`:
+      i%5===1||i%5===4?String(120-i*2.5):`(${i*5}, ${i%3}, ${i<12?0:12})`,
+    type:i%5===2?'Text':i%5===1||i%5===4?'Num':'Pt',
+    paired:`Facade ${i<12?'A':'B'}-${String((i<12?i:i-12)+1).padStart(2,'0')}`
+  }));
+  // The entire panel grows to twice its ordinary width; input F is optional.
+  rect(x,y,w,h,C.white,3,'#aebca7');rect(x+1,y+1,5,45,C.green);
+  text('P+',x+20,y+32,25,C.green,700);
+  if(!connected)text('40 items · 2 branches',x+75,y+31,17,C.muted);
+  const chipX=x+w-(opened?420:205);
+  if(connected){
+    rect(chipX,y+8,55,32,opened&&!mismatch?C.light:C.white,0);
+    text('D|F',chipX+28,y+31,19,mismatch?'#a8b0a5':C.green,500,'center');
+    if(opened&&!mismatch)line(chipX,y+41,chipX+55,y+41,C.green,2);
+  }
+  text('↺',x+w-(opened?335:123),y+33,27,C.muted);
+  if(opening>.95){rect(x+w-300,y+8,204,32,C.light);text('Preview: Selected',x+w-290,y+31,18,C.green);chevron(x+w-111,y+23);}
+  text('⌃',x+w-67,y+32,23,C.muted);text('−',x+w-26,y+32,23,C.muted);
+  const gy=y+175;
+  [gy,y+365].forEach((yy,i)=>{
+    text(i?'F':'D',x-20,yy+6,15,C.muted,600);
+    circle(x,yy,6,C.white,C.ink);
+  });
+  line(x-40,gy-12,x,gy,'#91a18b');
+  if(connected){
+    ctx.beginPath();ctx.moveTo(x-35,y+410);ctx.bezierCurveTo(x-35,y+390,x-30,y+365,x,y+365);ctx.strokeStyle='#91a18b';ctx.lineWidth=2;ctx.stroke();
+  }
+  for(const [i,label] of ['D','S','B','F'].entries()) {circle(x+w,gy+i*68,6,C.white,C.ink);text(label,x+w+14,gy+i*68+6,15,C.muted);}
+  text(filtered?'Value: > 105':'Search…',x+18,y+77,19,filtered?C.green:C.muted);
+  text(filtered?'Num':'All types',x+w-239,y+77,17,C.muted);
+  text(filtered?'↑ Value':'Sort',x+w-139,y+77,17,C.muted);text('Paths',x+w-66,y+77,17,C.muted);
+  line(x+12,y+91,x+w-12,y+91);
+  const top=y+135, rowHeight=34;
+  function pane(px, paired, offset){
+    ctx.save();ctx.beginPath();ctx.rect(px+8,y+98,pw-16,h-151);ctx.clip();
+    text(paired?'F':'D',px+18,y+119,19,C.green,700);
+    text(paired?'Paired  40 · Text':'Data  40 · Pt / Num / Text',px+47,y+119,18,C.muted);
+    const ids=filtered?[4,1]:Array.from({length:8},(_,i)=>i+offset);
+    const path=filtered?'{0;0}':offset>=12?'{0;1}':'{0;0}';
+    rect(px+15,top,pw-47,29,'#ebf0e9');text(path,px+27,top+21,18,C.green,400,'left',mono);
+    text(filtered?'2 items':offset>=12?'28 items':'12 items',px+pw-43,top+21,17,C.muted,400,'right');
+    ids.forEach((id,n)=>{
+      const row=entries[id], ry=top+31+n*rowHeight, active=selections.includes(id);
+      rect(px+15,ry,pw-47,rowHeight,active?'#d7e8db':n%2?'#f5f8f3':C.white);
+      text(row.index,px+29,ry+24,17,C.muted,400,'left',mono);
+      const numeric=!paired&&row.type==='Num';
+      text(paired?row.paired:row.value,numeric?px+pw-93:px+65,ry+24,20,C.ink,400,numeric?'right':'left',numeric?mono:font);
+      text(paired?'Text':row.type,px+pw-42,ry+24,17,C.muted,400,'right');
+    });
+    ctx.restore();
+  }
+  pane(x,false,sourceOffset);
+  if(opened){
+    ctx.save();ctx.beginPath();ctx.rect(x+pw,y+98,Math.max(0,w-pw),h-150);ctx.clip();
+    if(mismatch){
+      text('F',x+pw+18,y+119,19,C.green,700);
+      text('Paired ·',x+pw+47,y+119,18,C.muted);text('mismatch',x+pw+120,y+119,18,C.orange);
+      ctx.beginPath();ctx.moveTo(x+pw+26,top+8);ctx.lineTo(x+pw+17,top+25);ctx.lineTo(x+pw+35,top+25);ctx.closePath();ctx.fillStyle=C.orange;ctx.fill();
+      text('!',x+pw+26,top+23,13,C.white,700,'center');
+      text('Branch {0;1}: D has 28 items, F has 27',x+pw+45,top+23,18,C.ink);
+      text('Match D’s paths and item counts.',x+pw+18,top+56,17,C.muted);
+    } else pane(x+pw,true,pairedOffset);
+    ctx.restore();
+    if(!mismatch)chain(x+pw-9,y+115,linked);
+    // Linked mode has one right-edge track; unlinked mode has one per pane.
+    const track=(tx,offset)=>{rect(tx,top,5,303,'#e5eade',1);rect(tx,top+offset*7,5,105,'#98ae99',1);};
+    track(x+w-15,pairedOffset);if(independent)track(x+pw-15,partner?sourceOffset:0);
+  }
+  text(!opened?'Ready':mismatch?'40 items · 2 branches · output = input':filtered?'2 / 40 items · 2 selected':`${selections.length} selected · right-click to copy`,x+17,y+h-21,17,C.muted);
+  for(const [i,tool]of ['Trim','Simplify','Flatten','Reverse'].entries())toolIcon(tool,x+w-295+i*39,y+h-37,false);
+  text('Units',x+w-108,y+h-20,17,C.muted);chevron(x+w-28,y+h-26);
+  if(t<1.2){pill('Names → F',80,494);cursor(chipX+28,239,t-1.2);}
+  else if(t<2)cursor(chipX+28,y+25,t-1.2);
+  else if(scrolling)cursor(x+w-14,top+98,t-3.6);
+  else if(independent&&t<5.2)cursor(x+pw-9,y+115,t-4.5);
+  else if(independent&&t>=5.8)cursor(x+pw+160,top+31+3*rowHeight+18,t-6.1);
+  const label=mismatch?'Match the source tree before tree tools.':independent?(partner?'Click a row. Its partner comes into view.':'Independent scrollbars. Shared selection.'):scrolling?'Linked scrolling. Both panes move together.':'Aligned rows. One right-edge scrollbar.';
+  note(label,657,751,mismatch?C.orange:C.green);
+}
 function compact(chapter,t){
-  const half=ease((t-1.2)/.75)*(1-ease((t-4.1)/.75));
+  const half=ease((t-.65)/.6);
   const h=mix(500,250,half),y=215+(500-h)/2;
   panel({y,h,gripY:490,half:half>.5,rows:[numberRows[0],...numberRows.slice(3)],count:'3 / 5 items · 1 branch',search:'Value: > 800'});
   pill('FULL ↔ HALF',80,492);
   for(const x of [675,1490]){circle(x,490,16,null,'#9aae8d');line(x,519,x,571,C.line,1);}
   note('Same wire grips. Same data.',1000,747);
-  cursor(1460,y+24,t>4.1?t-4.1:t-1.2);
+  cursor(1460,y+24,t-.65);
 }
 function reset(chapter,t){
   const clean=t>1.6;
@@ -256,7 +353,7 @@ function reset(chapter,t){
   text('panel-plus',80,612,19,C.muted,400,'left',mono);
   if(clean)note('Reset data settings · preserve size and wires');
 }
-const scenes=[intro,filter,measure,select,tree,units,compact,reset];
+const scenes=[intro,filter,measure,select,tree,units,splitView,compact,reset];
 
 function draw(time){
   const index=chapters.findIndex((chapter,i)=>time<chapter.start+chapter.duration||i===chapters.length-1);
@@ -278,7 +375,7 @@ function draw(time){
   text(caption,800,837,23,C.ink,450,'center');
   let px=80;
   for(let i=0;i<chapters.length;i++){
-    const w=chapters[i].duration/duration*1384;
+    const w=chapters[i].duration/duration*(1440-8*(chapters.length-1));
     rect(px,872,w,3,'#d5decd',1.5);
     const p=clamp((time-chapters[i].start)/chapters[i].duration);
     if(p>0)rect(px,872,w*p,3,C.green,1.5);px+=w+8;
