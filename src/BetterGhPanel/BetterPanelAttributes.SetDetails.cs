@@ -46,7 +46,7 @@ namespace BetterGhPanel
             }
             _setDetails.Layout(_panel, _setControlsVisible && current && !PanelOwner.PanelMinimized);
             m_innerBounds = _setDetails.Bounds.IsEmpty ? _panel : RectangleF.Union(_panel, _setDetails.Bounds);
-            Bounds = new RectangleF(m_innerBounds.X - 22, m_innerBounds.Y, m_innerBounds.Width + 44, m_innerBounds.Height);
+            Bounds = new RectangleF(m_innerBounds.X - 22, m_innerBounds.Y, m_innerBounds.Width + (PanelOwner.OutputScope == PanelOutputScope.Selected ? 58 : 44), m_innerBounds.Height);
         }
 
         private void DrawSetCount(Graphics g, CanvasRowRenderer renderer, RectangleF bounds,

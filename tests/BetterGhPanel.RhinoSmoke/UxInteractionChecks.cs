@@ -147,6 +147,25 @@ internal static class UxInteractionChecks
         Call(attributes, "ShowNotice", canvas, new string('W', 90)); Render();
         Check(!Field<bool>(attributes, "_singleLineFooter"), "A long notice returns the footer to two lines");
 
+        Call(component, "SetPanelSplit", true);
+        attributes.PerformLayout(); Render();
+        var splitArchive = new GH_IO.Serialization.GH_LooseChunk("Panel");
+        Check(component.Write(splitArchive), "Split view writes its canonical dimensions and display mode");
+        foreach (bool legacy in new[] { false, true })
+        {
+            if (legacy) splitArchive.RemoveItem("PanelSplit");
+            var restored = (Grasshopper.Kernel.GH_Component)Activator.CreateInstance(component.GetType())!;
+            restored.CreateAttributes();
+            Check(restored.Read(splitArchive), "Split view archive reads successfully");
+            restored.Attributes.PerformLayout();
+            Check(PanelTestAdapter.Bounds(restored, CanvasControl.Panel).Width == PanelTestAdapter.Size(component).Width * (legacy ? 1 : 2) &&
+                PanelTestAdapter.Size(restored) == PanelTestAdapter.Size(component),
+                legacy ? "Archives without PanelSplit restore the ordinary width" : "Split view roundtrips without doubling the canonical saved width");
+            restored.DocumentContextChanged(fixture.Document, Grasshopper.Kernel.GH_DocumentContext.Close);
+        }
+        Call(component, "SetPanelSplit", false);
+        attributes.PerformLayout();
+
         using var curve = new LineCurve(Point3d.Origin, new Point3d(1, 2, 3));
         var group = new GH_GeometryGroup(); group.Objects.Add(new GH_Point(Point3d.Origin));
         var inputs = new IGH_Goo[] { new GH_ObjectWrapper(Point3d.Origin), new GH_ObjectWrapper(curve),

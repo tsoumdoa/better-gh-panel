@@ -85,10 +85,12 @@ namespace BetterGhPanel
         internal float CanvasHeight { get; private set; } = CanvasPanelSize.DefaultHeight;
         internal CanvasPanelDisplay CanvasDisplay { get; private set; }
         internal bool PanelMinimized { get; private set; }
+        internal bool PanelSplit { get; private set; }
         internal PanelPreviewMode PreviewMode { get; private set; }
         internal bool ShowItemOrder { get; private set; }
         internal string PreviewStatus => _highlight.Status;
         internal float DisplayHeight => CanvasPanelSize.DisplayHeight(CanvasHeight, CanvasDisplay);
+        internal float DisplayWidth => CanvasWidth * (PanelSplit ? 2 : 1);
         internal int TrimDepth { get; private set; }
         internal bool FlattenTree { get; private set; }
         internal bool ReverseTree { get; private set; }
@@ -518,6 +520,39 @@ namespace BetterGhPanel
             ApplyPanelMinimized(minimized);
         }
 
+        internal void SetPanelSplit(bool split)
+        {
+            if (PanelSplit == split || split && !CanSplit) return;
+            RecordUndoEvent("Panel+ D | F view", new SplitUndo(InstanceGuid, PanelSplit, split));
+            ApplyPanelSplit(split);
+        }
+
+        private void ApplyPanelSplit(bool split)
+        {
+            CanvasTextInput.CloseActive(this);
+            (Attributes as BetterPanelAttributes)?.ClosePresentationControls();
+            PanelSplit = split;
+            if (split && PairedSnapshot == null && _pairedQueryTree != null)
+                PairedSnapshot = SnapshotCapture.Capture(_pairedQueryTree, out _, geometryUnits: _geometryUnits);
+            Attributes.ExpireLayout();
+            OnPingDocument()?.Modified();
+            Instances.ActiveCanvas?.Invalidate();
+        }
+
+        private sealed class SplitUndo : GH_UndoAction
+        {
+            private readonly Guid _component;
+            private readonly bool _before, _after;
+            internal SplitUndo(Guid component, bool before, bool after)
+            { _component = component; _before = before; _after = after; }
+            public override bool ExpiresSolution => false;
+            public override bool ExpiresDisplay => false;
+            protected override void Internal_Undo(GH_Document doc) => Apply(doc, _before);
+            protected override void Internal_Redo(GH_Document doc) => Apply(doc, _after);
+            private void Apply(GH_Document doc, bool split) =>
+                (doc.FindObject(_component, false) as BetterPanelComponent)?.ApplyPanelSplit(split);
+        }
+
         private void ApplyPanelMinimized(bool minimized)
         {
             CanvasTextInput.CloseActive(this);
@@ -913,6 +948,7 @@ namespace BetterGhPanel
                     if (!Current()) return;
                     var snapshot = SnapshotCapture.CaptureForMeasurements(queryTree, out var sources, out var measurementSources, out var graphs,
                         conversion, units, retainedSources, CaptureObserverForTesting, GraphVisitObserverForTesting, queryScalars, inputSeed);
+                    var pairedSnapshot = PanelSplit && pairedTree != null ? SnapshotCapture.Capture(pairedTree, out _, geometryUnits: units) : null;
                     StructureObserverForTesting?.Invoke(liveInputTree, livePairedTree);
                     if (!Current()) return;
                     bool hasGeometry = snapshot.Rows.Any(row => row.GeometryInfo != null || row.Components != null);
@@ -931,6 +967,7 @@ namespace BetterGhPanel
                     _inputTree = inputTree; _preConversionTree = preConversionTree; _queryTree = queryTree; _retainedSources = retainedSources;
                     _liveInputTree = liveInputTree; _livePairedTree = livePairedTree; _pairedInputTree = capturedPairedTree; _pairedInputPresent = pairedPresent;
                     _pairedQueryTree = pairedTree; _pairedError = pairedError;
+                    PairedSnapshot = pairedSnapshot;
                     bool retainContext = _geometryContext.Equals(context);
                     _geometryUnitSystem = unitSystem; _geometryTolerance = tolerance; _geometryUnits = units;
                     _geometryContext = context; _captureHasGeometry = hasGeometry;
@@ -1105,6 +1142,7 @@ namespace BetterGhPanel
             writer.SetSingle("PanelHeight", CanvasHeight);
             writer.SetInt32("PanelDisplay", (int)CanvasDisplay);
             writer.SetBoolean("PanelMinimized", PanelMinimized);
+            writer.SetBoolean("PanelSplit", PanelSplit);
             writer.SetInt32("PanelPreviewMode", (int)PreviewMode);
             writer.SetBoolean("PanelShowItemOrder", ShowItemOrder);
             writer.SetInt32("PanelTrimDepth", TrimDepth);
@@ -1167,6 +1205,9 @@ namespace BetterGhPanel
             bool minimized = false;
             reader.TryGetBoolean("PanelMinimized", ref minimized);
             PanelMinimized = minimized;
+            bool split = false;
+            reader.TryGetBoolean("PanelSplit", ref split);
+            PanelSplit = split;
             int previewMode = 0;
             reader.TryGetInt32("PanelPreviewMode", ref previewMode);
             PreviewMode = Enum.IsDefined(typeof(PanelPreviewMode), previewMode)

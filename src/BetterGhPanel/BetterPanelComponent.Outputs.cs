@@ -23,6 +23,9 @@ namespace BetterGhPanel
         private bool _pairedInputPresent;
         private IReadOnlyList<PanelSourceAddress> _retainedSources = Array.Empty<PanelSourceAddress>();
         private string? _pairedError;
+        internal PanelSnapshot? PairedSnapshot { get; private set; }
+        internal string? PairedError => _pairedError;
+        internal bool CanSplit => _pairedInputPresent && _pairedQueryTree != null && _pairedError == null && Session.HasCurrentResult;
         private long _selectionVersion, _publishedSelectionVersion;
         private PanelOutputScope _publishedScope;
         private PanelQueryResult? _cachedOutputResult;
@@ -40,6 +43,7 @@ namespace BetterGhPanel
         private void ApplyOutputScope(PanelOutputScope scope)
         {
             OutputScope = scope;
+            Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             ScheduleOutput();
             Instances.ActiveCanvas?.Invalidate();
@@ -68,6 +72,7 @@ namespace BetterGhPanel
             _captureHasGeometry = false;
             _retainedSources = Array.Empty<PanelSourceAddress>();
             _pairedError = null;
+            PairedSnapshot = null;
             _cachedOutputResult = null;
             _filteredData = _filteredPair = null;
             _filteredMask = null;

@@ -101,7 +101,7 @@ namespace BetterGhPanel
                 return GH_ObjectResponse.Handled;
             }
             var result = PanelOwner.Session.Result;
-            if (_list.Contains(e.CanvasLocation) && !RowsAreCurrent(result))
+            if (ListContains(e.CanvasLocation) && !RowsAreCurrent(result))
             {
                 _rowContextHandled = true;
                 _rowHits.Clear();
@@ -112,6 +112,7 @@ namespace BetterGhPanel
             {
                 if (!hit.Bounds.Contains(e.CanvasLocation)) continue;
                 _rowContextHandled = true;
+                RevealPartner(canvas, hit.SourcePosition, null, e.CanvasLocation);
                 InvalidateCopyStatus();
                 _selection.SelectAt(result, hit.SourcePosition, hit.ViewNumber - 1, preserveSelected: true);
                 PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));

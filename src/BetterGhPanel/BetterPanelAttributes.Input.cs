@@ -63,13 +63,15 @@ namespace BetterGhPanel
             }
             if (_rowMenuResult != null && _rowMenuBounds.Contains(point)) return true;
             // A list without overflow lets the wheel zoom the canvas as usual.
-            if (!_list.Contains(point) && !_trackHit.Contains(point) || MaximumOffset == 0)
+            if (!ListContains(point) && !_trackHit.Contains(point) && !_pairedTrackHit.Contains(point) || MaximumOffset == 0)
             {
                 _wheelRemainder = 0;
                 return false;
             }
+            bool paired = _pairedList.Contains(point) || _pairedTrackHit.Contains(point);
+            if (paired && !PanelOwner.CanSplit) return false;
             int rows = WheelRows(delta);
-            if (rows != 0) SetOffset(canvas, _offset - rows);
+            if (rows != 0) SetPaneOffset(canvas, (paired ? _pairedOffset : _offset) - rows, paired);
             return true;
         }
 
@@ -222,7 +224,10 @@ namespace BetterGhPanel
         // Hover feedback: a translucent fill on the control or row under the pointer.
         private IEnumerable<RectangleF> HoverControls()
         {
-            yield return _close; yield return _display; yield return _jump; yield return _reset; yield return _preview;
+            yield return _close; yield return _display;
+            if (PanelOwner.CanSplit || PanelOwner.PanelSplit) yield return _split;
+            if (PanelOwner.PanelSplit) yield return _scrollLock;
+            yield return _jump; yield return _reset; yield return _preview;
             if (SearchClearVisible) yield return _searchClear;
             yield return _filter; yield return _search;
             if (BranchClearVisible) yield return _branchClear;
