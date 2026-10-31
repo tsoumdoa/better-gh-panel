@@ -73,6 +73,9 @@ namespace BetterGhPanel
             _retainedSources = Array.Empty<PanelSourceAddress>();
             _pairedError = null;
             PairedSnapshot = null;
+            _pairedSourceItems = Array.Empty<IGH_Goo?>();
+            _pairedMeasurementSources = Array.Empty<CapturedMeasurementSource?>();
+            _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
             _cachedOutputResult = null;
             _filteredData = _filteredPair = null;
             _filteredMask = null;

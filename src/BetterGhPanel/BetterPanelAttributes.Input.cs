@@ -26,6 +26,7 @@ namespace BetterGhPanel
         private GH_Canvas? _hoverCanvas;
         private int _wheelRemainder;
         private int _keyboardCursor = -1;
+        private bool _keyboardPaired;
         private ViewRestore? _viewRestore;
 
         private bool KeyboardFocused => PanelCanvasInput.IsFocused(this);
@@ -68,7 +69,8 @@ namespace BetterGhPanel
                 _wheelRemainder = 0;
                 return false;
             }
-            bool paired = !_scrollLocked && (_pairedList.Contains(point) || _pairedTrackHit.Contains(point));
+            _keyboardPaired = _pairedList.Contains(point) || _pairedTrackHit.Contains(point);
+            bool paired = !_scrollLocked && _keyboardPaired;
             if (paired && !PanelOwner.CanSplit) return false;
             int rows = WheelRows(delta);
             if (rows != 0) SetPaneOffset(canvas, (paired ? _pairedOffset : _offset) - rows, paired);
@@ -99,6 +101,7 @@ namespace BetterGhPanel
             if (_menu.Kind != CanvasMenuKind.None) return HandleMenuKey(canvas, key, none);
             var result = PanelOwner.Session.Result;
             bool current = ResultIsCurrent(result);
+            bool paired = PanelOwner.PanelSplit && !_scrollLocked && PanelOwner.CanSplit && _keyboardPaired;
             switch (key)
             {
                 case Keys.Escape when none:
@@ -111,13 +114,14 @@ namespace BetterGhPanel
                     return true;
                 case Keys.PageUp when none:
                 case Keys.PageDown when none:
-                    SetOffset(canvas, _offset + (key == Keys.PageUp ? -1 : 1) * Math.Max(1, _shown - 1));
+                    SetPaneOffset(canvas, (paired ? _pairedOffset : _offset) + (key == Keys.PageUp ? -1 : 1) *
+                        Math.Max(1, (paired ? _pairedShown : _shown) - 1), paired);
                     return true;
                 case Keys.Home when none || control:
-                    SetOffset(canvas, 0);
+                    SetPaneOffset(canvas, 0, paired);
                     return true;
                 case Keys.End when none || control:
-                    SetOffset(canvas, MaximumOffset);
+                    SetPaneOffset(canvas, MaximumOffset, paired);
                     return true;
                 case Keys.C when control:
                     // With no rows selected, Ctrl+C keeps copying Grasshopper objects.
@@ -184,13 +188,14 @@ namespace BetterGhPanel
 
         private void MoveKeyboardCursor(GH_Canvas canvas, PanelQueryResult result, int step, bool extend)
         {
-            if (DisplayListLengths) { SetOffset(canvas, _offset + step); return; }
+            bool paired = PanelOwner.PanelSplit && !_scrollLocked && PanelOwner.CanSplit && _keyboardPaired;
+            if (DisplayListLengths) { SetPaneOffset(canvas, (paired ? _pairedOffset : _offset) + step, paired); return; }
             int count = result.RowPositions.Count;
             if (count == 0) return;
             int index;
             if (_keyboardCursor >= 0 && result.TryGetViewIndex(_keyboardCursor, out int cursor)) index = cursor + step;
             else if (_selection.Anchor >= 0 && result.TryGetViewIndex(_selection.Anchor, out int anchor)) index = anchor + step;
-            else index = Math.Max(0, _firstShownItem);
+            else index = paired ? Math.Max(0, result.ViewIndex.ItemAtOrAfter(_pairedOffset)) : Math.Max(0, _firstShownItem);
             index = Math.Max(0, Math.Min(count - 1, index));
             int position = result.RowPositions[index];
             InvalidateCopyStatus();
@@ -199,9 +204,11 @@ namespace BetterGhPanel
             PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
             TrackSelectionCanvas(canvas);
             int offset = result.ViewIndex.OffsetOfItem(index);
-            if (_firstShownItem < 0 || index < _firstShownItem) SetOffset(canvas, offset);
+            if (paired) { RevealPartner(canvas, position, null, _list.Location); canvas.Invalidate(); }
+            else if (_firstShownItem < 0 || index < _firstShownItem) SetOffset(canvas, offset);
             else if (index > _lastShownItem) SetOffset(canvas, offset - Math.Max(0, _shown - 3));
             else canvas.Invalidate();
+            RevealPartner(canvas, position, null, paired ? _pairedList.Location : _list.Location);
         }
 
         private void SelectAllRows(GH_Canvas canvas, PanelQueryResult result)

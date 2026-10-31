@@ -81,14 +81,16 @@ namespace BetterGhPanel
 
         private static bool FullyVisible(Graphics graphics, RectangleF bounds)
         {
+            if (!graphics.IsVisible(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2)) return false;
             // Canvas projection is scale/translation. GDI+ can round a clip edge
             // inward when converting it back to canvas units at fractional zoom.
             // Test the interior with one device pixel of tolerance, retaining the
             // region check so real partial paints (including clip holes) stay inert.
             var pixel = new[] { PointF.Empty, new PointF(1, 1) };
             graphics.TransformPoints(CoordinateSpace.World, CoordinateSpace.Device, pixel);
-            bounds.Inflate(-Math.Min(bounds.Width / 4, Math.Abs(pixel[1].X - pixel[0].X)),
-                -Math.Min(bounds.Height / 4, Math.Abs(pixel[1].Y - pixel[0].Y)));
+            float dx = Math.Abs(pixel[1].X - pixel[0].X), dy = Math.Abs(pixel[1].Y - pixel[0].Y);
+            // Tiny viewport slivers must retain their full coverage requirement.
+            bounds.Inflate(bounds.Width > 2 * dx ? -dx : 0, bounds.Height > 2 * dy ? -dy : 0);
             using (var unpainted = new Region(bounds))
             using (var clip = graphics.Clip)
             {
@@ -166,6 +168,7 @@ namespace BetterGhPanel
             }
             else if (action == PanelRowAction.ViewFullValue)
             {
+                if (!PanelOwner.CapturedSnapshotCurrent(result.Snapshot)) return;
                 int position = _rowMenuSourcePosition;
                 if (position < 0 || position >= result.Snapshot.Rows.Count || !_selection.Contains(position)) return;
                 var row = result.Snapshot.Rows[position];

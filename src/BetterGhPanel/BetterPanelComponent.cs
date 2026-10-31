@@ -26,6 +26,9 @@ namespace BetterGhPanel
         private IGH_Goo?[] _sourceItems = Array.Empty<IGH_Goo?>();
         private CapturedMeasurementSource?[] _measurementSources = Array.Empty<CapturedMeasurementSource?>();
         private CaptureGraphWitness[] _captureGraphs = Array.Empty<CaptureGraphWitness>();
+        private IGH_Goo?[] _pairedSourceItems = Array.Empty<IGH_Goo?>();
+        private CapturedMeasurementSource?[] _pairedMeasurementSources = Array.Empty<CapturedMeasurementSource?>();
+        private CaptureGraphWitness[] _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
         private PanelSnapshot? _measurementSnapshot, _staleMeasurementSnapshot;
         private string _geometryUnits = "units";
         private Rhino.UnitSystem _geometryUnitSystem = Rhino.UnitSystem.None;
@@ -258,20 +261,20 @@ namespace BetterGhPanel
             if (session == null || session.IsDisposed || Locked || !ReferenceEquals(snapshot, _measurementSnapshot) ||
                 !ReferenceEquals(snapshot, session.Snapshot) || !session.GeometrySnapshotAttached(snapshot) || tree == null) return false;
             long visits = 0;
-            bool HoldersCurrent()
+            bool HoldersCurrent(IGH_Goo?[] holders, CapturedMeasurementSource?[] sources)
             {
-                bool result = SnapshotCapture.MeasurementSourcesCurrentWithVisits(_sourceItems, _measurementSources, out int count);
+                bool result = SnapshotCapture.MeasurementSourcesCurrentWithVisits(holders, sources, out int count);
                 if (CaptureDiagnosticsForTesting) CaptureMeasurementSourceVisitsForTesting += count;
                 visits += count; return result;
             }
-            bool GraphsCurrent()
+            bool GraphsCurrent(CaptureGraphWitness[] graphs)
             {
-                bool result = SnapshotCapture.GraphSourcesCurrentWithVisits(_captureGraphs, out long count);
+                bool result = SnapshotCapture.GraphSourcesCurrentWithVisits(graphs, out long count);
                 visits += count; return result;
             }
-            bool ManagedCurrent()
+            bool ManagedCurrent(PanelSnapshot captured, IGH_Goo?[] holders)
             {
-                bool result = SnapshotCapture.ManagedRowsCurrentWithVisits(snapshot, _sourceItems, out int count);
+                bool result = SnapshotCapture.ManagedRowsCurrentWithVisits(captured, holders, out int count);
                 visits += count; return result;
             }
             bool UnitsCurrent()
@@ -289,7 +292,10 @@ namespace BetterGhPanel
                 visits += count; return result;
             }
             bool current = (!_captureHasGeometry || GeometryContextCurrent(context)) &&
-                HoldersCurrent() && GraphsCurrent() && ManagedCurrent() && UnitsCurrent() && StructuresCurrent() &&
+                HoldersCurrent(_sourceItems, _measurementSources) && GraphsCurrent(_captureGraphs) && ManagedCurrent(snapshot, _sourceItems) &&
+                (PairedSnapshot == null || HoldersCurrent(_pairedSourceItems, _pairedMeasurementSources) &&
+                    GraphsCurrent(_pairedCaptureGraphs) && ManagedCurrent(PairedSnapshot, _pairedSourceItems)) &&
+                UnitsCurrent() && StructuresCurrent() &&
                 (!_captureHasGeometry || (context.Equals(_geometryContext) && GeometryContextCurrent(context)));
             if (CaptureDiagnosticsForTesting) { CaptureValidationPassesForTesting++; CaptureValidationVisitsForTesting += visits; }
             if (!current && generation == _solveGeneration && ReferenceEquals(snapshot, _measurementSnapshot))
@@ -533,7 +539,8 @@ namespace BetterGhPanel
             (Attributes as BetterPanelAttributes)?.ClosePresentationControls();
             PanelSplit = split;
             if (split && PairedSnapshot == null && _pairedQueryTree != null)
-                PairedSnapshot = SnapshotCapture.Capture(_pairedQueryTree, out _, geometryUnits: _geometryUnits);
+                PairedSnapshot = SnapshotCapture.CaptureForMeasurements(_pairedQueryTree, out _pairedSourceItems,
+                    out _pairedMeasurementSources, out _pairedCaptureGraphs, PanelUnitConversion.None, _geometryUnits, null, null, null, null, null);
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
@@ -956,12 +963,18 @@ namespace BetterGhPanel
                     if (!Current()) return;
                     var snapshot = SnapshotCapture.CaptureForMeasurements(queryTree, out var sources, out var measurementSources, out var graphs,
                         conversion, units, retainedSources, CaptureObserverForTesting, GraphVisitObserverForTesting, queryScalars, inputSeed);
-                    var pairedSnapshot = PanelSplit && pairedTree != null ? SnapshotCapture.Capture(pairedTree, out _, geometryUnits: units) : null;
+                    var pairedSources = Array.Empty<IGH_Goo?>();
+                    var pairedMeasurements = Array.Empty<CapturedMeasurementSource?>();
+                    var pairedGraphs = Array.Empty<CaptureGraphWitness>();
+                    var pairedSnapshot = PanelSplit && pairedTree != null ? SnapshotCapture.CaptureForMeasurements(pairedTree,
+                        out pairedSources, out pairedMeasurements, out pairedGraphs, PanelUnitConversion.None, units, null, null, null, null, null) : null;
                     StructureObserverForTesting?.Invoke(liveInputTree, livePairedTree);
                     if (!Current()) return;
                     bool hasGeometry = snapshot.Rows.Any(row => row.GeometryInfo != null || row.Components != null);
                     if (!SnapshotCapture.MeasurementSourcesCurrent(sources, measurementSources) || !SnapshotCapture.GraphSourcesCurrent(graphs) ||
                         !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor) ||
+                        (pairedSnapshot != null && (!SnapshotCapture.MeasurementSourcesCurrent(pairedSources, pairedMeasurements) ||
+                            !SnapshotCapture.GraphSourcesCurrent(pairedGraphs) || !SnapshotCapture.ManagedRowsCurrent(pairedSnapshot, pairedSources))) ||
                         !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) || pairedPresent != PairedInputPresent() ||
                         (pairedPresent && !PanelTreeOperations.StructureStillMatches(livePairedTree, capturedPairedTree)) ||
                         (hasGeometry && !GeometryContextCurrent(context)))
@@ -976,6 +989,7 @@ namespace BetterGhPanel
                     _liveInputTree = liveInputTree; _livePairedTree = livePairedTree; _pairedInputTree = capturedPairedTree; _pairedInputPresent = pairedPresent;
                     _pairedQueryTree = pairedTree; _pairedError = pairedError;
                     PairedSnapshot = pairedSnapshot;
+                    _pairedSourceItems = pairedSources; _pairedMeasurementSources = pairedMeasurements; _pairedCaptureGraphs = pairedGraphs;
                     bool retainContext = _geometryContext.Equals(context);
                     _geometryUnitSystem = unitSystem; _geometryTolerance = tolerance; _geometryUnits = units;
                     _geometryContext = context; _captureHasGeometry = hasGeometry;

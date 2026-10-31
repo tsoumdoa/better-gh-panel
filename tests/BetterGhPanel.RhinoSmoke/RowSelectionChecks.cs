@@ -89,6 +89,20 @@ internal static class RowSelectionChecks
             fixture.ClearSelection();
         }
 
+        var savedPivot = attributes.Pivot;
+        float savedZoom = canvas.Viewport.Zoom;
+        canvas.Viewport.Zoom = 0.73f; canvas.Viewport.ComputeProjection();
+        attributes.PerformLayout(); Invalidate(); Render();
+        var bottomRow = PanelTestAdapter.RowBounds(component, 1);
+        float shift = canvas.Viewport.VisibleRegion.Bottom - 1.2f / 0.73f - bottomRow.Top;
+        attributes.Pivot = new PointF(attributes.Pivot.X, attributes.Pivot.Y + shift);
+        attributes.PerformLayout(); bottomRow.Offset(0, shift);
+        Invalidate(); Render(new RectangleF(bottomRow.X, bottomRow.Y - 20 / 0.73f, bottomRow.Width, 18 / 0.73f));
+        Check(!PanelTestAdapter.TryRowBounds(component, 1, out _),
+            "A repaint ending above a 1.2-device-pixel viewport-bottom row cannot register that unpainted row at zoom 0.73");
+        attributes.Pivot = savedPivot;
+        canvas.Viewport.Zoom = savedZoom; canvas.Viewport.ComputeProjection(); attributes.PerformLayout();
+
         // Selection publication keeps the same query result, so a second normal
         // click must work without waiting for another paint.
         Render();
