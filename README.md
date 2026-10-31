@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.2.0-beta
+yak install panel-plus 0.2.1-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -28,7 +28,7 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
-**Next beta (unreleased, [PR #41](https://github.com/tsoumdoa/better-gh-panel/pull/41))**
+**[`0.2.1-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.1-beta)**
 
 - **D | F split view.** Inspect paired data beside the data it belongs to — see [below](#d--f-split-view).
 - **Row selection fix.** Rows could intermittently ignore clicks at some canvas zoom levels; they are now reliably selectable.
