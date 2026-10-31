@@ -18,7 +18,7 @@ Created in [T3 Code](https://t3.codes).
 
 ## Native MVP
 
-**D | F split view:** With matching F data connected, click **D|F** in the header to inspect raw paired values beside D. Pane captions show counts and types; both panes follow D's tree tools, filters, sorting and selection. List-length rows show a compact summary of their paired branch; sets follow the representative item's F value. The mode doubles the saved width, supports Undo and save/load, and is retained by Reset alongside Full/Half and dimensions. The small lock between captions links scrolling by default; unlock for independent wheels and scrollbars. Clicking either pane reveals its partner row, and locking again snaps F to D. Scroll locking is transient. Mismatched F data reports the first missing/extra branch or differing item count in the pane and runtime warning. With **B + F source → Selected**, drawn outputs read **B·S / F·S** and the F caption says **selected**; row visibility still follows D.
+**D | F split view:** The **D|F** header toggle appears when F is connected; matching paths and item counts enable it. Inspect raw F values beside D with shared filters, sorting and selection. The chain-link control links scrolling through one right-edge scrollbar; unlink for independent scrolling, then relink to snap F to D. Mismatches show a diagnostic and pairing hint. Split view doubles the saved width, supports Undo and save/load, and survives Reset. Selected output scope is shown by **B·S / F·S** port labels.
 
 **Patch `0.1.26-beta` — UI/UX audit fixes:** Panel+ now behaves more like a focused list while leaving Grasshopper's own gestures alone. [Release notes](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.1.26-beta).
 

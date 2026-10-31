@@ -68,7 +68,7 @@ namespace BetterGhPanel
                 _wheelRemainder = 0;
                 return false;
             }
-            bool paired = _pairedList.Contains(point) || _pairedTrackHit.Contains(point);
+            bool paired = !_scrollLocked && (_pairedList.Contains(point) || _pairedTrackHit.Contains(point));
             if (paired && !PanelOwner.CanSplit) return false;
             int rows = WheelRows(delta);
             if (rows != 0) SetPaneOffset(canvas, (paired ? _pairedOffset : _offset) - rows, paired);
@@ -225,7 +225,7 @@ namespace BetterGhPanel
         private IEnumerable<RectangleF> HoverControls()
         {
             yield return _close; yield return _display;
-            if (PanelOwner.CanSplit || PanelOwner.PanelSplit) yield return _split;
+            if (!_split.IsEmpty) yield return _split;
             if (PanelOwner.PanelSplit) yield return _scrollLock;
             yield return _jump; yield return _reset; yield return _preview;
             if (SearchClearVisible) yield return _searchClear;
@@ -316,7 +316,7 @@ namespace BetterGhPanel
             var result = _lastResult;
             // A second expiry before the next result keeps the original stash.
             if (result == null) return;
-            _viewRestore = _offset == 0 ? null : new ViewRestore(result.Snapshot, _offset, DisplayListLengths);
+            _viewRestore = _offset == 0 && _pairedOffset == 0 ? null : new ViewRestore(result.Snapshot, _offset, _pairedOffset, DisplayListLengths);
         }
 
         private void RestoreView(PanelQueryResult result)
@@ -325,7 +325,8 @@ namespace BetterGhPanel
             if (restore == null) return;
             _viewRestore = null;
             if (restore.ListLengths != DisplayListLengths || !SameStructure(restore.Snapshot, result.Snapshot)) return;
-            _offset = restore.Offset;
+            _offset = Math.Max(0, Math.Min(MaximumOffset, restore.Offset));
+            _pairedOffset = _scrollLocked ? _offset : Math.Max(0, Math.Min(MaximumOffset, restore.PairedOffset));
         }
 
         private static bool SameStructure(PanelSnapshot before, PanelSnapshot after)
@@ -338,12 +339,13 @@ namespace BetterGhPanel
 
         private sealed class ViewRestore
         {
-            internal ViewRestore(PanelSnapshot snapshot, int offset, bool listLengths)
+            internal ViewRestore(PanelSnapshot snapshot, int offset, int pairedOffset, bool listLengths)
             {
-                Snapshot = snapshot; Offset = offset; ListLengths = listLengths;
+                Snapshot = snapshot; Offset = offset; PairedOffset = pairedOffset; ListLengths = listLengths;
             }
             internal PanelSnapshot Snapshot { get; }
             internal int Offset { get; }
+            internal int PairedOffset { get; }
             internal bool ListLengths { get; }
         }
     }

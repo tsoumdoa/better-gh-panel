@@ -47,7 +47,7 @@ namespace BetterGhPanel
         private long _queryEditorGeneration;
         private PanelQueryOptions? _previewOriginal;
         private object? _previewOwner;
-        private int _previewOffset;
+        private int _previewOffset, _previewPairedOffset;
         private int _offset, _shown, _firstShownItem, _lastShownItem;
         private PanelQueryResult? _lastResult;
         private PanelQueryResult? _paintedResult;
@@ -330,8 +330,8 @@ namespace BetterGhPanel
             _jump = new RectangleF(_display.Left - 24, _panel.Y + 2, 20, 18);
             _preview = new RectangleF(_jump.Left - 108, _jump.Y, 104, 18);
             _reset = new RectangleF(_preview.Left - 26, _jump.Y, 20, 18);
-            _split = new RectangleF(_reset.Left - 32, _reset.Y, 28, 18);
-            _move = new RectangleF(_panel.X + 14, _panel.Y + 1, _split.Left - _panel.X - 18, 23);
+            _split = Owner.Params.Input[1].SourceCount > 0 ? new RectangleF(_reset.Left - 32, _reset.Y, 28, 18) : RectangleF.Empty;
+            _move = new RectangleF(_panel.X + 14, _panel.Y + 1, (_split.IsEmpty ? _reset.Left : _split.Left) - _panel.X - 18, 23);
             // Reserve the corner for resizing rather than overlaying footer controls.
             // Wide panels fit status, selection, statistics, tools and Units on one line.
             _singleLineFooter &= _panel.Width >= 500;
@@ -442,6 +442,7 @@ namespace BetterGhPanel
                     session.RequestGeometryMeasurements(session.Snapshot, Array.Empty<int>());
                     return;
                 }
+                // Minimum Half split needs a one-line footer to fit a value row below the pane captions.
                 bool singleLine = PanelOwner.PanelSplit && _panel.Height < 140 || _panel.Width >= 500 &&
                     graphics.MeasureString(FooterStatus(result, singleLine: true), small).Width <= _panel.Width - 357;
                 if (singleLine != _singleLineFooter)
@@ -596,6 +597,7 @@ namespace BetterGhPanel
             if (!paired && !_preservePaintedTargets) { _setHits.Clear(); _rowHits.Clear(); _branchHits.Clear(); }
             var list = paired ? _pairedList : _list;
             var track = paired ? _pairedTrack : _track;
+            if (PanelOwner.PanelSplit && _scrollLocked) track = paired ? RectangleF.Empty : _pairedTrack;
             ref int offset = ref (paired ? ref _pairedOffset : ref _offset);
             ref int shown = ref (paired ? ref _pairedShown : ref _shown);
             int firstShownItem = -1, lastShownItem = -1;
@@ -640,7 +642,7 @@ namespace BetterGhPanel
             if (DisplayListLengths)
             {
                 _setDetails.Close();
-                RenderListLengths(g, result, small, mono, trim, paired);
+                RenderListLengths(g, result, font, small, mono, trim, paired);
                 if (!paired) PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, Array.Empty<int>());
                 return;
             }
@@ -762,7 +764,7 @@ namespace BetterGhPanel
                 _lastShownItem = lastShownItem;
                 PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, measurements);
             }
-            if (Count > shown)
+            if (Count > shown && !track.IsEmpty)
             {
                 Fill(g, PanelTheme.Rgb(232, 236, 229), track);
                 Fill(g, PanelTheme.Rgb(153, 174, 156), Thumb(paired));
@@ -841,7 +843,7 @@ namespace BetterGhPanel
 
         private RectangleF Thumb(bool paired)
         {
-            var track = paired ? _pairedTrack : _track;
+            var track = paired || PanelOwner.PanelSplit && _scrollLocked ? _pairedTrack : _track;
             int shown = paired ? _pairedShown : _shown, offset = paired ? _pairedOffset : _offset;
             float minimum = Math.Min(20, track.Height / 2);
             float height = Math.Min(track.Height, Math.Max(minimum, track.Height * Math.Max(1, shown) / Math.Max(1, Count)));
@@ -1017,35 +1019,6 @@ namespace BetterGhPanel
             // double-click interval expires. Only its trailing click is blocked.
             if (e.Clicks == 1) _rowActionDismissedUntil = default;
             if (e.Clicks > 1 && DateTime.UtcNow < _rowActionDismissedUntil) return GH_ObjectResponse.Handled;
-            if (_close.Contains(point))
-            {
-                SuppressTrailingDoubleClick();
-                PanelOwner.SetPanelMinimized(true);
-                PerformLayout();
-                CanvasDoubleClickGuard.Start(sender, e);
-                sender.Invalidate();
-                return GH_ObjectResponse.Handled;
-            }
-            if (_display.Contains(point))
-            {
-                // Expanding Half moves this header away from the pointer and can
-                // expose a row beneath the second click of the same gesture.
-                SuppressTrailingDoubleClick();
-                _menu.Close();
-                CloseRowMenu();
-                PanelOwner.SetCanvasDisplay(CanvasPanelSize.NextDisplay(PanelOwner.CanvasDisplay));
-                PerformLayout();
-                CanvasDoubleClickGuard.Start(sender, e);
-                sender.Invalidate();
-                return GH_ObjectResponse.Handled;
-            }
-            if (HandleSplitClick(sender, e)) return GH_ObjectResponse.Handled;
-            if (_reset.Contains(point))
-            {
-                PanelOwner.ResetPanel();
-                ShowNotice(sender, "Panel reset · Undo restores the previous settings");
-                return GH_ObjectResponse.Handled;
-            }
             if (_rowMenuResult != null)
             {
                 var menuResult = _rowMenuResult;
@@ -1106,6 +1079,35 @@ namespace BetterGhPanel
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
+            if (_close.Contains(point))
+            {
+                SuppressTrailingDoubleClick();
+                PanelOwner.SetPanelMinimized(true);
+                PerformLayout();
+                CanvasDoubleClickGuard.Start(sender, e);
+                sender.Invalidate();
+                return GH_ObjectResponse.Handled;
+            }
+            if (_display.Contains(point))
+            {
+                // Expanding Half moves this header away from the pointer and can
+                // expose a row beneath the second click of the same gesture.
+                SuppressTrailingDoubleClick();
+                _menu.Close();
+                CloseRowMenu();
+                PanelOwner.SetCanvasDisplay(CanvasPanelSize.NextDisplay(PanelOwner.CanvasDisplay));
+                PerformLayout();
+                CanvasDoubleClickGuard.Start(sender, e);
+                sender.Invalidate();
+                return GH_ObjectResponse.Handled;
+            }
+            if (HandleSplitClick(sender, e)) return GH_ObjectResponse.Handled;
+            if (_reset.Contains(point))
+            {
+                PanelOwner.ResetPanel();
+                ShowNotice(sender, "Panel reset · Undo restores the previous settings");
+                return GH_ObjectResponse.Handled;
+            }
             if (HandleSetDetailsClick(sender, e)) return GH_ObjectResponse.Handled;
             if (_resize.Contains(point))
             {
@@ -1113,9 +1115,10 @@ namespace BetterGhPanel
                 _resizing = true; _dragStart = point; _startWidth = _panel.Width; _startHeight = _panel.Height;
                 return GH_ObjectResponse.Capture;
             }
-            if ((_trackHit.Contains(point) && Count > _shown) || (_pairedTrackHit.Contains(point) && Count > _pairedShown && PanelOwner.CanSplit))
+            if ((_trackHit.Contains(point) && Count > _shown) ||
+                (_pairedTrackHit.Contains(point) && Count > (_scrollLocked ? _shown : _pairedShown) && (_scrollLocked || PanelOwner.CanSplit)))
             {
-                _scrollingPaired = _pairedTrackHit.Contains(point);
+                _scrollingPaired = _pairedTrackHit.Contains(point) && !_scrollLocked;
                 var thumb = Thumb(_scrollingPaired);
                 if (point.Y >= thumb.Top && point.Y <= thumb.Bottom) { _scrolling = true; _thumbGrab = point.Y - thumb.Y; return GH_ObjectResponse.Capture; }
                 int offset = _scrollingPaired ? _pairedOffset : _offset, shown = _scrollingPaired ? _pairedShown : _shown;
@@ -1397,6 +1400,7 @@ namespace BetterGhPanel
                 _previewOriginal = session.Options;
                 _previewOwner = token;
                 _previewOffset = _offset;
+                _previewPairedOffset = _pairedOffset;
                 PanelOwner.BeginQueryPreview();
             }
             session.UpdateQuery(options);
@@ -1427,7 +1431,7 @@ namespace BetterGhPanel
         {
             if (_previewOriginal == null || !ReferenceEquals(_previewOwner, token)) return;
             var original = _previewOriginal;
-            _viewRestore = new ViewRestore(PanelOwner.Session.Snapshot, _previewOffset,
+            _viewRestore = new ViewRestore(PanelOwner.Session.Snapshot, _previewOffset, _previewPairedOffset,
                 original.DisplayFilterValue && original.SearchMode == PanelSearchMode.ListLength);
             ClearPreviewState();
             PanelOwner.Session.UpdateQuery(original);
@@ -1439,7 +1443,7 @@ namespace BetterGhPanel
         {
             _previewOriginal = null;
             _previewOwner = null;
-            _previewOffset = 0;
+            _previewOffset = _previewPairedOffset = 0;
         }
 
         private void ShowQueryEditor(GH_Canvas canvas, RectangleF bounds, string current, Action<string> accepted,
@@ -1520,7 +1524,7 @@ namespace BetterGhPanel
             }
             if (_scrolling)
             {
-                var track = _scrollingPaired ? _pairedTrack : _track;
+                var track = _scrollingPaired || PanelOwner.PanelSplit && _scrollLocked ? _pairedTrack : _track;
                 float travel = track.Height - Thumb(_scrollingPaired).Height;
                 if (travel > 0) SetPaneOffset(sender, (int)Math.Round((e.CanvasY - track.Y - _thumbGrab) / travel * MaximumOffset), _scrollingPaired);
                 return GH_ObjectResponse.Capture;
@@ -1569,7 +1573,7 @@ namespace BetterGhPanel
         public override void SetupTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             base.SetupTooltip(point, e);
-            if (SplitTooltip(point, e)) return;
+            if (_menu.Kind == CanvasMenuKind.None && _rowMenuResult == null && SplitTooltip(point, e)) return;
             if (e.Control is GH_Canvas canvas && _paintedCanvas != null && !ReferenceEquals(_paintedCanvas, canvas)) InvalidatePaintedHits();
             if (_menu.Kind != CanvasMenuKind.None && _menu.Bounds.Contains(point) &&
                 (!PaintedViewIsCurrent() || !_menu.IsPaintedAt(point))) return;
@@ -1794,9 +1798,9 @@ namespace BetterGhPanel
                     if (_pairedList.Contains(point) && PanelOwner.PairedSnapshot != null)
                     {
                         var pairedRow = PanelOwner.PairedSnapshot.Rows[hit.SourcePosition];
-                        e.Title = "F � " + row.Path + " [" + row.OriginalIndex + "]";
+                        e.Title = "F · " + row.Path + " [" + row.OriginalIndex + "]";
                         e.Text = pairedRow.TypeName;
-                        e.Description = PanelTextPreview.ForTooltip(PairedDisplayValue(pairedRow)) + "\nClick to select the shared D / F row � double-click to clear";
+                        e.Description = PanelTextPreview.ForTooltip(PairedDisplayValue(pairedRow)) + "\nClick to select the shared D / F row · double-click to clear";
                         return;
                     }
                     e.Title = (PanelOwner.ShowItemOrder || PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder
@@ -1854,17 +1858,22 @@ namespace BetterGhPanel
             if (warning)
             {
                 // An input diagnostic is flagged with a drawn triangle rather than a bare "!".
-                float tx = bounds.X + 4, ty = bounds.Y + bounds.Height / 2;
-                using (var brush = new SolidBrush(PanelTheme.Warning))
-                    g.FillPolygon(brush, new[] { new PointF(tx + 4.5f, ty - 5), new PointF(tx + 9, ty + 4), new PointF(tx, ty + 4) });
-                using (var pen = new Pen(PanelTheme.Background, 1.2f))
-                    g.DrawLine(pen, tx + 4.5f, ty - 2, tx + 4.5f, ty + 1.5f);
+                DrawWarningTriangle(g, new PointF(bounds.X + 4, bounds.Y + bounds.Height / 2));
                 inset += 12;
             }
             Text(g, value, font, active ? Accent : Muted, new RectangleF(bounds.X + inset, bounds.Y, bounds.Width - 13 - inset - reserve, bounds.Height), trim);
             float x = bounds.Right - 10, y = bounds.Y + bounds.Height / 2 - 1;
             using (var pen = new Pen(active ? Accent : Muted, 1))
                 g.DrawLines(pen, new[] { new PointF(x, y), new PointF(x + 3, y + 3), new PointF(x + 6, y) });
+        }
+
+        private static void DrawWarningTriangle(Graphics g, PointF origin)
+        {
+            float tx = origin.X, ty = origin.Y;
+            using (var brush = new SolidBrush(PanelTheme.Warning))
+                g.FillPolygon(brush, new[] { new PointF(tx + 4.5f, ty - 5), new PointF(tx + 9, ty + 4), new PointF(tx, ty + 4) });
+            using (var pen = new Pen(PanelTheme.Background, 1.2f))
+                g.DrawLine(pen, tx + 4.5f, ty - 2, tx + 4.5f, ty + 1.5f);
         }
 
         private static void DrawClear(Graphics g, RectangleF bounds)

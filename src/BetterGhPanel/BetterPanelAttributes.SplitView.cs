@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using BetterGhPanel.Core;
 using BetterGhPanel.UI;
@@ -35,8 +36,8 @@ namespace BetterGhPanel
             float height = Math.Max(RowHeight, _list.Height - 14);
             _list = new RectangleF(_list.X, _list.Y + 14, middle - _list.X - 19, height);
             _pairedList = new RectangleF(middle + 14, _list.Y, _list.Width, height);
-            _track = new RectangleF(middle - 18, _list.Y, 4, height);
-            _trackHit = new RectangleF(middle - 21, _list.Y, 8, height);
+            _track = _scrollLocked ? RectangleF.Empty : new RectangleF(middle - 18, _list.Y, 4, height);
+            _trackHit = _scrollLocked ? RectangleF.Empty : new RectangleF(middle - 21, _list.Y, 8, height);
             _pairedTrack = new RectangleF(_panel.Right - 18, _list.Y, 4, height);
             _pairedTrackHit = new RectangleF(_panel.Right - 21, _list.Y, 8, height);
         }
@@ -47,18 +48,35 @@ namespace BetterGhPanel
 
         private void DrawSplitActions(Graphics graphics, Font small, StringFormat trim)
         {
-            Text(graphics, "D|F", small, PanelOwner.PanelSplit ? Accent : PanelOwner.CanSplit ? Muted : PanelTheme.Rgb(180, 185, 178), _split, trim);
+            if (!_split.IsEmpty)
+            {
+                Control(graphics, _split, PanelOwner.CanSplit ? "D|F" : "", small, trim, PanelOwner.PanelSplit && PanelOwner.CanSplit);
+                if (!PanelOwner.CanSplit)
+                    Text(graphics, "D|F", small, PanelTheme.Rgb(180, 185, 178), new RectangleF(_split.X + 3, _split.Y, _split.Width - 6, _split.Height), trim);
+            }
             if (!PanelOwner.PanelSplit) return;
             using (var pen = new Pen(_scrollLocked ? Accent : Muted, 1))
             {
-                float x = _scrollLock.X + 6, y = _scrollLock.Y + 6;
-                graphics.DrawRectangle(pen, x, y, 8, 6);
-                graphics.DrawArc(pen, x + (_scrollLocked ? 1 : 4), y - 5, 6, 8, 180, _scrollLocked ? 180 : 130);
+                var state = graphics.Save();
+                graphics.TranslateTransform(_scrollLock.X + 10, _scrollLock.Y + 7);
+                graphics.RotateTransform(-35);
+                foreach (float center in new[] { _scrollLocked ? -3f : -6f, _scrollLocked ? 3f : 6f })
+                {
+                    using var link = new GraphicsPath();
+                    link.AddArc(center - 4.5f, -2.5f, 5, 5, 90, 180);
+                    link.AddArc(center - 0.5f, -2.5f, 5, 5, 270, 180);
+                    link.CloseFigure();
+                    graphics.DrawPath(pen, link);
+                }
+                graphics.Restore(state);
             }
             var session = PanelOwner.Session;
             bool current = session.HasCurrentResult && !PanelOwner.Locked;
             string dataSummary = current ? $"{session.Result.RowPositions.Count:N0} · {TypeSummary(session.Result.Statistics.TypeCounts.Keys)}" : "…";
-            Text(graphics, "D · Data  " + dataSummary, small, Accent, _dataCaption, trim);
+            using var bold = new Font(small, FontStyle.Bold);
+            Text(graphics, "D", bold, Accent, _dataCaption, trim);
+            Text(graphics, "Data  " + dataSummary, small, Muted,
+                new RectangleF(_dataCaption.X + 16, _dataCaption.Y, _dataCaption.Width - 16, _dataCaption.Height), trim);
             string pairSummary = "…";
             if (current && PanelOwner.PairedSnapshot != null)
             {
@@ -81,8 +99,16 @@ namespace BetterGhPanel
                 }
                 pairSummary = $"{session.Result.RowPositions.Count:N0} · {_pairedTypeSummary}";
             }
-            Text(graphics, "F · Paired" + (PanelOwner.OutputScope == PanelOutputScope.Selected ? " · selected" : "") + "  " + pairSummary,
-                small, Accent, _pairedCaption, trim);
+            Text(graphics, "F", bold, Accent, _pairedCaption, trim);
+            bool mismatch = PanelOwner.PairedError != null;
+            Text(graphics, mismatch ? "Paired · " : "Paired  " + pairSummary, small, Muted,
+                new RectangleF(_pairedCaption.X + 16, _pairedCaption.Y, _pairedCaption.Width - 16, _pairedCaption.Height), trim);
+            if (mismatch)
+            {
+                float prefix = graphics.MeasureString("Paired · ", small, PointF.Empty, trim).Width;
+                Text(graphics, "mismatch", small, PanelTheme.Warning,
+                    new RectangleF(_pairedCaption.X + 16 + prefix, _pairedCaption.Y, _pairedCaption.Width - 16 - prefix, _pairedCaption.Height), trim);
+            }
         }
 
         private static string TypeSummary(IEnumerable<string> types)
@@ -91,7 +117,7 @@ namespace BetterGhPanel
             return names.Length == 0 ? "Empty" : string.Join(" / ", names);
         }
 
-        private static string PairedDisplayValue(PanelRow row) =>
+        internal static string PairedDisplayValue(PanelRow row) =>
             PanelValuePresentation.FormatDisplay(row, PanelUnitConversion.None, PanelUnits.AutomaticDecimals);
 
         private string PairedBranchValue(string path)
@@ -124,9 +150,9 @@ namespace BetterGhPanel
             }
             if (_scrollLock.Contains(point))
             {
-                e.Title = "Scroll sync";
-                e.Text = _scrollLocked ? "Locked" : "Unlocked";
-                e.Description = "Click to " + (_scrollLocked ? "scroll each pane independently. Selecting a row reveals its partner." : "lock scrolling and snap F to D.");
+                e.Title = "Linked scrolling";
+                e.Text = _scrollLocked ? "Linked" : "Independent";
+                e.Description = "Click to " + (_scrollLocked ? "scroll each pane independently. Selecting a row reveals its partner." : "link scrolling and snap F to D.");
                 return true;
             }
             if (_pairedList.Contains(point) && PanelOwner.PairedError != null)
@@ -143,9 +169,20 @@ namespace BetterGhPanel
         {
             string message = PanelOwner.PairedError ?? (PanelOwner.Locked ? "Disabled. Enable the component to recompute." :
                 PanelOwner.Session.IsBusy ? "Recomputing…" : "Connect matching F data to inspect paired values.");
-            using var format = new StringFormat { Trimming = StringTrimming.EllipsisCharacter };
-            Text(graphics, message, small, Muted,
-                new RectangleF(_pairedList.X + 6, _pairedList.Y + 2, _pairedList.Width - 12, _pairedList.Height - 2), format);
+            using var format = new StringFormat();
+            var state = graphics.Save();
+            graphics.SetClip(_pairedList, CombineMode.Intersect);
+            bool mismatch = PanelOwner.PairedError != null;
+            float inset = mismatch ? 20 : 6;
+            float width = _pairedList.Width - inset - 6;
+            float height = graphics.MeasureString(message, small, (int)width, format).Height;
+            if (mismatch) DrawWarningTriangle(graphics, new PointF(_pairedList.X + 6, _pairedList.Y + 9));
+            Text(graphics, message, small, mismatch ? Ink : Muted,
+                new RectangleF(_pairedList.X + inset, _pairedList.Y + 2, width, height), format);
+            if (mismatch)
+                Text(graphics, "F must have the same branch paths and item counts as D (before tree tools).", small, Muted,
+                    new RectangleF(_pairedList.X + 6, _pairedList.Y + height + 6, _pairedList.Width - 12, _pairedList.Height), format);
+            graphics.Restore(state);
         }
 
         private bool HandleSplitClick(GH_Canvas canvas, GH_CanvasMouseEvent e)
@@ -165,6 +202,8 @@ namespace BetterGhPanel
             if (!_scrollLock.Contains(e.CanvasLocation)) return false;
             _scrollLocked = !_scrollLocked;
             if (_scrollLocked) _pairedOffset = _offset;
+            ExpireLayout();
+            PerformLayout();
             InvalidatePaintedHits();
             canvas.Invalidate();
             return true;

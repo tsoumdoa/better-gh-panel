@@ -21,6 +21,7 @@ namespace BetterGhPanel
         private CanvasRowAction[] _rowMenuAllActions = Array.Empty<CanvasRowAction>();
         private PointF _rowMenuAnchor;
         private int _rowMenuSourcePosition = -1;
+        private bool _rowMenuPaired;
         private bool _rowMenuPaged;
         private DateTime _copiedUntil;
         private DateTime _rowActionDismissedUntil;
@@ -123,6 +124,7 @@ namespace BetterGhPanel
                     PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX);
                 _rowMenuAnchor = e.CanvasLocation;
                 _rowMenuSourcePosition = hit.SourcePosition;
+                _rowMenuPaired = _pairedList.Contains(e.CanvasLocation);
                 _rowMenuPaged = CanvasRowActions.NeedsPages(_panel.Height - HeaderHeight - 6);
                 ShowRowMenu(result, 0);
                 canvas.Invalidate();
@@ -159,7 +161,8 @@ namespace BetterGhPanel
                 if (position < 0 || position >= result.Snapshot.Rows.Count || !_selection.Contains(position)) return;
                 var row = result.Snapshot.Rows[position];
                 bool projected = result.DisplaySet?.Values.ContainsKey(position) == true;
-                string value = !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
+                string value = _rowMenuPaired && PanelOwner.PairedSnapshot != null ? PairedDisplayValue(PanelOwner.PairedSnapshot.Rows[position]) :
+                    !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
                     ? row.StringValue : PanelOwner.DisplayValue(result.Snapshot, row, position);
                 try { PanelFullValueWindow.Show(value); }
                 catch (Exception)
@@ -182,7 +185,7 @@ namespace BetterGhPanel
                 if (PanelGeometryActions.FrameGeneration <= before + 1)
                 { _actionStatus = status ?? "Selection framed"; _copiedUntil = DateTime.UtcNow.AddSeconds(5); }
             }
-            else if (action == PanelRowAction.CopyValues) CopySelectedValues(result, canvas);
+            else if (action == PanelRowAction.CopyValues) CopySelectedValues(result, canvas, _rowMenuPaired);
             else if (action == PanelRowAction.CopyGeometry)
             {
                 InvalidateCopyStatus();
@@ -221,7 +224,7 @@ namespace BetterGhPanel
             _actionStatus = string.Empty;
         }
 
-        private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas)
+        private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas, bool paired = false)
         {
             var positions = _selection.OrderedPositions(result);
             if (positions.Count == 0) return;
@@ -232,7 +235,7 @@ namespace BetterGhPanel
             canvas.Invalidate();
             long before = PanelGeometryActions.ClipboardGeneration;
             string status;
-            try { status = await PanelOwner.CopyValuesAsync(result.Snapshot, positions); }
+            try { status = await (paired ? PanelOwner.CopyPairedValuesAsync(result.Snapshot, positions) : PanelOwner.CopyValuesAsync(result.Snapshot, positions)); }
             catch (Exception) { status = "Could not copy values. Try again."; }
             Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
             {

@@ -28,7 +28,7 @@ internal static class UxInteractionChecks
         foreach (int i in Enumerable.Range(0, 80))
         {
             fixture.Source.PersistentData.Append(new GH_Number(i), new GH_Path(0));
-            fixture.Paired.PersistentData.Append(new GH_Number(i), new GH_Path(0));
+            fixture.Paired.PersistentData.Append(new GH_String("F raw " + i), new GH_Path(0));
         }
         fixture.Solve();
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 80);
@@ -163,8 +163,64 @@ internal static class UxInteractionChecks
                 legacy ? "Archives without PanelSplit restore the ordinary width" : "Split view roundtrips without doubling the canonical saved width");
             restored.DocumentContextChanged(fixture.Document, Grasshopper.Kernel.GH_DocumentContext.Close);
         }
+        // One split interaction scenario uses different values so a D lookup cannot pass as F.
+        fixture.Query(new PanelQueryOptions { Search = "> 9", SortMode = PanelSortMode.ValueDescending });
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 70);
+        PanelTestAdapter.Resize(component, 400, 360); attributes.PerformLayout(); Render();
+        var dataList = Field<RectangleF>(attributes, "_list");
+        var pairedList = Field<RectangleF>(attributes, "_pairedList");
+        var dataRow = PanelTestAdapter.RowBounds(component, 74);
+        var pairedPoint = new PointF(dataRow.X + pairedList.X - dataList.X + 80, dataRow.Y + dataRow.Height / 2);
+        PanelTestAdapter.CanvasClick(canvas, pairedPoint);
+        Check(fixture.SelectedCount == 1 && PanelTestAdapter.SelectedPosition(component) == 74,
+            "Clicking F with sorting and a filter selects the paired source position in the shared selection");
+        Render();
+        PanelTestAdapter.CanvasClick(canvas, pairedPoint, Forms.MouseButtons.Right);
+        Render();
+        var clipboard = Forms.Clipboard.GetDataObject();
+        try
+        {
+            var actions = Field<Array>(attributes, "_rowMenuActions").Cast<object>().ToArray();
+            int copyIndex = Array.FindIndex(actions, action => action.GetType().GetProperty("Action", Instance)!.GetValue(action)!.ToString() == "CopyValues");
+            var menu = Field<RectangleF>(attributes, "_rowMenuBounds");
+            PanelTestAdapter.CanvasClick(canvas, new PointF(menu.X + 30, menu.Y + copyIndex * 20 + 10));
+            await fixture.Ready(() => Field<string>(attributes, "_actionStatus") == "Value copied");
+            Check(Forms.Clipboard.GetText() == "F raw 74", "The F row menu copies the raw paired value rather than D's value");
+        }
+        finally
+        {
+            if (clipboard == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(clipboard, true);
+        }
+        var link = Field<RectangleF>(attributes, "_scrollLock");
+        var linkPoint = new PointF(link.X + link.Width / 2, link.Y + link.Height / 2);
+        Render(); PanelTestAdapter.CanvasClick(canvas, linkPoint); Render();
+        var wheel = assembly.GetType("BetterGhPanel.UI.IPanelInputTarget", true)!.GetMethod("HandleWheel")!;
+        wheel.Invoke(attributes, new object[] { canvas, pairedPoint, -240 });
+        int independentOffset = Field<int>(attributes, "_pairedOffset");
+        Check(independentOffset > 0 && PanelTestAdapter.Offset(component) == 0 && !Field<RectangleF>(attributes, "_trackHit").IsEmpty,
+            "Unlinked wheel scrolling moves only F and exposes D's independent track");
+        Render();
+        var splitSearch = Search();
+        await Preview(splitSearch, "> 50", 29);
+        splitSearch.Cancel();
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 70);
+        Render();
+        Check(Field<int>(attributes, "_pairedOffset") == independentOffset && PanelTestAdapter.Offset(component) == 0,
+            "Esc restores the independent F offset after a filtered search preview");
+        fixture.Solve();
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 70);
+        Render();
+        Check(Field<int>(attributes, "_pairedOffset") == independentOffset && PanelTestAdapter.Offset(component) == 0,
+            "Same-shape upstream recompute preserves both independent offsets");
+        PanelTestAdapter.CanvasClick(canvas, linkPoint); Render();
+        Check(Field<int>(attributes, "_pairedOffset") == PanelTestAdapter.Offset(component) && Field<bool>(attributes, "_scrollLocked") &&
+            Field<RectangleF>(attributes, "_trackHit").IsEmpty,
+            "Relinking snaps F back to D and removes D's middle track target");
+
         Call(component, "SetPanelSplit", false);
         attributes.PerformLayout();
+        fixture.Query(new PanelQueryOptions());
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
 
         using var curve = new LineCurve(Point3d.Origin, new Point3d(1, 2, 3));
         var group = new GH_GeometryGroup(); group.Objects.Add(new GH_Point(Point3d.Origin));

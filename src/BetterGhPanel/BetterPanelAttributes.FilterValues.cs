@@ -8,10 +8,11 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
-        private void RenderListLengths(Graphics graphics, PanelQueryResult result, Font small, Font mono, StringFormat trim, bool paired)
+        private void RenderListLengths(Graphics graphics, PanelQueryResult result, Font font, Font small, Font mono, StringFormat trim, bool paired)
         {
             var list = paired ? _pairedList : _list;
             var track = paired ? _pairedTrack : _track;
+            if (PanelOwner.PanelSplit && _scrollLocked) track = paired ? RectangleF.Empty : _pairedTrack;
             ref int offset = ref (paired ? ref _pairedOffset : ref _offset);
             ref int shown = ref (paired ? ref _pairedShown : ref _shown);
             offset = Math.Max(0, Math.Min(Math.Max(0, Count - 1), offset));
@@ -25,7 +26,8 @@ namespace BetterGhPanel
             {
                 Fill(graphics, PanelTheme.Rgb(236, 241, 235), new RectangleF(list.X, y, list.Width, BranchHeight));
                 Text(graphics, "Branch", small, Accent, new RectangleF(list.X + 6, y, list.Width / 2, BranchHeight), trim);
-                Text(graphics, paired ? "Paired values" : "List length", small, Accent, new RectangleF(list.Right - 90 - (set ? 40 : 0), y, 84, BranchHeight), trim);
+                Text(graphics, paired ? "Paired values" : "List length", small, Accent,
+                    paired ? new RectangleF(list.X + 90, y, list.Width - 96, BranchHeight) : new RectangleF(list.Right - 90 - (set ? 40 : 0), y, 84, BranchHeight), trim);
                 y += BranchHeight;
             }
             for (int index = offset; index < result.BranchPaths.Count && y + RowHeight <= list.Bottom; index++)
@@ -39,10 +41,10 @@ namespace BetterGhPanel
                     if (statuses.Unverified > 0) Fill(graphics, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (statuses.VerifiedInvalid > 0 ? 2 : 0), bounds.Y + 3, 2, bounds.Height - 6));
                 }
                 float badgeWidth = set ? 40 : 0;
-                renderer.DrawCell(graphics, path, mono, Accent, new RectangleF(bounds.X + 6, y, Math.Max(0, bounds.Width - 102 - badgeWidth), RowHeight));
+                renderer.DrawCell(graphics, path, mono, Accent, new RectangleF(bounds.X + 6, y, Math.Max(0, paired ? 78 : bounds.Width - 102 - badgeWidth), RowHeight));
                 int count = result.Snapshot.BranchItemCounts[path];
                 renderer.DrawValue(graphics, paired ? PairedBranchValue(path) : count.ToString(System.Globalization.CultureInfo.InvariantCulture) + (count == 1 ? " item" : " items"),
-                    small, Ink, new RectangleF(bounds.Right - 96 - badgeWidth, y, 90, RowHeight), true);
+                    paired ? font : small, Ink, paired ? new RectangleF(bounds.X + 90, y, bounds.Width - 96, RowHeight) : new RectangleF(bounds.Right - 96 - badgeWidth, y, 90, RowHeight), !paired);
                 if (set)
                     renderer.DrawValue(graphics, result.DisplaySet!.BranchOccurrences[path].Count + "×", small, Accent,
                         new RectangleF(bounds.Right - badgeWidth, y, badgeWidth - 6, RowHeight), true);
@@ -53,7 +55,7 @@ namespace BetterGhPanel
             if (Count == 0)
                 Text(graphics, result.Snapshot.Branches.Count == 0 ? "Connect a tree to start exploring." : "No matching branches. Clear a filter or Reset.",
                     small, Muted, new RectangleF(list.X + 6, list.Y, list.Width - 12, RowHeight), trim);
-            if (Count > shown)
+            if (Count > shown && !track.IsEmpty)
             {
                 Fill(graphics, PanelTheme.Rgb(232, 236, 229), track);
                 Fill(graphics, PanelTheme.Rgb(153, 174, 156), Thumb(paired));

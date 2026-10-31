@@ -741,10 +741,16 @@ namespace BetterGhPanel
             ExpirePreview(false);
         }
 
-        internal async Task<string> CopyValuesAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions)
+        internal Task<string> CopyValuesAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions) => CopyValuesCoreAsync(snapshot, positions, false);
+
+        internal Task<string> CopyPairedValuesAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions) => CopyValuesCoreAsync(snapshot, positions, true);
+
+        private async Task<string> CopyValuesCoreAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, bool paired)
         {
             CancelPendingCopy();
             if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
+            var pairedSnapshot = paired ? PairedSnapshot : null;
+            if (paired && (!CanSplit || pairedSnapshot == null)) return "Data changed; select rows again";
             long clipboardGeneration = PanelGeometryActions.BeginClipboard();
             var session = _session!;
             var result = session.Result;
@@ -755,7 +761,7 @@ namespace BetterGhPanel
             var measurementPositions = session.Options.DisplayFilterValue && PanelProperties.IsProperty(session.Options.SearchMode)
                 ? ordered.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
                     session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray() : ordered;
-            bool measured = await session.MeasureGeometryAsync(snapshot, measurementPositions, cancellation.Token);
+            bool measured = paired || await session.MeasureGeometryAsync(snapshot, measurementPositions, cancellation.Token);
             var completion = new TaskCompletionSource<string>();
             // Rhino does not guarantee a SynchronizationContext for every canvas
             // callback. Live goo and the system clipboard belong to its UI thread.
@@ -778,11 +784,13 @@ namespace BetterGhPanel
                         ReferenceEquals(_session, session) && session.HasCurrentResult &&
                         ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, result) &&
                         ReferenceEquals(_sourceItems, source) &&
+                        (!paired || CanSplit && ReferenceEquals(PairedSnapshot, pairedSnapshot)) &&
                         PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion);
                     if (!measured || !SelectionCurrent()) Finish(PanelCommitOutcome.Stale);
                     else
                     {
-                        var text = string.Join(Environment.NewLine, ordered.Select(position => CopyValue(snapshot, position)));
+                        var text = string.Join(Environment.NewLine, ordered.Select(position => paired
+                            ? BetterPanelAttributes.PairedDisplayValue(pairedSnapshot!.Rows[position]) : CopyValue(snapshot, position)));
                         // Measurements cover only queued geometry; value-only
                         // rows and unmeasured geometry can change too.
                         bool Current() => SelectionCurrent() && CapturedSnapshotCurrent(snapshot) && SelectionCurrent() &&
