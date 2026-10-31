@@ -18,6 +18,8 @@ Created in [T3 Code](https://t3.codes).
 
 ## Native MVP
 
+**Unreleased fix:** Rows remain selectable at fractional canvas zoom and offsets; genuinely unpainted or stale rows remain inactive.
+
 **Patch `0.1.26-beta` — UI/UX audit fixes:** Panel+ now behaves more like a focused list while leaving Grasshopper's own gestures alone. [Release notes](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.1.26-beta).
 
 - **Keyboard focus is explicit.** Click inside the panel (not the dotted move grip or the wire-grip edges) to focus it; a green ring shows focus. While focused: **↑/↓** move the selection (**Shift** extends), **PgUp/PgDn/Home/End** scroll, **Ctrl/Cmd+C** copies the selected values, **Ctrl/Cmd+A** selects all rows, **Ctrl/Cmd+F** or **/** opens search, and in open menus **↑/↓/Enter/Esc** navigate. In the open **Paths** menu, typing digits and `;` narrows the branch list and Enter jumps to the typed path. **Esc** clears the selection, then releases focus; clicking elsewhere, minimizing or zooming below 50% releases it too. Without focus every key and wheel event reaches Grasshopper unchanged, and **Ctrl/Cmd+C** with no rows selected still copies Grasshopper objects.

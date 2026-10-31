@@ -60,6 +60,7 @@ internal static class Program
         ["capture-stock-geometry"] = CaptureStockGeometryChecks.RunNative,
         ["property-inspection"] = PropertyInspectionChecks.Run,
         ["ui-ux"] = UxInteractionChecks.Run,
+        ["row-selection"] = RowSelectionChecks.Run,
     };
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]

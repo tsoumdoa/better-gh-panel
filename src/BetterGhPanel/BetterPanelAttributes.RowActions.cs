@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
 using BetterGhPanel.Core;
@@ -79,10 +80,18 @@ namespace BetterGhPanel
 
         private static bool FullyVisible(Graphics graphics, RectangleF bounds)
         {
-            if (!graphics.VisibleClipBounds.Contains(bounds)) return false;
+            // Canvas projection is scale/translation. GDI+ can round a clip edge
+            // inward when converting it back to canvas units at fractional zoom.
+            // Test the interior with one device pixel of tolerance, retaining the
+            // region check so real partial paints (including clip holes) stay inert.
+            var pixel = new[] { PointF.Empty, new PointF(1, 1) };
+            graphics.TransformPoints(CoordinateSpace.World, CoordinateSpace.Device, pixel);
+            bounds.Inflate(-Math.Min(bounds.Width / 4, Math.Abs(pixel[1].X - pixel[0].X)),
+                -Math.Min(bounds.Height / 4, Math.Abs(pixel[1].Y - pixel[0].Y)));
             using (var unpainted = new Region(bounds))
             using (var clip = graphics.Clip)
             {
+                clip.Intersect(graphics.VisibleClipBounds);
                 unpainted.Exclude(clip);
                 return unpainted.IsEmpty(graphics);
             }
