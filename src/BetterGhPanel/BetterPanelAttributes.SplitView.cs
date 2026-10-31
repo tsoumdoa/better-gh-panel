@@ -24,6 +24,8 @@ namespace BetterGhPanel
 
         private RectangleF ListBounds => _pairedList.IsEmpty ? _list : RectangleF.Union(_list, _pairedList);
         private bool ListContains(PointF point) => _list.Contains(point) || _pairedList.Contains(point);
+        private bool RowShownIn(RectangleF pane, int position) =>
+            _rowHits.Any(hit => hit.SourcePosition == position && pane.Contains(hit.Bounds));
 
         private void LayoutSplitPanes()
         {

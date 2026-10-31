@@ -1014,6 +1014,8 @@ namespace BetterGhPanel
             }
             if (ListContains(e.CanvasLocation) || _trackHit.Contains(e.CanvasLocation) || _pairedTrackHit.Contains(e.CanvasLocation))
                 _keyboardPaired = _pairedList.Contains(e.CanvasLocation) || _pairedTrackHit.Contains(e.CanvasLocation);
+            // Only clicking rows chooses which pane Ctrl+C copies; scrolling never does.
+            if (ListContains(e.CanvasLocation)) _copyPaired = _pairedList.Contains(e.CanvasLocation);
             if (e.Button == MouseButtons.Right) return RespondToRowContextMenu(sender, e);
             if (e.Button != MouseButtons.Left) return base.RespondToMouseDown(sender, e);
             var point = e.CanvasLocation;

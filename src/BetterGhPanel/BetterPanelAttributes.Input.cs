@@ -26,7 +26,7 @@ namespace BetterGhPanel
         private GH_Canvas? _hoverCanvas;
         private int _wheelRemainder;
         private int _keyboardCursor = -1;
-        private bool _keyboardPaired;
+        private bool _keyboardPaired, _copyPaired;
         private ViewRestore? _viewRestore;
 
         private bool KeyboardFocused => PanelCanvasInput.IsFocused(this);
@@ -126,8 +126,8 @@ namespace BetterGhPanel
                 case Keys.C when control:
                     // With no rows selected, Ctrl+C keeps copying Grasshopper objects.
                     if (!current || _selection.Count == 0 || DisplayListLengths) return false;
-                    // Copy from the pane last clicked, whether or not scrolling is linked.
-                    CopySelectedValues(result, canvas, PanelOwner.PanelSplit && PanelOwner.CanSplit && _keyboardPaired);
+                    // Copy from the pane whose row was last clicked, whether or not scrolling is linked.
+                    CopySelectedValues(result, canvas, PanelOwner.PanelSplit && PanelOwner.CanSplit && _copyPaired);
                     return true;
                 case Keys.A when control:
                     if (current) SelectAllRows(canvas, result);
@@ -205,11 +205,14 @@ namespace BetterGhPanel
             PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
             TrackSelectionCanvas(canvas);
             int offset = result.ViewIndex.OffsetOfItem(index);
-            if (paired) { RevealPartner(canvas, position, null, _list.Location); canvas.Invalidate(); }
+            // Read both panes' visibility before scrolling either: scrolling clears painted hits.
+            bool shownInData = RowShownIn(_list, position), shownInPaired = RowShownIn(_pairedList, position);
+            if (paired) { if (!shownInPaired) RevealPartner(canvas, position, null, _list.Location); canvas.Invalidate(); }
             else if (_firstShownItem < 0 || index < _firstShownItem) SetOffset(canvas, offset);
             else if (index > _lastShownItem) SetOffset(canvas, offset - Math.Max(0, _shown - 3));
             else canvas.Invalidate();
-            RevealPartner(canvas, position, null, paired ? _pairedList.Location : _list.Location);
+            if (paired ? !shownInData : !shownInPaired)
+                RevealPartner(canvas, position, null, paired ? _pairedList.Location : _list.Location);
         }
 
         private void SelectAllRows(GH_Canvas canvas, PanelQueryResult result)
