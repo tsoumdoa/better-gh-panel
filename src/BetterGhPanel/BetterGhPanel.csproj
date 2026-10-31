@@ -4,7 +4,7 @@
     <TargetExt>.gha</TargetExt>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <Title>BetterGhPanel</Title>
+    <Title>Panel+</Title>
     <Description>A fast Grasshopper data panel with filtering, tree navigation, sorting, and statistics.</Description>
     <AssemblyIcon>../../assets/icon.png</AssemblyIcon>
     <NoWarn>$(NoWarn);NU1701;NETSDK1086</NoWarn>

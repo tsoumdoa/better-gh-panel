@@ -19,7 +19,7 @@ test('staging derives the version, drops obsolete payloads, and preserves a stag
     writeFileSync(destination, contents);
   }
   write('Directory.Build.props', '<Project><PropertyGroup><Version>1.2.3-beta.4</Version></PropertyGroup></Project>');
-  write('yak/manifest.yml', 'name: better-gh-panel\nversion: "@VERSION@"\n');
+  write('yak/manifest.yml', 'name: panel-plus\nversion: "@VERSION@"\n');
   write('assets/icon.png', 'fixture icon');
   write('LICENSE', 'fixture MIT license');
   write('scripts/package.mjs', '');
@@ -29,9 +29,9 @@ test('staging derives the version, drops obsolete payloads, and preserves a stag
   for (const [framework, names] of Object.entries(payloads))
     for (const name of names) write(`src/BetterGhPanel/bin/Release/${framework}/${name}`, `${framework} ${name}`);
 
-  const stage = join(fixture, 'artifacts/better-gh-panel-1.2.3-beta.4');
-  write('artifacts/better-gh-panel-1.2.3-beta.4/net48/obsolete.dll', 'obsolete');
-  write('artifacts/better-gh-panel-1.2.3-beta.4/net7.0/obsolete/nested.dll', 'obsolete');
+  const stage = join(fixture, 'artifacts/panel-plus-1.2.3-beta.4');
+  write('artifacts/panel-plus-1.2.3-beta.4/net48/obsolete.dll', 'obsolete');
+  write('artifacts/panel-plus-1.2.3-beta.4/net7.0/obsolete/nested.dll', 'obsolete');
   const run = () => spawnSync(process.execPath, [join(fixture, 'scripts/package.mjs'), '--stage-only', '--skip-build'], { encoding: 'utf8' });
   const first = run();
   assert.equal(first.status, 0, first.stderr);
@@ -41,7 +41,7 @@ test('staging derives the version, drops obsolete payloads, and preserves a stag
   for (const [framework, names] of Object.entries(payloads))
     assert.deepEqual(readdirSync(join(stage, framework)).sort(), [...names].sort());
 
-  write('artifacts/better-gh-panel-1.2.3-beta.4/net48/obsolete.dll', 'obsolete');
+  write('artifacts/panel-plus-1.2.3-beta.4/net48/obsolete.dll', 'obsolete');
   assert.equal(run().status, 0);
   assert.ok(!existsSync(join(stage, 'net48/obsolete.dll')));
 
@@ -58,7 +58,7 @@ test('staging derives the version, drops obsolete payloads, and preserves a stag
   // A stray root DLL or file would otherwise be included by Yak. Refuse the
   // whole stage before changing its previous payload, and preserve user files.
   for (const name of ['obsolete.dll', 'accidental.txt', 'unexpected/nested.txt']) {
-    write(`artifacts/better-gh-panel-1.2.3-beta.4/${name}`, 'unexpected');
+    write(`artifacts/panel-plus-1.2.3-beta.4/${name}`, 'unexpected');
     const rejected = run();
     assert.notEqual(rejected.status, 0);
     assert.match(rejected.stderr, /Unexpected staging entries/);

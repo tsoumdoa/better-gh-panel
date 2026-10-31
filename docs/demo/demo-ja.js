@@ -47,7 +47,7 @@ window.panelDemoJapanese = {
       name: 'リセット', title: ['流れを保って、', '中身を見通す。'],
       body: '通過するデータを理解するための\n機能を、ひとつのパネルに。',
       captions: [[0, 'Reset で表示・ツリー操作・単位変換を初期化。Undo 1回で元の設定へ。'], [3.5, 'Panel+ / Rhino 8 用 · Params → Util から配置 · D に接続']],
-      transcript: 'Reset は、ツリー操作、単位変換、小数点以下の桁数、検索、フィルター、並べ替え、選択状態を初期化し、元の入力データを復元します。パネルのサイズ、表示モード、ワイヤー接続は維持されます。Undo 1回で直前の設定に戻せます。Rhino の PackageManager でプレリリースを有効にし、better-gh-panel をインストールすると、Params → Util から利用できます。',
+      transcript: 'Reset は、ツリー操作、単位変換、小数点以下の桁数、検索、フィルター、並べ替え、選択状態を初期化し、元の入力データを復元します。パネルのサイズ、表示モード、ワイヤー接続は維持されます。Undo 1回で直前の設定に戻せます。Rhino の PackageManager でプレリリースを有効にし、panel-plus をインストールすると、Params → Util から利用できます。',
     },
   ],
   labels: {

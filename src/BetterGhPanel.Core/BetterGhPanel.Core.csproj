@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
-    <Title>BetterGhPanel Core</Title>
-    <Description>Immutable tree snapshots, filtering, sorting, and statistics for BetterGhPanel.</Description>
+    <Title>Panel+ Core</Title>
+    <Description>Immutable tree snapshots, filtering, sorting, and statistics for Panel+.</Description>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="BetterGhPanel.Core.Tests" />

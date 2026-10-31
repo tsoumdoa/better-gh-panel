@@ -35,7 +35,7 @@ try {
     if (result.status !== 0) throw new Error(`${command} failed with exit code ${result.status}.`);
   }
   if (!values['skip-build']) run('dotnet', ['build', 'src/BetterGhPanel/BetterGhPanel.csproj', '-c', 'Release', '--nologo']);
-  const stage = join(root, 'artifacts', `better-gh-panel-${version}`);
+  const stage = join(root, 'artifacts', `panel-plus-${version}`);
   const outputs = ['net48', 'net7.0'].map(framework => {
     const source = join(root, 'src', 'BetterGhPanel', 'bin', 'Release', framework);
     const names = ['BetterGhPanel.gha', 'BetterGhPanel.Core.dll'];
@@ -58,7 +58,7 @@ try {
   if (existsSync(stage)) {
     const allowed = new Set(['manifest.yml', 'icon.png', 'LICENSE', ...outputs.map(output => output.framework)]);
     const unexpected = readdirSync(stage).filter(name => !allowed.has(name) &&
-      !(name.startsWith(`better-gh-panel-${version}-`) && name.endsWith('.yak') && statSync(join(stage, name)).isFile()));
+      !(name.startsWith(`panel-plus-${version}-`) && name.endsWith('.yak') && statSync(join(stage, name)).isFile()));
     if (unexpected.length) throw new Error(`Unexpected staging entries: ${unexpected.join(', ')}. Move them out of ${stage} before packaging.`);
   }
   mkdirSync(stage, { recursive: true });
@@ -77,12 +77,12 @@ try {
   if (values['stage-only']) process.exit(0);
   // Replace only this version's generated archives; preserve staged payload files.
   for (const name of readdirSync(stage)) {
-    if (name.startsWith(`better-gh-panel-${version}-`) && name.endsWith('.yak')) {
+    if (name.startsWith(`panel-plus-${version}-`) && name.endsWith('.yak')) {
       unlinkSync(join(stage, name));
     }
   }
   run(yak, ['build', '--platform', 'any'], stage);
-  const packages = readdirSync(stage).filter(name => name.startsWith(`better-gh-panel-${version}-`) && name.endsWith('.yak'));
+  const packages = readdirSync(stage).filter(name => name.startsWith(`panel-plus-${version}-`) && name.endsWith('.yak'));
   if (packages.length !== 1) throw new Error(`Expected one Yak archive, found ${packages.length}.`);
   console.log(`Local package ready: ${join(stage, packages[0])}`);
 } catch (error) {
