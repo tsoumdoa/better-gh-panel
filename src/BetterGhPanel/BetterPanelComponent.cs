@@ -547,8 +547,12 @@ namespace BetterGhPanel
                 _pairedHasGeometry = HasGeometry(PairedSnapshot);
                 // F geometry was labelled with the units of the last solve. If the document
                 // units changed since, recompute now rather than show stale measurements.
+                // This is a fresh capture attempt, so it gets its own single retry.
                 if (_pairedHasGeometry && !GeometryContextCurrent(_geometryContext) && _session != null)
+                {
+                    _captureRetries = 0;
                     InvalidateStaleCapture(_session, OnPingDocument(), _solveGeneration);
+                }
             }
             else if (!split)
             {
