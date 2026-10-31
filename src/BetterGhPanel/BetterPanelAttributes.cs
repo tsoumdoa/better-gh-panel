@@ -1323,6 +1323,19 @@ namespace BetterGhPanel
                     canvas.Invalidate();
                     return;
                 }
+                if (selectedComparison.Value.IsValue)
+                {
+                    options.SearchMode = _editingSearchMode;
+                    options.DisplayFilterValue = false;
+                    options.Search = "= " + selectedComparison.Value.Value;
+                    if (PanelQueryPolicy.SameQuery(oldOptions, options)) { canvas.Invalidate(); return; }
+                    PanelOwner.RecordUndoEvent("Panel filter");
+                    _offset = _pairedOffset = 0;
+                    PanelOwner.Session.UpdateQuery(options);
+                    PanelOwner.OnPingDocument()?.Modified();
+                    canvas.Invalidate();
+                    return;
+                }
                 var comparisonChoice = selectedComparison.Value.Comparison!.Value;
                 string comparison = CanvasMenu.ComparisonOperator(comparisonChoice);
                 string value = CanvasMenu.WithComparison(options.SearchMode == _editingSearchMode ? options.Search : "", comparisonChoice, _editingSearchMode).Substring(comparison.Length).Trim();

@@ -11,6 +11,7 @@ internal static class CanvasMenuChoiceChecks
     {
         SearchCapabilitiesAndPaging();
         ChoiceIdentityAndPersistedValues();
+        FixedValueChoices();
         PartialPaintEligibility();
     }
 
@@ -161,6 +162,42 @@ internal static class CanvasMenuChoiceChecks
         options.DisplayFilterValue = true;
         Check(menu.IsSectionStart(display) && menu.IsSelected(display, options, PanelUnitConversion.None, -1),
             "Display value has its own action identity");
+    }
+
+    private static void FixedValueChoices()
+    {
+        foreach (var mode in new[] { PanelSearchMode.Validity, PanelSearchMode.Closed })
+        {
+            var values = mode == PanelSearchMode.Validity ? new[] { "Valid", "Invalid", "Unverified", "Null" } : new[] { "True", "False" };
+            var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Text };
+            var menu = new CanvasMenu();
+            menu.Toggle(CanvasMenuKind.Comparison, PanelSnapshot.Empty, options, comparisonMode: mode);
+            Check(Enumerable.Range(0, menu.Count).Select(i => menu.Label(i)).SequenceEqual(values.Concat(new[] { "Display value" })) &&
+                values.Select((value, i) => menu.ComparisonChoiceAt(i).IsValue && menu.ComparisonChoiceAt(i).Value == value && !menu.IsSectionStart(i)).All(match => match) &&
+                menu.ComparisonChoiceAt(values.Length).IsDisplayValue && menu.IsSectionStart(values.Length),
+                "Validity and Boolean menus list fixed values in order, followed by a separate Display value action");
+            options.SearchMode = mode;
+            foreach (var value in values)
+            {
+                int index = Array.IndexOf(values, value);
+                options.Search = "  ==  " + value + "  ";
+                Check(menu.IsSelected(index, options, PanelUnitConversion.None, -1) &&
+                    !menu.IsSelected((index + 1) % values.Length, options, PanelUnitConversion.None, -1),
+                    "Only the matching fixed value is selected after trimming and normalizing equality");
+            }
+            options.Search = "= " + values[0].ToLowerInvariant();
+            Check(menu.IsSelected(0, options, PanelUnitConversion.None, -1) == (mode == PanelSearchMode.Closed),
+                "Boolean values ignore case, while validity states match ordinally");
+            options.Search = "!= " + values[0];
+            Check(!Enumerable.Range(0, values.Length).Any(i => menu.IsSelected(i, options, PanelUnitConversion.None, -1)),
+                "Legacy inequality queries do not select a fixed value");
+            options.Search = "= " + values[0];
+            options.DisplayFilterValue = true;
+            Check(!menu.IsSelected(0, options, PanelUnitConversion.None, -1), "Display value suppresses fixed-value checkmarks");
+            options.DisplayFilterValue = false;
+            options.SearchMode = PanelSearchMode.Text;
+            Check(!menu.IsSelected(0, options, PanelUnitConversion.None, -1), "A matching query in a different mode does not select a fixed value");
+        }
     }
 
     private static void Check(bool condition, string description)

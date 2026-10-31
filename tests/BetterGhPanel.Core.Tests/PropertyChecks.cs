@@ -106,8 +106,8 @@ public sealed class PropertyChecks
         Assert.DoesNotContain(PanelSearchMode.FaceCount, modes);
         menu.Close(); menu.Toggle(CanvasMenuKind.Comparison, snapshot, options, comparisonMode: PanelSearchMode.Closed);
         Assert.Equal(3, menu.Count);
-        Assert.Equal(CanvasComparison.Equal, menu.ComparisonChoiceAt(0).Comparison);
-        Assert.Equal(CanvasComparison.NotEqual, menu.ComparisonChoiceAt(1).Comparison);
+        Assert.Equal("True", menu.ComparisonChoiceAt(0).Value);
+        Assert.Equal("False", menu.ComparisonChoiceAt(1).Value);
         Assert.True(menu.ComparisonChoiceAt(2).IsDisplayValue);
         var panel = new RectangleF(0, 0, 300, 110); menu.Layout(panel, panel, panel, panel, search: new RectangleF(6, 25, 88, 21));
         Assert.True(panel.Contains(menu.Bounds));

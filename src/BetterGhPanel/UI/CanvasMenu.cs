@@ -36,9 +36,11 @@ namespace BetterGhPanel.UI
 
     internal readonly struct CanvasComparisonChoice
     {
-        internal CanvasComparisonChoice(CanvasComparison? comparison, string label) { Comparison = comparison; Label = label; }
+        internal CanvasComparisonChoice(CanvasComparison? comparison, string label, string? value = null) { Comparison = comparison; Label = label; Value = value; }
         internal CanvasComparison? Comparison { get; }
-        internal bool IsDisplayValue => !Comparison.HasValue;
+        internal string? Value { get; }
+        internal bool IsValue => Value != null;
+        internal bool IsDisplayValue => !Comparison.HasValue && !IsValue;
         internal string Label { get; }
     }
 
@@ -102,6 +104,7 @@ namespace BetterGhPanel.UI
             new CanvasUnitChoice(CanvasNumberSetting.RoundingFactor)
         };
         private CanvasComparisonChoice[] _comparisonChoices = ComparisonChoices;
+        private PanelSearchMode _comparisonMode;
         private PanelSnapshot _snapshot = PanelSnapshot.Empty;
         private PanelQueryResult? _statisticsResult;
         private string[] _types = Array.Empty<string>();
@@ -248,8 +251,13 @@ namespace BetterGhPanel.UI
             }
             if (Kind == CanvasMenuKind.Comparison)
             {
-                var propertyKind = PanelProperties.Kind(comparisonMode ?? options.SearchMode);
-                _comparisonChoices = propertyKind == PanelPropertyKind.Boolean || propertyKind == PanelPropertyKind.Text
+                _comparisonMode = comparisonMode ?? options.SearchMode;
+                var propertyKind = PanelProperties.Kind(_comparisonMode);
+                var values = _comparisonMode == PanelSearchMode.Validity ? new[] { "Valid", "Invalid", "Unverified", "Null" } :
+                    propertyKind == PanelPropertyKind.Boolean ? new[] { "True", "False" } : Array.Empty<string>();
+                _comparisonChoices = values.Length > 0
+                    ? values.Select(value => new CanvasComparisonChoice(null, value, value)).Concat(ComparisonChoices.Where(choice => choice.IsDisplayValue)).ToArray()
+                    : propertyKind == PanelPropertyKind.Text
                     ? ComparisonChoices.Where(choice => choice.IsDisplayValue || choice.Comparison == CanvasComparison.Equal || choice.Comparison == CanvasComparison.NotEqual).ToArray()
                     : ComparisonChoices;
             }
@@ -337,6 +345,13 @@ namespace BetterGhPanel.UI
                 if (choice.IsDisplayValue) return options.DisplayFilterValue;
                 if (options.DisplayFilterValue) return false;
                 string comparison = ComparisonPrefix(options.Search);
+                if (choice.IsValue)
+                {
+                    if (options.SearchMode != _comparisonMode || comparison != "=") return false;
+                    string search = options.Search.Trim();
+                    return string.Equals(search.Substring(search.StartsWith("==", StringComparison.Ordinal) ? 2 : 1).Trim(), choice.Value,
+                        PanelProperties.Kind(_comparisonMode) == PanelPropertyKind.Boolean ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+                }
                 if (comparison.Length == 0 && IsComparisonMode(options.SearchMode) && IsFiniteNumber(options.Search))
                     comparison = "=";
                 return ComparisonOperator(choice.Comparison!.Value) == comparison;
@@ -428,9 +443,11 @@ namespace BetterGhPanel.UI
             _ => throw new ArgumentOutOfRangeException(nameof(comparison))
         };
 
-        internal static string PropertyHelp(PanelSearchMode mode) => PanelProperties.Kind(mode) switch
+        internal static string PropertyHelp(PanelSearchMode mode) => mode == PanelSearchMode.Validity
+            ? "Choose one of four mutually exclusive states: Valid (checked and valid), Invalid (checked and invalid), Unverified (validity could not be checked safely), or Null (empty item with no value). Choose Display value to show the state."
+            : PanelProperties.Kind(mode) switch
         {
-            PanelPropertyKind.Boolean => "Choose Display value to inspect True/False, or compare with = True, = False, != True or != False. Rows without this property are excluded from comparisons.",
+            PanelPropertyKind.Boolean => "Choose True or False to filter, or Display value to show the value. Rows without this property are excluded from comparisons.",
             PanelPropertyKind.Text => "Choose Display value to inspect this text property, or use = and != for exact, case-sensitive matches. Double quotes preserve leading/trailing spaces; doubled quotes represent a quote. Rows without this property are excluded from comparisons.",
             PanelPropertyKind.DateTime => "Choose Display value or compare dates using >, >=, <, <=, = or !=. Enter yyyy-MM-dd or yyyy-MM-dd HH:mm:ss, with optional fractional seconds. Comparisons use the stored calendar time without timezone conversion.",
             _ => "Choose Display value or compare the full-precision property using >, >=, <, <=, = or !=. Counts and dimensionless values ignore unit conversion. Lengths and angles use matching display conversions. Rows without this property are excluded from comparisons."
