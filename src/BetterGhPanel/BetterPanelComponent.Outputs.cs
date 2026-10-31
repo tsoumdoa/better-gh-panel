@@ -69,7 +69,7 @@ namespace BetterGhPanel
             _liveInputTree = _livePairedTree = _pairedInputTree = null;
             _pairedInputPresent = false;
             _captureGraphs = Array.Empty<CaptureGraphWitness>();
-            _captureHasGeometry = false;
+            _captureHasGeometry = _pairedHasGeometry = false;
             _retainedSources = Array.Empty<PanelSourceAddress>();
             _pairedError = null;
             PairedSnapshot = null;

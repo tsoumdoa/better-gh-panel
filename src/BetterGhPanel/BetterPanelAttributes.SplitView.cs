@@ -134,7 +134,7 @@ namespace BetterGhPanel
             return string.Join(" · ", values) + (positions.Count > 4 ? " …" : "");
         }
 
-        private void ClearPaneSummary()
+        internal void ClearPaneSummary()
         {
             _captionResult = null;
             _captionPairedSnapshot = null;

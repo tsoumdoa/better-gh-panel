@@ -34,7 +34,9 @@ namespace BetterGhPanel
         private Rhino.UnitSystem _geometryUnitSystem = Rhino.UnitSystem.None;
         private double _geometryTolerance = 0.001;
         private MeasurementContextStamp _geometryContext;
-        private bool _captureHasGeometry;
+        private bool _captureHasGeometry, _pairedHasGeometry;
+        // F geometry is fenced on the document context only while its snapshot is shown.
+        private bool ContextFenced => _captureHasGeometry || PairedSnapshot != null && _pairedHasGeometry;
         private CancellationTokenSource? _copyCancellation;
         private bool _retainGeometryMeasurements;
         private GH_Structure<IGH_Goo>? _queryTree;
@@ -215,7 +217,7 @@ namespace BetterGhPanel
             if (!ReferenceEquals(snapshot, _measurementSnapshot) || position < 0 || position >= _measurementSources.Length ||
                 position >= _sourceItems.Length) return false;
             var context = _geometryContext;
-            if (_captureHasGeometry && !GeometryContextCurrent(context))
+            if (ContextFenced && !GeometryContextCurrent(context))
             {
                 RecaptureStaleMeasurementSource(snapshot);
                 return false;
@@ -227,7 +229,7 @@ namespace BetterGhPanel
             try
             {
                 if (SafeGooInspection.IsCurrentCapturedGeometry(holder, capture.Leaf) &&
-                    (!_captureHasGeometry || (context.Equals(_geometryContext) && GeometryContextCurrent(context))) &&
+                    (!ContextFenced || (context.Equals(_geometryContext) && GeometryContextCurrent(context))) &&
                     ReferenceEquals(snapshot, _measurementSnapshot) && ReferenceEquals(snapshot, _session?.Snapshot) &&
                     position < _measurementSources.Length && position < _sourceItems.Length &&
                     ReferenceEquals(capture, _measurementSources[position]) && ReferenceEquals(holder, _sourceItems[position])) return true;
@@ -291,12 +293,12 @@ namespace BetterGhPanel
                 result = PanelTreeOperations.StructureStillMatchesWithVisits(_livePairedTree, _pairedInputTree, out count);
                 visits += count; return result;
             }
-            bool current = (!_captureHasGeometry || GeometryContextCurrent(context)) &&
+            bool current = (!ContextFenced || GeometryContextCurrent(context)) &&
                 HoldersCurrent(_sourceItems, _measurementSources) && GraphsCurrent(_captureGraphs) && ManagedCurrent(snapshot, _sourceItems) &&
                 (PairedSnapshot == null || HoldersCurrent(_pairedSourceItems, _pairedMeasurementSources) &&
                     GraphsCurrent(_pairedCaptureGraphs) && ManagedCurrent(PairedSnapshot, _pairedSourceItems)) &&
                 UnitsCurrent() && StructuresCurrent() &&
-                (!_captureHasGeometry || (context.Equals(_geometryContext) && GeometryContextCurrent(context)));
+                (!ContextFenced || (context.Equals(_geometryContext) && GeometryContextCurrent(context)));
             if (CaptureDiagnosticsForTesting) { CaptureValidationPassesForTesting++; CaptureValidationVisitsForTesting += visits; }
             if (!current && generation == _solveGeneration && ReferenceEquals(snapshot, _measurementSnapshot))
                 RecaptureStaleMeasurementSource(snapshot);
@@ -542,9 +544,11 @@ namespace BetterGhPanel
             {
                 PairedSnapshot = SnapshotCapture.CaptureForMeasurements(_pairedQueryTree, out _pairedSourceItems,
                     out _pairedMeasurementSources, out _pairedCaptureGraphs, PanelUnitConversion.None, _geometryUnits, null, null, null, null, null);
-                // F geometry captured against the stored units joins the document-context fence,
-                // so a unit change since the last solve recaptures instead of showing stale labels.
-                _captureHasGeometry |= HasGeometry(PairedSnapshot);
+                _pairedHasGeometry = HasGeometry(PairedSnapshot);
+                // F geometry was labelled with the units of the last solve. If the document
+                // units changed since, recompute now rather than show stale measurements.
+                if (_pairedHasGeometry && !GeometryContextCurrent(_geometryContext) && _session != null)
+                    InvalidateStaleCapture(_session, OnPingDocument(), _solveGeneration);
             }
             else if (!split)
             {
@@ -553,6 +557,7 @@ namespace BetterGhPanel
                 _pairedSourceItems = Array.Empty<IGH_Goo?>();
                 _pairedMeasurementSources = Array.Empty<CapturedMeasurementSource?>();
                 _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
+                (Attributes as BetterPanelAttributes)?.ClearPaneSummary();
             }
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
@@ -1008,7 +1013,8 @@ namespace BetterGhPanel
                     _pairedSourceItems = pairedSources; _pairedMeasurementSources = pairedMeasurements; _pairedCaptureGraphs = pairedGraphs;
                     bool retainContext = _geometryContext.Equals(context);
                     _geometryUnitSystem = unitSystem; _geometryTolerance = tolerance; _geometryUnits = units;
-                    _geometryContext = context; _captureHasGeometry = hasGeometry;
+                    _geometryContext = context; _captureHasGeometry = HasGeometry(snapshot);
+                    _pairedHasGeometry = pairedSnapshot != null && HasGeometry(pairedSnapshot);
                     _sourceItems = sources; _measurementSources = measurementSources; _captureGraphs = graphs;
                     _measurementSnapshot = snapshot;
                     _staleMeasurementSnapshot = null;
