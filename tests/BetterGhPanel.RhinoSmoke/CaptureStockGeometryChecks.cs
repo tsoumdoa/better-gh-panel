@@ -140,7 +140,7 @@ internal static class CaptureStockGeometryChecks
         var trees = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!;
         var outputs = assembly.GetType("BetterGhPanel.Runtime.PanelOutputOperations", true)!;
         object[] selectedArgs = { tree, query.RowPositions };
-        object[] setArgs = { tree, query, query.RowPositions, query.BranchPaths };
+        object?[] setArgs = { tree, query, query.RowPositions, query.BranchPaths, null };
         var data = (GH_Structure<IGH_Goo>)(set ? outputs.GetMethod("DisplaySet", Static)!.Invoke(null, setArgs)! :
             trees.GetMethod("Filter", Static)!.Invoke(null, new object[] { tree, query })!);
         var selection = (GH_Structure<IGH_Goo>)(set ? outputs.GetMethod("DisplaySet", Static)!.Invoke(null, setArgs)! :

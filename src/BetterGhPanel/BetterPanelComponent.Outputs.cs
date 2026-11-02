@@ -152,15 +152,13 @@ namespace BetterGhPanel
             if (current && _queryTree != null && _inputTree != null && !ReferenceEquals(_cachedOutputResult, session.Result))
             {
                 _cachedOutputResult = session.Result;
-                if (set != null) CountOutputVisits(OutputsValues ? query.RowPositions.Count : set.AllMembers.Count);
-                else if (OutputsValues) CountOutputVisits(query.RowPositions.Count);
-                else if (filtering && (session.Result.RowPositions.Count != _queryTree.DataCount || session.Result.BranchPaths.Count != _queryTree.PathCount))
+                if (set == null && !OutputsValues && filtering && (session.Result.RowPositions.Count != _queryTree.DataCount || session.Result.BranchPaths.Count != _queryTree.PathCount))
                     CountOutputVisits(_queryTree.DataCount);
                 _filteredData = BuildDataOutput(_queryTree, query, query.RowPositions, query.BranchPaths, false);
-                if (_pairedQueryTree != null && (set != null || query.RowPositions.Count != _pairedQueryTree.DataCount || query.BranchPaths.Count != _pairedQueryTree.PathCount))
-                    CountOutputVisits(set != null ? set.AllMembers.Count : _pairedQueryTree.DataCount);
+                if (_pairedQueryTree != null && set == null && (query.RowPositions.Count != _pairedQueryTree.DataCount || query.BranchPaths.Count != _pairedQueryTree.PathCount))
+                    CountOutputVisits(_pairedQueryTree.DataCount);
                 _filteredPair = _pairedQueryTree == null ? null : set != null
-                    ? PanelOutputOperations.SetItems(_pairedQueryTree, query, query.RowPositions, query.BranchPaths, FlattenTree)
+                    ? PanelOutputOperations.SetItems(_pairedQueryTree, query, query.RowPositions, query.BranchPaths, FlattenTree, CountOutputVisits)
                     : PanelTreeOperations.Filter(_pairedQueryTree, query);
                 _filteredMask = null;
             }
@@ -179,19 +177,19 @@ namespace BetterGhPanel
                 ? set.ExpandMembers(query.Snapshot, selectedPositions, selectedBranches) : selectedPositions;
             if (current && set != null && (!OutputsValues || OutputScope == PanelOutputScope.Selected))
                 CountOutputVisits(selectedMembers.Count);
-            if (current && _queryTree != null && selectedPositions.Count > 0)
-                CountOutputVisits(OutputsValues ? selectedPositions.Count : set != null ? selectedMembers.Count : _queryTree.DataCount);
+            if (current && _queryTree != null && set == null && !OutputsValues && selectedPositions.Count > 0)
+                CountOutputVisits(_queryTree.DataCount);
             var selected = current && _queryTree != null
                 ? BuildDataOutput(_queryTree, query, selectedPositions, selectedBranches, true) : empty;
             if (current && _inputTree != null && OutputScope == PanelOutputScope.Selected)
                 CountOutputVisits((long)_inputTree.DataCount + selectedMembers.Count);
             var mask = !current || _inputTree == null ? new GH_Structure<GH_Boolean>() : OutputScope == PanelOutputScope.Filtered
                 ? _filteredMask! : PanelOutputOperations.Mask(_inputTree, _retainedSources, selectedMembers);
-            if (current && _pairedQueryTree != null && OutputScope == PanelOutputScope.Selected && selectedPositions.Count > 0)
-                CountOutputVisits(set != null ? selectedMembers.Count : _pairedQueryTree.DataCount);
+            if (current && _pairedQueryTree != null && set == null && OutputScope == PanelOutputScope.Selected && selectedPositions.Count > 0)
+                CountOutputVisits(_pairedQueryTree.DataCount);
             var paired = !current || _pairedQueryTree == null ? empty : OutputScope == PanelOutputScope.Filtered
                 ? _filteredPair ?? empty : set != null
-                    ? PanelOutputOperations.SetItems(_pairedQueryTree, query, selectedPositions, selectedBranches, FlattenTree)
+                    ? PanelOutputOperations.SetItems(_pairedQueryTree, query, selectedPositions, selectedBranches, FlattenTree, CountOutputVisits)
                     : PanelTreeOperations.Select(_pairedQueryTree, selectedPositions);
             // Tree construction above only reads captured structures and managed
             // query data. Run the full freshness fence once, after all of it and
@@ -215,10 +213,10 @@ namespace BetterGhPanel
         {
             if (selected && positions.Count == 0 && branches.Count == 0) return new GH_Structure<IGH_Goo>();
             if (query.DisplaySet != null) return OutputsValues
-                ? PanelOutputOperations.DisplaySet(source, query, positions, branches)
-                : PanelOutputOperations.SetItems(source, query, positions, branches, FlattenTree);
+                ? PanelOutputOperations.DisplaySet(source, query, positions, branches, CountOutputVisits)
+                : PanelOutputOperations.SetItems(source, query, positions, branches, FlattenTree, CountOutputVisits);
             if (OutputsValues) return PanelOutputOperations.Values(source, query, positions,
-                selected ? Array.Empty<string>() : branches);
+                selected ? Array.Empty<string>() : branches, CountOutputVisits);
             return selected ? PanelTreeOperations.Select(source, positions)
                 : PanelQueryPolicy.HasOutputFilter(Session.Options) ? PanelTreeOperations.Filter(source, query) : source;
         }

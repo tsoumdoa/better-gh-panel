@@ -20,6 +20,7 @@ internal static class OutputValuesChecks
 
     internal static async Task Run(Assembly assembly)
     {
+        SelectionWork(assembly);
         using var fixture = new PanelHostFixture.Fixture(assembly);
         var component = fixture.Component;
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
@@ -89,6 +90,54 @@ internal static class OutputValuesChecks
         await FooterLayout(fixture, assembly);
     }
 
+    private static void SelectionWork(Assembly assembly)
+    {
+        var operations = assembly.GetType("BetterGhPanel.Runtime.PanelOutputOperations", true)!;
+        foreach (int count in new[] { 16, 100000 })
+        {
+            var tree = new GH_Structure<IGH_Goo>();
+            var rows = new PanelRow[count + 1];
+            var branches = new PanelBranch[count];
+            for (int i = 0; i < count; i++)
+            {
+                var path = new GH_Path(i, 2, 0);
+                tree.Append(new GH_Integer(i), path);
+                rows[i] = new PanelRow(0, path.ToString(), "Integer", i.ToString(), i);
+                branches[i] = new PanelBranch(path.ToString(), i == count - 1 ? 2 : 1);
+            }
+            var last = tree.Paths[count - 1];
+            tree.Append(new GH_Integer(count - 1), last);
+            rows[count] = new PanelRow(1, last.ToString(), "Integer", (count - 1).ToString(), count - 1);
+            var snapshot = new PanelSnapshot(rows, branches);
+            var query = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions
+                { CreateSet = true, DisplayFilterValue = true, SearchMode = PanelSearchMode.Value });
+            var values = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions
+                { OutputValues = true, DisplayFilterValue = true, SearchMode = PanelSearchMode.Value });
+            var positions = new[] { count - 1 };
+            var paths = new[] { last.ToString() };
+            foreach (string operation in new[] { "SetItems", "DisplaySet", "Values" })
+            {
+                long visits = 0;
+                Action<long> counter = value => visits = value;
+                object[] args = operation == "SetItems"
+                    ? new object[] { tree, query, positions, paths, false, counter }
+                    : new object[] { tree, operation == "Values" ? values : query, positions, paths, counter };
+                var method = operations.GetMethod(operation, BindingFlags.Static | BindingFlags.NonPublic)!;
+                method.Invoke(null, args); // Warm the reflection and publication paths.
+                long allocated = GC.GetAllocatedBytesForCurrentThread();
+                var result = (GH_Structure<IGH_Goo>)method.Invoke(null, args)!;
+                allocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+                int expected = operation == "SetItems" ? 2 : 1;
+                Check(result.PathCount == 1 && result.DataCount == expected && visits == 1 + expected && allocated < 65536,
+                    operation + " visits only one touched path and its published members for " + count + " branches");
+                Check(operation == "SetItems"
+                    ? result.Paths[0].ToString() == last.AppendElement(0).ToString() && result.Branches[0].SequenceEqual(tree.Branches[count - 1])
+                    : result.Paths[0].ToString() == last.ToString() && ((GH_Number)result.Branches[0][0]).Value == count - 1,
+                    operation + " preserves the selected deep path, values and complete set membership");
+            }
+        }
+    }
+
     private static async Task FooterLayout(PanelHostFixture.Fixture fixture, Assembly assembly)
     {
         var component = fixture.Component;
@@ -124,8 +173,14 @@ internal static class OutputValuesChecks
             var before = controls.Select(Bounds).ToArray();
             await Query(PanelSearchMode.Length);
             Check(controls.Select(Bounds).SequenceEqual(before), "Showing Out keeps existing footer controls fixed at width " + width);
-            Check(Bounds("_outValues").Right <= (width == 360 ? Bounds("_trim").Left : Bounds("_selectAll").Left) - 4,
-                "Readable segmented Out fits its footer row at width " + width);
+            var values = Bounds("_outValues");
+            var selectAll = Bounds("_selectAll");
+            Check(values.Right <= selectAll.Left - 4 &&
+                Math.Abs(values.Top + values.Height / 2 - selectAll.Top - selectAll.Height / 2) < 1,
+                "Readable segmented Out sits immediately left of Select all on the same row at width " + width);
+            var output = RectangleF.Union(Bounds("_outLabel"), RectangleF.Union(Bounds("_outItems"), values));
+            Check(controls.All(name => !output.IntersectsWith(Bounds(name))),
+                "Out does not overlap any footer control in X and Y at width " + width);
             var point = new PointF(Bounds("_outValues").X + 10, Bounds("_outValues").Y + 8);
             var tooltip = (Grasshopper.GUI.GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(Grasshopper.GUI.GH_TooltipDisplayEventArgs),
                 BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, System.Drawing.Point.Round(point) }, null)!;
