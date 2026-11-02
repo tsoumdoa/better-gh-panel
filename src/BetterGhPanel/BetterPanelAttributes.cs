@@ -844,6 +844,7 @@ namespace BetterGhPanel
         private void DrawOutputControl(Graphics g, Font small, StringFormat trim)
         {
             var bounds = RectangleF.Union(_outItems, _outValues);
+            bounds.Height -= 1;
             const float corner = 6;
             using var shape = new GraphicsPath();
             shape.AddArc(bounds.X, bounds.Y, corner, corner, 180, 90);
