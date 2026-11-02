@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.2.2-beta
+yak install panel-plus 0.2.3-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -28,6 +28,11 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
+**[`0.2.3-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.3-beta)**
+
+- **Send items or values.** When the panel shows a value (Length, Area, Validity, …) or a set, the new **Out Items | Values** switch next to **Select all** chooses what D and S send: the original data, for example the curves you filtered by length, or the values you see.
+- **One branch per set value.** With Create set and **Items**, every matching item goes to `{path;k}`, and set rows are numbered by that **k**. Selecting a set row sends, previews and frames all of its members.
+
 **[`0.2.2-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.2-beta)**
 
 - **Pick a property to see it.** Choosing Area, Validity, Closed, … in the filter dropdown shows its value in every row; click the search field to filter by it.
@@ -37,8 +42,6 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 - **D | F split view.** Inspect paired data beside the data it belongs to — see [below](#d--f-split-view).
 - **Row selection fix.** Rows could intermittently ignore clicks at some canvas zoom levels; they are now reliably selectable.
-
-**`0.2.0-beta`** renamed the plugin to Panel+ (`panel-plus`). Earlier changes are listed in [Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
 
 ## Features
 
