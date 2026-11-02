@@ -359,9 +359,8 @@ namespace BetterGhPanel
             _outLabel = _outItems = _outValues = RectangleF.Empty;
             if (PanelOwner.CanOutputValues)
             {
-                bool bottomRow = !_singleLineFooter && _trim.Left - 4 - (_panel.Left + 14) >= OutputControlWidth;
-                float outputLeft = bottomRow ? _panel.Left + 14 : _selectAll.Left - 4 - OutputControlWidth;
-                float outputTop = bottomRow ? _units.Y + 1 : _selectAll.Y;
+                float outputLeft = _selectAll.Left - 4 - OutputControlWidth;
+                float outputTop = _selectAll.Y;
                 _outLabel = new RectangleF(outputLeft, outputTop, 23, 16);
                 _outItems = new RectangleF(_outLabel.Right, outputTop, 38, 16);
                 _outValues = new RectangleF(_outItems.Right, outputTop, 43, 16);
@@ -811,7 +810,7 @@ namespace BetterGhPanel
             if (result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count)
                 return "filtered";
             return PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.RoundUpFactor > 0
-                ? "tools on" : "output = input";
+                ? "tools on" : PanelOwner.OutputsValues ? "values out" : "output = input";
         }
 
         private void RenderFooter(Graphics g, PanelQueryResult result, Font small, StringFormat trim)
@@ -820,22 +819,16 @@ namespace BetterGhPanel
             bool current = !PanelOwner.Locked && session.HasCurrentResult;
             if (current && !_singleLineFooter)
                 Text(g, CanvasStatistics.Summary(result), small, Ink,
-                    new RectangleF(_footer.X, _footer.Y, (!_outLabel.IsEmpty && _outLabel.Y == _selectAll.Y ? _outLabel.Left - 4 : _selectAll.Left - 5) - _footer.X, _statistics.Height), trim);
+                    new RectangleF(_footer.X, _footer.Y, (!_outLabel.IsEmpty ? _outLabel.Left - 4 : _selectAll.Left - 5) - _footer.X, _statistics.Height), trim);
             int selected = !current ? 0 : DisplayListLengths ? _selection.BranchPaths(result).Count : _selection.Count;
             int selectableCount = DisplayListLengths ? result.BranchPaths.Count : result.RowPositions.Count;
             Control(g, _selectAll, "Select all", small, trim, current && selectableCount > 0 && selected == selectableCount);
             Control(g, _statistics, "Stats", small, trim, current && _menu.Kind == CanvasMenuKind.Statistics);
             string status = FooterStatus(result, _singleLineFooter);
-            float statusLeft = _footer.X;
-            float statusRight = _singleLineFooter ? _selectAll.Left - 6 : _trim.Left - 6;
-            if (!_outLabel.IsEmpty)
-            {
-                if (_singleLineFooter) statusRight = _outLabel.Left - 4;
-                else if (_outLabel.Y != _selectAll.Y) statusLeft = _outValues.Right + 4;
-                DrawOutputControl(g, small, trim);
-            }
-            if (statusRight > statusLeft)
-                Text(g, status, small, Muted, new RectangleF(statusLeft, _units.Y, statusRight - statusLeft, _units.Height), trim);
+            float statusRight = _singleLineFooter ? (!_outLabel.IsEmpty ? _outLabel.Left - 4 : _selectAll.Left - 6) : _trim.Left - 6;
+            if (!_outLabel.IsEmpty) DrawOutputControl(g, small, trim);
+            if (statusRight - _footer.X >= g.MeasureString("000…", small).Width)
+                Text(g, status, small, Muted, new RectangleF(_footer.X, _units.Y, statusRight - _footer.X, _units.Height), trim);
             TreeToolIcons.Draw(g, _trim, TreeToolIcon.Trim, PanelOwner.TrimDepth > 0);
             TreeToolIcons.Draw(g, _simplify, TreeToolIcon.Simplify, PanelOwner.SimplifyTree);
             TreeToolIcons.Draw(g, _flatten, TreeToolIcon.Flatten, PanelOwner.FlattenTree);
@@ -850,7 +843,7 @@ namespace BetterGhPanel
 
         private void DrawOutputControl(Graphics g, Font small, StringFormat trim)
         {
-            var bounds = RectangleF.Union(_outLabel, _outValues);
+            var bounds = RectangleF.Union(_outItems, _outValues);
             const float corner = 6;
             using var shape = new GraphicsPath();
             shape.AddArc(bounds.X, bounds.Y, corner, corner, 180, 90);
@@ -867,7 +860,7 @@ namespace BetterGhPanel
             using var border = new Pen(PanelTheme.Rgb(210, 223, 203));
             g.DrawPath(border, shape);
             g.DrawLine(border, _outValues.Left, bounds.Y + 1, _outValues.Left, bounds.Bottom - 1);
-            Text(g, "Out", small, Muted, new RectangleF(_outLabel.X + 3, bounds.Y, _outLabel.Width - 3, bounds.Height), trim);
+            Text(g, "Out", small, Muted, _outLabel, trim);
             using var centered = (StringFormat)trim.Clone();
             centered.Alignment = StringAlignment.Center;
             Text(g, "Items", small, PanelOwner.OutputsValues ? Muted : Accent, _outItems, centered);

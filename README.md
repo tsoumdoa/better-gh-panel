@@ -125,7 +125,7 @@ The **D|F** chip is hidden until F has data. Split view saves with the definitio
 
 **Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. Values label the ports **D·V / S·V**. Without a set, numbers retain full precision in displayed units; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
 
-Right-click the component → **B + F source** to make B and F follow the **Filtered results** (default) or only the **Selected rows**. In Selected mode the port labels read **B·S** and **F·S**. With nothing filtered or transformed, D forwards its input unchanged.
+Right-click the component → **B + F source** to make B and F follow the **Filtered results** (default) or only the **Selected rows**. In Selected mode the port labels read **B·S** and **F·S**. With Items output and nothing filtered or transformed, D forwards its input unchanged.
 
 ### Layout
 
