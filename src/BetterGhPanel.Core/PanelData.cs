@@ -384,6 +384,8 @@ namespace BetterGhPanel.Core
         public bool DisplayFilterValue { get; set; }
         /// <summary>Create a set of the current formatted values after filtering.</summary>
         public bool CreateSet { get; set; }
+        /// <summary>Prepare typed displayed values for D/S, including offscreen measurements.</summary>
+        public bool OutputValues { get; set; }
         /// <summary>Presentation precision for text/regex matching; numeric predicates retain full precision.</summary>
         public int DecimalPlaces { get; set; } = PanelUnits.AutomaticDecimals;
         public string? TypeName { get; set; }
@@ -399,6 +401,7 @@ namespace BetterGhPanel.Core
             SearchMode = SearchMode,
             DisplayFilterValue = DisplayFilterValue,
             CreateSet = CreateSet,
+            OutputValues = OutputValues,
             DecimalPlaces = DecimalPlaces,
             TypeName = TypeName,
             BranchPath = BranchPath,
@@ -476,7 +479,8 @@ namespace BetterGhPanel.Core
 
         internal PanelQueryResult(PanelSnapshot snapshot, int[] rowPositions, PanelResultPositionIndex viewIndices,
             PanelStatistics statistics, List<string> orderedBranches, HashSet<string> branchPaths,
-            PanelViewIndex viewIndex, PanelDisplaySetResult? displaySet = null)
+            PanelViewIndex viewIndex, PanelDisplaySetResult? displaySet = null,
+            Dictionary<int, PanelPropertyValue?>? outputValues = null)
         {
             Snapshot = snapshot;
             RowPositions = Array.AsReadOnly(rowPositions);
@@ -486,6 +490,7 @@ namespace BetterGhPanel.Core
             BranchPaths = orderedBranches.AsReadOnly();
             ViewIndex = viewIndex;
             DisplaySet = displaySet;
+            OutputValues = outputValues == null ? null : new ReadOnlyDictionary<int, PanelPropertyValue?>(outputValues);
         }
 
         public PanelSnapshot Snapshot { get; }
@@ -500,6 +505,17 @@ namespace BetterGhPanel.Core
         public bool ContainsBranchPath(string path) => _branchPaths.Contains(path);
         public PanelViewIndex ViewIndex { get; }
         public PanelDisplaySetResult? DisplaySet { get; }
+        public IReadOnlyDictionary<int, PanelPropertyValue?>? OutputValues { get; }
+        /// <summary>Preview includes every set member, with a distinct tree-order slot.</summary>
+        public bool TryGetPreviewIndex(int position, out int index)
+        {
+            if (DisplaySet != null)
+            {
+                index = position;
+                return DisplaySet.MemberIndices.ContainsKey(position);
+            }
+            return TryGetViewIndex(position, out index);
+        }
         public PanelSetOccurrences? SetOccurrencesAt(int position) =>
             DisplaySet != null && DisplaySet.Occurrences.TryGetValue(position, out var occurrences) ? occurrences : Snapshot.Rows[position].SetOccurrences;
     }

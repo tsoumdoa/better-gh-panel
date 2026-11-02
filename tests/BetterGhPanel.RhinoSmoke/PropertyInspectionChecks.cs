@@ -13,7 +13,11 @@ using Rhino.Geometry;
 internal static class PropertyInspectionChecks
 {
     private const BindingFlags Instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-    internal static Task Run(Assembly assembly) => PanelHostFixture.RunWithEditor(assembly, Verify);
+    internal static Task Run(Assembly assembly) => PanelHostFixture.RunWithEditor(assembly, async plugin =>
+    {
+        await Verify(plugin);
+        await OutputValuesChecks.Run(plugin);
+    });
 
     private static PanelSnapshot Capture(Assembly assembly, params IGH_Goo[] inputs)
     {
@@ -110,6 +114,7 @@ internal static class PropertyInspectionChecks
         Check(fixture.Sinks[0].VolatileData.AllData(false).Single() is GH_Curve, "property comparison retains typed geometry on D");
         Check(fixture.Values(3) == "10", "paired data follows property filters");
         fixture.Component.GetType().GetMethod("SetTreeOperations", Instance)!.Invoke(fixture.Component, new object[] { 0, false, false, false, true });
+        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Values });
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.FaceCount, DisplayFilterValue = true, CreateSet = true, TypeName = "Mesh" });
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).SingleOrDefault() is GH_Number number && number.Value == 6);
         Check(fixture.Values(3) == "20", "property sets retain paired source provenance");

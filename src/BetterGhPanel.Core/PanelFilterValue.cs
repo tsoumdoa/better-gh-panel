@@ -6,6 +6,23 @@ namespace BetterGhPanel.Core
     /// <summary>The same metric drives comparisons and the optional value display.</summary>
     public static class PanelFilterValue
     {
+        /// <summary>Full-precision displayed value; null preserves an unavailable row's output slot.</summary>
+        public static PanelPropertyValue? OutputValue(PanelSnapshot snapshot, PanelRow row, PanelSearchMode mode, PanelGeometryInfo? measured)
+        {
+            if (mode == PanelSearchMode.ListLength) return PanelPropertyValue.Numeric(snapshot.BranchItemCounts[row.Path]);
+            if (PanelProperties.IsProperty(mode))
+            {
+                if (!PanelProperties.TryGet(row, mode, measured, out var property) || property == null) return null;
+                if (property.Kind != PanelPropertyKind.Number) return property;
+                double number = property.Converted(snapshot.UnitConversion);
+                return IsFinite(number) ? PanelPropertyValue.Numeric(number) : null;
+            }
+            bool available = mode == PanelSearchMode.Value || mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z
+                ? TryScalarValue(row, mode, snapshot.UnitConversion, out double value)
+                : TryGeometryValue(row, mode, snapshot.UnitConversion, measured, out value);
+            return available ? PanelPropertyValue.Numeric(value) : null;
+        }
+
         public static bool MatchesGeometry(PanelSearchMode mode, PanelGeometryInfo geometry) =>
             PanelProperties.IsProperty(mode) ? geometry.Properties.ContainsKey(mode) :
             mode >= PanelSearchMode.Length && mode <= PanelSearchMode.Volume &&

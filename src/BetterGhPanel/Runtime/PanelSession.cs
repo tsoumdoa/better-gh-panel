@@ -116,6 +116,8 @@ namespace BetterGhPanel.Runtime
 
         internal void SetDecimalPlacesResolver(Func<int> resolver) => _decimalPlacesResolver = resolver;
         internal void SetCreateSetResolver(Func<bool> resolver) => _createSetResolver = resolver;
+        private Func<bool>? _outputValuesResolver;
+        internal void SetOutputValuesResolver(Func<bool> resolver) => _outputValuesResolver = resolver;
 
         internal void SetGeometryPreparationResolver(Func<int, PreparedMeasurement<PanelGeometryInfo>?> resolver)
         { _geometryPreparationResolver = resolver; _geometryRetentionResolver = null; _geometrySourceCurrent = null; }
@@ -191,6 +193,7 @@ namespace BetterGhPanel.Runtime
             // ResetView cannot silently revert the filter's presentation precision.
             if (_decimalPlacesResolver != null) next.DecimalPlaces = _decimalPlacesResolver();
             if (_createSetResolver != null) next.CreateSet = _createSetResolver();
+            if (_outputValuesResolver != null) next.OutputValues = _outputValuesResolver() && (next.DisplayFilterValue || next.CreateSet);
             next.DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, next.DecimalPlaces));
             // Canonical paths keep direct input, saved options and menu checkmarks
             // consistent. Malformed input stays in the query so it reports the same

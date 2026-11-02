@@ -44,7 +44,9 @@ namespace BetterGhPanel
             _pairedTrackHit = new RectangleF(_panel.Right - 21, _list.Y, 8, height);
         }
 
-        private string OutputPortLabel(IGH_Param parameter) => PanelOwner.OutputScope == PanelOutputScope.Selected &&
+        private string OutputPortLabel(IGH_Param parameter) => PanelOwner.OutputsValues &&
+            (ReferenceEquals(parameter, Owner.Params.Output[0]) || ReferenceEquals(parameter, Owner.Params.Output[1]))
+                ? parameter.NickName + "·V" : PanelOwner.OutputScope == PanelOutputScope.Selected &&
             (ReferenceEquals(parameter, Owner.Params.Output[2]) || ReferenceEquals(parameter, Owner.Params.Output[3]))
                 ? parameter.NickName + "·S" : parameter.NickName;
 

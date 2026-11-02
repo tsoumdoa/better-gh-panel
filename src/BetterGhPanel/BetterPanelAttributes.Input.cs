@@ -247,6 +247,7 @@ namespace BetterGhPanel
             yield return _type; yield return _sort; yield return _branch;
             yield return _selectAll; yield return _statistics;
             yield return _trim; yield return _simplify; yield return _flatten; yield return _reverse; yield return _createSet; yield return _units;
+            if (PanelOwner.CanOutputValues) { yield return _outItems; yield return _outValues; }
         }
 
         private RectangleF HoverTargetAt(PointF point, out bool control)
