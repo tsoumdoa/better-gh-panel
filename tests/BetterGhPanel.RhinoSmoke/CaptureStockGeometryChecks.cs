@@ -140,21 +140,26 @@ internal static class CaptureStockGeometryChecks
         var trees = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!;
         var outputs = assembly.GetType("BetterGhPanel.Runtime.PanelOutputOperations", true)!;
         object[] selectedArgs = { tree, query.RowPositions };
-        object?[] setArgs = { tree, query, query.RowPositions, query.BranchPaths, null };
-        var data = (GH_Structure<IGH_Goo>)(set ? outputs.GetMethod("DisplaySet", Static)!.Invoke(null, setArgs)! :
+        object?[] setArgs = { tree, query, query.RowPositions, query.BranchPaths, false, null };
+        var data = (GH_Structure<IGH_Goo>)(set ? outputs.GetMethod("SetItems", Static)!.Invoke(null, setArgs)! :
             trees.GetMethod("Filter", Static)!.Invoke(null, new object[] { tree, query })!);
-        var selection = (GH_Structure<IGH_Goo>)(set ? outputs.GetMethod("DisplaySet", Static)!.Invoke(null, setArgs)! :
+        var selection = (GH_Structure<IGH_Goo>)(set ? outputs.GetMethod("SetItems", Static)!.Invoke(null, setArgs)! :
             trees.GetMethod("Select", Static)!.Invoke(null, selectedArgs)!);
         var addresses = snapshot.Rows.Select((_, i) => snapshot.SourceAddressAt(i)).ToArray();
         var mask = (GH_Structure<GH_Boolean>)outputs.GetMethod("Mask", Static)!.Invoke(null, new object[] { tree, addresses, query.RowPositions })!;
         var paired = new GH_Structure<IGH_Goo>();
         for (int i = 0; i < tree.DataCount; i++) paired.Append(new GH_Integer(i), new GH_Path(0));
         var pair = (GH_Structure<IGH_Goo>)outputs.GetMethod("Pair", Static)!.Invoke(null, new object?[] { tree, paired, tree, addresses, null })!;
-        var filteredPair = (GH_Structure<IGH_Goo>)trees.GetMethod("Filter", Static)!.Invoke(null, new object[] { pair, query })!;
+        var filteredPair = (GH_Structure<IGH_Goo>)(set
+            ? outputs.GetMethod("SetItems", Static)!.Invoke(null, new object?[] { pair, query, query.RowPositions, query.BranchPaths, false, null })!
+            : trees.GetMethod("Filter", Static)!.Invoke(null, new object[] { pair, query })!);
+        var expectedPath = set ? new GH_Path(0, 0) : new GH_Path(0);
         Check(data.DataCount == 1 && selection.DataCount == 1 &&
-            (set ? data.Branches[0][0] is GH_String && selection.Branches[0][0] is GH_String :
-                ReferenceEquals(data.Branches[0][0], tree.Branches[0][position]) && ReferenceEquals(selection.Branches[0][0], tree.Branches[0][position])) &&
+            data.PathCount == 1 && data.Paths[0].CompareTo(expectedPath) == 0 &&
+            selection.PathCount == 1 && selection.Paths[0].CompareTo(expectedPath) == 0 &&
+            ReferenceEquals(data.Branches[0][0], tree.Branches[0][position]) && ReferenceEquals(selection.Branches[0][0], tree.Branches[0][position]) &&
             mask.Branches[0].Count(flag => flag.Value) == 1 && mask.Branches[0][position].Value &&
+            filteredPair.PathCount == 1 && filteredPair.Paths[0].CompareTo(expectedPath) == 0 &&
             ((GH_Integer)filteredPair.Branches[0][0]).Value == position,
             "D/S, original-shape B and typed F preserve the filtered occurrence with set=" + set);
     }
@@ -392,11 +397,11 @@ internal static class CaptureStockGeometryChecks
             fixture.Query(new PanelQueryOptions { TypeName = item.Item1, OnlyInvalid = true, CreateSet = set });
             await fixture.Ready(() => fixture.Result.RowPositions.SequenceEqual(new[] { item.Item2 }) &&
                 (fixture.Result.DisplaySet != null) == set && fixture.Sinks[0].VolatileData.DataCount == 1 &&
-                (fixture.Sinks[0].VolatileData.AllData(false).Single() is GH_String) == set);
+                fixture.Sinks[0].VolatileData.AllData(false).Single().GetType() == inputs[item.Item2].GetType());
             var selectedSnapshot = fixture.Result.Snapshot;
             fixture.Select(item.Item2);
             await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1 && fixture.Sinks[3].VolatileData.DataCount == 1 &&
-                (fixture.Sinks[1].VolatileData.AllData(false).Single() is GH_String) == set);
+                fixture.Sinks[1].VolatileData.AllData(false).Single().GetType() == inputs[item.Item2].GetType());
             var data = fixture.Sinks[0].VolatileData.AllData(false).Single(); var selection = fixture.Sinks[1].VolatileData.AllData(false).Single();
             var mask = fixture.Sinks[2].VolatileData.AllData(false).Cast<GH_Boolean>().Select(value => value.Value).ToArray();
             Console.WriteLine("STOCK_SOLVE type=" + item.Item1 + " set=" + set + " sameSnapshot=" + ReferenceEquals(selectedSnapshot, fixture.Result.Snapshot) +
@@ -404,7 +409,9 @@ internal static class CaptureStockGeometryChecks
                 " paired=" + ((GH_Integer)fixture.Sinks[3].VolatileData.AllData(false).Single()).Value +
                 " invalidSources=" + fixture.Result.Statistics.FilteredSourceStatuses.VerifiedInvalid);
             Check(ReferenceEquals(selectedSnapshot, fixture.Result.Snapshot) && fixture.Result.Statistics.FilteredSourceStatuses.VerifiedInvalid == 1 &&
-                (set ? data is GH_String && selection is GH_String : data.GetType() == inputs[item.Item2].GetType() && selection.GetType() == inputs[item.Item2].GetType()) &&
+                data.GetType() == inputs[item.Item2].GetType() && selection.GetType() == inputs[item.Item2].GetType() &&
+                new[] { 0, 1, 3 }.All(output => fixture.Sinks[output].VolatileData.PathCount == 1 &&
+                    fixture.Sinks[output].VolatileData.Paths[0].CompareTo(set ? new GH_Path(0, 0) : new GH_Path(0)) == 0) &&
                 mask.Count(value => value) == 1 && mask[item.Item2] && ((GH_Integer)fixture.Sinks[3].VolatileData.AllData(false).Single()).Value == item.Item2,
                 "real solve keeps D/S/B/F and invalid source statistics for " + item.Item1 + " with set=" + set);
         }
