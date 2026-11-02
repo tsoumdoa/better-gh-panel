@@ -214,7 +214,8 @@ namespace BetterGhPanel.UI
             return _positions.Select(position =>
                 {
                     _rowVisited?.Invoke();
-                    return result.Snapshot.Rows[position].OriginalIndex;
+                    PanelItemOrder.TryGetNumber(result, position, out int number);
+                    return number;
                 }).Distinct().OrderBy(index => index).ToArray();
         }
 
@@ -227,7 +228,8 @@ namespace BetterGhPanel.UI
             foreach (int position in result.RowPositions)
             {
                 _rowVisited?.Invoke();
-                if (!wanted.Contains(result.Snapshot.Rows[position].OriginalIndex)) continue;
+                PanelItemOrder.TryGetNumber(result, position, out int number);
+                if (!wanted.Contains(number)) continue;
                 next.Add(position);
                 if (anchor < 0) anchor = position;
             }

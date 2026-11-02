@@ -10,6 +10,7 @@ namespace BetterGhPanel.UI
             number = 0;
             if (result == null) return false;
             rowVisited?.Invoke();
+            if (result.DisplaySet != null) return result.DisplaySet.MemberIndices.TryGetValue(position, out number);
             if (!result.TryGetViewIndex(position, out _)) return false;
             number = result.Snapshot.Rows[position].OriginalIndex;
             return true;

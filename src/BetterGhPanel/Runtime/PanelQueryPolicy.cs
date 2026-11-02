@@ -16,7 +16,7 @@ namespace BetterGhPanel.Runtime
 
         // While a query is pending or has failed, an unfiltered tree may pass through.
         internal static bool HasOutputFilter(PanelQueryOptions options) =>
-            options.CreateSet ||
+            options.CreateSet || options.OutputValues && options.DisplayFilterValue ||
             (!options.DisplayFilterValue && (options.SearchMode == PanelSearchMode.Regex
                 ? !string.IsNullOrEmpty(options.Search) : !string.IsNullOrWhiteSpace(options.Search))) ||
             options.TypeName != null || options.OnlyInvalid || !string.IsNullOrWhiteSpace(options.BranchPath);
@@ -35,6 +35,6 @@ namespace BetterGhPanel.Runtime
             left.Search == right.Search && left.SearchMode == right.SearchMode && left.TypeName == right.TypeName &&
             left.BranchPath == right.BranchPath && left.BranchPrefix == right.BranchPrefix &&
             left.OnlyInvalid == right.OnlyInvalid && left.DisplayFilterValue == right.DisplayFilterValue &&
-            left.CreateSet == right.CreateSet;
+            left.CreateSet == right.CreateSet && left.OutputValues == right.OutputValues;
     }
 }

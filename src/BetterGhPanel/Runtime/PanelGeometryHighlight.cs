@@ -117,7 +117,7 @@ namespace BetterGhPanel.Runtime
             else if (update.AddedPosition >= 0 && !_byPosition.ContainsKey(update.AddedPosition) && !_attempted.Contains(update.AddedPosition))
             {
                 LastVisitedRows++;
-                if (result.TryGetViewIndex(update.AddedPosition, out int order))
+                if (result.TryGetPreviewIndex(update.AddedPosition, out int order))
                     TryAdmit(update.AddedPosition, order, budget, true, generation, current);
                 if (!Current(generation, current)) return;
                 if (!_byPosition.ContainsKey(update.AddedPosition) && !_attempted.Contains(update.AddedPosition))
@@ -126,13 +126,14 @@ namespace BetterGhPanel.Runtime
             if (fresh && filtered)
             {
                 int rows = 0;
-                foreach (int position in result.RowPositions)
+                foreach (int position in result.DisplaySet?.AllMembers ?? result.RowPositions)
                 {
                     if (++rows > MaxBuildRows || budget.Remaining <= 0 || _entries.Count >= MaxEntries || RetainedBytes >= MaxRetainedBytes)
                     { _partial = true; break; }
                     LastVisitedRows++;
                     if (_byPosition.ContainsKey(position) || _attempted.Contains(position)) continue;
-                    TryAdmit(position, rows - 1, budget, false, generation, current);
+                    if (result.TryGetPreviewIndex(position, out int order))
+                        TryAdmit(position, order, budget, false, generation, current);
                     if (!Current(generation, current)) return;
                 }
             }
@@ -150,7 +151,7 @@ namespace BetterGhPanel.Runtime
                     if (budget.Remaining <= 0 || !Current(generation, current) ||
                         (_entries.Count >= MaxEntries && _unselected.Count == 0)) return PanelPreviewRecovery.Admission.Blocked;
                     LastVisitedRows++;
-                    if (_result == null || !_result.TryGetViewIndex(position, out int order)) return PanelPreviewRecovery.Admission.Complete;
+                    if (_result == null || !_result.TryGetPreviewIndex(position, out int order)) return PanelPreviewRecovery.Admission.Complete;
                     TryAdmit(position, order, budget, true, generation, current);
                     if (!Current(generation, current)) return PanelPreviewRecovery.Admission.Blocked;
                     if (_byPosition.ContainsKey(position) || _attempted.Contains(position))

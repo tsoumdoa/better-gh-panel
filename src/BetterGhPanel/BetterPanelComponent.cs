@@ -107,7 +107,7 @@ namespace BetterGhPanel
         internal double RoundUpFactor { get; private set; }
 
         public BetterPanelComponent() : base("Panel+", "Panel+",
-            "Inspect and manipulate data trees on the canvas. Tree tools, units and filters change output. Create set emits unique displayed numbers or text at the displayed precision; otherwise output retains original types and precision. Sorting changes view order.",
+            "Inspect and manipulate data trees on the canvas. Choose Items or displayed Values for D/S. Create set groups every member in a branch per value, or emits unique displayed values. B/F and geometry actions include all set members. Sorting changes only view order.",
             "Params", "Util")
         {
             _highlight.PreviewChanged = () =>
@@ -155,6 +155,7 @@ namespace BetterGhPanel
                     _session.GeometryDiagnosticsForTesting = CaptureDiagnosticsForTesting;
                     _session.SetDecimalPlacesResolver(() => DecimalPlaces);
                     _session.SetCreateSetResolver(() => CreateSetTree);
+                    _session.SetOutputValuesResolver(() => OutputValues == PanelOutputValues.Values);
                     if (Locked) _session.InvalidateInput(false, suspended: true);
                     _session.SetGeometryPreparationResolver(PrepareCapturedGeometry);
                     _session.SetGeometryRetentionResolver(PrepareCapturedGeometryForRetention);
@@ -427,7 +428,7 @@ namespace BetterGhPanel
         {
             var source = _sourceItems;
             var budget = new PanelGeometrySources.Budget();
-            foreach (int position in positions)
+            foreach (int position in ExpandSetMembers(positions))
             {
                 if (position < 0 || position >= source.Length) continue;
                 var item = source[position];
@@ -448,7 +449,7 @@ namespace BetterGhPanel
             _discardViewRestore = true;
             var options = Session.Options;
             bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0;
-            bool settingsChanged = outputChanged || OutputScope != PanelOutputScope.Filtered || DecimalPlaces != PanelUnits.AutomaticDecimals ||
+            bool settingsChanged = outputChanged || OutputScope != PanelOutputScope.Filtered || OutputValues != PanelOutputValues.Items || DecimalPlaces != PanelUnits.AutomaticDecimals ||
                 !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.TypeName != null || options.BranchPath != null ||
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
             if (settingsChanged) RecordUndoEvent("Reset Panel+");
@@ -458,6 +459,7 @@ namespace BetterGhPanel
             RoundUpFactor = 0;
             DecimalPlaces = PanelUnits.AutomaticDecimals;
             OutputScope = PanelOutputScope.Filtered;
+            OutputValues = PanelOutputValues.Items;
             ResetPanelView();
             if (settingsChanged) OnPingDocument()?.Modified();
             try
@@ -723,6 +725,7 @@ namespace BetterGhPanel
                 result.Skipped > 0 || result.Exhausted
                 ? "Selection framed" + (result.Skipped > 0 ? "; " + result.Skipped + " skipped" : "") +
                     (result.Exhausted ? "; inspection limit reached" : "") : null;
+            ordered = ExpandSetMembers(ordered);
             var result = PanelGeometryActions.FrameWithSnapshot(ordered.Select(position => source[position]).ToArray(), Current,
                 () => Current() && CapturedSnapshotCurrent(snapshot) && Current(),
                 value => completed?.Invoke(Format(value) ?? "Selection framed"));
@@ -744,7 +747,8 @@ namespace BetterGhPanel
                 ClearHighlight();
                 return;
             }
-            var previewPositions = PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.RowPositions : ordered;
+            ordered = ExpandSetMembers(ordered);
+            var previewPositions = PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.DisplaySet?.AllMembers ?? session.Result.RowPositions : ordered;
             _highlight.SetOrderResult(ShowItemOrder && previewPositions.Count > 0 ? session.Result : null);
             var source = _sourceItems;
             var expectedResult = session.Result;
@@ -757,6 +761,9 @@ namespace BetterGhPanel
             InvalidatePreviewCaches();
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
+
+        private IReadOnlyList<int> ExpandSetMembers(IReadOnlyList<int> positions) =>
+            Session.Result.DisplaySet?.ExpandMembers(Session.Snapshot, positions) ?? positions;
 
         internal void ClearHighlight()
         {
@@ -864,6 +871,7 @@ namespace BetterGhPanel
                 (result.Skipped > 0 ? "; " + result.Skipped + " skipped (" + (result.Detail ?? "unsupported geometry or unverified metadata") + ")" : "") +
                 (result.Exhausted ? "; preparation limit reached" : "") +
                 (result.UnverifiedMetadata ? "; custom metadata content not fully verified" : "") : result.Error ?? "Copy geometry failed";
+            ordered = ExpandSetMembers(ordered);
             var result = PanelGeometryActions.CopyGeometryWithSnapshot(ordered.Select(position => source[position]).ToArray(),
                 _geometryUnitSystem, _geometryTolerance, Current, () => Current() && CapturedSnapshotCurrent(snapshot) && Current(),
                 value => completed?.Invoke(Format(value)));
@@ -881,10 +889,10 @@ namespace BetterGhPanel
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddGenericParameter("Data", "D", "Matching items after Simplify → Trim → Flatten → Reverse → unit conversion → filters. Create set outputs unique displayed numbers or text at the displayed precision. Otherwise output keeps original types and full precision. Sorting changes only view order.", GH_ParamAccess.tree);
-            p.AddGenericParameter("Selected data", "S", "Selected rows within the current filtered results, in transformed tree order. Empty when no rows are selected.", GH_ParamAccess.tree);
-            p.AddBooleanParameter("Membership mask", "B", "True at original D input positions retained by the B + F source setting (Filtered by default, or Selected). Preserves original paths and item counts. Removed set duplicates are False. This mask conveys membership, not transformed ordering.", GH_ParamAccess.tree);
-            p.AddGenericParameter("Paired results", "F", "Paired input values corresponding to the B + F source setting (Filtered by default, or Selected), in the primary transformed tree order. F retains its original values and types.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Data", "D", "Matching Items or displayed Values after tree tools, units and filters. Set Items: all members in {path;k} ({k} when flattened); list-length sets use {k;path}. Set Values: unique values at displayed precision. Other Values keep full precision; unavailable values are null. Sorting changes only the view.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Selected data", "S", "Selected Items or Values in tree order. Set Items include every member and keep the same group paths as D. Empty when no rows are selected.", GH_ParamAccess.tree);
+            p.AddBooleanParameter("Membership mask", "B", "True at original D input positions retained by the B + F source setting (Filtered by default, or Selected). Preserves original paths and item counts. Every member of a kept or selected set is True. This mask conveys membership, not transformed ordering.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Paired results", "F", "Paired input values corresponding to the B + F source setting (Filtered by default, or Selected), in the primary transformed tree order. Sets group every member as {path;k} ({k} when flattened; {k;path} for list-length sets). F retains its original values and types in both output modes.", GH_ParamAccess.tree);
         }
 
         private void ScheduleOutput()
@@ -894,7 +902,7 @@ namespace BetterGhPanel
             if (_solving || _restoringView || Locked || document == null || session == null || _queryTree == null) return;
             var options = session.Options;
             if (!_outputPending && _outputOptions != null && PanelQueryPolicy.SameOutputFilter(_outputOptions, options) &&
-                _publishedSelectionVersion == _selectionVersion && _publishedScope == OutputScope) return;
+                _publishedSelectionVersion == _selectionVersion && _publishedScope == OutputScope && _publishedValues == OutputValues) return;
             var snapshot = session.Snapshot;
             long request = ++_outputRequest;
             // Never solve recursively from a query callback. Publish through a
@@ -1031,11 +1039,12 @@ namespace BetterGhPanel
                 var committedSnapshot = session.Snapshot;
                 var committedResult = session.Result;
                 var committedScope = OutputScope;
+                var committedValues = OutputValues;
                 var committedSelection = _selectionVersion;
                 bool committedResultCurrent = session.HasCurrentResult;
                 bool PublicationOwnerCurrent() => Current() && ReferenceEquals(committedTree, _queryTree) &&
                     ReferenceEquals(committedSnapshot, session.Snapshot) && ReferenceEquals(committedResult, session.Result) &&
-                    committedScope == OutputScope && committedSelection == _selectionVersion &&
+                    committedScope == OutputScope && committedValues == OutputValues && committedSelection == _selectionVersion &&
                     committedResultCurrent == session.HasCurrentResult;
                 bool PublicationCurrent()
                 {
@@ -1156,6 +1165,9 @@ namespace BetterGhPanel
             Menu_AppendItem(menu, "Reset panel", (_, __) => ResetPanel());
             Menu_AppendItem(menu, "Reset panel view", (_, __) => ResetPanelView());
             Menu_AppendItem(menu, "Reset tree tools", (_, __) => SetTreeOperations(0, false, false, false, false), HasTreeOperations);
+            var valuesMenu = Menu_AppendItem(menu, "Output: " + (OutputsValues ? "Values" : "Items"));
+            Menu_AppendItem(valuesMenu.DropDown, "Items", (_, __) => SetOutputValues(PanelOutputValues.Items), true, !OutputsValues);
+            Menu_AppendItem(valuesMenu.DropDown, "Values", (_, __) => SetOutputValues(PanelOutputValues.Values), CanOutputValues, OutputsValues);
             var outputMenu = Menu_AppendItem(menu, "B + F source: " + (OutputScope == PanelOutputScope.Filtered ? "Filtered" : "Selected"));
             Menu_AppendItem(outputMenu.DropDown, "Filtered results", (_, __) => SetOutputScope(PanelOutputScope.Filtered), true, OutputScope == PanelOutputScope.Filtered);
             Menu_AppendItem(outputMenu.DropDown, "Selected rows", (_, __) => SetOutputScope(PanelOutputScope.Selected), true, OutputScope == PanelOutputScope.Selected);
@@ -1202,6 +1214,7 @@ namespace BetterGhPanel
             writer.SetInt32("PanelDecimalPlaces", DecimalPlaces);
             writer.SetDouble("PanelRoundUpFactor", RoundUpFactor);
             writer.SetInt32("PanelOutputScope", (int)OutputScope);
+            writer.SetInt32("PanelOutputValues", (int)OutputValues);
             writer.SetInt32("PanelOutputSchema", 1);
             return base.Write(writer);
         }
@@ -1275,6 +1288,9 @@ namespace BetterGhPanel
             ReverseTree = reverse;
             SimplifyTree = simplify;
             CreateSetTree = createSet;
+            int outputValues = createSet ? (int)PanelOutputValues.Values : (int)PanelOutputValues.Items;
+            reader.TryGetInt32("PanelOutputValues", ref outputValues);
+            OutputValues = Enum.IsDefined(typeof(PanelOutputValues), outputValues) ? (PanelOutputValues)outputValues : PanelOutputValues.Items;
             int conversion = 0, decimals = PanelUnits.AutomaticDecimals;
             reader.TryGetInt32("PanelUnitConversion", ref conversion);
             reader.TryGetInt32("PanelDecimalPlaces", ref decimals);

@@ -11,6 +11,67 @@ namespace BetterGhPanel.Runtime
     // returns to original input addresses; paired values follow the primary tree.
     internal static class PanelOutputOperations
     {
+        internal static GH_Structure<IGH_Goo> Values(GH_Structure<IGH_Goo> source, PanelQueryResult query,
+            IReadOnlyList<int> positions, IEnumerable<string> branchPaths)
+        {
+            var result = new GH_Structure<IGH_Goo>();
+            var paths = source.Paths.ToDictionary(path => path.ToString(), path => new GH_Path(path), StringComparer.Ordinal);
+            foreach (string path in branchPaths) result.EnsurePath(paths[path]);
+            foreach (int position in positions.OrderBy(value => value))
+            {
+                var value = query.OutputValues![position];
+                IGH_Goo item = value == null ? null! : value.Kind switch
+                {
+                    PanelPropertyKind.Number => new GH_Number(value.Number),
+                    PanelPropertyKind.Boolean => new GH_Boolean(value.Number != 0),
+                    PanelPropertyKind.DateTime => new GH_Time(value.Date),
+                    _ => new GH_String(value.Text)
+                };
+                // Append to the list directly: a null is an item, not a missing row.
+                result.EnsurePath(paths[query.Snapshot.Rows[position].Path]).Add(item);
+            }
+            return result;
+        }
+
+        internal static GH_Structure<IGH_Goo> SetItems(GH_Structure<IGH_Goo> source, PanelQueryResult query,
+            IReadOnlyList<int> positions, IReadOnlyList<string> branchPaths, bool flatten)
+        {
+            var result = new GH_Structure<IGH_Goo>();
+            if (positions.Count == 0 && branchPaths.Count == 0) return result;
+            var set = query.DisplaySet!;
+            var paths = source.Paths.ToDictionary(path => path.ToString(), path => new GH_Path(path), StringComparer.Ordinal);
+            var branches = new Dictionary<string, IList<IGH_Goo>>(StringComparer.Ordinal);
+            for (int b = 0; b < source.PathCount; b++) branches.Add(source.Paths[b].ToString(), source.Branches[b]);
+            if (set.IsBranchSet)
+            {
+                foreach (string representative in branchPaths)
+                {
+                    int k = set.BranchIndices[representative];
+                    foreach (string path in set.BranchOccurrences[representative])
+                        result.EnsurePath(new GH_Path(new[] { k }.Concat(paths[path].Indices).ToArray()));
+                    foreach (int member in set.BranchMembers[representative])
+                    {
+                        var row = query.Snapshot.Rows[member];
+                        var path = new GH_Path(new[] { k }.Concat(paths[row.Path].Indices).ToArray());
+                        result.EnsurePath(path).Add(branches[row.Path][row.OriginalIndex]);
+                    }
+                }
+            }
+            else foreach (int representative in positions.OrderBy(value => value))
+            {
+                var row = query.Snapshot.Rows[representative];
+                int k = set.Indices[representative];
+                var path = flatten ? new GH_Path(k) : paths[row.Path].AppendElement(k);
+                var branch = result.EnsurePath(path);
+                foreach (int member in set.Members[representative])
+                {
+                    var memberRow = query.Snapshot.Rows[member];
+                    branch.Add(branches[memberRow.Path][memberRow.OriginalIndex]);
+                }
+            }
+            return result;
+        }
+
         internal static GH_Structure<IGH_Goo> DisplaySet(GH_Structure<IGH_Goo> source, PanelQueryResult query,
             IReadOnlyList<int> positions, IEnumerable<string> branchPaths)
         {

@@ -52,6 +52,7 @@ namespace BetterGhPanel.Core
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
+            var outputValues = query.OutputValues && query.DisplayFilterValue && set == null ? new Dictionary<int, PanelPropertyValue?>() : null;
             var propertySortValues = set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplayFilterValue && PanelProperties.IsProperty(query.SearchMode)
                 ? new Dictionary<int, PanelDisplayedValue>() : null;
             // Sets and property views already supply complete displayed sort keys.
@@ -102,6 +103,7 @@ namespace BetterGhPanel.Core
                 if (set != null && !set.IncludeRow(i, measured)) continue;
 
                 rowPositions.Add(i);
+                outputValues?.Add(i, PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured));
                 if (propertySortValues != null) propertySortValues.Add(i, PanelDisplayedValue.Capture(snapshot, row, query, measured, culture));
                 if (sortText != null && !row.IsNull && !HasFiniteNumber(row))
                     sortText.Add(i, PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture));
@@ -256,7 +258,7 @@ namespace BetterGhPanel.Core
                 viewIndices.Add(positions[index], index);
             }
             cancellationToken.ThrowIfCancellationRequested();
-            yield return new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet);
+            yield return new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues);
         }
 
         public static bool RequiresGeometryMeasurements(PanelQueryOptions options)
@@ -310,7 +312,7 @@ namespace BetterGhPanel.Core
             return candidates.AsReadOnly();
         }
 
-        private static bool SetNeedsGeometry(PanelQueryOptions query) => query.CreateSet &&
+        private static bool SetNeedsGeometry(PanelQueryOptions query) => (query.CreateSet || query.OutputValues && query.DisplayFilterValue) &&
             (!query.DisplayFilterValue || query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(query.SearchMode));
 
         /// <summary>Accepts a semicolon-separated path with or without braces. Blank means all branches.</summary>

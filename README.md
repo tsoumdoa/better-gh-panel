@@ -90,7 +90,7 @@ Unsupported properties show `n/a`. Text comparisons are exact; quote text to kee
 
 The footer's tree tools run in a fixed order — **Simplify → Trim → Flatten → Reverse** — then unit conversion, filters and **Create set**:
 
-- **Create set** keeps one entry per displayed value (per branch, or across the tree with Flatten). An occurrence badge such as **9×** expands to list every original path and index.
+- **Create set** groups equal displayed values per branch (or across the tree with Flatten). Rows use set index **k**. **Out Items** sends all members in **{path;k}** branches (**{k}** when flattened); **Out Values** sends each unique value once at displayed precision. List-length sets group original branches as **{k;path}**. An occurrence badge such as **9×** lists every original path and index.
 - **Units** converts numbers and geometry metrics (mm ↔ m, mm² ↔ m², mm³ ↔ m³, rad ↔ deg), sets **Decimal places**, and can **Round up by factor**. Geometry coordinates are never scaled.
 - **Reset** returns to the incoming data in one click; one Undo restores your settings.
 
@@ -118,10 +118,12 @@ The **D|F** chip is hidden until F has data. Split view saves with the definitio
 
 | Port | Output |
 | --- | --- |
-| **D** | Every matching item, typed, in tree order — or the unique displayed values when Create set is on. |
-| **S** | Only the selected rows. Empty when nothing is selected. |
-| **B** | A True/False mask in the original D tree shape: which input items survived. |
-| **F** | The F input's items that pair with the surviving D items, in D's output order. |
+| **D** | Matching **Items** (default) or displayed **Values**, in tree order. Set Items: all members in one branch per value; set Values: one list of unique values per source branch. |
+| **S** | Selected Items or Values. Selected sets include all members and retain D's group paths. Empty when nothing is selected. |
+| **B** | A True/False mask in the original D tree shape, including every member of kept or selected sets. |
+| **F** | Paired items in tree order. Sets always group every member using the same paths as set Items, in both output modes. F keeps its original values. |
+
+**Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. Values label the ports **D·V / S·V**. Without a set, numbers retain full precision in displayed units; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
 
 Right-click the component → **B + F source** to make B and F follow the **Filtered results** (default) or only the **Selected rows**. In Selected mode the port labels read **B·S** and **F·S**. With nothing filtered or transformed, D forwards its input unchanged.
 
