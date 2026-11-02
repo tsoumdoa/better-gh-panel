@@ -122,7 +122,7 @@ namespace BetterGhPanel.Runtime
                     if (!path.FromString(text)) throw new ArgumentException("Invalid captured path.", nameof(text));
                     int upper = 0;
                     _source.PathIndex(path, ref index, ref upper);
-                    if (index != upper || index < 0 || index >= _source.PathCount)
+                    if (index != upper || index < 0 || index >= _source.PathCount || _source.Paths[index] != path)
                         throw new ArgumentException("Captured path is missing from the output source.", nameof(text));
                     _indices.Add(text, index);
                 }

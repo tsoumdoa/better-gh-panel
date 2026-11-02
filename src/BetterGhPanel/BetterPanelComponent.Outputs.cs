@@ -173,9 +173,9 @@ namespace BetterGhPanel
             var data = current ? _filteredData ?? empty : !filtering && _queryTree != null ? _queryTree : empty;
             var selectedPositions = current ? RowSelection.OrderedPositions(session.Result) : Array.Empty<int>();
             var selectedBranches = current ? RowSelection.BranchPaths(query) : Array.Empty<string>();
-            var selectedMembers = current && set != null && (!OutputsValues || OutputScope == PanelOutputScope.Selected)
+            var selectedMembers = current && set != null && OutputScope == PanelOutputScope.Selected
                 ? set.ExpandMembers(query.Snapshot, selectedPositions, selectedBranches) : selectedPositions;
-            if (current && set != null && (!OutputsValues || OutputScope == PanelOutputScope.Selected))
+            if (current && set != null && OutputScope == PanelOutputScope.Selected)
                 CountOutputVisits(selectedMembers.Count);
             if (current && _queryTree != null && set == null && !OutputsValues && selectedPositions.Count > 0)
                 CountOutputVisits(_queryTree.DataCount);
