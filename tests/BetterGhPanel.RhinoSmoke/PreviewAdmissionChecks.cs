@@ -261,7 +261,7 @@ internal static partial class PreviewSafetyChecks
         }
         Solve("initial solve");
         await Ready(() => fixture.Result.Snapshot.Rows.Count == input.Length &&
-            fixture.Sinks[0].VolatileData.DataCount == fixture.Result.RowPositions.Count);
+            fixture.Sinks[0].VolatileData.DataCount == input.Length);
         int position = set ? 1 : 0;
         var delivered = fixture.Component.Params.Input[0].VolatileData.AllData(false).ToArray();
         Check(fixture.Result.RowPositions.SequenceEqual(Enumerable.Range(0, input.Length)) &&
@@ -314,13 +314,16 @@ internal static partial class PreviewSafetyChecks
         // Explicitly expire the volatile producer. A persistent-data re-solve
         // would normalize names again and would not test the changed semantics.
         int[] expectedPositions = set ? new[] { 0, 2 } : new[] { 1 };
+        // The view still has one row per value; Items and paired F now publish
+        // both equal-summary groups below that row's {path;k} branch.
+        int[] expectedMembers = set ? new[] { 0, 1, 2 } : expectedPositions;
         Solve("recapture solve");
         await Ready(() => !ReferenceEquals(snapshot, fixture.Result.Snapshot) &&
             fixture.Result.Snapshot.Rows.Count == input.Length &&
-            fixture.Sinks[0].VolatileData.DataCount == fixture.Result.RowPositions.Count &&
+            fixture.Sinks[0].VolatileData.DataCount == expectedMembers.Length &&
             fixture.Sinks[1].VolatileData.DataCount == 0 &&
             fixture.Sinks[2].VolatileData.DataCount == input.Length &&
-            fixture.Sinks[3].VolatileData.DataCount == fixture.Result.RowPositions.Count);
+            fixture.Sinks[3].VolatileData.DataCount == expectedMembers.Length);
         DumpSemanticDelivery(fixture, producer, copy, set, "recapture completed");
         var recovered = fixture.Result.Snapshot;
         delivered = fixture.Component.Params.Input[0].VolatileData.AllData(false).ToArray();
@@ -336,43 +339,52 @@ internal static partial class PreviewSafetyChecks
             "recapture clears stale selected S membership");
         bool DataCurrent()
         {
-            var data = fixture.Sinks[0].VolatileData.AllData(false).ToArray();
-            return data.Length == expectedPositions.Length && (set
-                ? data.All(value => value is GH_String) && ((GH_String)data[0]).Value == "Group (keep) with 1 object" &&
-                    ((GH_String)data[1]).Value == PanelTestAdapter.CopyValue(fixture.Component, recovered, 2)
-                : data.Single() is ActionPointPreview);
+            var data = (GH_Structure<IGH_Goo>)fixture.Sinks[0].VolatileData;
+            return set
+                ? data.PathCount == 2 && data.Paths[0].CompareTo(new GH_Path(0, 0)) == 0 &&
+                    data.Paths[1].CompareTo(new GH_Path(0, 1)) == 0 && data.Branches[0].Count == 2 &&
+                    data.Branches[0].SequenceEqual(delivered.Take(2)) &&
+                    data.Branches[1].Single() is ActionPointPreview
+                : data.DataCount == 1 && data.AllData(false).Single() is ActionPointPreview;
         }
         bool PairingCurrent(IReadOnlyList<int> retained)
         {
             var mask = fixture.Sinks[2].VolatileData;
-            var paired = fixture.Sinks[3].VolatileData;
+            var paired = (GH_Structure<IGH_Goo>)fixture.Sinks[3].VolatileData;
             return mask.PathCount == 1 && mask.Paths[0].CompareTo(new GH_Path(0)) == 0 && mask.DataCount == input.Length &&
                 mask.AllData(false).Cast<GH_Boolean>().Select(value => value.Value)
                     .SequenceEqual(Enumerable.Range(0, input.Length).Select(retained.Contains)) &&
-                paired.PathCount == 1 && paired.Paths[0].CompareTo(new GH_Path(0)) == 0 &&
+                (set
+                    ? paired.PathCount == (retained.Count == 3 ? 2 : 1) &&
+                        paired.Paths[0].CompareTo(new GH_Path(0, 0)) == 0 && paired.Branches[0].Count == 2 &&
+                        (paired.PathCount == 1 || paired.Paths[1].CompareTo(new GH_Path(0, 1)) == 0 && paired.Branches[1].Count == 1)
+                    : paired.PathCount == 1 && paired.Paths[0].CompareTo(new GH_Path(0)) == 0) &&
                 paired.AllData(false).All(value => value is GH_String) &&
                 paired.AllData(false).Cast<GH_String>().Select(value => value.Value).SequenceEqual(retained.Select(i => "paired " + i));
         }
-        Check(DataCurrent() && PairingCurrent(expectedPositions),
+        Check(DataCurrent() && PairingCurrent(expectedMembers),
             "recovery publishes coherent typed D, original-shape B and correctly paired F with set=" + set);
         bool SelectedCurrent()
         {
-            var selected = fixture.Sinks[1].VolatileData.AllData(false).ToArray();
-            return selected.Length == 1 && (set
-                ? selected[0] is GH_String text && text.Value == "Group (keep) with 1 object"
-                : selected[0] is ActionPointPreview);
+            var selected = (GH_Structure<IGH_Goo>)fixture.Sinks[1].VolatileData;
+            return set
+                ? selected.PathCount == 1 && selected.Paths[0].CompareTo(new GH_Path(0, 0)) == 0 &&
+                    selected.DataCount == 2 && selected.Branches[0].SequenceEqual(delivered.Take(2))
+                : selected.DataCount == 1 && selected.AllData(false).Single() is ActionPointPreview;
         }
         int survivor = expectedPositions[0];
+        int[] selectedMembers = set ? new[] { 0, 1 } : new[] { survivor };
         fixture.Select(survivor);
-        await Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
+        await Ready(() => fixture.Sinks[1].VolatileData.DataCount == selectedMembers.Length);
         Check(SelectedCurrent() &&
-            DataCurrent() && PairingCurrent(expectedPositions) && ReferenceEquals(recovered, fixture.Result.Snapshot),
+            DataCurrent() && PairingCurrent(expectedMembers) && ReferenceEquals(recovered, fixture.Result.Snapshot),
             "selecting a recovered row publishes typed nonempty S and retains Filtered B/F and the same snapshot with set=" + set);
         fixture.Scope(PanelOutputScope.Selected);
-        await Ready(() => fixture.Sinks[3].VolatileData.DataCount == 1 && fixture.Values(3) == "paired " + survivor);
-        Check(DataCurrent() && SelectedCurrent() && PairingCurrent(new[] { survivor }) &&
+        await Ready(() => fixture.Sinks[3].VolatileData.DataCount == selectedMembers.Length &&
+            fixture.Values(3) == string.Join(",", selectedMembers.Select(i => "paired " + i)));
+        Check(DataCurrent() && SelectedCurrent() && PairingCurrent(selectedMembers) &&
             ReferenceEquals(recovered, fixture.Result.Snapshot),
-            "Selected scope binds recovered typed D/S and original-shape B/F to the selected representative with set=" + set);
+            "Selected scope binds recovered typed D/S, original-shape B and grouped F to every selected member with set=" + set);
     }
 
     private static void DumpSemanticDelivery(PanelHostFixture.Fixture fixture, NativeGroupFixture.VolatileSource producer,
