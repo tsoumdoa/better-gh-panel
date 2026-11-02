@@ -15,8 +15,8 @@ public sealed class OutputValuesChecks
         var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { CreateSet = true, SortMode = PanelSortMode.ValueDescending });
         var set = result.DisplaySet!;
         Assert.Equal(new[] { 1, 0 }, result.RowPositions);
-        Assert.Equal(0, set.Indices[0]);
-        Assert.Equal(1, set.Indices[1]);
+        Assert.Equal(0, set.MemberIndices[0]);
+        Assert.Equal(1, set.MemberIndices[1]);
         Assert.Equal(new[] { 0, 2, 3 }, set.Members[0]);
         Assert.Equal(new[] { 1, 4 }, set.ExpandMembers(snapshot, new[] { 1 }));
         Assert.Equal(Enumerable.Range(0, 5), set.AllMembers);

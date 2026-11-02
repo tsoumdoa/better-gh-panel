@@ -73,7 +73,8 @@ internal static class OutputValuesChecks
             component.Attributes.PerformLayout();
             RectangleF Bounds(string name) => (RectangleF)component.Attributes.GetType().GetField(name, Instance)!.GetValue(component.Attributes)!;
             var items = Bounds("_outItems"); var values = Bounds("_outValues"); var units = Bounds("_units");
-            Check(!items.IsEmpty && units.Right <= Bounds("_outLabel").Left && items.Right <= values.Left &&
+            Check(!items.IsEmpty && values.Right + 4 <= Bounds("_selectAll").Left && items.Right == values.Left &&
+                units.Width == 76 && Bounds("_trim").Width == 22 && Bounds("_outLabel").Left >= Bounds("_panel").Left + 14 &&
                 Bounds("_trim").Left >= Bounds("_panel").Left + 14 && values.Right <= Bounds("_panel").Right - 28,
                 "Items/Values fits minimum " + (half ? "Half" : "Full") + " layout with native grip and resize clearance");
         }
@@ -85,6 +86,75 @@ internal static class OutputValuesChecks
         Check(Paths(fixture, 3) == "{0},{1}", "Flattened set Items and F use {k}");
         await BranchSets(fixture);
         await TypedValues(fixture);
+        await FooterLayout(fixture, assembly);
+    }
+
+    private static async Task FooterLayout(PanelHostFixture.Fixture fixture, Assembly assembly)
+    {
+        var component = fixture.Component;
+        var attributes = component.Attributes;
+        using var canvas = new Grasshopper.GUI.Canvas.GH_Canvas { Document = fixture.Document, Size = new Size(1400, 700) };
+        _ = canvas.Handle;
+        canvas.Viewport.Size = canvas.Size;
+        canvas.Viewport.Target = System.Drawing.Point.Empty;
+        canvas.Viewport.Zoom = 1;
+        canvas.Viewport.ComputeProjection();
+        RectangleF Bounds(string name) => (RectangleF)attributes.GetType().GetField(name, Instance)!.GetValue(attributes)!;
+        void Render()
+        {
+            attributes.PerformLayout();
+            using var bitmap = new Bitmap(canvas.Width, canvas.Height);
+            using var graphics = Graphics.FromImage(bitmap);
+            canvas.Viewport.ApplyProjection(graphics);
+            PanelTestAdapter.Render(component, canvas, graphics);
+        }
+        async Task Query(PanelSearchMode mode)
+        {
+            var previous = fixture.Result;
+            fixture.Query(new PanelQueryOptions { DisplayFilterValue = mode != PanelSearchMode.Text, SearchMode = mode });
+            await fixture.Ready(() => !ReferenceEquals(previous, fixture.Result));
+            Render();
+        }
+        foreach (float width in new[] { 300f, 360f, 640f })
+        {
+            PanelTestAdapter.Resize(component, width, 220);
+            Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, "Full"));
+            await Query(PanelSearchMode.Text);
+            string[] controls = { "_trim", "_simplify", "_flatten", "_reverse", "_createSet", "_units", "_selectAll", "_statistics" };
+            var before = controls.Select(Bounds).ToArray();
+            await Query(PanelSearchMode.Length);
+            Check(controls.Select(Bounds).SequenceEqual(before), "Showing Out keeps existing footer controls fixed at width " + width);
+            Check(Bounds("_outValues").Right <= (width == 360 ? Bounds("_trim").Left : Bounds("_selectAll").Left) - 4,
+                "Readable segmented Out fits its footer row at width " + width);
+            var point = new PointF(Bounds("_outValues").X + 10, Bounds("_outValues").Y + 8);
+            var tooltip = (Grasshopper.GUI.GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(Grasshopper.GUI.GH_TooltipDisplayEventArgs),
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, System.Drawing.Point.Round(point) }, null)!;
+            attributes.SetupTooltip(point, tooltip);
+            Check(tooltip.Title == "Output: Items / Values", "Out tooltip survives upper-row statistics targeting at width " + width);
+        }
+        PanelTestAdapter.Resize(component, 300, 220);
+        Call(component, "SetPanelSplit", true);
+        foreach (string display in new[] { "Full", "Half" })
+        {
+            Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, display));
+            await Query(PanelSearchMode.Text);
+            await Query(PanelSearchMode.ListLength);
+            var pairedRows = (System.Collections.IDictionary)attributes.GetType().GetField("_pairedBranchRows", Instance)!.GetValue(attributes)!;
+            Check(!Bounds("_dataCaption").IsEmpty && !Bounds("_scrollLock").IsEmpty && pairedRows.Count > 0 &&
+                Bounds("_list").Height >= 17 && Bounds("_list").Bottom <= Bounds("_footer").Top,
+                "Minimum split " + display + " retains captions, relinking, paired branch content and a full data row");
+            foreach (bool expected in new[] { false, true })
+            {
+                var link = Bounds("_scrollLock");
+                var location = canvas.Viewport.ProjectPoint(new PointF(link.X + link.Width / 2, link.Y + link.Height / 2));
+                var click = new Grasshopper.GUI.GH_CanvasMouseEvent(canvas.Viewport,
+                    new System.Windows.Forms.MouseEventArgs(System.Windows.Forms.MouseButtons.Left, 1, (int)location.X, (int)location.Y, 0));
+                attributes.RespondToMouseDown(canvas, click);
+                Check((bool)attributes.GetType().GetField("_scrollLocked", Instance)!.GetValue(attributes)! == expected,
+                    "Minimum split " + display + " can unlink and relink scrolling");
+                Render();
+            }
+        }
     }
 
     private static void Archives(PanelHostFixture.Fixture fixture)

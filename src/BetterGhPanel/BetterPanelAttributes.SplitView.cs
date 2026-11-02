@@ -35,11 +35,8 @@ namespace BetterGhPanel
             _dataCaption = new RectangleF(_list.X, _list.Y - 2, middle - _list.X - 16, 14);
             _pairedCaption = new RectangleF(middle + 14, _dataCaption.Y, _dataCaption.Width, 14);
             _scrollLock = new RectangleF(middle - 10, _dataCaption.Y, 20, 14);
-            // Minimum Half keeps its value row by omitting pane captions above the two-row footer.
-            float captionHeight = PanelOwner.CanOutputValues && _panel.Height < 140 ? 0 : 14;
-            if (captionHeight == 0) _dataCaption = _pairedCaption = _scrollLock = RectangleF.Empty;
-            float height = Math.Max(RowHeight, _list.Height - captionHeight);
-            _list = new RectangleF(_list.X, _list.Y + captionHeight, middle - _list.X - 19, height);
+            float height = Math.Max(RowHeight, _list.Height - 14);
+            _list = new RectangleF(_list.X, _list.Y + 14, middle - _list.X - 19, height);
             _pairedList = new RectangleF(middle + 14, _list.Y, _list.Width, height);
             _track = _scrollLocked ? RectangleF.Empty : new RectangleF(middle - 18, _list.Y, 4, height);
             _trackHit = _scrollLocked ? RectangleF.Empty : new RectangleF(middle - 21, _list.Y, 8, height);
@@ -64,7 +61,6 @@ namespace BetterGhPanel
                     Text(graphics, "D|F", small, PanelTheme.Rgb(180, 185, 178), new RectangleF(_split.X + 3, _split.Y, _split.Width - 6, _split.Height), trim);
             }
             if (!PanelOwner.PanelSplit) return;
-            if (_dataCaption.IsEmpty) return;
             // Linking has nothing to act on while F does not match D.
             if (PanelOwner.CanSplit)
             using (var pen = new Pen(_scrollLocked ? Accent : Muted, 1))

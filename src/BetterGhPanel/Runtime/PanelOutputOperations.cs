@@ -60,7 +60,7 @@ namespace BetterGhPanel.Runtime
             else foreach (int representative in positions.OrderBy(value => value))
             {
                 var row = query.Snapshot.Rows[representative];
-                int k = set.Indices[representative];
+                int k = set.MemberIndices[representative];
                 var path = flatten ? new GH_Path(k) : paths[row.Path].AppendElement(k);
                 var branch = result.EnsurePath(path);
                 foreach (int member in set.Members[representative])

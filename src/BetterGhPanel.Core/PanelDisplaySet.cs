@@ -45,7 +45,7 @@ namespace BetterGhPanel.Core
     {
         internal PanelDisplaySetResult(Dictionary<int, PanelDisplayedValue> values, Dictionary<int, PanelSetOccurrences> occurrences,
             Dictionary<string, IReadOnlyList<string>> branchOccurrences, Dictionary<string, PanelSourceStatusCounts> branchSourceStatuses, bool isBranchSet,
-            Dictionary<int, IReadOnlyList<int>> members, Dictionary<int, int> indices,
+            Dictionary<int, IReadOnlyList<int>> members,
             Dictionary<string, IReadOnlyList<int>> branchMembers, Dictionary<string, int> branchIndices,
             Dictionary<int, int> memberIndices, List<int> allMembers)
         {
@@ -55,7 +55,6 @@ namespace BetterGhPanel.Core
             BranchOccurrences = new ReadOnlyDictionary<string, IReadOnlyList<string>>(branchOccurrences);
             BranchSourceStatuses = new ReadOnlyDictionary<string, PanelSourceStatusCounts>(branchSourceStatuses);
             Members = new ReadOnlyDictionary<int, IReadOnlyList<int>>(members);
-            Indices = new ReadOnlyDictionary<int, int>(indices);
             BranchMembers = new ReadOnlyDictionary<string, IReadOnlyList<int>>(branchMembers);
             BranchIndices = new ReadOnlyDictionary<string, int>(branchIndices);
             MemberIndices = new ReadOnlyDictionary<int, int>(memberIndices);
@@ -63,7 +62,6 @@ namespace BetterGhPanel.Core
         }
         public IReadOnlyDictionary<int, PanelDisplayedValue> Values { get; }
         public IReadOnlyDictionary<int, IReadOnlyList<int>> Members { get; }
-        public IReadOnlyDictionary<int, int> Indices { get; }
         public IReadOnlyDictionary<string, IReadOnlyList<int>> BranchMembers { get; }
         public IReadOnlyDictionary<string, int> BranchIndices { get; }
         public IReadOnlyDictionary<int, int> MemberIndices { get; }
@@ -105,7 +103,6 @@ namespace BetterGhPanel.Core
         private readonly Dictionary<int, PanelDisplayedValue> _values = new Dictionary<int, PanelDisplayedValue>();
         private readonly Dictionary<int, List<PanelSourceAddress>> _locations = new Dictionary<int, List<PanelSourceAddress>>();
         private readonly Dictionary<int, List<int>> _members = new Dictionary<int, List<int>>();
-        private readonly Dictionary<int, int> _indices = new Dictionary<int, int>();
         private readonly Dictionary<int, int> _memberIndices = new Dictionary<int, int>();
         private readonly List<int> _allMembers = new List<int>();
         private readonly Dictionary<string, List<int>> _branchMembers = new Dictionary<string, List<int>>(StringComparer.Ordinal);
@@ -165,11 +162,10 @@ namespace BetterGhPanel.Core
             {
                 _locations[first].Add(address);
                 _members[first].Add(position);
-                _memberIndices.Add(position, _indices[first]);
+                _memberIndices.Add(position, _memberIndices[first]);
                 _statuses[first] = _statuses[first].Add(row.Validity);
                 return false;
             }
-            _indices.Add(position, branch.Count);
             _memberIndices.Add(position, branch.Count);
             branch.Add(value.SemanticText, position);
             _values.Add(position, value);
@@ -200,7 +196,7 @@ namespace BetterGhPanel.Core
                 branchMembers.Add(pair.Key, _branchMembers[pair.Key].AsReadOnly());
             }
             yield return new PanelDisplaySetResult(_values, occurrences, branchOccurrences, _branchStatuses, IsBranchSet,
-                members, _indices, branchMembers, _branchIndices, _memberIndices, _allMembers);
+                members, branchMembers, _branchIndices, _memberIndices, _allMembers);
         }
     }
 }
