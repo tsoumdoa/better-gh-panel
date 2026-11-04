@@ -99,7 +99,7 @@ internal static class PanelTestAdapter
         var pair = operations.GetMethod("Pair", BindingFlags.Static | BindingFlags.NonPublic)!
             .Invoke(null, new object?[] { data, paired, sources, 0, false, false, false, null })!;
         return (Grasshopper.Kernel.Data.GH_Structure<Grasshopper.Kernel.Types.IGH_Goo>)pair.GetType()
-            .GetMethod("Output", PrivateInstance)!.Invoke(pair, new object?[] { query, query.RowPositions, query.BranchPaths, false, null })!;
+            .GetMethod("Output", PrivateInstance)!.Invoke(pair, new object?[] { query, query.RowPositions, query.BranchPaths, false, false, null, false })!;
     }
 
     internal static void Render(GH_Component component, GH_Canvas canvas, Graphics graphics) =>

@@ -21,11 +21,12 @@ namespace BetterGhPanel
         private Runtime.PanelPairedData? _pairViewData;
         private readonly List<PairedViewRow> _pairView = new List<PairedViewRow>();
         private int[] _pairItemOffsets = Array.Empty<int>(), _pairSuccessors = Array.Empty<int>();
-        private bool HasPairView => PanelOwner.PanelSplit && PanelOwner.PairedData != null;
+        private bool HasPairView => PanelOwner.PanelSplit && PanelOwner.PairedData?.HasUnequal == true;
         private IReadOnlyList<PairedViewRow> PairView(PanelQueryResult result)
         {
             if (ReferenceEquals(_pairViewResult, result) && ReferenceEquals(_pairViewData, PanelOwner.PairedData)) return _pairView;
             _pairViewResult = result; _pairViewData = PanelOwner.PairedData; _pairView.Clear();
+            if (PanelOwner.PairedData?.HasUnequal != true) return _pairView;
             var entries = new List<PairedViewRow>();
             void Flush()
             {
@@ -38,27 +39,13 @@ namespace BetterGhPanel
                     int end = i;
                     while (end + 1 < entries.Count && entries[end + 1].Item >= 0 &&
                         PanelOwner.PairedRow(result.RowPositions[entries[end + 1].Item]) == null) end++;
-                    int firstIndex = result.Snapshot.Rows[result.RowPositions[entries[i].Item]].OriginalIndex;
-                    int lastIndex = result.Snapshot.Rows[result.RowPositions[entries[end].Item]].OriginalIndex;
-                    entries[i].Label = "no F items for " + firstIndex + (end == i ? "" : "–" + lastIndex);
+                    entries[i].Label = end == i ? "no F item" : "no F items (" + (end - i + 1) + " rows)";
                     i = end;
                 }
-                _pairView.AddRange(entries);
-                var referenced = new HashSet<int>(entries.Where(entry => entry.Item >= 0)
-                    .Select(entry => PanelOwner.PairedData!.ItemAt(result.RowPositions[entry.Item]))
-                    .Where(item => item.HasValue).Select(item => item!.Value));
-                var set = result.DisplaySet;
-                var members = entries.Where(entry => entry.Item >= 0).SelectMany(entry => set == null
-                    ? new[] { result.RowPositions[entry.Item] } : set.IsBranchSet
-                    ? set.BranchMembers[path] : set.Members[result.RowPositions[entry.Item]]);
-                IEnumerable<string> paths = set?.IsBranchSet == true ? set.BranchOccurrences[path] : new[] { path };
-                foreach (var pair in PanelOwner.PairedData!.ScopedBranches(result.Snapshot, members, paths))
-                {
-                    if (!pair.Unequal) continue;
-                    var extras = Enumerable.Range(pair.PairedOffset, pair.Paired.ItemCount).Where(item => !referenced.Contains(item)).ToArray();
-                    for (int i = 0; i < extras.Length; i++)
-                        _pairView.Add(new PairedViewRow { Path = path, Extra = extras[i], Label = i == 0 ? "+" + extras.Length + " only in F" : "" });
-                }
+                // Item sets emit once per group, including nonrepresentative members.
+                // Branch sets use the list-length painter and never enter this index.
+                if (result.DisplaySet == null) AppendGroup(entries, result, path);
+                else foreach (var entry in entries) AppendGroup(new[] { entry }, result, path);
                 entries.Clear();
             }
             for (int offset = 0; offset < result.ViewIndex.Count; offset++)
@@ -79,6 +66,41 @@ namespace BetterGhPanel
                 _pairSuccessors[offset] = next;
             }
             return _pairView;
+        }
+        private void AppendGroup(IReadOnlyList<PairedViewRow> entries, PanelQueryResult result, string path)
+        {
+            var pairing = PanelOwner.PairedData!;
+            var set = result.DisplaySet;
+            var members = entries.Where(entry => entry.Item >= 0).SelectMany(entry => set == null
+                ? new[] { result.RowPositions[entry.Item] } : set.Members[result.RowPositions[entry.Item]]).ToArray();
+            var referenced = entries.Where(entry => entry.Item >= 0)
+                .Select(entry => (Entry: entry, Item: pairing.ItemAt(result.RowPositions[entry.Item])))
+                .Where(value => value.Item.HasValue).ToDictionary(value => value.Item!.Value, value => value.Entry);
+            bool sorted = PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder;
+            if (sorted) _pairView.AddRange(entries);
+            else foreach (var entry in entries.Where(entry => entry.Empty != null)) _pairView.Add(entry);
+            var hiddenNotes = new HashSet<PanelBranchPair>();
+            var extraNotes = new HashSet<PanelBranchPair>();
+            var missing = sorted ? Array.Empty<PairedViewRow>() : entries.Where(entry => entry.Item >= 0 && pairing.ItemAt(result.RowPositions[entry.Item]) == null).ToArray();
+            int missingIndex = 0;
+            foreach (var value in pairing.BranchItems(result.Snapshot, members, new[] { path },
+                Runtime.PanelPairedData.EmptyPartnersInScope(PanelOwner.Session.Options)))
+            {
+                if (referenced.TryGetValue(value.Item, out var entry))
+                {
+                    if (sorted) continue;
+                    while (missingIndex < missing.Length && missing[missingIndex].Item < entry.Item)
+                        _pairView.Add(missing[missingIndex++]);
+                    _pairView.Add(entry); continue;
+                }
+                var pair = pairing.PairAtPaired(value.Item);
+                bool onlyInF = value.Item - pair.PairedOffset >= pair.Data.ItemCount;
+                if (onlyInF) while (missingIndex < missing.Length) _pairView.Add(missing[missingIndex++]);
+                string label = onlyInF ? extraNotes.Add(pair) ? "+" + (pair.Paired.ItemCount - pair.Data.ItemCount) + " only in F" : ""
+                    : hiddenNotes.Add(pair) ? "paired with hidden D rows" : "";
+                _pairView.Add(new PairedViewRow { Path = path, Extra = value.Item, Label = label });
+            }
+            while (missingIndex < missing.Length) _pairView.Add(missing[missingIndex++]);
         }
         private int ViewCount(PanelQueryResult result) => HasPairView ? PairView(result).Count : result.ViewIndex.Count;
         private void ViewEntry(PanelQueryResult result, int offset, out int item, out string? empty, out int extra, out string label)
@@ -108,7 +130,7 @@ namespace BetterGhPanel
         }
         private void DrawPairedHeading(Graphics graphics, string path, RectangleF bounds, Font small, Font mono, StringFormat trim)
         {
-            var heading = PanelOwner.PairedData!.Headings[path];
+            var heading = PanelOwner.PairedData!.Heading(path, Runtime.PanelPairedData.EmptyPartnersInScope(PanelOwner.Session.Options));
             string count = heading.Count;
             float countWidth = graphics.MeasureString(count, small).Width + 6;
             float badgeWidth = heading.Unequal ? graphics.MeasureString(heading.DataCount, small).Width + 10 : 0;

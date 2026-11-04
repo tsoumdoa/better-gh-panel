@@ -19,7 +19,7 @@ namespace BetterGhPanel.Core
     public static class PanelPairing
     {
         public static string? Diagnose(IReadOnlyList<PanelBranch> data, IReadOnlyList<PanelBranch> paired) =>
-            data.Count == paired.Count ? null : $"F has {paired.Count} branches, D has {data.Count}.";
+            data.Count == paired.Count ? null : $"F has {paired.Count} {(paired.Count == 1 ? "branch" : "branches")}, D has {data.Count}.";
 
         public static IReadOnlyList<PanelBranchPair> Match(IReadOnlyList<PanelBranch> data, IReadOnlyList<PanelBranch> paired)
         {

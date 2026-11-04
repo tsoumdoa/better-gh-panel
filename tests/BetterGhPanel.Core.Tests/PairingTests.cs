@@ -11,7 +11,7 @@ public sealed class PairingTests
         var data = new[] { new PanelBranch("{0}", 12), new PanelBranch("{1}", 0) };
         Assert.Null(PanelPairing.Diagnose(data, new[] { new PanelBranch("{4}", 1), new PanelBranch("{5}", 20) }));
         Assert.Null(PanelPairing.Diagnose(Array.Empty<PanelBranch>(), Array.Empty<PanelBranch>()));
-        Assert.Equal("F has 1 branches, D has 2.", PanelPairing.Diagnose(data, new[] { data[0] }));
+        Assert.Equal("F has 1 branch, D has 2.", PanelPairing.Diagnose(data, new[] { data[0] }));
         Assert.Equal("F has 2 branches, D has 1.", PanelPairing.Diagnose(new[] { data[0] }, data));
         Assert.Throws<ArgumentException>(() => PanelPairing.Match(data, Array.Empty<PanelBranch>()));
     }

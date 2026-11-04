@@ -666,7 +666,7 @@ namespace BetterGhPanel
             bool grouped = list.Height >= BranchHeight + RowHeight;
             bool displayMetric = !paired && (PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null);
             bool showTypes = paired ? PanelOwner.PairedSnapshot?.TypeCounts.Count > 1 : displayMetric || result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
-            using var rowRenderer = new CanvasRowRenderer(g, result.Snapshot.Rows.Count, sorted);
+            using var rowRenderer = new CanvasRowRenderer(g, PanelOwner.PanelSplit ? Math.Max(result.Snapshot.Rows.Count, PanelOwner.PairedSnapshot?.Rows.Count ?? 0) : result.Snapshot.Rows.Count, sorted);
             if (!paired && PanelOwner.CreateSetTree) SizeSetColumn(g, rowRenderer, result);
             float setWidth = !paired && PanelOwner.CreateSetTree ? _setCountWidth : 0;
             // Grouped rows already show their path in the branch heading.
@@ -684,6 +684,24 @@ namespace BetterGhPanel
                     ViewEntry(result, scrollIndex, out int i, out string? emptyPath, out int extra, out string missingLabel);
                     if (extra >= 0)
                     {
+                        string extraPath = ViewPath(result, scrollIndex);
+                        if (grouped && extraPath != previousPath && result.Snapshot.BranchItemCounts[extraPath] > 0)
+                        {
+                            if (y + BranchHeight + RowHeight > list.Bottom) break;
+                            var headingBounds = new RectangleF(list.X, y, list.Width, BranchHeight);
+                            Fill(g, PanelTheme.Rgb(236, 241, 235), headingBounds);
+                            if (paired) DrawPairedHeading(g, extraPath, headingBounds, small, mono, trim);
+                            else
+                            {
+                                var count = CanvasStatistics.BranchCount(result, extraPath);
+                                float countWidth = Math.Min(list.Width / 2, g.MeasureString(count, small).Width + 6);
+                                Text(g, extraPath, mono, Accent, new RectangleF(list.X + 6, y, list.Width - countWidth - 18, BranchHeight), trim);
+                                Text(g, count, small, Muted, new RectangleF(list.Right - countWidth - 6, y, countWidth, BranchHeight), trim);
+                            }
+                            if (TargetPainted(g, headingBounds)) AddBranchHit(headingBounds, extraPath);
+                            y += BranchHeight;
+                            previousPath = extraPath;
+                        }
                         if (y + RowHeight > list.Bottom) break;
                         var spacer = new RectangleF(list.X, y, list.Width, RowHeight);
                         Fill(g, PanelTheme.Background, spacer);
@@ -1931,7 +1949,7 @@ namespace BetterGhPanel
                     if (_pairedList.Contains(point) && PanelOwner.PairedSnapshot != null)
                     {
                         var pairedRow = PanelOwner.PairedRow(hit.SourcePosition);
-                        e.Title = "F · " + row.Path + " [" + rowNumber + "]";
+                        e.Title = "F · " + (pairedRow?.Path ?? PanelOwner.PairedData!.BranchAt(hit.SourcePosition).Paired.Path) + " [" + (pairedRow?.OriginalIndex ?? rowNumber) + "]";
                         e.Text = pairedRow?.TypeName ?? "No F item";
                         e.Description = PanelTextPreview.ForTooltip(pairedRow == null ? "" : PairedDisplayValue(pairedRow)) + "\nClick to select the shared D / F row · double-click to clear";
                         return;

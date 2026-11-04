@@ -112,7 +112,7 @@ Connect matching data to the optional **F** input and click **D|F** in the heade
 - **Linked scrolling** (the chain link between the pane captions) moves both panes with one scrollbar. Unlink it to scroll each pane on its own; selecting a row brings its partner into view, and relinking snaps F back to D.
 - Copying and **View full value** from the F pane use F's raw values, unconverted.
 - F must have **the same number of branches as D**, before tree tools. All identical paths pair first; remaining branches pair in tree order. The F heading shows its own path when paired by order.
-- Items pair by index within each original branch pair. Missing F cells stay empty, with a label on the first row of each run; additional F items appear as muted rows beside blank D spacers. Extra rows are not selectable. An amber **D 12** badge beside F's count marks unequal lengths.
+- Items pair by index within each original branch pair. Missing F cells stay empty, with a label on the first row of each run; additional F items appear as muted rows beside blank D spacers. Only indices beyond the original D branch length are labelled **only in F**; retained values whose D rows are hidden carry **paired with hidden D rows**. These muted rows are not selectable. An amber **D 12** badge beside F's count marks unequal lengths.
 - When branch counts differ, the F pane explains the mismatch:
 
 ![F pane explaining the first mismatch between D and F](docs/images/panel-split-mismatch.png)
@@ -126,7 +126,7 @@ The **D|F** chip is hidden until F has data. Split view saves with the definitio
 | **D** | Matching **Items** (default) or displayed **Values**, in tree order. Set Items: all members in one branch per value; set Values: one list of unique values per source branch. |
 | **S** | Selected Items or Values. Selected sets include all members and retain D's group paths. Empty when nothing is selected. |
 | **B** | A True/False mask in the original D tree shape, including every member of kept or selected sets. |
-| **F** | Equal-length original branches: paired items in tree order. Unequal-length branches: the whole original F branch once whenever any D member is in scope (also for a retained empty D branch). Tree tools map it to D's destination path. Sets put the whole unequal F branch in every group containing a D member from that branch; equal branches keep member-level grouping. F always uses the same group paths as set Items, in both output modes, and keeps its original values. |
+| **F** | Raw paired items at D's transformed paths: equal branches follow item membership; an unequal branch emits its whole F branch once per destination group when any D member is in scope. An empty D branch's F partner is included only with no active search, type or path filter and no Create set (item or list-length); it follows D's destination even after merging or Flatten. Otherwise it is neither emitted nor shown, and is excluded from F heading totals. Sets use the same group paths as set Items in both output modes. |
 
 **Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. Values label the ports **D·V / S·V**. Without a set, numbers retain full precision in displayed units; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
 

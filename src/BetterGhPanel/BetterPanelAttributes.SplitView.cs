@@ -94,11 +94,17 @@ namespace BetterGhPanel
                     _captionPairedSnapshot = PanelOwner.PairedSnapshot;
                     _pairedBranchRows.Clear();
                     var types = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (string path in session.Result.BranchPaths)
+                    var result = session.Result;
+                    var set = result.DisplaySet;
+                    var membersByPath = (set?.AllMembers ?? result.RowPositions).GroupBy(position => result.Snapshot.Rows[position].Path)
+                        .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
+                    bool includeEmpty = Runtime.PanelPairedData.EmptyPartnersInScope(session.Options);
+                    foreach (string path in result.BranchPaths)
                     {
-                        var set = session.Result.DisplaySet;
                         var paths = set?.IsBranchSet == true ? set.BranchOccurrences[path] : new[] { path };
-                        var positions = paths.SelectMany(member => PanelOwner.PairedData!.BranchItems(member)).ToList();
+                        var positions = paths.SelectMany(memberPath => PanelOwner.PairedData!.BranchItems(result.Snapshot,
+                            membersByPath.TryGetValue(memberPath, out var matches) ? matches : Array.Empty<int>(),
+                            new[] { memberPath }, includeEmpty)).Select(value => value.Item).ToList();
                         foreach (int item in positions) types.Add(PanelOwner.PairedSnapshot.Rows[item].TypeName);
                         _pairedBranchRows.Add(path, positions.Take(5).ToList());
                     }

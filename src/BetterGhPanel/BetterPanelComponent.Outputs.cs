@@ -160,7 +160,7 @@ namespace BetterGhPanel
                 if (set == null && !OutputsValues && filtering && (session.Result.RowPositions.Count != _queryTree.DataCount || session.Result.BranchPaths.Count != _queryTree.PathCount))
                     CountOutputVisits(_queryTree.DataCount);
                 _filteredData = BuildDataOutput(_queryTree, query, query.RowPositions, query.BranchPaths, false);
-                _filteredPair = PairedData?.Output(query, query.RowPositions, query.BranchPaths, FlattenTree, CountOutputVisits);
+                _filteredPair = PairedData?.Output(query, query.RowPositions, query.BranchPaths, FlattenTree, PanelPairedData.EmptyPartnersInScope(session.Options), CountOutputVisits);
                 _filteredMask = null;
             }
             // Selection-only solutions reuse unchanged query outputs. A large
@@ -187,7 +187,7 @@ namespace BetterGhPanel
             var mask = !current || _inputTree == null ? new GH_Structure<GH_Boolean>() : OutputScope == PanelOutputScope.Filtered
                 ? _filteredMask! : PanelOutputOperations.Mask(_inputTree, _retainedSources, selectedMembers);
             var paired = !current || PairedData == null ? empty : OutputScope == PanelOutputScope.Filtered
-                ? _filteredPair ?? empty : PairedData.Output(query, selectedPositions, selectedBranches, FlattenTree, CountOutputVisits);
+                ? _filteredPair ?? empty : PairedData.Output(query, selectedPositions, selectedBranches, FlattenTree, PanelPairedData.EmptyPartnersInScope(session.Options), CountOutputVisits, selected: true);
             // Tree construction above only reads captured structures and managed
             // query data. Run the full freshness fence once, after all of it and
             // immediately before GH receives any output.
