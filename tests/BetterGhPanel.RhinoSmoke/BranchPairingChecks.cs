@@ -29,6 +29,7 @@ internal static class BranchPairingChecks
     }
     private static async Task Verify(Assembly assembly)
     {
+        await VerifySummaryFreshness(assembly);
         using var f = new PanelHostFixture.Fixture(assembly);
         var component = f.Component; var attributes = component.Attributes;
         Task Ready(Func<bool> condition) => f.Ready(() =>
@@ -536,6 +537,23 @@ internal static class BranchPairingChecks
         PanelTestAdapter.TreeTools(component, 0, true, false, false);
         await Ready(() => f.Result.Snapshot.Branches.Count == 1 && f.Values(3) == "f0-0,f0-1,f0-2,f1-0,f1-1");
         Render("mixed-flatten");
+        f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
+        for (int b = 0; b < 2; b++)
+        {
+            f.Source.PersistentData.Append(new GH_Integer(0), new GH_Path(b));
+            f.Source.PersistentData.Append(new GH_Integer(1), new GH_Path(b));
+            f.Paired.PersistentData.EnsurePath(new GH_Path(b));
+        }
+        f.Paired.PersistentData.Append(new GH_String("b0"), new GH_Path(1));
+        PanelTestAdapter.TreeTools(component, 0, true, true, false);
+        f.Query(new PanelQueryOptions { Search = "> 0" }); f.Solve();
+        await Ready(() => f.Result.RowPositions.Count == 2 && f.Values(3) == "b0"); Render();
+        var splitMissing = ((IEnumerable)Call(attributes, "PairView", f.Result)!).Cast<object>().ToArray();
+        Check(splitMissing.Length == 3 && Field<int>(splitMissing[0], "Item") >= 0 &&
+            Field<int>(splitMissing[1], "Extra") == 0 && Field<int>(splitMissing[2], "Item") >= 0 &&
+            splitMissing.Select(row => Field<string>(row, "Label")).SequenceEqual(new[]
+                { "no F item", "paired with hidden D rows", "no F item" }),
+            "Flatten plus Reverse labels each missing-F run separated by a hidden partner independently");
         PanelTestAdapter.TreeTools(component, 0, false, false, false);
         f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
         for (int i = 0; i < 12; i++)
@@ -556,5 +574,51 @@ internal static class BranchPairingChecks
         Check(Property<string>(component, "PairedError") == "F has 4 branches, D has 3." &&
             !Property<bool>(component, "CanSplit") && f.Sinks[3].VolatileData.PathCount == 0,
             "Only branch count mismatch blocks pairing, clears F output and publishes the port warning");
+    }
+
+    private static async Task VerifySummaryFreshness(Assembly assembly)
+    {
+        using var f = new PanelHostFixture.Fixture(assembly);
+        var component = f.Component;
+        f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
+        for (int i = 0; i < 2; i++)
+        {
+            f.Source.PersistentData.Append(new GH_Integer(i), new GH_Path(0));
+            f.Paired.PersistentData.Append(new GH_String("f" + i), new GH_Path(0));
+        }
+        PanelTestAdapter.TreeTools(component, 0, false, false, false, true);
+        f.Query(new PanelQueryOptions { CreateSet = true }); f.Solve();
+        await f.Ready(() => f.Values(3) == "f0,f1" && Property<bool>(component, "PairedSummaryCurrent"));
+        var pairing = Property<object>(component, "PairedData");
+        var oldSummary = Property<PanelQueryResult>(pairing, "SummaryResult");
+        Check(f.Result.RowPositions.Count == 2 && (string)Call(pairing, "HeadingCount", "{0}", false)! == "2 items",
+            "Freshness regression starts with two item sets and a published F summary");
+        bool? currentBeforeRebuild = null;
+        var changed = f.Session.GetType().GetEvent("ResultChanged")!;
+        EventHandler onResult = (_, __) => currentBeforeRebuild = Property<bool>(component, "PairedSummaryCurrent");
+        changed.AddEventHandler(f.Session, onResult);
+        try
+        {
+            f.Query(new PanelQueryOptions { CreateSet = true, SearchMode = PanelSearchMode.Regex, Search = "^1$" });
+            Check(Property<bool>(f.Session, "IsBusy"), "Regex query remains asynchronous before its UI callback");
+            // Exercise a busy publication without committing trees through the final fence.
+            Call(component, "PublishOutputs", null!, (Func<bool>)(() => false));
+            Check(Field<PanelQueryOptions>(component, "_outputOptions").Search == "^1$" &&
+                ReferenceEquals(oldSummary, Property<PanelQueryResult>(pairing, "SummaryResult")) &&
+                !Property<bool>(component, "PairedSummaryCurrent"),
+                "Busy publication updates output options but leaves the old F summaries stale");
+            await f.Ready(() => f.Values(3) == "f1" && Property<bool>(component, "PairedSummaryCurrent"));
+        }
+        finally { changed.RemoveEventHandler(f.Session, onResult); }
+        Check(currentBeforeRebuild == false && f.Result.RowPositions.Count == 1 &&
+            (string)Call(pairing, "HeadingCount", "{0}", false)! == "1 of 2 items",
+            "Completed regex keeps the old heading pending until summaries rebuild to one of two items");
+        var filteredSummary = Property<PanelQueryResult>(pairing, "SummaryResult");
+        f.Query(new PanelQueryOptions { CreateSet = true, SearchMode = PanelSearchMode.Regex, Search = "^1$",
+            SortMode = PanelSortMode.ValueDescending });
+        await f.Ready(() => !ReferenceEquals(filteredSummary, f.Result));
+        Check(Property<bool>(component, "PairedSummaryCurrent") &&
+            ReferenceEquals(filteredSummary, Property<PanelQueryResult>(pairing, "SummaryResult")),
+            "Sort-only results reuse published F summaries with unchanged membership");
     }
 }

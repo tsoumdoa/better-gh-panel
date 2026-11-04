@@ -45,8 +45,10 @@ namespace BetterGhPanel
         internal PanelSnapshot? PairedSnapshot { get; private set; }
         internal string? PairedError => _pairedError;
         internal bool CanSplit => _pairedInputPresent && PairedData != null && _pairedError == null && Session.HasCurrentResult;
-        internal bool PairedSummaryCurrent => PairedData?.SummaryResult is PanelQueryResult summary &&
-            ReferenceEquals(summary.Snapshot, Session.Snapshot) && _outputOptions != null && PanelQueryPolicy.SameOutputFilter(_outputOptions, Session.Options);
+        private PanelQueryOptions? _pairedSummaryOptions;
+        internal bool PairedSummaryCurrent => Session.HasCurrentResult && PairedData?.SummaryResult is PanelQueryResult summary &&
+            ReferenceEquals(summary.Snapshot, Session.Snapshot) && _pairedSummaryOptions != null &&
+            PanelQueryPolicy.SameOutputFilter(_pairedSummaryOptions, Session.Options);
         private long _selectionVersion, _publishedSelectionVersion;
         private PanelOutputScope _publishedScope;
         private PanelOutputValues _publishedValues;
@@ -128,6 +130,7 @@ namespace BetterGhPanel
             _pairedError = null;
             PairedSnapshot = null;
             PairedData = null;
+            _pairedSummaryOptions = null;
             _pairedSourceItems = Array.Empty<IGH_Goo?>();
             _pairedMeasurementSources = Array.Empty<CapturedMeasurementSource?>();
             _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
@@ -176,6 +179,9 @@ namespace BetterGhPanel
                     CountOutputVisits(_queryTree.DataCount);
                 _filteredData = BuildDataOutput(_queryTree, query, query.RowPositions, query.BranchPaths, false);
                 _filteredPair = PairedData?.Output(query, query.RowPositions, query.BranchPaths, FlattenTree, PanelPairedData.EmptyPartnersInScope(session.Options), CountOutputVisits);
+                // Busy publications advance _outputOptions without rebuilding summaries.
+                // Retain their own filter identity, allowing unchanged sort-only reuse.
+                _pairedSummaryOptions = session.Options;
                 _filteredMask = null;
             }
             // Selection-only solutions reuse unchanged query outputs. A large

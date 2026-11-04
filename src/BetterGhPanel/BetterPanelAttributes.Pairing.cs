@@ -32,16 +32,6 @@ namespace BetterGhPanel
             {
                 if (entries.Count == 0) return;
                 string path = entries[0].Path;
-                // Missing-cell runs are presentation runs, including sorted/filtered views.
-                for (int i = 0; i < entries.Count; i++)
-                {
-                    if (entries[i].Item < 0 || PanelOwner.PairedRow(result.RowPositions[entries[i].Item]) != null) continue;
-                    int end = i;
-                    while (end + 1 < entries.Count && entries[end + 1].Item >= 0 &&
-                        PanelOwner.PairedRow(result.RowPositions[entries[end + 1].Item]) == null) end++;
-                    entries[i].Label = end == i ? "no F item" : "no F items (" + (end - i + 1) + " rows)";
-                    i = end;
-                }
                 AppendGroup(entries, result, path);
                 entries.Clear();
             }
@@ -53,6 +43,17 @@ namespace BetterGhPanel
                 entries.Add(new PairedViewRow { Item = item, Empty = empty, Path = path });
             }
             Flush();
+            // Label final presentation runs after hidden partners and spacers split them.
+            for (int i = 0; i < _pairView.Count; i++)
+            {
+                var entry = _pairView[i];
+                if (entry.Item < 0 || PanelOwner.PairedRow(result.RowPositions[entry.Item]) != null) continue;
+                int end = i;
+                while (end + 1 < _pairView.Count && _pairView[end + 1].Path == entry.Path && _pairView[end + 1].Item >= 0 &&
+                    PanelOwner.PairedRow(result.RowPositions[_pairView[end + 1].Item]) == null) end++;
+                entry.Label = end == i ? "no F item" : "no F items (" + (end - i + 1) + " rows)";
+                i = end;
+            }
             // Hidden-partner notes follow contiguous presentation runs, just like missing F cells.
             PanelBranchPair? previousHidden = null;
             foreach (var entry in _pairView)
