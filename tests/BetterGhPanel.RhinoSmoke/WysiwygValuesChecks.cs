@@ -59,7 +59,7 @@ internal static class WysiwygValuesChecks
         using var canvas = new GH_Canvas { Document = fixture.Document, Size = new Size(1600, 820) };
         _ = canvas.Handle;
         canvas.Viewport.Size = canvas.Size; canvas.Viewport.Target = System.Drawing.Point.Empty;
-        canvas.Viewport.Zoom = 1.5f; canvas.Viewport.ComputeProjection();
+        canvas.Viewport.Zoom = 1f; canvas.Viewport.ComputeProjection();
         var visible = canvas.Viewport.VisibleRegion;
         attributes.Pivot = new PointF(visible.Left + 45, visible.Top + 45);
         PanelTestAdapter.Resize(component, 620, 360); attributes.PerformLayout();
@@ -69,7 +69,7 @@ internal static class WysiwygValuesChecks
         {
             using var bitmap = new Bitmap(canvas.Width, canvas.Height);
             using var graphics = Graphics.FromImage(bitmap);
-            graphics.Clear(Color.FromArgb(238, 238, 238));
+            graphics.Clear(GH_Skin.canvas_back);
             canvas.Viewport.ApplyProjection(graphics);
             PanelTestAdapter.Render(component, canvas, graphics);
             if (tooltip != null)
@@ -84,16 +84,39 @@ internal static class WysiwygValuesChecks
             }
             if (name != null) { string file = Path.Combine(output, name + ".png"); bitmap.Save(file, ImageFormat.Png); Console.WriteLine("IMAGE " + file); }
         }
+        void Capture(string name, GH_TooltipDisplayEventArgs? tip = null)
+        {
+            Color previous = GH_Skin.canvas_back;
+            try
+            {
+                foreach (bool dark in new[] { false, true })
+                {
+                    GH_Skin.canvas_back = dark ? Color.FromArgb(35, 38, 36) : Color.FromArgb(238, 238, 238);
+                    Render(name + (dark ? "-dark" : "-light"), tip);
+                }
+            }
+            finally { GH_Skin.canvas_back = previous; }
+        }
         Render();
         var tooltip = PanelTestAdapter.Tooltip(component, canvas, 0);
         Check(tooltip.Description.Contains("Shown 1300.00") && tooltip.Description.Contains("raw 1263.4718") && tooltip.Description.Contains("rounded up by 50"),
             "Rounded Length native tooltip exposes raw metric and rounding reason");
-        Render("rounded-length-raw-tooltip", tooltip);
-        Render("out-values-as-shown");
+        Check(tooltip.Description.Split(new[] { "Shown " }, StringSplitOptions.None).Length == 2 &&
+            tooltip.Description.Split('\n').Contains("Shown 1300.00 mm · raw 1263.4718 mm · rounded up by 50"), "Raw tooltip adds exactly one rounding line");
+        Check(!tooltip.Description.Contains("Geometry · length:") && !tooltip.Description.Contains("Ln · L") &&
+            tooltip.Description.Contains("Length: 1300.00 mm") && tooltip.Description.Contains("Degree: 1"),
+            "Raw tooltip keeps the main labeled geometry details without repeated compact summaries");
+        Capture("rounded-length-raw-tooltip", tooltip);
+        fixture.ClearSelection();
+        PanelTestAdapter.Resize(component, 560, 360); attributes.PerformLayout(); Render();
+        Check(!Field<bool>(attributes, "_singleLineFooter") && Field<RectangleF>(attributes, "_outValues").Right < Field<RectangleF>(attributes, "_selectAll").Left,
+            "560px Values footer reserves separate status and Units rows");
+        Capture("footer-560-values");
+        fixture.SelectAt(0); Render();
         var heading = Field<IEnumerable>(attributes, "_branchHits").Cast<object>().First();
         var bounds = Property<RectangleF>(heading, "Bounds");
         Call(attributes, "UpdateHover", canvas, new PointF(bounds.X + 20, bounds.Y + bounds.Height / 2));
-        Render("branch-copy-hover");
+        Capture("branch-copy-hover");
         var clipboard = Forms.Clipboard.GetDataObject();
         try
         {
@@ -103,14 +126,12 @@ internal static class WysiwygValuesChecks
             Check(Forms.Clipboard.GetText() == "{0;2;52}" && fixture.SelectedCount == 1, "Heading glyph copies the exact path without changing selection");
             Render();
             PanelTestAdapter.CanvasClick(canvas, new PointF(bounds.X + 20, bounds.Y + bounds.Height / 2), Forms.MouseButtons.Right);
-            Render("branch-heading-menu");
+            Capture("branch-heading-menu");
             Check(Field<Array>(attributes, "_rowMenuActions").Length == 5, "Heading menu includes selected paths and branch-only filtering");
             Call(attributes, "CloseRowMenu"); Render();
             var row = PanelTestAdapter.RowBounds(component, 0);
-            var location = canvas.Viewport.ProjectPoint(new PointF(row.X + 80, row.Y + row.Height / 2));
-            var click = new GH_CanvasMouseEvent(canvas.Viewport, new Forms.MouseEventArgs(Forms.MouseButtons.Right, 1, (int)location.X, (int)location.Y, 0));
-            attributes.RespondToMouseDown(canvas, click);
-            Render("row-address-table-menu");
+            PanelTestAdapter.CanvasClick(canvas, new PointF(row.X + 80, row.Y + row.Height / 2), Forms.MouseButtons.Right);
+            Capture("row-address-table-menu");
             Check(Field<Array>(attributes, "_rowMenuActions").Cast<object>().Any(action => Property<object>(action, "Action").ToString() == "CopyTable"),
                 "Native row menu contains Copy as table");
             Call(attributes, "CloseRowMenu");
@@ -143,7 +164,29 @@ internal static class WysiwygValuesChecks
         Check(fixture.Source.PersistentData.AllData(false).OfType<GH_Number>().First().Value == 4.4999999, "Numeric Items round to explicit decimals while preserving upstream input");
 
         fixture.Source.PersistentData.Clear();
+        fixture.Source.PersistentData.Append(new GH_Number(double.MaxValue), path); fixture.Solve();
+        Call(component, "SetUnits", PanelUnitConversion.MetersToMillimeters, 2, (double?)0);
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 1 && fixture.Sinks[0].VolatileData.AllData(false).Single() == null);
+        Check(PanelValuePresentation.FormatDisplay(fixture.Result.Snapshot.Rows[0], PanelUnitConversion.MetersToMillimeters, 2) == "unavailable" &&
+            fixture.Result.Statistics.NumericCount == 0, "Final conversion overflow is unavailable in rows, numeric Items and Stats");
+        Call(component, "SetTreeOperations", 0, false, false, false, true);
+        Call(component, "SetOutputValues", PanelOutputValues.Values);
+        await fixture.Ready(() => fixture.Result.DisplaySet != null && fixture.Sinks[0].VolatileData.DataCount == 1 && fixture.Sinks[0].VolatileData.AllData(false).Single() == null);
+        Check(fixture.Result.DisplaySet!.Values[0].Unavailable && fixture.Result.Statistics.ScalarCount == 0,
+            "Final conversion overflow remains a null slot through Create set Values");
+        Call(component, "SetOutputValues", PanelOutputValues.Items);
+        Call(component, "SetTreeOperations", 0, false, false, false, false);
+        fixture.Query(new PanelQueryOptions { DecimalPlaces = 2 });
+        Call(component, "SetUnits", PanelUnitConversion.None, 2, (double?)0);
+        fixture.Source.PersistentData.Clear();
+        fixture.Source.PersistentData.Append(new GH_Integer(42), path); fixture.Solve();
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).FirstOrDefault() is GH_Integer);
+        Check(fixture.Result.Snapshot.Rows[0].TypeName == "Integer", "Explicit decimals retain Integer goo and its type filter identity");
+        options = Property<PanelQueryOptions>(fixture.Session, "Options"); options.TypeName = "Integer"; fixture.Query(options);
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 1);
+        fixture.Source.PersistentData.Clear();
         fixture.Source.PersistentData.Append(new GH_Number(-0.0), path); fixture.Solve();
+        fixture.Query(new PanelQueryOptions());
         Call(component, "SetUnits", PanelUnitConversion.None, PanelUnits.AutomaticDecimals, (double?)0);
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).OfType<GH_Number>().FirstOrDefault()?.Value == 0);
         Check(BitConverter.DoubleToInt64Bits(fixture.Sinks[0].VolatileData.AllData(false).OfType<GH_Number>().First().Value) == 0,
@@ -152,12 +195,48 @@ internal static class WysiwygValuesChecks
         fixture.Source.PersistentData.Append(new GH_Number(1), path);
         fixture.Source.PersistentData.EnsurePath(new GH_Path(0, 3, 52));
         for (int b = 4; b < 10; b++) for (int i = 0; i < 3; i++)
-            fixture.Source.PersistentData.Append(b == 4 && i == 0 ? null : new GH_Number(b == 4 && i == 1 ? double.NaN : 10 + i), new GH_Path(0, b, 52));
+            fixture.Source.PersistentData.Append(b == 4 && i == 0 ? null : b == 4 && i == 2 ? new GH_ObjectWrapper(new object()) : new GH_Number(b == 4 && i == 1 ? double.NaN : 10 + i), new GH_Path(0, b, 52));
         options = new PanelQueryOptions { DecimalPlaces = 2 };
         fixture.Query(options); fixture.Solve();
         await fixture.Ready(() => fixture.Result.Warnings.OutlierBranches == 2);
-        attributes.PerformLayout(); Render("data-warnings-amber-counts");
+        attributes.PerformLayout(); Render(); Capture("data-warnings-amber-counts");
         Check(fixture.Result.Warnings.MajorityLength == 3 && fixture.Result.Warnings.NullCount == 1 && fixture.Result.Warnings.InvalidCount == 1,
             "Native warning strip includes null, invalid and empty-branch length outliers");
+        Call(component, "SetTreeOperations", 0, false, true, false, false);
+        Call(component, "SetUnits", PanelUnitConversion.MillimetersToMeters, 2, (double?)0);
+        await fixture.Ready(() => fixture.Result.Warnings.UnverifiedCount == 1);
+        foreach (int kind in new[] { 0, 1, 2, 3 })
+        {
+            var restricted = Property<PanelQueryOptions>(fixture.Session, "Options");
+            restricted.SearchMode = PanelSearchMode.Regex; restricted.Search = "no matches";
+            restricted.TypeName = "Integer"; restricted.OnlyInvalid = true; restricted.BranchPath = "{99}";
+            fixture.Query(restricted);
+            await fixture.Ready(() => fixture.Result.RowPositions.Count == 0);
+            attributes.PerformLayout(); Render();
+            var hits = Field<System.Collections.Generic.List<(RectangleF Bounds, int Kind)>>(attributes, "_warningHits");
+            var warning = hits.Single(hit => hit.Kind == kind);
+            fixture.Document.UndoServer.Clear();
+            PanelTestAdapter.CanvasClick(canvas, new PointF(warning.Bounds.X + warning.Bounds.Width / 2, warning.Bounds.Y + 8));
+            await fixture.Ready(() => kind == 3 ? fixture.Result.BranchPaths.Count == 2 : fixture.Result.RowPositions.Count == 1);
+            var jumped = Property<PanelQueryOptions>(fixture.Session, "Options");
+            Check(jumped.TypeName == null && !jumped.OnlyInvalid && jumped.BranchPath == null && jumped.Search != "no matches" &&
+                jumped.DecimalPlaces == 2 && Property<PanelUnitConversion>(component, "UnitConversion") == PanelUnitConversion.MillimetersToMeters &&
+                Property<bool>(component, "ReverseTree") && fixture.Document.UndoServer.UndoCount == 1,
+                "Warning jump clears restrictions, keeps units/tree tools, and records one Undo step: " + kind);
+            fixture.Document.UndoServer.PerformUndo();
+            await fixture.Ready(() => fixture.Result.RowPositions.Count == 0);
+            var restored = Property<PanelQueryOptions>(fixture.Session, "Options");
+            Check(restored.Search == "no matches" && restored.TypeName == "Integer" && restored.OnlyInvalid && restored.BranchPath == "{99}",
+                "One Undo restores all prior warning-click restrictions: " + kind);
+        }
+        fixture.Query(new PanelQueryOptions { DecimalPlaces = 2 });
+        await fixture.Ready(() => fixture.Result.RowPositions.Count > 0);
+        PanelTestAdapter.Resize(component, 300, 220);
+        Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, "Half"));
+        attributes.PerformLayout(); Render();
+        Check(Field<float>(attributes, "_warningsHeight") == 0 && Field<RectangleF>(attributes, "_list").Bottom <= Field<RectangleF>(attributes, "_footer").Top &&
+            Field<System.Collections.Generic.List<(RectangleF Bounds, int Kind)>>(attributes, "_warningHits").Count == 0,
+            "Compact Half hides warnings and keeps rows above footer with no stale warning hit targets");
+        Capture("compact-half");
     }
 }

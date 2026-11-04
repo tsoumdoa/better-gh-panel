@@ -27,7 +27,12 @@ namespace BetterGhPanel.Runtime
                     // Invalid scalar goo can contain finite unset sentinels. Scaling
                     // those would turn an invalid input into an ordinary valid number.
                     var value = captured[position++];
-                    if (value.IsNumeric && value.IsValid && (transform || value.IsNegativeZero)) converted = new GH_Number(PanelUnits.Transform(value.NumericValue, conversion, roundUpFactor, decimals));
+                    if (value.IsNumeric && value.IsValid && (transform || value.IsNegativeZero) &&
+                        !(value.IsInteger && conversion == PanelUnitConversion.None && roundUpFactor == 0))
+                    {
+                        double number = PanelUnits.Transform(value.NumericValue, conversion, roundUpFactor, decimals);
+                        converted = double.IsNaN(number) || double.IsInfinity(number) ? null! : new GH_Number(number);
+                    }
                     result.Append(converted, path);
                 }
             }
@@ -55,11 +60,15 @@ namespace BetterGhPanel.Runtime
                     {
                         var number = (GH_Number)original;
                         if (!number.IsValid) { if (!ReferenceEquals(original, result)) return false; continue; }
+                        double expected = PanelUnits.Transform(number.Value, conversion, roundUpFactor, decimals);
+                        if (double.IsNaN(expected) || double.IsInfinity(expected)) { if (result != null) return false; continue; }
                         if (result?.GetType() != typeof(GH_Number) ||
-                            BitConverter.DoubleToInt64Bits(((GH_Number)result).Value) != BitConverter.DoubleToInt64Bits(PanelUnits.Transform(number.Value, conversion, roundUpFactor, decimals))) return false;
+                            BitConverter.DoubleToInt64Bits(((GH_Number)result).Value) != BitConverter.DoubleToInt64Bits(expected)) return false;
                     }
                     else if (original?.GetType() == typeof(GH_Integer))
                     {
+                        if (conversion == PanelUnitConversion.None && roundUpFactor == 0)
+                        { if (!ReferenceEquals(original, result)) return false; continue; }
                         var integer = (GH_Integer)original;
                         if (!integer.IsValid) { if (!ReferenceEquals(original, result)) return false; continue; }
                         if (result?.GetType() != typeof(GH_Number) ||

@@ -99,6 +99,7 @@ namespace BetterGhPanel.Core
                 }
             }
 
+            string? numericUnits = null;
             var numericCount = 0;
             var nullCount = 0;
             var invalidCount = 0;
@@ -138,7 +139,8 @@ namespace BetterGhPanel.Core
                     numeric = query.DisplayFilterValue
                         ? metric?.Kind == PanelPropertyKind.Number ? metric.Number : (double?)null
                         : HasFiniteNumber(row) ? PanelUnits.Transform(row.NumericValue!.Value, PanelUnitConversion.None, 0, query.DecimalPlaces) : (double?)null;
-                PanelText? text = projected != null ? projected.Number.HasValue ? (PanelText?)null : projected.SemanticText :
+                if (numeric.HasValue && (double.IsNaN(numeric.Value) || double.IsInfinity(numeric.Value))) numeric = null;
+                PanelText? text = projected != null ? projected.Number.HasValue || projected.Unavailable ? (PanelText?)null : projected.SemanticText :
                     row.StringValue != null ? new PanelText(row.StringValue) : (PanelText?)null;
                 Increment(typeCounts, projected == null ? row.TypeName : projected.Number.HasValue ? "Number" : "Text");
                 if (projected == null && row.IsNull) nullCount++;
@@ -171,7 +173,9 @@ namespace BetterGhPanel.Core
                         scalarCount++;
                     }
                 }
-                if (!numeric.HasValue) continue;
+                if (!numeric.HasValue || double.IsNaN(numeric.Value) || double.IsInfinity(numeric.Value)) continue;
+                string units = query.DisplayFilterValue ? PanelFilterValue.UnitSymbol(snapshot, row, query.SearchMode, measured) : PanelUnits.Symbol(snapshot.UnitConversion);
+                numericUnits = numericUnits == null ? units : numericUnits == units ? units : "";
                 var value = numeric.Value;
                 numericCount++;
                 minimum = Math.Min(minimum, value);
@@ -268,7 +272,7 @@ namespace BetterGhPanel.Core
                 invalidCount, numericCount == 0 ? (double?)null : minimum,
                 numericCount == 0 ? (double?)null : maximum, numericCount == 0 ? (double?)null : mean,
                 new ReadOnlyDictionary<string, int>(typeCounts), new ReadOnlyDictionary<string, int>(branchCounts),
-                Array.AsReadOnly(frequencies), scalarCount, unverifiedCount, filteredSourceStatuses);
+                Array.AsReadOnly(frequencies), scalarCount, unverifiedCount, filteredSourceStatuses, numericUnits ?? "");
             PanelDisplaySetResult? displaySet = null;
             if (set != null)
                 foreach (var step in set.Complete(work, cancellationToken))

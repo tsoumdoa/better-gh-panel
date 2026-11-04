@@ -438,8 +438,9 @@ namespace BetterGhPanel.Core
             int invalidCount, double? minimum, double? maximum, double? mean,
             IReadOnlyDictionary<string, int> typeCounts, IReadOnlyDictionary<string, int> branchItemCounts,
             IReadOnlyList<PanelValueFrequency> uniqueValues, int scalarCount, int unverifiedCount,
-            PanelSourceStatusCounts filteredSourceStatuses)
+            PanelSourceStatusCounts filteredSourceStatuses, string numericUnits = "")
         {
+            NumericUnits = numericUnits;
             ItemCount = itemCount;
             BranchCount = branchCount;
             NumericCount = numericCount;
@@ -465,6 +466,7 @@ namespace BetterGhPanel.Core
         public int UnverifiedCount { get; }
         /// <summary>Filtered input occurrences before Create set, independent of representatives.</summary>
         public PanelSourceStatusCounts FilteredSourceStatuses { get; }
+        public string NumericUnits { get; }
         public double? Minimum { get; }
         public double? Maximum { get; }
         public double? Mean { get; }

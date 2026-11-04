@@ -33,15 +33,17 @@ namespace BetterGhPanel.Core
             if (Kind == PanelPropertyKind.DateTime) return Date.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture);
             double value = PanelUnits.Transform(Converted(conversion), PanelUnitConversion.None, roundUpFactor, decimals);
             if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";
-            string suffix = "";
-            if (includeUnits && Power != 0)
-            {
-                bool converted = Power == -1 ? conversion == PanelUnitConversion.RadiansToDegrees :
-                    PanelUnits.ConvertGeometry(1, Power, Units, conversion) != 1;
-                suffix = converted ? PanelUnits.Symbol(conversion) : Power == -1 ? "rad" : Units + (Power == 2 ? "²" : Power == 3 ? "³" : "");
-            }
+            string suffix = includeUnits ? UnitSymbol(conversion) : "";
             return PanelUnits.Format(value, PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture) + (suffix.Length == 0 ? "" : " " + suffix);
         }
+        public string UnitSymbol(PanelUnitConversion conversion)
+        {
+            if (Power == 0) return "";
+            bool converted = Power == -1 ? conversion == PanelUnitConversion.RadiansToDegrees :
+                PanelUnits.ConvertGeometry(1, Power, Units, conversion) != 1;
+            return converted ? PanelUnits.Symbol(conversion) : Power == -1 ? "rad" : Units + (Power == 2 ? "²" : Power == 3 ? "³" : "");
+        }
+
     }
 
     public static class PanelProperties

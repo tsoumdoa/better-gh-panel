@@ -57,8 +57,7 @@ namespace BetterGhPanel.Core
                 decimals = Math.Min(MaximumDecimals, decimals);
                 try
                 {
-                    decimal number = (decimal)value;
-                    if ((double)number == value) value = (double)Math.Round(number, decimals, MidpointRounding.AwayFromZero);
+                    if (TryDecimal(value, out decimal number)) value = (double)Math.Round(number, decimals, MidpointRounding.AwayFromZero);
                     else value = Math.Round(value, decimals, MidpointRounding.AwayFromZero);
                 }
                 catch (OverflowException) { value = Math.Round(value, decimals, MidpointRounding.AwayFromZero); }
@@ -66,13 +65,17 @@ namespace BetterGhPanel.Core
             return value == 0 ? 0 : value;
         }
 
+        // A double-to-decimal cast retains only 15 significant digits on Framework.
+        // Parse its round-trip text so large integers and decimal midpoints survive.
+        private static bool TryDecimal(double value, out decimal number) => decimal.TryParse(
+            value.ToString("R", CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out number);
+
         private static double RoundUp(double value, double roundUpFactor)
         {
             if (!IsRoundingFactor(roundUpFactor) || double.IsNaN(value) || double.IsInfinity(value)) return value;
             try
             {
-                decimal number = (decimal)value, factor = (decimal)roundUpFactor;
-                if (factor > 0 && (double)number == value && (double)factor == roundUpFactor)
+                if (TryDecimal(value, out decimal number) && TryDecimal(roundUpFactor, out decimal factor) && factor > 0)
                 {
                     decimal remainder = number % factor;
                     return (double)(remainder == 0 ? number : number - remainder + (number > 0 ? factor : 0));
@@ -122,9 +125,11 @@ namespace BetterGhPanel.Core
             {
                 var converted = Transform(value, matchingConversion, roundUpFactor, decimals);
                 return double.IsInfinity(converted) ? "unavailable" : Format(converted,
-                    includeUnits ? matchingConversion : PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture);
+                    includeUnits ? matchingConversion : PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6");
             }
-            return Format(Transform(value, PanelUnitConversion.None, roundUpFactor, decimals), PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture) +
+            value = Transform(value, PanelUnitConversion.None, roundUpFactor, decimals);
+            if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";
+            return Format(value, PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6") +
                 (includeUnits ? " " + units + (power == 2 ? "²" : power == 3 ? "³" : "") : "");
         }
 
@@ -139,15 +144,17 @@ namespace BetterGhPanel.Core
                 ? conversion : PanelUnitConversion.None;
         }
 
-        // Format exactly the presented number. Automatic uses a round-trip representation.
+        // Automatic keeps the compact display without rounding the wire.
         public static string Format(double value, PanelUnitConversion conversion, int decimals,
-            IFormatProvider? culture = null, string automaticFormat = "R")
+            IFormatProvider? culture = null, string automaticFormat = "G12")
         {
             _ = culture; // Kept for source compatibility; panel numbers are always invariant.
             decimals = Math.Max(AutomaticDecimals, Math.Min(MaximumDecimals, decimals));
             value = Transform(value, PanelUnitConversion.None, 0, decimals);
-            string text = value.ToString(decimals < 0 ? automaticFormat : "F" + decimals,
-                CultureInfo.InvariantCulture);
+            if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";
+            string text = decimals >= 0 && TryDecimal(value, out decimal number)
+                ? Math.Round(number, decimals, MidpointRounding.AwayFromZero).ToString("F" + decimals, CultureInfo.InvariantCulture)
+                : value.ToString(decimals < 0 ? automaticFormat : "F" + decimals, CultureInfo.InvariantCulture);
             string symbol = Symbol(conversion);
             return symbol.Length == 0 ? text : text + " " + symbol;
         }

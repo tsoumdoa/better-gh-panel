@@ -67,7 +67,7 @@ Type in the search field: rows update as you type, **Enter** applies the query a
 | List length · per branch | `>= 3`, `= 0` |
 | Input-specific properties (below) | `>= 2`, `>= 2026-01-01` |
 
-Comparisons test the numbers shown, after unit conversion, factor rounding and any explicit decimal places. Automatic keeps full precision. All panel numbers use a decimal point in every locale. Pick a comparison mode to show its values, then click the search field to filter. Validity offers Valid/Invalid/Unverified/Null; Boolean properties offer True/False. **×** clears the filter, then the values. Combine searches with the **Types** filter (including *invalid only*) and **Paths** (`0;2;4` or `{0;2;4}`, including descendants). **Asc/Desc** sorts within each branch and adds Excel-style row numbers; wire outputs always keep tree order.
+Comparisons test the numbers shown, after unit conversion, factor rounding and any explicit decimal places. Automatic keeps full precision. Numbers now always use "." as the decimal separator, so saved text/regex filters written with "," need updating. Pick a comparison mode to show its values, then click the search field to filter. Validity offers Valid/Invalid/Unverified/Null; Boolean properties offer True/False. **×** clears the filter, then the values. Combine searches with the **Types** filter (including *invalid only*) and **Paths** (`0;2;4` or `{0;2;4}`, including descendants). **Asc/Desc** sorts within each branch and adds Excel-style row numbers; wire outputs always keep tree order.
 
 <details>
 <summary>Selectable properties by input type</summary>
@@ -128,7 +128,7 @@ The **D|F** chip is hidden until F has data. Split view saves with the definitio
 | **B** | A True/False mask in the original D tree shape, including every member of kept or selected sets. |
 | **F** | Paired items in tree order. Sets always group every member using the same paths as set Items, in both output modes. F keeps its original values. |
 
-**Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. A quiet **as shown** hint confirms Values output; the ports always read **D** and **S**. Numbers use the shown units and rounding; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
+**Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. The Values tooltip says "Sends the values exactly as shown"; the ports always read **D** and **S**. Numbers use the shown units and explicit rounding; Automatic keeps full wire precision except for compact displayed Create set Values; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
 
 Right-click the component → **B + F source** to make B and F follow the **Filtered results** (default) or only the **Selected rows**. In Selected mode the port labels read **B·S** and **F·S**. With Items output and nothing filtered or transformed, D forwards its input unchanged.
 

@@ -108,8 +108,14 @@ namespace BetterGhPanel.Core
                     Contains(row.Path, _text) || Contains(row.TypeName, _text);
             }
             if (!IsGeometry)
-                return PanelFilterValue.TryScalarValue(row, _mode, conversion, out double scalarValue) && _comparison(PanelUnits.Transform(scalarValue, PanelUnitConversion.None, _mode == PanelSearchMode.Value || _mode == PanelSearchMode.Text ? 0 : _roundUpFactor, _decimals));
-            return PanelFilterValue.TryGeometryValue(row, _mode, conversion, measured, out double geometryValue) && _comparison(PanelUnits.Transform(geometryValue, PanelUnitConversion.None, _roundUpFactor, _decimals));
+                return PanelFilterValue.TryScalarValue(row, _mode, conversion, out double scalarValue) && ComparePresented(scalarValue, _mode == PanelSearchMode.Value || _mode == PanelSearchMode.Text ? 0 : _roundUpFactor);
+            return PanelFilterValue.TryGeometryValue(row, _mode, conversion, measured, out double geometryValue) && ComparePresented(geometryValue, _roundUpFactor);
+        }
+
+        private bool ComparePresented(double value, double factor)
+        {
+            value = PanelUnits.Transform(value, PanelUnitConversion.None, factor, _decimals);
+            return IsFinite(value) && _comparison!(value);
         }
 
         private void RememberGroupMatch(PanelText value, bool match)

@@ -26,7 +26,7 @@ namespace BetterGhPanel
         private static Color Accent => PanelTheme.Accent;
         private RectangleF _panel, _search, _filter, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _footer;
         private RectangleF _trim, _simplify, _flatten, _reverse, _createSet, _units;
-        private const float OutputControlWidth = 140;
+        private const float OutputControlWidth = 92;
         private RectangleF _outLabel, _outItems, _outValues;
         private RectangleF _display, _preview, _move, _statistics, _selectAll, _close, _restore;
         // The visible scroll track stays slim; its grab target is wider.
@@ -366,7 +366,7 @@ namespace BetterGhPanel
                 _outItems = new RectangleF(_outLabel.Right, outputTop, 34, 16);
                 _outValues = new RectangleF(_outItems.Right, outputTop, 38, 16);
             }
-            _warningsHeight = PanelOwner.Session.HasCurrentResult && PanelOwner.Session.Result.Warnings.Any ? 17 : 0;
+            _warningsHeight = WarningStripHeight(footerHeight);
             // Keep interactive content beyond native grip picking's 12-unit
             // radius on both edges, including rows and the scroll track.
             _list = new RectangleF(_panel.X + 14, _panel.Y + 52 + _warningsHeight, _panel.Width - 33, Math.Max(RowHeight, _panel.Height - 56 - footerHeight - _warningsHeight));
@@ -457,10 +457,10 @@ namespace BetterGhPanel
                 }
                 // Minimum Half split needs a one-line footer to fit a value row below the pane captions.
                 bool singleLine = PanelOwner.PanelSplit && _panel.Height < 140 || _panel.Width >= 500 &&
-                    graphics.MeasureString(CanvasStatistics.Summary(result), small).Width <=
-                        _panel.Width - 357 - OutputControlWidth - 4;
+                    graphics.MeasureString(CanvasStatistics.Summary(result) + " · " + OutputLabel(result), small).Width <=
+                        _panel.Width - 357 - (PanelOwner.CanOutputValues ? OutputControlWidth + 4 : 0);
                 if (singleLine != _singleLineFooter || PanelOwner.CanOutputValues == _outLabel.IsEmpty ||
-                    _warningsHeight != (session.HasCurrentResult && result.Warnings.Any ? 17 : 0))
+                    _warningsHeight != WarningStripHeight(singleLine ? 20 : 36))
                 {
                     _singleLineFooter = singleLine;
                     Layout();
@@ -496,7 +496,7 @@ namespace BetterGhPanel
                     if (branchClear) DrawClear(graphics, _branchClear);
                     DrawJumpAction(graphics);
                     DrawResetAction(graphics);
-                    RenderWarnings(graphics, result, small, trim);
+                    RenderWarnings(graphics, result, small);
                     RenderRows(graphics, result, visibleRegion, font, small, mono, trim);
                     if (_scrollLocked) _pairedOffset = _offset;
                     if (PanelOwner.PanelSplit) RenderRows(graphics, result, visibleRegion, font, small, mono, trim, paired: true);
@@ -839,9 +839,9 @@ namespace BetterGhPanel
             TreeToolIcons.Draw(g, _reverse, TreeToolIcon.Reverse, PanelOwner.ReverseTree);
             TreeToolIcons.Draw(g, _createSet, TreeToolIcon.CreateSet, PanelOwner.CreateSetTree);
             string unitLabel = PanelOwner.UnitConversion == PanelUnitConversion.None ? "Units" : PanelUnits.Label(PanelOwner.UnitConversion).Replace(" → ", "→");
-            string precision = (PanelOwner.DecimalPlaces < 0 ? "" : $" · {PanelOwner.DecimalPlaces}dp") +
-                (PanelOwner.RoundUpFactor > 0 ? " · round " + PanelOwner.RoundUpFactor.ToString("G4", System.Globalization.CultureInfo.InvariantCulture) : "");
-            DropdownControl(g, _units, unitLabel + precision, small, trim,
+            string precision = (PanelOwner.RoundUpFactor > 0 ? "↑" + PanelOwner.RoundUpFactor.ToString("G4", System.Globalization.CultureInfo.InvariantCulture) : "") +
+                (PanelOwner.DecimalPlaces < 0 ? "" : (PanelOwner.RoundUpFactor > 0 ? " · " : "") + PanelOwner.DecimalPlaces + "dp");
+            DropdownControl(g, _units, precision.Length == 0 ? unitLabel : unitLabel == "Units" ? precision : unitLabel + " · " + precision, small, trim,
                 PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor > 0);
         }
 
@@ -870,11 +870,7 @@ namespace BetterGhPanel
             centered.Alignment = StringAlignment.Center;
             Text(g, "Items", small, PanelOwner.OutputsValues ? Muted : Accent, _outItems, centered);
             Text(g, "Values", small, PanelOwner.OutputsValues ? Accent : Muted, _outValues, centered);
-            if (PanelOwner.OutputsValues)
-            {
-                using var hint = new Font(small.FontFamily, 9, FontStyle.Regular, GraphicsUnit.Pixel);
-                Text(g, "as shown", hint, Muted, new RectangleF(_outValues.Right + 4, _outValues.Y, 44, 16), trim);
-            }
+
         }
 
         private string FooterStatus(PanelQueryResult result, bool singleLine)
@@ -1099,7 +1095,7 @@ namespace BetterGhPanel
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }
-                int index = _rowMenuBounds.Contains(point) ? (int)((point.Y - _rowMenuBounds.Y) / 20) : -1;
+                int index = _rowMenuBounds.Contains(point) ? RowMenuIndex(point) : -1;
                 // Capture identity before closing releases the menu choices.
                 PanelRowAction? action = index >= 0 && index < _rowMenuActions.Length ? _rowMenuActions[index].Action : (PanelRowAction?)null;
                 string? disabled = index >= 0 && index < _rowMenuActions.Length ? _rowMenuActions[index].DisabledReason : null;
@@ -1607,7 +1603,7 @@ namespace BetterGhPanel
                 _move.Contains(e.CanvasLocation) ? Cursors.SizeAll : setControl ? Cursors.Hand : Cursors.Default;
             if (PaintedViewIsCurrent() && _menu.Hover(e.CanvasLocation)) sender.Invalidate();
             int rowMenuHovered = _rowMenuResult != null && RowsAreCurrent(_rowMenuResult) && RowMenuTargetPainted(e.CanvasLocation)
-                ? (int)((e.CanvasY - _rowMenuBounds.Y) / 20) : -1;
+                ? RowMenuIndex(e.CanvasLocation) : -1;
             if (rowMenuHovered != _rowMenuHovered) { _rowMenuHovered = rowMenuHovered; sender.Invalidate(); }
             if (_resizing)
             {
@@ -1782,7 +1778,7 @@ namespace BetterGhPanel
             else if (_outLabel.Contains(point) || _outItems.Contains(point) || _outValues.Contains(point))
             {
                 e.Title = "Output: Items / Values";
-                e.Description = "Items sends the source data; Values sends the displayed property. Sets group all member items by set index. Values use the shown rounding; unavailable values are null.";
+                e.Description = _outValues.Contains(point) ? "Sends the values exactly as shown" : "Items sends the source data; Values sends the displayed property. Sets group all member items by set index; unavailable values are null.";
             }
             else if (_units.Contains(point))
             {
@@ -1934,10 +1930,12 @@ namespace BetterGhPanel
                             details += "\nMeasurement unavailable.";
                     }
                     else details = value;
-                    if (PanelOwner.Session.Options.DisplayFilterValue)
+                    string rounding = PanelFilterValue.RoundingDescription(snapshot, row, PanelOwner.Session.Options, geometry);
+                    // The rounding line already describes the shown metric. Retain
+                    // the labeled geometry details without repeating its compact summaries.
+                    if (PanelOwner.Session.Options.DisplayFilterValue && !(rounding.Length > 0 && geometry != null))
                         details = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode) + ": " + value + "\n" +
                             PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, PanelOwner.DecimalPlaces, geometry, roundUpFactor: PanelOwner.RoundUpFactor) + "\n" + details;
-                    string rounding = PanelFilterValue.RoundingDescription(snapshot, row, PanelOwner.Session.Options, geometry);
                     if (rounding.Length > 0) details = rounding + "\n" + details;
                     if (setOccurrences != null)
                         details += "\nFiltered source occurrences: " + CanvasStatistics.SourceStatuses(setOccurrences.SourceStatuses);

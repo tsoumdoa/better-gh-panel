@@ -57,10 +57,12 @@ namespace BetterGhPanel
             var actions = _rowMenuPendingActions;
             if (!_preservePaintedTargets)
                 _rowMenuActions = Enumerable.Repeat(new CanvasRowAction(PanelRowAction.Unpainted, "", ""), actions.Length).ToArray();
+            float top = _rowMenuBounds.Y;
             for (int i = 0; i < actions.Length; i++)
             {
-                var bounds = new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + i * CanvasRowActions.RowHeight,
-                    _rowMenuBounds.Width - 2, CanvasRowActions.RowHeight);
+                var bounds = new RectangleF(_rowMenuBounds.X + 1, top,
+                    _rowMenuBounds.Width - 2, actions[i].Action == PanelRowAction.Separator ? 5 : CanvasRowActions.RowHeight);
+                top += bounds.Height;
                 if (actions[i].Action == PanelRowAction.Separator)
                 {
                     using var separator = new Pen(PanelTheme.Rgb(224, 229, 222));
@@ -68,8 +70,18 @@ namespace BetterGhPanel
                     continue;
                 }
                 if (i == _rowMenuHovered) Fill(g, PanelTheme.Rgb(226, 236, 226), bounds);
-                Text(g, actions[i].Label, font, actions[i].Enabled ? Ink : PanelTheme.Rgb(176, 182, 178),
-                    new RectangleF(bounds.X + 8, bounds.Y, bounds.Width - 16, bounds.Height), trim);
+                string label = actions[i].Label;
+                int pathStart = actions[i].Action == PanelRowAction.CopyPath ? label.IndexOf("  {", StringComparison.Ordinal) : -1;
+                if (pathStart >= 0)
+                {
+                    using var mono = new Font(FontFamily.GenericMonospace, font.Size, font.Style, font.Unit);
+                    using var right = (StringFormat)trim.Clone();
+                    right.Alignment = StringAlignment.Far;
+                    Text(g, label.Substring(pathStart + 2), mono, Muted, new RectangleF(bounds.X + 80, bounds.Y, bounds.Width - 88, bounds.Height), right);
+                    label = label.Substring(0, pathStart);
+                }
+                Text(g, label, font, actions[i].Enabled ? Ink : PanelTheme.Rgb(176, 182, 178),
+                    new RectangleF(bounds.X + 8, bounds.Y, pathStart >= 0 ? 72 : bounds.Width - 16, bounds.Height), trim);
                 // Partial invalidations must not activate a row that has not
                 // actually been painted at its new position.
                 var target = new RectangleF(_rowMenuBounds.X, bounds.Y, _rowMenuBounds.Width, bounds.Height);
@@ -80,9 +92,21 @@ namespace BetterGhPanel
             _rowMenuPainted = _rowMenuActions.Any(action => action.Action != PanelRowAction.Unpainted);
         }
 
+        private int RowMenuIndex(PointF point)
+        {
+            float top = _rowMenuBounds.Y;
+            for (int i = 0; i < _rowMenuPendingActions.Length; i++)
+            {
+                float height = _rowMenuPendingActions[i].Action == PanelRowAction.Separator ? 5 : CanvasRowActions.RowHeight;
+                if (point.Y >= top && point.Y < top + height) return _rowMenuPendingActions[i].Action == PanelRowAction.Separator ? -1 : i;
+                top += height;
+            }
+            return -1;
+        }
+
         private bool RowMenuTargetPainted(PointF point)
         {
-            int index = (int)((point.Y - _rowMenuBounds.Y) / CanvasRowActions.RowHeight);
+            int index = RowMenuIndex(point);
             return _rowMenuPainted && _rowMenuBounds.Contains(point) && index >= 0 && index < _rowMenuActions.Length &&
                 _rowMenuActions[index].Action != PanelRowAction.Unpainted;
         }
@@ -185,7 +209,7 @@ namespace BetterGhPanel
                 _rowMenuAllActions.Skip(3).Concat(new[] { new CanvasRowAction(PanelRowAction.PreviousPage, "Previous actions…", "Return to the first branch actions.") }).ToArray();
             _rowMenuActions = Enumerable.Repeat(new CanvasRowAction(PanelRowAction.Unpainted, "", ""), _rowMenuPendingActions.Length).ToArray();
             float width = Math.Min(300, _panel.Width - 28);
-            float height = _rowMenuPendingActions.Length * CanvasRowActions.RowHeight;
+            float height = _rowMenuPendingActions.Sum(action => action.Action == PanelRowAction.Separator ? 5 : CanvasRowActions.RowHeight);
             _rowMenuBounds = new RectangleF(
                 Math.Max(_panel.Left + 14, Math.Min(_rowMenuAnchor.X, _panel.Right - width - 14)),
                 Math.Max(_panel.Top + HeaderHeight, Math.Min(_rowMenuAnchor.Y, _panel.Bottom - height - 6)), width, height);
@@ -306,7 +330,7 @@ namespace BetterGhPanel
         private bool RowActionTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             if (_rowMenuResult == null || !_rowMenuPainted || !_rowMenuBounds.Contains(point)) return false;
-            int index = (int)((point.Y - _rowMenuBounds.Y) / CanvasRowActions.RowHeight);
+            int index = RowMenuIndex(point);
             if (RowsAreCurrent(_rowMenuResult) && index >= 0 && index < _rowMenuActions.Length &&
                 _rowMenuActions[index].Action != PanelRowAction.Unpainted)
             {

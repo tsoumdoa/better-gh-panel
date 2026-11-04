@@ -20,6 +20,7 @@ namespace BetterGhPanel.Runtime
         private CapturedScalar(byte kind, double number, string? text, bool valid, double? rawNumber = null)
         { _rawNumber = rawNumber; _kind = kind; _number = number; _text = text; _valid = valid; }
         internal bool Available => _kind != None;
+        internal bool IsInteger => _kind == Integer;
         internal bool IsNumeric => _kind == Number || _kind == Integer;
         internal bool IsValid => _valid;
         internal double NumericValue => _number;
@@ -62,7 +63,10 @@ namespace BetterGhPanel.Runtime
                 var value = source[i];
                 if (!value.IsNumeric || !value.IsValid) continue;
                 double converted = PanelUnits.Transform(value._number, conversion, roundUpFactor, decimals);
-                result[i] = new CapturedScalar(Number, converted, null, RhinoMath.IsValidDouble(converted), PanelUnits.Convert(value._number, conversion));
+                // An overflowing conversion has no finite display-unit raw value.
+                // Retain the finite source as the witness of transformed unavailability.
+                double raw = double.IsNaN(converted) || double.IsInfinity(converted) ? value._number : PanelUnits.Convert(value._number, conversion);
+                result[i] = new CapturedScalar(value.IsInteger && conversion == PanelUnitConversion.None && roundUpFactor == 0 ? Integer : Number, converted, null, RhinoMath.IsValidDouble(converted), raw);
             }
             return result;
         }
@@ -70,7 +74,7 @@ namespace BetterGhPanel.Runtime
         internal string Format(out double? numeric, out string? text)
         {
             numeric = null; text = null;
-            if (_kind == Number) { numeric = _number; return _number.ToString("R", CultureInfo.InvariantCulture); }
+            if (_kind == Number) { numeric = _number; return _number.ToString("G12", CultureInfo.InvariantCulture); }
             if (_kind == Integer) { numeric = _number; return ((int)_number).ToString(CultureInfo.InvariantCulture); }
             if (_kind == Text) { text = _text; return _text ?? "<null text>"; }
             if (_kind == Boolean) return _number != 0 ? "True" : "False";

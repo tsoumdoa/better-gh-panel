@@ -26,7 +26,7 @@ namespace BetterGhPanel.UI
         {
             result.Statistics.BranchItemCounts.TryGetValue(path, out var matched);
             result.Snapshot.BranchItemCounts.TryGetValue(path, out var total);
-            return Count(matched, total) + " items";
+            return Count(matched, total) + (total == 1 ? " item" : " items");
         }
 
         internal static string SourceStatuses(PanelSourceStatusCounts counts) =>
@@ -58,17 +58,17 @@ namespace BetterGhPanel.UI
             }
             var value = stats.UniqueValues[index - OverviewRows];
             string text = value.NumericValue.HasValue
-                ? "Number: " + PanelUnits.Format(value.NumericValue.Value, Conversion(result),
-                    PanelUnits.AutomaticDecimals, CultureInfo.InvariantCulture, "R")
+                ? "Number: " + FormatNumber(value.NumericValue.Value, result, decimals)
                 : "Text: " + Quote(value.StringValue!, full);
             return FormattableString.Invariant($"{value.Count:N0}×  {text}");
         }
 
         private static string Count(int matched, int total) => matched == total ? FormattableString.Invariant($"{total:N0}") : FormattableString.Invariant($"{matched:N0}/{total:N0}");
         private static int Total(PanelQueryResult result) => result.DisplaySet?.IsBranchSet == true ? result.Snapshot.Branches.Count : result.Snapshot.Rows.Count;
-        private static PanelUnitConversion Conversion(PanelQueryResult result) => result.DisplaySet == null ? result.Snapshot.UnitConversion : PanelUnitConversion.None;
         private static string Number(double? value, PanelQueryResult result, int decimals) => value.HasValue
-            ? PanelUnits.Format(value.Value, Conversion(result), decimals) : "—";
+            ? FormatNumber(value.Value, result, decimals) : "—";
+        private static string FormatNumber(double value, PanelQueryResult result, int decimals) =>
+            PanelUnits.Format(value, PanelUnitConversion.None, decimals) + (result.Statistics.NumericUnits.Length == 0 ? "" : " " + result.Statistics.NumericUnits);
 
         private static string Quote(string value, bool full)
         {

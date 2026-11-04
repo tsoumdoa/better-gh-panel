@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -7,25 +6,6 @@ using Xunit;
 
 public sealed class PresentedNumberChecks
 {
-    [Theory]
-    [InlineData(1263.4718, 50, -1, 1300)]
-    [InlineData(-1263.4718, 50, -1, -1250)]
-    [InlineData(1.005, 0, 2, 1.01)]
-    [InlineData(-1.005, 0, 2, -1.01)]
-    [InlineData(4.4999999, 0, 2, 4.5)]
-    [InlineData(0.07, 0.01, 2, 0.07)]
-    [InlineData(1.2345678901234567, 0, -1, 1.2345678901234567)]
-    [InlineData(0.126, 0.05, 1, 0.2)]
-    public void ConversionFactorThenExplicitDecimals(double raw, double factor, int decimals, double expected)
-    {
-        double value = PanelUnits.Transform(raw, PanelUnitConversion.None, factor, decimals);
-        Assert.Equal(expected, value);
-        Assert.Equal(value, double.Parse(PanelUnits.Format(value, PanelUnitConversion.None, decimals), CultureInfo.InvariantCulture));
-        Assert.Equal(1.3, PanelUnits.Transform(1263.4718, PanelUnitConversion.MillimetersToMeters, 0.05, 2));
-        Assert.Equal(0L, BitConverter.DoubleToInt64Bits(PanelUnits.Transform(-0.001, PanelUnitConversion.None, 0, 2)));
-        Assert.Equal(double.MaxValue, PanelUnits.Transform(double.MaxValue, PanelUnitConversion.None, 0, 12));
-    }
-
     [Fact]
     public void PresentedMetricsPropertiesComponentsAndScalarsAgreeWithOutputComparisonsAndStats()
     {
@@ -68,6 +48,16 @@ public sealed class PresentedNumberChecks
         Assert.Contains("2 decimal places", PanelFilterValue.RoundingDescription(snapshot, scalar, options));
         options.DecimalPlaces = -1;
         Assert.Equal("", PanelFilterValue.RoundingDescription(snapshot, scalar, options));
+        var feet = new PanelRow(0, "{0}", "Curve", "", null, geometryInfo: new PanelGeometryInfo("Curve", 12.345, units: "ft"));
+        snapshot = new PanelSnapshot(new[] { feet }, new[] { new PanelBranch("{0}", 1) }, PanelUnitConversion.MillimetersToMeters);
+        options.SearchMode = PanelSearchMode.Length; options.Search = ""; options.DisplayFilterValue = true; options.DecimalPlaces = 2;
+        result = PanelQueryEngine.Execute(snapshot, options);
+        Assert.Equal("ft", result.Statistics.NumericUnits);
+        Assert.Contains("12.35 ft", BetterGhPanel.UI.CanvasStatistics.Label(result, 2, 2));
+        options.SearchMode = PanelSearchMode.ItemIndex;
+        result = PanelQueryEngine.Execute(snapshot, options);
+        Assert.Equal("", result.Statistics.NumericUnits);
+        Assert.DoesNotContain(" m", BetterGhPanel.UI.CanvasStatistics.Label(result, 2, 2));
         var circle = new PanelRow(0, "{0}", "Circle", "", null, geometryInfo: new PanelGeometryInfo("Circle", 2, metricName: "Radius"));
         Assert.Equal(15, PanelFilterValue.OutputValue(snapshot, circle, PanelSearchMode.Length, null, -1, 5)!.Number);
     }

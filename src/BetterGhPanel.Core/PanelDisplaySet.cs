@@ -10,8 +10,9 @@ namespace BetterGhPanel.Core
     public sealed class PanelDisplayedValue
     {
         private readonly PanelText _text, _copyText;
-        internal PanelDisplayedValue(PanelText text, PanelText copyText, double? number)
-        { _text = text; _copyText = copyText; Number = number; }
+        internal PanelDisplayedValue(PanelText text, PanelText copyText, double? number, bool unavailable = false)
+        { _text = text; _copyText = copyText; Number = number; Unavailable = unavailable; }
+        public bool Unavailable { get; }
         public string Text => _text.ToString();
         public string CopyText => _copyText.ToString();
         public double? Number { get; }
@@ -35,9 +36,15 @@ namespace BetterGhPanel.Core
                 copy = numeric ? new PanelText(PanelUnits.Format(row.NumericValue!.Value, PanelUnitConversion.None,
                     query.DecimalPlaces, CultureInfo.InvariantCulture)) : text;
             }
-            double? number = numeric && double.TryParse(copy.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) &&
+            double? number = query.DecimalPlaces < 0 && numeric && double.TryParse(copy.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) &&
                 !double.IsNaN(parsed) && !double.IsInfinity(parsed) ? parsed : (double?)null;
-            return new PanelDisplayedValue(text, copy, number);
+            var presented = query.DisplayFilterValue
+                ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor)
+                : numeric ? PanelFilterValue.OutputValue(snapshot, row, PanelSearchMode.Value, measured, query.DecimalPlaces) : null;
+            bool unavailable = numeric && presented == null || PanelValuePresentation.IsTransformedUnavailable(row);
+            // Automatic deliberately preserves main's compact set grouping/value semantics.
+            if (query.DecimalPlaces >= 0) number = presented?.Kind == PanelPropertyKind.Number ? presented.Number : (double?)null;
+            return new PanelDisplayedValue(text, copy, number, unavailable);
         }
     }
 
