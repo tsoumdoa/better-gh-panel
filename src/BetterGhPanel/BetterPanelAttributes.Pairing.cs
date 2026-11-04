@@ -56,6 +56,16 @@ namespace BetterGhPanel
                 entries.Add(new PairedViewRow { Item = item, Empty = empty, Path = path });
             }
             Flush();
+            // Hidden-partner notes follow contiguous presentation runs, just like missing F cells.
+            PanelBranchPair? previousHidden = null;
+            foreach (var entry in _pairView)
+            {
+                var pair = entry.Extra >= 0 ? _pairViewData!.PairAtPaired(entry.Extra) : null;
+                var hidden = pair != null && entry.Extra - pair.PairedOffset < pair.Data.ItemCount ? pair : null;
+                if (hidden != null)
+                    entry.Label = ReferenceEquals(hidden, previousHidden) ? "" : "paired with hidden D rows";
+                previousHidden = hidden;
+            }
             _pairItemOffsets = new int[result.RowPositions.Count];
             _pairSuccessors = new int[_pairView.Count];
             int next = result.RowPositions.Count;
@@ -79,7 +89,6 @@ namespace BetterGhPanel
             bool sorted = PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder;
             if (sorted) _pairView.AddRange(entries);
             else foreach (var entry in entries.Where(entry => entry.Empty != null)) _pairView.Add(entry);
-            var hiddenNotes = new HashSet<PanelBranchPair>();
             var extraNotes = new HashSet<PanelBranchPair>();
             var missing = sorted ? Array.Empty<PairedViewRow>() : entries.Where(entry => entry.Item >= 0 && pairing.ItemAt(result.RowPositions[entry.Item]) == null).ToArray();
             int missingIndex = 0;
@@ -96,11 +105,18 @@ namespace BetterGhPanel
                 var pair = pairing.PairAtPaired(value.Item);
                 bool onlyInF = value.Item - pair.PairedOffset >= pair.Data.ItemCount;
                 if (onlyInF) while (missingIndex < missing.Length) _pairView.Add(missing[missingIndex++]);
-                string label = onlyInF ? extraNotes.Add(pair) ? "+" + (pair.Paired.ItemCount - pair.Data.ItemCount) + " only in F" : ""
-                    : hiddenNotes.Add(pair) ? "paired with hidden D rows" : "";
+                string label = onlyInF && extraNotes.Add(pair) ? "+" + (pair.Paired.ItemCount - pair.Data.ItemCount) + " only in F" : "";
                 _pairView.Add(new PairedViewRow { Path = path, Extra = value.Item, Label = label });
             }
             while (missingIndex < missing.Length) _pairView.Add(missing[missingIndex++]);
+        }
+        private (int Index, bool Sorted) RowAddress(PanelQueryResult result, int sourcePosition, bool paired)
+        {
+            if (paired && PanelOwner.PairedData!.BranchAt(sourcePosition).Unequal)
+                return (PanelOwner.PairedRow(sourcePosition)!.OriginalIndex, false);
+            int index = result.DisplaySet?.MemberIndices.TryGetValue(sourcePosition, out int k) == true
+                ? k : result.Snapshot.Rows[sourcePosition].OriginalIndex;
+            return (index, PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder);
         }
         private int ViewCount(PanelQueryResult result) => HasPairView ? PairView(result).Count : result.ViewIndex.Count;
         private void ViewEntry(PanelQueryResult result, int offset, out int item, out string? empty, out int extra, out string label)

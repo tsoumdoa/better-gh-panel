@@ -781,8 +781,8 @@ namespace BetterGhPanel
                         shown++; y += RowHeight;
                         continue;
                     }
-                    int rowNumber = result.DisplaySet?.MemberIndices.TryGetValue(sourcePosition, out int k) == true ? k : dataRow.OriginalIndex;
-                    rowRenderer.DrawAddress(g, bounds, i + 1, rowNumber, sorted, selected);
+                    var address = RowAddress(result, sourcePosition, paired);
+                    rowRenderer.DrawAddress(g, bounds, i + 1, address.Index, address.Sorted, selected);
                     var sourceStatuses = paired ? new PanelSourceStatusCounts(0,
                         row.Validity == PanelValidity.VerifiedInvalid ? 1 : 0, row.Validity == PanelValidity.Unverified ? 1 : 0) :
                         CanvasStatistics.RowSourceStatuses(result, sourcePosition);

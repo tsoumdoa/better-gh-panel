@@ -372,6 +372,14 @@ internal static class BranchPairingChecks
             .Select(row => Field<int>(row, "Extra") >= 0 ? rawF.Rows[Field<int>(row, "Extra")].StringValue
                 : ((PanelRow)Call(component, "PairedRow", f.Result.RowPositions[Field<int>(row, "Item")])!).StringValue));
         Check(paneValues == f.Values(3), "Reverse plus filter keeps every F pane row in exact wire order f3,f2,f1,f0,f4,f5");
+        Check(reversedView.Where(row => Field<int>(row, "Extra") >= 0 || Field<int>(row, "Item") >= 0)
+            .Select(row => Field<int>(row, "Extra") >= 0 ? (rawF.Rows[Field<int>(row, "Extra")].OriginalIndex, false)
+                : ((int, bool))Call(attributes, "RowAddress", f.Result, f.Result.RowPositions[Field<int>(row, "Item")], true)!)
+            .SequenceEqual(new[] { (3, false), (2, false), (1, false), (0, false), (4, false), (5, false) }),
+            "Reverse plus filter shows F's own original index for every unequal partner, hidden partner and F-only row");
+        Check(reversedView.Where(row => Field<string>(row, "Label") == "paired with hidden D rows")
+            .Select(row => Field<int>(row, "Extra")).SequenceEqual(new[] { 3, 0 }),
+            "Reverse plus filter labels the first row of each hidden-D run at f3 and f0, leaving f2 unlabelled");
         Check(reversedView.Where(row => Field<int>(row, "Extra") >= 0 && Field<string>(row, "Label").Contains("only in F"))
             .Select(row => Field<int>(row, "Extra")).SequenceEqual(new[] { 4 }) &&
             reversedView.Any(row => Field<int>(row, "Extra") == 3 && Field<string>(row, "Label") == "paired with hidden D rows") &&
