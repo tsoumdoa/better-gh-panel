@@ -57,16 +57,16 @@ namespace BetterGhPanel.Core
         public PanelGeometryInfo WithAdditionalLength(double length) =>
             new PanelGeometryInfo(Description, Value, Power, Units, MetricName, MetricLabel, CanMeasure, Details, MeasurementUnavailable, length, HasArea, AreaValue, Properties);
 
-        public string FormatCompact(PanelUnitConversion conversion, int decimals) => Description +
-            (Value.HasValue ? " · " + MetricLabel + " " + FormatValue(conversion, decimals) : "");
+        public string FormatCompact(PanelUnitConversion conversion, int decimals, double roundUpFactor = 0) => Description +
+            (Value.HasValue ? " · " + MetricLabel + " " + FormatValue(conversion, decimals, roundUpFactor) : "");
 
-        public string FormatDetails(PanelUnitConversion conversion, int decimals) =>
-            (Value.HasValue ? MetricName + ": " + FormatValue(conversion, decimals) + "\n" : "") +
-            (AreaValue.HasValue ? "Area: " + PanelUnits.FormatGeometry(AreaValue.Value, 2, Units, conversion, decimals) + "\n" : "") +
-            (_additionalLength.HasValue ? "Length: " + PanelUnits.FormatGeometry(_additionalLength.Value, 1, Units, conversion, decimals) + "\n" : "") +
+        public string FormatDetails(PanelUnitConversion conversion, int decimals, double roundUpFactor = 0) =>
+            (Value.HasValue ? MetricName + ": " + FormatValue(conversion, decimals, roundUpFactor) + "\n" : "") +
+            (AreaValue.HasValue ? "Area: " + PanelUnits.FormatGeometry(AreaValue.Value, 2, Units, conversion, decimals, roundUpFactor: roundUpFactor) + "\n" : "") +
+            (_additionalLength.HasValue ? "Length: " + PanelUnits.FormatGeometry(_additionalLength.Value, 1, Units, conversion, decimals, roundUpFactor: roundUpFactor) + "\n" : "") +
             Details;
 
-        private string FormatValue(PanelUnitConversion conversion, int decimals) =>
-            PanelUnits.FormatGeometry(Value!.Value, Power, Units, conversion, decimals);
+        private string FormatValue(PanelUnitConversion conversion, int decimals, double roundUpFactor = 0) =>
+            PanelUnits.FormatGeometry(Value!.Value, Power, Units, conversion, decimals, roundUpFactor: roundUpFactor);
     }
 }

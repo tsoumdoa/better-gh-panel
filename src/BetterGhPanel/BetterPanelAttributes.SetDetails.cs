@@ -27,7 +27,7 @@ namespace BetterGhPanel
             foreach (int position in result.RowPositions)
                 if (result.SetOccurrencesAt(position) is PanelSetOccurrences occurrences && occurrences.Count > largest) largest = occurrences.Count;
             // Measure each completed result once, never the scrolling viewport.
-            _setCountWidth = System.Math.Max(44, renderer.MeasureNumber(graphics, $"{largest:N0}") + 36);
+            _setCountWidth = System.Math.Max(44, renderer.MeasureNumber(graphics, System.FormattableString.Invariant($"{largest:N0}")) + 36);
         }
 
         private bool SetControlAt(PointF point) => _setControlsVisible && _menu.Kind == CanvasMenuKind.None && _rowMenuResult == null &&
@@ -58,7 +58,7 @@ namespace BetterGhPanel
             bool expanded = _setDetails.SourcePosition == sourcePosition && _setDetails.IsOpen;
             bool repeated = occurrences.Count > 1;
             DrawSetBadge(g, new RectangleF(countBounds.X + 2, bounds.Y + 1.5f, countBounds.Width - 18, bounds.Height - 3), repeated, expanded);
-            renderer.DrawValue(g, $"{occurrences.Count:N0}", small, expanded || repeated ? Accent : PanelTheme.Rgb(139, 148, 132),
+            renderer.DrawValue(g, System.FormattableString.Invariant($"{occurrences.Count:N0}"), small, expanded || repeated ? Accent : PanelTheme.Rgb(139, 148, 132),
                 new RectangleF(countBounds.X + 6, bounds.Y, countBounds.Width - 36, bounds.Height), true);
             renderer.DrawCell(g, "×", small, expanded ? Accent : repeated ? PanelTheme.Rgb(130, 149, 117) : PanelTheme.Rgb(161, 171, 153),
                 new RectangleF(countBounds.Right - 28, bounds.Y, 8, bounds.Height));
@@ -119,7 +119,7 @@ namespace BetterGhPanel
             }
             if (_setDetails.HasPages)
             {
-                Text(g, $"{_setDetails.Offset + 1:N0}–{_setDetails.Offset + _setDetails.Visible:N0} of {occurrences.Count:N0}", small, Muted,
+                Text(g, System.FormattableString.Invariant($"{_setDetails.Offset + 1:N0}–{_setDetails.Offset + _setDetails.Visible:N0} of {occurrences.Count:N0}"), small, Muted,
                     new RectangleF(bounds.X + 8, bounds.Bottom - 21, bounds.Width - 128, 18), trim);
                 Text(g, "‹ Previous", small, _setDetails.CanPrevious ? Accent : Color.LightGray, _setDetails.Previous, trim);
                 Text(g, "Next ›", small, _setDetails.CanNext ? Accent : Color.LightGray, _setDetails.Next, trim);
@@ -200,7 +200,7 @@ namespace BetterGhPanel
                 if (!hit.Bounds.Contains(point)) continue;
                 var occurrences = PanelOwner.Session.Result.SetOccurrencesAt(hit.SourcePosition)!;
                 e.Title = _setDetails.IsOpen && _setDetails.SourcePosition == hit.SourcePosition ? "Collapse occurrences" : "Expand occurrences";
-                e.Text = CanvasSetDetails.Summary(occurrences) + $". {occurrences.DuplicatesRemoved:N0} " +
+                e.Text = CanvasSetDetails.Summary(occurrences) + System.FormattableString.Invariant($". {occurrences.DuplicatesRemoved:N0} ") +
                     (occurrences.DuplicatesRemoved == 1 ? "duplicate removed." : "duplicates removed.");
                 e.Description = "Filtered source occurrences: " + CanvasStatistics.SourceStatuses(occurrences.SourceStatuses) + ". " + CanvasSetDetails.Scope;
                 return true;

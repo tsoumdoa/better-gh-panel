@@ -52,7 +52,8 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 - **Typed rows grouped by branch.** Branch headings show their path and item count; rows show compact type labels (**Pt**, **Crv**, **Srf**, **Brep**, **Mesh**, **Num**, …), empty branches, `<empty>` text and geometry-group names with their object counts.
 - **Geometry metrics, automatically.** Visible curves, surfaces, Breps and meshes are measured in the background — length, area, volume and shape hints such as **Srf · untrimmed · planar · A 100 mm²**. Rows show **measuring…** until ready, and Panel+ never moves the camera.
 - **Invalid and unverified values are marked** with a label, a **!** or **?** badge and the reason in the tooltip.
-- **Counts and Stats.** The footer shows matched/total items and branches. **Stats** lists min/max/average plus every unique value with its frequency.
+- **Data checks.** A quiet, clickable **Check:** line flags null, invalid and unverified items and strong branch-length outliers before search filters; outlier counts turn amber. Healthy trees use no extra space.
+- **Counts and Stats.** The footer shows matched/total items and branches. **Stats** lists min/max/average plus every unique value with its frequency, using the presented numbers.
 - **Long values** open in a read-only, scrollable **View full value** window from the row's right-click menu.
 
 ### Search, filter and sort
@@ -66,7 +67,7 @@ Type in the search field: rows update as you type, **Enter** applies the query a
 | List length · per branch | `>= 3`, `= 0` |
 | Input-specific properties (below) | `>= 2`, `>= 2026-01-01` |
 
-Comparisons use full precision in the units shown. Pick a comparison mode to show its values, then click the search field to filter. Validity offers Valid/Invalid/Unverified/Null; Boolean properties offer True/False. **×** clears the filter, then the values. Combine searches with the **Types** filter (including *invalid only*) and **Paths** (`0;2;4` or `{0;2;4}`, including descendants). **Asc/Desc** sorts within each branch and adds Excel-style row numbers; wire outputs always keep tree order.
+Comparisons test the numbers shown, after unit conversion, factor rounding and any explicit decimal places. Automatic keeps full precision. All panel numbers use a decimal point in every locale. Pick a comparison mode to show its values, then click the search field to filter. Validity offers Valid/Invalid/Unverified/Null; Boolean properties offer True/False. **×** clears the filter, then the values. Combine searches with the **Types** filter (including *invalid only*) and **Paths** (`0;2;4` or `{0;2;4}`, including descendants). **Asc/Desc** sorts within each branch and adds Excel-style row numbers; wire outputs always keep tree order.
 
 <details>
 <summary>Selectable properties by input type</summary>
@@ -94,13 +95,14 @@ Unsupported properties show `n/a`. Text comparisons are exact; quote text to kee
 The footer's tree tools run in a fixed order — **Simplify → Trim → Flatten → Reverse** — then unit conversion, filters and **Create set**:
 
 - **Create set** groups equal displayed values per branch (or across the tree with Flatten). Rows use set index **k**. **Out Items** sends all members in **{path;k}** branches (**{k}** when flattened); **Out Values** sends each unique value once at displayed precision. List-length sets group original branches as **{k;path}**. An occurrence badge such as **9×** lists every original path and index.
-- **Units** converts numbers and geometry metrics (mm ↔ m, mm² ↔ m², mm³ ↔ m³, rad ↔ deg), sets **Decimal places**, and can **Round up by factor**. Geometry coordinates are never scaled.
+- **Units** converts numbers and geometry metrics (mm ↔ m, mm² ↔ m², mm³ ↔ m³, rad ↔ deg), sets **Decimal places**, and can **Round up by factor**. Unit conversion, Round up by factor, then explicit Decimal places define one presented number shared by the rows, Values output, clipboard, comparisons and Stats. Numeric Items also leave at this precision; geometry is never modified. Hover a rounded row to see its raw value and rounding.
 - **Reset** returns to the incoming data in one click; one Undo restores your settings.
 
 ### Select, preview and copy
 
 - **Click** a row to select it, **Ctrl/Cmd-click** to toggle, **Shift-click** for a range, a **branch heading** for the whole branch, and **Alt/Option-click** to pick the same item index in every branch. **Select all** takes every current match.
 - **Preview** draws **Selected** rows (default), all **Filtered results**, or nothing, in Grasshopper's selection colour. **Show item order** adds numbered dots in Rhino.
+- **Branch addresses.** Hover a branch heading to copy its path with the small copy glyph. Right-click for path formats, selected paths or **Show only this branch**. Row menus offer **Copy address(es)** (`{path}(index)`) and **Copy as table** (Path, Index, shown Value as TSV).
 - **Right-click** a row to **Frame selection** in Rhino, **Copy value(s)**, **View full value**, or **Copy geometry for Rhino** (Windows) to paste with Rhino's normal Paste.
 
 ### D | F split view
@@ -121,12 +123,12 @@ The **D|F** chip is hidden until F has data. Split view saves with the definitio
 
 | Port | Output |
 | --- | --- |
-| **D** | Matching **Items** (default) or displayed **Values**, in tree order. Set Items: all members in one branch per value; set Values: one list of unique values per source branch. |
+| **D** | Matching **Items** (default) or displayed **Values**, with the same rounding as shown, in tree order. Set Items: all members in one branch per value; set Values: one list of unique values per source branch. |
 | **S** | Selected Items or Values. Selected sets include all members and retain D's group paths. Empty when nothing is selected. |
 | **B** | A True/False mask in the original D tree shape, including every member of kept or selected sets. |
 | **F** | Paired items in tree order. Sets always group every member using the same paths as set Items, in both output modes. F keeps its original values. |
 
-**Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. Values label the ports **D·V / S·V**. Without a set, numbers retain full precision in displayed units; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
+**Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. A quiet **as shown** hint confirms Values output; the ports always read **D** and **S**. Numbers use the shown units and rounding; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
 
 Right-click the component → **B + F source** to make B and F follow the **Filtered results** (default) or only the **Selected rows**. In Selected mode the port labels read **B·S** and **F·S**. With Items output and nothing filtered or transformed, D forwards its input unchanged.
 
@@ -144,6 +146,7 @@ Click inside the panel to focus it (a green ring appears). Without focus, every 
 | **↑ / ↓** (+ **Shift**) | Move (or extend) the selection |
 | **PgUp / PgDn / Home / End** | Scroll |
 | **Ctrl/Cmd + C** | Copy the selected values (Grasshopper objects when no rows are selected) |
+| **Ctrl/Cmd + Shift + C** | Copy unique paths of selected rows, in tree order |
 | **Ctrl/Cmd + A** | Select all rows |
 | **Ctrl/Cmd + F** or **/** | Search |
 | **Esc** | Clear the selection, then release focus |

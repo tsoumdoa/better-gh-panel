@@ -17,17 +17,19 @@ namespace BetterGhPanel.Core
         private readonly Regex? _regex;
         private readonly Stopwatch? _regexBudget;
         private readonly int _decimals;
+        private readonly double _roundUpFactor;
         private readonly IFormatProvider _culture;
         private readonly Dictionary<PanelGroupKey, bool> _groupMatches = new Dictionary<PanelGroupKey, bool>();
         private readonly Queue<PanelGroupKey> _groupMatchOrder = new Queue<PanelGroupKey>();
         private const int MaxCachedGroupMatches = 16384;
         internal int GroupEvaluationCount { get; private set; }
 
-        internal PanelSearchFilter(PanelQueryOptions options, IFormatProvider? culture = null)
+        internal PanelSearchFilter(PanelQueryOptions options)
         {
             _mode = options.SearchMode;
             _decimals = options.DecimalPlaces;
-            _culture = culture ?? CultureInfo.CurrentCulture;
+            _roundUpFactor = options.RoundUpFactor;
+            _culture = CultureInfo.InvariantCulture;
             if (!Enum.IsDefined(typeof(PanelSearchMode), _mode)) throw new ArgumentException("Unknown search mode.");
             _text = options.DisplayFilterValue && _mode >= PanelSearchMode.Value ? string.Empty : options.Search ?? string.Empty;
             // Spaces in a regular expression are significant.
@@ -81,12 +83,12 @@ namespace BetterGhPanel.Core
         {
             if (!HasFilter || IsBranchFilter) return true;
             if (_propertyFilter != null)
-                return PanelProperties.TryGet(row, _mode, measured, out var property) && property != null && _propertyFilter.Matches(property, conversion);
+                return PanelProperties.TryGet(row, _mode, measured, out var property) && property != null && _propertyFilter.Matches(property, conversion, _decimals, _roundUpFactor);
             if (_regex != null)
             {
                 token.ThrowIfCancellationRequested();
                 if (_regexBudget!.ElapsedMilliseconds >= 2000) throw RegexTooSlow();
-                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _culture);
+                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _culture, _roundUpFactor);
                 if (TryGroupMatch(value, out bool cached)) return cached;
                 try
                 {
@@ -98,7 +100,7 @@ namespace BetterGhPanel.Core
             }
             if (_comparison == null)
             {
-                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _culture);
+                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _culture, _roundUpFactor);
                 bool matches;
                 if (TryGroupMatch(value, out bool cached)) matches = cached;
                 else { matches = value.Contains(_text); RememberGroupMatch(value, matches); }
@@ -106,8 +108,8 @@ namespace BetterGhPanel.Core
                     Contains(row.Path, _text) || Contains(row.TypeName, _text);
             }
             if (!IsGeometry)
-                return PanelFilterValue.TryScalarValue(row, _mode, conversion, out double scalarValue) && _comparison(scalarValue);
-            return PanelFilterValue.TryGeometryValue(row, _mode, conversion, measured, out double geometryValue) && _comparison(geometryValue);
+                return PanelFilterValue.TryScalarValue(row, _mode, conversion, out double scalarValue) && _comparison(PanelUnits.Transform(scalarValue, PanelUnitConversion.None, _mode == PanelSearchMode.Value || _mode == PanelSearchMode.Text ? 0 : _roundUpFactor, _decimals));
+            return PanelFilterValue.TryGeometryValue(row, _mode, conversion, measured, out double geometryValue) && _comparison(PanelUnits.Transform(geometryValue, PanelUnitConversion.None, _roundUpFactor, _decimals));
         }
 
         private void RememberGroupMatch(PanelText value, bool match)

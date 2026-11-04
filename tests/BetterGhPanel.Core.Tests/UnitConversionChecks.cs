@@ -98,10 +98,10 @@ internal static class UnitConversionChecks
         var circle = new PanelGeometryInfo("Cir", 2, units: "mm", metricName: "Radius", metricLabel: "R",
             details: "Shape: Circle").WithAdditionalLength(4 * Math.PI);
         Check(circle.FormatCompact(PanelUnitConversion.None, -1) == "Cir · R 2 mm" &&
-            circle.FormatDetails(PanelUnitConversion.None, -1) == "Radius: 2 mm\nLength: 12.5664 mm\nShape: Circle",
+            circle.FormatDetails(PanelUnitConversion.None, -1) == "Radius: 2 mm\nLength: 12.566370614359172 mm\nShape: Circle",
             "analytic circumference adds details without replacing the compact radius");
         Check(circle.FormatDetails(PanelUnitConversion.MillimetersToMeters, -1) ==
-            "Radius: 0.002 m\nLength: 0.0125664 m\nShape: Circle",
+            "Radius: 0.002 m\nLength: 0.012566370614359173 m\nShape: Circle",
             "both radius and circumference follow the geometry unit conversion");
     }
 

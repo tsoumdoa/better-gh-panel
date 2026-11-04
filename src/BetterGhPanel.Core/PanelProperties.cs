@@ -26,12 +26,12 @@ namespace BetterGhPanel.Core
         public double Converted(PanelUnitConversion conversion) => Power == -1
             ? PanelUnits.Convert(Number, conversion == PanelUnitConversion.RadiansToDegrees ? conversion : PanelUnitConversion.None)
             : Power == 0 ? Number : PanelUnits.ConvertGeometry(Number, Power, Units, conversion);
-        public string Format(PanelUnitConversion conversion, int decimals, bool includeUnits)
+        public string Format(PanelUnitConversion conversion, int decimals, bool includeUnits, double roundUpFactor = 0)
         {
             if (Kind == PanelPropertyKind.Text) return Text;
             if (Kind == PanelPropertyKind.Boolean) return Number == 0 ? "False" : "True";
             if (Kind == PanelPropertyKind.DateTime) return Date.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture);
-            double value = Converted(conversion);
+            double value = PanelUnits.Transform(Converted(conversion), PanelUnitConversion.None, roundUpFactor, decimals);
             if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";
             string suffix = "";
             if (includeUnits && Power != 0)

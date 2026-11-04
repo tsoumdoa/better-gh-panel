@@ -17,7 +17,7 @@ internal static class DisplaySetChecks
 
     private static void RoundedAndFilteredValues()
     {
-        var rows = new[] { Number(0, "{0}", 1.234), Number(1, "{0}", 1.233), Number(2, "{0}", 2), Number(0, "{1}", 1.234) };
+        var rows = new[] { new PanelRow(0, "{0}", "Integer", "1.234", 1.234), Number(1, "{0}", 1.233), Number(2, "{0}", 2), Number(0, "{1}", 1.234) };
         var sources = rows.Select((row, index) => new PanelSourceAddress("{9}", index + 10)).ToArray();
         var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", 3), new PanelBranch("{1}", 1) }, sourceAddresses: sources);
         var options = new PanelQueryOptions { CreateSet = true, DecimalPlaces = 2, SortMode = PanelSortMode.ValueDescending };
@@ -27,11 +27,13 @@ internal static class DisplaySetChecks
             "Sets compare complete displayed values per branch, output displayed precision and sort/project statistics consistently");
         Check(set.SetOccurrencesAt(0)!.Locations.Select(address => address.ItemIndex).SequenceEqual(new[] { 10, 11 }) &&
             set.SetOccurrencesAt(0)!.Locations[0].Path == "{9}", "Display grouping keeps original input addresses");
+        options.TypeName = "Number";
         options.Search = "< 1.234";
         set = PanelQueryEngine.Execute(snapshot, options);
-        Check(set.RowPositions.SequenceEqual(new[] { 1 }) && set.SetOccurrencesAt(1)!.Count == 1 && set.DisplaySet!.Values[1].Number == 1.23,
+        Check(set.RowPositions.SequenceEqual(new[] { 1, 3 }) && set.SetOccurrencesAt(1)!.Count == 1 && set.DisplaySet!.Values[1].Number == 1.23,
             "Filtering precedes set grouping so a hidden first occurrence cannot remove a visible equal display value");
         options.Search = "";
+        options.TypeName = null;
         options.DecimalPlaces = 3;
         Check(PanelQueryEngine.Execute(snapshot, options).RowPositions.Count == 4, "Changing decimals recomputes the displayed set");
         options.CreateSet = false;

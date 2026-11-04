@@ -20,6 +20,7 @@ namespace BetterGhPanel.Runtime
         private CancellationTokenSource? _queryCancellation;
         private PanelQueryOptions _options = new PanelQueryOptions();
         private Func<int>? _decimalPlacesResolver;
+        private Func<double>? _roundUpFactorResolver;
         private Func<bool>? _createSetResolver;
         private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryPreparationResolver;
         private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryRetentionResolver;
@@ -115,6 +116,7 @@ namespace BetterGhPanel.Runtime
         }
 
         internal void SetDecimalPlacesResolver(Func<int> resolver) => _decimalPlacesResolver = resolver;
+        internal void SetRoundUpFactorResolver(Func<double> resolver) => _roundUpFactorResolver = resolver;
         internal void SetCreateSetResolver(Func<bool> resolver) => _createSetResolver = resolver;
         private Func<bool>? _outputValuesResolver;
         internal void SetOutputValuesResolver(Func<bool> resolver) => _outputValuesResolver = resolver;
@@ -192,6 +194,7 @@ namespace BetterGhPanel.Runtime
             // A component owns its formatting setting. Direct query updates and
             // ResetView cannot silently revert the filter's presentation precision.
             if (_decimalPlacesResolver != null) next.DecimalPlaces = _decimalPlacesResolver();
+            if (_roundUpFactorResolver != null) next.RoundUpFactor = _roundUpFactorResolver();
             if (_createSetResolver != null) next.CreateSet = _createSetResolver();
             if (_outputValuesResolver != null) next.OutputValues = _outputValuesResolver() && (next.DisplayFilterValue || next.CreateSet);
             next.DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, next.DecimalPlaces));

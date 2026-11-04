@@ -23,6 +23,8 @@ public sealed class PropertyChecks
             Row(3, PanelSearchMode.FaceCount, PanelPropertyValue.Numeric(8)) };
         var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", 4) }, PanelUnitConversion.MillimetersToMeters);
         var query = Query(PanelSearchMode.Radius, "> 1.23456"); query.DecimalPlaces = 2;
+        Assert.Empty(PanelQueryEngine.Execute(snapshot, query).RowPositions);
+        query.Search = "= 1.23";
         Assert.Equal(new[] { 0 }, PanelQueryEngine.Execute(snapshot, query).RowPositions);
         Assert.Equal("1.23 m", PanelFilterValue.Format(snapshot, rows[0], query.SearchMode, 2));
         Assert.Equal("1.23", PanelFilterValue.Format(snapshot, rows[0], query.SearchMode, 2, includeUnits: false));
@@ -120,7 +122,7 @@ public sealed class PropertyChecks
         var query = Query(PanelSearchMode.FaceCount); query.DisplayFilterValue = true; query.SortMode = PanelSortMode.ValueAscending;
         var result = PanelQueryEngine.Execute(snapshot, query);
         Assert.Equal(new[] { 1, 0, 2 }, result.RowPositions);
-        Assert.Equal(0, result.Statistics.NumericCount); // Typed input statistics remain intact without Create set.
+        Assert.Equal(2, result.Statistics.NumericCount); // Stats describe the presented property.
         query.SortMode = PanelSortMode.ValueDescending;
         Assert.Equal(new[] { 0, 1, 2 }, PanelQueryEngine.Execute(snapshot, query).RowPositions);
         query.CreateSet = true;

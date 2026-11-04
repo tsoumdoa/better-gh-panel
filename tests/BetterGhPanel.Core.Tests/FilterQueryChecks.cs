@@ -38,8 +38,8 @@ internal static class FilterQueryChecks
         var result = PanelQueryEngine.Execute(snapshot, options);
         Check(result.RowPositions.SequenceEqual(new[] { 0, 1, 2 }) && result.BranchPaths.SequenceEqual(new[] { "{0}", "{1}" }),
             "Display value bypasses comparison parsing, retains unsupported items and empty branches");
-        Check(options.Clone().DisplayFilterValue && !PanelQueryEngine.RequiresGeometryMeasurements(options),
-            "Display state survives query capture and does not hold results for offscreen measurements");
+        Check(options.Clone().DisplayFilterValue && PanelQueryEngine.RequiresGeometryMeasurements(options),
+            "Display state survives capture and completes offscreen metrics for presented-value Stats");
         Check(PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, 3) == "6.283 m" &&
             PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, 3, includeUnits: false) == "6.283",
             "Length display and numeric copy use converted circle circumference, not radius");
@@ -194,10 +194,10 @@ internal static class FilterQueryChecks
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-            var query = new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "^1,23 m$", DecimalPlaces = 2 };
+            var query = new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = @"^1\.23 m$", DecimalPlaces = 2 };
             Check(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 0 }),
                 "Regex uses converted scalar units and the same decimals and culture as displayed text");
-            Check(PanelValuePresentation.FormatDisplay(numeric.Rows[0], numeric.UnitConversion, 2) == "1,23 m",
+            Check(PanelValuePresentation.FormatDisplay(numeric.Rows[0], numeric.UnitConversion, 2) == "1.23 m",
                 "Shared scalar presentation formats converted snapshot values without converting twice");
             using var work = PanelQueryEngine.Start(numeric, query);
             query.DecimalPlaces = 0;
@@ -209,16 +209,16 @@ internal static class FilterQueryChecks
                 "Text substring search uses the same fixed-decimal presentation as regex");
             query.SearchMode = PanelSearchMode.Value;
             query.Search = "> 1.23";
-            Check(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 0, 1 }),
-                "Numeric comparisons retain full converted precision even when display rounds");
+            Check(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 1 }),
+                "Numeric comparisons use the shown precision");
             query.Search = "= 1.23";
-            Check(PanelQueryEngine.Execute(numeric, query).RowPositions.Count == 0,
-                "Numeric equality never compares a rounded display string");
+            Check(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 0 }),
+                "Numeric equality compares the presented number");
             query.SearchMode = PanelSearchMode.Text;
             query.Search = "> 1.23";
-            Check(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 0, 1 }) &&
+            Check(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 1 }) &&
                 !PanelQueryEngine.RequiresGeometryMeasurements(query) && !PanelQueryEngine.UsesDisplayedText(query),
-                "Legacy numeric comparisons in Text mode retain exact numeric semantics and skip geometry work");
+                "Legacy numeric comparisons in Text mode use presented numbers and skip geometry work");
         }
         finally { CultureInfo.CurrentCulture = previous; }
 

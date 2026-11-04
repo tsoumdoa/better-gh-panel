@@ -49,12 +49,26 @@ namespace BetterGhPanel.Core
         public static bool IsRoundingFactor(double factor) => factor > 0 && !double.IsInfinity(factor);
 
         /// <summary>Rounds numeric output toward positive infinity after unit conversion. Zero disables rounding.</summary>
-        public static double Transform(double value, PanelUnitConversion conversion, double roundUpFactor = 0)
+        public static double Transform(double value, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = AutomaticDecimals)
         {
-            value = Convert(value, conversion);
+            value = RoundUp(Convert(value, conversion), roundUpFactor);
+            if (!double.IsNaN(value) && !double.IsInfinity(value) && decimals >= 0)
+            {
+                decimals = Math.Min(MaximumDecimals, decimals);
+                try
+                {
+                    decimal number = (decimal)value;
+                    if ((double)number == value) value = (double)Math.Round(number, decimals, MidpointRounding.AwayFromZero);
+                    else value = Math.Round(value, decimals, MidpointRounding.AwayFromZero);
+                }
+                catch (OverflowException) { value = Math.Round(value, decimals, MidpointRounding.AwayFromZero); }
+            }
+            return value == 0 ? 0 : value;
+        }
+
+        private static double RoundUp(double value, double roundUpFactor)
+        {
             if (!IsRoundingFactor(roundUpFactor) || double.IsNaN(value) || double.IsInfinity(value)) return value;
-            // Decimal remainder preserves ordinary entered multiples (0.07 / 0.01)
-            // without allocating strings, dividing tiny values to zero or overflowing a quotient.
             try
             {
                 decimal number = (decimal)value, factor = (decimal)roundUpFactor;
@@ -66,7 +80,6 @@ namespace BetterGhPanel.Core
             }
             catch (OverflowException) { }
             double quotient = value / roundUpFactor;
-            // A factor below the value's floating-point resolution cannot change it.
             if (Math.Abs(quotient) >= 4503599627370496d) return value;
             if (quotient == 0 && value > 0) return roundUpFactor;
             return Math.Ceiling(quotient) * roundUpFactor;
@@ -101,17 +114,17 @@ namespace BetterGhPanel.Core
         // Geometry retains its model units. Convert only a matching source unit and
         // dimension; numeric output conversion must never scale the geometry itself.
         public static string FormatGeometry(double value, int power, string units, PanelUnitConversion conversion, int decimals,
-            bool includeUnits = true)
+            bool includeUnits = true, double roundUpFactor = 0)
         {
             if (double.IsNaN(value) || double.IsInfinity(value) || value < 0) return "unavailable";
             var matchingConversion = GeometryConversion(power, units, conversion);
             if (matchingConversion != PanelUnitConversion.None)
             {
-                var converted = Convert(value, matchingConversion);
+                var converted = Transform(value, matchingConversion, roundUpFactor, decimals);
                 return double.IsInfinity(converted) ? "unavailable" : Format(converted,
-                    includeUnits ? matchingConversion : PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6");
+                    includeUnits ? matchingConversion : PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture);
             }
-            return Format(value, PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6") +
+            return Format(Transform(value, PanelUnitConversion.None, roundUpFactor, decimals), PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture) +
                 (includeUnits ? " " + units + (power == 2 ? "²" : power == 3 ? "³" : "") : "");
         }
 
@@ -126,13 +139,15 @@ namespace BetterGhPanel.Core
                 ? conversion : PanelUnitConversion.None;
         }
 
-        // Formatting never rounds the value carried by the output wire.
+        // Format exactly the presented number. Automatic uses a round-trip representation.
         public static string Format(double value, PanelUnitConversion conversion, int decimals,
-            IFormatProvider? culture = null, string automaticFormat = "G12")
+            IFormatProvider? culture = null, string automaticFormat = "R")
         {
+            _ = culture; // Kept for source compatibility; panel numbers are always invariant.
             decimals = Math.Max(AutomaticDecimals, Math.Min(MaximumDecimals, decimals));
+            value = Transform(value, PanelUnitConversion.None, 0, decimals);
             string text = value.ToString(decimals < 0 ? automaticFormat : "F" + decimals,
-                culture ?? CultureInfo.CurrentCulture);
+                CultureInfo.InvariantCulture);
             string symbol = Symbol(conversion);
             return symbol.Length == 0 ? text : text + " " + symbol;
         }

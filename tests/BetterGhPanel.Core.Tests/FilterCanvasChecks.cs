@@ -38,15 +38,16 @@ internal static class FilterCanvasChecks
             Require(choice.Description.Length > 0 && choice.Description == multiple.Single(other => other.Action == choice.Action).Description,
                 "Row action explanations stay with the action across selection changes");
 
-        Require(CanvasRowActions.NeedsPages(82) && !CanvasRowActions.NeedsPages(100),
-            "The compact panel pages five actions while taller panels show them together");
+        Require(CanvasRowActions.NeedsPages(82) && !CanvasRowActions.NeedsPages(140),
+            "The compact panel pages seven actions while taller panels show them together");
         var reordered = Enumerable.Reverse(single).ToArray();
         var first = CanvasRowActions.Page(reordered, 0);
         var second = CanvasRowActions.Page(reordered, 1);
+        var third = CanvasRowActions.Page(reordered, 2);
+        Require(third.Select(choice => choice.Action).SequenceEqual(new[] { PanelRowAction.CopyGeometry, PanelRowAction.SelectIndices, PanelRowAction.PreviousPage }), "The last page retains geometry and index actions");
         Require(first.Select(choice => choice.Action).SequenceEqual(new[] { PanelRowAction.FrameSelection, PanelRowAction.CopyValues,
                 PanelRowAction.ViewFullValue, PanelRowAction.NextPage }) &&
-            second.Select(choice => choice.Action).SequenceEqual(new[] { PanelRowAction.CopyGeometry, PanelRowAction.SelectIndices,
-                PanelRowAction.PreviousPage }), "Compact pages preserve all named actions by identity after reordering");
+            second.Select(choice => choice.Action).SequenceEqual(new[] { PanelRowAction.CopyAddresses, PanelRowAction.CopyTable, PanelRowAction.PreviousPage, PanelRowAction.NextPage }), "Compact pages preserve all named actions by identity after reordering");
         Require(first.Length * CanvasRowActions.RowHeight <= 82 && second.Length * CanvasRowActions.RowHeight <= 82,
             "Every compact page fits below the minimum Half panel's header");
     }

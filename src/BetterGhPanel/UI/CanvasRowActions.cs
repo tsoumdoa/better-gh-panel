@@ -2,7 +2,7 @@ using System.Linq;
 
 namespace BetterGhPanel.UI
 {
-    internal enum PanelRowAction { FrameSelection, CopyValues, CopyGeometry, SelectIndices, ViewFullValue, NextPage, PreviousPage, Unpainted }
+    internal enum PanelRowAction { FrameSelection, CopyValues, CopyGeometry, SelectIndices, ViewFullValue, NextPage, PreviousPage, CopyAddresses, CopyTable, CopyPaths, CopyPath, CopyPathBare, ShowBranch, Separator, Unpainted }
 
     internal readonly struct CanvasRowAction
     {
@@ -32,6 +32,8 @@ namespace BetterGhPanel.UI
             // Value actions on the F pane read F; geometry actions always use D.
             new CanvasRowAction(PanelRowAction.CopyValues, (paired ? "Copy F value" : "Copy value") + (selectedCount == 1 ? "" : "s"),
                 "One value per line, in displayed order and formatting. Measurements copy as plain numbers."),
+            new CanvasRowAction(PanelRowAction.CopyAddresses, "Copy address" + (selectedCount == 1 ? "" : "es"), "Copy {path}(index), one address per selected row."),
+            new CanvasRowAction(PanelRowAction.CopyTable, "Copy as table", "Copy Path, Index and shown Value as a tab-separated table."),
             new CanvasRowAction(PanelRowAction.CopyGeometry, "Copy geometry for Rhino",
                 "Copy the selected geometry, then Paste in Rhino. Other rows are skipped.",
                 !canCopyGeometry ? GeometryCopyUnsupported : hasGeometry ? null : NoGeometry),
@@ -44,17 +46,20 @@ namespace BetterGhPanel.UI
 
         // The minimum Half panel fits four 20-pixel rows. Keep the viewer on
         // the first page and retain every existing action on the second page.
-        internal static bool NeedsPages(float availableHeight) => availableHeight < 5 * RowHeight;
+        internal static bool NeedsPages(float availableHeight) => availableHeight < 7 * RowHeight;
 
         internal static CanvasRowAction[] Page(CanvasRowAction[] actions, int page) => page == 0
             ? new[] { Find(actions, PanelRowAction.FrameSelection), Find(actions, PanelRowAction.CopyValues), Find(actions, PanelRowAction.ViewFullValue),
                 new CanvasRowAction(PanelRowAction.NextPage, "More actions…", "Show the remaining row actions.") }
+            : page == 1 ? new[] { Find(actions, PanelRowAction.CopyAddresses), Find(actions, PanelRowAction.CopyTable),
+                new CanvasRowAction(PanelRowAction.PreviousPage, "Previous actions…", "Return to the previous actions."),
+                new CanvasRowAction(PanelRowAction.NextPage, "More actions…", "Show the remaining row actions.") }
             : new[] { Find(actions, PanelRowAction.CopyGeometry), Find(actions, PanelRowAction.SelectIndices),
-                new CanvasRowAction(PanelRowAction.PreviousPage, "Previous actions…", "Return to the first row actions.") };
+                new CanvasRowAction(PanelRowAction.PreviousPage, "Previous actions…", "Return to the previous actions.") };
 
         private static CanvasRowAction Find(CanvasRowAction[] actions, PanelRowAction action) => actions.Single(item => item.Action == action);
 
         internal static string IndexLabel(int[] indices) => indices.Length == 1 ? "Index " + indices[0] :
-            indices.Length <= 3 ? "Indices " + string.Join(", ", indices) : indices.Length.ToString("N0") + " indices";
+            indices.Length <= 3 ? "Indices " + string.Join(", ", indices) : indices.Length.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " indices";
     }
 }

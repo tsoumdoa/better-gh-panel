@@ -154,6 +154,7 @@ namespace BetterGhPanel
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
                     _session.GeometryDiagnosticsForTesting = CaptureDiagnosticsForTesting;
                     _session.SetDecimalPlacesResolver(() => DecimalPlaces);
+                    _session.SetRoundUpFactorResolver(() => RoundUpFactor);
                     _session.SetCreateSetResolver(() => CreateSetTree);
                     _session.SetOutputValuesResolver(() => OutputValues == PanelOutputValues.Values);
                     if (Locked) _session.InvalidateInput(false, suspended: true);
@@ -162,6 +163,7 @@ namespace BetterGhPanel
                     _session.SetGeometrySourceCurrentResolver(MeasurementSourceCurrent);
                     _session.SetCaptureCurrentResolver(CapturedSnapshotCurrent);
                     _savedOptions.DecimalPlaces = DecimalPlaces;
+                    _savedOptions.RoundUpFactor = RoundUpFactor;
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
@@ -282,7 +284,7 @@ namespace BetterGhPanel
             }
             bool UnitsCurrent()
             {
-                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count, RoundUpFactor);
+                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count, RoundUpFactor, DecimalPlaces);
                 visits += count; return result;
             }
             bool StructuresCurrent()
@@ -448,7 +450,7 @@ namespace BetterGhPanel
         {
             _discardViewRestore = true;
             var options = Session.Options;
-            bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0;
+            bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0 || DecimalPlaces >= 0;
             bool settingsChanged = outputChanged || OutputScope != PanelOutputScope.Filtered || OutputValues != PanelOutputValues.Items || DecimalPlaces != PanelUnits.AutomaticDecimals ||
                 !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.TypeName != null || options.BranchPath != null ||
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
@@ -617,26 +619,16 @@ namespace BetterGhPanel
             decimals = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, decimals));
             double factor = roundUpFactor ?? RoundUpFactor;
             if (!PanelUnits.IsRoundingFactor(factor)) factor = 0;
-            bool conversionChanged = UnitConversion != conversion || RoundUpFactor != factor;
-            if (!conversionChanged && DecimalPlaces == decimals) return;
+            if (UnitConversion == conversion && RoundUpFactor == factor && DecimalPlaces == decimals) return;
             CancelPendingCopy();
             RecordUndoEvent("Panel+ units, rounding and decimals");
             UnitConversion = conversion;
             RoundUpFactor = factor;
             DecimalPlaces = decimals;
             OnPingDocument()?.Modified();
-            if (conversionChanged)
-            {
-                _retainGeometryMeasurements = true;
-                try { ExpireSolution(true); }
-                finally { _retainGeometryMeasurements = false; }
-            }
-            else
-            {
-                var options = Session.Options;
-                options.DecimalPlaces = DecimalPlaces;
-                Session.UpdateQuery(options);
-            }
+            _retainGeometryMeasurements = true;
+            try { ExpireSolution(true); }
+            finally { _retainGeometryMeasurements = false; }
             Instances.ActiveCanvas?.Invalidate();
         }
 
@@ -650,8 +642,8 @@ namespace BetterGhPanel
                     ? row.GeometryInfo?.WithUnavailableMeasurement() : row.GeometryInfo;
             var options = Session.Options;
             if (options.DisplayFilterValue)
-                return PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, geometry);
-            var display = PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry);
+                return PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor);
+            var display = PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor);
             if (row.IsValid && geometry != null)
                 return display + (Session.IsGeometryPending(snapshot, sourcePosition) ? " · measuring…" : "");
             return display;
@@ -668,7 +660,7 @@ namespace BetterGhPanel
             {
                 var metric = Session.GetGeometryDetails(snapshot, position);
                 if (metric == null && Session.HasGeometryMeasurement(snapshot, position)) metric = row.GeometryInfo?.WithUnavailableMeasurement();
-                var value = PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, metric, includeUnits: false);
+                var value = PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, metric, includeUnits: false, roundUpFactor: RoundUpFactor);
                 bool literalProperty = PanelProperties.IsProperty(options.SearchMode) &&
                     PanelProperties.TryGet(row, options.SearchMode, metric, out var property) && property != null && property.Kind != PanelPropertyKind.Number;
                 if (!literalProperty && (value == "measuring…" || value == "unavailable")) throw new InvalidOperationException("A selected measurement is unavailable.");
@@ -682,13 +674,13 @@ namespace BetterGhPanel
             if (row.IsValid && geometry?.Value != null)
             {
                 var value = PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units,
-                    snapshot.UnitConversion, DecimalPlaces, includeUnits: false);
+                    snapshot.UnitConversion, DecimalPlaces, includeUnits: false, roundUpFactor: RoundUpFactor);
                 if (value == "unavailable") throw new InvalidOperationException("A selected measurement is unavailable.");
                 return value;
             }
             if (row.IsValid && geometry?.CanMeasure == true)
                 throw new InvalidOperationException("A selected measurement is unavailable.");
-            return PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry);
+            return PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor);
         }
 
         internal void CancelPendingCopy()
@@ -784,10 +776,16 @@ namespace BetterGhPanel
 
         internal Task<string> CopyPairedValuesAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions) => CopyValuesCoreAsync(snapshot, positions, true);
 
-        private async Task<string> CopyValuesCoreAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, bool paired)
+        internal Task<string> CopyAddressesAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, PanelRowAction action, string? path = null, bool paired = false)
+            => CopyValuesCoreAsync(snapshot, positions, paired, action, path);
+
+        private async Task<string> CopyValuesCoreAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, bool paired,
+            PanelRowAction action = PanelRowAction.CopyValues, string? path = null)
         {
             CancelPendingCopy();
-            if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
+            IReadOnlyList<int> ordered;
+            if (path != null || action == PanelRowAction.CopyPaths && RowSelection.Count > 0) ordered = positions;
+            else if (!TryGetActionPositions(snapshot, positions, out ordered)) return "Data changed; select rows again";
             var pairedSnapshot = paired ? PairedSnapshot : null;
             if (paired && (!CanSplit || pairedSnapshot == null)) return "Data changed; select rows again";
             long clipboardGeneration = PanelGeometryActions.BeginClipboard();
@@ -800,7 +798,8 @@ namespace BetterGhPanel
             var measurementPositions = session.Options.DisplayFilterValue && PanelProperties.IsProperty(session.Options.SearchMode)
                 ? ordered.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
                     session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray() : ordered;
-            bool measured = paired || await session.MeasureGeometryAsync(snapshot, measurementPositions, cancellation.Token);
+            bool addressOnly = action != PanelRowAction.CopyValues && action != PanelRowAction.CopyTable;
+            bool measured = addressOnly || paired || await session.MeasureGeometryAsync(snapshot, measurementPositions, cancellation.Token);
             var completion = new TaskCompletionSource<string>();
             // Rhino does not guarantee a SynchronizationContext for every canvas
             // callback. Live goo and the system clipboard belong to its UI thread.
@@ -812,6 +811,8 @@ namespace BetterGhPanel
                         outcome == PanelCommitOutcome.Committed && !PanelGeometryActions.ClipboardCurrent(clipboardGeneration)
                             ? "Copy context changed during clipboard publication; clipboard state is uncertain." :
                         outcome != PanelCommitOutcome.Committed ? "Copy cancelled" :
+                        path != null ? "Copied " + (action == PanelRowAction.CopyPathBare ? path.Trim('{', '}') : path) :
+                        addressOnly ? "Addresses copied" : action == PanelRowAction.CopyTable ? "Table copied" :
                         ordered.Count == 1 ? "Value copied" : ordered.Count + " values copied";
                     completion.TrySetResult(status);
                     if (ReferenceEquals(_copyCancellation, cancellation)) { _copyCancellation = null; cancellation.Dispose(); }
@@ -824,12 +825,34 @@ namespace BetterGhPanel
                         ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, result) &&
                         ReferenceEquals(_sourceItems, source) &&
                         (!paired || CanSplit && ReferenceEquals(PairedSnapshot, pairedSnapshot)) &&
-                        PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion);
+                        (path != null || action == PanelRowAction.CopyPaths ? RowSelection.Version == selectionVersion && (path == null || result.ContainsBranchPath(path)) : PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion));
                     if (!measured || !SelectionCurrent()) Finish(PanelCommitOutcome.Stale);
                     else
                     {
-                        var text = string.Join(Environment.NewLine, ordered.Select(position => paired
-                            ? BetterPanelAttributes.PairedDisplayValue(pairedSnapshot!.Rows[position]) : CopyValue(snapshot, position)));
+                        string Value(int position) => paired ? BetterPanelAttributes.PairedDisplayValue(pairedSnapshot!.Rows[position]) : CopyValue(snapshot, position);
+                        string Address(int position)
+                        {
+                            PanelItemOrder.TryGetNumber(result, position, out int index);
+                            return snapshot.Rows[position].Path + "(" + index.ToString(CultureInfo.InvariantCulture) + ")";
+                        }
+                        string text;
+                        if (path != null) text = action == PanelRowAction.CopyPathBare ? path.Trim('{', '}') : path;
+                        else if (action == PanelRowAction.CopyPaths)
+                        {
+                            var paths = new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal);
+                            text = string.Join(Environment.NewLine, snapshot.Branches.Where(branch => paths.Contains(branch.Path)).Select(branch => branch.Path));
+                        }
+                        else if (action == PanelRowAction.CopyAddresses) text = string.Join(Environment.NewLine, ordered.Select(Address));
+                        else if (action == PanelRowAction.CopyTable)
+                            text = "Path\tIndex\tValue" + Environment.NewLine + string.Join(Environment.NewLine, ordered.Select(position =>
+                            {
+                                PanelItemOrder.TryGetNumber(result, position, out int index);
+                                string value = paired ? Value(position) : DisplayValue(snapshot, snapshot.Rows[position], position);
+                                // Quote cells containing TSV delimiters, preserving the complete shown value.
+                                if (value.IndexOfAny(new[] { '\t', '\r', '\n', '"' }) >= 0) value = "\"" + value.Replace("\"", "\"\"") + "\"";
+                                return snapshot.Rows[position].Path + "\t" + index.ToString(CultureInfo.InvariantCulture) + "\t" + value;
+                            }));
+                        else text = string.Join(Environment.NewLine, ordered.Select(Value));
                         // Measurements cover only queued geometry; value-only
                         // rows and unmeasured geometry can change too.
                         bool Current() => SelectionCurrent() && CapturedSnapshotCurrent(snapshot) && SelectionCurrent() &&
@@ -889,7 +912,7 @@ namespace BetterGhPanel
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddGenericParameter("Data", "D", "Matching Items or displayed Values after tree tools, units and filters. Set Items: all members in {path;k} ({k} when flattened); list-length sets use {k;path}. Set Values: unique values at displayed precision. Other Values keep full precision; unavailable values are null. Sorting changes only the view.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Data", "D", "Matching Items or displayed Values after tree tools, units and filters. Set Items: all members in {path;k} ({k} when flattened); list-length sets use {k;path}. Set Values: unique values at displayed precision. Values use the shown rounding; unavailable values are null. Sorting changes only the view.", GH_ParamAccess.tree);
             p.AddGenericParameter("Selected data", "S", "Selected Items or Values in tree order. Set Items include every member and keep the same group paths as D. Empty when no rows are selected.", GH_ParamAccess.tree);
             p.AddBooleanParameter("Membership mask", "B", "True at original D input positions retained by the B + F source setting (Filtered by default, or Selected). Preserves original paths and item counts. Every member of a kept or selected set is True. This mask conveys membership, not transformed ordering.", GH_ParamAccess.tree);
             p.AddGenericParameter("Paired results", "F", "Paired input values corresponding to the B + F source setting (Filtered by default, or Selected), in the primary transformed tree order. Sets group every member as {path;k} ({k} when flattened; {k;path} for list-length sets). F retains its original values and types in both output modes.", GH_ParamAccess.tree);
@@ -974,9 +997,10 @@ namespace BetterGhPanel
                     CancelPendingCopy();
                     ClearHighlight();
                     var options = session.Options;
-                    if (options.DecimalPlaces != DecimalPlaces)
+                    if (options.DecimalPlaces != DecimalPlaces || options.RoundUpFactor != RoundUpFactor)
                     {
                         options.DecimalPlaces = DecimalPlaces;
+                        options.RoundUpFactor = RoundUpFactor;
                         session.UpdateQuery(options);
                     }
                     if (!Current()) return;
@@ -987,8 +1011,8 @@ namespace BetterGhPanel
                     var conversion = UnitConversion;
                     var roundUpFactor = RoundUpFactor;
                     var scalarInputs = CapturedScalar.Capture(preConversionTree);
-                    var queryScalars = CapturedScalar.Convert(scalarInputs, conversion, roundUpFactor);
-                    var queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.ApplyCaptured(preConversionTree, conversion, scalarInputs, roundUpFactor));
+                    var queryScalars = CapturedScalar.Convert(scalarInputs, conversion, roundUpFactor, DecimalPlaces);
+                    var queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.ApplyCaptured(preConversionTree, conversion, scalarInputs, roundUpFactor, DecimalPlaces));
                     var inputSeed = SnapshotCapture.PrepareInputs(queryTree);
                     CapturePairedInput(da, inputTree, queryTree, retainedSources, out var pairedTree, out var pairedError,
                         out var livePairedTree, out var capturedPairedTree, out bool pairedPresent);
@@ -1005,7 +1029,7 @@ namespace BetterGhPanel
                     if (!Current()) return;
                     bool hasGeometry = HasGeometry(snapshot) || pairedSnapshot != null && HasGeometry(pairedSnapshot);
                     if (!SnapshotCapture.MeasurementSourcesCurrent(sources, measurementSources) || !SnapshotCapture.GraphSourcesCurrent(graphs) ||
-                        !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor) ||
+                        !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor, DecimalPlaces) ||
                         (pairedSnapshot != null && (!SnapshotCapture.MeasurementSourcesCurrent(pairedSources, pairedMeasurements) ||
                             !SnapshotCapture.GraphSourcesCurrent(pairedGraphs) || !SnapshotCapture.ManagedRowsCurrent(pairedSnapshot, pairedSources))) ||
                         !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) || pairedPresent != PairedInputPresent() ||
@@ -1304,6 +1328,7 @@ namespace BetterGhPanel
             reader.TryGetInt32("PanelOutputScope", ref outputScope);
             OutputScope = Enum.IsDefined(typeof(PanelOutputScope), outputScope) ? (PanelOutputScope)outputScope : PanelOutputScope.Filtered;
             _savedOptions.DecimalPlaces = DecimalPlaces;
+            _savedOptions.RoundUpFactor = RoundUpFactor;
             _restoringView = true;
             try { _session?.UpdateQuery(_savedOptions); }
             finally { _restoringView = false; }

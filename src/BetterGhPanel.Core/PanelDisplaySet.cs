@@ -24,13 +24,13 @@ namespace BetterGhPanel.Core
             bool numeric;
             if (query.DisplayFilterValue)
             {
-                text = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured));
-                copy = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false));
+                text = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, roundUpFactor: query.RoundUpFactor));
+                copy = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false, roundUpFactor: query.RoundUpFactor));
                 numeric = !PanelProperties.IsProperty(query.SearchMode) || PanelProperties.Kind(query.SearchMode) == PanelPropertyKind.Number;
             }
             else
             {
-                text = PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture);
+                text = PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture, query.RoundUpFactor);
                 numeric = !row.IsNull && row.IsValid && row.NumericValue.HasValue;
                 copy = numeric ? new PanelText(PanelUnits.Format(row.NumericValue!.Value, PanelUnitConversion.None,
                     query.DecimalPlaces, CultureInfo.InvariantCulture)) : text;

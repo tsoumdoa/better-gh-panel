@@ -59,6 +59,7 @@ internal static class Program
         ["capture-stock-geometry"] = CaptureStockGeometryChecks.RunNative,
         ["property-inspection"] = PropertyInspectionChecks.Run,
         ["ui-ux"] = UxInteractionChecks.Run,
+        ["wysiwyg-values"] = WysiwygValuesChecks.Run,
         ["row-selection"] = RowSelectionChecks.Run,
     };
 

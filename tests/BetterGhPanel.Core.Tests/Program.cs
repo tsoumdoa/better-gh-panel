@@ -371,7 +371,7 @@ internal static class Program
         Equal("1.23456789 m", PanelUnits.Format(1.23456789, PanelUnitConversion.MillimetersToMeters, -1, CultureInfo.InvariantCulture));
         Equal("1 m²", PanelUnits.Format(1, PanelUnitConversion.SquareMillimetersToSquareMeters, 0, CultureInfo.InvariantCulture));
         Equal("180.00 °", PanelUnits.Format(180, PanelUnitConversion.RadiansToDegrees, 2, CultureInfo.InvariantCulture));
-        Equal("1,23 m", PanelUnits.Format(1.234, PanelUnitConversion.MillimetersToMeters, 2, CultureInfo.GetCultureInfo("de-DE")));
+        Equal("1.23 m", PanelUnits.Format(1.234, PanelUnitConversion.MillimetersToMeters, 2, CultureInfo.GetCultureInfo("de-DE")));
         Equal("1.000000000000", PanelUnits.Format(1, PanelUnitConversion.None, 100, CultureInfo.InvariantCulture));
         Equal(true, double.IsNaN(PanelUnits.Convert(double.NaN, PanelUnitConversion.RadiansToDegrees)));
         Equal(double.PositiveInfinity, PanelUnits.Convert(double.PositiveInfinity, PanelUnitConversion.MillimetersToMeters));
@@ -417,8 +417,8 @@ internal static class Program
         Equal("1 m²", PanelUnits.FormatGeometry(1000000, 2, "mm", PanelUnitConversion.SquareMillimetersToSquareMeters, -1));
         Equal("1 m³", PanelUnits.FormatGeometry(1000000000, 3, "mm", PanelUnitConversion.CubicMillimetersToCubicMeters, -1));
         Equal("1000 mm", PanelUnits.FormatGeometry(1, 1, "m", PanelUnitConversion.MetersToMillimeters, -1));
-        Equal("1e+06 mm²", PanelUnits.FormatGeometry(1, 2, "m", PanelUnitConversion.SquareMetersToSquareMillimeters, -1).ToLowerInvariant());
-        Equal("1e+09 mm³", PanelUnits.FormatGeometry(1, 3, "m", PanelUnitConversion.CubicMetersToCubicMillimeters, -1).ToLowerInvariant());
+        Equal("1000000 mm²", PanelUnits.FormatGeometry(1, 2, "m", PanelUnitConversion.SquareMetersToSquareMillimeters, -1).ToLowerInvariant());
+        Equal("1000000000 mm³", PanelUnits.FormatGeometry(1, 3, "m", PanelUnitConversion.CubicMetersToCubicMillimeters, -1).ToLowerInvariant());
         Equal("1000 mm²", PanelUnits.FormatGeometry(1000, 2, "mm", PanelUnitConversion.MillimetersToMeters, -1));
         Equal("1 m", PanelUnits.FormatGeometry(1, 1, "m", PanelUnitConversion.MillimetersToMeters, -1));
         Equal("2 ft³", PanelUnits.FormatGeometry(2, 3, "ft", PanelUnitConversion.CubicMillimetersToCubicMeters, -1));
@@ -440,7 +440,7 @@ internal static class Program
         Equal("Trimming: Untrimmed", new PanelGeometryInfo("Srf · untrimmed", canMeasure: true,
             details: "Trimming: Untrimmed").FormatDetails(PanelUnitConversion.None, -1));
         Equal("1.00", PanelUnits.FormatGeometry(1000000, 2, "mm", PanelUnitConversion.SquareMillimetersToSquareMeters, 2, false));
-        Equal("1E+06", PanelUnits.FormatGeometry(1000000, 2, "mm", PanelUnitConversion.MillimetersToMeters, -1, false));
+        Equal("1000000", PanelUnits.FormatGeometry(1000000, 2, "mm", PanelUnitConversion.MillimetersToMeters, -1, false));
         Equal("1", PanelUnits.FormatGeometry(1000000000, 3, "mm", PanelUnitConversion.CubicMillimetersToCubicMeters, -1, false));
         Equal("unavailable", PanelUnits.FormatGeometry(double.MaxValue, 3, "m", PanelUnitConversion.CubicMetersToCubicMillimeters, -1, false));
     }

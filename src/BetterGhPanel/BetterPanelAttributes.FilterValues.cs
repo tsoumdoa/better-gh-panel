@@ -41,14 +41,14 @@ namespace BetterGhPanel
                     if (statuses.Unverified > 0) Fill(graphics, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (statuses.VerifiedInvalid > 0 ? 2 : 0), bounds.Y + 3, 2, bounds.Height - 6));
                 }
                 float badgeWidth = set ? 40 : 0;
-                renderer.DrawCell(graphics, set ? result.DisplaySet!.BranchIndices[path] + " · " + path : path, mono, Accent, new RectangleF(bounds.X + 6, y, Math.Max(0, paired ? 78 : bounds.Width - 102 - badgeWidth), RowHeight));
+                renderer.DrawCell(graphics, set ? result.DisplaySet!.BranchIndices[path] + " · " + path : path, mono, Accent, new RectangleF(bounds.X + 6, y, Math.Max(0, paired ? 78 : bounds.Width - 120 - badgeWidth), RowHeight));
                 int count = result.Snapshot.BranchItemCounts[path];
                 renderer.DrawValue(graphics, paired ? PairedBranchValue(path) : count.ToString(System.Globalization.CultureInfo.InvariantCulture) + (count == 1 ? " item" : " items"),
-                    paired ? font : small, Ink, paired ? new RectangleF(bounds.X + 90, y, bounds.Width - 96, RowHeight) : new RectangleF(bounds.Right - 96 - badgeWidth, y, 90, RowHeight), !paired);
+                    paired ? font : small, !paired && result.Warnings.IsOutlier(result.Snapshot, path) ? PanelTheme.Warning : Ink, paired ? new RectangleF(bounds.X + 90, y, bounds.Width - 96, RowHeight) : new RectangleF(bounds.Right - 96 - badgeWidth, y, 90, RowHeight), !paired);
                 if (set)
                     renderer.DrawValue(graphics, result.DisplaySet!.BranchOccurrences[path].Count + "×", small, Accent,
                         new RectangleF(bounds.Right - badgeWidth, y, badgeWidth - 6, RowHeight), true);
-                if (TargetPainted(graphics, bounds)) AddBranchHit(bounds, path);
+                DrawBranchExtras(graphics, result, bounds, path, mono, small, trim, paired: paired);
                 shown++;
                 y += RowHeight;
             }

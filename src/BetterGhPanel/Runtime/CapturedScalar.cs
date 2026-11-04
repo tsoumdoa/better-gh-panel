@@ -14,14 +14,17 @@ namespace BetterGhPanel.Runtime
         private const byte None = 0, Number = 1, Integer = 2, Text = 3, Boolean = 4;
         private readonly byte _kind;
         private readonly double _number;
+        private readonly double? _rawNumber;
         private readonly string? _text;
         private readonly bool _valid;
-        private CapturedScalar(byte kind, double number, string? text, bool valid)
-        { _kind = kind; _number = number; _text = text; _valid = valid; }
+        private CapturedScalar(byte kind, double number, string? text, bool valid, double? rawNumber = null)
+        { _rawNumber = rawNumber; _kind = kind; _number = number; _text = text; _valid = valid; }
         internal bool Available => _kind != None;
         internal bool IsNumeric => _kind == Number || _kind == Integer;
         internal bool IsValid => _valid;
         internal double NumericValue => _number;
+        internal bool IsNegativeZero => IsNumeric && _number == 0 && BitConverter.DoubleToInt64Bits(_number) < 0;
+        internal double? RawNumber => IsNumeric ? _rawNumber ?? _number : (double?)null;
         internal PanelValidity Validity => _valid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
 
         internal static CapturedScalar[] Capture(GH_Structure<IGH_Goo> tree)
@@ -50,16 +53,16 @@ namespace BetterGhPanel.Runtime
             return values;
         }
 
-        internal static CapturedScalar[] Convert(CapturedScalar[] source, PanelUnitConversion conversion, double roundUpFactor = 0)
+        internal static CapturedScalar[] Convert(CapturedScalar[] source, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = PanelUnits.AutomaticDecimals)
         {
-            if (conversion == PanelUnitConversion.None && roundUpFactor == 0) return source;
+            if (conversion == PanelUnitConversion.None && roundUpFactor == 0 && decimals < 0 && !Array.Exists(source, value => value.IsNegativeZero)) return source;
             var result = (CapturedScalar[])source.Clone();
             for (int i = 0; i < result.Length; i++)
             {
                 var value = source[i];
                 if (!value.IsNumeric || !value.IsValid) continue;
-                double converted = PanelUnits.Transform(value._number, conversion, roundUpFactor);
-                result[i] = new CapturedScalar(Number, converted, null, RhinoMath.IsValidDouble(converted));
+                double converted = PanelUnits.Transform(value._number, conversion, roundUpFactor, decimals);
+                result[i] = new CapturedScalar(Number, converted, null, RhinoMath.IsValidDouble(converted), PanelUnits.Convert(value._number, conversion));
             }
             return result;
         }
@@ -67,7 +70,7 @@ namespace BetterGhPanel.Runtime
         internal string Format(out double? numeric, out string? text)
         {
             numeric = null; text = null;
-            if (_kind == Number) { numeric = _number; return _number.ToString("G12", CultureInfo.InvariantCulture); }
+            if (_kind == Number) { numeric = _number; return _number.ToString("R", CultureInfo.InvariantCulture); }
             if (_kind == Integer) { numeric = _number; return ((int)_number).ToString(CultureInfo.InvariantCulture); }
             if (_kind == Text) { text = _text; return _text ?? "<null text>"; }
             if (_kind == Boolean) return _number != 0 ? "True" : "False";

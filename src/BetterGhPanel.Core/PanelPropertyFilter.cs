@@ -37,7 +37,7 @@ namespace BetterGhPanel.Core
             else if (!double.TryParse(_text, NumberStyles.Float, CultureInfo.InvariantCulture, out _number) || double.IsNaN(_number) || double.IsInfinity(_number))
                 throw new ArgumentException("Enter a finite number with >, >=, <, <=, = or !=.");
         }
-        internal bool Matches(PanelPropertyValue value, PanelUnitConversion conversion)
+        internal bool Matches(PanelPropertyValue value, PanelUnitConversion conversion, int decimals, double roundUpFactor)
         {
             if (value.Kind != _kind) return false;
             int comparison;
@@ -45,7 +45,7 @@ namespace BetterGhPanel.Core
             else if (_kind == PanelPropertyKind.DateTime) comparison = value.Date.Ticks.CompareTo(_date.Ticks);
             else
             {
-                double number = value.Converted(conversion);
+                double number = _kind == PanelPropertyKind.Number ? PanelUnits.Transform(value.Converted(conversion), PanelUnitConversion.None, roundUpFactor, decimals) : value.Number;
                 if (double.IsNaN(number) || double.IsInfinity(number)) return false;
                 comparison = number.CompareTo(_number);
             }

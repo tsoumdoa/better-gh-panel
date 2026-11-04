@@ -103,7 +103,7 @@ namespace BetterGhPanel.Core
             PanelValidity validity, bool typeIdentityAvailable = true, PanelSearchCapabilities? searchCapabilities = null,
             bool isNull = false, PanelGeometryInfo? geometryInfo = null, string invalidReason = "", string? stringValue = null,
             PanelSetOccurrences? setOccurrences = null, PanelGroupSummary? groupSummary = null, PanelComponents? components = null,
-            IReadOnlyDictionary<PanelSearchMode, PanelPropertyValue?>? properties = null)
+            IReadOnlyDictionary<PanelSearchMode, PanelPropertyValue?>? properties = null, double? rawNumericValue = null)
         {
             OriginalIndex = originalIndex;
             Path = path ?? string.Empty;
@@ -111,6 +111,7 @@ namespace BetterGhPanel.Core
             _displayValue = displayValue ?? string.Empty;
             _groupSummary = groupSummary;
             NumericValue = numericValue;
+            RawNumericValue = rawNumericValue ?? numericValue;
             Components = components;
             Properties = PanelProperties.Freeze(properties);
             IsNull = isNull;
@@ -132,6 +133,7 @@ namespace BetterGhPanel.Core
         internal PanelGroupSummary? GroupSummary => _groupSummary;
         public string DisplayValue => _groupSummary?.Format() ?? _displayValue;
         public double? NumericValue { get; }
+        public double? RawNumericValue { get; }
         public PanelComponents? Components { get; }
         public IReadOnlyDictionary<PanelSearchMode, PanelPropertyValue?> Properties { get; }
         public bool IsNull { get; }
@@ -386,7 +388,9 @@ namespace BetterGhPanel.Core
         public bool CreateSet { get; set; }
         /// <summary>Prepare typed displayed values for D/S, including offscreen measurements.</summary>
         public bool OutputValues { get; set; }
-        /// <summary>Presentation precision for text/regex matching; numeric predicates retain full precision.</summary>
+        /// <summary>Geometry/property rounding; captured scalars already carry this transform.</summary>
+        public double RoundUpFactor { get; set; }
+        /// <summary>Explicit presented precision for output, filtering and statistics; Automatic preserves the number.</summary>
         public int DecimalPlaces { get; set; } = PanelUnits.AutomaticDecimals;
         public string? TypeName { get; set; }
         public string? BranchPath { get; set; }
@@ -403,6 +407,7 @@ namespace BetterGhPanel.Core
             CreateSet = CreateSet,
             OutputValues = OutputValues,
             DecimalPlaces = DecimalPlaces,
+            RoundUpFactor = RoundUpFactor,
             TypeName = TypeName,
             BranchPath = BranchPath,
             BranchPrefix = BranchPrefix,
@@ -480,13 +485,14 @@ namespace BetterGhPanel.Core
         internal PanelQueryResult(PanelSnapshot snapshot, int[] rowPositions, PanelResultPositionIndex viewIndices,
             PanelStatistics statistics, List<string> orderedBranches, HashSet<string> branchPaths,
             PanelViewIndex viewIndex, PanelDisplaySetResult? displaySet = null,
-            Dictionary<int, PanelPropertyValue?>? outputValues = null)
+            Dictionary<int, PanelPropertyValue?>? outputValues = null, PanelDataWarnings? warnings = null)
         {
             Snapshot = snapshot;
             RowPositions = Array.AsReadOnly(rowPositions);
             _viewIndices = viewIndices;
             _branchPaths = branchPaths;
             Statistics = statistics;
+            Warnings = warnings ?? new PanelDataWarnings();
             BranchPaths = orderedBranches.AsReadOnly();
             ViewIndex = viewIndex;
             DisplaySet = displaySet;
@@ -499,6 +505,7 @@ namespace BetterGhPanel.Core
         /// <summary>Finds a visible source position in this result's view order.</summary>
         public bool TryGetViewIndex(int position, out int index) => _viewIndices.TryGet(position, out index);
         public PanelStatistics Statistics { get; }
+        public PanelDataWarnings Warnings { get; }
         /// <summary>Matching paths, including empty branches when no item filter is active.</summary>
         public IReadOnlyList<string> BranchPaths { get; }
         /// <summary>Whether a path, including a retained empty path, is present in this result.</summary>
