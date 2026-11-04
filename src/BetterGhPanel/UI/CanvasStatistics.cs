@@ -68,7 +68,7 @@ namespace BetterGhPanel.UI
         private static string Number(double? value, PanelQueryResult result, int decimals) => value.HasValue
             ? FormatNumber(value.Value, result, decimals) : "—";
         private static string FormatNumber(double value, PanelQueryResult result, int decimals) =>
-            PanelUnits.Format(value, PanelUnitConversion.None, decimals) + (result.Statistics.NumericUnits.Length == 0 ? "" : " " + result.Statistics.NumericUnits);
+            (decimals < 0 ? value.ToString("R", CultureInfo.InvariantCulture) : PanelUnits.Format(value, PanelUnitConversion.None, decimals)) + (result.Statistics.NumericUnits.Length == 0 ? "" : " " + result.Statistics.NumericUnits);
 
         private static string Quote(string value, bool full)
         {

@@ -1,5 +1,5 @@
 using System;
-using System.Globalization;
+using System.Threading;
 
 namespace BetterGhPanel.Core
 {
@@ -52,40 +52,56 @@ namespace BetterGhPanel.Core
         public static double Transform(double value, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = AutomaticDecimals)
         {
             value = RoundUp(Convert(value, conversion), roundUpFactor);
-            if (!double.IsNaN(value) && !double.IsInfinity(value) && decimals >= 0)
-            {
-                decimals = Math.Min(MaximumDecimals, decimals);
-                try
-                {
-                    if (TryDecimal(value, out decimal number)) value = (double)Math.Round(number, decimals, MidpointRounding.AwayFromZero);
-                    else value = Math.Round(value, decimals, MidpointRounding.AwayFromZero);
-                }
-                catch (OverflowException) { value = Math.Round(value, decimals, MidpointRounding.AwayFromZero); }
-            }
+            if (!double.IsNaN(value) && !double.IsInfinity(value) && decimals >= 0 && Math.Abs(value) < PanelNumber.IntegerBoundary)
+                value = PanelNumber.ToDouble(PanelNumber.RoundedDecimal(value, Math.Min(MaximumDecimals, decimals)));
             return value == 0 ? 0 : value;
         }
 
-        // A double-to-decimal cast retains only 15 significant digits on Framework.
-        // Parse its round-trip text so large integers and decimal midpoints survive.
-        private static bool TryDecimal(double value, out decimal number) => decimal.TryParse(
-            value.ToString("R", CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out number);
+        public static bool TryParseOperand(string text, out double value) => PanelNumber.TryParse(text, out value);
+
+        // Settings usually share one factor across the entire solve/query. Cache
+        // its guarded decimal cast, rather than converting it for every value.
+        private sealed class Factor
+        {
+            internal readonly double Value;
+            internal readonly decimal Decimal;
+            internal readonly bool Faithful;
+            internal Factor(double value) { Value = value; Faithful = PanelNumber.FaithfulDecimal(value, out Decimal); }
+        }
+        private static Factor _factor = new Factor(0);
 
         private static double RoundUp(double value, double roundUpFactor)
         {
             if (!IsRoundingFactor(roundUpFactor) || double.IsNaN(value) || double.IsInfinity(value)) return value;
+            long bits = BitConverter.DoubleToInt64Bits(Math.Abs(value));
+            int exponent = (int)((bits >> 52) & 2047);
+            double resolution = exponent <= 52 ? BitConverter.Int64BitsToDouble(1L << Math.Max(0, exponent - 1)) : BitConverter.Int64BitsToDouble((long)(exponent - 52) << 52);
+            if (roundUpFactor < resolution) return value;
+            var prepared = Volatile.Read(ref _factor);
+            if (prepared.Value != roundUpFactor) { prepared = new Factor(roundUpFactor); Volatile.Write(ref _factor, prepared); }
             try
             {
-                if (TryDecimal(value, out decimal number) && TryDecimal(roundUpFactor, out decimal factor) && factor > 0)
+                if (prepared.Faithful && prepared.Decimal > 0 && Math.Abs(value) < 79228162514264337593543950336d)
                 {
+                    decimal number = (decimal)value, factor = prepared.Decimal;
+                    if (number == 0 && value > 0) return roundUpFactor;
+                    if ((double)number != value) return DoubleCeil(value, roundUpFactor);
                     decimal remainder = number % factor;
-                    return (double)(remainder == 0 ? number : number - remainder + (number > 0 ? factor : 0));
+                    if (remainder == 0) return value;
+                    double rounded = PanelNumber.ToDouble(number - remainder + (number > 0 ? factor : 0));
+                    return rounded >= value ? rounded : DoubleCeil(value, roundUpFactor);
                 }
             }
             catch (OverflowException) { }
+            return DoubleCeil(value, roundUpFactor);
+        }
+
+        private static double DoubleCeil(double value, double roundUpFactor)
+        {
             double quotient = value / roundUpFactor;
             if (Math.Abs(quotient) >= 4503599627370496d) return value;
             if (quotient == 0 && value > 0) return roundUpFactor;
-            return Math.Ceiling(quotient) * roundUpFactor;
+            return Math.Max(value, Math.Ceiling(quotient) * roundUpFactor);
         }
 
         public static string Label(PanelUnitConversion conversion) => Definition(conversion).Label;
@@ -149,11 +165,9 @@ namespace BetterGhPanel.Core
             string automaticFormat = "G12")
         {
             decimals = Math.Max(AutomaticDecimals, Math.Min(MaximumDecimals, decimals));
-            value = Transform(value, PanelUnitConversion.None, 0, decimals);
             if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";
-            string text = decimals >= 0 && TryDecimal(value, out decimal number)
-                ? Math.Round(number, decimals, MidpointRounding.AwayFromZero).ToString("F" + decimals, CultureInfo.InvariantCulture)
-                : value.ToString(decimals < 0 ? automaticFormat : "F" + decimals, CultureInfo.InvariantCulture);
+            string text = decimals >= 0 ? PanelNumber.Fixed(value, decimals)
+                : PanelNumber.General(value, automaticFormat == "G6" ? 6 : 12);
             string symbol = Symbol(conversion);
             return symbol.Length == 0 ? text : text + " " + symbol;
         }

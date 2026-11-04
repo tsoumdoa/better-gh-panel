@@ -25,14 +25,15 @@ namespace BetterGhPanel.UI
         internal const string GeometryCopyUnsupported = "Copying geometry is not supported on Mac yet.";
 
         internal static CanvasRowAction[] Create(int selectedCount, int[] indices, bool filtered, bool hasGeometry = true, bool canCopyGeometry = true,
-            bool paired = false) => new[]
+            bool paired = false, bool setItems = false) => new[]
         {
             new CanvasRowAction(PanelRowAction.FrameSelection, "Frame selection in Rhino",
                 "Zoom Rhino's active viewport to the selected geometry.", hasGeometry ? null : NoGeometry),
             // Value actions on the F pane read F; geometry actions always use D.
             new CanvasRowAction(PanelRowAction.CopyValues, (paired ? "Copy F value" : "Copy value") + (selectedCount == 1 ? "" : "s"),
                 "One value per line, in displayed order and formatting. Measurements copy as plain numbers."),
-            new CanvasRowAction(PanelRowAction.CopyAddresses, "Copy address" + (selectedCount == 1 ? "" : "es"), "Copy {path}(index), one address per selected row."),
+            new CanvasRowAction(PanelRowAction.CopyAddresses, (setItems ? "Copy D branch address" : "Copy address") + (selectedCount == 1 ? "" : "es"),
+                setItems ? "Copy the D output branch {path;k} (or {k} with Flatten), one address per selected set row." : "Copy {path}(index), one address per selected row."),
             new CanvasRowAction(PanelRowAction.CopyTable, "Copy as table", "Copy Path, Index and shown Value as a tab-separated table."),
             new CanvasRowAction(PanelRowAction.CopyGeometry, "Copy geometry for Rhino",
                 "Copy the selected geometry, then Paste in Rhino. Other rows are skipped.",

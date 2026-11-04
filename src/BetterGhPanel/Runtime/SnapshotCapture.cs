@@ -196,7 +196,7 @@ namespace BetterGhPanel.Runtime
                     }
                     finally { GC.KeepAlive(capturedGeometry); }
                     rows.Add(new PanelRow(i, path, type, display, number, validity,
-                        typeIdentityAvailable: typeAvailable, searchCapabilities: capabilities, isNull: item == null,
+                        typeIdentityAvailable: typeAvailable, searchCapabilities: capabilities, isNull: item == null && !scalars[position].Available,
                         geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary, components: components, properties: properties, rawNumericValue: scalars[position].RawNumber));
                     source.Add(item);
                     geometrySources.Add(directLeaf.HasValue ? new CapturedMeasurementSource(directLeaf.Value) : null);

@@ -1,10 +1,21 @@
 using System;
+using System.Globalization;
 using BetterGhPanel.Core;
 
 namespace BetterGhPanel.UI
 {
     internal static class PanelItemOrder
     {
+        internal static string Address(PanelQueryResult result, int position, bool setItems, bool flatten)
+        {
+            TryGetNumber(result, position, out int number);
+            string index = number.ToString(CultureInfo.InvariantCulture);
+            string path = result.Snapshot.Rows[position].Path;
+            return setItems && result.DisplaySet != null && !result.DisplaySet.IsBranchSet
+                ? flatten ? "{" + index + "}" : path.Substring(0, path.Length - 1) + ";" + index + "}"
+                : path + "(" + index + ")";
+        }
+
         internal static bool TryGetNumber(PanelQueryResult? result, int position, out int number, Action? rowVisited = null)
         {
             number = 0;

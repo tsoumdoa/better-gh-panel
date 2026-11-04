@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.Threading;
 
 namespace BetterGhPanel.Core
@@ -36,7 +35,7 @@ namespace BetterGhPanel.Core
                 copy = numeric ? new PanelText(PanelUnits.Format(row.NumericValue!.Value, PanelUnitConversion.None,
                     query.DecimalPlaces)) : text;
             }
-            double? number = query.DecimalPlaces < 0 && numeric && double.TryParse(copy.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) &&
+            double? number = query.DecimalPlaces < 0 && numeric && PanelUnits.TryParseOperand(copy.ToString(), out double parsed) &&
                 !double.IsNaN(parsed) && !double.IsInfinity(parsed) ? parsed : (double?)null;
             var presented = query.DisplayFilterValue
                 ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor)

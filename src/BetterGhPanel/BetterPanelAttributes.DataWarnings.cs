@@ -57,7 +57,7 @@ namespace BetterGhPanel
 
         private bool TryWarningClick(PointF point, GH_Canvas canvas)
         {
-            if (!ResultIsCurrent(PanelOwner.Session.Result)) return false;
+            if (!RowsAreCurrent(PanelOwner.Session.Result)) return false;
             foreach (var hit in _warningHits)
             {
                 if (!hit.Bounds.Contains(point)) continue;
@@ -85,12 +85,16 @@ namespace BetterGhPanel
         }
 
         private void DrawBranchExtras(Graphics graphics, PanelQueryResult result, RectangleF bounds, string path,
-            Font mono, Font small, StringFormat trim, string? countText = null, bool paired = false)
+            Font mono, Font small, StringFormat trim, string? countText = null, bool paired = false,
+            string? label = null, RectangleF labelBounds = default)
         {
             float countWidth = countText == null ? 96 : System.Math.Min(bounds.Width / 2, graphics.MeasureString(countText, small).Width + 6);
-            float x = bounds.X + 8 + System.Math.Min(graphics.MeasureString(path, mono).Width, System.Math.Max(0, bounds.Width - countWidth - 42));
-            var copy = x + 17 < bounds.Right - countWidth - 8 ? new RectangleF(x, bounds.Y, 17, bounds.Height) : RectangleF.Empty;
-            if (_hoverBounds == bounds && !copy.IsEmpty)
+            if (labelBounds.IsEmpty) labelBounds = new RectangleF(bounds.X + 6, bounds.Y, bounds.Width - countWidth - 36, bounds.Height);
+            float labelWidth = graphics.MeasureString(label ?? path, mono, int.MaxValue, trim).Width;
+            float x = labelBounds.X + labelWidth + 2;
+            var copy = _hoverBounds == bounds && x + 17 <= labelBounds.Right
+                ? new RectangleF(x, bounds.Y, 17, bounds.Height) : RectangleF.Empty;
+            if (!copy.IsEmpty && TargetPainted(graphics, copy))
             {
                 using var pen = new Pen(Accent, 1);
                 using var back = new System.Drawing.Drawing2D.GraphicsPath();
@@ -105,6 +109,7 @@ namespace BetterGhPanel
                 using var brush = new SolidBrush(PanelTheme.Rgb(236, 241, 235));
                 graphics.FillPath(brush, front); graphics.DrawPath(pen, front);
             }
+            else copy = RectangleF.Empty;
             if (!paired && countText != null && result.Warnings.IsOutlier(result.Snapshot, path))
                 Text(graphics, countText, small, PanelTheme.Warning, new RectangleF(bounds.Right - countWidth - 6, bounds.Y, countWidth, bounds.Height), trim);
             if (TargetPainted(graphics, bounds)) AddBranchHit(bounds, path, copy);

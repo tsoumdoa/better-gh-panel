@@ -998,7 +998,9 @@ namespace BetterGhPanel
 
         private void AddBranchHit(RectangleF bounds, string path, RectangleF copyBounds = default)
         {
-            if (!_branchHits.Any(hit => hit.Bounds == bounds && hit.Path == path)) _branchHits.Add(new BranchHit(bounds, path, copyBounds));
+            int index = _branchHits.FindIndex(hit => hit.Bounds == bounds && hit.Path == path);
+            var target = new BranchHit(bounds, path, copyBounds);
+            if (index < 0) _branchHits.Add(target); else _branchHits[index] = target;
         }
 
         private static (bool Toggle, bool Range, bool AcrossBranches) RowModifiers()
@@ -1778,7 +1780,7 @@ namespace BetterGhPanel
             else if (_outLabel.Contains(point) || _outItems.Contains(point) || _outValues.Contains(point))
             {
                 e.Title = "Output: Items / Values";
-                e.Description = _outValues.Contains(point) ? "Sends the values exactly as shown" : "Items sends the source data; Values sends the displayed property. Sets group all member items by set index; unavailable values are null.";
+                e.Description = _outValues.Contains(point) ? (PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor != 0 ? "Sends the values exactly as shown" : "Sends full-precision values; the display may be abbreviated") : "Items sends the source data; Values sends the displayed property. Sets group all member items by set index; unavailable values are null.";
             }
             else if (_units.Contains(point))
             {
@@ -1938,7 +1940,11 @@ namespace BetterGhPanel
                             PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, PanelOwner.DecimalPlaces, geometry, roundUpFactor: PanelOwner.RoundUpFactor) + "\n" + details;
                     if (rounding.Length > 0) details = rounding + "\n" + details;
                     if (setOccurrences != null)
+                    {
                         details += "\nFiltered source occurrences: " + CanvasStatistics.SourceStatuses(setOccurrences.SourceStatuses);
+                        if (PanelOwner.OutputValues == PanelOutputValues.Items)
+                            details += "\nD output branch: " + PanelItemOrder.Address(PanelOwner.Session.Result, hit.SourcePosition, true, PanelOwner.FlattenTree);
+                    }
                     e.Description = PanelTextPreview.ForTooltip(details) + "\n\nClick to select · Ctrl/Cmd toggles · Shift extends · Alt/Option same index · right-click for more";
                     break;
                 }

@@ -8,7 +8,8 @@ using Rhino;
 namespace BetterGhPanel.Runtime
 {
     // Temporary immutable scalar values taken before callback-bearing capture.
-    // Strings are referenced, never copied; no scalar array survives the solve.
+    // Strings are referenced, never copied. The solve retains the original and
+    // presented arrays as immutable witnesses for subsequent currency checks.
     internal readonly struct CapturedScalar
     {
         private const byte None = 0, Number = 1, Integer = 2, Text = 3, Boolean = 4;
@@ -56,7 +57,7 @@ namespace BetterGhPanel.Runtime
 
         internal static CapturedScalar[] Convert(CapturedScalar[] source, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = PanelUnits.AutomaticDecimals)
         {
-            if (conversion == PanelUnitConversion.None && roundUpFactor == 0 && decimals < 0 && !Array.Exists(source, value => value.IsNegativeZero)) return source;
+            if (conversion == PanelUnitConversion.None && roundUpFactor == 0 && decimals < 0) return source;
             var result = (CapturedScalar[])source.Clone();
             for (int i = 0; i < result.Length; i++)
             {
@@ -66,7 +67,7 @@ namespace BetterGhPanel.Runtime
                 // An overflowing conversion has no finite display-unit raw value.
                 // Retain the finite source as the witness of transformed unavailability.
                 double raw = double.IsNaN(converted) || double.IsInfinity(converted) ? value._number : PanelUnits.Convert(value._number, conversion);
-                result[i] = new CapturedScalar(value.IsInteger && conversion == PanelUnitConversion.None && roundUpFactor == 0 ? Integer : Number, converted, null, RhinoMath.IsValidDouble(converted), raw);
+                result[i] = new CapturedScalar(value.IsInteger && conversion == PanelUnitConversion.None && roundUpFactor == 0 ? Integer : Number, converted, null, value.IsValid, raw);
             }
             return result;
         }
@@ -74,7 +75,7 @@ namespace BetterGhPanel.Runtime
         internal string Format(out double? numeric, out string? text)
         {
             numeric = null; text = null;
-            if (_kind == Number) { numeric = _number; return _number.ToString("G12", CultureInfo.InvariantCulture); }
+            if (_kind == Number) { numeric = _number; return PanelUnits.Format(_number, PanelUnitConversion.None, PanelUnits.AutomaticDecimals); }
             if (_kind == Integer) { numeric = _number; return ((int)_number).ToString(CultureInfo.InvariantCulture); }
             if (_kind == Text) { text = _text; return _text ?? "<null text>"; }
             if (_kind == Boolean) return _number != 0 ? "True" : "False";

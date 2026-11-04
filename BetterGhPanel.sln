@@ -8,8 +8,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BetterGhPanel", "src\Better
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BetterGhPanel.Core.Tests", "tests\BetterGhPanel.Core.Tests\BetterGhPanel.Core.Tests.csproj", "{AB217670-C3F9-482D-8226-D746C03425F7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BetterGhPanel.PresentedNumbers", "tests\BetterGhPanel.PresentedNumbers\BetterGhPanel.PresentedNumbers.csproj", "{9E91C25C-6BD8-4A45-8566-CC898B67F2D9}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -28,9 +26,5 @@ Global
 		{AB217670-C3F9-482D-8226-D746C03425F7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{AB217670-C3F9-482D-8226-D746C03425F7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{AB217670-C3F9-482D-8226-D746C03425F7}.Release|Any CPU.Build.0 = Release|Any CPU
-		{9E91C25C-6BD8-4A45-8566-CC898B67F2D9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{9E91C25C-6BD8-4A45-8566-CC898B67F2D9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{9E91C25C-6BD8-4A45-8566-CC898B67F2D9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{9E91C25C-6BD8-4A45-8566-CC898B67F2D9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

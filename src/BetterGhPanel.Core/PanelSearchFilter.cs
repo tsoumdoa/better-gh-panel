@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Threading;
 
@@ -145,7 +144,7 @@ namespace BetterGhPanel.Core
                 text.StartsWith(">", StringComparison.Ordinal) || text.StartsWith("<", StringComparison.Ordinal) ||
                 text.StartsWith("=", StringComparison.Ordinal) ? 1 : 0;
             if (operatorLength == 0 && !implicitEquality ||
-                !double.TryParse(text.Substring(operatorLength).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var threshold) ||
+                !PanelUnits.TryParseOperand(text.Substring(operatorLength).Trim(), out var threshold) ||
                 !IsFinite(threshold)) return null;
             switch (text.Substring(0, operatorLength))
             {

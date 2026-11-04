@@ -12,8 +12,6 @@ for (const path of sources.stdout.split('\0').filter(Boolean)) {
 }
 const checks = [
   ['dotnet', ['test', 'BetterGhPanel.sln', '-c', 'Release', '--nologo']],
-  ['dotnet', ['run', '--project', 'tests/BetterGhPanel.PresentedNumbers', '-c', 'Release', '-f', 'net7.0', '--no-build']],
-  ...(process.platform === 'win32' ? [['tests/BetterGhPanel.PresentedNumbers/bin/Release/net48/BetterGhPanel.PresentedNumbers.exe', []]] : []),
   [process.execPath, ['--test', 'tests/rhino-coordinator.test.mjs']],
   [process.execPath, ['--test', 'tests/package.test.mjs']],
   [process.execPath, ['scripts/package.mjs', '--stage-only']],

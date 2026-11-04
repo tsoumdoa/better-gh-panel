@@ -24,6 +24,7 @@ namespace BetterGhPanel
         private readonly PanelGeometryHighlight _highlight = new PanelGeometryHighlight();
         private bool _previewSuspended;
         private IGH_Goo?[] _sourceItems = Array.Empty<IGH_Goo?>();
+        private CapturedScalar[] _scalarInputs = Array.Empty<CapturedScalar>(), _presentedScalars = Array.Empty<CapturedScalar>();
         private CapturedMeasurementSource?[] _measurementSources = Array.Empty<CapturedMeasurementSource?>();
         private CaptureGraphWitness[] _captureGraphs = Array.Empty<CaptureGraphWitness>();
         private IGH_Goo?[] _pairedSourceItems = Array.Empty<IGH_Goo?>();
@@ -284,7 +285,7 @@ namespace BetterGhPanel
             }
             bool UnitsCurrent()
             {
-                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count, RoundUpFactor, DecimalPlaces);
+                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count, RoundUpFactor, DecimalPlaces, _scalarInputs, _presentedScalars);
                 visits += count; return result;
             }
             bool StructuresCurrent()
@@ -832,8 +833,7 @@ namespace BetterGhPanel
                         string Value(int position) => paired ? BetterPanelAttributes.PairedDisplayValue(pairedSnapshot!.Rows[position]) : CopyValue(snapshot, position);
                         string Address(int position)
                         {
-                            PanelItemOrder.TryGetNumber(result, position, out int index);
-                            return snapshot.Rows[position].Path + "(" + index.ToString(CultureInfo.InvariantCulture) + ")";
+                            return PanelItemOrder.Address(result, position, OutputValues == PanelOutputValues.Items, FlattenTree);
                         }
                         string text;
                         if (path != null) text = action == PanelRowAction.CopyPathBare ? path.Trim('{', '}') : path;
@@ -951,6 +951,7 @@ namespace BetterGhPanel
             {
                 ++_outputRequest;
                 _queryTree = null;
+                _scalarInputs = _presentedScalars = Array.Empty<CapturedScalar>();
                 ClearOutputSources();
                 if (!_retainGeometryMeasurements)
                 {
@@ -1012,7 +1013,7 @@ namespace BetterGhPanel
                     var roundUpFactor = RoundUpFactor;
                     var scalarInputs = CapturedScalar.Capture(preConversionTree);
                     var queryScalars = CapturedScalar.Convert(scalarInputs, conversion, roundUpFactor, DecimalPlaces);
-                    var queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.ApplyCaptured(preConversionTree, conversion, scalarInputs, roundUpFactor, DecimalPlaces));
+                    var queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.ApplyCaptured(preConversionTree, conversion, scalarInputs, roundUpFactor, DecimalPlaces, queryScalars));
                     var inputSeed = SnapshotCapture.PrepareInputs(queryTree);
                     CapturePairedInput(da, inputTree, queryTree, retainedSources, out var pairedTree, out var pairedError,
                         out var livePairedTree, out var capturedPairedTree, out bool pairedPresent);
@@ -1029,7 +1030,7 @@ namespace BetterGhPanel
                     if (!Current()) return;
                     bool hasGeometry = HasGeometry(snapshot) || pairedSnapshot != null && HasGeometry(pairedSnapshot);
                     if (!SnapshotCapture.MeasurementSourcesCurrent(sources, measurementSources) || !SnapshotCapture.GraphSourcesCurrent(graphs) ||
-                        !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor, DecimalPlaces) ||
+                        !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor, DecimalPlaces, scalarInputs, queryScalars) ||
                         (pairedSnapshot != null && (!SnapshotCapture.MeasurementSourcesCurrent(pairedSources, pairedMeasurements) ||
                             !SnapshotCapture.GraphSourcesCurrent(pairedGraphs) || !SnapshotCapture.ManagedRowsCurrent(pairedSnapshot, pairedSources))) ||
                         !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) || pairedPresent != PairedInputPresent() ||
@@ -1042,6 +1043,7 @@ namespace BetterGhPanel
                     if (!Current()) return;
                     // All callback-bearing inspection has completed. Commit these
                     // locals together only while this solve still owns the component.
+                    _scalarInputs = scalarInputs; _presentedScalars = queryScalars;
                     _inputTree = inputTree; _preConversionTree = preConversionTree; _queryTree = queryTree; _retainedSources = retainedSources;
                     _liveInputTree = liveInputTree; _livePairedTree = livePairedTree; _pairedInputTree = capturedPairedTree; _pairedInputPresent = pairedPresent;
                     _pairedQueryTree = pairedTree; _pairedError = pairedError;
@@ -1105,6 +1107,7 @@ namespace BetterGhPanel
             if (generation != _solveGeneration || !ReferenceEquals(session, _session)) return;
             long invalidated = ++_solveGeneration;
             _queryTree = null;
+            _scalarInputs = _presentedScalars = Array.Empty<CapturedScalar>();
             ClearOutputSources();
             _measurementSnapshot = null;
             _measurementSources = Array.Empty<CapturedMeasurementSource?>();
@@ -1163,6 +1166,7 @@ namespace BetterGhPanel
             ++_solveGeneration;
             ++_outputRequest;
             _queryTree = null;
+            _scalarInputs = _presentedScalars = Array.Empty<CapturedScalar>();
             ClearOutputSources();
             _reuseQuery = false;
             CancelPendingCopy();
@@ -1248,6 +1252,7 @@ namespace BetterGhPanel
             ++_solveGeneration;
             ++_outputRequest;
             _queryTree = null;
+            _scalarInputs = _presentedScalars = Array.Empty<CapturedScalar>();
             _reuseQuery = false;
             ClearOutputSources();
             _sourceItems = Array.Empty<IGH_Goo?>();

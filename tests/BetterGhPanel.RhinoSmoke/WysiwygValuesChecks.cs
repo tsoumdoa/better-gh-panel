@@ -117,15 +117,21 @@ internal static class WysiwygValuesChecks
         fixture.SelectAt(0); Render();
         var heading = Field<IEnumerable>(attributes, "_branchHits").Cast<object>().First();
         var bounds = Property<RectangleF>(heading, "Bounds");
+        Check(Property<RectangleF>(heading, "CopyBounds").IsEmpty, "An unhovered heading has no copy hit target");
         Call(attributes, "UpdateHover", canvas, new PointF(bounds.X + 20, bounds.Y + bounds.Height / 2));
         Capture("branch-copy-hover");
+        heading = Field<IEnumerable>(attributes, "_branchHits").Cast<object>().First();
         var clipboard = Forms.Clipboard.GetDataObject();
         try
         {
             var copy = Property<RectangleF>(heading, "CopyBounds");
+            Check(!copy.IsEmpty, "Hover paints the copy glyph and creates its hit target together");
             PanelTestAdapter.CanvasClick(canvas, new PointF(copy.X + copy.Width / 2, copy.Y + copy.Height / 2));
             await fixture.Ready(() => Field<string>(attributes, "_actionStatus") == "Copied {0;2;52}");
             Check(Forms.Clipboard.GetText() == "{0;2;52}" && fixture.SelectedCount == 1, "Heading glyph copies the exact path without changing selection");
+            Call(attributes, "UpdateHover", canvas, new PointF(bounds.X - 20, bounds.Y)); Render();
+            Check(Property<RectangleF>(Field<IEnumerable>(attributes, "_branchHits").Cast<object>().First(), "CopyBounds").IsEmpty,
+                "Leaving a heading removes its copy hit target");
             Render();
             PanelTestAdapter.CanvasClick(canvas, new PointF(bounds.X + 20, bounds.Y + bounds.Height / 2), Forms.MouseButtons.Right);
             Capture("branch-heading-menu");
@@ -142,9 +148,11 @@ internal static class WysiwygValuesChecks
             fixture.SelectAt(1, toggle: true);
             await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 2);
             var actionType = assembly.GetType("BetterGhPanel.UI.PanelRowAction", true)!;
-            async Task Copy(string action) => await (Task<string>)Call(component, "CopyAddressesAsync", fixture.Result.Snapshot, new[] { 0, 1 }, Enum.Parse(actionType, action), null, false)!;
-            await Copy("CopyAddresses");
-            Check(Forms.Clipboard.GetText() == "{0;2;52}(0)" + Environment.NewLine + "{0;2;52}(1)", "Native addresses use the exact visible path and index");
+            async Task<string> Copy(string action) => await (Task<string>)Call(component, "CopyAddressesAsync", fixture.Result.Snapshot, new[] { 0, 1 }, Enum.Parse(actionType, action), null, false)!;
+            string addressStatus = await Copy("CopyAddresses");
+            string addressText = Forms.Clipboard.GetText();
+            Check(addressStatus == "Addresses copied" && addressText == "{0;2;52}(0)" + Environment.NewLine + "{0;2;52}(1)",
+                "Native addresses use the exact visible path and index; status=" + addressStatus + "; clipboard=" + addressText.Replace(Environment.NewLine, " / "));
             await Copy("CopyTable");
             Check(Forms.Clipboard.GetText() == "Path\tIndex\tValue" + Environment.NewLine +
                 "{0;2;52}\t0\t1300.00 mm" + Environment.NewLine + "{0;2;52}\t1\t1350.00 mm", "Native TSV preserves shown values and unit labels");
@@ -153,6 +161,19 @@ internal static class WysiwygValuesChecks
             keyTarget.GetMethod("HandleKey")!.Invoke(attributes, new object[] { canvas, Forms.Keys.Control | Forms.Keys.Shift | Forms.Keys.C });
             await fixture.Ready(() => Field<string>(attributes, "_actionStatus") == "Addresses copied");
             Check(Forms.Clipboard.GetText() == "{0;2;52}", "Ctrl/Cmd+Shift+C copies unique selected paths");
+
+            Call(component, "SetOutputValues", PanelOutputValues.Items);
+            Call(component, "SetTreeOperations", 0, false, false, false, true);
+            await fixture.Ready(() => fixture.Result.DisplaySet != null && fixture.Sinks[0].VolatileData.PathCount == 2);
+            await Copy("CopyAddresses");
+            Check(Forms.Clipboard.GetText() == "{0;2;52;0}" + Environment.NewLine + "{0;2;52;1}",
+                "Create-set Items copy the same branches D sends");
+            Call(component, "SetTreeOperations", 0, true, false, false, true);
+            await fixture.Ready(() => fixture.Result.DisplaySet != null && fixture.Sinks[0].VolatileData.Paths[0].ToString() == "{0}");
+            await Copy("CopyAddresses");
+            Check(Forms.Clipboard.GetText() == "{0}" + Environment.NewLine + "{1}", "Flattened set addresses match D branches");
+            Call(component, "SetTreeOperations", 0, false, false, false, false);
+            await fixture.Ready(() => fixture.Result.DisplaySet == null);
         }
         finally { if (clipboard == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(clipboard, true); }
 
@@ -170,7 +191,9 @@ internal static class WysiwygValuesChecks
         Call(component, "SetUnits", PanelUnitConversion.MetersToMillimeters, 2, (double?)0);
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 1 && fixture.Sinks[0].VolatileData.AllData(false).Single() == null);
         Check(PanelValuePresentation.FormatDisplay(fixture.Result.Snapshot.Rows[0], PanelUnitConversion.MetersToMillimeters, 2) == "unavailable" &&
-            fixture.Result.Statistics.NumericCount == 0, "Final conversion overflow is unavailable in rows, numeric Items and Stats");
+            fixture.Result.Statistics.NumericCount == 0 && fixture.Result.Statistics.InvalidCount == 0 && fixture.Result.Statistics.NullCount == 0 &&
+            fixture.Result.Warnings.InvalidCount == 0 && fixture.Result.Warnings.NullCount == 0,
+            "Final conversion overflow is unavailable in rows/Items/Stats and never an invalid or null source warning");
         Call(component, "SetTreeOperations", 0, false, false, false, true);
         Call(component, "SetOutputValues", PanelOutputValues.Values);
         await fixture.Ready(() => fixture.Result.DisplaySet != null && fixture.Sinks[0].VolatileData.DataCount == 1 && fixture.Sinks[0].VolatileData.AllData(false).Single() == null);
@@ -191,8 +214,8 @@ internal static class WysiwygValuesChecks
         fixture.Query(new PanelQueryOptions());
         Call(component, "SetUnits", PanelUnitConversion.None, PanelUnits.AutomaticDecimals, (double?)0);
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).OfType<GH_Number>().FirstOrDefault()?.Value == 0);
-        Check(BitConverter.DoubleToInt64Bits(fixture.Sinks[0].VolatileData.AllData(false).OfType<GH_Number>().First().Value) == 0,
-            "Automatic numeric Items normalize negative zero on the wire");
+        Check(BitConverter.DoubleToInt64Bits(fixture.Sinks[0].VolatileData.AllData(false).OfType<GH_Number>().First().Value) == long.MinValue,
+            "Automatic numeric Items preserve negative zero without active transformations");
         fixture.Source.PersistentData.Clear();
         fixture.Source.PersistentData.Append(new GH_Number(1), path);
         fixture.Source.PersistentData.EnsurePath(new GH_Path(0, 3, 52));

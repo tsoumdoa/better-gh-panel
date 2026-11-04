@@ -341,7 +341,7 @@ namespace BetterGhPanel.Core
             return candidates.AsReadOnly();
         }
 
-        private static bool PresentationNeedsGeometry(PanelQueryOptions query) => (query.CreateSet || query.DisplayFilterValue) &&
+        private static bool PresentationNeedsGeometry(PanelQueryOptions query) => (query.CreateSet || query.OutputValues && query.DisplayFilterValue) &&
             (!query.DisplayFilterValue || query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(query.SearchMode));
 
         /// <summary>Accepts a semicolon-separated path with or without braces. Blank means all branches.</summary>

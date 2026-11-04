@@ -15,7 +15,7 @@ namespace BetterGhPanel.Core
                 if (!PanelProperties.TryGet(row, mode, measured, out var property) || property == null) return null;
                 if (property.Kind != PanelPropertyKind.Number) return property;
                 double number = property.Converted(snapshot.UnitConversion);
-                return Presented(number, roundUpFactor, decimals);
+                return Presented(number, property.Power == 0 ? 0 : roundUpFactor, property.KeepInteger ? -1 : decimals);
             }
             bool available = mode == PanelSearchMode.Value || mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z
                 ? TryScalarValue(row, mode, snapshot.UnitConversion, out double value)
@@ -149,14 +149,16 @@ namespace BetterGhPanel.Core
                     options.DisplayFilterValue && mode == PanelSearchMode.Area ? 2 : geometry.Power, geometry.Units);
             }
             double number = raw.Converted(snapshot.UnitConversion);
-            double factored = PanelUnits.Transform(number, PanelUnitConversion.None, options.RoundUpFactor);
-            double shown = PanelUnits.Transform(number, PanelUnitConversion.None, options.RoundUpFactor, options.DecimalPlaces);
+            double factor = options.DisplayFilterValue && PanelProperties.IsProperty(mode) && raw.Power == 0 ? 0 : options.RoundUpFactor;
+            double factored = PanelUnits.Transform(number, PanelUnitConversion.None, factor);
+            double shown = PanelUnits.Transform(number, PanelUnitConversion.None, factor,
+                options.DisplayFilterValue && PanelProperties.IsProperty(mode) && raw.KeepInteger ? -1 : options.DecimalPlaces);
             string shownText = options.DisplayFilterValue
                 ? Format(snapshot, row, mode, options.DecimalPlaces, measured, false, options.RoundUpFactor)
                 : row.RawNumericValue.HasValue ? PanelUnits.Format(shown, PanelUnitConversion.None, options.DecimalPlaces)
                 : PanelUnits.Format(shown, PanelUnitConversion.None, options.DecimalPlaces, automaticFormat: "G6");
             if (!IsFinite(number) || !IsFinite(shown) || shown == number &&
-                double.TryParse(shownText, NumberStyles.Float, CultureInfo.InvariantCulture, out double displayed) && displayed == number) return "";
+                PanelUnits.TryParseOperand(shownText, out double displayed) && displayed == number) return "";
             string plain = raw.Format(snapshot.UnitConversion, PanelUnits.AutomaticDecimals, false);
             string suffix = raw.Format(snapshot.UnitConversion, PanelUnits.AutomaticDecimals, true).Substring(plain.Length);
             if (row.RawNumericValue.HasValue && (!options.DisplayFilterValue || mode == PanelSearchMode.Value))

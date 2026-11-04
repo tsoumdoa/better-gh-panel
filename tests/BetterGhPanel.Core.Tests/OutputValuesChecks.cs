@@ -63,7 +63,7 @@ public sealed class OutputValuesChecks
         Assert.Equal(new[] { 0 }, PanelQueryEngine.GeometryCandidates(pending, query));
         Assert.Null(PanelQueryEngine.Execute(pending, query).OutputValues![0]);
         query.OutputValues = false;
-        Assert.True(PanelQueryEngine.RequiresGeometryMeasurements(query)); // Stats also need complete displayed metrics.
+        Assert.False(PanelQueryEngine.RequiresGeometryMeasurements(query)); // Plain display keeps visible-row measurement.
     }
 
     [Fact]

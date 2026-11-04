@@ -38,8 +38,8 @@ internal static class FilterQueryChecks
         var result = PanelQueryEngine.Execute(snapshot, options);
         Check(result.RowPositions.SequenceEqual(new[] { 0, 1, 2 }) && result.BranchPaths.SequenceEqual(new[] { "{0}", "{1}" }),
             "Display value bypasses comparison parsing, retains unsupported items and empty branches");
-        Check(options.Clone().DisplayFilterValue && PanelQueryEngine.RequiresGeometryMeasurements(options),
-            "Display state survives capture and completes offscreen metrics for presented-value Stats");
+        Check(options.Clone().DisplayFilterValue && !PanelQueryEngine.RequiresGeometryMeasurements(options) && PanelQueryEngine.GeometryCandidates(snapshot, options).Count == 0,
+            "Display state survives capture and leaves plain geometry display on visible-row measurement");
         Check(PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, 3) == "6.283 m" &&
             PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, 3, includeUnits: false) == "6.283",
             "Length display and numeric copy use converted circle circumference, not radius");
