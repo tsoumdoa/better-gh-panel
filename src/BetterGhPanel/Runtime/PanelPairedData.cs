@@ -11,8 +11,9 @@ namespace BetterGhPanel.Runtime
     internal sealed class PanelPairedData
     {
         internal IReadOnlyList<PanelBranchPair> Pairs { get; }
-        internal int DifferingCount { get; }
-        internal bool ByOrder { get; }
+        internal string Caption { get; }
+        internal readonly Dictionary<string, (string Count, string DataCount, bool Unequal, bool ByOrder, string Paths)> Headings =
+            new Dictionary<string, (string, string, bool, bool, string)>(StringComparer.Ordinal);
         private readonly Dictionary<string, PanelBranchPair> _byData;
         private readonly Dictionary<string, int> _dataOrder;
         private readonly IReadOnlyList<PanelSourceAddress> _sources;
@@ -23,8 +24,10 @@ namespace BetterGhPanel.Runtime
             IReadOnlyList<PanelSourceAddress> sources, int trim, bool simplify, bool flatten, bool reverse)
         {
             Pairs = PanelPairing.Match(Shape(data), Shape(paired));
-            DifferingCount = Pairs.Count(pair => pair.Unequal);
-            ByOrder = Pairs.Any(pair => pair.ByOrder);
+            int differingCount = Pairs.Count(pair => pair.Unequal);
+            int byOrder = Pairs.Count(pair => pair.ByOrder);
+            Caption = string.Join(" · ", new[] { "Paired by branch", byOrder > 0 ? byOrder + " by order" : null,
+                differingCount > 0 ? differingCount + " of " + Pairs.Count + " differ in length" : null }.Where(part => part != null));
             _byData = Pairs.ToDictionary(pair => pair.Data.Path, StringComparer.Ordinal);
             _dataOrder = Pairs.Select((pair, index) => (pair, index)).ToDictionary(value => value.pair.Data.Path, value => value.index, StringComparer.Ordinal);
             _sources = sources; _reverse = reverse;
@@ -48,12 +51,37 @@ namespace BetterGhPanel.Runtime
                 if (!_byDestination.TryGetValue(path, out var branches)) _byDestination.Add(path, branches = new List<PanelBranchPair>());
                 branches.Add(pair);
             }
+            foreach (var destination in _byDestination)
+            {
+                var pairs = destination.Value;
+                int count = pairs.Sum(pair => pair.Paired.ItemCount);
+                string paths = string.Join(", ", pairs.Take(3).Select(pair => pair.Paired.Path.Length > 80 ? pair.Paired.Path.Substring(0, 77) + "…" : pair.Paired.Path));
+                Headings.Add(destination.Key, (count + (count == 1 ? " item" : " items"), "D " + pairs.Sum(pair => pair.Data.ItemCount),
+                    pairs.Any(pair => pair.Unequal), pairs.Any(pair => pair.ByOrder), paths + (pairs.Count > 3 ? " …" : "")));
+            }
         }
         internal static PanelBranch[] Shape(GH_Structure<IGH_Goo> tree) =>
             Enumerable.Range(0, tree.PathCount).Select(b => new PanelBranch(tree.Paths[b].ToString(), tree.Branches[b].Count)).ToArray();
         internal PanelBranchPair BranchAt(int position) => _byData[_sources[position].Path];
         internal int? ItemAt(int position) => BranchAt(position).ItemPosition(_sources[position].ItemIndex);
         internal IEnumerable<PanelBranchPair> BranchesAt(string path) => _byDestination.TryGetValue(path, out var pairs) ? pairs : Enumerable.Empty<PanelBranchPair>();
+        internal IEnumerable<PanelBranchPair> ScopedBranches(PanelSnapshot snapshot, IEnumerable<int> members, IEnumerable<string> paths)
+        {
+            var scoped = new HashSet<string>(StringComparer.Ordinal);
+            var result = new List<PanelBranchPair>();
+            foreach (int position in members)
+            {
+                var pair = BranchAt(position);
+                if (scoped.Add(pair.Data.Path)) result.Add(pair);
+            }
+            // A destination shared with nonempty D rows does not identify an empty
+            // original branch. Only an explicitly retained empty branch does.
+            foreach (string path in paths)
+                if (snapshot.BranchItemCounts[path] == 0)
+                    foreach (var pair in BranchesAt(path))
+                        if (pair.Data.ItemCount == 0 && scoped.Add(pair.Data.Path)) result.Add(pair);
+            return result.OrderBy(pair => _dataOrder[pair.Data.Path]);
+        }
         internal IEnumerable<int> BranchItems(string path)
         {
             var pairs = BranchesAt(path).ToArray();
@@ -116,8 +144,8 @@ namespace BetterGhPanel.Runtime
                 {
                     visits++;
                     result.EnsurePath(destination(path));
-                    foreach (var pair in BranchesAt(path))
-                        if (pair.Data.ItemCount == 0 && emitted.Add(pair.Data.Path)) extras.Add(pair.Data.Path, (pair, path));
+                    foreach (var pair in ScopedBranches(query.Snapshot, Array.Empty<int>(), new[] { path }))
+                        if (emitted.Add(pair.Data.Path)) extras.Add(pair.Data.Path, (pair, path));
                 }
                 // Only scoped original branches enter this pass. Their F extras use
                 // original branch order, also after merged/flattened D rows.

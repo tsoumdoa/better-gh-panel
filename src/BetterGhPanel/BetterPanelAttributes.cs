@@ -690,9 +690,13 @@ namespace BetterGhPanel
                         if (paired)
                         {
                             using var italic = new Font(small, FontStyle.Italic);
-                            string value = PairedDisplayValue(PanelOwner.PairedSnapshot!.Rows[extra]);
-                            Text(g, (missingLabel.Length == 0 ? "" : missingLabel + " · ") + value, italic, Muted,
-                                new RectangleF(list.X + valueStart + 3, y, Math.Max(0, list.Width - valueStart - 9), RowHeight), trim);
+                            var extraRow = PanelOwner.PairedSnapshot!.Rows[extra];
+                            rowRenderer.DrawAddress(g, spacer, 0, extraRow.OriginalIndex, false, false);
+                            float noteWidth = missingLabel.Length == 0 ? 0 : g.MeasureString(missingLabel, small).Width + 10;
+                            rowRenderer.DrawCell(g, PairedDisplayValue(extraRow), italic, Muted,
+                                new RectangleF(list.X + valueStart + 3, y, Math.Max(0, list.Width - valueStart - 9 - noteWidth), RowHeight));
+                            if (noteWidth > 0) rowRenderer.DrawCell(g, missingLabel, small, Muted,
+                                new RectangleF(list.Right - noteWidth - 3, y, noteWidth, RowHeight), true);
                         }
                         shown++; y += RowHeight;
                         continue;

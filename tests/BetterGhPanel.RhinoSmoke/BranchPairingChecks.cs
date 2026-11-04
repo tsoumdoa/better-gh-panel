@@ -64,10 +64,24 @@ internal static class BranchPairingChecks
         string screenshots = Path.Combine(AppContext.BaseDirectory, "pairing-screenshots"); Directory.CreateDirectory(screenshots);
         void Render(string? name = null)
         {
+            if (name == null) { Draw(null); return; }
+            var previous = GH_Skin.canvas_back;
+            try
+            {
+                foreach (bool dark in new[] { false, true })
+                {
+                    GH_Skin.canvas_back = dark ? Color.FromArgb(35, 38, 36) : Color.FromArgb(229, 229, 229);
+                    Draw(name + (dark ? "-dark" : "-light"));
+                }
+            }
+            finally { GH_Skin.canvas_back = previous; }
+        }
+        void Draw(string? name)
+        {
             attributes.PerformLayout();
             using var bitmap = new Bitmap(canvas.Width, canvas.Height);
             using var graphics = Graphics.FromImage(bitmap);
-            graphics.Clear(Color.FromArgb(229, 229, 229));
+            graphics.Clear(GH_Skin.canvas_back);
             canvas.Viewport.ApplyProjection(graphics);
             PanelTestAdapter.Render(component, canvas, graphics);
             if (name != null)
@@ -87,6 +101,22 @@ internal static class BranchPairingChecks
         Render();
         f.Select(3); await Ready(() => f.Sinks[1].VolatileData.DataCount == 1);
         Render("uneven-split");
+        var display = ((IEnumerable)Call(attributes, "PairView", f.Result)!).Cast<object>().ToArray();
+        var extraRows = display.Where(row => Field<int>(row, "Extra") >= 0).ToArray();
+        Check(extraRows.Length == 2 && Field<string>(extraRows[0], "Label") == "+2 only in F" &&
+            Field<string>(extraRows[1], "Label") == "" && Property<object>(component, "PairedSnapshot") is PanelSnapshot pairedSnapshot &&
+            pairedSnapshot.Rows[Field<int>(extraRows[0], "Extra")].OriginalIndex == 2,
+            "F extras retain raw item indices and keep the first-row note separate from data");
+        bool offsetsAgree = true;
+        int successor = f.Result.RowPositions.Count;
+        for (int offset = display.Length - 1; offset >= 0; offset--)
+        {
+            int item = Field<int>(display[offset], "Item");
+            if (item >= 0) { successor = item; offsetsAgree &= (int)Call(attributes, "ViewOffset", f.Result, item)! == offset; }
+            offsetsAgree &= (int)Call(attributes, "ViewItemAtOrAfter", f.Result, offset)! == successor;
+        }
+        Check(offsetsAgree && ReferenceEquals(display[0], ((IEnumerable)Call(attributes, "PairView", f.Result)!).Cast<object>().First()),
+            "Cached item offsets and spacer successors agree with the paired index and reuse its rows");
         Check(PaneRow(3, true).Y == PaneRow(3, false).Y && PaneRow(14, true).Y == PaneRow(14, false).Y,
             "Missing F cells and F extras with D spacers preserve linked row alignment");
         Check(Call(component, "PairedRow", 3) == null && ((PanelRow)Call(component, "PairedRow", 14)!).StringValue == "F2-0",
@@ -147,6 +177,9 @@ internal static class BranchPairingChecks
         Seed(order: true);
         await Ready(() => f.Sinks[3].VolatileData.DataCount == 7);
         Render("order-paired-paths");
+        Check(Property<string>(Property<object>(component, "PairedData"), "Caption") ==
+            "Paired by branch · 2 by order · 2 of 3 differ in length",
+            "Caption includes both order fallback and unequal lengths without zero-count parts");
         Check(Branch(f, 3, "{0;1}") == "F1-0,F1-1,F1-2,F1-3" && Branch(f, 3, "{0;0}") == "Branch name",
             "Exact path reservation precedes fallback even when an unmatched D branch comes first");
         foreach (var tools in new[] { (0, false, false, true), (1, false, false, false), (0, true, true, false), (1, true, true, true) })
@@ -193,9 +226,95 @@ internal static class BranchPairingChecks
         PanelTestAdapter.TreeTools(component, 0, false, false, false, true);
         f.Query(new PanelQueryOptions { CreateSet = true, DisplayFilterValue = true, SearchMode = PanelSearchMode.ListLength });
         await Ready(() => f.Result.DisplaySet?.IsBranchSet == true && Paths(f, 3) == Paths(f, 0));
+        Render();
+        string lengthTwo = f.Result.BranchPaths.Single(path => f.Result.Snapshot.BranchItemCounts[path] == 2);
+        string lengthSummary = (string)Call(attributes, "PairedBranchValue", lengthTwo)!;
+        Check(lengthSummary.Contains("F1-0") && lengthSummary.Contains("F1-3") && lengthSummary.EndsWith(" …"),
+            "List-length set summary expands every branch occurrence with a bounded preview");
         Console.WriteLine("Branch-set outputs: D=" + Paths(f, 0) + "; F=" + Paths(f, 3) + "; values=" + f.Values(3));
         Check(f.Result.BranchPaths.Any(path => f.Result.DisplaySet!.BranchOccurrences[path].Contains("{0;3}") &&
             Branch(f, 3, "{" + f.Result.DisplaySet.BranchIndices[path] + ";0;3}") == "F3-0"), "List-length sets include empty D partners below the same {k;path} group as Items");
+        f.SelectBranch("{0;3}"); f.Scope(PanelOutputScope.Selected);
+        await Ready(() => f.Values(3) == "F3-0");
+        Check(f.Values(3) == "F3-0", "An explicitly selected empty D branch retains its own F partner");
+        f.ClearSelection(); f.Scope(PanelOutputScope.Filtered);
+        PanelTestAdapter.TreeTools(component, 0, false, false, false);
+        f.Query(new PanelQueryOptions());
+        f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
+        f.Source.PersistentData.EnsurePath(new GH_Path(0, 0));
+        f.Source.PersistentData.Append(new GH_Integer(2), new GH_Path(0, 1));
+        f.Paired.PersistentData.Append(new GH_String("empty-partner"), new GH_Path(0, 0));
+        f.Paired.PersistentData.Append(new GH_String("b"), new GH_Path(0, 1));
+        f.Solve();
+        await Ready(() => f.Result.RowPositions.Count == 1);
+        PanelTestAdapter.TreeTools(component, 0, true, false, false);
+        await Ready(() => f.Result.Snapshot.Rows[0].Path == "{0}");
+        f.Select(0); f.Scope(PanelOutputScope.Selected);
+        await Ready(() => f.Values(3) == "b");
+        Check(f.Values(3) == "b", "Selected merged D row never scopes an unrelated empty original branch");
+        f.ClearSelection(); f.Scope(PanelOutputScope.Filtered);
+        f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
+        for (int b = 0; b < 2; b++)
+        {
+            f.Source.PersistentData.Append(new GH_Integer(b + 1), new GH_Path(0, b));
+            string label = b == 0 ? "a" : "b";
+            f.Paired.PersistentData.Append(new GH_String(label), new GH_Path(0, b));
+            f.Paired.PersistentData.Append(new GH_String(label + "-extra"), new GH_Path(0, b));
+        }
+        f.Solve();
+        f.Query(new PanelQueryOptions { Search = "= 2" });
+        await Ready(() => f.Values(3) == "b,b-extra"); Render();
+        var filteredView = ((IEnumerable)Call(attributes, "PairView", f.Result)!).Cast<object>().ToArray();
+        Check(filteredView.Where(row => Field<int>(row, "Extra") >= 0).Select(row => Field<int>(row, "Extra")).SequenceEqual(new[] { 3 }),
+            "Merged filtered pane excludes every F value from unrelated original branches");
+        f.Query(new PanelQueryOptions { Search = "= 99" });
+        await Ready(() => f.Result.RowPositions.Count == 0 && f.Sinks[3].VolatileData.DataCount == 0);
+        Check((int)Call(attributes, "ViewItemAtOrAfter", f.Result, -1)! == 0,
+            "Empty paired index retains the ordinary successor lookup boundary behavior");
+        PanelTestAdapter.TreeTools(component, 0, true, false, false, true);
+        f.Query(new PanelQueryOptions { CreateSet = true, Search = "= 2" });
+        await Ready(() => f.Result.DisplaySet != null && f.Values(3) == "b,b-extra"); Render();
+        Check(((IEnumerable)Call(attributes, "PairView", f.Result)!).Cast<object>().Count(row => Field<int>(row, "Extra") >= 0) == 1,
+            "Merged set pane derives F extras from expanded current members");
+        f.Query(new PanelQueryOptions { CreateSet = true });
+        f.Source.PersistentData.Branches[0][0] = new GH_Integer(2); f.Solve();
+        await Ready(() => f.Result.DisplaySet?.Members.Values.Single().Count == 2 && f.Values(3) == "a,b,a-extra,b-extra"); Render();
+        Check(((IEnumerable)Call(attributes, "PairView", f.Result)!).Cast<object>().Where(row => Field<int>(row, "Extra") >= 0)
+            .Select(row => Field<int>(row, "Extra")).SequenceEqual(new[] { 1, 2, 3 }),
+            "Set pane expands nonrepresentative original branches before deriving whole-branch F tails");
+        // A run of extras fills both panes; Down must resume at the following D item.
+        PanelTestAdapter.TreeTools(component, 0, false, false, false);
+        f.Query(new PanelQueryOptions());
+        for (int i = 2; i < 40; i++) f.Paired.PersistentData.Append(new GH_String("tail-" + i), new GH_Path(0, 0));
+        f.Solve();
+        await Ready(() => f.Sinks[3].VolatileData.DataCount == 42);
+        PanelTestAdapter.Resize(component, 560, 260);
+        Call(attributes, "SetPaneOffset", canvas, 4, false); Render();
+        f.ClearSelection();
+        attributes.GetType().GetField("_keyboardCursor", Instance)!.SetValue(attributes, -1);
+        Check(Field<int>(attributes, "_firstShownItem") == -1, "Regression viewport contains only D spacers");
+        Call(attributes, "MoveKeyboardCursor", canvas, f.Result, 1, false);
+        Check(PanelTestAdapter.SelectedPosition(component) == 1, "Down from a spacer-only D viewport selects the next D item");
+        PanelTestAdapter.Resize(component, 560, 650);
+        f.ClearSelection();
+        f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
+        for (int b = 0; b < 12; b++)
+        {
+            f.Source.PersistentData.Append(new GH_Integer(b), new GH_Path(0, b));
+            f.Paired.PersistentData.Append(new GH_String("first"), new GH_Path(1, b));
+            f.Paired.PersistentData.Append(new GH_String("extra"), new GH_Path(1, b));
+        }
+        PanelTestAdapter.TreeTools(component, 0, true, false, false); f.Solve();
+        await Ready(() => f.Sinks[3].VolatileData.DataCount == 24); Render();
+        var headings = Field<IDictionary>(Property<object>(component, "PairedData"), "Headings");
+        var heading = headings["{0}"]!;
+        Check(Field<string>(heading, "Item1") == "24 items" && Field<string>(heading, "Item2") == "D 12" &&
+            Field<bool>(heading, "Item3") && Field<bool>(heading, "Item4") &&
+            Field<string>(heading, "Item5") == "{1;0}, {1;1}, {1;2} …",
+            "Merged heading caches counts, flags and at most three F paths");
+        Render();
+        Check(ReferenceEquals(headings, Field<IDictionary>(Property<object>(component, "PairedData"), "Headings")),
+            "Repainting reuses the merged-heading cache");
         PanelTestAdapter.TreeTools(component, 0, false, false, false);
         f.Query(new PanelQueryOptions()); Seed();
         await Ready(() => f.Sinks[3].VolatileData.DataCount == 7);

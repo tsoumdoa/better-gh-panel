@@ -96,7 +96,9 @@ namespace BetterGhPanel
                     var types = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (string path in session.Result.BranchPaths)
                     {
-                        var positions = PanelOwner.PairedData!.BranchItems(path).ToList();
+                        var set = session.Result.DisplaySet;
+                        var paths = set?.IsBranchSet == true ? set.BranchOccurrences[path] : new[] { path };
+                        var positions = paths.SelectMany(member => PanelOwner.PairedData!.BranchItems(member)).ToList();
                         foreach (int item in positions) types.Add(PanelOwner.PairedSnapshot.Rows[item].TypeName);
                         _pairedBranchRows.Add(path, positions.Take(5).ToList());
                     }
@@ -107,9 +109,7 @@ namespace BetterGhPanel
             Text(graphics, "F", bold, Accent, _pairedCaption, trim);
             bool mismatch = PanelOwner.PairedError != null;
             var pairing = PanelOwner.PairedData;
-            string caption = pairing != null && pairing.DifferingCount > 0
-                ? $"Paired by branch · {pairing.DifferingCount} of {pairing.Pairs.Count} branches differ in length"
-                : pairing?.ByOrder == true ? "Paired by branch order" : "Paired  " + pairSummary;
+            string caption = pairing != null && pairing.Caption != "Paired by branch" ? pairing.Caption : "Paired  " + pairSummary;
             Text(graphics, mismatch ? "Paired · " : caption, small, Muted,
                 new RectangleF(_pairedCaption.X + 16, _pairedCaption.Y, _pairedCaption.Width - 16, _pairedCaption.Height), trim);
             if (mismatch)
@@ -147,6 +147,7 @@ namespace BetterGhPanel
             _pairViewResult = null;
             _pairViewData = null;
             _pairView.Clear();
+            _pairItemOffsets = _pairSuccessors = Array.Empty<int>();
         }
 
         private bool SplitTooltip(PointF point, GH_TooltipDisplayEventArgs e)

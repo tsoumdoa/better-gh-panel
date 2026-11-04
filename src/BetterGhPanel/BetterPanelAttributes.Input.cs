@@ -198,7 +198,8 @@ namespace BetterGhPanel
             int index;
             if (_keyboardCursor >= 0 && result.TryGetViewIndex(_keyboardCursor, out int cursor)) index = cursor + step;
             else if (_selection.Anchor >= 0 && result.TryGetViewIndex(_selection.Anchor, out int anchor)) index = anchor + step;
-            else index = paired ? Math.Max(0, ViewItemAtOrAfter(result, _pairedOffset)) : Math.Max(0, _firstShownItem);
+            else index = paired ? ViewItemAtOrAfter(result, _pairedOffset) :
+                _firstShownItem >= 0 ? _firstShownItem : ViewItemAtOrAfter(result, _offset);
             index = Math.Max(0, Math.Min(count - 1, index));
             int position = result.RowPositions[index];
             InvalidateCopyStatus();
