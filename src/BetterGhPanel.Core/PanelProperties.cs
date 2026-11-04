@@ -34,7 +34,7 @@ namespace BetterGhPanel.Core
             double value = PanelUnits.Transform(Converted(conversion), PanelUnitConversion.None, roundUpFactor, decimals);
             if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";
             string suffix = includeUnits ? UnitSymbol(conversion) : "";
-            return PanelUnits.Format(value, PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture) + (suffix.Length == 0 ? "" : " " + suffix);
+            return PanelUnits.Format(value, PanelUnitConversion.None, decimals) + (suffix.Length == 0 ? "" : " " + suffix);
         }
         public string UnitSymbol(PanelUnitConversion conversion)
         {

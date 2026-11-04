@@ -112,10 +112,10 @@ namespace BetterGhPanel.Core
             if (mode == PanelSearchMode.Value)
                 return row.NumericValue.HasValue && IsFinite(row.NumericValue.Value)
                     ? PanelUnits.Format(row.NumericValue.Value, includeUnits ? snapshot.UnitConversion : PanelUnitConversion.None,
-                        decimals, CultureInfo.InvariantCulture) : "n/a";
+                        decimals) : "n/a";
             if (mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z)
                 return TryScalarValue(row, mode, snapshot.UnitConversion, out double component)
-                    ? PanelUnits.Format(PanelUnits.Transform(component, PanelUnitConversion.None, roundUpFactor, decimals), PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture) : "n/a";
+                    ? PanelUnits.Format(PanelUnits.Transform(component, PanelUnitConversion.None, roundUpFactor, decimals), PanelUnitConversion.None, decimals) : "n/a";
             var geometry = measured ?? row.GeometryInfo;
             if (geometry == null || !MatchesGeometry(mode, geometry)) return "n/a";
             if (!TryGeometryValue(row, mode, snapshot.UnitConversion, geometry, out _))

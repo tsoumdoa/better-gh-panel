@@ -6,11 +6,11 @@ namespace BetterGhPanel.Core
     public static class PanelValuePresentation
     {
         public static string FormatDisplay(PanelRow row, PanelUnitConversion conversion, int decimals,
-            PanelGeometryInfo? measuredGeometry = null, IFormatProvider? culture = null, double roundUpFactor = 0)
-            => DisplayText(row, conversion, decimals, measuredGeometry, culture, roundUpFactor).ToString();
+            PanelGeometryInfo? measuredGeometry = null, double roundUpFactor = 0)
+            => DisplayText(row, conversion, decimals, measuredGeometry, roundUpFactor).ToString();
 
         internal static PanelText DisplayText(PanelRow row, PanelUnitConversion conversion, int decimals,
-            PanelGeometryInfo? measuredGeometry = null, IFormatProvider? culture = null, double roundUpFactor = 0)
+            PanelGeometryInfo? measuredGeometry = null, double roundUpFactor = 0)
         {
             if (row == null) throw new ArgumentNullException(nameof(row));
             if (IsTransformedUnavailable(row)) return new PanelText("unavailable");
@@ -20,7 +20,7 @@ namespace BetterGhPanel.Core
             if (geometry != null) return new PanelText(geometry.FormatCompact(conversion, decimals, roundUpFactor) +
                 (geometry.MeasurementUnavailable ? " · measurement unavailable" : ""));
             if (!row.IsNull && row.NumericValue.HasValue)
-                return new PanelText(PanelUnits.Format(row.NumericValue.Value, conversion, decimals, culture));
+                return new PanelText(PanelUnits.Format(row.NumericValue.Value, conversion, decimals));
             return row.GroupSummary != null ? new PanelText(row.GroupSummary, false) : new PanelText(row.DisplayValue);
         }
 

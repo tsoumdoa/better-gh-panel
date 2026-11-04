@@ -19,7 +19,7 @@ namespace BetterGhPanel.Core
         internal PanelText SemanticText => _text;
 
         internal static PanelDisplayedValue Capture(PanelSnapshot snapshot, PanelRow row, PanelQueryOptions query,
-            PanelGeometryInfo? measured, IFormatProvider culture)
+            PanelGeometryInfo? measured)
         {
             PanelText text, copy;
             bool numeric;
@@ -31,10 +31,10 @@ namespace BetterGhPanel.Core
             }
             else
             {
-                text = PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture, query.RoundUpFactor);
+                text = PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, query.RoundUpFactor);
                 numeric = !row.IsNull && row.IsValid && row.NumericValue.HasValue;
                 copy = numeric ? new PanelText(PanelUnits.Format(row.NumericValue!.Value, PanelUnitConversion.None,
-                    query.DecimalPlaces, CultureInfo.InvariantCulture)) : text;
+                    query.DecimalPlaces)) : text;
             }
             double? number = query.DecimalPlaces < 0 && numeric && double.TryParse(copy.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) &&
                 !double.IsNaN(parsed) && !double.IsInfinity(parsed) ? parsed : (double?)null;
@@ -104,7 +104,6 @@ namespace BetterGhPanel.Core
     {
         private readonly PanelSnapshot _snapshot;
         private readonly PanelQueryOptions _query;
-        private readonly IFormatProvider _culture;
         private readonly PanelTextComparer _textComparer = new PanelTextComparer();
         private readonly Dictionary<string, Dictionary<PanelText, int>> _seen = new Dictionary<string, Dictionary<PanelText, int>>(StringComparer.Ordinal);
         private readonly Dictionary<int, PanelDisplayedValue> _values = new Dictionary<int, PanelDisplayedValue>();
@@ -120,8 +119,8 @@ namespace BetterGhPanel.Core
         private readonly Dictionary<string, List<string>> _branchLocations = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         private readonly Dictionary<string, PanelSourceStatusCounts> _branchStatuses = new Dictionary<string, PanelSourceStatusCounts>(StringComparer.Ordinal);
 
-        internal PanelDisplaySet(PanelSnapshot snapshot, PanelQueryOptions query, IFormatProvider culture)
-        { _snapshot = snapshot; _query = query; _culture = culture; }
+        internal PanelDisplaySet(PanelSnapshot snapshot, PanelQueryOptions query)
+        { _snapshot = snapshot; _query = query; }
         internal bool IsBranchSet => _query.DisplayFilterValue && _query.SearchMode == PanelSearchMode.ListLength;
         internal IReadOnlyDictionary<int, PanelDisplayedValue> Values => _values;
 
@@ -157,7 +156,7 @@ namespace BetterGhPanel.Core
                 _allMembers.Add(position);
                 return included;
             }
-            var value = PanelDisplayedValue.Capture(_snapshot, row, _query, measured, _culture);
+            var value = PanelDisplayedValue.Capture(_snapshot, row, _query, measured);
             if (!_seen.TryGetValue(row.Path, out var branch))
             {
                 branch = new Dictionary<PanelText, int>(_textComparer);

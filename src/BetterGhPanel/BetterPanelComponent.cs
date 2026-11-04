@@ -669,7 +669,7 @@ namespace BetterGhPanel
             if (!row.IsValid)
                 return PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces);
             if (row.NumericValue.HasValue)
-                return PanelUnits.Format(row.NumericValue.Value, PanelUnitConversion.None, DecimalPlaces, CultureInfo.InvariantCulture);
+                return PanelUnits.Format(row.NumericValue.Value, PanelUnitConversion.None, DecimalPlaces);
             var geometry = Session.GetGeometryDetails(snapshot, position) ?? row.GeometryInfo;
             if (row.IsValid && geometry?.Value != null)
             {

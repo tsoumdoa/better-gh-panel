@@ -20,7 +20,7 @@ namespace BetterGhPanel.UI
 
         internal static string Summary(PanelQueryResult result) =>
             Count(result.Statistics.ItemCount, Total(result)) + (result.DisplaySet?.IsBranchSet == true ? " values · " : " items · ") +
-            Count(result.Statistics.BranchCount, result.Snapshot.Branches.Count) + " branches";
+            Count(result.Statistics.BranchCount, result.Snapshot.Branches.Count) + (result.Snapshot.Branches.Count == 1 ? " branch" : " branches");
 
         internal static string BranchCount(PanelQueryResult result, string path)
         {

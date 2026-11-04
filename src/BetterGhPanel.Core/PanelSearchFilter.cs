@@ -18,7 +18,6 @@ namespace BetterGhPanel.Core
         private readonly Stopwatch? _regexBudget;
         private readonly int _decimals;
         private readonly double _roundUpFactor;
-        private readonly IFormatProvider _culture;
         private readonly Dictionary<PanelGroupKey, bool> _groupMatches = new Dictionary<PanelGroupKey, bool>();
         private readonly Queue<PanelGroupKey> _groupMatchOrder = new Queue<PanelGroupKey>();
         private const int MaxCachedGroupMatches = 16384;
@@ -29,7 +28,6 @@ namespace BetterGhPanel.Core
             _mode = options.SearchMode;
             _decimals = options.DecimalPlaces;
             _roundUpFactor = options.RoundUpFactor;
-            _culture = CultureInfo.InvariantCulture;
             if (!Enum.IsDefined(typeof(PanelSearchMode), _mode)) throw new ArgumentException("Unknown search mode.");
             _text = options.DisplayFilterValue && _mode >= PanelSearchMode.Value ? string.Empty : options.Search ?? string.Empty;
             // Spaces in a regular expression are significant.
@@ -88,7 +86,7 @@ namespace BetterGhPanel.Core
             {
                 token.ThrowIfCancellationRequested();
                 if (_regexBudget!.ElapsedMilliseconds >= 2000) throw RegexTooSlow();
-                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _culture, _roundUpFactor);
+                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _roundUpFactor);
                 if (TryGroupMatch(value, out bool cached)) return cached;
                 try
                 {
@@ -100,7 +98,7 @@ namespace BetterGhPanel.Core
             }
             if (_comparison == null)
             {
-                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _culture, _roundUpFactor);
+                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _roundUpFactor);
                 bool matches;
                 if (TryGroupMatch(value, out bool cached)) matches = cached;
                 else { matches = value.Contains(_text); RememberGroupMatch(value, matches); }

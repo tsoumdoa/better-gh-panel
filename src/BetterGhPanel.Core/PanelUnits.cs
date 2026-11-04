@@ -125,11 +125,11 @@ namespace BetterGhPanel.Core
             {
                 var converted = Transform(value, matchingConversion, roundUpFactor, decimals);
                 return double.IsInfinity(converted) ? "unavailable" : Format(converted,
-                    includeUnits ? matchingConversion : PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6");
+                    includeUnits ? matchingConversion : PanelUnitConversion.None, decimals, "G6");
             }
             value = Transform(value, PanelUnitConversion.None, roundUpFactor, decimals);
             if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";
-            return Format(value, PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6") +
+            return Format(value, PanelUnitConversion.None, decimals, "G6") +
                 (includeUnits ? " " + units + (power == 2 ? "²" : power == 3 ? "³" : "") : "");
         }
 
@@ -146,9 +146,8 @@ namespace BetterGhPanel.Core
 
         // Automatic keeps the compact display without rounding the wire.
         public static string Format(double value, PanelUnitConversion conversion, int decimals,
-            IFormatProvider? culture = null, string automaticFormat = "G12")
+            string automaticFormat = "G12")
         {
-            _ = culture; // Kept for source compatibility; panel numbers are always invariant.
             decimals = Math.Max(AutomaticDecimals, Math.Min(MaximumDecimals, decimals));
             value = Transform(value, PanelUnitConversion.None, 0, decimals);
             if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";

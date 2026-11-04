@@ -44,7 +44,13 @@ public sealed class PresentedNumberChecks
         options.SearchMode = PanelSearchMode.Value;
         Assert.Single(PanelQueryEngine.Execute(snapshot, options).RowPositions);
         Assert.Equal(4.5, PanelQueryEngine.Execute(snapshot, options).Statistics.Minimum);
-        Assert.Equal("4.50", PanelValuePresentation.FormatDisplay(scalar, PanelUnitConversion.None, 2, culture: CultureInfo.GetCultureInfo("de-DE")));
+        var previousCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+            Assert.Equal("4.50", PanelValuePresentation.FormatDisplay(scalar, PanelUnitConversion.None, 2));
+        }
+        finally { CultureInfo.CurrentCulture = previousCulture; }
         Assert.Contains("2 decimal places", PanelFilterValue.RoundingDescription(snapshot, scalar, options));
         options.DecimalPlaces = -1;
         Assert.Equal("", PanelFilterValue.RoundingDescription(snapshot, scalar, options));

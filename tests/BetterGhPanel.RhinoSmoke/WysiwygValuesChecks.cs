@@ -69,6 +69,8 @@ internal static class WysiwygValuesChecks
         {
             using var bitmap = new Bitmap(canvas.Width, canvas.Height);
             using var graphics = Graphics.FromImage(bitmap);
+            // Bitmap captures need grayscale antialiasing: ClearType fringes tint the narrow unit glyphs.
+            graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
             graphics.Clear(GH_Skin.canvas_back);
             canvas.Viewport.ApplyProjection(graphics);
             PanelTestAdapter.Render(component, canvas, graphics);

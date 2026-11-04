@@ -37,18 +37,17 @@ namespace BetterGhPanel.Core
             cancellationToken.ThrowIfCancellationRequested();
             // Capture options now, before either execution or handoff can be deferred.
             var query = options.Clone();
-            var culture = CultureInfo.InvariantCulture;
-            return new PanelQueryWork(work => ExecuteSteps(snapshot, query, cancellationToken, measuredGeometry, culture, work).GetEnumerator());
+            return new PanelQueryWork(work => ExecuteSteps(snapshot, query, cancellationToken, measuredGeometry, work).GetEnumerator());
         }
 
         private static IEnumerable<PanelQueryResult?> ExecuteSteps(PanelSnapshot snapshot, PanelQueryOptions query,
             CancellationToken cancellationToken, IReadOnlyDictionary<int, PanelGeometryInfo>? measuredGeometry,
-            IFormatProvider culture, PanelQueryWork work)
+            PanelQueryWork work)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var search = new PanelSearchFilter(query);
             var scope = new PanelQueryScope(snapshot, query, search);
-            var set = query.CreateSet ? new PanelDisplaySet(snapshot, query, culture) : null;
+            var set = query.CreateSet ? new PanelDisplaySet(snapshot, query) : null;
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
@@ -127,9 +126,9 @@ namespace BetterGhPanel.Core
                 var metric = set == null && query.DisplayFilterValue
                     ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor) : null;
                 outputValues?.Add(i, metric);
-                if (propertySortValues != null) propertySortValues.Add(i, PanelDisplayedValue.Capture(snapshot, row, query, measured, culture));
+                if (propertySortValues != null) propertySortValues.Add(i, PanelDisplayedValue.Capture(snapshot, row, query, measured));
                 if (sortText != null && !row.IsNull && !HasFiniteNumber(row))
-                    sortText.Add(i, PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture, query.RoundUpFactor));
+                    sortText.Add(i, PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, query.RoundUpFactor));
                 branches.Add(row.Path);
                 Increment(branchCounts, row.Path);
                 if (set?.IsBranchSet == true) continue;

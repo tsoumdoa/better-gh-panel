@@ -367,12 +367,18 @@ internal static class Program
         Near(Math.PI, PanelUnits.Convert(180, PanelUnitConversion.DegreesToRadians));
         foreach (var pair in new[] { PanelUnitConversion.MillimetersToMeters, PanelUnitConversion.SquareMillimetersToSquareMeters, PanelUnitConversion.RadiansToDegrees })
             Near(-1234.5, PanelUnits.Convert(PanelUnits.Convert(-1234.5, pair), (PanelUnitConversion)((int)pair + 1)));
-        Equal("1.23 m", PanelUnits.Format(1.23456789, PanelUnitConversion.MillimetersToMeters, 2, CultureInfo.InvariantCulture));
-        Equal("1.23456789 m", PanelUnits.Format(1.23456789, PanelUnitConversion.MillimetersToMeters, -1, CultureInfo.InvariantCulture));
-        Equal("1 m²", PanelUnits.Format(1, PanelUnitConversion.SquareMillimetersToSquareMeters, 0, CultureInfo.InvariantCulture));
-        Equal("180.00 °", PanelUnits.Format(180, PanelUnitConversion.RadiansToDegrees, 2, CultureInfo.InvariantCulture));
-        Equal("1.23 m", PanelUnits.Format(1.234, PanelUnitConversion.MillimetersToMeters, 2, CultureInfo.GetCultureInfo("de-DE")));
-        Equal("1.000000000000", PanelUnits.Format(1, PanelUnitConversion.None, 100, CultureInfo.InvariantCulture));
+        Equal("1.23 m", PanelUnits.Format(1.23456789, PanelUnitConversion.MillimetersToMeters, 2));
+        Equal("1.23456789 m", PanelUnits.Format(1.23456789, PanelUnitConversion.MillimetersToMeters, -1));
+        Equal("1 m²", PanelUnits.Format(1, PanelUnitConversion.SquareMillimetersToSquareMeters, 0));
+        Equal("180.00 °", PanelUnits.Format(180, PanelUnitConversion.RadiansToDegrees, 2));
+        var previousCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+            Equal("1.23 m", PanelUnits.Format(1.234, PanelUnitConversion.MillimetersToMeters, 2));
+        }
+        finally { CultureInfo.CurrentCulture = previousCulture; }
+        Equal("1.000000000000", PanelUnits.Format(1, PanelUnitConversion.None, 100));
         Equal(true, double.IsNaN(PanelUnits.Convert(double.NaN, PanelUnitConversion.RadiansToDegrees)));
         Equal(double.PositiveInfinity, PanelUnits.Convert(double.PositiveInfinity, PanelUnitConversion.MillimetersToMeters));
     }
