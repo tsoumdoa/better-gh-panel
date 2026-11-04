@@ -19,8 +19,9 @@ namespace BetterGhPanel
         private bool _scrollLocked = true, _scrollingPaired;
         private PanelQueryResult? _captionResult;
         private PanelSnapshot? _captionPairedSnapshot;
+        private PanelQueryResult? _captionSummaryResult;
+        private int _pairedItemCount;
         private string _pairedTypeSummary = "";
-        private readonly Dictionary<string, List<int>> _pairedBranchRows = new Dictionary<string, List<int>>(StringComparer.Ordinal);
 
         private RectangleF ListBounds => _pairedList.IsEmpty ? _list : RectangleF.Union(_list, _pairedList);
         private bool ListContains(PointF point) => _list.Contains(point) || _pairedList.Contains(point);
@@ -88,29 +89,24 @@ namespace BetterGhPanel
             string pairSummary = "…";
             if (current && PanelOwner.PairedSnapshot != null)
             {
-                if (!ReferenceEquals(_captionResult, session.Result) || !ReferenceEquals(_captionPairedSnapshot, PanelOwner.PairedSnapshot))
+                if (!ReferenceEquals(_captionResult, session.Result) || !ReferenceEquals(_captionPairedSnapshot, PanelOwner.PairedSnapshot) ||
+                    !ReferenceEquals(_captionSummaryResult, PanelOwner.PairedData!.SummaryResult))
                 {
                     _captionResult = session.Result;
                     _captionPairedSnapshot = PanelOwner.PairedSnapshot;
-                    _pairedBranchRows.Clear();
+                    _captionSummaryResult = PanelOwner.PairedData!.SummaryResult;
+                    _pairedItemCount = 0;
                     var types = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     var result = session.Result;
-                    var set = result.DisplaySet;
-                    var membersByPath = (set?.AllMembers ?? result.RowPositions).GroupBy(position => result.Snapshot.Rows[position].Path)
-                        .ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
-                    bool includeEmpty = Runtime.PanelPairedData.EmptyPartnersInScope(session.Options);
-                    foreach (string path in result.BranchPaths)
+                    IEnumerable<Runtime.PanelPairedData.Summary> summaries = result.DisplaySet?.IsBranchSet == false ? PanelOwner.PairedData!.SetSummaries.Values : PanelOwner.PairedData!.BranchSummaries.Values;
+                    foreach (var summary in summaries)
                     {
-                        var paths = set?.IsBranchSet == true ? set.BranchOccurrences[path] : new[] { path };
-                        var positions = paths.SelectMany(memberPath => PanelOwner.PairedData!.BranchItems(result.Snapshot,
-                            membersByPath.TryGetValue(memberPath, out var matches) ? matches : Array.Empty<int>(),
-                            new[] { memberPath }, includeEmpty)).Select(value => value.Item).ToList();
-                        foreach (int item in positions) types.Add(PanelOwner.PairedSnapshot.Rows[item].TypeName);
-                        _pairedBranchRows.Add(path, positions.Take(5).ToList());
+                        _pairedItemCount += summary.Count;
+                        foreach (int item in summary.Preview) types.Add(PanelOwner.PairedSnapshot.Rows[item].TypeName);
                     }
                     _pairedTypeSummary = TypeSummary(types);
                 }
-                pairSummary = $"{session.Result.RowPositions.Count:N0} · {_pairedTypeSummary}";
+                pairSummary = PanelOwner.PairedSummaryCurrent ? $"{_pairedItemCount:N0} · {_pairedTypeSummary}" : "…";
             }
             Text(graphics, "F", bold, Accent, _pairedCaption, trim);
             bool mismatch = PanelOwner.PairedError != null;
@@ -137,19 +133,30 @@ namespace BetterGhPanel
 
         private string PairedBranchValue(string path)
         {
+            PanelOwner.PairedData!.BranchSummaries.TryGetValue(path, out var summary);
+            return PairedSummary(summary, PanelOwner.Session.Result.DisplaySet != null);
+        }
+
+        private string PairedSetValue(int position)
+        {
+            PanelOwner.PairedData!.SetSummaries.TryGetValue(position, out var summary);
+            return PairedSummary(summary, true);
+        }
+
+        private string PairedSummary(Runtime.PanelPairedData.Summary? summary, bool set)
+        {
+            if (!PanelOwner.PairedSummaryCurrent) return "…";
             var snapshot = PanelOwner.PairedSnapshot;
-            if (snapshot == null || !_pairedBranchRows.TryGetValue(path, out var positions) || positions.Count == 0) return "<empty branch>";
-            // Branch-level Display value has one D row for an entire F branch.
-            // Keep its raw values in order, bounded to the available cell.
-            var values = positions.Take(4).Select(index => Short(PanelValuePresentation.Visualize(PairedDisplayValue(snapshot.Rows[index])), 120));
-            return string.Join(" · ", values) + (positions.Count > 4 ? " …" : "");
+            if (snapshot == null || summary == null || summary.Count == 0) return set ? "<empty set>" : "<empty branch>";
+            var values = summary.Preview.Select(index => Short(PanelValuePresentation.Visualize(PairedDisplayValue(snapshot.Rows[index])), 120));
+            return string.Join(" · ", values) + (summary.Count > summary.Preview.Count
+                ? " … +" + (summary.Count - summary.Preview.Count) + (set ? " in this set" : " items") : "");
         }
 
         internal void ClearPaneSummary()
         {
             _captionResult = null;
             _captionPairedSnapshot = null;
-            _pairedBranchRows.Clear();
             _pairViewResult = null;
             _pairViewData = null;
             _pairView.Clear();

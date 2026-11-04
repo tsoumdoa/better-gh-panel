@@ -231,7 +231,7 @@ internal static class BranchPairingChecks
         Render();
         string lengthTwo = f.Result.BranchPaths.Single(path => f.Result.Snapshot.BranchItemCounts[path] == 2);
         string lengthSummary = (string)Call(attributes, "PairedBranchValue", lengthTwo)!;
-        Check(lengthSummary.Contains("F1-0") && lengthSummary.Contains("F1-3") && lengthSummary.EndsWith(" …"),
+        Check(lengthSummary == "F1-0 · F1-1 · F1-2 · F1-3 … +2 in this set",
             "List-length set summary expands every branch occurrence with a bounded preview");
         Console.WriteLine("Branch-set outputs: D=" + Paths(f, 0) + "; F=" + Paths(f, 3) + "; values=" + f.Values(3));
         Check(f.Result.BranchPaths.Any(path => f.Result.DisplaySet!.BranchOccurrences[path].Contains("{0;3}") &&
@@ -260,14 +260,21 @@ internal static class BranchPairingChecks
         await Ready(() => f.Values(3) == "b,empty-partner"); Render();
         Check((string)Call(attributes, "PairedBranchValue", "{0}")! == "b \u00b7 empty-partner",
             "Flatten list-length summary exactly matches emitted F membership");
+        foreach (var query in new[] { new PanelQueryOptions { BranchPath = "{0}" },
+            new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = "= 1" } })
+        {
+            f.Query(query); await Ready(() => f.Values(3) == "b,empty-partner"); Render();
+            Check((string)Call(Property<object>(component, "PairedData"), "HeadingCount", "{0}", true)! == "2 items",
+                "Path and list-length restrictions retain merged empty partners when D retains the destination");
+        }
         foreach (var query in new[] { new PanelQueryOptions { Search = "= 2" }, new PanelQueryOptions { TypeName = "Integer" },
-            new PanelQueryOptions { BranchPath = "{0}" }, new PanelQueryOptions { CreateSet = true },
+            new PanelQueryOptions { CreateSet = true },
             new PanelQueryOptions { CreateSet = true, DisplayFilterValue = true, SearchMode = PanelSearchMode.ListLength } })
         {
             PanelTestAdapter.TreeTools(component, 0, true, false, false, query.CreateSet);
             f.Query(query); await Ready(() => f.Values(3) == "b"); Render();
             Check(Field<string>(Call(Property<object>(component, "PairedData"), "Heading", "{0}", false)!, "Count") == "1 item",
-                "Every filter and either Create set exclude merged empty partners from output and heading totals");
+                "Item filters and either Create set exclude merged empty partners from output and heading totals");
         }
         PanelTestAdapter.TreeTools(component, 0, true, false, false);
         f.Query(new PanelQueryOptions()); await Ready(() => f.Values(3) == "b,empty-partner");
@@ -296,14 +303,13 @@ internal static class BranchPairingChecks
         PanelTestAdapter.TreeTools(component, 0, true, false, false, true);
         f.Query(new PanelQueryOptions { CreateSet = true, Search = "= 2" });
         await Ready(() => f.Result.DisplaySet != null && f.Values(3) == "b,b-extra"); Render();
-        Check(((IEnumerable)Call(attributes, "PairView", f.Result)!).Cast<object>().Count(row => Field<int>(row, "Extra") >= 0) == 1,
-            "Merged set pane derives F extras from expanded current members");
+        Check(!Property<bool>(attributes, "HasPairView") && (string)Call(attributes, "PairedSetValue", f.Result.RowPositions.Single())! == "b · b-extra",
+            "Merged set pane summarizes expanded current members in one cell");
         f.Query(new PanelQueryOptions { CreateSet = true });
         f.Source.PersistentData.Branches[0][0] = new GH_Integer(2); f.Solve();
         await Ready(() => f.Result.DisplaySet?.Members.Values.Single().Count == 2 && f.Values(3) == "a,b,a-extra,b-extra"); Render();
-        Check(((IEnumerable)Call(attributes, "PairView", f.Result)!).Cast<object>().Where(row => Field<int>(row, "Extra") >= 0)
-            .Select(row => Field<int>(row, "Extra")).SequenceEqual(new[] { 2, 1, 3 }),
-            "Set pane keeps nonrepresentative partners before F-only tails in wire order");
+        Check((string)Call(attributes, "PairedSetValue", f.Result.RowPositions.Single())! == "a · b · a-extra · b-extra",
+            "One set cell keeps nonrepresentative partners and F-only tails in wire order");
         // A run of extras fills both panes; Down must resume at the following D item.
         PanelTestAdapter.TreeTools(component, 0, false, false, false);
         f.Query(new PanelQueryOptions());
@@ -390,6 +396,157 @@ internal static class BranchPairingChecks
         Check(((IEnumerable)Call(attributes, "PairView", f.Result)!).Cast<object>().Where(row => Field<int>(row, "Item") >= 0)
             .Select(row => Field<int>(row, "Item")).SequenceEqual(Enumerable.Range(0, 4)),
             "Unequal pane augmentation retains D's sorted view order");
+
+        // Every item-set cell previews exactly its wire group, independently of other branches.
+        var savedClipboard = Forms.Clipboard.GetDataObject();
+        try
+        {
+            foreach (string scenario in new[] { "all-equal", "mixed", "unequal-three", "bounded" })
+            {
+                PanelTestAdapter.TreeTools(component, 0, false, false, false, true);
+                f.Query(new PanelQueryOptions { CreateSet = true });
+                f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
+                int branches = scenario == "all-equal" || scenario == "mixed" ? 2 : 1;
+                for (int b = 0; b < branches; b++)
+                {
+                    var path = new GH_Path(0, b);
+                    f.Source.PersistentData.Append(new GH_Integer(b + 1), path);
+                    f.Source.PersistentData.Append(new GH_Integer(scenario == "unequal-three" || scenario == "bounded" ? 2 : b + 1), path);
+                    int count = scenario == "bounded" ? 12 : scenario == "unequal-three" || scenario == "mixed" && b == 1 ? 3 : 2;
+                    for (int i = 0; i < count; i++) f.Paired.PersistentData.Append(new GH_String("f" + b + "-" + i), path);
+                }
+                f.Solve(); await Ready(() => f.Result.DisplaySet != null && f.Sinks[3].VolatileData.DataCount > 0);
+                Render(scenario == "unequal-three" ? "uneven-create-set" : null);
+                Check(!Property<bool>(attributes, "HasPairView") && (int)Call(attributes, "ViewCount", f.Result)! == f.Result.ViewIndex.Count &&
+                    !((IEnumerable)Call(attributes, "PairView", f.Result)!).Cast<object>().Any(),
+                    scenario + ": Create set has one pane row per set and no hidden/F-only rows");
+                long outputVisits = 0;
+                Call(Property<object>(component, "PairedData"), "Output", f.Result, f.Result.RowPositions, f.Result.BranchPaths,
+                    false, false, (Action<long>)(visits => outputVisits += visits), false);
+                Check(outputVisits >= 2L * f.Sinks[3].VolatileData.DataCount + f.Result.DisplaySet!.Members.Values.Sum(members => members.Count),
+                    scenario + ": output visit accounting includes every repeated F emission and D group member");
+                foreach (string dataPath in f.Result.BranchPaths)
+                {
+                    string prefix = dataPath.TrimEnd('}') + ";";
+                    int count = f.Sinks[3].VolatileData.Paths.Select((path, b) => (path, b)).Where(value => value.path.ToString().StartsWith(prefix, StringComparison.Ordinal))
+                        .Sum(value => f.Sinks[3].VolatileData.get_Branch(value.b).Count);
+                    Check((string)Call(Property<object>(component, "PairedData"), "HeadingCount", dataPath, false)! == count + (count == 1 ? " item" : " items"),
+                        scenario + ": F set heading counts all emitted group values");
+                }
+                foreach (int position in f.Result.RowPositions)
+                {
+                    int k = f.Result.DisplaySet!.MemberIndices[position];
+                    string path = f.Result.Snapshot.Rows[position].Path.TrimEnd('}') + ";" + k + "}";
+                    string[] emitted = Branch(f, 3, path).Split(',');
+                    string expected = string.Join(" · ", emitted.Take(4)) + (emitted.Length > 4 ? " … +" + (emitted.Length - 4) + " in this set" : "");
+                    Check((string)Call(attributes, "PairedSetValue", position)! == expected,
+                        scenario + ": bounded F cell equals emitted group in output order at " + path);
+                    f.ClearSelection(); f.Select(position);
+                    await Ready(() => Field<long>(component, "_publishedSelectionVersion") == Field<long>(component, "_selectionVersion"));
+                    string copyStatus = await (Task<string>)Call(component, "CopyPairedValuesAsync", f.Result.Snapshot, new[] { position })!;
+                    Check(Forms.Clipboard.GetText() == string.Join(Environment.NewLine, emitted),
+                        scenario + ": copying an F set cell includes every emitted group member exactly once (" + copyStatus + ")");
+                }
+            }
+            // Branch-set copy uses the same output order as the list-length summary.
+            PanelTestAdapter.TreeTools(component, 0, false, false, false, true);
+            f.Query(new PanelQueryOptions { CreateSet = true, DisplayFilterValue = true, SearchMode = PanelSearchMode.ListLength });
+            await Ready(() => f.Result.DisplaySet?.IsBranchSet == true);
+            string representative = f.Result.BranchPaths.Single();
+            f.ClearSelection(); f.SelectBranch(representative);
+            await Ready(() => Field<long>(component, "_publishedSelectionVersion") == Field<long>(component, "_selectionVersion"));
+            await (Task<string>)Call(component, "CopyPairedValuesAsync", f.Result.Snapshot, Array.Empty<int>())!;
+            Check(Forms.Clipboard.GetText() == string.Join(Environment.NewLine, f.Values(3).Split(',')),
+                "List-length F set copying includes its full emitted group");
+            Render();
+            Check((string)Call(attributes, "PairedBranchValue", representative)! == "f0-0 · f0-1 · f0-2 · f0-3 … +8 in this set",
+                "List-length sets use the same bounded F summary rule as item sets");
+            var branchPane = Field<RectangleF>(attributes, "_pairedList");
+            var branchHit = Field<IEnumerable>(attributes, "_branchHits").Cast<object>().Single(hit =>
+                Property<string>(hit, "Path") == representative && branchPane.Contains(Property<RectangleF>(hit, "Bounds")));
+            var branchBounds = Property<RectangleF>(branchHit, "Bounds");
+            PanelTestAdapter.CanvasClick(canvas, new PointF(branchBounds.X + 120, branchBounds.Y + 8));
+            await Ready(() => Field<long>(component, "_publishedSelectionVersion") == Field<long>(component, "_selectionVersion"));
+            Forms.Clipboard.SetText("before F set copy");
+            bool copied = (bool)input.GetMethod("HandleKey")!.Invoke(attributes, new object[] { canvas, Forms.Keys.Control | Forms.Keys.C })!;
+            await f.Ready(() => Forms.Clipboard.GetText() == string.Join(Environment.NewLine, f.Values(3).Split(',')));
+            Check(copied, "Ctrl+C on a selected F list-length set copies its complete emitted group");
+        }
+        finally { if (savedClipboard == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(savedClipboard, true); }
+
+        PanelTestAdapter.TreeTools(component, 0, false, false, false);
+        f.Query(new PanelQueryOptions()); f.ClearSelection();
+        f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
+        f.Source.PersistentData.EnsurePath(new GH_Path(0));
+        f.Source.PersistentData.Append(new GH_Integer(1), new GH_Path(1));
+        f.Paired.PersistentData.Append(new GH_String("included"), new GH_Path(1));
+        f.Paired.PersistentData.Append(new GH_String("excluded-empty"), new GH_Path(9));
+        f.Solve(); await Ready(() => f.Values(3) == "excluded-empty,included");
+        var emptyHeading = Call(Property<object>(component, "PairedData"), "Heading", "{0}", false)!;
+        Check(Field<string>(emptyHeading, "Count") == "0 items" && !Field<bool>(emptyHeading, "Unequal") &&
+            !Field<bool>(emptyHeading, "ByOrder") && Field<string>(emptyHeading, "Paths") == "",
+            "An excluded empty-only partner has no amber D 0 badge or order-paired path");
+        PanelTestAdapter.TreeTools(component, 0, true, false, false);
+        f.Query(new PanelQueryOptions { TypeName = "Integer" });
+        await Ready(() => f.Values(3) == "included"); Render();
+        var scopedHeading = Call(Property<object>(component, "PairedData"), "Heading", "{0}", false)!;
+        Check(Field<string>(scopedHeading, "Count") == "1 item" && Field<string>(scopedHeading, "DataCount") == "D 1" &&
+            !Field<bool>(scopedHeading, "Unequal") && !Field<bool>(scopedHeading, "ByOrder") && Field<string>(scopedHeading, "Paths") == "{1}",
+            "Excluded empty partner contributes no count, amber badge, order flag or F path to a merged heading");
+        PanelTestAdapter.TreeTools(component, 0, false, false, false);
+        f.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = "= 0", BranchPath = "{0}" });
+        await Ready(() => f.Values(3) == "excluded-empty" && f.Result.BranchPaths.Count == 1);
+        Check(Branch(f, 0, "{0}") == "", "Path and list-length filters keep an empty D branch and its F partner together");
+
+        // Mixed equal/unequal numbering uses raw F indices and one sorting policy.
+        f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
+        for (int b = 0; b < 2; b++)
+        {
+            for (int i = 0; i < 3; i++) f.Source.PersistentData.Append(new GH_Integer(2 - i), new GH_Path(b));
+            for (int i = 0; i < (b == 0 ? 3 : 2); i++) f.Paired.PersistentData.Append(new GH_String("f" + b + "-" + i), new GH_Path(b));
+        }
+        PanelTestAdapter.TreeTools(component, 0, false, true, false);
+        f.Query(new PanelQueryOptions()); f.Solve(); await Ready(() => f.Result.RowPositions.Count == 6);
+        foreach (var sort in new[] { PanelSortMode.SourceOrder, PanelSortMode.ValueAscending })
+        {
+            f.Query(new PanelQueryOptions { SortMode = sort });
+            await f.Ready(() => Property<PanelQueryOptions>(f.Session, "Options").SortMode == sort);
+            Render();
+            foreach (int position in f.Result.RowPositions)
+            {
+                if (Call(component, "PairedRow", position) is not PanelRow pairedRow) continue;
+                Check(((int, bool))Call(attributes, "RowAddress", f.Result, position, true)! == (pairedRow.OriginalIndex, sort != PanelSortMode.SourceOrder),
+                    "Equal and unequal F gutters retain raw original indices with the same sorted flag");
+                var bounds = PaneRow(position, true);
+                var point = new PointF(bounds.X + 80, bounds.Y + 8);
+                var tooltip = (Grasshopper.GUI.GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(Grasshopper.GUI.GH_TooltipDisplayEventArgs),
+                    BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(point) }, null)!;
+                attributes.SetupTooltip(point, tooltip);
+                Check(tooltip.Title.Contains("[" + pairedRow.OriginalIndex + "]"), "F tooltip index agrees with its gutter");
+            }
+        }
+        // A missing F cell still precedes a hidden partner at its reversed D position.
+        f.Query(new PanelQueryOptions { Search = "!= 1" });
+        await Ready(() => f.Result.RowPositions.Count == 4); Render("reverse-filter-placement");
+        var reversePlacement = ((IEnumerable)Call(attributes, "PairView", f.Result)!).Cast<object>()
+            .Where(row => Field<string>(row, "Path") == "{1}").ToArray();
+        Check(Field<int>(reversePlacement[0], "Item") >= 0 && Field<int>(reversePlacement[1], "Extra") == 4 && Field<int>(reversePlacement[2], "Item") >= 0,
+            "Reverse inserts hidden f1 between the missing-F a2 cell and a0, preserving F output order");
+        f.Query(new PanelQueryOptions());
+        PanelTestAdapter.TreeTools(component, 0, true, false, false);
+        await Ready(() => f.Result.Snapshot.Branches.Count == 1 && f.Values(3) == "f0-0,f0-1,f0-2,f1-0,f1-1");
+        Render("mixed-flatten");
+        PanelTestAdapter.TreeTools(component, 0, false, false, false);
+        f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
+        for (int i = 0; i < 12; i++)
+        {
+            f.Source.PersistentData.Append(new GH_Integer(i), new GH_Path(0));
+            f.Paired.PersistentData.Append(new GH_String("f" + i), new GH_Path(0));
+        }
+        f.Query(new PanelQueryOptions { Search = "< 3" }); f.Solve();
+        await Ready(() => f.Sinks[3].VolatileData.DataCount == 3); Render();
+        Check((string)Call(Property<object>(component, "PairedData"), "HeadingCount", "{0}", false)! == "3 of 12 items",
+            "Filtered F heading reports matching items against its original F count");
         PanelTestAdapter.TreeTools(component, 0, false, false, false);
         f.Query(new PanelQueryOptions()); Seed();
         await Ready(() => f.Sinks[3].VolatileData.DataCount == 7);

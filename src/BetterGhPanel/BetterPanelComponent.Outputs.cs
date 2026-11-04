@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using BetterGhPanel.Core;
 using BetterGhPanel.Runtime;
 using BetterGhPanel.UI;
@@ -28,10 +29,24 @@ namespace BetterGhPanel
         private string? _pairedError;
         internal PanelPairedData? PairedData { get; private set; }
         internal PanelRow? PairedRow(int position) => PairedData?.ItemAt(position) is int item ? PairedSnapshot?.Rows[item] : null;
-        internal string PairedValue(int position) => PairedRow(position) is PanelRow row ? BetterPanelAttributes.PairedDisplayValue(row) : "";
+        internal string PairedValue(int position)
+        {
+            var query = Session.Result;
+            if (query.DisplaySet?.IsBranchSet == false && PairedSnapshot != null && PairedData != null)
+                return string.Join(Environment.NewLine, PairedData.BranchItems(query.Snapshot, query.DisplaySet.Members[position],
+                    Array.Empty<string>(), false).Select(item => BetterPanelAttributes.PairedDisplayValue(PairedSnapshot.Rows[item.Item])));
+            return PairedRow(position) is PanelRow row ? BetterPanelAttributes.PairedDisplayValue(row) : "";
+        }
+        private string PairedBranchValues(PanelQueryResult query, IReadOnlyList<string> paths) =>
+            string.Join(Environment.NewLine, paths.SelectMany(path => PairedData!.BranchItems(query.Snapshot,
+                query.DisplaySet!.BranchMembers[path], query.DisplaySet.BranchOccurrences[path], false)
+                .GroupBy(item => item.Path).SelectMany(group => group))
+                .Select(item => BetterPanelAttributes.PairedDisplayValue(PairedSnapshot!.Rows[item.Item])));
         internal PanelSnapshot? PairedSnapshot { get; private set; }
         internal string? PairedError => _pairedError;
         internal bool CanSplit => _pairedInputPresent && PairedData != null && _pairedError == null && Session.HasCurrentResult;
+        internal bool PairedSummaryCurrent => PairedData?.SummaryResult is PanelQueryResult summary &&
+            ReferenceEquals(summary.Snapshot, Session.Snapshot) && _outputOptions != null && PanelQueryPolicy.SameOutputFilter(_outputOptions, Session.Options);
         private long _selectionVersion, _publishedSelectionVersion;
         private PanelOutputScope _publishedScope;
         private PanelOutputValues _publishedValues;

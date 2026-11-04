@@ -709,7 +709,7 @@ namespace BetterGhPanel
                         {
                             using var italic = new Font(small, FontStyle.Italic);
                             var extraRow = PanelOwner.PairedSnapshot!.Rows[extra];
-                            rowRenderer.DrawAddress(g, spacer, 0, extraRow.OriginalIndex, false, false);
+                            rowRenderer.DrawAddress(g, spacer, scrollIndex + 1, extraRow.OriginalIndex, sorted, false);
                             float noteWidth = missingLabel.Length == 0 ? 0 : g.MeasureString(missingLabel, small).Width + 10;
                             rowRenderer.DrawCell(g, PairedDisplayValue(extraRow), italic, Muted,
                                 new RectangleF(list.X + valueStart + 3, y, Math.Max(0, list.Width - valueStart - 9 - noteWidth), RowHeight));
@@ -766,7 +766,7 @@ namespace BetterGhPanel
                     var bounds = new RectangleF(list.X, y, list.Width, RowHeight);
                     bool selected = _selection.Contains(sourcePosition);
                     Fill(g, selected ? PanelTheme.Rgb(216, 232, 219) : (shown & 1) == 0 ? PanelTheme.Background : PanelTheme.Rgb(247, 249, 246), bounds);
-                    if (paired && pairedRow == null)
+                    if (paired && pairedRow == null && result.DisplaySet == null)
                     {
                         Fill(g, selected ? PanelTheme.Rgb(216, 232, 219) : PanelTheme.Background, bounds);
                         if (missingLabel.Length > 0)
@@ -782,7 +782,7 @@ namespace BetterGhPanel
                         continue;
                     }
                     var address = RowAddress(result, sourcePosition, paired);
-                    rowRenderer.DrawAddress(g, bounds, i + 1, address.Index, address.Sorted, selected);
+                    if (address.Index >= 0) rowRenderer.DrawAddress(g, bounds, i + 1, address.Index, address.Sorted, selected);
                     var sourceStatuses = paired ? new PanelSourceStatusCounts(0,
                         row.Validity == PanelValidity.VerifiedInvalid ? 1 : 0, row.Validity == PanelValidity.Unverified ? 1 : 0) :
                         CanvasStatistics.RowSourceStatuses(result, sourcePosition);
@@ -795,7 +795,7 @@ namespace BetterGhPanel
                             new RectangleF(bounds.X + rowRenderer.GutterWidth + 9, y, Math.Max(0, pathWidth - 12), RowHeight));
                     // Geometry summaries already name their type; reserve the extra
                     // label only for values whose text does not identify their type.
-                    bool showRowType = showTypes && (displayMetric || row.GeometryInfo == null);
+                    bool showRowType = showTypes && !(paired && result.DisplaySet != null) && (displayMetric || row.GeometryInfo == null);
                     float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
                     var projectedType = !paired && result.DisplaySet != null ? result.DisplaySet.Values[sourcePosition] : null;
                     // A glyph as well as the colour bar, so validity never relies on colour alone.
@@ -806,9 +806,9 @@ namespace BetterGhPanel
                             sourceStatuses.VerifiedInvalid > 0 ? "!" : "?", sourceStatuses.VerifiedInvalid > 0 ? PanelTheme.Warning : PanelTheme.Unverified, small);
                         marker = 12;
                     }
-                    rowRenderer.DrawValue(g, PanelValuePresentation.Visualize(paired ? PairedDisplayValue(row) : PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition)), font, Ink,
+                    rowRenderer.DrawValue(g, PanelValuePresentation.Visualize(paired ? result.DisplaySet != null ? PairedSetValue(sourcePosition) : PairedDisplayValue(row) : PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition)), font, Ink,
                         new RectangleF(bounds.X + valueStart + 3 + marker, y, Math.Max(0, valueRight - bounds.X - valueStart - 3 - marker), RowHeight),
-                        projectedType != null ? projectedType.Number.HasValue : displayMetric || row.NumericValue.HasValue);
+                        projectedType != null ? projectedType.Number.HasValue : !(paired && result.DisplaySet != null) && (displayMetric || row.NumericValue.HasValue));
                     if (showRowType)
                         rowRenderer.DrawCell(g, projectedType != null
                                 ? projectedType.Number.HasValue ? "Num" : "Text" : CanvasMenu.ShortTypeName(row.TypeName), small, Muted,
@@ -1949,9 +1949,9 @@ namespace BetterGhPanel
                     if (_pairedList.Contains(point) && PanelOwner.PairedSnapshot != null)
                     {
                         var pairedRow = PanelOwner.PairedRow(hit.SourcePosition);
-                        e.Title = "F · " + (pairedRow?.Path ?? PanelOwner.PairedData!.BranchAt(hit.SourcePosition).Paired.Path) + " [" + (pairedRow?.OriginalIndex ?? rowNumber) + "]";
-                        e.Text = pairedRow?.TypeName ?? "No F item";
-                        e.Description = PanelTextPreview.ForTooltip(pairedRow == null ? "" : PairedDisplayValue(pairedRow)) + "\nClick to select the shared D / F row · double-click to clear";
+                        e.Title = "F · " + (pairedRow?.Path ?? PanelOwner.PairedData!.BranchAt(hit.SourcePosition).Paired.Path) + (pairedRow == null ? "" : " [" + pairedRow.OriginalIndex + "]");
+                        e.Text = PanelOwner.Session.Result.DisplaySet != null ? "F set values" : pairedRow?.TypeName ?? "No F item";
+                        e.Description = PanelTextPreview.ForTooltip(PanelOwner.Session.Result.DisplaySet != null ? PairedSetValue(hit.SourcePosition) : pairedRow == null ? "" : PairedDisplayValue(pairedRow)) + "\nClick to select the shared D / F row · double-click to clear";
                         return;
                     }
                     e.Title = (PanelOwner.ShowItemOrder || PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder
