@@ -63,6 +63,16 @@ internal static class PropertyInspectionChecks
         Number(snapshot, 12, PanelSearchMode.Magnitude, 5);
         Number(snapshot, 13, PanelSearchMode.Determinant, 1);
         Text(snapshot, 14, PanelSearchMode.GroupName, "001");
+        foreach (var sample in new[] {
+            (1, PanelSearchMode.Red, "10"), (4, PanelSearchMode.Year, "2026"),
+            (6, PanelSearchMode.CharacterCount, "3"), (14, PanelSearchMode.ObjectCount, "1"),
+            (7, PanelSearchMode.ItemIndex, "7"), (2, PanelSearchMode.DomainStart, "-2.00"),
+            (3, PanelSearchMode.UStart, "-1.00"), (7, PanelSearchMode.AxisZZ, "1.00"),
+            (7, PanelSearchMode.AxisXZ, "0.00"), (12, PanelSearchMode.Real, "3.00"),
+            (12, PanelSearchMode.Imaginary, "4.00"), (13, PanelSearchMode.Determinant, "1.00"),
+            (13, PanelSearchMode.M00, "1.00") })
+            Check(PanelFilterValue.Format(snapshot, snapshot.Rows[sample.Item1], sample.Item2, 2, includeUnits: false) == sample.Item3,
+                sample.Item2 + " uses its captured integer or continuous property kind at explicit precision");
 
         using var mesh = Mesh.CreateFromBox(box, 1, 1, 1);
         using var brep = box.ToBrep();
@@ -81,6 +91,9 @@ internal static class PropertyInspectionChecks
         Number(snapshot, 4, PanelSearchMode.VertexCount, subd.Vertices.Count);
         Number(snapshot, 5, PanelSearchMode.Height, 5);
         Number(snapshot, 6, PanelSearchMode.PointCount, 2);
+        Check(PanelFilterValue.Format(snapshot, snapshot.Rows[0], PanelSearchMode.FaceCount, 2, includeUnits: false) == "6" &&
+            PanelFilterValue.Format(snapshot, snapshot.Rows[3], PanelSearchMode.Degree, 2, includeUnits: false) == "1",
+            "geometry counts and degree keep integer presentation at explicit precision");
         var rejected = Capture(assembly, new HostileSubD(), new HostileComplex());
         Check(rejected.Rows.All(row => row.Validity == PanelValidity.Unverified && row.Properties.Count == 0 && row.GeometryInfo == null),
             "new property handlers never invoke subclass validity or metadata callbacks");

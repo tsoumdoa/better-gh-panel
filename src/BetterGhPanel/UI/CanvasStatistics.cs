@@ -58,7 +58,7 @@ namespace BetterGhPanel.UI
             }
             var value = stats.UniqueValues[index - OverviewRows];
             string text = value.NumericValue.HasValue
-                ? "Number: " + FormatNumber(value.NumericValue.Value, result, decimals)
+                ? "Number: " + FormatNumber(value.NumericValue.Value, result, decimals, unique: true)
                 : "Text: " + Quote(value.StringValue!, full);
             return FormattableString.Invariant($"{value.Count:N0}×  {text}");
         }
@@ -67,8 +67,8 @@ namespace BetterGhPanel.UI
         private static int Total(PanelQueryResult result) => result.DisplaySet?.IsBranchSet == true ? result.Snapshot.Branches.Count : result.Snapshot.Rows.Count;
         private static string Number(double? value, PanelQueryResult result, int decimals) => value.HasValue
             ? FormatNumber(value.Value, result, decimals) : "—";
-        private static string FormatNumber(double value, PanelQueryResult result, int decimals) =>
-            (decimals < 0 ? value.ToString("R", CultureInfo.InvariantCulture) : PanelUnits.Format(value, PanelUnitConversion.None, decimals)) + (result.Statistics.NumericUnits.Length == 0 ? "" : " " + result.Statistics.NumericUnits);
+        private static string FormatNumber(double value, PanelQueryResult result, int decimals, bool unique = false) =>
+            (unique && decimals < 0 ? PanelUnits.FormatRoundTrip(value) : PanelUnits.Format(value, PanelUnitConversion.None, decimals)) + (result.Statistics.NumericUnits.Length == 0 ? "" : " " + result.Statistics.NumericUnits);
 
         private static string Quote(string value, bool full)
         {

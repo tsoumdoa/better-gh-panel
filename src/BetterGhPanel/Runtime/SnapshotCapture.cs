@@ -162,7 +162,7 @@ namespace BetterGhPanel.Runtime
                                 if (stringValue != null)
                                 {
                                     captured[PanelSearchMode.TextValue] = PanelPropertyValue.String(stringValue);
-                                    captured[PanelSearchMode.CharacterCount] = PanelPropertyValue.Numeric(stringValue.Length);
+                                    captured[PanelSearchMode.CharacterCount] = PanelPropertyValue.Integer(stringValue.Length);
                                 }
                                 else if (inspected.GetType() == typeof(GH_Boolean)) captured[PanelSearchMode.BooleanValue] = PanelPropertyValue.Boolean(display == "True");
                                 properties = captured;
@@ -171,7 +171,7 @@ namespace BetterGhPanel.Runtime
                             if (groupSummary != null) properties = new Dictionary<PanelSearchMode, PanelPropertyValue?>
                             {
                                 [PanelSearchMode.GroupName] = PanelPropertyValue.String(groupSummary.Name),
-                                [PanelSearchMode.ObjectCount] = PanelPropertyValue.Numeric(groupSummary.Count)
+                                [PanelSearchMode.ObjectCount] = PanelPropertyValue.Integer(groupSummary.Count)
                             };
                             geometry = GeometryHints.DescribeCaptured(inspected!, capturedGeometry, geometryUnits);
                             // Only a standalone exact holder and its captured inner object

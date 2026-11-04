@@ -10,8 +10,8 @@ namespace BetterGhPanel.Core
     /// <summary>An immutable captured value. Null dictionary entries advertise deferred properties.</summary>
     public sealed class PanelPropertyValue
     {
-        private PanelPropertyValue(PanelPropertyKind kind, double number = 0, string text = "", int power = 0, string units = "", DateTime date = default)
-        { Kind = kind; Number = number; Text = text; Power = power; Units = units; Date = date; }
+        private PanelPropertyValue(PanelPropertyKind kind, double number = 0, string text = "", int power = 0, string units = "", DateTime date = default, bool integer = false)
+        { Kind = kind; Number = number; Text = text; Power = power; Units = units; Date = date; KeepInteger = integer; }
         public PanelPropertyKind Kind { get; }
         public double Number { get; }
         public string Text { get; }
@@ -20,13 +20,14 @@ namespace BetterGhPanel.Core
         public string Units { get; }
         public DateTime Date { get; }
         public static PanelPropertyValue Numeric(double value, int power = 0, string units = "") => new PanelPropertyValue(PanelPropertyKind.Number, value, power: power, units: units);
+        public static PanelPropertyValue Integer(int value) => new PanelPropertyValue(PanelPropertyKind.Number, value, integer: true);
         public static PanelPropertyValue Boolean(bool value) => new PanelPropertyValue(PanelPropertyKind.Boolean, value ? 1 : 0);
         public static PanelPropertyValue String(string value) => new PanelPropertyValue(PanelPropertyKind.Text, text: value);
         public static PanelPropertyValue Time(DateTime value) => new PanelPropertyValue(PanelPropertyKind.DateTime, date: value);
         public double Converted(PanelUnitConversion conversion) => Power == -1
             ? PanelUnits.Convert(Number, conversion == PanelUnitConversion.RadiansToDegrees ? conversion : PanelUnitConversion.None)
             : Power == 0 ? Number : PanelUnits.ConvertGeometry(Number, Power, Units, conversion);
-        internal bool KeepInteger => Power == 0 && Number == Math.Truncate(Number);
+        internal bool KeepInteger { get; }
         internal double Presented(PanelUnitConversion conversion, int decimals, double roundUpFactor) =>
             PanelUnits.Transform(Converted(conversion), PanelUnitConversion.None, Power == 0 ? 0 : roundUpFactor, KeepInteger ? -1 : decimals);
         public string Format(PanelUnitConversion conversion, int decimals, bool includeUnits, double roundUpFactor = 0)
@@ -100,7 +101,7 @@ namespace BetterGhPanel.Core
                 PanelSearchMode.DataType => PanelPropertyValue.String(row.TypeName),
                 PanelSearchMode.Validity => PanelPropertyValue.String(row.IsNull ? "Null" : row.Validity == PanelValidity.VerifiedValid ? "Valid" : row.Validity == PanelValidity.VerifiedInvalid ? "Invalid" : "Unverified"),
                 PanelSearchMode.BranchPath => PanelPropertyValue.String(row.Path),
-                PanelSearchMode.ItemIndex => PanelPropertyValue.Numeric(row.OriginalIndex),
+                PanelSearchMode.ItemIndex => PanelPropertyValue.Integer(row.OriginalIndex),
                 _ => null
             };
             if (IsMetadata(mode)) return true;

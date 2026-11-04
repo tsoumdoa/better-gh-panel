@@ -9,7 +9,7 @@ namespace BetterGhPanel.Core
         /// <summary>Presented typed value; null preserves an unavailable row's output slot.</summary>
         public static PanelPropertyValue? OutputValue(PanelSnapshot snapshot, PanelRow row, PanelSearchMode mode, PanelGeometryInfo? measured, int decimals = PanelUnits.AutomaticDecimals, double roundUpFactor = 0)
         {
-            if (mode == PanelSearchMode.ListLength) return PanelPropertyValue.Numeric(snapshot.BranchItemCounts[row.Path]);
+            if (mode == PanelSearchMode.ListLength) return PanelPropertyValue.Integer(snapshot.BranchItemCounts[row.Path]);
             if (PanelProperties.IsProperty(mode))
             {
                 if (!PanelProperties.TryGet(row, mode, measured, out var property) || property == null) return null;

@@ -35,14 +35,15 @@ namespace BetterGhPanel.Core
                 copy = numeric ? new PanelText(PanelUnits.Format(row.NumericValue!.Value, PanelUnitConversion.None,
                     query.DecimalPlaces)) : text;
             }
-            double? number = query.DecimalPlaces < 0 && numeric && PanelUnits.TryParseOperand(copy.ToString(), out double parsed) &&
-                !double.IsNaN(parsed) && !double.IsInfinity(parsed) ? parsed : (double?)null;
             var presented = query.DisplayFilterValue
                 ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor)
                 : numeric ? PanelFilterValue.OutputValue(snapshot, row, PanelSearchMode.Value, measured, query.DecimalPlaces) : null;
             bool unavailable = numeric && presented == null || PanelValuePresentation.IsTransformedUnavailable(row);
             // Automatic deliberately preserves main's compact set grouping/value semantics.
-            if (query.DecimalPlaces >= 0) number = presented?.Kind == PanelPropertyKind.Number ? presented.Number : (double?)null;
+            double? number = presented?.Kind == PanelPropertyKind.Number ? presented.Number : (double?)null;
+            if (query.DecimalPlaces < 0 && number.HasValue)
+                number = PanelNumber.GeneralValue(number.Value, query.DisplayFilterValue &&
+                    query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume ? 6 : 12);
             return new PanelDisplayedValue(text, copy, number, unavailable);
         }
     }

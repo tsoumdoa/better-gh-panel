@@ -95,13 +95,7 @@ namespace BetterGhPanel.Core
         internal static string General(double value, int precision)
         {
             if (value == 0) return "0";
-            Binary(value, out var numerator, out var denominator);
-            int exponent = (int)Math.Floor(Math.Log10(Math.Abs(value)));
-            bool BelowPower(int power) => power >= 0 ? numerator < denominator * Tens[power] : numerator * Tens[-power] < denominator;
-            while (BelowPower(exponent)) exponent--;
-            while (!BelowPower(exponent + 1)) exponent++;
-            int scale = precision - 1 - exponent;
-            var coefficient = scale >= 0 ? Rounded(numerator * Tens[scale], denominator) : Rounded(numerator, denominator * Tens[-scale]);
+            var coefficient = GeneralCoefficient(value, precision, out int exponent);
             string digits = coefficient.ToString(CultureInfo.InvariantCulture);
             if (digits.Length > precision) { exponent++; digits = digits.Substring(0, precision); }
             digits = digits.TrimEnd('0');
@@ -114,23 +108,65 @@ namespace BetterGhPanel.Core
                 ? digits + new string('0', point - digits.Length) : digits.Insert(point, "."));
         }
 
+        private static BigInteger GeneralCoefficient(double value, int precision, out int exponent)
+        {
+            Binary(value, out var numerator, out var denominator);
+            exponent = (int)Math.Floor(Math.Log10(Math.Abs(value)));
+            bool BelowPower(int power) => power >= 0 ? numerator < denominator * Tens[power] : numerator * Tens[-power] < denominator;
+            while (BelowPower(exponent)) exponent--;
+            while (!BelowPower(exponent + 1)) exponent++;
+            int scale = precision - 1 - exponent;
+            return scale >= 0 ? Rounded(numerator * Tens[scale], denominator) : Rounded(numerator, denominator * Tens[-scale]);
+        }
+
+        internal static double GeneralValue(double value, int precision)
+        {
+            if (value == 0) return 0;
+            var coefficient = GeneralCoefficient(value, precision, out int exponent);
+            int scale = precision - 1 - exponent;
+            return RationalDouble(scale < 0 ? coefficient * Tens[-scale] : coefficient,
+                scale > 0 ? Tens[scale] : BigInteger.One, value < 0, Math.Abs(value));
+        }
+
+        internal static string RoundTrip(double value)
+        {
+            for (int precision = 15; precision <= 17; precision++)
+            {
+                string text = General(value, precision);
+                if (TryParse(text, out double parsed) && BitConverter.DoubleToInt64Bits(parsed) == BitConverter.DoubleToInt64Bits(value))
+                    return text;
+            }
+            return General(value, 17);
+        }
+
+        private static bool FitsDecimalExactly(string text)
+        {
+            int significant = 0, fractional = 0, index = 0;
+            bool point = false;
+            for (; index < text.Length && text[index] != 'e' && text[index] != 'E'; index++)
+            {
+                char c = text[index];
+                if (c == '.') point = true;
+                if (c < '0' || c > '9') continue;
+                if (c != '0' || significant > 0) significant++;
+                if (point) fractional++;
+            }
+            int exponent = 0;
+            if (index < text.Length && !int.TryParse(text.Substring(index + 1), NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture, out exponent)) return false;
+            return significant <= 28 && (long)fractional - exponent <= 28;
+        }
+
         internal static bool TryParse(string text, out double value)
         {
-            if (decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal number))
+            text = text.Trim();
+            if (FitsDecimalExactly(text) && decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal number))
             {
-                bool underflow = false;
-                if (number == 0)
-                    foreach (char character in text)
-                    {
-                        if (character == 'e' || character == 'E') break;
-                        if (character >= '1' && character <= '9') { underflow = true; break; }
-                    }
-                if (!underflow) { value = ToDouble(number); return true; }
+                value = ToDouble(number); return true;
             }
-            // Outside decimal's range, parse the integer rational directly. This
+            // Outside decimal's exact range, parse the integer rational directly. This
             // avoids net48's mis-rounded double.Parse for large integer addresses.
             value = 0;
-            text = text.Trim();
             if (text.Length == 0) return false;
             int index = 0; bool negative = text[0] == '-';
             if (negative || text[0] == '+') index++;

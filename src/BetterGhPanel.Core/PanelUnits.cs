@@ -160,6 +160,10 @@ namespace BetterGhPanel.Core
                 ? conversion : PanelUnitConversion.None;
         }
 
+        /// <summary>Runtime-independent round-trip text for a finite unique numeric value.</summary>
+        public static string FormatRoundTrip(double value) => double.IsNaN(value) || double.IsInfinity(value)
+            ? "unavailable" : PanelNumber.RoundTrip(value);
+
         // Automatic keeps the compact display without rounding the wire.
         public static string Format(double value, PanelUnitConversion conversion, int decimals,
             string automaticFormat = "G12")

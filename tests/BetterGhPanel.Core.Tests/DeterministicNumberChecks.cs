@@ -173,7 +173,7 @@ public sealed class DeterministicNumberChecks
         {
             var property = PanelPropertyValue.Numeric(value);
             string text = property.Format(PanelUnitConversion.None, 2, true, 50);
-            Assert.Equal(value == Math.Truncate(value) ? value.ToString(CultureInfo.InvariantCulture) : "0.12", text);
+            Assert.Equal(value == Math.Truncate(value) ? value.ToString("F2", CultureInfo.InvariantCulture) : "0.12", text);
             var row = new PanelRow(0, "{0}", "Example", "", null, PanelValidity.VerifiedValid,
                 properties: new Dictionary<PanelSearchMode, PanelPropertyValue?> { [PanelSearchMode.M00] = property });
             var snapshot = new PanelSnapshot(new[] { row }, new[] { new PanelBranch("{0}", 1) });
@@ -181,7 +181,75 @@ public sealed class DeterministicNumberChecks
                 DisplayFilterValue = true, OutputValues = true, RoundUpFactor = 50, DecimalPlaces = 2 });
             Assert.Equal(value == Math.Truncate(value) ? value : .12, result.OutputValues![0]!.Number);
         }
+        foreach (int value in new[] { 0, 1, 2026, 255 })
+            Assert.Equal(value.ToString(CultureInfo.InvariantCulture), PanelPropertyValue.Integer(value).Format(PanelUnitConversion.None, 2, true, 50));
         Assert.Equal("50.00 mm", PanelPropertyValue.Numeric(1, 1, "mm").Format(PanelUnitConversion.None, 2, true, 50));
+    }
+
+    [Theory]
+    [InlineData("1.23456789012E-18", 1.23456789012e-18)]
+    [InlineData("1.23456789012E-19", 1.23456789012e-19)]
+    [InlineData("1.23456789012E-20", 1.23456789012e-20)]
+    [InlineData("1.23456789012E-21", 1.23456789012e-21)]
+    [InlineData("1.23456789012E-22", 1.23456789012e-22)]
+    [InlineData("1.23456789012E-23", 1.23456789012e-23)]
+    [InlineData("1.23456789012E-24", 1.23456789012e-24)]
+    [InlineData("1.23456789012E-25", 1.23456789012e-25)]
+    [InlineData("1.23456789012E-26", 1.23456789012e-26)]
+    [InlineData("1.23456789012E-27", 1.23456789012e-27)]
+    [InlineData("1.23456789012E-28", 1.23456789012e-28)]
+    [InlineData("2.5e-28", 2.5e-28)]
+    [InlineData("0.12345678901234567890123456789", .12345678901234567890123456789)]
+    public void TinyOperandsPreserveEveryBit(string text, double expected)
+    {
+        Assert.True(PanelUnits.TryParseOperand(text, out double actual));
+        Assert.Equal(BitConverter.DoubleToInt64Bits(expected), BitConverter.DoubleToInt64Bits(actual));
+        Assert.True(PanelUnits.TryParseOperand("-" + text, out actual));
+        Assert.Equal(BitConverter.DoubleToInt64Bits(-expected), BitConverter.DoubleToInt64Bits(actual));
+    }
+
+    [Fact]
+    public void AutomaticTinySetValuesFiltersAndRoundingNotesAgree()
+    {
+        const double first = 1.23456789012e-25, second = 1.23456789013e-25;
+        var snapshot = new PanelSnapshot(new[] { new PanelRow(0, "{0}", "Number", "", first),
+            new PanelRow(1, "{0}", "Number", "", second) }, new[] { new PanelBranch("{0}", 2) });
+        foreach (bool displayFilterValue in new[] { false, true })
+        {
+            var options = new PanelQueryOptions { CreateSet = true, SearchMode = PanelSearchMode.Value, DisplayFilterValue = displayFilterValue };
+            var result = PanelQueryEngine.Execute(snapshot, options);
+            Assert.Equal(2, result.RowPositions.Count);
+            Assert.Equal(first, result.DisplaySet!.Values[0].Number);
+            Assert.Equal(second, result.DisplaySet.Values[1].Number);
+            Assert.Equal(first, result.Statistics.Minimum);
+            Assert.Equal(2, result.Statistics.UniqueValues.Count);
+            Assert.Equal("", PanelFilterValue.RoundingDescription(snapshot, snapshot.Rows[0], options));
+            options.DisplayFilterValue = false;
+            options.Search = "= 1.23456789012E-25";
+            Assert.Equal(0, Assert.Single(PanelQueryEngine.Execute(snapshot, options).RowPositions));
+        }
+        Assert.Equal(1e-25, PanelNumber.GeneralValue(9.999999999999e-26, 12));
+    }
+
+    [Theory]
+    [InlineData(.3, "0.3")]
+    [InlineData(.30000000000000004, "0.30000000000000004")]
+    [InlineData(1.234567890123456, "1.234567890123456")]
+    [InlineData(1.23456789012e-25, "1.23456789012E-25")]
+    [InlineData(double.MaxValue, "1.7976931348623157E+308")]
+    [InlineData(double.Epsilon, "4.94065645841247E-324")]
+    public void AutomaticUniqueTextRoundTripsWhileAggregatesStayCompact(double value, string expected)
+    {
+        Assert.Equal(expected, PanelUnits.FormatRoundTrip(value));
+        Assert.True(PanelUnits.TryParseOperand(expected, out double parsed));
+        Assert.Equal(BitConverter.DoubleToInt64Bits(value), BitConverter.DoubleToInt64Bits(parsed));
+        var snapshot = new PanelSnapshot(new[] { new PanelRow(0, "{0}", "Number", "", value) }, new[] { new PanelBranch("{0}", 1) });
+        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
+        string compact = PanelUnits.Format(value, PanelUnitConversion.None, -1);
+        Assert.Equal("Numbers: 1 · Min: " + compact, CanvasStatistics.Label(result, 2, -1));
+        Assert.Equal("Max: " + compact, CanvasStatistics.Label(result, 3, -1));
+        Assert.Equal("Average: " + compact, CanvasStatistics.Label(result, 4, -1));
+        Assert.Equal("1×  Number: " + expected, CanvasStatistics.Label(result, CanvasStatistics.OverviewRows, -1));
     }
 
     [Fact]
