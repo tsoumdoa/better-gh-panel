@@ -70,7 +70,7 @@ namespace BetterGhPanel
         private float _startWidth, _startHeight, _thumbGrab;
         private BetterPanelComponent PanelOwner => (BetterPanelComponent)Owner;
         private bool DisplayListLengths => PanelOwner.Session.Options.DisplayFilterValue && PanelOwner.Session.Options.SearchMode == PanelSearchMode.ListLength;
-        private int Count => PanelOwner.Session.HasCurrentResult ? DisplayListLengths ? PanelOwner.Session.Result.BranchPaths.Count : PanelOwner.Session.Result.ViewIndex.Count : 0;
+        private int Count => PanelOwner.Session.HasCurrentResult ? DisplayListLengths ? PanelOwner.Session.Result.BranchPaths.Count : ViewCount(PanelOwner.Session.Result) : 0;
         private int MaximumOffset
         {
             get
@@ -90,9 +90,9 @@ namespace BetterGhPanel
                 // At most one viewport of entries is visited, even for huge trees.
                 for (int index = count - 1; index >= 0; index--)
                 {
-                    result.ViewIndex.TryGet(index, out int item, out string? emptyPath);
-                    string path = emptyPath ?? result.Snapshot.Rows[result.RowPositions[item]].Path;
-                    float height = emptyPath != null ? (grouped ? BranchHeight : RowHeight) :
+                    ViewEntry(result, index, out _, out string? emptyPath, out int extra, out _);
+                    string path = ViewPath(result, index);
+                    float height = extra >= 0 ? RowHeight + (grouped && path != followingPath && result.Snapshot.BranchItemCounts[path] > 0 ? BranchHeight : 0) : emptyPath != null ? (grouped ? BranchHeight : RowHeight) :
                         RowHeight + (grouped && path != followingPath ? BranchHeight : 0);
                     if (used + height > _list.Height) break;
                     used += height;
@@ -679,9 +679,24 @@ namespace BetterGhPanel
             try
             {
                 g.SetClip(list, CombineMode.Intersect);
-                for (int scrollIndex = offset; scrollIndex < result.ViewIndex.Count; scrollIndex++)
+                for (int scrollIndex = offset; scrollIndex < ViewCount(result); scrollIndex++)
                 {
-                    result.ViewIndex.TryGet(scrollIndex, out int i, out string? emptyPath);
+                    ViewEntry(result, scrollIndex, out int i, out string? emptyPath, out int extra, out string missingLabel);
+                    if (extra >= 0)
+                    {
+                        if (y + RowHeight > list.Bottom) break;
+                        var spacer = new RectangleF(list.X, y, list.Width, RowHeight);
+                        Fill(g, PanelTheme.Background, spacer);
+                        if (paired)
+                        {
+                            using var italic = new Font(small, FontStyle.Italic);
+                            string value = PairedDisplayValue(PanelOwner.PairedSnapshot!.Rows[extra]);
+                            Text(g, (missingLabel.Length == 0 ? "" : missingLabel + " · ") + value, italic, Muted,
+                                new RectangleF(list.X + valueStart + 3, y, Math.Max(0, list.Width - valueStart - 9), RowHeight), trim);
+                        }
+                        shown++; y += RowHeight;
+                        continue;
+                    }
                     if (emptyPath != null)
                     {
                         float height = grouped ? BranchHeight : RowHeight;
@@ -692,8 +707,9 @@ namespace BetterGhPanel
                         {
                             var count = CanvasStatistics.BranchCount(result, emptyPath);
                             float countWidth = Math.Min(list.Width / 2, g.MeasureString(count, small).Width + 6);
-                            Text(g, emptyPath, mono, Accent, new RectangleF(list.X + 6, y, list.Width - countWidth - 18, height), trim);
-                            Text(g, count, small, Muted, new RectangleF(list.Right - countWidth - 6, y, countWidth, height), trim);
+                            if (paired) DrawPairedHeading(g, emptyPath, emptyBounds, small, mono, trim);
+                            else Text(g, emptyPath, mono, Accent, new RectangleF(list.X + 6, y, list.Width - countWidth - 18, height), trim);
+                            if (!paired) Text(g, count, small, Muted, new RectangleF(list.Right - countWidth - 6, y, countWidth, height), trim);
                         }
                         else rowRenderer.DrawCell(g, emptyPath, mono, Accent,
                             new RectangleF(list.X + 6, y, list.Width - 12, height));
@@ -705,25 +721,45 @@ namespace BetterGhPanel
                     }
                     int sourcePosition = result.RowPositions[i];
                     var dataRow = result.Snapshot.Rows[sourcePosition];
-                    var row = paired ? PanelOwner.PairedSnapshot!.Rows[sourcePosition] : dataRow;
-                    if (grouped && row.Path != previousPath)
+                    var pairedRow = paired ? PanelOwner.PairedRow(sourcePosition) : null;
+                    var row = pairedRow ?? dataRow;
+                    if (grouped && dataRow.Path != previousPath)
                     {
                         if (y + BranchHeight + RowHeight > list.Bottom) break;
                         var branchBounds = new RectangleF(list.X, y, list.Width, BranchHeight);
                         Fill(g, PanelTheme.Rgb(236, 241, 235), branchBounds);
-                        var count = CanvasStatistics.BranchCount(result, row.Path);
+                        var count = CanvasStatistics.BranchCount(result, dataRow.Path);
                         float countWidth = Math.Min(list.Width / 2, g.MeasureString(count, small).Width + 6);
-                        Text(g, row.Path, mono, Accent, new RectangleF(list.X + 6, y, list.Width - countWidth - 18, BranchHeight), trim);
-                        Text(g, count, small, Muted, new RectangleF(list.Right - countWidth - 6, y, countWidth, BranchHeight), trim);
-                        if (TargetPainted(g, branchBounds)) AddBranchHit(branchBounds, row.Path);
+                        if (paired) DrawPairedHeading(g, dataRow.Path, branchBounds, small, mono, trim);
+                        else
+                        {
+                            Text(g, dataRow.Path, mono, Accent, new RectangleF(list.X + 6, y, list.Width - countWidth - 18, BranchHeight), trim);
+                            Text(g, count, small, Muted, new RectangleF(list.Right - countWidth - 6, y, countWidth, BranchHeight), trim);
+                        }
+                        if (TargetPainted(g, branchBounds)) AddBranchHit(branchBounds, dataRow.Path);
                         y += BranchHeight;
-                        previousPath = row.Path;
+                        previousPath = dataRow.Path;
                     }
                     if (y + RowHeight > list.Bottom) break;
                     var bounds = new RectangleF(list.X, y, list.Width, RowHeight);
                     bool selected = _selection.Contains(sourcePosition);
                     Fill(g, selected ? PanelTheme.Rgb(216, 232, 219) : (shown & 1) == 0 ? PanelTheme.Background : PanelTheme.Rgb(247, 249, 246), bounds);
-                    int rowNumber = result.DisplaySet?.MemberIndices.TryGetValue(sourcePosition, out int k) == true ? k : row.OriginalIndex;
+                    if (paired && pairedRow == null)
+                    {
+                        Fill(g, selected ? PanelTheme.Rgb(216, 232, 219) : PanelTheme.Background, bounds);
+                        if (missingLabel.Length > 0)
+                        {
+                            using var italic = new Font(small, FontStyle.Italic);
+                            Text(g, missingLabel, italic, Muted, new RectangleF(bounds.X + valueStart + 3, y, Math.Max(0, bounds.Width - valueStart - 9), RowHeight), trim);
+                        }
+                        if (TargetPainted(g, bounds) && !_rowHits.Any(hit => hit.Bounds == bounds && hit.SourcePosition == sourcePosition))
+                            _rowHits.Add(new RowHit(bounds, sourcePosition, i + 1));
+                        if (firstShownItem < 0) firstShownItem = i;
+                        lastShownItem = i;
+                        shown++; y += RowHeight;
+                        continue;
+                    }
+                    int rowNumber = result.DisplaySet?.MemberIndices.TryGetValue(sourcePosition, out int k) == true ? k : dataRow.OriginalIndex;
                     rowRenderer.DrawAddress(g, bounds, i + 1, rowNumber, sorted, selected);
                     var sourceStatuses = paired ? new PanelSourceStatusCounts(0,
                         row.Validity == PanelValidity.VerifiedInvalid ? 1 : 0, row.Validity == PanelValidity.Unverified ? 1 : 0) :
@@ -733,7 +769,7 @@ namespace BetterGhPanel
                     if (sourceStatuses.Unverified > 0)
                         Fill(g, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (sourceStatuses.VerifiedInvalid > 0 ? 2 : 0), bounds.Y + 3, 2, bounds.Height - 6));
                     if (!grouped)
-                        rowRenderer.DrawCell(g, row.Path, mono, Accent,
+                        rowRenderer.DrawCell(g, dataRow.Path, mono, Accent,
                             new RectangleF(bounds.X + rowRenderer.GutterWidth + 9, y, Math.Max(0, pathWidth - 12), RowHeight));
                     // Geometry summaries already name their type; reserve the extra
                     // label only for values whose text does not identify their type.
@@ -764,7 +800,7 @@ namespace BetterGhPanel
                     shown++;
                     y += RowHeight;
                 }
-                if (result.ViewIndex.Count == 0)
+                if (ViewCount(result) == 0)
                 {
                     Text(g, result.Snapshot.Branches.Count == 0 ? "Connect a tree to start exploring." : "No matching items. Clear a filter or Reset.",
                         small, Muted, new RectangleF(list.X + 6, list.Y + 12, list.Width - 12, 22), trim);
@@ -1220,7 +1256,7 @@ namespace BetterGhPanel
             {
                 var jumpResult = PanelOwner.Session.Result;
                 bool branchView = DisplayListLengths;
-                int firstItem = branchView ? _offset : jumpResult.ViewIndex.ItemAtOrAfter(_offset);
+                int firstItem = branchView ? _offset : ViewItemAtOrAfter(jumpResult, _offset);
                 CanvasTextInput.Show(sender, PanelOwner, _jump, (Math.Min(firstItem, Math.Max(0, (branchView ? jumpResult.BranchPaths.Count : jumpResult.RowPositions.Count) - 1)) + 1).ToString(), text =>
                 {
                     if (!ResultIsCurrent(jumpResult) || DisplayListLengths != branchView) return;
@@ -1233,7 +1269,7 @@ namespace BetterGhPanel
                     // Put the requested item first; grouped branch headings can change
                     // page capacity, so previous-page size must not hide the final item.
                     int index = Math.Max(0, Math.Min(Math.Max(0, itemCount - 1), row <= 1 ? 0 : row - 1));
-                    _offset = itemCount == 0 ? 0 : branchView ? index : jumpResult.ViewIndex.OffsetOfItem(index);
+                    _offset = itemCount == 0 ? 0 : branchView ? index : ViewOffset(jumpResult, index);
                     if (itemCount > 0 && (row < 1 || row > itemCount))
                         ShowNotice(sender, $"Row {row:N0} is out of range · showing row {index + 1:N0} of {itemCount:N0}");
                     InvalidatePaintedHits();
@@ -1890,10 +1926,10 @@ namespace BetterGhPanel
                     PanelItemOrder.TryGetNumber(PanelOwner.Session.Result, hit.SourcePosition, out int rowNumber);
                     if (_pairedList.Contains(point) && PanelOwner.PairedSnapshot != null)
                     {
-                        var pairedRow = PanelOwner.PairedSnapshot.Rows[hit.SourcePosition];
+                        var pairedRow = PanelOwner.PairedRow(hit.SourcePosition);
                         e.Title = "F · " + row.Path + " [" + rowNumber + "]";
-                        e.Text = pairedRow.TypeName;
-                        e.Description = PanelTextPreview.ForTooltip(PairedDisplayValue(pairedRow)) + "\nClick to select the shared D / F row · double-click to clear";
+                        e.Text = pairedRow?.TypeName ?? "No F item";
+                        e.Description = PanelTextPreview.ForTooltip(pairedRow == null ? "" : PairedDisplayValue(pairedRow)) + "\nClick to select the shared D / F row · double-click to clear";
                         return;
                     }
                     e.Title = (PanelOwner.ShowItemOrder || PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder

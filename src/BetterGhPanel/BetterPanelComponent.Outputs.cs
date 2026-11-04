@@ -21,14 +21,17 @@ namespace BetterGhPanel
         internal PanelOutputValues OutputValues { get; private set; }
         internal bool CanOutputValues => CreateSetTree || Session.Options.DisplayFilterValue;
         internal bool OutputsValues => CanOutputValues && OutputValues == PanelOutputValues.Values;
-        private GH_Structure<IGH_Goo>? _inputTree, _preConversionTree, _pairedQueryTree;
+        private GH_Structure<IGH_Goo>? _inputTree, _preConversionTree;
         private GH_Structure<IGH_Goo>? _liveInputTree, _livePairedTree, _pairedInputTree;
         private bool _pairedInputPresent;
         private IReadOnlyList<PanelSourceAddress> _retainedSources = Array.Empty<PanelSourceAddress>();
         private string? _pairedError;
+        internal PanelPairedData? PairedData { get; private set; }
+        internal PanelRow? PairedRow(int position) => PairedData?.ItemAt(position) is int item ? PairedSnapshot?.Rows[item] : null;
+        internal string PairedValue(int position) => PairedRow(position) is PanelRow row ? BetterPanelAttributes.PairedDisplayValue(row) : "";
         internal PanelSnapshot? PairedSnapshot { get; private set; }
         internal string? PairedError => _pairedError;
-        internal bool CanSplit => _pairedInputPresent && _pairedQueryTree != null && _pairedError == null && Session.HasCurrentResult;
+        internal bool CanSplit => _pairedInputPresent && PairedData != null && _pairedError == null && Session.HasCurrentResult;
         private long _selectionVersion, _publishedSelectionVersion;
         private PanelOutputScope _publishedScope;
         private PanelOutputValues _publishedValues;
@@ -101,7 +104,7 @@ namespace BetterGhPanel
 
         private void ClearOutputSources()
         {
-            _inputTree = _preConversionTree = _pairedQueryTree = null;
+            _inputTree = _preConversionTree = null;
             _liveInputTree = _livePairedTree = _pairedInputTree = null;
             _pairedInputPresent = false;
             _captureGraphs = Array.Empty<CaptureGraphWitness>();
@@ -109,6 +112,7 @@ namespace BetterGhPanel
             _retainedSources = Array.Empty<PanelSourceAddress>();
             _pairedError = null;
             PairedSnapshot = null;
+            PairedData = null;
             _pairedSourceItems = Array.Empty<IGH_Goo?>();
             _pairedMeasurementSources = Array.Empty<CapturedMeasurementSource?>();
             _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
@@ -117,8 +121,8 @@ namespace BetterGhPanel
             _filteredMask = null;
         }
 
-        private void CapturePairedInput(IGH_DataAccess da, GH_Structure<IGH_Goo> inputTree, GH_Structure<IGH_Goo> queryTree,
-            IReadOnlyList<PanelSourceAddress> retainedSources, out GH_Structure<IGH_Goo>? pairedTree, out string? error,
+        private void CapturePairedInput(IGH_DataAccess da, GH_Structure<IGH_Goo> inputTree,
+            IReadOnlyList<PanelSourceAddress> retainedSources, out PanelPairedData? pairedTree, out string? error,
             out GH_Structure<IGH_Goo>? livePairedTree, out GH_Structure<IGH_Goo>? capturedPairedTree, out bool present)
         {
             pairedTree = null;
@@ -129,7 +133,8 @@ namespace BetterGhPanel
             if (!da.GetDataTree(1, out GH_Structure<IGH_Goo> paired)) paired = new GH_Structure<IGH_Goo>();
             livePairedTree = paired;
             capturedPairedTree = PanelTreeOperations.CopyStructure(paired);
-            pairedTree = PanelOutputOperations.Pair(inputTree, capturedPairedTree, queryTree, retainedSources, out error);
+            pairedTree = PanelOutputOperations.Pair(inputTree, capturedPairedTree, retainedSources,
+                TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out error);
         }
 
         internal bool PairedInputPresent() => Params.Input[1].SourceCount != 0 ||
@@ -155,11 +160,7 @@ namespace BetterGhPanel
                 if (set == null && !OutputsValues && filtering && (session.Result.RowPositions.Count != _queryTree.DataCount || session.Result.BranchPaths.Count != _queryTree.PathCount))
                     CountOutputVisits(_queryTree.DataCount);
                 _filteredData = BuildDataOutput(_queryTree, query, query.RowPositions, query.BranchPaths, false);
-                if (_pairedQueryTree != null && set == null && (query.RowPositions.Count != _pairedQueryTree.DataCount || query.BranchPaths.Count != _pairedQueryTree.PathCount))
-                    CountOutputVisits(_pairedQueryTree.DataCount);
-                _filteredPair = _pairedQueryTree == null ? null : set != null
-                    ? PanelOutputOperations.SetItems(_pairedQueryTree, query, query.RowPositions, query.BranchPaths, FlattenTree, CountOutputVisits)
-                    : PanelTreeOperations.Filter(_pairedQueryTree, query);
+                _filteredPair = PairedData?.Output(query, query.RowPositions, query.BranchPaths, FlattenTree, CountOutputVisits);
                 _filteredMask = null;
             }
             // Selection-only solutions reuse unchanged query outputs. A large
@@ -185,12 +186,8 @@ namespace BetterGhPanel
                 CountOutputVisits((long)_inputTree.DataCount + selectedMembers.Count);
             var mask = !current || _inputTree == null ? new GH_Structure<GH_Boolean>() : OutputScope == PanelOutputScope.Filtered
                 ? _filteredMask! : PanelOutputOperations.Mask(_inputTree, _retainedSources, selectedMembers);
-            if (current && _pairedQueryTree != null && set == null && OutputScope == PanelOutputScope.Selected && selectedPositions.Count > 0)
-                CountOutputVisits(_pairedQueryTree.DataCount);
-            var paired = !current || _pairedQueryTree == null ? empty : OutputScope == PanelOutputScope.Filtered
-                ? _filteredPair ?? empty : set != null
-                    ? PanelOutputOperations.SetItems(_pairedQueryTree, query, selectedPositions, selectedBranches, FlattenTree, CountOutputVisits)
-                    : PanelTreeOperations.Select(_pairedQueryTree, selectedPositions);
+            var paired = !current || PairedData == null ? empty : OutputScope == PanelOutputScope.Filtered
+                ? _filteredPair ?? empty : PairedData.Output(query, selectedPositions, selectedBranches, FlattenTree, CountOutputVisits);
             // Tree construction above only reads captured structures and managed
             // query data. Run the full freshness fence once, after all of it and
             // immediately before GH receives any output.

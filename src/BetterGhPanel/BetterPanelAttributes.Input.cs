@@ -198,7 +198,7 @@ namespace BetterGhPanel
             int index;
             if (_keyboardCursor >= 0 && result.TryGetViewIndex(_keyboardCursor, out int cursor)) index = cursor + step;
             else if (_selection.Anchor >= 0 && result.TryGetViewIndex(_selection.Anchor, out int anchor)) index = anchor + step;
-            else index = paired ? Math.Max(0, result.ViewIndex.ItemAtOrAfter(_pairedOffset)) : Math.Max(0, _firstShownItem);
+            else index = paired ? Math.Max(0, ViewItemAtOrAfter(result, _pairedOffset)) : Math.Max(0, _firstShownItem);
             index = Math.Max(0, Math.Min(count - 1, index));
             int position = result.RowPositions[index];
             InvalidateCopyStatus();
@@ -206,7 +206,7 @@ namespace BetterGhPanel
             _keyboardCursor = position;
             PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
             TrackSelectionCanvas(canvas);
-            int offset = result.ViewIndex.OffsetOfItem(index);
+            int offset = ViewOffset(result, index);
             // Read both panes' visibility before scrolling either: scrolling clears painted hits.
             bool shownInData = RowShownIn(_list, position), shownInPaired = RowShownIn(_pairedList, position);
             if (paired) { if (!shownInPaired) RevealPartner(canvas, position, null, _list.Location); canvas.Invalidate(); }
