@@ -21,7 +21,10 @@ namespace BetterGhPanel.Core
                 ? _selectedBranch.Substring(0, _selectedBranch.Length - 1) + ";" : null;
         }
 
-        internal bool HasItemFilter => _search.HasFilter && !_search.IsBranchFilter || _query.TypeName != null || _query.OnlyInvalid;
+        internal bool HasItemFilter => ItemFilter(_query, _search);
+
+        internal static bool ItemFilter(PanelQueryOptions query, PanelSearchFilter search) =>
+            search.HasFilter && !search.IsBranchFilter || query.TypeName != null || query.OnlyInvalid;
 
         internal bool MatchesBranch(PanelBranch branch) => MatchesPath(branch.Path) && _search.MatchesBranchCount(branch.ItemCount);
 

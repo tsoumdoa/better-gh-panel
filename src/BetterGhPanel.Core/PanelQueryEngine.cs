@@ -8,6 +8,8 @@ namespace BetterGhPanel.Core
 {
     public static class PanelQueryEngine
     {
+        public static bool HasItemFilter(PanelQueryOptions options) => PanelQueryScope.ItemFilter(options, new PanelSearchFilter(options));
+
         public static PanelQueryResult Execute(PanelSnapshot snapshot, PanelQueryOptions options,
             CancellationToken cancellationToken = default, IReadOnlyDictionary<int, PanelGeometryInfo>? measuredGeometry = null)
         {

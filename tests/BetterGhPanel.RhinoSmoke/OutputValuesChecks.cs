@@ -194,7 +194,8 @@ internal static class OutputValuesChecks
             Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, display));
             await Query(PanelSearchMode.Text);
             await Query(PanelSearchMode.ListLength);
-            var pairedRows = (System.Collections.IDictionary)attributes.GetType().GetField("_pairedBranchRows", Instance)!.GetValue(attributes)!;
+            var pairing = Property<object>(component, "PairedData");
+            var pairedRows = (System.Collections.IDictionary)pairing.GetType().GetField("BranchSummaries", Instance)!.GetValue(pairing)!;
             Check(!Bounds("_dataCaption").IsEmpty && !Bounds("_scrollLock").IsEmpty && pairedRows.Count > 0 &&
                 Bounds("_list").Height >= 17 && Bounds("_list").Bottom <= Bounds("_footer").Top,
                 "Minimum split " + display + " retains captions, relinking, paired branch content and a full data row");

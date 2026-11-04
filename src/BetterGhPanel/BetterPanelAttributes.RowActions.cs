@@ -157,11 +157,12 @@ namespace BetterGhPanel
                 if (!heading.Bounds.Contains(e.CanvasLocation)) continue;
                 _rowContextHandled = true;
                 _rowMenuPath = heading.Path;
-                _rowMenuPaired = false;
+                _rowMenuPaired = _pairedList.Contains(e.CanvasLocation);
+                string copyPath = _rowMenuPaired ? string.Join(", ", PanelOwner.PairedPaths(heading.Path)) : heading.Path;
                 var choices = new System.Collections.Generic.List<CanvasRowAction>
                 {
-                    new CanvasRowAction(PanelRowAction.CopyPath, "Copy path  " + heading.Path, "Copy the branch path."),
-                    new CanvasRowAction(PanelRowAction.CopyPathBare, "Copy path as " + heading.Path.Trim('{', '}'), "Copy without braces.")
+                    new CanvasRowAction(PanelRowAction.CopyPath, "Copy path  " + copyPath, "Copy the branch path."),
+                    new CanvasRowAction(PanelRowAction.CopyPathBare, "Copy path as " + copyPath.Trim('{', '}'), "Copy without braces.")
                 };
                 if (_selection.Count > 0) choices.Add(new CanvasRowAction(PanelRowAction.CopyPaths, "Copy paths of selected rows", "Unique paths in tree order, one per line."));
                 choices.Add(new CanvasRowAction(PanelRowAction.Separator, "", ""));
@@ -188,7 +189,7 @@ namespace BetterGhPanel
                 _rowMenuPaired = _copyPaired = _pairedList.Contains(e.CanvasLocation);
                 _rowMenuAllActions = CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered,
                     PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX, _rowMenuPaired,
-                    result.DisplaySet != null && !result.DisplaySet.IsBranchSet && PanelOwner.OutputValues == PanelOutputValues.Items);
+                    !_rowMenuPaired && result.DisplaySet != null && !result.DisplaySet.IsBranchSet && PanelOwner.OutputValues == PanelOutputValues.Items);
                 _rowMenuAnchor = e.CanvasLocation;
                 _rowMenuSourcePosition = hit.SourcePosition;
                 _rowMenuPaged = CanvasRowActions.NeedsPages(_panel.Height - HeaderHeight - 6);
@@ -240,7 +241,7 @@ namespace BetterGhPanel
                 if (position < 0 || position >= result.Snapshot.Rows.Count || !_selection.Contains(position)) return;
                 var row = result.Snapshot.Rows[position];
                 bool projected = result.DisplaySet?.Values.ContainsKey(position) == true;
-                string value = _rowMenuPaired && PanelOwner.PairedSnapshot != null ? PairedDisplayValue(PanelOwner.PairedSnapshot.Rows[position]) :
+                string value = _rowMenuPaired && PanelOwner.PairedSnapshot != null ? PanelOwner.PairedValue(position) :
                     !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
                     ? row.StringValue : PanelOwner.DisplayValue(result.Snapshot, row, position);
                 try { PanelFullValueWindow.Show(value); }
@@ -306,7 +307,8 @@ namespace BetterGhPanel
         private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas, bool paired = false, PanelRowAction action = PanelRowAction.CopyValues, string? path = null)
         {
             var positions = _selection.OrderedPositions(result);
-            if (positions.Count == 0 && path == null && action != PanelRowAction.CopyPaths) return;
+            if (positions.Count == 0 && path == null && action != PanelRowAction.CopyPaths &&
+                !(paired && result.DisplaySet?.IsBranchSet == true && _selection.BranchPaths(result).Count > 0)) return;
             InvalidateCopyStatus();
             long generation = _actionGeneration;
             _copyPending = true;

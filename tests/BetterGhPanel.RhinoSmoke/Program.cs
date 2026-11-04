@@ -60,6 +60,8 @@ internal static class Program
         ["property-inspection"] = PropertyInspectionChecks.Run,
         ["ui-ux"] = UxInteractionChecks.Run,
         ["wysiwyg-values"] = WysiwygValuesChecks.Run,
+        ["branch-pairing"] = BranchPairingChecks.Run,
+        ["pairing-wysiwyg"] = PairingWysiwygChecks.Run,
         ["row-selection"] = RowSelectionChecks.Run,
     };
 

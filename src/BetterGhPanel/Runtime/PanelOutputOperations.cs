@@ -151,35 +151,11 @@ namespace BetterGhPanel.Runtime
             return result;
         }
 
-        internal static GH_Structure<IGH_Goo>? Pair(GH_Structure<IGH_Goo> input, GH_Structure<IGH_Goo> paired,
-            GH_Structure<IGH_Goo> transformed, IReadOnlyList<PanelSourceAddress> retainedSources, out string? error)
+        internal static PanelPairedData? Pair(GH_Structure<IGH_Goo> input, GH_Structure<IGH_Goo> paired,
+            IReadOnlyList<PanelSourceAddress> retainedSources, int trim, bool simplify, bool flatten, bool reverse, out string? error)
         {
-            error = PanelPairing.Diagnose(BranchShape(input), BranchShape(paired));
-            if (error != null) return null;
-            var branches = new Dictionary<string, IList<IGH_Goo>>(StringComparer.Ordinal);
-            for (int b = 0; b < input.PathCount; b++)
-            {
-                branches.Add(paired.Paths[b].ToString(), paired.Branches[b]);
-            }
-            var result = new GH_Structure<IGH_Goo>();
-            int position = 0;
-            for (int b = 0; b < transformed.PathCount; b++)
-            {
-                var branch = result.EnsurePath(new GH_Path(transformed.Paths[b]));
-                for (int i = 0; i < transformed.Branches[b].Count; i++)
-                {
-                    var address = retainedSources[position++];
-                    branch.Add(branches[address.Path][address.ItemIndex]);
-                }
-            }
-            return result;
-        }
-
-        private static PanelBranch[] BranchShape(GH_Structure<IGH_Goo> tree)
-        {
-            var branches = new PanelBranch[tree.PathCount];
-            for (int b = 0; b < branches.Length; b++) branches[b] = new PanelBranch(tree.Paths[b].ToString(), tree.Branches[b].Count);
-            return branches;
+            error = PanelPairing.Diagnose(PanelPairedData.Shape(input), PanelPairedData.Shape(paired));
+            return error == null ? new PanelPairedData(input, paired, retainedSources, trim, simplify, flatten, reverse) : null;
         }
     }
 }

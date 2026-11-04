@@ -3,23 +3,50 @@ using System.Collections.Generic;
 
 namespace BetterGhPanel.Core
 {
-    /// <summary>Exact original-path pairing diagnostics, before any tree tools.</summary>
+    /// <summary>Original branch identity, independent of transformed paths and item positions.</summary>
+    public sealed class PanelBranchPair
+    {
+        internal PanelBranchPair(PanelBranch data, PanelBranch paired, int pairedOffset)
+        { Data = data; Paired = paired; PairedOffset = pairedOffset; }
+        public PanelBranch Data { get; }
+        public PanelBranch Paired { get; }
+        public int PairedOffset { get; }
+        public bool ByOrder => Data.Path != Paired.Path;
+        public bool Unequal => Data.ItemCount != Paired.ItemCount;
+        public int? ItemPosition(int dataIndex) => dataIndex < Paired.ItemCount ? PairedOffset + dataIndex : (int?)null;
+    }
+
     public static class PanelPairing
     {
-        public static string? Diagnose(IReadOnlyList<PanelBranch> data, IReadOnlyList<PanelBranch> paired)
+        public static string? Diagnose(IReadOnlyList<PanelBranch> data, IReadOnlyList<PanelBranch> paired) =>
+            data.Count == paired.Count ? null : $"F has {paired.Count} {(paired.Count == 1 ? "branch" : "branches")}, D has {data.Count}.";
+
+        public static IReadOnlyList<PanelBranchPair> Match(IReadOnlyList<PanelBranch> data, IReadOnlyList<PanelBranch> paired)
         {
-            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-            foreach (var branch in paired) counts.Add(branch.Path, branch.ItemCount);
-            foreach (var branch in data)
+            if (Diagnose(data, paired) is string error) throw new ArgumentException(error, nameof(paired));
+            var indices = new Dictionary<string, int>(StringComparer.Ordinal);
+            var offsets = new int[paired.Count];
+            int offset = 0;
+            for (int i = 0; i < paired.Count; i++)
+            { indices.Add(paired[i].Path, i); offsets[i] = offset; offset += paired[i].ItemCount; }
+            var matches = new int[data.Count];
+            var reserved = new bool[paired.Count];
+            // Reserve every exact match before assigning any order fallback.
+            for (int i = 0; i < data.Count; i++)
             {
-                if (!counts.TryGetValue(branch.Path, out int count)) return "F is missing branch " + branch.Path;
-                if (branch.ItemCount != count) return $"Branch {branch.Path}: D has {branch.ItemCount} items, F has {count}";
-                counts.Remove(branch.Path);
+                matches[i] = indices.TryGetValue(data[i].Path, out int index) ? index : -1;
+                if (matches[i] >= 0) reserved[matches[i]] = true;
             }
-            if (counts.Count > 0)
-                foreach (var branch in paired)
-                    if (counts.ContainsKey(branch.Path)) return "F has extra branch " + branch.Path;
-            return null;
+            var result = new PanelBranchPair[data.Count];
+            int next = 0;
+            for (int i = 0; i < data.Count; i++)
+            {
+                int index = matches[i];
+                if (index < 0)
+                { while (reserved[next]) next++; index = next++; }
+                result[i] = new PanelBranchPair(data[i], paired[index], offsets[index]);
+            }
+            return Array.AsReadOnly(result);
         }
     }
 }
