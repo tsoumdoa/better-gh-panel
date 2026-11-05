@@ -88,7 +88,7 @@ Type in the search field: rows update as you type, **Enter** or clicking away ap
 | List length · per branch | `>= 3`, `= 0` |
 | Input-specific properties (below) | `>= 2`, `>= 2026-01-01` |
 
-Comparisons test the numbers shown, after unit conversion, factor rounding and any explicit decimal places. Automatic keeps full precision. Picking a numeric or date comparison mode shows its values and opens the editor. Validity offers Valid/Invalid/Unverified/Null; Boolean properties offer True/False. **×** clears the filter, then the values. Combine searches with the **Types** filter (including *invalid only*) and **Paths** (`0;2;4` or `{0;2;4}`, including descendants). **Asc/Desc** sorts within each branch and adds Excel-style row numbers; wire outputs always keep tree order.
+Comparisons test the numbers shown, after unit conversion, factor rounding and any explicit decimal places. Automatic keeps full precision. Picking a numeric or date comparison mode shows its values and opens the editor. Validity offers Valid/Invalid/Unverified/Null; Boolean properties offer True/False. **×** clears the expression and returns to Text mode; Undo restores both. Combine searches with the **Types** filter (including *invalid only*) and **Paths** (`0;2;4` or `{0;2;4}`, including descendants). **Asc/Desc** sorts within each branch and adds Excel-style row numbers; wire outputs always keep tree order.
 
 **Behaviour changes:** Numbers now always use "." as the decimal separator, so saved text/regex filters written with "," need updating. Decimal places now also rounds numbers sent on D and S.
 
@@ -156,7 +156,12 @@ The **D|F** chip is drawn greyed whenever F is wired but has no usable data. Spl
 <details>
 <summary>F output pairing details</summary>
 
-Raw paired F items for the items B + F follow, at D's transformed destinations. Equal branches follow item membership; scoped unequal branches emit their whole F branch once per group. Empty D partners are included when D retains the branch, without item filters or Create set; path and list-length filters preserve them. Sets use {path;k} ({k} when flattened; {k;path} for list-length sets), in both output modes. F values and types are unchanged. F must have the same branch count as D; exact paths pair first, then remaining branches in tree order.
+F sends the F items paired with the D items that B + F follow, at D's transformed paths. Values and types are unchanged.
+
+- Equal branches follow item membership; scoped unequal branches emit their whole F branch once per group.
+- Empty D partners are included when D retains the branch, without item filters or Create set; path and list-length filters preserve them.
+- Sets use {path;k} ({k} when flattened; {k;path} for list-length sets), in both output modes.
+- F must have the same branch count as D; exact paths pair first, then remaining branches in tree order.
 
 </details>
 
@@ -167,7 +172,7 @@ Raw paired F items for the items B + F follow, at D's transformed destinations. 
 | **D** | Matching **Items** (default) or displayed **Values**, with explicit rounding as shown, in tree order. Automatic sends full precision; Create set Values sends compact displayed set values. Set Items: all members in one branch per value; set Values: one list of unique values per source branch. |
 | **S** | Selected Items or Values. Selected sets include all members and retain D's group paths. Empty when nothing is selected. |
 | **B** | A True/False mask in the original D tree shape, including every member of kept or selected sets. |
-| **F** | Raw F items paired with the D items that B + F follow, at D's paths. F values and types are unchanged. |
+| **F** | F sends the F items paired with the D items that B + F follow, at D's transformed paths. Values and types are unchanged. |
 
 **Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. With explicit decimals, the Values tooltip says "Sends the values exactly as shown." In Automatic with a factor it says "Sends the rounded values at full precision; rows may be abbreviated." Without a factor it says "Sends full-precision values; rows may be abbreviated." Sets say "Sends the displayed set values." The ports always read **D** and **S**. Numbers use the shown units and explicit rounding; Automatic keeps full wire precision except for compact displayed Create set Values; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
 

@@ -194,6 +194,7 @@ internal sealed class CanvasEditorAdapter
     internal Action<string> CaptureAccepted() => (Action<string>)_type.GetField("_accepted", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_editor)!;
 
     internal void Type(string text) => Input.Text = text;
+    internal void Blur() => _type.GetMethod("HideTextInputBox")!.Invoke(_editor, Array.Empty<object>());
     internal void Cancel() => _type.GetMethod("RespondToEscape")!.Invoke(_editor, Array.Empty<object>());
 
     internal void Submit(string text)

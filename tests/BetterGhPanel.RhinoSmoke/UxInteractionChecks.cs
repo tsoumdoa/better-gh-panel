@@ -68,6 +68,40 @@ internal static class UxInteractionChecks
                 "Debounced host textbox input starts a live query preview");
         }
 
+        foreach (string outcome in new[] { "blur", "enter", "unchanged", "escape", "reset" })
+        {
+            fixture.Query(new PanelQueryOptions { Search = outcome == "reset" ? "> -1" : "" });
+            await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+            fixture.Document.UndoServer.Clear();
+            var edit = Search();
+            if (outcome != "unchanged") edit.Type("> 50");
+            if (outcome == "enter") { edit.Submit("> 50"); edit.Blur(); }
+            else if (outcome == "escape") edit.Cancel();
+            else if (outcome == "reset") Call(component, "ResetAll");
+            else edit.Blur();
+            await Task.Delay(300);
+            bool didCommit = outcome == "blur" || outcome == "enter";
+            await fixture.Ready(() => fixture.Result.RowPositions.Count == (didCommit ? 29 : 80));
+            Check(fixture.Document.UndoServer.UndoCount == (didCommit || outcome == "reset" ? 1 : 0),
+                "Editor outcome has exactly the expected undo count: " + outcome);
+            Check(Options(fixture).Search == (didCommit ? "> 50" : ""), "Editor outcome preserves or commits text: " + outcome);
+        }
+        foreach (string display in new[] { "Full", "Half" })
+        {
+            Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, display));
+            Call(component, "SetCanvasSize", 1f, 1f);
+            fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Length });
+            attributes.PerformLayout();
+            Call(attributes, "OpenMenu", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasMenuKind", true)!, "SearchMode"), canvas);
+            Call(attributes, "ChooseMenu", 3, canvas);
+            Check(Options(fixture).SearchMode == PanelSearchMode.Length && CanvasEditorAdapter.IsActive(assembly),
+                "Picking Length opens the editor at minimum " + display + " size");
+            CanvasEditorAdapter.Active(assembly).Cancel();
+            await Task.Delay(50);
+        }
+        Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, "Full"));
+        Call(component, "SetCanvasSize", 360f, 400f);
+
         foreach (bool asynchronous in new[] { false, true })
         {
             fixture.Query(new PanelQueryOptions { SearchMode = asynchronous ? PanelSearchMode.Regex : PanelSearchMode.Text,
@@ -149,6 +183,36 @@ internal static class UxInteractionChecks
         Render();
         var input = assembly.GetType("BetterGhPanel.UI.IPanelInputTarget", true)!.GetMethod("HandleKey")!;
         void Key(Forms.Keys key) => input.Invoke(attributes, new object[] { canvas, key });
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, DisplayFilterValue = true });
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+        fixture.ClearSelection();
+        Check(!(bool)input.Invoke(attributes, new object[] { canvas, Forms.Keys.Control | Forms.Keys.C })!,
+            "Ctrl+C without selection passes through to Grasshopper");
+        fixture.Select(0); fixture.Select(1, toggle: true);
+        var savedClipboard = Forms.Clipboard.GetDataObject();
+        try
+        {
+            Forms.Clipboard.SetText("sentinel");
+            Check((bool)input.Invoke(attributes, new object[] { canvas, Forms.Keys.Control | Forms.Keys.C })!,
+                "Ctrl+C handles selected list-length rows");
+            await fixture.Ready(() => Forms.Clipboard.GetText() == "80");
+            Check(Forms.Clipboard.GetText() == "80", "List-length copy emits one count per branch");
+            fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, DisplayFilterValue = true, CreateSet = true });
+            await fixture.Ready(() => fixture.Result.DisplaySet?.IsBranchSet == true);
+            fixture.ClearSelection(); fixture.SelectBranch("{0}");
+            Forms.Clipboard.SetText("sentinel");
+            Check((bool)input.Invoke(attributes, new object[] { canvas, Forms.Keys.Control | Forms.Keys.C })!,
+                "Ctrl+C handles a selected list-length set");
+            await fixture.Ready(() => Forms.Clipboard.GetText() == "80");
+
+        }
+        finally
+        {
+            if (savedClipboard == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(savedClipboard, true);
+        }
+        fixture.Query(new PanelQueryOptions());
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+        fixture.ClearSelection();
         Key(Forms.Keys.Down); Key(Forms.Keys.Down);
         Render();
         var row = PanelTestAdapter.RowBounds(component, 5);

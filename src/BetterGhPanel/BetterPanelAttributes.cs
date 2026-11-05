@@ -1428,18 +1428,6 @@ namespace BetterGhPanel
                     SetSearch(canvas, _editingSearchMode, "= " + selectedComparison.Value.Value, false);
                     return;
                 }
-                var comparisonChoice = selectedComparison.Value.Comparison!.Value;
-                string comparison = CanvasMenu.ComparisonOperator(comparisonChoice);
-                string value = CanvasMenu.WithComparison(options.SearchMode == _editingSearchMode ? options.Search : "", comparisonChoice, _editingSearchMode).Substring(comparison.Length).Trim();
-                var mode = _editingSearchMode;
-                ShowLiveQueryEditor(canvas, value, "Panel comparison", text =>
-                {
-                    var query = PanelOwner.Session.Options;
-                    query.SearchMode = mode;
-                    query.Search = CanvasMenu.ApplyComparison(text, comparison);
-                    query.DisplayFilterValue = query.Search.Length == 0;
-                    return query;
-                });
                 return;
             }
             if (kind == CanvasMenuKind.Type)
@@ -1549,6 +1537,7 @@ namespace BetterGhPanel
             var session = PanelOwner.Session;
             if (_previewOriginal == null || !ReferenceEquals(_previewOwner, token))
             {
+                if (PanelQueryPolicy.SameQuery(session.Options, options)) return;
                 PanelOwner.RecordQueryUndo(undoName, session.Options, options);
                 session.UpdateQuery(options);
                 return;
@@ -1603,7 +1592,8 @@ namespace BetterGhPanel
                 _queryEditor = null;
                 _queryEditorSnapshot = null;
                 ++_queryEditorGeneration;
-                if (!ReferenceEquals(session, PanelOwner.Session) || !ReferenceEquals(snapshot, session.Snapshot))
+                if (PanelOwner.Locked || canvas.IsDisposed || !canvas.Enabled || canvas.Document?.Enabled != true || !ReferenceEquals(canvas.Document, PanelOwner.OnPingDocument()) ||
+                    !ReferenceEquals(session, PanelOwner.Session) || !ReferenceEquals(snapshot, session.Snapshot))
                 {
                     abandoned?.Invoke();
                     return;

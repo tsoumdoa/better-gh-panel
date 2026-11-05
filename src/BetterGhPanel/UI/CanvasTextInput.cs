@@ -13,7 +13,7 @@ namespace BetterGhPanel.UI
     // Bounds are projected once when the editor opens; the host owns keyboard focus.
     // Optional live editors report debounced edits, then exactly one outcome:
     // Enter or focus loss accepts; Escape or a programmatic close abandons.
-    internal sealed class CanvasTextInput : GH_TextBoxInputBase
+    internal sealed class CanvasTextInput : GH_TextBoxInputBase, Grasshopper.GUI.IGH_ToolstripItemKeyHandler
     {
         private const int LiveDelay = 250;
         private static WeakReference<CanvasTextInput>? _active;
@@ -27,6 +27,8 @@ namespace BetterGhPanel.UI
         private RectangleF _canvasBounds;
         private Rectangle _screenBounds;
         private bool _accepting;
+        private bool _escaped;
+        private bool _programmaticClose;
 
         private CanvasTextInput(Action<string> accepted) { _accepted = accepted; }
 
@@ -62,12 +64,11 @@ namespace BetterGhPanel.UI
             var host = canvas.Controls.Cast<Control>().LastOrDefault(control => control.Controls.OfType<TextBox>().Any());
             var box = host?.Controls.OfType<TextBox>().FirstOrDefault();
             if (host == null || box == null) return;
-            bool escaped = false;
-            box.KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) escaped = true; };
-            box.LostFocus += (_, __) =>
-            {
-                if (!escaped && !_completed && _accepted != null) HandleTextInputAccepted(box.Text);
-            };
+            box.PreviewKeyDown += (_, e) => { if (e.KeyCode == Keys.Escape || e.KeyCode == Keys.Cancel) _escaped = true; };
+            // Grasshopper paints Cancel in the rightmost 20 UI-scaled pixels.
+            bool OnCancel(Point point) => point.X >= host.ClientSize.Width - Grasshopper.Global_Proc.UiAdjust(20)
+                && host.ClientRectangle.Contains(point);
+            host.MouseDown += (_, e) => { if (e.Button == MouseButtons.Left && OnCancel(e.Location)) _escaped = true; };
             _changed = changed;
             _abandoned = abandoned;
             if (changed != null)
@@ -92,11 +93,20 @@ namespace BetterGhPanel.UI
                 _timer?.Stop();
                 _timer?.Dispose();
                 _timer = null;
+                string text = box.Text;
+                // Focus can leave before the panel receives MouseDown.
+                if (Control.MouseButtons == MouseButtons.Left && OnCancel(host.PointToClient(Control.MousePosition))) _escaped = true;
                 // The host hides the box before it reports Enter, so decide afterwards.
                 void Decide()
                 {
                     if (_completed) return;
+                    if (!_escaped && !_programmaticClose && _accepted != null)
+                    {
+                        HandleTextInputAccepted(text);
+                        return;
+                    }
                     _completed = true;
+                    _accepted = null;
                     var callback = _abandoned;
                     _abandoned = null;
                     _changed = null;
@@ -108,8 +118,15 @@ namespace BetterGhPanel.UI
             host.ParentChanged += Hidden;
         }
 
+        public new Grasshopper.GUI.GH_ToolstripItemKeyHandlerResult RespondToEscape()
+        {
+            _escaped = true;
+            return base.RespondToEscape();
+        }
+
         protected override void HandleTextInputAccepted(string text)
         {
+            if (_completed || _escaped || _programmaticClose) return;
             if (_active != null && _active.TryGetTarget(out var current) && ReferenceEquals(current, this)) _active = null;
             var accepted = _accepted;
             _accepted = null;
@@ -128,7 +145,7 @@ namespace BetterGhPanel.UI
         internal static void Maintain(GH_Canvas canvas)
         {
             if (_active == null || !_active.TryGetTarget(out var current)) return;
-            if (!current.IsTextInput) { current._accepted = null; _active = null; return; }
+            if (!current.IsTextInput) return;
             if (current._canvas != null && current._canvas.TryGetTarget(out var ownerCanvas) && ReferenceEquals(ownerCanvas, canvas) &&
                 current._screenBounds != Rectangle.Round(canvas.Viewport.ProjectRectangle(current._canvasBounds))) CloseActive();
         }
@@ -138,6 +155,7 @@ namespace BetterGhPanel.UI
             if (_active != null && _active.TryGetTarget(out var current))
             {
                 if (owner != null && !ReferenceEquals(current._owner, owner)) return;
+                current._programmaticClose = true;
                 current._accepted = null;
                 current.HideTextInputBox();
             }

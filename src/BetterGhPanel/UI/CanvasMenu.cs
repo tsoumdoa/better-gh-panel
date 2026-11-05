@@ -434,26 +434,6 @@ namespace BetterGhPanel.UI
             _ => "Compares the number as shown (after units and rounding). Use >, >=, <, <=, = or !=. Counts and dimensionless values ignore unit conversion. Lengths and angles use matching display conversions. Rows without this property are excluded from comparisons."
         };
 
-        internal static string WithComparison(string search, CanvasComparison comparison, PanelSearchMode mode = PanelSearchMode.Value)
-        {
-            string value = (search ?? "").Trim();
-            string prefix = ComparisonPrefix(value);
-            if (prefix.Length > 0) value = value.Substring(value.StartsWith("==", StringComparison.Ordinal) ? 2 : prefix.Length).Trim();
-            // Switching from text or regex starts with an empty threshold; an
-            // existing numeric threshold survives an operator change.
-            if (PanelProperties.Kind(mode) == PanelPropertyKind.Number && !IsFiniteNumber(value)) value = "";
-            return ComparisonOperator(comparison) + " " + value;
-        }
-
-        internal static string ApplyComparison(string text, string comparison)
-        {
-            string value = (text ?? "").Trim();
-            // The editor initially shows only the threshold. Accept an explicit
-            // operator too, so pasted comparisons mean exactly what they say.
-            return value.Length == 0 ? string.Empty :
-                ComparisonPrefix(value).Length > 0 ? value : comparison + " " + value;
-        }
-
         private static bool IsFiniteNumber(string value) =>
             double.TryParse(value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double number) &&
             !double.IsNaN(number) && !double.IsInfinity(number);

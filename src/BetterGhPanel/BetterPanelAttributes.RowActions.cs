@@ -308,7 +308,7 @@ namespace BetterGhPanel
         {
             var positions = _selection.OrderedPositions(result);
             if (positions.Count == 0 && path == null && action != PanelRowAction.CopyPaths &&
-                !(paired && result.DisplaySet?.IsBranchSet == true && _selection.BranchPaths(result).Count > 0)) return;
+                !(result.DisplaySet?.IsBranchSet == true && _selection.BranchPaths(result).Count > 0)) return;
             InvalidateCopyStatus();
             long generation = _actionGeneration;
             _copyPending = true;

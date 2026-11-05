@@ -764,7 +764,7 @@ namespace BetterGhPanel
             PanelRowAction action = PanelRowAction.CopyValues, string? path = null)
         {
             CancelPendingCopy();
-            bool branchSet = paired && path == null && action == PanelRowAction.CopyValues && Session.Result.DisplaySet?.IsBranchSet == true;
+            bool branchSet = path == null && action == PanelRowAction.CopyValues && Session.Result.DisplaySet?.IsBranchSet == true;
             IReadOnlyList<int> ordered;
             if (path != null || action == PanelRowAction.CopyPaths && RowSelection.Count > 0) ordered = positions;
             else if (branchSet) ordered = Array.Empty<int>();
@@ -856,7 +856,11 @@ namespace BetterGhPanel
                                 if (value.IndexOfAny(new[] { '\t', '\r', '\n', '"' }) >= 0) value = "\"" + value.Replace("\"", "\"\"") + "\"";
                                 return snapshot.Rows[position].Path + "\t" + index.ToString(CultureInfo.InvariantCulture) + "\t" + value;
                             }));
-                        else text = branchSet ? PairedBranchValues(result, branches) : string.Join(Environment.NewLine, ordered.Select(Value));
+                        else if (branchSet) text = paired ? PairedBranchValues(result, branches) : string.Join(Environment.NewLine, branches.Select(branch => snapshot.BranchItemCounts[branch].ToString(CultureInfo.InvariantCulture)));
+                        else if (!paired && session.Options.DisplayFilterValue && session.Options.SearchMode == PanelSearchMode.ListLength)
+                            text = string.Join(Environment.NewLine, ordered.GroupBy(position => result.DisplaySet?.IsBranchSet == true
+                                ? position.ToString(CultureInfo.InvariantCulture) : snapshot.Rows[position].Path).Select(group => Value(group.First())));
+                        else text = string.Join(Environment.NewLine, ordered.Select(Value));
                         // Measurements cover only queued geometry; value-only
                         // rows and unmeasured geometry can change too.
                         bool Current() => SelectionCurrent() && CapturedSnapshotCurrent(snapshot) && SelectionCurrent() &&
@@ -916,7 +920,7 @@ namespace BetterGhPanel
 
         private const string MaskDescription = "True/False mask, in the original D input tree, of the items B + F follow. Preserves original paths and item counts. Every member of a kept or selected set is True. This mask conveys membership, not transformed ordering.";
 
-        private const string PairedDescription = "Raw F items paired with the D items that B + F follow, at D's paths. F values and types are unchanged.";
+        private const string PairedDescription = "F sends the F items paired with the D items that B + F follow, at D's transformed paths. Values and types are unchanged.";
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
