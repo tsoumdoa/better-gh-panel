@@ -286,7 +286,7 @@ namespace BetterGhPanel.Runtime
             {
                 if (!trusted || (IsCapturedGeometryHolder(holderType) && !hasReference)) return PanelValidity.Unverified;
                 if (!standalone && hasReference && (reference.Referenced || reference.Id != Guid.Empty) &&
-                    (!IsExtendedCapturedGeometryHolder(holderType) || reference.Document == 0 || reference.ObjectSerial == 0))
+                    (StockGooSupport.Has(holderType, StockTypeFacets.Measure) || reference.Document == 0 || reference.ObjectSerial == 0))
                     return PanelValidity.Unverified;
                 if (geometry == null) return PanelValidity.VerifiedInvalid;
                 if (!standalone && (geometry.GetType() == typeof(PolylineCurve) || geometry.GetType() == typeof(NurbsCurve)) &&
@@ -419,14 +419,8 @@ namespace BetterGhPanel.Runtime
             {
                 if (holder == null || source == null || !TryGetMeasurementReference(holder, out var currentReference) ||
                     !reference.Equals(currentReference)) return false;
-                Type type = holder.GetType(), inner = source.GetType();
-                bool current = type == typeof(GH_Curve) &&
-                    (inner == typeof(LineCurve) || inner == typeof(ArcCurve) || inner == typeof(PolylineCurve) ||
-                     inner == typeof(NurbsCurve) || inner == typeof(PolyCurve)) && ReferenceEquals(((GH_Curve)holder).Value, source);
-                if (type == typeof(GH_Surface) && inner == typeof(Brep)) current = ReferenceEquals(((GH_Surface)holder).Value, source);
-                if (type == typeof(GH_Brep) && inner == typeof(Brep)) current = ReferenceEquals(((GH_Brep)holder).Value, source);
-                if (type == typeof(GH_Mesh) && inner == typeof(Mesh)) current = ReferenceEquals(((GH_Mesh)holder).Value, source);
-                return current && MeasurementSourceCanRead(source);
+                return StockGooSupport.Has(holder.GetType(), StockTypeFacets.Measure) &&
+                    TryGetTrustedGeometry(holder, out var current) && ReferenceEquals(current, source) && MeasurementSourceCanRead(source);
             }
             catch (Exception) { return false; }
             finally { GC.KeepAlive(source); }
@@ -459,55 +453,8 @@ namespace BetterGhPanel.Runtime
         /// implementations. Null is a recognized invalid value. No copy, metadata,
         /// serialization, user-data traversal or retained ownership is implied.
         /// </summary>
-        internal static bool TryGetTrustedGeometry(IGH_Goo goo, out GeometryBase? geometry)
-        {
-            geometry = null;
-            Type type = goo.GetType();
-            if (type == typeof(GH_Curve)) geometry = ((GH_Curve)goo).Value;
-            else if (type == typeof(GH_Surface)) geometry = ((GH_Surface)goo).Value;
-            else if (type == typeof(GH_Brep)) geometry = ((GH_Brep)goo).Value;
-            else if (type == typeof(GH_Mesh)) geometry = ((GH_Mesh)goo).Value;
-            else if (type == typeof(GH_SubD))
-            { geometry = ((GH_SubD)goo).Value; return geometry == null || geometry.GetType() == typeof(SubD); }
-            else if (type == typeof(GH_PointCloud))
-            { geometry = ((GH_PointCloud)goo).Value; return geometry == null || geometry.GetType() == typeof(PointCloud); }
-            else if (type == typeof(GH_Extrusion))
-            { geometry = ((GH_Extrusion)goo).Value; return geometry == null || geometry.GetType() == typeof(Extrusion); }
-            else if (type == typeof(GH_TextDot))
-            { geometry = ((GH_TextDot)goo).Value; return geometry == null || geometry.GetType() == typeof(TextDot); }
-            else if (type == typeof(GH_InstanceReference))
-            { geometry = ((GH_InstanceReference)goo).Value; return geometry == null || geometry.GetType() == typeof(InstanceReferenceGeometry); }
-            else if (type == typeof(GH_DetailView))
-            { geometry = ((GH_DetailView)goo).Value; return geometry == null || geometry.GetType() == typeof(DetailView); }
-            else if (type == typeof(GH_Hatch))
-            { geometry = ((GH_Hatch)goo).Value; return geometry == null || geometry.GetType() == typeof(Hatch); }
-            else if (StockGooSupport.Has(type, StockTypeFacets.Capture) && goo is GH_AnnotationBase annotation)
-            {
-                geometry = annotation.Value;
-                Type expected = type == typeof(GH_TextEntity) ? typeof(TextEntity) : type == typeof(GH_Leader) ? typeof(Leader) :
-                    type == typeof(GH_LinearDimension) ? typeof(LinearDimension) : type == typeof(GH_AngularDimension) ? typeof(AngularDimension) :
-                    type == typeof(GH_OrdinateDimension) ? typeof(OrdinateDimension) : type == typeof(GH_RadialDimension) ? typeof(RadialDimension) : typeof(Centermark);
-                return geometry == null || geometry.GetType() == expected;
-            }
-            else return false;
-            if (geometry == null) return true;
-            return IsTrustedGeometry(geometry);
-        }
-
-        internal static bool IsTrustedGeometry(GeometryBase geometry)
-        {
-            Type inner = geometry.GetType();
-            return inner == typeof(Point) || inner == typeof(LineCurve) || inner == typeof(ArcCurve) ||
-                inner == typeof(PolylineCurve) || inner == typeof(NurbsCurve) || inner == typeof(PolyCurve) ||
-                inner == typeof(Brep) || inner == typeof(Mesh) || inner == typeof(SubD) ||
-                inner == typeof(NurbsSurface) || inner == typeof(PlaneSurface) || inner == typeof(RevSurface) ||
-                inner == typeof(TextDot);
-        }
-
-        internal static bool IsGeometryHolder(Type type) => type == typeof(GH_Curve) || type == typeof(GH_Surface) ||
-            type == typeof(GH_Brep) || type == typeof(GH_Mesh);
-
-        internal static bool IsExtendedCapturedGeometryHolder(Type type) => IsCapturedGeometryHolder(type) && !IsGeometryHolder(type);
+        internal static bool TryGetTrustedGeometry(IGH_Goo goo, out GeometryBase? geometry) => StockGooSupport.TryGeometry(goo, out geometry);
+        internal static bool IsTrustedGeometry(GeometryBase geometry) => StockGooSupport.IsPreviewGeometry(geometry.GetType());
         internal static bool IsCapturedGeometryHolder(Type type) => StockGooSupport.Has(type, StockTypeFacets.Capture);
         private static bool HasTrustedLeafValidity(Type type) => StockGooSupport.Has(type, StockTypeFacets.Validity);
         internal static string? TrustedTypeName(Type type) => StockGooSupport.Find(type)?.Name ?? TrustedModelTypeName(type);

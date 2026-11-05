@@ -19,17 +19,12 @@ is reached through a group or wrapper; an unloaded reference is not loaded by
 the preview or an action. The native fixtures exercise standalone, grouped and
 wrapped loaded references and cancellation on reference retargeting.
 
-Exact `GH_TextDot` / `TextDot` adds an owned compatibility leaf. Text, secondary
-text and font-face lengths are checked before native duplication (the public
-string getters materialize their results before the checks). It uses the same
-metadata scan, native-byte estimate, exact-copy check, source/reference freshness,
-archive and retirement paths as existing native compatibility geometry. `DrawDot`
-receives the owned dot; the generation retains it through the pipeline flush.
-Frame uses its world-space point bounds. Native display/copy calls retain the
-best-effort callback and concurrent-mutation limitations below. Text Dots add no
-measurement provider. Annotation/hatch/block/detail metadata capture does not
-admit their preview or copy: model styles, patterns and definitions require a
-separate dependency/ownership strategy.
+Exact `GH_TextDot` / `TextDot` uses the owned compatibility path, including
+metadata, byte, source/reference and retirement checks. Display capture shares
+its text-length limit; native getters materialize strings before checking length.
+`DrawDot` receives the owned dot, retained through flush; frame uses point bounds.
+Annotation/hatch/block/detail metadata does not admit preview/copy without an
+owned strategy for their styles, patterns and definitions.
 
 Points, lines, arcs, circles, rectangles, boxes, bounded polylines and meshes
 are reconstructed from value fields. Bounded NURBS curves use a value-only

@@ -36,12 +36,6 @@ internal static class StockTypeChecks
     private static async Task Verify(Assembly assembly)
     {
         var rhino = RhinoDoc.ActiveDoc ?? throw new InvalidOperationException("Stock types need a Rhino document.");
-        var names = assembly.GetType("BetterGhPanel.Runtime.SafeGooInspection", true)!.GetMethod("TrustedTypeName", Static)!;
-        foreach (var type in PanelStockTypes.All)
-        {
-            var sdk = typeof(IGH_Goo).Assembly.GetType("Grasshopper.Kernel.Types." + type.SdkName);
-            Check(sdk != null && (string?)names.Invoke(null, new object[] { sdk! }) == type.Name, type.SdkName + " binds to an exact SDK type");
-        }
         using var dot = new TextDot("Lobby α", new Point3d(2, 3, 4)) { FontHeight = 18, FontFace = "Arial", SecondaryText = "Entrance" };
         using var text = new TextEntity { PlainText = "Level 01", Plane = Plane.WorldXY, TextHeight = 2 };
         using var dimension = new LinearDimension(Plane.WorldXY, new Point2d(0, 0), new Point2d(4, 0), new Point2d(2, 1));
@@ -56,13 +50,14 @@ internal static class StockTypeChecks
         var captured = Capture(assembly, holder, textHolder, dimensionHolder, new GH_Culture(new CultureInfo("en-GB")), matrixHolder, pathHolder, location);
         var snapshot = (PanelSnapshot)captured[0]!;
         Check(snapshot.Rows.All(row => row.Validity == PanelValidity.VerifiedValid), "new stock samples have trusted validity");
-        Check(snapshot.Rows[0].TypeName == "Text Dot" && snapshot.Rows[0].DisplayValue == "Lobby α @ (2, 3, 4)", "dot displays text and position");
+        Check(snapshot.Rows[0].TypeName == "Text Dot" && snapshot.Rows[0].DisplayValue == "Lobby α", "dot displays only its text");
         Check(PanelFilterValue.Format(snapshot, snapshot.Rows[0], PanelSearchMode.TextValue, -1, includeUnits: false) == "Lobby α", "dot text is selectable");
-        Number(snapshot.Rows[0], PanelSearchMode.LocationX, 2); Number(snapshot.Rows[0], PanelSearchMode.LocationZ, 4);
-        Number(snapshot.Rows[0], PanelSearchMode.FontHeight, 18);
+        Check(snapshot.Rows[0].Components?.X == 2 && snapshot.Rows[0].Components?.Z == 4 && snapshot.SupportsSearchMode(PanelSearchMode.X), "dot exposes existing coordinate modes");
+        Number(snapshot.Rows[0], PanelSearchMode.DotFontSize, 18);
         Check(PanelFilterValue.Format(snapshot, snapshot.Rows[0], PanelSearchMode.FontFace, -1) == "Arial", "dot font face is selectable");
-        Check(snapshot.Rows[1].DisplayValue.StartsWith("Level 01 @", StringComparison.Ordinal), "text entity displays its text");
-        Number(snapshot.Rows[2], PanelSearchMode.DimensionValue, 4); Number(snapshot.Rows[4], PanelSearchMode.RowCount, 2);
+        Check(snapshot.Rows[1].DisplayValue == "Level 01", "text entity displays its text");
+        Check(snapshot.Rows[2].GeometryInfo?.Value == 4 && PanelValuePresentation.FormatDisplay(snapshot.Rows[2], PanelUnitConversion.None, 2) == "4.00 mm", "linear dimension displays an ordinary length metric");
+        Number(snapshot.Rows[1], PanelSearchMode.TextHeight, 2); Number(snapshot.Rows[4], PanelSearchMode.RowCount, 2);
         Number(snapshot.Rows[5], PanelSearchMode.PathDepth, 2); Number(snapshot.Rows[6], PanelSearchMode.Latitude, 22.3);
         Check(snapshot.Rows[3].DisplayValue.StartsWith("en-GB", StringComparison.Ordinal) && snapshot.Rows[5].DisplayValue == "{2;7}", "culture and path have value summaries");
         matrixHolder.Value[0, 1] = 5;
@@ -89,6 +84,32 @@ internal static class StockTypeChecks
             Check(!(bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("MeasurementSourcesCurrent", Static)!.Invoke(null, new[] { referencedCapture[1], referencedCapture[2] })!, "retargeting a dot reference invalidates its capture");
         }
         finally { rhino.Objects.Delete(referenceId, true); rhino.Modified = modified; }
+
+        var cultureHolder = new GH_Culture(CultureInfo.GetCultureInfo("en-GB"));
+        var cultureCapture = Capture(assembly, cultureHolder);
+        cultureHolder.Value = CultureInfo.GetCultureInfo("en-US");
+        Check(!(bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("GraphSourcesCurrent", Static)!.Invoke(null, new[] { cultureCapture[3] })!, "culture identity replacement invalidates its string witness");
+        var nullPath = new GH_StructurePath(); typeof(GH_StructurePath).GetField("m_value", Instance)!.SetValue(nullPath, null);
+        var pathProperties = (Dictionary<PanelSearchMode, PanelPropertyValue?>)assembly.GetType("BetterGhPanel.Runtime.PanelPropertyCapture", true)!.GetMethod("Scalar", Static)!.Invoke(null, new object[] { nullPath, "mm" })!;
+        var emptyField = (GH_Field)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(GH_Field));
+        var nulls = (PanelSnapshot)Capture(assembly, emptyField, new GH_Material { Value = null })[0]!;
+        Check(!pathProperties.ContainsKey(PanelSearchMode.PathDepth) && nulls.Rows[0].DisplayValue == "Null field" && nulls.Rows[1].DisplayValue == "Null material", "null path, field and material values are guarded");
+        using var longDot = new TextDot(new string('x', 65537), Point3d.Origin);
+        using var longText = new TextEntity { PlainText = new string('y', 65537) };
+        var limited = (PanelSnapshot)Capture(assembly, new GH_TextDot { Value = longDot }, new GH_TextEntity(longText))[0]!;
+        Check(limited.Rows.All(row => row.Validity == PanelValidity.Unverified && row.DisplayValue.Length < 128 && row.Properties.Count == 0 && row.GeometryInfo == null), "oversized native text cannot escape capture limits through summaries/properties");
+        using var angular = new AngularDimension(new Arc(Plane.WorldXY, 5, Math.PI / 2), 0);
+        var angularHolder = new GH_AngularDimension(angular);
+        using var boundary = new Rectangle3d(Plane.WorldXY, 4, 3).ToNurbsCurve();
+        using var hatch = Hatch.Create(boundary, 0, Math.PI / 2, 1, rhino.ModelAbsoluteTolerance).Single();
+        var angles = (PanelSnapshot)Capture(assembly, angularHolder, new GH_Hatch { Value = hatch }, new GH_Arc(new Arc(Plane.WorldXY, 5, Math.PI / 2)), new GH_ComplexNumber(new Complex(0, 1)))[0]!;
+        var modes = new[] { PanelSearchMode.DimensionAngle, PanelSearchMode.PatternRotation, PanelSearchMode.Angle, PanelSearchMode.Phase };
+        for (int i = 0; i < modes.Length; i++)
+            Check(PanelProperties.TryGet(angles.Rows[i], modes[i], null, out var angle) && angle?.Format(PanelUnitConversion.RadiansToDegrees, 2, true) == "90.00 °", modes[i] + " uses the established angle convention");
+        var southern = (PanelSnapshot)Capture(assembly, new GH_LonLatCoordinate(-114.17, -22.3))[0]!;
+        Check(southern.Rows[0].DisplayValue == "22.3° S, 114.17° W", "location labels negative coordinates S/W");
+        var matrixSummary = (PanelSnapshot)Capture(assembly, new GH_Transform(Transform.Translation(0, 3, 4)), new GH_Transform(Transform.Identity))[0]!;
+        Check(matrixSummary.Rows[0].DisplayValue.StartsWith("4 × 4 [", StringComparison.Ordinal) && matrixSummary.Rows[0].DisplayValue.Contains("3") && matrixSummary.Rows[0].DisplayValue.Contains("4") && matrixSummary.Rows[1].DisplayValue == "Identity", "transform summary includes all rows and recognizes identity");
 
         var highlight = Activator.CreateInstance(assembly.GetType("BetterGhPanel.Runtime.PanelGeometryHighlight", true)!, true)!;
         object Call(string name, params object[] args) => highlight.GetType().GetMethod(name, Instance)!.Invoke(highlight, args)!;
@@ -124,29 +145,66 @@ internal static class StockTypeChecks
         _ = canvas.Handle; canvas.Viewport.Size = canvas.Size; canvas.Viewport.Zoom = 1.5f;
         canvas.Viewport.Target = System.Drawing.Point.Empty; canvas.Viewport.ComputeProjection();
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
-        fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { holder, new GH_TextDot(new TextDot("Roof terrace — north wing, long annotation", new Point3d(8, 3, 4))), holder }, new GH_Path(0));
+        fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { holder, new GH_TextDot(new TextDot("Roof terrace — north wing, long annotation", new Point3d(8, 3, 4))), new GH_TextDot(new TextDot("Lobby α", new Point3d(12, 3, 4))) }, new GH_Path(0));
         fixture.Solve(); await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 3);
         Check(fixture.Sinks[0].VolatileData.AllData(false).All(item => item is GH_TextDot), "Items output retains dot goo");
         var dots = fixture.Result.Snapshot;
         var set = PanelQueryEngine.Execute(dots, new PanelQueryOptions { CreateSet = true });
-        Check(set.RowPositions.Count == 2 && set.DisplaySet!.Members[0].Count == 2, "Create set groups repeated dot display values");
-        fixture.Select(0); await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
-        // The fixture's selection helper updates the model/output. A canvas row
-        // gesture also invokes this production preview action.
-        fixture.Component.GetType().GetMethod("HighlightRows", Instance)!.Invoke(fixture.Component, new object[] { fixture.Result.Snapshot, new[] { 0 } });
-        var componentHighlight = fixture.Component.GetType().GetField("_highlight", Instance)!.GetValue(fixture.Component)!;
-        Check(Property<int>(componentHighlight, "PreviewCount") == 1, "selected dot owns one component preview");
-        SavePanel(fixture, canvas, "text-dots-values.png");
-        await SaveViewport(fixture, rhino);
+        Check(set.RowPositions.Count == 2 && set.DisplaySet!.Members[0].Count == 2, "Create set groups equal dot text across different locations");
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.TextValue, DisplayFilterValue = true });
         fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Values });
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).FirstOrDefault() is GH_String);
         Check(fixture.Sinks[0].VolatileData.AllData(false).Cast<GH_String>().Select(item => item.Value).SequenceEqual(new[] { "Lobby α", "Roof terrace — north wing, long annotation", "Lobby α" }), "Values output emits selected dot text properties");
         Check(fixture.Component.Params.Output[0].NickName == "D" && fixture.Component.Params.Output[1].NickName == "S", "output port names remain D and S");
-        SavePanel(fixture, canvas, "text-dots-property.png");
-        SaveComparison();
         fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Items });
+        fixture.Query(new PanelQueryOptions());
+        fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { new GH_Point(new Point3d(1, 2, 3)), textHolder, new GH_String("Text row") }, new GH_Path(1));
+        fixture.Solve(); await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 6 && fixture.Sinks[0].VolatileData.DataCount == 6);
+        fixture.Select(0); await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
+        fixture.Component.GetType().GetMethod("HighlightRows", Instance)!.Invoke(fixture.Component, new object[] { fixture.Result.Snapshot, new[] { 0 } });
+        var componentHighlight = fixture.Component.GetType().GetField("_highlight", Instance)!.GetValue(fixture.Component)!;
+        Check(Property<int>(componentHighlight, "PreviewCount") == 1, "selected dot owns one component preview");
+        SavePanel(fixture, canvas, "dots-mixed.png"); await SaveViewport(fixture, rhino);
+
         fixture.Source.PersistentData.Clear();
+        fixture.Source.PersistentData.AppendRange(new IGH_Goo[] {
+            new GH_TextDot(new TextDot("Lobby", new Point3d(1234.567, 0, 0))), new GH_TextDot(new TextDot("Roof", new Point3d(2345.678, 0, 0))) }, new GH_Path(0));
+        fixture.Source.PersistentData.Append(new GH_TextDot(new TextDot("Below threshold", new Point3d(100, 0, 0))), new GH_Path(1));
+        PanelTestAdapter.Units(fixture.Component, PanelUnitConversion.MillimetersToMeters, 2);
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.X, Search = ">= 1.23", DecimalPlaces = 2 });
+        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Values });
+        fixture.Solve(); await fixture.Ready(() => fixture.Result.RowPositions.Count == 2 && fixture.Sinks[0].VolatileData.AllData(false).Count(item => item is GH_TextDot) == 2);
+        Check(fixture.Result.RowPositions.SequenceEqual(new[] { 0, 1 }), "X comparisons use converted dot components and retain typed Items");
+        SavePanel(fixture, canvas, "dots-x-filter.png");
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.X, DisplayFilterValue = true, BranchPath = "{0}", DecimalPlaces = 2 });
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).OfType<GH_Number>().Select(n => n.Value).SequenceEqual(new[] { 1.23, 2.35 }));
+        fixture.Select(0); await fixture.Ready(() => fixture.Sinks[1].VolatileData.AllData(false).OfType<GH_Number>().Select(n => n.Value).SequenceEqual(new[] { 1.23 }));
+        Check(Math.Abs(fixture.Result.Statistics.Mean!.Value - 1.79) < 1e-9 && PanelFilterValue.Format(fixture.Result.Snapshot, fixture.Result.Snapshot.Rows[0], PanelSearchMode.X, 2) == "1.23", "dot X filter, Stats and D/S share converted explicit precision");
+        SavePanel(fixture, canvas, "dots-x-values.png");
+        SavePair("dots-x-filter.png", "dots-x-values.png", "dots-x-converted.png");
+
+        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Items });
+        fixture.Source.PersistentData.Clear(); fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { dimensionHolder, angularHolder }, new GH_Path(0));
+        PanelTestAdapter.Units(fixture.Component, PanelUnitConversion.RadiansToDegrees, 2); fixture.Query(new PanelQueryOptions { DecimalPlaces = 2 });
+        fixture.Solve(); await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 2 && fixture.Result.Snapshot.Rows.Count == 2);
+        Check(PanelValuePresentation.FormatDisplay(fixture.Result.Snapshot.Rows[0], PanelUnitConversion.RadiansToDegrees, 2) == "4.00 mm" &&
+            PanelValuePresentation.FormatDisplay(fixture.Result.Snapshot.Rows[1], PanelUnitConversion.RadiansToDegrees, 2) == "90.00 °", "linear/angular dimension summaries respect units and precision");
+        SavePanel(fixture, canvas, "dimensions.png");
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Length, Search = "= 4.00", TypeName = "Linear Dimension", DecimalPlaces = 2 });
+        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Values });
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 1 && fixture.Sinks[0].VolatileData.AllData(false).SingleOrDefault() is GH_LinearDimension);
+        Check(fixture.Result.RowPositions.SequenceEqual(new[] { 0 }), "linear dimension comparison retains its typed item");
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Length, TypeName = "Linear Dimension", DisplayFilterValue = true, DecimalPlaces = 2 });
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).OfType<GH_Number>().Select(n => n.Value).SequenceEqual(new[] { 4.0 }));
+        Check(fixture.Result.Statistics.Mean == 4, "linear dimension length comparison/Stats/Values share the metric");
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.DimensionAngle, Search = "= 90.00", TypeName = "Angular Dimension", DecimalPlaces = 2 });
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 1 && fixture.Sinks[0].VolatileData.AllData(false).SingleOrDefault() is GH_AngularDimension);
+        Check(fixture.Result.RowPositions.SequenceEqual(new[] { 1 }), "angular dimension comparison uses converted degrees and retains its type");
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.DimensionAngle, TypeName = "Angular Dimension", DisplayFilterValue = true, DecimalPlaces = 2 });
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).OfType<GH_Number>().Select(n => n.Value).SequenceEqual(new[] { 90.0 }));
+        Check(fixture.Result.Statistics.Mean == 90, "angular dimension comparison/Stats/Values share converted degrees");
+        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Items });
+        PanelTestAdapter.Units(fixture.Component, PanelUnitConversion.None, -1); fixture.Source.PersistentData.Clear();
         fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { textHolder, dimensionHolder, new GH_Culture(new CultureInfo("en-GB")), matrixHolder, pathHolder, location }, new GH_Path(1));
         using var comparisonCurve = new LineCurve(new Point3d(0, 0, 0), new Point3d(6, 0, 0));
         fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { new GH_Point(new Point3d(1, 2, 3)), new GH_Curve(comparisonCurve), new GH_Number(42) }, new GH_Path(2));
@@ -172,14 +230,13 @@ internal static class StockTypeChecks
         graphics.Clear(Color.FromArgb(238, 238, 238)); canvas.Viewport.ApplyProjection(graphics);
         PanelTestAdapter.Render(fixture.Component, canvas, graphics); if (path != null) image.Save(path);
     }
-    private static void SaveComparison()
+    private static void SavePair(string first, string second, string name)
     {
-        string? path = ImagePath("text-dots-inspection.png"); if (path == null) return;
-        using var values = new Bitmap(ImagePath("text-dots-values.png")!);
-        using var property = new Bitmap(ImagePath("text-dots-property.png")!);
-        using var image = new Bitmap(values.Width + property.Width, Math.Max(values.Height, property.Height));
+        string? path = ImagePath(name); if (path == null) return;
+        using var left = new Bitmap(ImagePath(first)!); using var right = new Bitmap(ImagePath(second)!);
+        using var image = new Bitmap(left.Width + right.Width, Math.Max(left.Height, right.Height));
         using var graphics = Graphics.FromImage(image);
-        graphics.DrawImageUnscaled(values, 0, 0); graphics.DrawImageUnscaled(property, values.Width, 0); image.Save(path);
+        graphics.DrawImageUnscaled(left, 0, 0); graphics.DrawImageUnscaled(right, left.Width, 0); image.Save(path);
     }
     private static Task SaveViewport(PanelHostFixture.Fixture fixture, RhinoDoc rhino)
     {

@@ -51,18 +51,36 @@ namespace BetterGhPanel.Runtime
                 if (BitConverter.DoubleToInt64Bits(Cells[i]) != BitConverter.DoubleToInt64Bits(matrix[i / Columns, i % Columns])) return false;
             return true;
         }
-        internal string Summary()
+        internal string Summary() => Valid ? MatrixSummary.Format(Rows, Columns, (r, c) => Cells[r * Columns + c]) : "Invalid matrix";
+    }
+
+    internal static class MatrixSummary
+    {
+        internal static string Format(int rows, int columns, Func<int, int, double> cell)
         {
-            var text = new System.Text.StringBuilder(Rows + " × " + Columns + " [");
-            int count = Math.Min(16, Cells.Length);
+            bool identity = rows == columns && rows > 0;
+            for (int r = 0; identity && r < rows; r++) for (int c = 0; c < columns; c++)
+                if (cell(r, c) != (r == c ? 1 : 0)) { identity = false; break; }
+            if (identity) return "Identity";
+            var text = new System.Text.StringBuilder(rows + " × " + columns + " [");
+            int count = Math.Min(16, rows * columns);
             for (int i = 0; i < count; i++)
             {
-                if (i > 0) text.Append(i % Columns == 0 ? "; " : ", ");
-                text.Append(Cells[i].ToString("G8", System.Globalization.CultureInfo.InvariantCulture));
+                if (i > 0) text.Append(i % columns == 0 ? "; " : ", ");
+                text.Append(cell(i / columns, i % columns).ToString("G8", System.Globalization.CultureInfo.InvariantCulture));
             }
-            if (count < Cells.Length) text.Append("; …");
+            if (count < rows * columns) text.Append("; …");
             return text.Append(']').ToString();
         }
+    }
+
+    internal readonly struct CapturedCultureValue
+    {
+        internal CapturedCultureValue(System.Globalization.CultureInfo? culture) { Name = culture?.Name; EnglishName = culture?.EnglishName; }
+        internal string? Name { get; }
+        internal string? EnglishName { get; }
+        internal bool IsCurrent(System.Globalization.CultureInfo? culture) => culture == null ? Name == null :
+            culture.GetType() == typeof(System.Globalization.CultureInfo) && culture.Name == Name && culture.EnglishName == EnglishName;
     }
 
     // Structural evidence retained with a snapshot. Group and wrapper references
@@ -101,6 +119,8 @@ namespace BetterGhPanel.Runtime
                 if (!captured.Available) return true;
                 if (captured.Raw is CapturedMatrixValue matrix)
                     return holder?.GetType() == typeof(GH_Matrix) && matrix.IsCurrent(((GH_Matrix)holder).Value);
+                if (captured.Raw is CapturedCultureValue culture)
+                    return holder?.GetType() == typeof(GH_Culture) && culture.IsCurrent(((GH_Culture)holder).Value);
                 if (captured.Raw is Box box)
                 {
                     if (holder == null || holder.GetType() != typeof(GH_Box) || !Same(((GH_Box)holder).Value, box)) return false;
@@ -131,6 +151,14 @@ namespace BetterGhPanel.Runtime
                 var matrix = CapturedMatrixValue.Capture(((GH_Matrix)value).Value);
                 if (matrix == null) return false;
                 captured = new CapturedManagedValue(null, matrix, matrix.Valid ? BetterGhPanel.Core.PanelValidity.VerifiedValid : BetterGhPanel.Core.PanelValidity.VerifiedInvalid,
+                    true, false, false, default);
+                return true;
+            }
+            if (value.GetType() == typeof(GH_Culture))
+            {
+                var culture = ((GH_Culture)value).Value;
+                if (culture != null && culture.GetType() != typeof(System.Globalization.CultureInfo)) return false;
+                captured = new CapturedManagedValue(null, new CapturedCultureValue(culture), culture == null ? BetterGhPanel.Core.PanelValidity.VerifiedInvalid : BetterGhPanel.Core.PanelValidity.VerifiedValid,
                     true, false, false, default);
                 return true;
             }
@@ -474,14 +502,6 @@ namespace BetterGhPanel.Runtime
             else if (type == typeof(GH_MeshFace)) copy = new GH_MeshFace(((GH_MeshFace)value).Value);
             else if (type == typeof(GH_LonLatCoordinate))
             { var v = (GH_LonLatCoordinate)value; copy = new GH_LonLatCoordinate(v.Longitude, v.Latitude); }
-            else if (type == typeof(GH_Culture))
-            {
-                var culture = ((GH_Culture)value).Value;
-                if (culture != null && culture.GetType() != typeof(System.Globalization.CultureInfo)) { copy = null; return false; }
-                // Only culture identity is presented. Construct it from its safe name
-                // rather than cloning user-supplied calendar/format implementations.
-                copy = culture == null ? new GH_Culture { Value = null } : new GH_Culture(new System.Globalization.CultureInfo(culture.Name));
-            }
             else if (type == typeof(GH_StructurePath))
             {
                 var path = ((GH_StructurePath)value).Value;
@@ -501,7 +521,7 @@ namespace BetterGhPanel.Runtime
             return true;
         }
 
-        internal static bool IsManagedValueType(Type type) => StockGooSupport.Has(type, BetterGhPanel.Core.StockTypeFacets.Managed);
+        internal static bool IsManagedValueType(Type type) => StockGooSupport.Has(type, StockTypeFacets.Managed);
 
         private static bool SameManagedValue(object value, IGH_Goo copy)
         {
@@ -536,12 +556,6 @@ namespace BetterGhPanel.Runtime
             { var a = ((GH_MeshFace)value).Value; var b = ((GH_MeshFace)copy).Value; return a.A == b.A && a.B == b.B && a.C == b.C && a.D == b.D; }
             if (type == typeof(GH_LonLatCoordinate))
             { var a = (GH_LonLatCoordinate)value; var b = (GH_LonLatCoordinate)copy; return Same(a.Longitude, b.Longitude) && Same(a.Latitude, b.Latitude); }
-            if (type == typeof(GH_Culture))
-            {
-                var a = ((GH_Culture)value).Value; var b = ((GH_Culture)copy).Value;
-                // Only identity properties are presented; do not invoke a custom CultureInfo.
-                return a == null || b == null ? a == null && b == null : a.GetType() == typeof(System.Globalization.CultureInfo) && a.Name == b.Name;
-            }
             if (type == typeof(GH_StructurePath))
             {
                 var a = ((GH_StructurePath)value).Value; var b = ((GH_StructurePath)copy).Value;

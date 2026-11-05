@@ -196,7 +196,7 @@ namespace BetterGhPanel.Runtime
             else if (type == typeof(GH_Circle)) value = ((GH_Circle)node).Value;
             else if (type == typeof(GH_Rectangle)) value = ((GH_Rectangle)node).Value;
             else if (type == typeof(GH_Box)) value = ((GH_Box)node).Value;
-            else if (node is IGH_Goo goo && StockGooSupport.Has(type, BetterGhPanel.Core.StockTypeFacets.Preview))
+            else if (node is IGH_Goo goo && StockGooSupport.Has(type, StockTypeFacets.Preview))
             {
                 if (!SafeGooInspection.TryGetTrustedGeometry(goo, out var geometry))
                 { capturedValue = geometry ?? NullSlot; unavailable = true; return null; }
@@ -309,7 +309,7 @@ namespace BetterGhPanel.Runtime
             return false;
         }
 
-        private static bool IsKnownGeometryGoo(Type type) => StockGooSupport.Has(type, BetterGhPanel.Core.StockTypeFacets.Preview);
+        private static bool IsKnownGeometryGoo(Type type) => StockGooSupport.Has(type, StockTypeFacets.Preview);
 
         internal static bool TryReferenceState(object node, out ReferenceState reference)
         {

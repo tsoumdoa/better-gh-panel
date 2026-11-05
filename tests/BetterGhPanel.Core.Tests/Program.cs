@@ -329,11 +329,11 @@ internal static class Program
         Equal(CanvasMenuKind.None, menu.Kind);
 
         var options = new PanelQueryOptions();
-        Equal("Num/Text +1", CanvasMenu.TypeHint(Query(options), options));
+        Equal("Number/Text +1", CanvasMenu.TypeHint(Query(options), options));
         options.Search = "Alpha";
         Equal("Text", CanvasMenu.TypeHint(Query(options), options));
         options.Search = "no matches";
-        Equal("Num/Text +1", CanvasMenu.TypeHint(Query(options), options));
+        Equal("Number/Text +1", CanvasMenu.TypeHint(Query(options), options));
         options.TypeName = "Saved type";
         Equal("Saved type", CanvasMenu.TypeHint(Query(options), options));
         options.OnlyInvalid = true;
@@ -348,11 +348,11 @@ internal static class Program
         }, new[] { new PanelBranch("{0}", 3) });
         options = new PanelQueryOptions();
         var geometryResult = PanelQueryEngine.Execute(geometry, options);
-        Equal("Mesh/Pt +1", CanvasMenu.TypeHint(geometryResult, options));
+        Equal("Mesh/Point +1", CanvasMenu.TypeHint(geometryResult, options));
         Equal("Mesh: 1, Point: 1, Surface: 1", CanvasMenu.TypeDetails(geometryResult));
         options.TypeName = "Surface";
         geometryResult = PanelQueryEngine.Execute(geometry, options);
-        Equal("Srf", CanvasMenu.TypeHint(geometryResult, options));
+        Equal("Surface", CanvasMenu.TypeHint(geometryResult, options));
         Equal("Surface", geometryResult.Snapshot.Rows[geometryResult.RowPositions[0]].TypeName);
         Equal("Plugin geometry", CanvasMenu.ShortTypeName("Plugin geometry"));
     }

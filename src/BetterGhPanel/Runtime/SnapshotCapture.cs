@@ -144,6 +144,12 @@ namespace BetterGhPanel.Runtime
                                     [PanelSearchMode.ColumnCount] = PanelPropertyValue.Integer(matrix.Columns)
                                 };
                             }
+                            else if (managed.Raw is CapturedCultureValue culture)
+                            {
+                                display = culture.Name == null ? "Null culture" : culture.Name.Length == 0 ? "Invariant culture" : culture.Name + " · " + culture.EnglishName;
+                                if (culture.Name != null) properties = new Dictionary<PanelSearchMode, PanelPropertyValue?>
+                                { [PanelSearchMode.CultureName] = PanelPropertyValue.String(culture.Name), [PanelSearchMode.EnglishName] = PanelPropertyValue.String(culture.EnglishName ?? "") };
+                            }
                             if (validity == PanelValidity.VerifiedInvalid) reason = "The value is invalid.";
                             else if (validity == PanelValidity.Unverified) reason = "Validity could not be safely verified.";
                         }
@@ -164,6 +170,8 @@ namespace BetterGhPanel.Runtime
                                 var vector = ((GH_Vector)inspected).Value;
                                 components = new PanelComponents(vector.X, vector.Y, vector.Z, geometryUnits);
                             }
+                            else if (PanelPropertyCapture.Origin(capturedGeometry) is Point3d origin)
+                                components = new PanelComponents(origin.X, origin.Y, origin.Z, geometryUnits);
                             if (scalar.Available && scalar.IsNumeric) properties = PanelProperties.Empty;
                             else if (scalar.Available)
                             {
@@ -187,9 +195,10 @@ namespace BetterGhPanel.Runtime
                             // can enter either reconstruction or the compatibility fallback.
                             bool supported = capturedGeometry != null && hasReference && directLeaf.HasValue && directLeaf.Value.Trusted;
                             if (geometry?.CanMeasure == true && !supported) geometry = geometry.WithUnavailableMeasurement();
+                            if (capturedGeometry is TextDot || capturedGeometry is TextEntity || capturedGeometry is Leader) stringValue = geometry?.Description;
                             display = geometry?.FormatCompact(PanelUnitConversion.None, PanelUnits.AutomaticDecimals) ?? display;
                         }
-                        capabilities = Capabilities(inspected, validity, capturedGeometry);
+                        capabilities = Capabilities(inspected, validity, capturedGeometry) | (components == null ? PanelSearchCapabilities.None : PanelSearchCapabilities.Components);
                         inspectionObserver?.Invoke(rows.Count, item);
                     }
                     catch (Exception)
@@ -343,6 +352,7 @@ namespace BetterGhPanel.Runtime
             if (type == typeof(GH_Number) || type == typeof(GH_Integer)) return PanelSearchCapabilities.Value;
             if (validity == PanelValidity.Unverified) return PanelSearchCapabilities.None;
             if (type == typeof(GH_Point) || type == typeof(GH_Vector)) return PanelSearchCapabilities.Components;
+            if (geometry is Dimension && !(geometry is AngularDimension)) return PanelSearchCapabilities.Length;
             if (type == typeof(GH_Line) || type == typeof(GH_Arc) || type == typeof(GH_Circle) || type == typeof(GH_Curve))
                 return PanelSearchCapabilities.Length;
             if (type == typeof(GH_Rectangle) || type == typeof(GH_Surface)) return PanelSearchCapabilities.Area;
@@ -407,19 +417,12 @@ namespace BetterGhPanel.Runtime
             { var v = ((GH_ComplexNumber)goo).Value; return string.Format(CultureInfo.InvariantCulture, "{0:G8} {1} {2:G8}i", v.Real, v.Imaginary < 0 ? "−" : "+", Math.Abs(v.Imaginary)); }
             if (runtime == typeof(GH_MeshFace))
             { var face = ((GH_MeshFace)goo).Value; return face.IsTriangle ? $"({face.A}, {face.B}, {face.C})" : $"({face.A}, {face.B}, {face.C}, {face.D})"; }
-            if (runtime == typeof(GH_Culture))
-            {
-                var culture = ((GH_Culture)goo).Value;
-                if (culture?.GetType() == typeof(CultureInfo)) return culture.Name.Length == 0 ? "Invariant culture" : culture.Name + " · " + culture.EnglishName;
-            }
             if (runtime == typeof(GH_LonLatCoordinate))
-            { var v = (GH_LonLatCoordinate)goo; return string.Format(CultureInfo.InvariantCulture, "{0:G8}°, {1:G8}°", v.Latitude, v.Longitude); }
+            { var v = (GH_LonLatCoordinate)goo; return string.Format(CultureInfo.InvariantCulture, "{0:G8}° {1}, {2:G8}° {3}", Math.Abs(v.Latitude), v.Latitude < 0 ? "S" : "N", Math.Abs(v.Longitude), v.Longitude < 0 ? "W" : "E"); }
             if (runtime == typeof(GH_StructurePath))
             { var path = ((GH_StructurePath)goo).Value; if (path?.GetType() == typeof(GH_Path) && path.Length <= SafeGooInspection.MaxNodesPerRoot) return path.ToString(); }
-            if (runtime == typeof(GH_Matrix))
-            { var matrix = ((GH_Matrix)goo).Value; if (matrix?.GetType() == typeof(Matrix)) return matrix.RowCount + " × " + matrix.ColumnCount + " matrix"; }
-            if (runtime == typeof(GH_Field)) return ((GH_Field)goo).Elements.Count + " field elements";
-            if (runtime == typeof(GH_Material)) return ((GH_Material)goo).Type + " material";
+            if (runtime == typeof(GH_Field)) return ((GH_Field)goo).Elements is { } elements ? elements.Count + " field elements" : "Null field";
+            if (runtime == typeof(GH_Material)) return ((GH_Material)goo).Value == null ? "Null material" : ((GH_Material)goo).Type + " material";
             if (runtime == typeof(GH_Transform))
             {
                 var transforms = ((GH_Transform)goo).CompoundTransforms;
@@ -427,7 +430,7 @@ namespace BetterGhPanel.Runtime
                 if (transforms.Count == 1 && transforms[0]?.GetType() == typeof(Grasshopper.Kernel.Types.Transforms.Generic))
                 {
                     var t = ((Grasshopper.Kernel.Types.Transforms.Generic)transforms[0]).Transform;
-                    return t.IsIdentity ? "Identity" : string.Format(CultureInfo.InvariantCulture, "[{0:G6}, {1:G6}, {2:G6}, {3:G6}; …]", t.M00, t.M01, t.M02, t.M03);
+                    return MatrixSummary.Format(4, 4, (r, c) => t[r, c]);
                 }
                 return transforms.Count + " compound transforms";
             }

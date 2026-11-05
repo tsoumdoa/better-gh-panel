@@ -13,13 +13,12 @@ namespace BetterGhPanel.Runtime
         // Only analytic measurements and stored properties belong in the snapshot.
         internal static PanelGeometryInfo? Describe(IGH_Goo goo, string units)
         {
-            if (SafeGooInspection.IsGeometryHolder(goo.GetType()))
+            if (StockGooSupport.Has(goo.GetType(), StockTypeFacets.Measure))
             {
                 if (!SafeGooInspection.TryGetTrustedGeometry(goo, out GeometryBase? geometry) || geometry == null) return null;
                 try
                 {
-                    if ((goo.GetType() == typeof(GH_Curve) || goo.GetType() == typeof(GH_Surface) || goo.GetType() == typeof(GH_Brep)) &&
-                        !SafeGooInspection.MeasurementSourceCanRead(geometry)) return null;
+                    if (!SafeGooInspection.MeasurementSourceCanRead(geometry)) return null;
                     return geometry.IsValid ? DescribeCaptured(goo, geometry, units) : null;
                 }
                 finally { GC.KeepAlive(geometry); }
@@ -38,15 +37,11 @@ namespace BetterGhPanel.Runtime
         private static PanelGeometryInfo? DescribeCapturedCore(IGH_Goo goo, GeometryBase? geometry, string units)
         {
             Type type = goo.GetType();
-            if (geometry?.GetType() == typeof(TextDot))
-            { var dot = (TextDot)geometry; return new PanelGeometryInfo(dot.Text + " @ " + PointText(dot.Point)); }
-            if (geometry is AnnotationBase annotation)
-            {
-                string text = annotation.PlainText;
-                if (annotation is Dimension dimension)
-                    text = dimension.NumericValue.ToString("G8", CultureInfo.InvariantCulture);
-                return new PanelGeometryInfo((string.IsNullOrEmpty(text) ? "" : text + " @ ") + PointText(annotation.Plane.Origin));
-            }
+            if (geometry is TextDot dot) return new PanelGeometryInfo(PanelPropertyCapture.BoundedText(dot.Text));
+            if (geometry is Dimension dimension) return new PanelGeometryInfo("", dimension.NumericValue,
+                geometry is AngularDimension ? -1 : 1, geometry is AngularDimension ? "rad" : units,
+                geometry is AngularDimension ? "Angle" : "Length", "");
+            if (geometry is AnnotationBase annotation) return new PanelGeometryInfo(PanelPropertyCapture.BoundedText(annotation.PlainText));
             if (geometry?.GetType() == typeof(InstanceReferenceGeometry))
                 return new PanelGeometryInfo("Definition " + ((InstanceReferenceGeometry)geometry).ParentIdefId.ToString("D"));
             if (geometry?.GetType() == typeof(DetailView))
@@ -362,7 +357,6 @@ namespace BetterGhPanel.Runtime
             ? new PanelGeometryInfo("Cir", arc.Radius, units: units, metricName: "Radius", metricLabel: "R", details: ArcDetails(arc))
                 .WithAdditionalLength(arc.Length)
             : new PanelGeometryInfo("Arc", arc.Length, units: units, details: ArcDetails(arc));
-        internal static string PointText(Point3d point) => string.Format(CultureInfo.InvariantCulture, "({0:G8}, {1:G8}, {2:G8})", point.X, point.Y, point.Z);
         private static string Closed(bool closed) => closed ? "closed" : "open";
         private static string Count(int count, string noun) => count + " " + noun + (count == 1 ? "" : "s");
     }

@@ -25,15 +25,11 @@ typed output and does not promise preservation of nonserializable metadata in a
 copy or archive. The fixture probes representative serializable root and nested
 metadata, rather than claiming this holds for all installed plug-ins.
 
-Stock type capabilities now come from `PanelStockTypes`, bound to exact SDK
-Types by `StockGooSupport`. Text Dot, annotation, hatch, block and detail capture
-adds no measurement provider. Their summaries/properties read the captured exact
-native shape; style, pattern and definition model objects are never traversed.
-Validity describes that native shape and does not certify those dependencies.
-Text Dot alone extends owned preview/copy in this addition; the existing source,
-reference, generation and context fences still apply. Matrix witnesses retain
-bounded managed cells rather than native Matrix copies. Culture witnesses cover
-its presented identity only, and never clone custom calendars/formatters.
+`StockGooSupport` binds inspection and measurement facets to exact SDK types and
+native readers. Annotation/hatch/block/detail validity concerns their native
+shape, not external model dependencies. Dimension values are stored analytic
+metrics and add no worker provider. Matrix witnesses own managed cells; culture
+witnesses own identity strings, never custom formatter/calendar objects.
 
 Capture keeps the exact inner source of every built-in curve, surface, Brep,
 mesh, point-cloud and extrusion holder, including null, invalid and unverified
