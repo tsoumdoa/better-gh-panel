@@ -331,16 +331,28 @@ namespace BetterGhPanel
         // same paths and branch lengths; otherwise the view starts at the top.
         // Selection deliberately still clears: an address may now hold different
         // data, and S/B/F must never silently emit items the user did not pick.
+        private PanelQueryResult? _selectionRestore;
+        private PanelRowSelection? _savedSelection;
+
         internal void StashViewForRestore()
         {
             var result = _lastResult;
             // A second expiry before the next result keeps the original stash.
             if (result == null) return;
+            _selectionRestore = result;
+            _savedSelection = _selection.CopyForPreview();
             _viewRestore = _offset == 0 && _pairedOffset == 0 ? null : new ViewRestore(result.Snapshot, _offset, _pairedOffset, DisplayListLengths);
         }
 
         private void RestoreView(PanelQueryResult result)
         {
+            if (_selectionRestore != null && _savedSelection != null)
+            {
+                if (SameStructure(_selectionRestore.Snapshot, result.Snapshot))
+                    _selection.Rebind(_savedSelection, result);
+                _selectionRestore = null;
+                _savedSelection = null;
+            }
             var restore = _viewRestore;
             if (restore == null) return;
             _viewRestore = null;

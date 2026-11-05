@@ -154,7 +154,6 @@ namespace BetterGhPanel
             if (ReferenceEquals(_selectionCanvas, canvas)) return;
             DetachSelectionCanvas();
             _selectionCanvas = canvas;
-            canvas.MouseDown += SelectionCanvasMouseDown;
             canvas.DocumentChanged += SelectionCanvasDocumentChanged;
             canvas.Disposed += SelectionCanvasDisposed;
         }
@@ -162,26 +161,9 @@ namespace BetterGhPanel
         private void DetachSelectionCanvas()
         {
             if (_selectionCanvas == null) return;
-            _selectionCanvas.MouseDown -= SelectionCanvasMouseDown;
             _selectionCanvas.DocumentChanged -= SelectionCanvasDocumentChanged;
             _selectionCanvas.Disposed -= SelectionCanvasDisposed;
             _selectionCanvas = null;
-        }
-
-        private void SelectionCanvasMouseDown(object? sender, MouseEventArgs e)
-        {
-            if (!CanvasTextInput.IsCurrent(_queryEditor)) CancelQueryEditor();
-            if (sender is not GH_Canvas canvas || e.Button != MouseButtons.Left ||
-                !ReferenceEquals(canvas.Document, Owner.OnPingDocument()) || canvas.Document == null) return;
-            if (e.Clicks > 1 && DateTime.UtcNow < _rowActionDismissedUntil) return;
-            // The host handles this event first. Only its ordinary blank-canvas
-            // selection gesture clears rows; wire, widget, pan and drag gestures do not.
-            if (canvas.ActiveInteraction is not GH_WindowSelectInteraction) return;
-            var modifiers = RowModifiers();
-            if (modifiers.Toggle || modifiers.Range || modifiers.AcrossBranches) return;
-            var point = canvas.Viewport.UnprojectPoint(e.Location);
-            if (canvas.Document.RelevantObjectAtPoint(point) != null) return;
-            ClearRowSelection(canvas);
         }
 
         private void SelectionCanvasDocumentChanged(GH_Canvas canvas, GH_CanvasDocumentChangedEventArgs e)
@@ -1222,7 +1204,7 @@ namespace BetterGhPanel
             if (HandleSplitClick(sender, e)) return GH_ObjectResponse.Handled;
             if (_reset.Contains(point))
             {
-                PanelOwner.ResetPanel();
+                PanelOwner.ResetAll();
                 ShowNotice(sender, "Panel reset · Undo restores the previous settings");
                 return GH_ObjectResponse.Handled;
             }
@@ -1358,13 +1340,13 @@ namespace BetterGhPanel
                 }
             if (ListContains(point))
             {
-                if (_paintedListBackground) ClearRowSelection(sender);
-                else sender.Invalidate();
+                // Empty panel space retains selection.
+                sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
             // Empty panel margins and its header also clear rows, while the host
             // remains responsible for selecting and dragging the component itself.
-            if (_panel.Contains(point)) ClearRowSelection(sender);
+            // Focus does not change selection.
             return base.RespondToMouseDown(sender, e);
         }
 
@@ -1880,8 +1862,8 @@ namespace BetterGhPanel
             }
             else if (_reset.Contains(point))
             {
-                e.Title = "Reset panel";
-                e.Description = "Clear search, filters, sorting, tree tools, units and selection. Undo brings them back.";
+                e.Title = "Reset all";
+                e.Description = "Reset search, mode, type, path, invalid-only, sort, selection, scroll, tree tools, units, rounding, decimals, Out Items/Values and B + F source. Keeps Preview mode, item order, D|F split and size. Undo brings settings back.";
             }
             else if (_search.Contains(point))
             {

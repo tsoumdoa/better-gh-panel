@@ -73,6 +73,20 @@ namespace BetterGhPanel.UI
             if (changed) NotifyChanged();
         }
 
+        internal void Rebind(PanelRowSelection previous, PanelQueryResult result)
+        {
+            _positions.Clear();
+            _positions.UnionWith(previous._positions);
+            _emptyBranches.Clear();
+            _emptyBranches.UnionWith(previous._emptyBranches);
+            _anchor = previous._anchor;
+            _result = result;
+            _positions.RemoveWhere(position => !result.TryGetViewIndex(position, out _));
+            _emptyBranches.RemoveWhere(path => !result.ContainsBranchPath(path));
+            RebuildIndex(result);
+            NotifyChanged();
+        }
+
         internal void Synchronize(PanelQueryResult result)
         {
             if (ReferenceEquals(_result, result)) return;

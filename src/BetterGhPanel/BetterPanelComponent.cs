@@ -167,6 +167,7 @@ namespace BetterGhPanel
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
+                        if (!CanOutputValues) OutputValues = PanelOutputValues.Items;
                         (Attributes as BetterPanelAttributes)?.OnQueryStarted();
                         (Attributes as BetterPanelAttributes)?.InvalidateStatistics();
                         CancelPendingCopy();
@@ -328,7 +329,7 @@ namespace BetterGhPanel
 
         public override void CreateAttributes() => m_attributes = new BetterPanelAttributes(this);
 
-        internal void ResetPanelView()
+        internal void ClearFilters()
         {
             CancelPendingCopy();
             CanvasTextInput.CloseActive(this);
@@ -392,7 +393,13 @@ namespace BetterGhPanel
         internal void RecordQueryUndo(string name, PanelQueryOptions before, PanelQueryOptions after)
         {
             if (!PanelQueryPolicy.SameQuery(before, after))
-                RecordUndoEvent(name, new PanelUndo<PanelQueryOptions>(InstanceGuid, before.Clone(), after.Clone(), (component, options) => { (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor(); component.Session.UpdateQuery(options); }));
+            {
+                var beforeValues = OutputValues;
+                var afterValues = CreateSetTree || after.DisplayFilterValue ? beforeValues : PanelOutputValues.Items;
+                RecordUndoEvent(name, new PanelUndo<Tuple<PanelQueryOptions, PanelOutputValues>>(InstanceGuid,
+                    Tuple.Create(before.Clone(), beforeValues), Tuple.Create(after.Clone(), afterValues),
+                    (component, state) => { (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor(); component.Session.UpdateQuery(state.Item1); component.OutputValues = state.Item2; }));
+            }
         }
 
         // Ends a live edit. A committed edit publishes like any other query change;
@@ -430,7 +437,7 @@ namespace BetterGhPanel
             return false;
         }
 
-        internal void ResetPanel()
+        internal void ResetAll()
         {
             _discardViewRestore = true;
             var options = Session.Options;
@@ -446,7 +453,7 @@ namespace BetterGhPanel
             DecimalPlaces = PanelUnits.AutomaticDecimals;
             OutputScope = PanelOutputScope.Filtered;
             OutputValues = PanelOutputValues.Items;
-            ResetPanelView();
+            ClearFilters();
             if (settingsChanged) OnPingDocument()?.Modified();
             try
             {
@@ -478,6 +485,7 @@ namespace BetterGhPanel
             ReverseTree = reverse;
             SimplifyTree = simplify;
             CreateSetTree = createSet;
+            if (!CanOutputValues) OutputValues = PanelOutputValues.Items;
             if (pathsChanged)
             {
                 // Reverse and Create set preserve paths, so branch selection stays valid.
@@ -1170,15 +1178,14 @@ namespace BetterGhPanel
             base.AppendAdditionalComponentMenuItems(menu);
             Menu_AppendSeparator(menu);
             Menu_AppendItem(menu, PanelMinimized ? "Restore panel" : "Minimize to capsule", (_, __) => SetPanelMinimized(!PanelMinimized));
-            Menu_AppendItem(menu, "Reset panel", (_, __) => ResetPanel());
-            Menu_AppendItem(menu, "Reset panel view", (_, __) => ResetPanelView());
-            Menu_AppendItem(menu, "Reset tree tools", (_, __) => SetTreeOperations(0, false, false, false, false), HasTreeOperations);
+            Menu_AppendItem(menu, "Reset all", (_, __) => ResetAll());
+            Menu_AppendItem(menu, "Clear filters", (_, __) => ClearFilters());
             var valuesMenu = Menu_AppendItem(menu, "Output: " + (OutputsValues ? "Values" : "Items"));
             Menu_AppendItem(valuesMenu.DropDown, "Items", (_, __) => SetOutputValues(PanelOutputValues.Items), true, !OutputsValues);
             Menu_AppendItem(valuesMenu.DropDown, "Values", (_, __) => SetOutputValues(PanelOutputValues.Values), CanOutputValues, OutputsValues);
             var outputMenu = Menu_AppendItem(menu, "B + F source: " + (OutputScope == PanelOutputScope.Filtered ? "Filtered" : "Selected"));
-            Menu_AppendItem(outputMenu.DropDown, "Filtered results", (_, __) => SetOutputScope(PanelOutputScope.Filtered), true, OutputScope == PanelOutputScope.Filtered);
-            Menu_AppendItem(outputMenu.DropDown, "Selected rows", (_, __) => SetOutputScope(PanelOutputScope.Selected), true, OutputScope == PanelOutputScope.Selected);
+            Menu_AppendItem(outputMenu.DropDown, "Results", (_, __) => SetOutputScope(PanelOutputScope.Filtered), true, OutputScope == PanelOutputScope.Filtered);
+            Menu_AppendItem(outputMenu.DropDown, "Selection", (_, __) => SetOutputScope(PanelOutputScope.Selected), true, OutputScope == PanelOutputScope.Selected);
             var sizeMenu = Menu_AppendItem(menu, "Canvas panel size");
             var names = CanvasPanelSize.PresetNames;
             for (var i = 0; i < names.Length; i++)
@@ -1297,6 +1304,7 @@ namespace BetterGhPanel
             ReverseTree = reverse;
             SimplifyTree = simplify;
             CreateSetTree = createSet;
+            if (!CanOutputValues) OutputValues = PanelOutputValues.Items;
             int outputValues = createSet ? (int)PanelOutputValues.Values : (int)PanelOutputValues.Items;
             reader.TryGetInt32("PanelOutputValues", ref outputValues);
             OutputValues = Enum.IsDefined(typeof(PanelOutputValues), outputValues) ? (PanelOutputValues)outputValues : PanelOutputValues.Items;
