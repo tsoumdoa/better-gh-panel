@@ -51,9 +51,12 @@ namespace BetterGhPanel.Core
         /// <summary>Rounds numeric output toward positive infinity after unit conversion. Zero disables rounding.</summary>
         public static double Transform(double value, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = AutomaticDecimals)
         {
-            value = RoundUp(Convert(value, conversion), roundUpFactor);
+            double converted = Convert(value, conversion);
+            value = RoundUp(converted, roundUpFactor);
             if (!double.IsNaN(value) && !double.IsInfinity(value) && decimals >= 0 && Math.Abs(value) < PanelNumber.IntegerBoundary)
-                value = PanelNumber.ToDouble(PanelNumber.RoundedDecimal(value, Math.Min(MaximumDecimals, decimals), IsRoundingFactor(roundUpFactor)));
+                value = IsRoundingFactor(roundUpFactor)
+                    ? PanelNumber.FactorDecimalCeiling(converted, value, roundUpFactor, Math.Min(MaximumDecimals, decimals))
+                    : PanelNumber.ToDouble(PanelNumber.RoundedDecimal(value, Math.Min(MaximumDecimals, decimals)));
             return value == 0 ? 0 : value;
         }
 

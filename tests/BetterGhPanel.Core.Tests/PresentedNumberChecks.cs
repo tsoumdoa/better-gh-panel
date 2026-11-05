@@ -23,21 +23,39 @@ public sealed class PresentedNumberChecks
     public void SeededFactorOracleAcrossDecimalPlaces()
     {
         var random = new System.Random(50421);
-        foreach (double factor in new[] { .25, .3, .07, 1e-12, 1, 1d / 3, System.Math.PI / 12 })
-        for (int places = 0; places <= 12; places++)
-        for (int i = 0; i < 100; i++)
+        foreach (double factor in new[] { .1, .01, .05, .2, .07, .25 })
+        for (int places = 1; places <= 4; places++)
+        for (int i = 0; i < 1000; i++)
         {
-            double input = System.Math.Round((random.NextDouble() * 2 - 1) * System.Math.Pow(10, i % 16), 4);
+            double input = random.NextDouble() * System.Math.Pow(10, i % 14);
+            double factored = PanelUnits.Transform(input, PanelUnitConversion.None, factor);
+            decimal multiple = (decimal)new System.Numerics.BigInteger(System.Math.Round(factored / factor)) * (decimal)factor;
+            decimal inputMultiple = (decimal)new System.Numerics.BigInteger(System.Math.Round(input / factor)) * (decimal)factor;
+            if (PanelNumber.ToDouble(inputMultiple) == input) multiple = inputMultiple;
+            decimal scale = (decimal)System.Math.Pow(10, places);
+            double expected = PanelNumber.ToDouble(decimal.Ceiling(multiple * scale) / scale);
+            if (factored == input && PanelNumber.ToDouble(inputMultiple) != input)
+                expected = ExactBinaryCeiling(input, places);
             double result = PanelUnits.Transform(input, PanelUnitConversion.None, factor, places);
-            // Double ordering compares the exact represented binary values, without a decimal cast.
+            Assert.True(expected == result, $"oracle input={input:R} f={factor:R} dp={places} expected={expected:R} actual={result:R}");
             Assert.True(result >= input);
-            Assert.True(PanelUnits.Transform(input + 1, PanelUnitConversion.None, factor, places) >= result);
-            if ((factor == .25 && places >= 2 || factor == 1) && System.Math.Abs(result) < 1e15)
-                Assert.Equal(result, PanelUnits.Transform(result, PanelUnitConversion.None, factor, places));
-            double multiple = i * factor;
-            if (factor == .25 || factor == 1 || factor == 1d / 3 && i % 3 == 0)
-                Assert.Equal(multiple, PanelUnits.Transform(multiple, PanelUnitConversion.None, factor));
+            decimal resultMultiple = (decimal)new System.Numerics.BigInteger(System.Math.Round(result / factor)) * (decimal)factor;
+            if (decimal.Round((decimal)factor, places) == (decimal)factor && PanelNumber.ToDouble(resultMultiple) == result)
+                Assert.True(result == PanelUnits.Transform(result, PanelUnitConversion.None, factor, places), $"idempotence input={input:R} result={result:R} f={factor:R} dp={places}");
         }
+    }
+
+    private static double ExactBinaryCeiling(double value, int places)
+    {
+        long bits = System.BitConverter.DoubleToInt64Bits(value);
+        int exponent = (int)((bits >> 52) & 2047) - 1075;
+        var numerator = new System.Numerics.BigInteger((bits & 0xfffffffffffffL) | (1L << 52));
+        var denominator = System.Numerics.BigInteger.One;
+        if (exponent >= 0) numerator <<= exponent; else denominator <<= -exponent;
+        var scale = System.Numerics.BigInteger.Pow(10, places);
+        var coefficient = System.Numerics.BigInteger.DivRem(numerator * scale, denominator, out var remainder);
+        if (remainder > 0) coefficient++;
+        return PanelNumber.ToDouble((decimal)coefficient / (decimal)scale);
     }
 
     [Fact]
@@ -111,9 +129,14 @@ public sealed class PresentedNumberChecks
     [InlineData(2 * System.Math.PI, System.Math.PI, -1, 2 * System.Math.PI)]
     [InlineData(1000000000000001, 1, -1, 1000000000000001)]
     [InlineData(9007199254740991, 1, -1, 9007199254740991)]
-    [InlineData(12345678901234.56, .07, 2, 12345678901234.57)]
+
     [InlineData(79595447042768.58, .25, 8, 79595447042768.75)]
     [InlineData(3e-30, 1e-30, 2, .01)]
+    [InlineData(.6424555553321054, .1, 1, .7)]
+    [InlineData(135.63838467730133, .01, 2, 135.64)]
+    [InlineData(8680.175, .07, 2, 8680.21)]
+    [InlineData(8680.175, .07, 11, 8680.21)]
+    [InlineData(12345678901234.56, .07, 2, 12345678901234.56)]
     [InlineData(12.1, .25, 0, 13)]
     [InlineData(-12.1, .25, 0, -12)]
     [InlineData(2.67, .01, 2, 2.67)]

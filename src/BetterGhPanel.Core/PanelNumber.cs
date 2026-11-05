@@ -57,6 +57,33 @@ namespace BetterGhPanel.Core
                 (int)(uint)((coefficient >> 64) & uint.MaxValue), value < 0, (byte)places);
         }
 
+        internal static double FactorDecimalCeiling(double input, double rounded, double factor, int places)
+        {
+            if (FaithfulDecimal(factor, out decimal decimalFactor) && decimalFactor > 0)
+            {
+                try
+                {
+                    // BigInteger preserves every integer digit of k; a double-to-
+                    // decimal cast would trim k to 15 significant digits again.
+                    decimal multiple = (decimal)new BigInteger(Math.Round(rounded / factor)) * decimalFactor;
+                    double intended = ToDouble(multiple);
+                    long distance = intended == 0 && rounded == 0 ? 0 :
+                        Math.Abs(BitConverter.DoubleToInt64Bits(intended) - BitConverter.DoubleToInt64Bits(rounded));
+                    // A previously emitted decimal multiple can itself make the base
+                    // binary factor step advance. Preserve that exact grid point.
+                    decimal inputMultiple = (decimal)new BigInteger(Math.Round(input / factor)) * decimalFactor;
+                    if (ToDouble(inputMultiple) == input) multiple = inputMultiple;
+                    if ((rounded != input || intended == input) && distance <= 4)
+                    {
+                        decimal scale = (decimal)Tens[places];
+                        return ToDouble(decimal.Ceiling(multiple * scale) / scale);
+                    }
+                }
+                catch (OverflowException) { }
+            }
+            return ToDouble(RoundedDecimal(rounded, places, ceiling: true));
+        }
+
         internal static double ToDouble(decimal number)
         {
             if (number == 0) return 0;
