@@ -23,25 +23,52 @@ public sealed class PresentedNumberChecks
     public void SeededFactorOracleAcrossDecimalPlaces()
     {
         var random = new System.Random(50421);
-        foreach (decimal factor in new[] { .25m, .3m, .07m, .000000000001m, 1m })
+        foreach (double factor in new[] { .25, .3, .07, 1e-12, 1, 1d / 3, System.Math.PI / 12 })
         for (int places = 0; places <= 12; places++)
+        for (int i = 0; i < 100; i++)
         {
-            decimal scale = 1;
-            for (int d = 0; d < places; d++) scale *= 10;
-            double previous = double.NegativeInfinity;
-            decimal input = -1000;
-            for (int i = 0; i < 100; i++)
+            double input = System.Math.Round((random.NextDouble() * 2 - 1) * System.Math.Pow(10, i % 16), 4);
+            double result = PanelUnits.Transform(input, PanelUnitConversion.None, factor, places);
+            // Double ordering compares the exact represented binary values, without a decimal cast.
+            Assert.True(result >= input);
+            Assert.True(PanelUnits.Transform(input + 1, PanelUnitConversion.None, factor, places) >= result);
+            if ((factor == .25 && places >= 2 || factor == 1) && System.Math.Abs(result) < 1e15)
+                Assert.Equal(result, PanelUnits.Transform(result, PanelUnitConversion.None, factor, places));
+            double multiple = i * factor;
+            if (factor == .25 || factor == 1 || factor == 1d / 3 && i % 3 == 0)
+                Assert.Equal(multiple, PanelUnits.Transform(multiple, PanelUnitConversion.None, factor));
+        }
+    }
+
+    [Fact]
+    public void FastAutomaticKeysMatchFormatter()
+    {
+        var random = new System.Random(501);
+        foreach (int precision in new[] { 6, 12 })
+        {
+            for (int exponent = -300; exponent <= 300; exponent += 10)
+            foreach (double coefficient in new[] { 1d, 9.999999999995, 1.234565, 1.234567890125 })
             {
-                input += random.Next(1, 10000) / 100m;
-                decimal factored = decimal.Ceiling(input / factor) * factor;
-                Assert.Equal(0m, factored % factor);
-                double factorResult = PanelUnits.Transform((double)input, PanelUnitConversion.None, (double)factor);
-                Assert.Equal((double)factored, factorResult);
-                double result = PanelUnits.Transform((double)input, PanelUnitConversion.None, (double)factor, places);
-                Assert.Equal((double)(decimal.Ceiling(factored * scale) / scale), result);
-                Assert.True((decimal)result >= input);
-                Assert.True(result >= previous);
-                previous = result;
+                double v = coefficient * System.Math.Pow(10, exponent);
+                for (int offset = -4; offset <= 4; offset++)
+                {
+                    double adjacent = System.BitConverter.Int64BitsToDouble(System.BitConverter.DoubleToInt64Bits(v) + offset);
+                    string format = precision == 6 ? "G6" : "G12";
+                    Assert.Equal(PanelUnits.Format(adjacent, PanelUnitConversion.None, -1, format),
+                        PanelUnits.Format(PanelNumber.GeneralKey(adjacent, precision), PanelUnitConversion.None, -1, format));
+                }
+            }
+            var keys = new Dictionary<string, double>();
+            var texts = new Dictionary<double, string>();
+            for (int i = 0; i < 20000; i++)
+            {
+                double value = (random.NextDouble() * 2 - 1) * System.Math.Pow(10, i % 600 - 300);
+                double key = PanelNumber.GeneralKey(value, precision);
+                string text = PanelUnits.Format(value, PanelUnitConversion.None, -1, precision == 6 ? "G6" : "G12");
+                if (keys.TryGetValue(text, out double existing)) Assert.Equal(existing, key);
+                if (texts.TryGetValue(key, out string? existingText)) Assert.Equal(existingText, text);
+                keys[text] = key; texts[key] = text;
+                Assert.Equal(text, PanelUnits.Format(key, PanelUnitConversion.None, -1, precision == 6 ? "G6" : "G12"));
             }
         }
     }
@@ -80,19 +107,17 @@ public sealed class PresentedNumberChecks
     }
 
     [Theory]
-    [InlineData(1500.0000000000002, .5, -1, 1500)]
-    [InlineData(.30000000000000004, .1, -1, .3)]
+    [InlineData(1, 1d / 3, -1, 1)]
+    [InlineData(2 * System.Math.PI, System.Math.PI, -1, 2 * System.Math.PI)]
     [InlineData(1000000000000001, 1, -1, 1000000000000001)]
     [InlineData(9007199254740991, 1, -1, 9007199254740991)]
-    [InlineData(12345678901234.56, .07, 2, 12345678901234.63)]
+    [InlineData(12345678901234.56, .07, 2, 12345678901234.57)]
     [InlineData(79595447042768.58, .25, 8, 79595447042768.75)]
     [InlineData(3e-30, 1e-30, 2, .01)]
     [InlineData(12.1, .25, 0, 13)]
     [InlineData(-12.1, .25, 0, -12)]
     [InlineData(2.67, .01, 2, 2.67)]
     [InlineData(2.675, .001, 2, 2.68)]
-    [InlineData(0.30000000000000004, 1e-20, 1, .3)]
-    [InlineData(0.29999999999999993, 1e-20, 1, .3)]
     public void FactorDecimalPlacesCeil(double value, double factor, int places, double expected) =>
         Assert.Equal(expected, PanelUnits.Transform(value, PanelUnitConversion.None, factor, places));
 

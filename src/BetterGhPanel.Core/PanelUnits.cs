@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 
 namespace BetterGhPanel.Core
 {
@@ -50,25 +51,57 @@ namespace BetterGhPanel.Core
         /// <summary>Rounds numeric output toward positive infinity after unit conversion. Zero disables rounding.</summary>
         public static double Transform(double value, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = AutomaticDecimals)
         {
-            value = Convert(value, conversion);
-            if (IsRoundingFactor(roundUpFactor)) return RoundUp(value, roundUpFactor, decimals);
+            value = RoundUp(Convert(value, conversion), roundUpFactor);
             if (!double.IsNaN(value) && !double.IsInfinity(value) && decimals >= 0 && Math.Abs(value) < PanelNumber.IntegerBoundary)
-                value = PanelNumber.ToDouble(PanelNumber.RoundedDecimal(value, Math.Min(MaximumDecimals, decimals)));
+                value = PanelNumber.ToDouble(PanelNumber.RoundedDecimal(value, Math.Min(MaximumDecimals, decimals), IsRoundingFactor(roundUpFactor)));
             return value == 0 ? 0 : value;
         }
 
         public static bool TryParseOperand(string text, out double value) => PanelNumber.TryParse(text, out value);
 
-        private static double RoundUp(double value, double factor, int decimals)
+        // Settings usually share one factor across the entire solve/query. Cache
+        // its guarded decimal cast, rather than converting it for every value.
+        private sealed class Factor
         {
-            // At and above 2^53 doubles have no fractional precision; a factor
-            // below their resolution is ignored. Preserve special values too.
-            if (double.IsNaN(value) || double.IsInfinity(value)) return value;
+            internal readonly double Value;
+            internal readonly decimal Decimal;
+            internal readonly bool Faithful;
+            internal Factor(double value) { Value = value; Faithful = PanelNumber.FaithfulDecimal(value, out Decimal); }
+        }
+        private static Factor _factor = new Factor(0);
+
+        private static double RoundUp(double value, double roundUpFactor)
+        {
+            if (!IsRoundingFactor(roundUpFactor) || double.IsNaN(value) || double.IsInfinity(value)) return value;
             long bits = BitConverter.DoubleToInt64Bits(Math.Abs(value));
             int exponent = (int)((bits >> 52) & 2047);
             double resolution = exponent <= 52 ? BitConverter.Int64BitsToDouble(1L << Math.Max(0, exponent - 1)) : BitConverter.Int64BitsToDouble((long)(exponent - 52) << 52);
-            if (factor < resolution) return decimals < 0 ? value : PanelNumber.FactorCeiling(value, factor, Math.Min(MaximumDecimals, decimals), skipFactor: true);
-            return PanelNumber.FactorCeiling(value, factor, Math.Min(MaximumDecimals, decimals));
+            if (roundUpFactor < resolution) return value;
+            var prepared = Volatile.Read(ref _factor);
+            if (prepared.Value != roundUpFactor) { prepared = new Factor(roundUpFactor); Volatile.Write(ref _factor, prepared); }
+            try
+            {
+                if (prepared.Faithful && prepared.Decimal > 0 && Math.Abs(value) < 79228162514264337593543950336d)
+                {
+                    decimal number = (decimal)value, factor = prepared.Decimal;
+                    if (number == 0 && value > 0) return roundUpFactor;
+                    if ((double)number != value) return DoubleCeil(value, roundUpFactor);
+                    decimal remainder = number % factor;
+                    if (remainder == 0) return value;
+                    double rounded = PanelNumber.ToDouble(number - remainder + (number > 0 ? factor : 0));
+                    return rounded >= value ? rounded : DoubleCeil(value, roundUpFactor);
+                }
+            }
+            catch (OverflowException) { }
+            return DoubleCeil(value, roundUpFactor);
+        }
+
+        private static double DoubleCeil(double value, double roundUpFactor)
+        {
+            double quotient = value / roundUpFactor;
+            if (Math.Abs(quotient) >= 4503599627370496d) return value;
+            if (quotient == 0 && value > 0) return roundUpFactor;
+            return Math.Max(value, Math.Ceiling(quotient) * roundUpFactor);
         }
 
         public static string Label(PanelUnitConversion conversion) => Definition(conversion).Label;

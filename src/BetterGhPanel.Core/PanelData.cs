@@ -426,17 +426,22 @@ namespace BetterGhPanel.Core
     public sealed class PanelValueFrequency
     {
         private readonly PanelText? _stringValue;
-        internal PanelValueFrequency(double? numericValue, PanelText? stringValue, int count, string? presentedText = null, int distinctCount = 1)
+        internal PanelValueFrequency(double? numericValue, PanelText? stringValue, int count, string? presentedText = null, int distinctCount = 1, string units = "", int precision = 12, int decimals = -1)
         {
             DistinctCount = distinctCount;
-            PresentedText = presentedText;
+            _presentedText = presentedText;
+            _units = units; _precision = precision; _decimals = decimals;
             NumericValue = numericValue;
             _stringValue = stringValue;
             Count = count;
         }
 
         public int DistinctCount { get; }
-        public string? PresentedText { get; }
+        private string? _presentedText;
+        private readonly string _units;
+        private readonly int _precision, _decimals;
+        public string? PresentedText => _presentedText ?? (_presentedText = NumericValue.HasValue
+            ? PanelUnits.Format(NumericValue.Value, PanelUnitConversion.None, _decimals, _precision == 6 ? "G6" : "G12") + (_units.Length == 0 ? "" : " " + _units) : null);
         public double? NumericValue { get; }
         public string? StringValue => _stringValue?.ToString();
         public int Count { get; }
