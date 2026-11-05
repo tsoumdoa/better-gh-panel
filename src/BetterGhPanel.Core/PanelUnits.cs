@@ -53,7 +53,7 @@ namespace BetterGhPanel.Core
         {
             value = RoundUp(Convert(value, conversion), roundUpFactor);
             if (!double.IsNaN(value) && !double.IsInfinity(value) && decimals >= 0 && Math.Abs(value) < PanelNumber.IntegerBoundary)
-                value = PanelNumber.ToDouble(PanelNumber.RoundedDecimal(value, Math.Min(MaximumDecimals, decimals)));
+                value = PanelNumber.ToDouble(PanelNumber.RoundedDecimal(value, Math.Min(MaximumDecimals, decimals), IsRoundingFactor(roundUpFactor)));
             return value == 0 ? 0 : value;
         }
 

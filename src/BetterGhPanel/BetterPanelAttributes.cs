@@ -1824,7 +1824,7 @@ namespace BetterGhPanel
             else if (_outLabel.Contains(point) || _outItems.Contains(point) || _outValues.Contains(point))
             {
                 e.Title = "Output: Items / Values";
-                e.Description = _outValues.Contains(point) ? (PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor != 0 ? "Sends the values exactly as shown" : "Sends full-precision values; the display may be abbreviated") : "Items sends the source data; Values sends the displayed property. Sets group all member items by set index; unavailable values are null.";
+                e.Description = _outValues.Contains(point) ? (PanelOwner.CreateSetTree ? "Sends the displayed set values." : PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor != 0 ? "Sends the values exactly as shown." : "Sends full-precision values; rows may be abbreviated.") : "Items sends the source data; Values sends the displayed property. Sets group all member items by set index; unavailable values are null.";
             }
             else if (_units.Contains(point))
             {

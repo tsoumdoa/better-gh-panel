@@ -6,6 +6,16 @@ using Xunit;
 
 public sealed class PresentedNumberChecks
 {
+    [Theory]
+    [InlineData(12.1, .25, 0, 13)]
+    [InlineData(-12.1, .25, 0, -12)]
+    [InlineData(2.67, .01, 2, 2.67)]
+    [InlineData(2.675, .001, 2, 2.68)]
+    [InlineData(0.30000000000000004, 1e-20, 1, .4)]
+    [InlineData(0.29999999999999993, 1e-20, 1, .3)]
+    public void FactorDecimalPlacesCeil(double value, double factor, int places, double expected) =>
+        Assert.Equal(expected, PanelUnits.Transform(value, PanelUnitConversion.None, factor, places));
+
     [Fact]
     public void PresentedMetricsPropertiesComponentsAndScalarsAgreeWithOutputComparisonsAndStats()
     {

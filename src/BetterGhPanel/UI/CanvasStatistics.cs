@@ -58,7 +58,7 @@ namespace BetterGhPanel.UI
             }
             var value = stats.UniqueValues[index - OverviewRows];
             string text = value.NumericValue.HasValue
-                ? "Number: " + FormatNumber(value.NumericValue.Value, result, decimals, unique: true)
+                ? "Number: " + FormatNumber(value.NumericValue.Value, result, decimals, unique: full)
                 : "Text: " + Quote(value.StringValue!, full);
             return FormattableString.Invariant($"{value.Count:N0}×  {text}");
         }

@@ -43,12 +43,14 @@ namespace BetterGhPanel.Core
             return remainder * 2 >= denominator ? quotient + 1 : quotient;
         }
 
-        internal static decimal RoundedDecimal(double value, int places)
+        internal static decimal RoundedDecimal(double value, int places, bool ceiling = false)
         {
             if (FaithfulDecimal(value, out decimal number))
-                return Math.Round(number, places, MidpointRounding.AwayFromZero);
+                return ceiling ? decimal.Ceiling(number * (decimal)Tens[places]) / (decimal)Tens[places]
+                    : Math.Round(number, places, MidpointRounding.AwayFromZero);
             Binary(value, out var numerator, out var denominator);
-            var coefficient = Rounded(numerator * Tens[places], denominator);
+            var coefficient = ceiling ? BigInteger.DivRem(numerator * Tens[places], denominator, out var remainder)
+                + (value > 0 && !remainder.IsZero ? 1 : 0) : Rounded(numerator * Tens[places], denominator);
             // |v| < 2^53 and places <= 12, so the coefficient fits 96 bits.
             return new decimal((int)(uint)(coefficient & uint.MaxValue),
                 (int)(uint)((coefficient >> 32) & uint.MaxValue),

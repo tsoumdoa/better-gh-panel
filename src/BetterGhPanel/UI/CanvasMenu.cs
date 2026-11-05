@@ -477,7 +477,7 @@ namespace BetterGhPanel.UI
                 if (choice.Setting == CanvasNumberSetting.RoundingOff) return "Rounding: off";
                 if (choice.Setting == CanvasNumberSetting.RoundingFactor) return "Round up by factor…" +
                     (roundUpFactor > 0 ? " (" + roundUpFactor.ToString("G6", System.Globalization.CultureInfo.InvariantCulture) + ")" : "");
-                if (choice.Setting == CanvasNumberSetting.Automatic) return "Decimals: automatic";
+                if (choice.Setting == CanvasNumberSetting.Automatic) return "Decimals: automatic (full precision sent)";
                 return "Decimal places…" + (decimals >= 0 ? " (" + decimals + ")" : "");
             }
             if (Kind == CanvasMenuKind.Type)
