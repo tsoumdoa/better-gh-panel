@@ -217,11 +217,18 @@ internal static class OutputValuesChecks
     {
         var chunk = new GH_IO.Serialization.GH_LooseChunk("Panel");
         Check(fixture.Component.Write(chunk), "Output mode settings write");
-        void Read(PanelOutputValues expected, string message)
+        void Read(PanelOutputValues expected, string message, bool enableValues = false)
         {
             var restored = (GH_Component)Activator.CreateInstance(fixture.Component.GetType())!;
             restored.CreateAttributes();
             Check(restored.Read(chunk) && Property<PanelOutputValues>(restored, "OutputValues") == expected, message);
+            if (enableValues)
+            {
+                Call(Property<object>(restored, "Session"), "UpdateQuery",
+                    new PanelQueryOptions { SearchMode = PanelSearchMode.Value, DisplayFilterValue = true });
+                Check(Property<PanelOutputValues>(restored, "OutputValues") == PanelOutputValues.Items,
+                    "Enabling value display after load does not resurrect a hidden Values choice");
+            }
             restored.DocumentContextChanged(fixture.Document, GH_DocumentContext.Close);
         }
         Read(PanelOutputValues.Values, "Saved Values output roundtrips");
@@ -233,6 +240,12 @@ internal static class OutputValuesChecks
         chunk.RemoveItem("PanelCreateSet");
         chunk.SetBoolean("PanelCreateSet", false);
         Read(PanelOutputValues.Items, "Old definitions without a set migrate to Items");
+        chunk.SetInt32("PanelOutputValues", (int)PanelOutputValues.Values);
+        chunk.RemoveItem("PanelSearchMode");
+        chunk.SetInt32("PanelSearchMode", (int)PanelSearchMode.Text);
+        chunk.RemoveItem("PanelDisplayFilterValue");
+        chunk.SetBoolean("PanelDisplayFilterValue", false);
+        Read(PanelOutputValues.Items, "Saved hidden Values normalises to Items on load", enableValues: true);
     }
 
     private static async Task BranchSets(PanelHostFixture.Fixture fixture)

@@ -115,7 +115,7 @@ namespace BetterGhPanel.Runtime
                     count++;
                 }
                 if (count == 0 || !bounds.IsValid)
-                    return Failure(exhausted ? "No geometry framed; inspection limit reached." : "No valid geometry to frame in Selection.", skipped, exhausted);
+                    return Failure(exhausted ? "No geometry framed; inspection limit reached." : "No valid geometry to frame in the selected rows.", skipped, exhausted);
                 if (!StillCurrent(sources, budget, true, current, out bool limit)) return limit ?
                     Failure("Frame cancelled; source reinspection limit reached.", skipped, true) : Stale();
                 double span = Math.Max(bounds.Max.X - bounds.Min.X, Math.Max(bounds.Max.Y - bounds.Min.Y, bounds.Max.Z - bounds.Min.Z));

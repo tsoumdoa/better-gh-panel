@@ -46,7 +46,7 @@ namespace BetterGhPanel
             }
             _setDetails.Layout(_panel, _setControlsVisible && current && !PanelOwner.PanelMinimized);
             m_innerBounds = _setDetails.Bounds.IsEmpty ? _panel : RectangleF.Union(_panel, _setDetails.Bounds);
-            Bounds = new RectangleF(m_innerBounds.X - 22, m_innerBounds.Y, m_innerBounds.Width + (PanelOwner.OutputsValues ? 58 : 44), m_innerBounds.Height);
+            Bounds = new RectangleF(m_innerBounds.X - 22, m_innerBounds.Y, m_innerBounds.Width + 44, m_innerBounds.Height);
         }
 
         private void DrawSetCount(Graphics g, CanvasRowRenderer renderer, RectangleF bounds,
@@ -192,7 +192,7 @@ namespace BetterGhPanel
                 var location = _setDetails.LocationAt(point);
                 e.Title = _setDetails.Collapse.Contains(point) ? "Collapse occurrences" : "Original input locations";
                 e.Text = location.HasValue ? location.Value.Path + " [" + location.Value.ItemIndex + "]" : CanvasSetDetails.Summary(_setDetails.Occurrences!);
-                e.Description = "Results source occurrences: " + CanvasStatistics.SourceStatuses(_setDetails.Occurrences!.SourceStatuses) + ". " + CanvasSetDetails.Scope;
+                e.Description = "Source occurrences after filters: " + CanvasStatistics.SourceStatuses(_setDetails.Occurrences!.SourceStatuses) + ". " + CanvasSetDetails.Scope;
                 return true;
             }
             foreach (var hit in _setHits)
@@ -202,7 +202,7 @@ namespace BetterGhPanel
                 e.Title = _setDetails.IsOpen && _setDetails.SourcePosition == hit.SourcePosition ? "Collapse occurrences" : "Expand occurrences";
                 e.Text = CanvasSetDetails.Summary(occurrences) + System.FormattableString.Invariant($". {occurrences.DuplicatesRemoved:N0} ") +
                     (occurrences.DuplicatesRemoved == 1 ? "duplicate removed." : "duplicates removed.");
-                e.Description = "Results source occurrences: " + CanvasStatistics.SourceStatuses(occurrences.SourceStatuses) + ". " + CanvasSetDetails.Scope;
+                e.Description = "Source occurrences after filters: " + CanvasStatistics.SourceStatuses(occurrences.SourceStatuses) + ". " + CanvasSetDetails.Scope;
                 return true;
             }
             return false;

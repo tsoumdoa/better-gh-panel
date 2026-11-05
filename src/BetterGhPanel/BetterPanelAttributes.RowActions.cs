@@ -164,7 +164,7 @@ namespace BetterGhPanel
                     new CanvasRowAction(PanelRowAction.CopyPath, "Copy path  " + copyPath, "Copy the branch path."),
                     new CanvasRowAction(PanelRowAction.CopyPathBare, "Copy path as " + copyPath.Trim('{', '}'), "Copy without braces.")
                 };
-                if (_selection.Count > 0) choices.Add(new CanvasRowAction(PanelRowAction.CopyPaths, "Copy paths of Selection", "Unique paths in tree order, one per line."));
+                if (_selection.Count > 0) choices.Add(new CanvasRowAction(PanelRowAction.CopyPaths, "Copy paths of selected rows", "Unique paths in tree order, one per line."));
                 choices.Add(new CanvasRowAction(PanelRowAction.Separator, "", ""));
                 choices.Add(new CanvasRowAction(PanelRowAction.ShowBranch, "Show only this branch", "Filter Paths to this branch."));
                 _rowMenuAllActions = choices.ToArray();

@@ -492,7 +492,7 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.Comparison) return ComparisonChoiceAt(index).Label;
             if (index == 0) return "All branches";
             if (index == 1) return _branchFilter.Length == 0 ? "Jump to exact path…" :
-                "Jump to {" + Unbraced(_branchFilter) + "}  ·  " + (_branchMatches?.Length ?? 0).ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " Results";
+                "Jump to {" + Unbraced(_branchFilter) + "}  ·  " + (_branchMatches?.Length ?? 0).ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " matching";
             var branch = _snapshot.Branches[BranchIndex(index)];
             var path = branch.Path.Length <= 150 ? branch.Path : branch.Path.Substring(0, 149) + "…";
             return path + "   ·   " + branch.ItemCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);

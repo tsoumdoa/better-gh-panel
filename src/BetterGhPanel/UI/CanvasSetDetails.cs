@@ -9,7 +9,7 @@ namespace BetterGhPanel.UI
     {
         internal const int PageSize = 4;
         internal const string Scope = "Locations refer to the original input tree, before Simplify, Trim, Flatten and Reverse. " +
-            "Item indices start at 0. Counts include Results displayed values after filters, units and decimal formatting. " +
+            "Item indices start at 0. Counts include displayed values after filters, units and decimal formatting. " +
             "Expanding and paging do not change selection or output.";
         private PanelSnapshot? _snapshot;
         private PanelQueryResult? _checkedResult;

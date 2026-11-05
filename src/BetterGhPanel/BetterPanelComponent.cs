@@ -343,8 +343,9 @@ namespace BetterGhPanel
             (Attributes as BetterPanelAttributes)?.ResetViewState();
             RowSelection.Clear();
             var previousResult = Session.Result;
-            if (!CreateSetTree) OutputValues = PanelOutputValues.Items;
-            Session.UpdateQuery(new PanelQueryOptions { DecimalPlaces = DecimalPlaces, RoundUpFactor = RoundUpFactor });
+            var options = new PanelQueryOptions { DecimalPlaces = DecimalPlaces, RoundUpFactor = RoundUpFactor };
+            if (!CanOutputValuesFor(CreateSetTree, options)) OutputValues = PanelOutputValues.Items;
+            Session.UpdateQuery(options);
             if (ReferenceEquals(previousResult, Session.Result)) (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
         }
 
@@ -403,7 +404,7 @@ namespace BetterGhPanel
             if (!PanelQueryPolicy.SameQuery(before, after))
             {
                 var beforeValues = OutputValues;
-                var afterValues = CreateSetTree || after.DisplayFilterValue ? beforeValues : PanelOutputValues.Items;
+                var afterValues = CanOutputValuesFor(CreateSetTree, after) ? beforeValues : PanelOutputValues.Items;
                 RecordUndoEvent(name, new PanelUndo<Tuple<PanelQueryOptions, PanelOutputValues>>(InstanceGuid,
                     Tuple.Create(before.Clone(), beforeValues), Tuple.Create(after.Clone(), afterValues),
                     (component, state) => { (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor(); component.OutputValues = state.Item2; component.Session.UpdateQuery(state.Item1); component.ScheduleOutput(); }));
@@ -909,8 +910,8 @@ namespace BetterGhPanel
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddGenericParameter("Data", "D", "Results Items or displayed Values after tree tools, units and filters. Set Items: all members in {path;k} ({k} when flattened); list-length sets use {k;path}. Set Values: unique values at displayed precision. Values use the shown rounding; unavailable values are null. Sorting changes only the view.", GH_ParamAccess.tree);
-            p.AddGenericParameter("Selection data", "S", "Selection Items or Values in tree order. Set Items include every member and keep the same group paths as D. Empty when no rows are selected.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Data", "D", "Matching Items or displayed Values after tree tools, units and filters. Set Items: all members in {path;k} ({k} when flattened); list-length sets use {k;path}. Set Values: unique values at displayed precision. Values use the shown rounding; unavailable values are null. Sorting changes only the view.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Selected data", "S", "Selected Items or Values in tree order. Set Items include every member and keep the same group paths as D. Empty when no rows are selected.", GH_ParamAccess.tree);
             p.AddBooleanParameter("Membership mask", "B", "True at original D input positions retained by the B + F follow setting (Results by default, or Selection). Preserves original paths and item counts. Every member of a kept or selected set is True. This mask conveys membership, not transformed ordering.", GH_ParamAccess.tree);
             p.AddGenericParameter("Paired results", "F", "Raw paired F items for the B + F follow setting (Results by default, or Selection), at D's transformed destinations. Equal branches follow item membership; scoped unequal branches emit their whole F branch once per group. Empty D partners are included when D retains the branch, without item filters or Create set; path and list-length filters preserve them. Sets use {path;k} ({k} when flattened; {k;path} for list-length sets), in both output modes. F values and types are unchanged. F must have the same branch count as D; exact paths pair first, then remaining branches in tree order.", GH_ParamAccess.tree);
         }
@@ -1331,6 +1332,7 @@ namespace BetterGhPanel
             OutputScope = Enum.IsDefined(typeof(PanelOutputScope), outputScope) ? (PanelOutputScope)outputScope : PanelOutputScope.Filtered;
             _savedOptions.DecimalPlaces = DecimalPlaces;
             _savedOptions.RoundUpFactor = RoundUpFactor;
+            if (!CanOutputValuesFor(CreateSetTree, _savedOptions)) OutputValues = PanelOutputValues.Items;
             _restoringView = true;
             try { _session?.UpdateQuery(_savedOptions); }
             finally { _restoringView = false; }
