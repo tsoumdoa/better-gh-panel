@@ -196,25 +196,7 @@ namespace BetterGhPanel.Runtime
             else if (type == typeof(GH_Circle)) value = ((GH_Circle)node).Value;
             else if (type == typeof(GH_Rectangle)) value = ((GH_Rectangle)node).Value;
             else if (type == typeof(GH_Box)) value = ((GH_Box)node).Value;
-            else if (type == typeof(GH_SubD))
-            {
-                var subd = ((GH_SubD)node).Value;
-                if (subd != null && subd.GetType() != typeof(SubD)) { capturedValue = subd; unavailable = true; return null; }
-                value = subd;
-            }
-            else if (type == typeof(GH_Extrusion))
-            {
-                var extrusion = ((GH_Extrusion)node).Value;
-                if (extrusion != null && extrusion.GetType() != typeof(Extrusion)) { capturedValue = extrusion; unavailable = true; return null; }
-                value = extrusion;
-            }
-            else if (type == typeof(GH_PointCloud))
-            {
-                var cloud = ((GH_PointCloud)node).Value;
-                if (cloud != null && cloud.GetType() != typeof(PointCloud)) { capturedValue = cloud; unavailable = true; return null; }
-                value = cloud;
-            }
-            else if (node is IGH_Goo goo && SafeGooInspection.IsGeometryHolder(type))
+            else if (node is IGH_Goo goo && StockGooSupport.Has(type, BetterGhPanel.Core.StockTypeFacets.Preview))
             {
                 if (!SafeGooInspection.TryGetTrustedGeometry(goo, out var geometry))
                 { capturedValue = geometry ?? NullSlot; unavailable = true; return null; }
@@ -327,10 +309,7 @@ namespace BetterGhPanel.Runtime
             return false;
         }
 
-        private static bool IsKnownGeometryGoo(Type type) => type == typeof(GH_Point) || type == typeof(GH_Line) ||
-            type == typeof(GH_Arc) || type == typeof(GH_Circle) || type == typeof(GH_Rectangle) || type == typeof(GH_Box) ||
-            type == typeof(GH_Curve) || type == typeof(GH_Surface) || type == typeof(GH_Brep) || type == typeof(GH_Mesh) || type == typeof(GH_SubD) ||
-            type == typeof(GH_Extrusion) || type == typeof(GH_PointCloud);
+        private static bool IsKnownGeometryGoo(Type type) => StockGooSupport.Has(type, BetterGhPanel.Core.StockTypeFacets.Preview);
 
         internal static bool TryReferenceState(object node, out ReferenceState reference)
         {

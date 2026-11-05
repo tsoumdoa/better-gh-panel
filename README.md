@@ -89,7 +89,14 @@ Comparisons test the numbers shown, after unit conversion, factor rounding and a
 | Text / Boolean / GUID / time | Text value and length; Boolean/GUID value; date-time and its parts |
 | Complex numbers / transforms | Real, imaginary, magnitude, phase; determinant and matrix entries |
 | SubD / extrusion / point cloud | Vertex/edge/face counts, solid/closed; extrusion height and profiles; point count |
+| Text Dots | Text, character count, location X/Y/Z, font height (screen pixels) and font face |
+| Text entities / leaders / dimensions / centermarks | Stored plain text, character count, plane location X/Y/Z and text height (model units); dimension value (radians for angular dimensions) |
+| Hatches | Pattern index, scale, rotation (radians) and plane location X/Y/Z |
+| Culture / location / path / matrix | Culture name and English name; latitude/longitude (degrees); path depth; matrix row/column counts |
+| Block instances / detail views | Block definition ID; detail projection type, projection lock and page-to-model ratio |
 | Every input | Data type, validity, branch path and zero-based item index |
+
+Text Dots show their text and location, preview/highlight in Rhino, frame, and copy as Rhino geometry. Annotation, hatch, block and detail properties describe the captured native shape; separate Grasshopper model styles, hatch patterns and block definitions are not resolved. Their automatic preview/frame/geometry copy remains unavailable. These types retain typed Items output; Values output can emit their selected properties. Matrix capture is limited to 4,096 cells and paths to 4,096 indices. Culture properties describe its identity, not custom formatting. Material and Field rows show their material kind or element count and remain unverified.
 
 Unsupported properties show `n/a`. Text comparisons are exact; quote text to keep surrounding spaces (`= " 001 "`).
 

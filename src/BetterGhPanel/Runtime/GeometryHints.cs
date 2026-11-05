@@ -38,6 +38,21 @@ namespace BetterGhPanel.Runtime
         private static PanelGeometryInfo? DescribeCapturedCore(IGH_Goo goo, GeometryBase? geometry, string units)
         {
             Type type = goo.GetType();
+            if (geometry?.GetType() == typeof(TextDot))
+            { var dot = (TextDot)geometry; return new PanelGeometryInfo(dot.Text + " @ " + PointText(dot.Point)); }
+            if (geometry is AnnotationBase annotation)
+            {
+                string text = annotation.PlainText;
+                if (annotation is Dimension dimension)
+                    text = (StockGooSupport.Find(type)?.Name ?? "Dimension") + " · " + dimension.NumericValue.ToString("G8", CultureInfo.InvariantCulture);
+                return new PanelGeometryInfo((string.IsNullOrEmpty(text) ? StockGooSupport.Find(type)?.Name : text) + " @ " + PointText(annotation.Plane.Origin));
+            }
+            if (geometry?.GetType() == typeof(InstanceReferenceGeometry))
+                return new PanelGeometryInfo("Definition " + ((InstanceReferenceGeometry)geometry).ParentIdefId.ToString("D"));
+            if (geometry?.GetType() == typeof(DetailView))
+            { var detail = (DetailView)geometry; return new PanelGeometryInfo((detail.IsPerspectiveProjection ? "Perspective" : "Parallel") + " · ratio " + detail.PageToModelRatio.ToString("G8", CultureInfo.InvariantCulture)); }
+            if (geometry?.GetType() == typeof(Hatch))
+            { var hatch = (Hatch)geometry; return new PanelGeometryInfo("Pattern " + hatch.PatternIndex + " · scale " + hatch.PatternScale.ToString("G8", CultureInfo.InvariantCulture)); }
             if (type == typeof(GH_Line)) return LineInfo(((GH_Line)goo).Value, units);
             if (type == typeof(GH_Arc)) return ArcInfo(((GH_Arc)goo).Value, units);
             if (type == typeof(GH_Circle)) return CircleInfo(((GH_Circle)goo).Value, units);
@@ -55,9 +70,9 @@ namespace BetterGhPanel.Runtime
             if (type == typeof(GH_Brep) && geometry is Brep brep) return BrepInfo(brep);
             if (type == typeof(GH_Mesh) && geometry is Mesh mesh)
                 return MeshInfo(mesh);
-            if (type == typeof(GH_SubD) && geometry is SubD) return new PanelGeometryInfo("<SubD>");
-            if (type == typeof(GH_Extrusion) && geometry is Extrusion) return new PanelGeometryInfo("<Extrusion>");
-            if (type == typeof(GH_PointCloud) && geometry is PointCloud) return new PanelGeometryInfo("<Point Cloud>");
+            if (type == typeof(GH_SubD) && geometry is SubD) return new PanelGeometryInfo("SubD · " + ((SubD)geometry).Faces.Count + " faces");
+            if (type == typeof(GH_Extrusion) && geometry is Extrusion) return new PanelGeometryInfo("Extrusion · " + ((Extrusion)geometry).ProfileCount + (((Extrusion)geometry).ProfileCount == 1 ? " profile" : " profiles"));
+            if (type == typeof(GH_PointCloud) && geometry is PointCloud) return new PanelGeometryInfo(((PointCloud)geometry).Count + " points");
             return null;
         }
 
@@ -347,6 +362,7 @@ namespace BetterGhPanel.Runtime
             ? new PanelGeometryInfo("Cir", arc.Radius, units: units, metricName: "Radius", metricLabel: "R", details: ArcDetails(arc))
                 .WithAdditionalLength(arc.Length)
             : new PanelGeometryInfo("Arc", arc.Length, units: units, details: ArcDetails(arc));
+        internal static string PointText(Point3d point) => string.Format(CultureInfo.InvariantCulture, "({0:G8}, {1:G8}, {2:G8})", point.X, point.Y, point.Z);
         private static string Closed(bool closed) => closed ? "closed" : "open";
         private static string Count(int count, string noun) => count + " " + noun + (count == 1 ? "" : "s");
     }

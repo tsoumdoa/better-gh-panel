@@ -43,8 +43,6 @@ namespace BetterGhPanel.Runtime
     /// </summary>
     internal static class SafeGooInspection
     {
-        // GH_Light exists in the SDK but is not publicly exposed to C#.
-        private static readonly Type? GhLightType = typeof(IGH_Goo).Assembly.GetType("Grasshopper.Kernel.Types.GH_Light");
         private static readonly Type? ModelDataType = typeof(IGH_Goo).Assembly.GetType("Grasshopper.Rhinoceros.ModelData");
         private static readonly Type? ModelValueType = typeof(IGH_Goo).Assembly.GetType("Grasshopper.Rhinoceros.ModelValue");
         private static readonly Dictionary<Type, string> ModelTypeNames = new Dictionary<Type, string>();
@@ -240,6 +238,22 @@ namespace BetterGhPanel.Runtime
                             transforms[0]?.GetType() != typeof(Grasshopper.Kernel.Types.Transforms.Generic))) return PanelValidity.Unverified;
                         return goo.IsValid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
                     }
+                    Type leafType = node.GetType();
+                    if (leafType == typeof(GH_Culture))
+                    {
+                        var culture = ((GH_Culture)goo).Value;
+                        return culture == null ? PanelValidity.VerifiedInvalid : culture.GetType() == typeof(System.Globalization.CultureInfo) ? PanelValidity.VerifiedValid : PanelValidity.Unverified;
+                    }
+                    if (leafType == typeof(GH_Matrix))
+                    {
+                        var matrix = ((GH_Matrix)goo).Value;
+                        if (matrix != null && (matrix.GetType() != typeof(Matrix) || (long)matrix.RowCount * matrix.ColumnCount > MaxNodesPerRoot)) return PanelValidity.Unverified;
+                    }
+                    if (leafType == typeof(GH_StructurePath))
+                    {
+                        var path = ((GH_StructurePath)goo).Value;
+                        if (path != null && (path.GetType() != typeof(Grasshopper.Kernel.Data.GH_Path) || path.Length > MaxNodesPerRoot)) return PanelValidity.Unverified;
+                    }
                     // A constant stock TypeName does not make a goo's validity path safe:
                     // some stock holders can contain externally supplied implementations.
                     if (!HasTrustedLeafValidity(node.GetType())) return PanelValidity.Unverified;
@@ -321,18 +335,17 @@ namespace BetterGhPanel.Runtime
             Type type = goo.GetType();
             if (type == typeof(GH_Curve))
             { var holder = (GH_Curve)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; edge = holder.ReferenceEdge; }
-            else if (type == typeof(GH_Surface))
-            { var holder = (GH_Surface)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
-            else if (type == typeof(GH_Brep))
-            { var holder = (GH_Brep)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
-            else if (type == typeof(GH_Mesh))
-            { var holder = (GH_Mesh)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
-            else if (type == typeof(GH_SubD))
-            { var holder = (GH_SubD)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
-            else if (type == typeof(GH_PointCloud))
-            { var holder = (GH_PointCloud)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
-            else if (type == typeof(GH_Extrusion))
-            { var holder = (GH_Extrusion)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; }
+            else if (IsCapturedGeometryHolder(type) && !StockGooSupport.Has(type, StockTypeFacets.Preview) && goo is IGH_GeometricGoo metadata)
+            {
+                // Annotation, hatch and block IsGeometryLoaded may consult model
+                // styles/definitions (including externally supplied subclasses).
+                // Our metadata capture concerns only the native shape, not those
+                // dependencies. Never load or inspect their model objects.
+                id = metadata.ReferenceID; referenced = metadata.IsReferencedGeometry;
+                TryGetTrustedGeometry(goo, out var shape); loaded = shape != null;
+            }
+            else if (IsCapturedGeometryHolder(type) && goo is IGH_GeometricGoo stock)
+            { id = stock.ReferenceID; referenced = stock.IsReferencedGeometry; loaded = stock.IsGeometryLoaded; }
             else if (type == typeof(GH_Point))
             { var holder = (GH_Point)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = !deferManagedLoad && holder.IsGeometryLoaded; }
             else if (type == typeof(GH_Plane))
@@ -460,6 +473,22 @@ namespace BetterGhPanel.Runtime
             { geometry = ((GH_PointCloud)goo).Value; return geometry == null || geometry.GetType() == typeof(PointCloud); }
             else if (type == typeof(GH_Extrusion))
             { geometry = ((GH_Extrusion)goo).Value; return geometry == null || geometry.GetType() == typeof(Extrusion); }
+            else if (type == typeof(GH_TextDot))
+            { geometry = ((GH_TextDot)goo).Value; return geometry == null || geometry.GetType() == typeof(TextDot); }
+            else if (type == typeof(GH_InstanceReference))
+            { geometry = ((GH_InstanceReference)goo).Value; return geometry == null || geometry.GetType() == typeof(InstanceReferenceGeometry); }
+            else if (type == typeof(GH_DetailView))
+            { geometry = ((GH_DetailView)goo).Value; return geometry == null || geometry.GetType() == typeof(DetailView); }
+            else if (type == typeof(GH_Hatch))
+            { geometry = ((GH_Hatch)goo).Value; return geometry == null || geometry.GetType() == typeof(Hatch); }
+            else if (StockGooSupport.Has(type, StockTypeFacets.Capture) && goo is GH_AnnotationBase annotation)
+            {
+                geometry = annotation.Value;
+                Type expected = type == typeof(GH_TextEntity) ? typeof(TextEntity) : type == typeof(GH_Leader) ? typeof(Leader) :
+                    type == typeof(GH_LinearDimension) ? typeof(LinearDimension) : type == typeof(GH_AngularDimension) ? typeof(AngularDimension) :
+                    type == typeof(GH_OrdinateDimension) ? typeof(OrdinateDimension) : type == typeof(GH_RadialDimension) ? typeof(RadialDimension) : typeof(Centermark);
+                return geometry == null || geometry.GetType() == expected;
+            }
             else return false;
             if (geometry == null) return true;
             return IsTrustedGeometry(geometry);
@@ -471,84 +500,17 @@ namespace BetterGhPanel.Runtime
             return inner == typeof(Point) || inner == typeof(LineCurve) || inner == typeof(ArcCurve) ||
                 inner == typeof(PolylineCurve) || inner == typeof(NurbsCurve) || inner == typeof(PolyCurve) ||
                 inner == typeof(Brep) || inner == typeof(Mesh) || inner == typeof(SubD) ||
-                inner == typeof(NurbsSurface) || inner == typeof(PlaneSurface) || inner == typeof(RevSurface);
+                inner == typeof(NurbsSurface) || inner == typeof(PlaneSurface) || inner == typeof(RevSurface) ||
+                inner == typeof(TextDot);
         }
 
         internal static bool IsGeometryHolder(Type type) => type == typeof(GH_Curve) || type == typeof(GH_Surface) ||
             type == typeof(GH_Brep) || type == typeof(GH_Mesh);
 
-        // Capture these stock types without expanding the independent preview or
-        // measurement provider allowlists in this change.
-        internal static bool IsExtendedCapturedGeometryHolder(Type type) =>
-            type == typeof(GH_PointCloud) || type == typeof(GH_Extrusion) || type == typeof(GH_SubD);
-
-        internal static bool IsCapturedGeometryHolder(Type type) =>
-            IsGeometryHolder(type) || IsExtendedCapturedGeometryHolder(type);
-
-        // Keep the previously audited validity allowlist independent of the broader
-        // identity table. Newly recognized identities are not evidence of safe validity.
-        private static bool HasTrustedLeafValidity(Type type) =>
-            type == typeof(GH_Number) || type == typeof(GH_Integer) || type == typeof(GH_String) || type == typeof(GH_ComplexNumber) ||
-            type == typeof(GH_Boolean) || type == typeof(GH_Colour) || type == typeof(GH_Interval) ||
-            type == typeof(GH_Interval2D) || type == typeof(GH_Guid) || type == typeof(GH_Time) ||
-            type == typeof(GH_Point) || type == typeof(GH_Plane) || type == typeof(GH_Vector) ||
-            type == typeof(GH_Line) || type == typeof(GH_Arc) || type == typeof(GH_Circle) ||
-            type == typeof(GH_Rectangle) || type == typeof(GH_Box) || type == typeof(GH_MeshFace) || IsCapturedGeometryHolder(type);
-
-        internal static string? TrustedTypeName(Type type)
-        {
-            if (type == typeof(GH_GeometryGroup)) return "Group";
-            if (type == typeof(GH_Number)) return "Number";
-            if (type == typeof(GH_Integer)) return "Integer";
-            if (type == typeof(GH_String)) return "Text";
-            if (type == typeof(GH_Boolean)) return "Boolean";
-            if (type == typeof(GH_Colour)) return "Colour";
-            if (type == typeof(GH_Interval)) return "Domain";
-            if (type == typeof(GH_Interval2D)) return "Domain²";
-            if (type == typeof(GH_Guid)) return "Guid";
-            if (type == typeof(GH_Time)) return "Time";
-            if (type == typeof(GH_Point)) return "Point";
-            if (type == typeof(GH_Plane)) return "Plane";
-            if (type == typeof(GH_Vector)) return "Vector";
-            if (type == typeof(GH_Line)) return "Line";
-            if (type == typeof(GH_Arc)) return "Arc";
-            if (type == typeof(GH_Circle)) return "Circle";
-            if (type == typeof(GH_Rectangle)) return "Rectangle";
-            if (type == typeof(GH_Box)) return "Box";
-            if (type == typeof(GH_Curve)) return "Curve";
-            if (type == typeof(GH_Surface)) return "Surface";
-            if (type == typeof(GH_Brep)) return "Brep";
-            if (type == typeof(GH_Mesh)) return "Mesh";
-            // These are constant TypeName getters in the Grasshopper 8 SDK and the
-            // installed Rhino 8 assembly. Do not call the getters on arbitrary goo.
-            if (type == typeof(GH_Transform)) return "Transform";
-            if (type == typeof(GH_MeshFace)) return "Meshface";
-            if (type == typeof(GH_ComplexNumber)) return "Complex";
-            if (type == typeof(GH_SubD)) return "SubD";
-            if (type == typeof(GH_Extrusion)) return "Extrusion";
-            if (type == typeof(GH_AngularDimension)) return "Angular Dimension";
-            if (type == typeof(GH_Centermark)) return "Radial Centermark";
-            if (type == typeof(GH_Hatch)) return "Hatch";
-            if (type == typeof(GH_InstanceReference)) return "Block Instance";
-            if (type == typeof(GH_Leader)) return "Leader";
-            if (type == GhLightType) return "Light";
-            if (type == typeof(GH_LinearDimension)) return "Linear Dimension";
-            if (type == typeof(GH_OrdinateDimension)) return "Ordinate Dimension";
-            if (type == typeof(GH_RadialDimension)) return "Radial Dimension";
-            if (type == typeof(GH_TextDot)) return "Text Dot";
-            if (type == typeof(GH_TextEntity)) return "Text Entity";
-            if (type == typeof(GH_Culture)) return "Culture";
-            if (type == typeof(GH_DetailView)) return "Detail View";
-            if (type == typeof(GH_Field)) return "Field";
-            if (type == typeof(GH_LonLatCoordinate)) return "Location";
-            if (type == typeof(GH_Material)) return "Material";
-            if (type == typeof(GH_Matrix)) return "Matrix";
-            if (type == typeof(GH_MeshingParameters)) return "MeshParameters";
-            if (type == typeof(GH_PointCloud)) return "Point Cloud";
-            if (type == typeof(GH_Predicate)) return "Predicate";
-            if (type == typeof(GH_StructurePath)) return "Path";
-            return TrustedModelTypeName(type);
-        }
+        internal static bool IsExtendedCapturedGeometryHolder(Type type) => IsCapturedGeometryHolder(type) && !IsGeometryHolder(type);
+        internal static bool IsCapturedGeometryHolder(Type type) => StockGooSupport.Has(type, StockTypeFacets.Capture);
+        private static bool HasTrustedLeafValidity(Type type) => StockGooSupport.Has(type, StockTypeFacets.Validity);
+        internal static string? TrustedTypeName(Type type) => StockGooSupport.Find(type)?.Name ?? TrustedModelTypeName(type);
 
         // Rhino model goo names are either constant getters or attributes consumed
         // by the stock ModelData/ModelValue getter. SDK releases change some of

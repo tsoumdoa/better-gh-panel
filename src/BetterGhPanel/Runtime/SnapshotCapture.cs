@@ -135,6 +135,15 @@ namespace BetterGhPanel.Runtime
                         else if (managed.Available)
                         {
                             validity = managed.Validity;
+                            if (managed.Raw is CapturedMatrixValue matrix)
+                            {
+                                display = matrix.Summary();
+                                if (matrix.Valid) properties = new Dictionary<PanelSearchMode, PanelPropertyValue?>
+                                {
+                                    [PanelSearchMode.RowCount] = PanelPropertyValue.Integer(matrix.Rows),
+                                    [PanelSearchMode.ColumnCount] = PanelPropertyValue.Integer(matrix.Columns)
+                                };
+                            }
                             if (validity == PanelValidity.VerifiedInvalid) reason = "The value is invalid.";
                             else if (validity == PanelValidity.Unverified) reason = "Validity could not be safely verified.";
                         }
@@ -394,6 +403,34 @@ namespace BetterGhPanel.Runtime
             }
             if (runtime == typeof(GH_Guid)) return ((GH_Guid)goo).Value.ToString("D");
             if (runtime == typeof(GH_Time)) return ((GH_Time)goo).Value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            if (runtime == typeof(GH_ComplexNumber))
+            { var v = ((GH_ComplexNumber)goo).Value; return string.Format(CultureInfo.InvariantCulture, "{0:G8} {1} {2:G8}i", v.Real, v.Imaginary < 0 ? "−" : "+", Math.Abs(v.Imaginary)); }
+            if (runtime == typeof(GH_MeshFace))
+            { var face = ((GH_MeshFace)goo).Value; return face.IsTriangle ? $"({face.A}, {face.B}, {face.C})" : $"({face.A}, {face.B}, {face.C}, {face.D})"; }
+            if (runtime == typeof(GH_Culture))
+            {
+                var culture = ((GH_Culture)goo).Value;
+                if (culture?.GetType() == typeof(CultureInfo)) return culture.Name.Length == 0 ? "Invariant culture" : culture.Name + " · " + culture.EnglishName;
+            }
+            if (runtime == typeof(GH_LonLatCoordinate))
+            { var v = (GH_LonLatCoordinate)goo; return string.Format(CultureInfo.InvariantCulture, "{0:G8}°, {1:G8}°", v.Latitude, v.Longitude); }
+            if (runtime == typeof(GH_StructurePath))
+            { var path = ((GH_StructurePath)goo).Value; if (path?.GetType() == typeof(GH_Path) && path.Length <= SafeGooInspection.MaxNodesPerRoot) return path.ToString(); }
+            if (runtime == typeof(GH_Matrix))
+            { var matrix = ((GH_Matrix)goo).Value; if (matrix?.GetType() == typeof(Matrix)) return matrix.RowCount + " × " + matrix.ColumnCount + " matrix"; }
+            if (runtime == typeof(GH_Field)) return ((GH_Field)goo).Elements.Count + " field elements";
+            if (runtime == typeof(GH_Material)) return ((GH_Material)goo).Type + " material";
+            if (runtime == typeof(GH_Transform))
+            {
+                var transforms = ((GH_Transform)goo).CompoundTransforms;
+                if (transforms.Count == 0) return "Identity";
+                if (transforms.Count == 1 && transforms[0]?.GetType() == typeof(Grasshopper.Kernel.Types.Transforms.Generic))
+                {
+                    var t = ((Grasshopper.Kernel.Types.Transforms.Generic)transforms[0]).Transform;
+                    return t.IsIdentity ? "Identity" : string.Format(CultureInfo.InvariantCulture, "[{0:G6}, {1:G6}, {2:G6}, {3:G6}; …]", t.M00, t.M01, t.M02, t.M03);
+                }
+                return transforms.Count + " compound transforms";
+            }
             return "<" + type + ">";
         }
 

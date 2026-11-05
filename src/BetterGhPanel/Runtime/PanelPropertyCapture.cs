@@ -87,6 +87,15 @@ namespace BetterGhPanel.Runtime
                     for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) N(PanelSearchMode.M00 + r * 4 + c, transform[r, c]);
                 }
             }
+            else if (type == typeof(GH_LonLatCoordinate))
+            { var location = (GH_LonLatCoordinate)goo; N(PanelSearchMode.Latitude, location.Latitude); N(PanelSearchMode.Longitude, location.Longitude); }
+            else if (type == typeof(GH_Culture))
+            {
+                var culture = ((GH_Culture)goo).Value;
+                if (culture?.GetType() == typeof(System.Globalization.CultureInfo))
+                { values[PanelSearchMode.CultureName] = PanelPropertyValue.String(culture.Name); values[PanelSearchMode.EnglishName] = PanelPropertyValue.String(culture.EnglishName); }
+            }
+            else if (type == typeof(GH_StructurePath)) I(PanelSearchMode.PathDepth, ((GH_StructurePath)goo).Value.Length);
             return values;
         }
 
@@ -96,7 +105,35 @@ namespace BetterGhPanel.Runtime
             void N(PanelSearchMode mode, double value, int power = 0) => values[mode] = PanelPropertyValue.Numeric(value, power, units);
             void I(PanelSearchMode mode, int value) => values[mode] = PanelPropertyValue.Integer(value);
             void B(PanelSearchMode mode, bool value) => values[mode] = PanelPropertyValue.Boolean(value);
-            if (geometry is Curve curve)
+            void Location(Point3d point)
+            { N(PanelSearchMode.LocationX, point.X, 1); N(PanelSearchMode.LocationY, point.Y, 1); N(PanelSearchMode.LocationZ, point.Z, 1); }
+            void Text(string text)
+            { values[PanelSearchMode.TextValue] = PanelPropertyValue.String(text); I(PanelSearchMode.CharacterCount, text.Length); }
+            if (geometry.GetType() == typeof(TextDot))
+            {
+                var dot = (TextDot)geometry; Text(dot.Text); Location(dot.Point);
+                I(PanelSearchMode.FontHeight, dot.FontHeight); values[PanelSearchMode.FontFace] = PanelPropertyValue.String(dot.FontFace);
+            }
+            else if (geometry is AnnotationBase annotation)
+            {
+                Text(annotation.PlainText); Location(annotation.Plane.Origin); N(PanelSearchMode.FontHeight, annotation.TextHeight, 1);
+                if (annotation is Dimension dimension) N(PanelSearchMode.DimensionValue, dimension.NumericValue, geometry is AngularDimension ? -1 : 1);
+            }
+            else if (geometry.GetType() == typeof(InstanceReferenceGeometry))
+                values[PanelSearchMode.DefinitionId] = PanelPropertyValue.String(((InstanceReferenceGeometry)geometry).ParentIdefId.ToString("D"));
+            else if (geometry.GetType() == typeof(DetailView))
+            {
+                var detail = (DetailView)geometry; B(PanelSearchMode.ParallelProjection, detail.IsParallelProjection);
+                B(PanelSearchMode.PerspectiveProjection, detail.IsPerspectiveProjection); B(PanelSearchMode.ProjectionLocked, detail.IsProjectionLocked);
+                N(PanelSearchMode.PageToModelRatio, detail.PageToModelRatio);
+            }
+            else if (geometry.GetType() == typeof(Hatch))
+            {
+                var hatch = (Hatch)geometry; I(PanelSearchMode.PatternIndex, hatch.PatternIndex);
+                N(PanelSearchMode.PatternScale, hatch.PatternScale); N(PanelSearchMode.PatternRotation, hatch.PatternRotation, -1);
+                Location(hatch.Plane.Origin);
+            }
+            else if (geometry is Curve curve)
             {
                 I(PanelSearchMode.Degree, curve.Degree); B(PanelSearchMode.Closed, curve.IsClosed);
                 if (curve is PolylineCurve polyline) I(PanelSearchMode.SegmentCount, polyline.PointCount - 1);

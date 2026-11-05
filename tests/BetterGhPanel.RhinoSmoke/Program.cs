@@ -58,6 +58,7 @@ internal static class Program
         ["capture-transaction"] = CaptureTransactionChecks.Run,
         ["capture-stock-geometry"] = CaptureStockGeometryChecks.RunNative,
         ["property-inspection"] = PropertyInspectionChecks.Run,
+        ["stock-types"] = StockTypeChecks.Run,
         ["ui-ux"] = UxInteractionChecks.Run,
         ["wysiwyg-values"] = WysiwygValuesChecks.Run,
         ["branch-pairing"] = BranchPairingChecks.Run,

@@ -197,6 +197,12 @@ namespace BetterGhPanel.Runtime
                             mesh.TextureCoordinates.Count > PanelPreviewLeaf.MaxMeshVertices)
                         { budget.MarkLimit(); return false; }
                     }
+                    else if (type == typeof(TextDot))
+                    {
+                        var dot = (TextDot)value;
+                        if (dot.Text.Length > MaxMetadataBytes || dot.SecondaryText.Length > MaxMetadataBytes || dot.FontFace.Length > 1024)
+                        { budget.MarkLimit(); return false; }
+                    }
                     else if (type != typeof(Point) && type != typeof(LineCurve) && type != typeof(ArcCurve) &&
                         type != typeof(PlaneSurface))
                     { budget.MarkUnavailable("unsupported nested geometry: " + type.Name); return false; }

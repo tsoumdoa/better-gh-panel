@@ -375,7 +375,11 @@ namespace BetterGhPanel.Core
         M30,
         M31,
         M32,
-        M33
+        M33,
+        LocationX, LocationY, LocationZ, FontHeight, FontFace,
+        Latitude, Longitude, CultureName, EnglishName, RowCount, ColumnCount, PathDepth,
+        PatternIndex, PatternScale, PatternRotation,
+        DefinitionId, ParallelProjection, PerspectiveProjection, ProjectionLocked, PageToModelRatio, DimensionValue
     }
 
     public sealed class PanelQueryOptions

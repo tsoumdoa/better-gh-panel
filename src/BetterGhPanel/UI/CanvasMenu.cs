@@ -188,31 +188,7 @@ namespace BetterGhPanel.UI
             types.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal);
 
         // Abbreviations are presentation only; filters and saved settings keep the full goo type name.
-        internal static string ShortTypeName(string name) => name switch
-        {
-            "Number" => "Num",
-            "Integer" => "Int",
-            "Boolean" => "Bool",
-            "Point" => "Pt",
-            "Vector" => "Vec",
-            "Plane" => "Pln",
-            "Line" => "Ln",
-            "Curve" => "Crv",
-            "Circle" => "Cir",
-            "Rectangle" => "Rect",
-            "Surface" => "Srf",
-            "Extrusion" => "Extr",
-            "Mesh Face" => "Face",
-            "Point Cloud" => "Cloud",
-            "Transform" => "Xform",
-            "Geometry Group" => "Geo group",
-            "Colour" => "Col",
-            "Domain" => "Dom",
-            "Domain²" => "Dom²",
-            "Complex Number" => "Cplx",
-            // Mesh, Brep, SubD, Arc, Box, annotations, and third-party goo retain their own names.
-            _ => name
-        };
+        internal static string ShortTypeName(string name) => PanelStockTypes.ShortName(name);
 
         internal void Close()
         {
