@@ -431,7 +431,7 @@ namespace BetterGhPanel.UI
             PanelPropertyKind.Boolean => "Pick True or False to filter. Rows without this property are excluded.",
             PanelPropertyKind.Text => "Use = and != for exact, case-sensitive matches. Double quotes preserve leading/trailing spaces; doubled quotes represent a quote. Rows without this property are excluded from comparisons.",
             PanelPropertyKind.DateTime => "Compare dates using >, >=, <, <=, = or !=. Enter yyyy-MM-dd or yyyy-MM-dd HH:mm:ss, with optional fractional seconds. Comparisons use the stored calendar time without timezone conversion.",
-            _ => "Compare the full-precision property using >, >=, <, <=, = or !=. Counts and dimensionless values ignore unit conversion. Lengths and angles use matching display conversions. Rows without this property are excluded from comparisons."
+            _ => "Compares the number as shown (after units and rounding). Use >, >=, <, <=, = or !=. Counts and dimensionless values ignore unit conversion. Lengths and angles use matching display conversions. Rows without this property are excluded from comparisons."
         };
 
         internal static string WithComparison(string search, CanvasComparison comparison, PanelSearchMode mode = PanelSearchMode.Value)

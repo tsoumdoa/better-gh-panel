@@ -12,7 +12,7 @@ namespace BetterGhPanel.UI
     // Uses the same host-owned text overlay as Grasshopper's native sliders.
     // Bounds are projected once when the editor opens; the host owns keyboard focus.
     // Optional live editors report debounced edits, then exactly one outcome:
-    // Enter accepts; Escape, focus loss or a programmatic close abandons.
+    // Enter or focus loss accepts; Escape or a programmatic close abandons.
     internal sealed class CanvasTextInput : GH_TextBoxInputBase
     {
         private const int LiveDelay = 250;
@@ -62,6 +62,12 @@ namespace BetterGhPanel.UI
             var host = canvas.Controls.Cast<Control>().LastOrDefault(control => control.Controls.OfType<TextBox>().Any());
             var box = host?.Controls.OfType<TextBox>().FirstOrDefault();
             if (host == null || box == null) return;
+            bool escaped = false;
+            box.KeyDown += (_, e) => { if (e.KeyCode == Keys.Escape) escaped = true; };
+            box.LostFocus += (_, __) =>
+            {
+                if (!escaped && !_completed && _accepted != null) HandleTextInputAccepted(box.Text);
+            };
             _changed = changed;
             _abandoned = abandoned;
             if (changed != null)

@@ -311,6 +311,7 @@ internal static class UxInteractionChecks
             await fixture.Ready(() => !PropertyBusy());
             Check(ValuesChoice() == PanelOutputValues.Items && fixture.Document.UndoServer.UndoCount == 1,
                 "Hiding Out resets Values to Items in one undo step: " + action);
+            if (action == "clear") Check(((PanelQueryOptions)fixture.Session.GetType().GetProperty("Options")!.GetValue(fixture.Session)!).SearchMode == PanelSearchMode.Text && ((PanelQueryOptions)fixture.Session.GetType().GetProperty("Options")!.GetValue(fixture.Session)!).Search.Length == 0, "One clear returns to Text");
             if (action == "filters" || action == "all") Check(fixture.SelectedCount == 0, "Reset clears Selection: " + action);
             fixture.Document.UndoServer.PerformUndo();
             await fixture.Ready(() => !PropertyBusy());

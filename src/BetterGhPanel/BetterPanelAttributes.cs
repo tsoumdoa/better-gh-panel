@@ -1409,8 +1409,9 @@ namespace BetterGhPanel
                 if (CanvasMenu.IsComparisonMode(_editingSearchMode))
                 {
                     if (options.SearchMode == _editingSearchMode && (options.DisplayFilterValue || !string.IsNullOrEmpty(options.Search)))
-                    { canvas.Invalidate(); return; }
+                    { EditSearch(canvas); return; }
                     SetSearch(canvas, _editingSearchMode, string.Empty, true);
+                    EditSearch(canvas);
                 }
                 else EditSearch(canvas, _editingSearchMode, options.SearchMode == _editingSearchMode ? options.Search : string.Empty);
                 return;
@@ -1485,7 +1486,7 @@ namespace BetterGhPanel
         private void EditSearch(GH_Canvas canvas)
         {
             var options = PanelOwner.Session.Options;
-            if (CanvasMenu.IsComparisonMode(options.SearchMode))
+            if (CanvasMenu.HasValueChoices(options.SearchMode))
             {
                 _editingSearchMode = options.SearchMode;
                 OpenMenu(CanvasMenuKind.Comparison, canvas);
@@ -1509,20 +1510,16 @@ namespace BetterGhPanel
             CancelQueryEditor();
             var options = PanelOwner.Session.Options;
             PanelOwner.RecordUndoEvent("Clear Panel+ search");
-            if (CanvasMenu.IsComparisonMode(options.SearchMode))
-            {
-                if (!string.IsNullOrEmpty(options.Search)) options.DisplayFilterValue = true;
-                else { options.SearchMode = PanelSearchMode.Text; options.DisplayFilterValue = false; }
-            }
-            else options.DisplayFilterValue = false;
+            options.SearchMode = PanelSearchMode.Text;
+            options.DisplayFilterValue = false;
             options.Search = string.Empty;
             PanelOwner.Session.UpdateQuery(options);
             canvas.Invalidate();
         }
 
         // Rows follow the search while typing. The preview is view-only: Enter
-        // commits it as one undo step and publishes outputs; Escape or clicking
-        // away restores the previous query, leaving outputs and undo untouched.
+        // or focus loss commits it as one undo step and publishes outputs; Escape
+        // restores the previous query, leaving outputs and undo untouched.
         private void ShowLiveQueryEditor(GH_Canvas canvas, string current, string undoName, Func<string, PanelQueryOptions> build)
         {
             object? token = null;
@@ -1866,6 +1863,11 @@ namespace BetterGhPanel
             {
                 e.Title = "Reset all";
                 e.Description = "Clears filters, sorting and selection, turns off tree tools and units, and sets Out to Items and B + F to Results. Keeps Preview, item order, D|F and size. Undo restores the settings.";
+            }
+            else if (_warningHits.Any(hit => hit.Bounds.Contains(point)))
+            {
+                e.Title = "Data checks";
+                e.Description = "Counts the input before filters. Replaces the current filters; Undo restores them.";
             }
             else if (_search.Contains(point))
             {

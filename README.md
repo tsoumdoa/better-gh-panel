@@ -34,6 +34,10 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 - With Round up by factor, Decimal places now also rounds up.
 - Stats show the same numbers as the rows in Automatic.
+- Picking a numeric mode opens the editor.
+- One � clears the search.
+- Clicking away applies a typed filter.
+- Ctrl+C copies selected rows in every view.
 
 - S survives recomputes with the same paths and branch lengths when Create set is off; filtered-out rows drop from the selection.
 - Clicking blank canvas or empty panel space keeps the selection.
@@ -52,7 +56,7 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 - **What you see is what you send.** Round up and Decimal places now apply to every number the panel shows, including Length, Area, Volume, properties and X/Y/Z. D and S send exactly those numbers, and filters and Stats use them too. Hover a rounded value to see the raw one.
 - **D | F pairs by branch.** F only needs the same number of branches as D; item counts may differ. Missing and extra F items are marked in the pane.
 - **Copy branch addresses.** Hover a branch heading to copy `{0;2;52}`, or right-click a row for `{0;2;52}(3)` or a table for Excel.
-- **Data warnings.** A short strip flags nulls, invalid items and branches whose length differs from the rest; click it to filter to them.
+- **Data checks.** A short strip flags nulls, invalid items and branches whose length differs from the rest; click it to filter to them.
 - **Behaviour changes:** Decimal places now rounds what D and S send, and numbers always use `.` as the decimal separator.
 
 **[`0.2.3-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.3-beta)**
@@ -69,13 +73,13 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 - **Typed rows grouped by branch.** Branch headings show their path and item count; rows show compact type labels (**Pt**, **Crv**, **Srf**, **Brep**, **Mesh**, **Num**, …), empty branches, `<empty>` text and geometry-group names with their object counts.
 - **Geometry metrics, automatically.** Visible curves, surfaces, Breps and meshes are measured in the background — length, area, volume and shape hints such as **Srf · untrimmed · planar · A 100 mm²**. Rows show **measuring…** until ready, and Panel+ never moves the camera.
 - **Invalid and unverified values are marked** with a label, a **!** or **?** badge and the reason in the tooltip.
-- **Data checks.** A quiet, clickable **Check:** line flags null, invalid and unverified items and strong branch-length outliers before search filters; outlier counts turn amber. Healthy trees use no extra space.
+- **Data checks.** A quiet, clickable **Check:** line flags null, invalid and unverified items and strong branch-length outliers before search filters; every warning segment is amber. Healthy trees use no extra space.
 - **Counts and Stats.** The footer shows matched/total items and branches. **Stats** lists min/max/average plus every unique value with its frequency, using the presented numbers.
 - **Long values** open in a read-only, scrollable **View full value** window from the row's right-click menu.
 
 ### Search, filter and sort
 
-Type in the search field: rows update as you type, **Enter** applies the query and **Esc** restores the previous one. The search dropdown picks what to match:
+Type in the search field: rows update as you type, **Enter** or clicking away applies the query and **Esc** restores the previous one. The search dropdown picks what to match:
 
 | Mode | Example |
 | --- | --- |
@@ -84,7 +88,7 @@ Type in the search field: rows update as you type, **Enter** applies the query a
 | List length · per branch | `>= 3`, `= 0` |
 | Input-specific properties (below) | `>= 2`, `>= 2026-01-01` |
 
-Comparisons test the numbers shown, after unit conversion, factor rounding and any explicit decimal places. Automatic keeps full precision. Pick a comparison mode to show its values, then click the search field to filter. Validity offers Valid/Invalid/Unverified/Null; Boolean properties offer True/False. **×** clears the filter, then the values. Combine searches with the **Types** filter (including *invalid only*) and **Paths** (`0;2;4` or `{0;2;4}`, including descendants). **Asc/Desc** sorts within each branch and adds Excel-style row numbers; wire outputs always keep tree order.
+Comparisons test the numbers shown, after unit conversion, factor rounding and any explicit decimal places. Automatic keeps full precision. Picking a numeric or date comparison mode shows its values and opens the editor. Validity offers Valid/Invalid/Unverified/Null; Boolean properties offer True/False. **×** clears the filter, then the values. Combine searches with the **Types** filter (including *invalid only*) and **Paths** (`0;2;4` or `{0;2;4}`, including descendants). **Asc/Desc** sorts within each branch and adds Excel-style row numbers; wire outputs always keep tree order.
 
 **Behaviour changes:** Numbers now always use "." as the decimal separator, so saved text/regex filters written with "," need updating. Decimal places now also rounds numbers sent on D and S.
 
@@ -139,7 +143,7 @@ Connect matching data to the optional **F** input and click **D|F** in the heade
 ![D | F split view with two rows selected in both panes](docs/images/panel-split-view.png)
 
 - **Linked scrolling** (the chain link between the pane captions) moves both panes with one scrollbar. Unlink it to scroll each pane on its own; selecting a row brings its partner into view, and relinking snaps F back to D.
-- Copying and **View full value** from the F pane use F's raw values, unconverted. F row addresses and tables use F's own original path and index. Heading **Copy path** copies the clicked pane's path, including F's own path for order-paired branches. Hover copy glyphs follow the complete drawn label and disappear when it is clipped. Data warnings mark D headings; F keeps its pairing badge and counts.
+- Copying and **View full value** from the F pane use F's raw values, unconverted. F row addresses and tables use F's own original path and index. Heading **Copy path** copies the clicked pane's path, including F's own path for order-paired branches. Hover copy glyphs follow the complete drawn label and disappear when it is clipped. Data checks mark D headings; F keeps its pairing badge and counts.
 - F must have **the same number of branches as D**, before tree tools. All identical paths pair first; remaining branches pair in tree order. The F heading shows its own path when paired by order.
 - Items pair by index within each original branch pair. Missing F cells stay empty, with a label on the first row of each run; additional F items appear as muted rows beside blank D spacers. Only indices beyond the original D branch length are labelled **only in F**; retained values whose D rows are hidden carry **paired with hidden D rows**. These muted rows are not selectable. Every F item keeps its original F index, including after Reverse, filtering and sorting. An amber **D 12** badge beside F's count marks unequal lengths; F headings show the matching count, such as **3 of 12 items**.
 - With **Create set**, each item or list-length set has one F cell: a bounded, single-line summary of exactly the values F emits for that group, in output order (for example, `f0 · f1 · f2 · f3 … +7 in this set`). Sets have no hidden-partner or only-in-F notes. Selecting an F set cell scopes its complete group; copying it includes every emitted F value. Use **Ctrl+C** on a selected F list-length set to copy the group.
@@ -147,7 +151,14 @@ Connect matching data to the optional **F** input and click **D|F** in the heade
 
 ![F pane explaining the first mismatch between D and F](docs/images/panel-split-mismatch.png)
 
-The **D|F** chip is hidden until F has data. Split view saves with the definition and supports Undo.
+The **D|F** chip is drawn greyed whenever F is wired but has no usable data. Split view saves with the definition and supports Undo.
+
+<details>
+<summary>F output pairing details</summary>
+
+Raw paired F items for the items B + F follow, at D's transformed destinations. Equal branches follow item membership; scoped unequal branches emit their whole F branch once per group. Empty D partners are included when D retains the branch, without item filters or Create set; path and list-length filters preserve them. Sets use {path;k} ({k} when flattened; {k;path} for list-length sets), in both output modes. F values and types are unchanged. F must have the same branch count as D; exact paths pair first, then remaining branches in tree order.
+
+</details>
 
 ### Outputs
 
@@ -156,7 +167,7 @@ The **D|F** chip is hidden until F has data. Split view saves with the definitio
 | **D** | Matching **Items** (default) or displayed **Values**, with explicit rounding as shown, in tree order. Automatic sends full precision; Create set Values sends compact displayed set values. Set Items: all members in one branch per value; set Values: one list of unique values per source branch. |
 | **S** | Selected Items or Values. Selected sets include all members and retain D's group paths. Empty when nothing is selected. |
 | **B** | A True/False mask in the original D tree shape, including every member of kept or selected sets. |
-| **F** | Raw paired items at D's transformed paths: equal branches follow item membership; an unequal branch emits its whole F branch once per destination group when any D member is in scope. An empty D branch's F partner is included when D retains that branch, no item filter is active, and Create set is off (item or list-length). Item filters follow the query engine's rule: text/regex or value/property comparisons, type and invalid-only restrictions exclude it; path and list-length restrictions retain it when D still shows the branch. It follows D's destination even after merging or Flatten. Otherwise it is neither emitted nor shown, and is excluded from F heading totals. Sets use the same group paths as set Items in both output modes. |
+| **F** | Raw F items paired with the D items that B + F follow, at D's paths. F values and types are unchanged. |
 
 **Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. With explicit decimals, the Values tooltip says "Sends the values exactly as shown." In Automatic with a factor it says "Sends the rounded values at full precision; rows may be abbreviated." Without a factor it says "Sends full-precision values; rows may be abbreviated." Sets say "Sends the displayed set values." The ports always read **D** and **S**. Numbers use the shown units and explicit rounding; Automatic keeps full wire precision except for compact displayed Create set Values; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
 
