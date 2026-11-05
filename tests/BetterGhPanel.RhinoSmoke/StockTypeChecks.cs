@@ -75,7 +75,10 @@ internal static class StockTypeChecks
         Check(rejected.Rows[0].Validity == PanelValidity.Unverified && rejected.Rows[1].Validity == PanelValidity.VerifiedInvalid && rejected.Rows[2].Validity == PanelValidity.Unverified && rejected.Rows[3].Validity == PanelValidity.Unverified, "holder/inner subclasses, null and unresolved dots retain safe validity classifications");
 
         bool modified = rhino.Modified;
-        Guid referenceId = rhino.Objects.AddTextDot(dot);
+        // Rhino's object/reference setup may move geometry user strings into
+        // object attributes. Keep that fixture separate from the copy source.
+        using var referenceDot = new TextDot("Reference dot", Point3d.Origin);
+        Guid referenceId = rhino.Objects.AddTextDot(referenceDot);
         try
         {
             var referenced = new GH_TextDot(referenceId);
@@ -102,6 +105,7 @@ internal static class StockTypeChecks
             var previousClipboard = System.Windows.Forms.Clipboard.GetDataObject();
             try
             {
+                Check(dot.GetUserString("panel.source") == "dot", "preview/frame leave source metadata intact");
                 byte[]? bytes = null;
                 var copy = actions.GetMethod("CopyGeometryWithArchiveObserver", Static)!.Invoke(null, new object[] {
                     new IGH_Goo[] { holder }, rhino.ModelUnitSystem, rhino.ModelAbsoluteTolerance, (Action<byte[]>)(value => bytes = value) })!;
@@ -115,29 +119,41 @@ internal static class StockTypeChecks
         finally { Call("Clear"); Call("ReleaseOnIdle", null!, EventArgs.Empty); }
 
         using var fixture = new PanelHostFixture.Fixture(assembly);
+        fixture.Document.Properties.KeepOpen = true; fixture.Document.PreviewMode = GH_PreviewMode.Shaded;
+        using var canvas = new GH_Canvas { Document = fixture.Document, Size = new Size(700, 650) };
+        _ = canvas.Handle; canvas.Viewport.Size = canvas.Size; canvas.Viewport.Zoom = 1.5f;
+        canvas.Viewport.Target = System.Drawing.Point.Empty; canvas.Viewport.ComputeProjection();
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
-        fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { holder, new GH_TextDot(new TextDot("Roof", new Point3d(8, 3, 4))), holder }, new GH_Path(0));
+        fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { holder, new GH_TextDot(new TextDot("Roof terrace — north wing, long annotation", new Point3d(8, 3, 4))), holder }, new GH_Path(0));
         fixture.Solve(); await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 3);
         Check(fixture.Sinks[0].VolatileData.AllData(false).All(item => item is GH_TextDot), "Items output retains dot goo");
         var dots = fixture.Result.Snapshot;
         var set = PanelQueryEngine.Execute(dots, new PanelQueryOptions { CreateSet = true });
         Check(set.RowPositions.Count == 2 && set.DisplaySet!.Members[0].Count == 2, "Create set groups repeated dot display values");
         fixture.Select(0); await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
-        SavePanel(fixture, "text-dots-values.png");
+        // The fixture's selection helper updates the model/output. A canvas row
+        // gesture also invokes this production preview action.
+        fixture.Component.GetType().GetMethod("HighlightRows", Instance)!.Invoke(fixture.Component, new object[] { fixture.Result.Snapshot, new[] { 0 } });
+        var componentHighlight = fixture.Component.GetType().GetField("_highlight", Instance)!.GetValue(fixture.Component)!;
+        Check(Property<int>(componentHighlight, "PreviewCount") == 1, "selected dot owns one component preview");
+        SavePanel(fixture, canvas, "text-dots-values.png");
         await SaveViewport(fixture, rhino);
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.TextValue, DisplayFilterValue = true });
         fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Values });
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).FirstOrDefault() is GH_String);
-        Check(fixture.Sinks[0].VolatileData.AllData(false).Cast<GH_String>().Select(item => item.Value).SequenceEqual(new[] { "Lobby α", "Roof", "Lobby α" }), "Values output emits selected dot text properties");
-        Check(fixture.Component.Params.Output[0].Name == "D" && fixture.Component.Params.Output[1].Name == "S", "output port names remain D and S");
-        SavePanel(fixture, "text-dots-property.png");
+        Check(fixture.Sinks[0].VolatileData.AllData(false).Cast<GH_String>().Select(item => item.Value).SequenceEqual(new[] { "Lobby α", "Roof terrace — north wing, long annotation", "Lobby α" }), "Values output emits selected dot text properties");
+        Check(fixture.Component.Params.Output[0].NickName == "D" && fixture.Component.Params.Output[1].NickName == "S", "output port names remain D and S");
+        SavePanel(fixture, canvas, "text-dots-property.png");
+        SaveComparison();
         fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Items });
         fixture.Source.PersistentData.Clear();
         fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { textHolder, dimensionHolder, new GH_Culture(new CultureInfo("en-GB")), matrixHolder, pathHolder, location }, new GH_Path(1));
+        using var comparisonCurve = new LineCurve(new Point3d(0, 0, 0), new Point3d(6, 0, 0));
+        fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { new GH_Point(new Point3d(1, 2, 3)), new GH_Curve(comparisonCurve), new GH_Number(42) }, new GH_Path(2));
         fixture.Query(new PanelQueryOptions()); fixture.Solve();
-        await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 6 && fixture.Sinks[0].VolatileData.DataCount == 6);
-        Check(fixture.Sinks[0].VolatileData.AllData(false).Select(item => item.GetType()).SequenceEqual(new[] { typeof(GH_TextEntity), typeof(GH_LinearDimension), typeof(GH_Culture), typeof(GH_Matrix), typeof(GH_StructurePath), typeof(GH_LonLatCoordinate) }), "mixed Items output preserves the newly supported types");
-        SavePanel(fixture, "stock-types-mixed.png");
+        await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 9 && fixture.Sinks[0].VolatileData.DataCount == 9);
+        Check(fixture.Sinks[0].VolatileData.AllData(false).Select(item => item.GetType()).SequenceEqual(new[] { typeof(GH_TextEntity), typeof(GH_LinearDimension), typeof(GH_Culture), typeof(GH_Matrix), typeof(GH_StructurePath), typeof(GH_LonLatCoordinate), typeof(GH_Point), typeof(GH_Curve), typeof(GH_Number) }), "mixed Items output preserves the newly supported types");
+        SavePanel(fixture, canvas, "stock-types-mixed.png");
     }
 
     // Optional native captures. The fixture always validates behavior; a later
@@ -148,20 +164,32 @@ internal static class StockTypeChecks
         if (string.IsNullOrWhiteSpace(directory)) return null;
         Directory.CreateDirectory(directory); return Path.Combine(directory, name);
     }
-    private static void SavePanel(PanelHostFixture.Fixture fixture, string name)
+    private static void SavePanel(PanelHostFixture.Fixture fixture, GH_Canvas canvas, string name)
     {
-        string? path = ImagePath(name); if (path == null) return;
-        using var canvas = new GH_Canvas { Document = fixture.Document, Size = new Size(900, 650) };
-        _ = canvas.Handle; canvas.Viewport.Size = canvas.Size; canvas.Viewport.Zoom = 1;
-        canvas.Viewport.Target = System.Drawing.Point.Empty; canvas.Viewport.ComputeProjection(); fixture.Component.Attributes.PerformLayout();
+        string? path = ImagePath(name);
+        fixture.Component.Attributes.PerformLayout();
         using var image = new Bitmap(canvas.Width, canvas.Height); using var graphics = Graphics.FromImage(image);
         graphics.Clear(Color.FromArgb(238, 238, 238)); canvas.Viewport.ApplyProjection(graphics);
-        PanelTestAdapter.Render(fixture.Component, canvas, graphics); image.Save(path);
+        PanelTestAdapter.Render(fixture.Component, canvas, graphics); if (path != null) image.Save(path);
+    }
+    private static void SaveComparison()
+    {
+        string? path = ImagePath("text-dots-inspection.png"); if (path == null) return;
+        using var values = new Bitmap(ImagePath("text-dots-values.png")!);
+        using var property = new Bitmap(ImagePath("text-dots-property.png")!);
+        using var image = new Bitmap(values.Width + property.Width, Math.Max(values.Height, property.Height));
+        using var graphics = Graphics.FromImage(image);
+        graphics.DrawImageUnscaled(values, 0, 0); graphics.DrawImageUnscaled(property, values.Width, 0); image.Save(path);
     }
     private static Task SaveViewport(PanelHostFixture.Fixture fixture, RhinoDoc rhino)
     {
         string? path = ImagePath("text-dot-highlight.png");
         var previous = rhino.Views.ActiveView;
+        var previewMode = fixture.Document.PreviewMode;
+        // The source/sinks also preview dots through GH's automatic conduit.
+        // Disable that conduit so the pixels prove Panel+'s selected preview.
+        fixture.Document.PreviewMode = GH_PreviewMode.Disabled;
+        fixture.Component.DocumentContextChanged(fixture.Document, GH_DocumentContext.Loaded);
         var view = rhino.Views.Add("Text Dot highlight", DefinedViewportProjection.Top, new Rectangle(0, 0, 900, 650), false);
         try
         {
@@ -169,13 +197,18 @@ internal static class StockTypeChecks
             using var conduit = new DotConduit(fixture.Component, fixture.Document) { Enabled = true };
             using var image = DisplayPipeline.DrawToBitmap(view.ActiveViewport, 900, 650);
             if (path != null) image.Save(path);
+            var projected = view.ActiveViewport.WorldToClient(new Point3d(2, 3, 4));
+            int px = (int)(projected.X * image.Width / Math.Max(1, view.ActiveViewport.Size.Width));
+            int py = (int)(projected.Y * image.Height / Math.Max(1, view.ActiveViewport.Size.Height));
             int selectedPixels = 0;
-            for (int y = 0; y < image.Height; y++) for (int x = 0; x < image.Width; x++)
+            for (int y = Math.Max(0, py - 40); y < Math.Min(image.Height, py + 40); y++)
+                for (int x = Math.Max(0, px - 80); x < Math.Min(image.Width, px + 80); x++)
             { var color = image.GetPixel(x, y); if (color.G > color.R + 50 && color.G > color.B + 50) selectedPixels++; }
+            Console.WriteLine($"Selected dot viewport: pixels={selectedPixels}, projected={px},{py}, draws={conduit.Draws}");
             Check(selectedPixels > 20, "selected dot draws its highlight color in native viewport pixels");
             Check(conduit.Draws > 0, "native viewport invokes Panel+ selected-dot preview");
         }
-        finally { view.Close(); if (previous != null) rhino.Views.ActiveView = previous; }
+        finally { view.Close(); fixture.Document.PreviewMode = previewMode; if (previous != null) rhino.Views.ActiveView = previous; }
         return Task.CompletedTask;
     }
     private sealed class DotConduit : DisplayConduit, IDisposable

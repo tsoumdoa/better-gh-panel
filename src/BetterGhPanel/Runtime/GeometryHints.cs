@@ -44,8 +44,8 @@ namespace BetterGhPanel.Runtime
             {
                 string text = annotation.PlainText;
                 if (annotation is Dimension dimension)
-                    text = (StockGooSupport.Find(type)?.Name ?? "Dimension") + " · " + dimension.NumericValue.ToString("G8", CultureInfo.InvariantCulture);
-                return new PanelGeometryInfo((string.IsNullOrEmpty(text) ? StockGooSupport.Find(type)?.Name : text) + " @ " + PointText(annotation.Plane.Origin));
+                    text = dimension.NumericValue.ToString("G8", CultureInfo.InvariantCulture);
+                return new PanelGeometryInfo((string.IsNullOrEmpty(text) ? "" : text + " @ ") + PointText(annotation.Plane.Origin));
             }
             if (geometry?.GetType() == typeof(InstanceReferenceGeometry))
                 return new PanelGeometryInfo("Definition " + ((InstanceReferenceGeometry)geometry).ParentIdefId.ToString("D"));
