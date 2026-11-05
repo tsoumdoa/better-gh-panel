@@ -118,10 +118,13 @@ internal static class StockTypeChecks
         var modes = new[] { PanelSearchMode.DimensionAngle, PanelSearchMode.PatternRotation, PanelSearchMode.Angle, PanelSearchMode.Phase };
         for (int i = 0; i < modes.Length; i++)
             Check(PanelProperties.TryGet(angles.Rows[i], modes[i], null, out var angle) && angle?.Format(PanelUnitConversion.RadiansToDegrees, 2, true) == "90.00 °", modes[i] + " uses the established angle convention");
+        var invalidComplex = ((PanelSnapshot)Capture(assembly, new GH_ComplexNumber(new Complex(1.234567, double.NaN)))[0]!).Rows[0];
+        Check(invalidComplex.Validity == PanelValidity.VerifiedInvalid && invalidComplex.NumericSummary != null &&
+            PanelValuePresentation.FormatDisplay(invalidComplex, PanelUnitConversion.None, 2) == "Invalid · 1.23 + unavailablei", "invalid complex capture retains a summary and formats it at active precision");
         var southern = (PanelSnapshot)Capture(assembly, new GH_LonLatCoordinate(-114.17, -22.3))[0]!;
         Check(southern.Rows[0].DisplayValue == "22.3° S, 114.17° W", "location labels negative coordinates S/W");
-        var matrixSummary = (PanelSnapshot)Capture(assembly, new GH_Transform(Transform.Translation(0, 3, 4)), new GH_Transform(Transform.Identity))[0]!;
-        Check(matrixSummary.Rows[0].DisplayValue.StartsWith("4 × 4 [", StringComparison.Ordinal) && matrixSummary.Rows[0].DisplayValue.Contains("3") && matrixSummary.Rows[0].DisplayValue.Contains("4") && matrixSummary.Rows[1].DisplayValue == "Identity", "transform summary includes all rows and recognizes identity");
+        var matrixSummary = (PanelSnapshot)Capture(assembly, new GH_Transform(Transform.Translation(0, 3, 4)), new GH_Transform(Transform.Identity), new GH_Transform())[0]!;
+        Check(matrixSummary.Rows[0].DisplayValue.StartsWith("4 × 4 [", StringComparison.Ordinal) && matrixSummary.Rows[0].DisplayValue.Contains("3") && matrixSummary.Rows[0].DisplayValue.Contains("4") && matrixSummary.Rows[1].DisplayValue == "Identity" && matrixSummary.Rows[2].DisplayValue == "Identity" && matrixSummary.Rows[1].NumericSummary == null && matrixSummary.Rows[2].NumericSummary == null, "transform summary includes all rows and recognizes identity");
 
         using var largeMatrix = new Matrix(64, 64); largeMatrix[0, 0] = 1;
         Budget(assembly, new GH_Matrix(largeMatrix), 4096);

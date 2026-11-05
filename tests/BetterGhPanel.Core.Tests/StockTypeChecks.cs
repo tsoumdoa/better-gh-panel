@@ -37,6 +37,9 @@ public sealed class StockTypeChecks
         var angles = Snapshot(angle, PanelUnitConversion.RadiansToDegrees);
         Assert.Equal("1.23 m", PanelValuePresentation.FormatDisplay(lengths.Rows[0], lengths.UnitConversion, 2));
         Assert.Equal("90.00 °", PanelValuePresentation.FormatDisplay(angles.Rows[0], angles.UnitConversion, 2));
+        Assert.Equal("90.00", PanelUnits.FormatGeometry(angle.Value!.Value, angle.Power, angle.Units, angles.UnitConversion, 2, includeUnits: false));
+        Assert.Equal(angle.FormatCompact(PanelUnitConversion.None, -1),
+            PanelUnits.FormatGeometry(angle.Value.Value, angle.Power, angle.Units, PanelUnitConversion.None, -1));
         foreach (var sample in new[] { (lengths, PanelSearchMode.Length, 1.23), (angles, PanelSearchMode.DimensionAngle, 90.0) })
         {
             var query = new PanelQueryOptions { SearchMode = sample.Item2, DisplayFilterValue = true, OutputValues = true, DecimalPlaces = 2,
@@ -69,6 +72,10 @@ public sealed class StockTypeChecks
         Assert.Equal(new[] { 0, 1 }, result.DisplaySet!.Members[0]);
         Assert.Equal("1.23 - 2.34i", result.DisplaySet.Values[0].CopyText);
         Assert.Equal(4, PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { CreateSet = true, DecimalPlaces = 3 }).RowPositions.Count);
+        var invalid = new PanelRow(0, "{0}", "Complex", "1.234567 + unavailablei", null, PanelValidity.VerifiedInvalid,
+            numericSummary: PanelNumericSummary.Complex(1.234567, double.NaN));
+        Assert.Equal("Invalid · 1.23 + unavailablei", PanelValuePresentation.FormatDisplay(invalid, PanelUnitConversion.None, 2));
+        Assert.Equal("0.00° N, 0.00° E", PanelNumericSummary.Location(-0.001, -0.004).Format(2));
     }
 
 }

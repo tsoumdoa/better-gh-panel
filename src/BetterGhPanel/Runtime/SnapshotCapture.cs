@@ -424,21 +424,16 @@ namespace BetterGhPanel.Runtime
             { var face = ((GH_MeshFace)goo).Value; return face.IsTriangle ? $"({face.A}, {face.B}, {face.C})" : $"({face.A}, {face.B}, {face.C}, {face.D})"; }
             if (runtime == typeof(GH_LonLatCoordinate))
             { var v = (GH_LonLatCoordinate)goo; summary = PanelNumericSummary.Location(v.Latitude, v.Longitude); return summary.Format(PanelUnits.AutomaticDecimals); }
-            if (runtime == typeof(GH_StructurePath))
-            { var path = ((GH_StructurePath)goo).Value; if (path == null) return "<null>"; if (path.GetType() == typeof(GH_Path) && path.Length <= SafeGooInspection.MaxNodesPerRoot) return path.ToString(); }
-            if (runtime == typeof(GH_Field)) return ((GH_Field)goo).Elements is { } elements ? elements.Count + " field elements" : "Null field";
+            if (runtime == typeof(GH_StructurePath)) return ((GH_StructurePath)goo).Value.ToString();
+            if (runtime == typeof(GH_Field)) return ((GH_Field)goo).Elements is { } elements ? GeometryHints.Count(elements.Count, "field element") : "Null field";
             if (runtime == typeof(GH_Material)) return ((GH_Material)goo).Value == null ? "Null material" : "Material";
             if (runtime == typeof(GH_Transform))
             {
                 var transforms = ((GH_Transform)goo).CompoundTransforms;
-                if (transforms.Count == 0) { summary = PanelNumericSummary.Matrix(4, 4, (r, c) => r == c ? 1 : 0); return "Identity"; }
-                if (transforms.Count == 1 && transforms[0]?.GetType() == typeof(Grasshopper.Kernel.Types.Transforms.Generic))
-                {
-                    var t = ((Grasshopper.Kernel.Types.Transforms.Generic)transforms[0]).Transform;
-                    summary = PanelNumericSummary.Matrix(4, 4, (r, c) => t[r, c]);
-                    return summary.Format(PanelUnits.AutomaticDecimals);
-                }
-                return transforms.Count + " compound transforms";
+                var t = transforms.Count == 0 ? Transform.Identity : ((Grasshopper.Kernel.Types.Transforms.Generic)transforms[0]).Transform;
+                if (t == Transform.Identity) return "Identity";
+                summary = PanelNumericSummary.Matrix(4, 4, (r, c) => t[r, c]);
+                return summary.Format(PanelUnits.AutomaticDecimals);
             }
             return "<" + type + ">";
         }

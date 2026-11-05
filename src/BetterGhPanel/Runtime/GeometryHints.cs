@@ -10,22 +10,6 @@ namespace BetterGhPanel.Runtime
 {
     internal static class GeometryHints
     {
-        // Only analytic measurements and stored properties belong in the snapshot.
-        internal static PanelGeometryInfo? Describe(IGH_Goo goo, string units)
-        {
-            if (StockGooSupport.Has(goo.GetType(), StockTypeFacets.Measure))
-            {
-                if (!SafeGooInspection.TryGetTrustedGeometry(goo, out GeometryBase? geometry) || geometry == null) return null;
-                try
-                {
-                    if (!SafeGooInspection.MeasurementSourceCanRead(geometry)) return null;
-                    return geometry.IsValid ? DescribeCaptured(goo, geometry, units) : null;
-                }
-                finally { GC.KeepAlive(geometry); }
-            }
-            return DescribeCaptured(goo, null, units);
-        }
-
         // The caller validates this exact inner object before this method. Never read
         // a mutable holder again after checking it, and never dispatch through a subclass.
         internal static PanelGeometryInfo? DescribeCaptured(IGH_Goo goo, GeometryBase? geometry, string units)
@@ -358,6 +342,6 @@ namespace BetterGhPanel.Runtime
                 .WithAdditionalLength(arc.Length)
             : new PanelGeometryInfo("Arc", arc.Length, units: units, details: ArcDetails(arc));
         private static string Closed(bool closed) => closed ? "closed" : "open";
-        private static string Count(int count, string noun) => count + " " + noun + (count == 1 ? "" : "s");
+        internal static string Count(int count, string noun) => count + " " + noun + (count == 1 ? "" : "s");
     }
 }

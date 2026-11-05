@@ -26,11 +26,12 @@ namespace BetterGhPanel.Core
         }
         public string Format(int decimals)
         {
-            string N(double value) => PanelUnits.Format(PanelUnits.Transform(value, PanelUnitConversion.None, decimals: decimals), PanelUnitConversion.None, decimals);
+            double Rounded(double value) => PanelUnits.Transform(value, PanelUnitConversion.None, decimals: decimals);
+            string N(double value) => PanelUnits.Format(Rounded(value), PanelUnitConversion.None, decimals);
             if (_shape == Shape.Complex)
-                return N(_values[0]) + (PanelUnits.Transform(_values[1], PanelUnitConversion.None, decimals: decimals) < 0 ? " - " : " + ") + N(Math.Abs(_values[1])) + "i";
+                return N(_values[0]) + (Rounded(_values[1]) < 0 ? " - " : " + ") + N(Math.Abs(_values[1])) + "i";
             if (_shape == Shape.Location)
-                return N(Math.Abs(_values[0])) + "° " + (_values[0] < 0 ? "S" : "N") + ", " + N(Math.Abs(_values[1])) + "° " + (_values[1] < 0 ? "W" : "E");
+                return N(Math.Abs(_values[0])) + "° " + (Rounded(_values[0]) < 0 ? "S" : "N") + ", " + N(Math.Abs(_values[1])) + "° " + (Rounded(_values[1]) < 0 ? "W" : "E");
             if (_identity) return "Identity";
             var text = new StringBuilder(_rows + " × " + _columns + " [");
             for (int i = 0; i < _values.Length; i++)

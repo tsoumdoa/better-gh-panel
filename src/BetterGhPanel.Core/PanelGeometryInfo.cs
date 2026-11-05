@@ -67,7 +67,6 @@ namespace BetterGhPanel.Core
             Details;
 
         private string FormatValue(PanelUnitConversion conversion, int decimals, double roundUpFactor = 0) =>
-            Power == -1 ? PanelPropertyValue.Numeric(Value!.Value, -1).Format(conversion, decimals, true, roundUpFactor) :
             PanelUnits.FormatGeometry(Value!.Value, Power, Units, conversion, decimals, roundUpFactor: roundUpFactor);
     }
 }
