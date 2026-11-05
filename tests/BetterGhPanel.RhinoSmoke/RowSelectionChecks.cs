@@ -138,5 +138,25 @@ internal static class RowSelectionChecks
         await fixture.Ready(() => !ReferenceEquals(paintedResult, fixture.Result));
         PanelTestAdapter.CanvasClick(canvas, point);
         Check(fixture.SelectedCount == 0, "A changed result cannot select a row using its old painted address");
+        fixture.Query(new PanelQueryOptions());
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+        fixture.Scope(PanelOutputScope.Selected);
+        fixture.Select(2);
+        var beforeRecompute = fixture.Result.Snapshot;
+        fixture.Source.PersistentData.Branches[0][2] = new GH_Number(802);
+        fixture.Solve();
+        await fixture.Ready(() => !ReferenceEquals(beforeRecompute, fixture.Result.Snapshot) && fixture.Values(1) == "802");
+        Check(fixture.SelectedCount == 1 && fixture.Values(3) == "" && fixture.Sinks[2].VolatileData.AllData(false).Count(value => value.ToString() == "True") == 1,
+            "Same-structure upstream replacement re-binds Selection and selection-scope B");
+        fixture.Query(new PanelQueryOptions { Search = "< 100" });
+        await fixture.Ready(() => fixture.SelectedCount == 0 && fixture.Sinks[1].VolatileData.DataCount == 0);
+        Check(fixture.SelectedCount == 0, "Published filters prune re-bound Selection");
+        fixture.Query(new PanelQueryOptions());
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+        fixture.Select(1);
+        fixture.Source.PersistentData.Append(new GH_Number(900), new GH_Path(0));
+        fixture.Solve();
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 81 && fixture.Sinks[1].VolatileData.DataCount == 0);
+        Check(fixture.SelectedCount == 0, "Structural input replacement clears Selection");
     }
 }

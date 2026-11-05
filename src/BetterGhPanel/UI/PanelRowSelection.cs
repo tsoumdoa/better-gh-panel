@@ -73,16 +73,28 @@ namespace BetterGhPanel.UI
             if (changed) NotifyChanged();
         }
 
+        internal static bool SameStructure(PanelSnapshot before, PanelSnapshot after)
+        {
+            if (before.Rows.Count != after.Rows.Count || before.Branches.Count != after.Branches.Count) return false;
+            for (int i = 0; i < before.Branches.Count; i++)
+                if (before.Branches[i].Path != after.Branches[i].Path || before.Branches[i].ItemCount != after.Branches[i].ItemCount) return false;
+            return true;
+        }
+
         internal void Rebind(PanelRowSelection previous, PanelQueryResult result)
         {
+            if (previous._result == null || !SameStructure(previous._result.Snapshot, result.Snapshot)) { Clear(); return; }
             _positions.Clear();
             _positions.UnionWith(previous._positions);
             _emptyBranches.Clear();
             _emptyBranches.UnionWith(previous._emptyBranches);
             _anchor = previous._anchor;
             _result = result;
+            if (_anchor >= 0 && !result.TryGetViewIndex(_anchor, out _)) _anchor = -1;
             _positions.RemoveWhere(position => !result.TryGetViewIndex(position, out _));
-            _emptyBranches.RemoveWhere(path => !result.ContainsBranchPath(path));
+            if (result.DisplaySet?.IsBranchSet == true)
+                _emptyBranches.RemoveWhere(path => !result.ContainsBranchPath(path));
+            else _emptyBranches.Clear();
             RebuildIndex(result);
             NotifyChanged();
         }

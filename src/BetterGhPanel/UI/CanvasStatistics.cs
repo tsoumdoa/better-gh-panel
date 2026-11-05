@@ -9,8 +9,8 @@ namespace BetterGhPanel.UI
     internal static class CanvasStatistics
     {
         internal const int OverviewRows = 9;
-        internal const string Scope = "Statistics describe the current filtered tree, after tree tools, unit conversion and presentation rounding. " +
-            "With Create set, statistics describe the displayed output values; filtered source counts are listed separately. " +
+        internal const string Scope = "Statistics describe the current Results tree, after tree tools, unit conversion and presentation rounding. " +
+            "With Create set, statistics describe the displayed output values; Results source counts are listed separately. " +
             "Orange row marks mean invalid; blue means unverified. Set row marks describe their source occurrences. " +
             "Totals describe the tree before filters and sets. Item counts include all data types.";
         internal const string UniqueScope = "Unique values include valid finite Number/Integer values and Text values. " +
@@ -54,7 +54,7 @@ namespace BetterGhPanel.UI
                 case 5: return FormattableString.Invariant($"{stats.NullCount:N0} null · {stats.InvalidCount:N0} invalid · {stats.UnverifiedCount:N0} unverified · {stats.TypeCounts.Count:N0} types");
                 case 6: return FormattableString.Invariant($"Unique: {stats.UniqueValues.Count:N0} values in {stats.ScalarCount:N0} number/text items");
                 case 7: return FormattableString.Invariant($"Excluded from unique values: {stats.UniqueExcludedCount:N0}");
-                case 8: return "Filtered sources: " + SourceStatuses(stats.FilteredSourceStatuses);
+                case 8: return "Results sources: " + SourceStatuses(stats.FilteredSourceStatuses);
             }
             var value = stats.UniqueValues[index - OverviewRows];
             string text = value.NumericValue.HasValue

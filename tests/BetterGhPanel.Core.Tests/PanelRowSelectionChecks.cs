@@ -7,6 +7,29 @@ internal static class PanelRowSelectionChecks
 {
     internal static void Run()
     {
+        var original = Query(Sample());
+        var retained = new PanelRowSelection();
+        retained.Select(original, 0);
+        retained.Select(original, 1, toggle: true);
+        var replacement = Query(Sample());
+        var rebound = new PanelRowSelection();
+        rebound.Rebind(retained, replacement);
+        Expect(rebound, replacement, 0, 1);
+        var restricted = Query(Sample(), new PanelQueryOptions { Search = "> 15" });
+        rebound.Rebind(retained, restricted);
+        Expect(rebound, restricted, 0);
+        var different = Query(new PanelSnapshot(original.Snapshot.Rows,
+            new[] { new PanelBranch("{9}", 3), new PanelBranch("{1}", 2), new PanelBranch("{2}", 0) }));
+        rebound.Rebind(retained, different);
+        Expect(rebound, different);
+        var lengths = Query(new PanelSnapshot(original.Snapshot.Rows,
+            new[] { new PanelBranch("{0}", 2), new PanelBranch("{1}", 3), new PanelBranch("{2}", 0) }));
+        rebound.Rebind(retained, lengths);
+        Expect(rebound, lengths);
+        retained.Clear();
+        rebound.Rebind(retained, replacement);
+        Expect(rebound, replacement);
+
         var snapshot = Sample();
         var source = Query(snapshot);
         var selection = new PanelRowSelection();

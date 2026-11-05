@@ -80,17 +80,26 @@ namespace BetterGhPanel
         {
             if (!Enum.IsDefined(typeof(PanelOutputScope), scope) || OutputScope == scope) return;
             // Scope changes must not reload the component and discard its selection.
-            RecordUndoEvent("Panel+ B + F source", new PanelUndo<PanelOutputScope>(InstanceGuid, OutputScope, scope, (component, value) => component.ApplyOutputScope(value)));
+            RecordUndoEvent("Panel+ B + F follow", new PanelUndo<PanelOutputScope>(InstanceGuid, OutputScope, scope, (component, value) => component.ApplyOutputScope(value)));
             ApplyOutputScope(scope);
         }
 
         private void ApplyOutputScope(PanelOutputScope scope)
         {
             OutputScope = scope;
+            UpdateOutputDescriptions();
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             ScheduleOutput();
             Instances.ActiveCanvas?.Invalidate();
+        }
+
+        private void UpdateOutputDescriptions()
+        {
+            if (Params.Output.Count < 4) return;
+            var scope = OutputScope == PanelOutputScope.Filtered ? "Results" : "Selection";
+            Params.Output[2].Description = "B: True/False mask of the " + scope + " in the original D tree shape. Every member of a retained set is True; ordering is unchanged.";
+            Params.Output[3].Description = "F: Raw paired items of the " + scope + " at D's transformed destinations. Equal branches follow item membership; unequal branches emit their whole F branch once per group. Values and types are unchanged.";
         }
 
         private void ClearOutputSources()

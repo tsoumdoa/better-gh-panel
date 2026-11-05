@@ -9,7 +9,6 @@ using BetterGhPanel.Runtime;
 using BetterGhPanel.UI;
 using Grasshopper.GUI;
 using Grasshopper.GUI.Canvas;
-using Grasshopper.GUI.Canvas.Interaction;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Attributes;
 
@@ -111,7 +110,7 @@ namespace BetterGhPanel
         {
             // An unconfirmed live search never survives a reset or a new input.
             EndQueryPreview(_previewOwner);
-            if (!keepViewRestore) _viewRestore = null;
+            if (!keepViewRestore) { _viewRestore = null; _selectionRestore = null; _savedSelection = null; }
             ClearHover();
             _keyboardCursor = -1;
             CancelQueryEditor();
@@ -124,7 +123,8 @@ namespace BetterGhPanel
             _offset = _pairedOffset = 0;
             _lastResult = null;
             ClearPaneSummary();
-            ClearRowSelection();
+            if (keepViewRestore) _selection.Clear();
+            else ClearRowSelection();
             PanelOwner.ClearHighlight();
             _scrolling = false;
             _rowContextHandled = false;
@@ -135,6 +135,8 @@ namespace BetterGhPanel
         internal void ClearRowSelection()
         {
             _keyboardCursor = -1;
+            _selectionRestore = null;
+            _savedSelection = null;
             _selection.Clear();
             DetachSelectionCanvas();
             InvalidateCopyStatus();
@@ -225,7 +227,8 @@ namespace BetterGhPanel
             if (!session.HasCurrentResult)
             {
                 InvalidatePaintedHits();
-                ClearRowSelection();
+                _selection.Clear();
+                if (_selectionRestore == null) DetachSelectionCanvas();
                 PanelOwner.ClearHighlight();
                 LayoutSetDetails();
                 return;
@@ -245,6 +248,7 @@ namespace BetterGhPanel
             LayoutSetDetails();
             PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
             if (_selection.Count == 0) DetachSelectionCanvas();
+            else if (Grasshopper.Instances.ActiveCanvas is GH_Canvas canvas) TrackSelectionCanvas(canvas);
         }
 
         internal void InvalidateStatistics()
@@ -464,7 +468,7 @@ namespace BetterGhPanel
                 if (canvas.Viewport.Zoom >= 0.5f)
                 {
                     var options = session.Options;
-                    DropdownControl(graphics, _preview, "Preview: " + (PanelOwner.PreviewMode == PanelPreviewMode.FilteredResults ? "Results" : CanvasMenu.PreviewLabel(PanelOwner.PreviewMode)), small, trim,
+                    DropdownControl(graphics, _preview, "Preview: " + CanvasMenu.PreviewLabel(PanelOwner.PreviewMode), small, trim,
                         PanelOwner.PreviewMode != PanelPreviewMode.Off);
                     bool searchClear = SearchClearVisible, branchClear = BranchClearVisible;
                     DropdownControl(graphics, _search, CanvasMenu.SearchHint(options), small, trim,
@@ -586,7 +590,7 @@ namespace BetterGhPanel
                 GH_CapsuleRenderEngine.RenderOutputGrip(g, canvas.Viewport.Zoom, grip, false);
                 if (canvas.Viewport.Zoom >= 0.5f)
                     Text(g, OutputPortLabel(parameter), font, Muted,
-                        new RectangleF(grip.X + 8, grip.Y - 8, PanelOwner.OutputScope == PanelOutputScope.Selected || PanelOwner.OutputsValues ? 26 : 12, 16), trim);
+                        new RectangleF(grip.X + 8, grip.Y - 8, PanelOwner.OutputsValues ? 26 : 12, 16), trim);
             }
         }
 
@@ -631,7 +635,7 @@ namespace BetterGhPanel
             }
             if (PanelOwner.Session.Error != null)
             {
-                Text(g, "Filter needs attention. Edit filter or Reset.", small, Muted,
+                Text(g, "Filter needs attention. Edit filter or Reset all.", small, Muted,
                     new RectangleF(list.X + 6, list.Y, list.Width - 12, 22), trim);
                 if (!paired) PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, Array.Empty<int>());
                 return;
@@ -812,7 +816,7 @@ namespace BetterGhPanel
                 }
                 if (ViewCount(result) == 0)
                 {
-                    Text(g, result.Snapshot.Branches.Count == 0 ? "Connect a tree to start exploring." : "No matching items. Clear a filter or Reset.",
+                    Text(g, result.Snapshot.Branches.Count == 0 ? "Connect a tree to start exploring." : "No Results. Clear a filter or Reset all.",
                         small, Muted, new RectangleF(list.X + 6, list.Y + 12, list.Width - 12, 22), trim);
                 }
             }
@@ -854,7 +858,7 @@ namespace BetterGhPanel
             int filters = ActiveFilterCount();
             if (filters > 0) return filters == 1 ? "1 filter on" : filters + " filters on";
             if (result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count)
-                return "filtered";
+                return "Results";
             return PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.RoundUpFactor > 0 || PanelOwner.DecimalPlaces >= 0
                 ? "tools on" : PanelOwner.OutputsValues ? "values out" : "output = input";
         }
@@ -1344,9 +1348,7 @@ namespace BetterGhPanel
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
-            // Empty panel margins and its header also clear rows, while the host
-            // remains responsible for selecting and dragging the component itself.
-            // Focus does not change selection.
+            // The host selects and drags the component; empty space keeps rows.
             return base.RespondToMouseDown(sender, e);
         }
 
@@ -1757,7 +1759,7 @@ namespace BetterGhPanel
                 {
                     e.Text = _menu.StatisticsDetails(index, PanelOwner.DecimalPlaces);
                     e.Description = index == 6 || index == 7 || index >= CanvasStatistics.OverviewRows ? CanvasStatistics.UniqueScope :
-                        index == 8 ? "Filtered source counts are measured before Create set removes duplicate occurrences. Valid, invalid and unverified are distinct." : CanvasStatistics.Scope;
+                        index == 8 ? "Results source counts are measured before Create set removes duplicate occurrences. Valid, invalid and unverified are distinct." : CanvasStatistics.Scope;
                 }
                 else e.Description = "Use Previous and Next to inspect all values.";
                 return;
@@ -1781,9 +1783,9 @@ namespace BetterGhPanel
             {
                 e.Title = "Select all rows";
                 e.Text = !PanelOwner.Locked && PanelOwner.Session.HasCurrentResult
-                    ? System.FormattableString.Invariant($"{PanelOwner.Session.Result.RowPositions.Count:N0} matching items")
+                    ? System.FormattableString.Invariant($"{PanelOwner.Session.Result.RowPositions.Count:N0} Results items")
                     : PanelOwner.Locked ? "Disabled" : PanelOwner.Session.IsBusy ? "Recomputing…" : "Selection unavailable";
-                e.Description = "Select every matching row, including offscreen rows. Shortcut while focused: Ctrl+A.";
+                e.Description = "Select every Results row, including offscreen rows. Shortcut while focused: Ctrl+A.";
                 return;
             }
             if (_statistics.Contains(point) || _footer.Contains(point) && point.Y < _units.Y &&
@@ -1814,7 +1816,7 @@ namespace BetterGhPanel
             {
                 e.Title = "Geometry preview";
                 e.Text = CanvasMenu.PreviewLabel(PanelOwner.PreviewMode);
-                e.Description = "Selected: draw selected rows only. Results: draw every match, highlighting the selection. Off: no Panel+ preview. Item order labels: " +
+                e.Description = "Selection: draw rows in Selection. Results: draw all Results, highlighting Selection. Off: no Panel+ preview. Item order labels: " +
                     (PanelOwner.ShowItemOrder ? "on" : "off") + ".";
                 if (!string.IsNullOrEmpty(PanelOwner.PreviewStatus)) e.Description += " " + PanelOwner.PreviewStatus +
                     " Oversized geometry, unsupported nested types, custom UserData, or mesh limits can prevent part of the preview.";
@@ -1863,7 +1865,7 @@ namespace BetterGhPanel
             else if (_reset.Contains(point))
             {
                 e.Title = "Reset all";
-                e.Description = "Reset search, mode, type, path, invalid-only, sort, selection, scroll, tree tools, units, rounding, decimals, Out Items/Values and B + F source. Keeps Preview mode, item order, D|F split and size. Undo brings settings back.";
+                e.Description = "Reset search, mode, type, path, invalid-only, sort, selection, scroll, tree tools, units, rounding, decimals, Out Items/Values and B + F follow. Keeps Preview mode, item order, D|F split and size. Undo brings settings back.";
             }
             else if (_search.Contains(point))
             {
@@ -1913,7 +1915,7 @@ namespace BetterGhPanel
                 {
                     e.Title = "Filter needs attention";
                     e.Text = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode);
-                    e.Description = PanelOwner.Session.Error + "\n\nEdit the filter or use Reset to clear it.";
+                    e.Description = PanelOwner.Session.Error + "\n\nEdit the filter or use Clear filters.";
                     return;
                 }
                 e.Title = "Row selection and copy";
@@ -1928,15 +1930,15 @@ namespace BetterGhPanel
                     {
                         e.Title = "Select branch " + hit.Path;
                         e.Text = CanvasStatistics.BranchCount(PanelOwner.Session.Result, hit.Path);
-                        e.Description = hit.CopyBounds.Contains(point) ? "Copy " + (_pairedList.Contains(point) ? string.Join(", ", PanelOwner.PairedPaths(hit.Path)) : hit.Path) : "Select this branch's matching rows. Double-click to clear. Right-click for branch actions.";
+                        e.Description = hit.CopyBounds.Contains(point) ? "Copy " + (_pairedList.Contains(point) ? string.Join(", ", PanelOwner.PairedPaths(hit.Path)) : hit.Path) : "Select this branch's Results rows. Double-click to clear. Right-click for branch actions.";
                         if (!_pairedList.Contains(point) && PanelOwner.Session.Result.Warnings.IsOutlier(PanelOwner.Session.Result.Snapshot, hit.Path))
                             e.Description += "\nMost branches have " + PanelOwner.Session.Result.Warnings.MajorityLength + " items";
                         if (PanelOwner.Session.Result.DisplaySet?.BranchOccurrences.TryGetValue(hit.Path, out var occurrences) == true)
                         {
                             e.Text = "List length: " + PanelOwner.Session.Snapshot.BranchItemCounts[hit.Path] + " · " + occurrences.Count + " branches";
                             e.Description = "Matching branches with this displayed count: " + string.Join(", ", occurrences) +
-                                ".\nFiltered source items: " + CanvasStatistics.SourceStatuses(PanelOwner.Session.Result.DisplaySet.BranchSourceStatuses[hit.Path]) +
-                                ". Out Items groups all matching branches; Out Values sends the count. B, F and geometry actions include every member. Click to select this count; double-click to clear selection.";
+                                ".\nResults source items: " + CanvasStatistics.SourceStatuses(PanelOwner.Session.Result.DisplaySet.BranchSourceStatuses[hit.Path]) +
+                                ". Out Items groups all Results branches; Out Values sends the count. B, F and geometry actions include every member. Click to select this count; double-click to clear selection.";
                         }
                         return;
                     }
@@ -1983,7 +1985,7 @@ namespace BetterGhPanel
                     if (rounding.Length > 0) details = rounding + "\n" + details;
                     if (setOccurrences != null)
                     {
-                        details += "\nFiltered source occurrences: " + CanvasStatistics.SourceStatuses(setOccurrences.SourceStatuses);
+                        details += "\nResults source occurrences: " + CanvasStatistics.SourceStatuses(setOccurrences.SourceStatuses);
                         if (PanelOwner.OutputValues == PanelOutputValues.Items)
                             details += "\nD output branch: " + PanelItemOrder.Address(PanelOwner.Session.Result, hit.SourcePosition, true, PanelOwner.FlattenTree);
                     }

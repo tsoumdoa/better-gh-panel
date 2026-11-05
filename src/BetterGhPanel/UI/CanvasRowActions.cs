@@ -41,7 +41,7 @@ namespace BetterGhPanel.UI
             new CanvasRowAction(PanelRowAction.ViewFullValue, paired ? "View full F value" : "View full value",
                 "Open the value of the row you right-clicked in a scrollable, read-only window."),
             new CanvasRowAction(PanelRowAction.SelectIndices,
-                "Select " + IndexLabel(indices).ToLowerInvariant() + (filtered ? " across filtered results" : " across branches"),
+                "Select " + IndexLabel(indices).ToLowerInvariant() + (filtered ? " across Results" : " across branches"),
                 "Select the same zero-based item indices in every branch, including offscreen rows. Shortcut: Alt/Option-click.")
         };
 

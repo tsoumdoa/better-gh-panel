@@ -58,7 +58,7 @@ namespace BetterGhPanel.UI
         };
         private static readonly CanvasPreviewChoice[] PreviewChoices =
         {
-            new CanvasPreviewChoice(PanelPreviewMode.Selected, "Selected"),
+            new CanvasPreviewChoice(PanelPreviewMode.Selected, "Selection"),
             new CanvasPreviewChoice(PanelPreviewMode.FilteredResults, "Results"),
             new CanvasPreviewChoice(PanelPreviewMode.Off, "Off"),
             new CanvasPreviewChoice(null, "Show item order")
@@ -492,7 +492,7 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.Comparison) return ComparisonChoiceAt(index).Label;
             if (index == 0) return "All branches";
             if (index == 1) return _branchFilter.Length == 0 ? "Jump to exact path…" :
-                "Jump to {" + Unbraced(_branchFilter) + "}  ·  " + (_branchMatches?.Length ?? 0).ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " matching";
+                "Jump to {" + Unbraced(_branchFilter) + "}  ·  " + (_branchMatches?.Length ?? 0).ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " Results";
             var branch = _snapshot.Branches[BranchIndex(index)];
             var path = branch.Path.Length <= 150 ? branch.Path : branch.Path.Substring(0, 149) + "…";
             return path + "   ·   " + branch.ItemCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);

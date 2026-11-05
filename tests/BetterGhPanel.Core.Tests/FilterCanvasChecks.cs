@@ -29,8 +29,8 @@ internal static class FilterCanvasChecks
 
         var multiple = CanvasRowActions.Create(6, new[] { 1, 3 }, true);
         Require(multiple.Single(choice => choice.Action == PanelRowAction.CopyValues).Label == "Copy values" &&
-            multiple.Single(choice => choice.Action == PanelRowAction.SelectIndices).Label == "Select indices 1, 3 across filtered results",
-            "Multi-row action labels preserve distinct indices and filtered scope");
+            multiple.Single(choice => choice.Action == PanelRowAction.SelectIndices).Label == "Select indices 1, 3 across Results",
+            "Multi-row action labels preserve distinct indices and Results scope");
         var manyIndices = CanvasRowActions.Create(8, new[] { 1, 3, 5, 7 }, false);
         Require(manyIndices.Single(choice => choice.Action == PanelRowAction.SelectIndices).Label == "Select 4 indices across branches",
             "Long index selections use a bounded count label");

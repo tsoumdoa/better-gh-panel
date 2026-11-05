@@ -329,8 +329,7 @@ namespace BetterGhPanel
 
         // Upstream recomputes keep the scroll position when the new tree has the
         // same paths and branch lengths; otherwise the view starts at the top.
-        // Selection deliberately still clears: an address may now hold different
-        // data, and S/B/F must never silently emit items the user did not pick.
+        // Selection is re-bound explicitly only after the same structure check.
         private PanelQueryResult? _selectionRestore;
         private PanelRowSelection? _savedSelection;
 
@@ -348,7 +347,7 @@ namespace BetterGhPanel
         {
             if (_selectionRestore != null && _savedSelection != null)
             {
-                if (SameStructure(_selectionRestore.Snapshot, result.Snapshot))
+                if (PanelRowSelection.SameStructure(_selectionRestore.Snapshot, result.Snapshot))
                     _selection.Rebind(_savedSelection, result);
                 _selectionRestore = null;
                 _savedSelection = null;
@@ -356,17 +355,9 @@ namespace BetterGhPanel
             var restore = _viewRestore;
             if (restore == null) return;
             _viewRestore = null;
-            if (restore.ListLengths != DisplayListLengths || !SameStructure(restore.Snapshot, result.Snapshot)) return;
+            if (restore.ListLengths != DisplayListLengths || !PanelRowSelection.SameStructure(restore.Snapshot, result.Snapshot)) return;
             _offset = Math.Max(0, Math.Min(MaximumOffset, restore.Offset));
             _pairedOffset = _scrollLocked ? _offset : Math.Max(0, Math.Min(MaximumOffset, restore.PairedOffset));
-        }
-
-        private static bool SameStructure(PanelSnapshot before, PanelSnapshot after)
-        {
-            if (before.Rows.Count != after.Rows.Count || before.Branches.Count != after.Branches.Count) return false;
-            for (int i = 0; i < before.Branches.Count; i++)
-                if (before.Branches[i].Path != after.Branches[i].Path || before.Branches[i].ItemCount != after.Branches[i].ItemCount) return false;
-            return true;
         }
 
         private sealed class ViewRestore

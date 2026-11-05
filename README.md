@@ -28,6 +28,17 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
+### Unreleased
+
+**Behaviour changes**
+
+- S survives recomputes with the same paths and branch lengths; filtered-out rows drop from Selection.
+- Clicking blank canvas or empty panel space keeps Selection.
+- Items/Values resets to Items when hidden; one Undo restores both settings.
+- Reset commands are now **Clear filters** and **Reset all**; the header ↻ is Reset all.
+- The **·S** port suffix is removed. B/F tooltips state Results or Selection.
+
+
 **[`0.2.5-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.5-beta)**
 
 - **Text Dots are fully supported.** Rows show the dot's text; X/Y/Z, font size and font face work as properties; selected dots preview, highlight, frame and copy in Rhino.
@@ -45,7 +56,7 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 **[`0.2.3-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.3-beta)**
 
 - **Send items or values.** When the panel shows a value (Length, Area, Validity, …) or a set, the new **Out Items | Values** switch next to **Select all** chooses what D and S send: the original data, for example the curves you filtered by length, or the values you see.
-- **One branch per set value.** With Create set and **Items**, every matching item goes to `{path;k}`, and set rows are numbered by that **k**. Selecting a set row sends, previews and frames all of its members.
+- **One branch per set value.** With Create set and **Items**, every Results item goes to `{path;k}`, and set rows are numbered by that **k**. Selecting a set row sends, previews and frames all of its members.
 
 ## Features
 
@@ -109,12 +120,14 @@ The footer's tree tools run in a fixed order — **Simplify → Trim → Flatten
 
 - **Create set** groups equal displayed values per branch (or across the tree with Flatten). Rows use set index **k**. **Out Items** sends all members in **{path;k}** branches (**{k}** when flattened); **Out Values** sends each unique value once at displayed precision. List-length sets group original branches as **{k;path}**. An occurrence badge such as **9×** lists every original path and index.
 - **Units** converts numbers and geometry metrics (mm ↔ m, mm² ↔ m², mm³ ↔ m³, rad ↔ deg), sets **Decimal places**, and can **Round up by factor**. Unit conversion, Round up by factor, then explicit Decimal places define one presented number shared by the rows, Values output, clipboard, comparisons and Stats. Numeric Items also leave at this precision; geometry is never modified. Factors apply to plain numbers, geometry metrics, X/Y/Z and dimensional properties, including angles. Counts, indices, dates, colour channels, axis components and matrix entries ignore the factor; integer properties stay integers. Rounding uses the faithful 15-digit decimal form when possible, so 2.675 at 2 decimal places becomes 2.68, as in Excel. Hover a rounded row to see its raw value and rounding.
-- **Reset** returns to the incoming data in one click; one Undo restores your settings.
+- **Clear filters** clears search, mode, type, path, invalid-only, sorting, selection and scroll in one Undo step.
+- **Reset all** (header ↻) also resets tree tools, units, rounding, decimals, Out Items/Values and B + F follow. It keeps Preview mode, item order, D|F split and size. One Undo restores the settings.
+- **Reset all tooltip:** “Reset search, mode, type, path, invalid-only, sort, selection, scroll, tree tools, units, rounding, decimals, Out Items/Values and B + F follow. Keeps Preview mode, item order, D|F split and size. Undo brings settings back.”
 
 ### Select, preview and copy
 
 - **Click** a row to select it, **Ctrl/Cmd-click** to toggle, **Shift-click** for a range, a **branch heading** for the whole branch, and **Alt/Option-click** to pick the same item index in every branch. **Select all** takes every current match.
-- **Preview** draws **Selected** rows (default), all **Filtered results**, or nothing, in Grasshopper's selection colour. **Show item order** adds numbered dots in Rhino.
+- **Preview** draws **Selection** (default), **Results**, or **Off**, in Grasshopper's selection colour. **Show item order** adds numbered dots in Rhino.
 - **Branch addresses.** Hover a branch heading to copy its path with the small copy glyph. Right-click for path formats, selected paths or **Show only this branch**. Row menus offer **Copy address(es)** (`{path}(index)`; Create-set Items copy the D branch `{path;k}`, or `{k}` with Flatten) and **Copy as table** (Path, Index, shown Value as TSV).
 - **Right-click** a row to **Frame selection** in Rhino, **Copy value(s)**, **View full value**, or **Copy geometry for Rhino** (Windows) to paste with Rhino's normal Paste.
 
@@ -127,7 +140,7 @@ Connect matching data to the optional **F** input and click **D|F** in the heade
 - **Linked scrolling** (the chain link between the pane captions) moves both panes with one scrollbar. Unlink it to scroll each pane on its own; selecting a row brings its partner into view, and relinking snaps F back to D.
 - Copying and **View full value** from the F pane use F's raw values, unconverted. F row addresses and tables use F's own original path and index. Heading **Copy path** copies the clicked pane's path, including F's own path for order-paired branches. Hover copy glyphs follow the complete drawn label and disappear when it is clipped. Data warnings mark D headings; F keeps its pairing badge and counts.
 - F must have **the same number of branches as D**, before tree tools. All identical paths pair first; remaining branches pair in tree order. The F heading shows its own path when paired by order.
-- Items pair by index within each original branch pair. Missing F cells stay empty, with a label on the first row of each run; additional F items appear as muted rows beside blank D spacers. Only indices beyond the original D branch length are labelled **only in F**; retained values whose D rows are hidden carry **paired with hidden D rows**. These muted rows are not selectable. Every F item keeps its original F index, including after Reverse, filtering and sorting. An amber **D 12** badge beside F's count marks unequal lengths; filtered F headings show the matching count, such as **3 of 12 items**.
+- Items pair by index within each original branch pair. Missing F cells stay empty, with a label on the first row of each run; additional F items appear as muted rows beside blank D spacers. Only indices beyond the original D branch length are labelled **only in F**; retained values whose D rows are hidden carry **paired with hidden D rows**. These muted rows are not selectable. Every F item keeps its original F index, including after Reverse, filtering and sorting. An amber **D 12** badge beside F's count marks unequal lengths; F headings show the Results count, such as **3 of 12 items**.
 - With **Create set**, each item or list-length set has one F cell: a bounded, single-line summary of exactly the values F emits for that group, in output order (for example, `f0 · f1 · f2 · f3 … +7 in this set`). Sets have no hidden-partner or only-in-F notes. Selecting an F set cell scopes its complete group; copying it includes every emitted F value. Use **Ctrl+C** on a selected F list-length set to copy the group.
 - When branch counts differ, the F pane explains the mismatch:
 
@@ -139,21 +152,27 @@ The **D|F** chip is hidden until F has data. Split view saves with the definitio
 
 | Port | Output |
 | --- | --- |
-| **D** | Matching **Items** (default) or displayed **Values**, with the same rounding as shown, in tree order. Set Items: all members in one branch per value; set Values: one list of unique values per source branch. |
-| **S** | Selected Items or Values. Selected sets include all members and retain D's group paths. Empty when nothing is selected. |
+| **D** | Results **Items** (default) or displayed **Values**, with the same rounding as shown, in tree order. Set Items: all members in one branch per value; set Values: one list of unique values per source branch. |
+| **S** | Selection Items or Values. Sets in Selection include all members and retain D's group paths. Empty when nothing is selected. |
 | **B** | A True/False mask in the original D tree shape, including every member of kept or selected sets. |
 | **F** | Raw paired items at D's transformed paths: equal branches follow item membership; an unequal branch emits its whole F branch once per destination group when any D member is in scope. An empty D branch's F partner is included when D retains that branch, no item filter is active, and Create set is off (item or list-length). Item filters follow the query engine's rule: text/regex or value/property comparisons, type and invalid-only restrictions exclude it; path and list-length restrictions retain it when D still shows the branch. It follows D's destination even after merging or Flatten. Otherwise it is neither emitted nor shown, and is excluded from F heading totals. Sets use the same group paths as set Items in both output modes. |
 
 **Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. With explicit decimals or a factor, the Values tooltip says "Sends the values exactly as shown"; in Automatic it says "Sends full-precision values; the display may be abbreviated"; the ports always read **D** and **S**. Numbers use the shown units and explicit rounding; Automatic keeps full wire precision except for compact displayed Create set Values; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
 
-Right-click the component → **B + F source** to make B and F follow the **Filtered results** (default) or only the **Selected rows**. In Selected mode the port labels read **B·S** and **F·S**. With Items output and nothing filtered or transformed, D forwards its input unchanged.
+The Out Items/Values switch resets to Items whenever hidden (for example, returning to Text with Create set off). Undo restores both settings.
+
+Right-click the component → **B + F follow** to make B and F follow the **Results** (default) or only the **Selection**. Ports always read **D**, **S**, **B**, **F**; B/F tooltips state the current scope. With Items output and nothing filtered or transformed, D forwards its input unchanged.
 
 ### Layout
+
+The header reads **Preview: Selection**, **Preview: Results** or **Preview: Off**. The ↻ button is **Reset all**.
 
 - Drag the dotted header grip to move the panel and the bottom-right corner to resize it. The header chevron toggles **Full ↔ Half** height; **–** minimizes it to a capsule that still shows counts. Wires stay connected throughout.
 - On a dark Grasshopper canvas Panel+ uses a matching dark palette. Below 50% zoom it shows a large item/branch summary.
 
 ### Keyboard and mouse
+
+Click inside the panel to focus it. Empty panel space and blank canvas keep Selection. Esc, double-clicking a row or heading, Clear filters, Reset all, a branch filter change, structural input changes and document switches clear Selection. Same-structure recomputes re-bind Selection by source position.
 
 Click inside the panel to focus it (a green ring appears). Without focus, every key and wheel event goes to Grasshopper as usual.
 

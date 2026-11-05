@@ -55,7 +55,7 @@ namespace BetterGhPanel
                 y += RowHeight;
             }
             if (Count == 0)
-                Text(graphics, result.Snapshot.Branches.Count == 0 ? "Connect a tree to start exploring." : "No matching branches. Clear a filter or Reset.",
+                Text(graphics, result.Snapshot.Branches.Count == 0 ? "Connect a tree to start exploring." : "No Results branches. Clear a filter or Reset all.",
                     small, Muted, new RectangleF(list.X + 6, list.Y, list.Width - 12, RowHeight), trim);
             if (Count > shown && !track.IsEmpty)
             {

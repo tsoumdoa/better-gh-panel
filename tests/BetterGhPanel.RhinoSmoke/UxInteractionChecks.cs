@@ -272,6 +272,62 @@ internal static class UxInteractionChecks
         fixture.Query(new PanelQueryOptions());
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
 
+        // Each action that hides Out must restore the choice in the same undo step.
+        foreach (string action in new[] { "mode", "clear", "set", "filters", "all" })
+        {
+            Call(component, "ResetAll");
+            await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+            if (action == "set") Call(component, "SetTreeOperations", 0, false, false, false, true);
+            else fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Value, DisplayFilterValue = true });
+            await fixture.Ready(() => !PropertyBusy());
+            Call(component, "SetOutputValues", PanelOutputValues.Values);
+            fixture.Select(0);
+            fixture.Document.UndoServer.Clear();
+            if (action == "mode") Call(attributes, "SetSearch", canvas, PanelSearchMode.Text, "", false);
+            else if (action == "clear") Call(attributes, "ClearSearch", canvas);
+            else if (action == "set") Call(component, "SetTreeOperations", 0, false, false, false, false);
+            else Call(component, action == "filters" ? "ClearFilters" : "ResetAll");
+            await fixture.Ready(() => !PropertyBusy());
+            Check(ValuesChoice() == PanelOutputValues.Items && fixture.Document.UndoServer.UndoCount == 1,
+                "Hiding Out resets Values to Items in one undo step: " + action);
+            if (action == "filters" || action == "all") Check(fixture.SelectedCount == 0, "Reset clears Selection: " + action);
+            fixture.Document.UndoServer.PerformUndo();
+            await fixture.Ready(() => !PropertyBusy());
+            Check(ValuesChoice() == PanelOutputValues.Values && CanValues(), "Undo restores query/tree setting and Values: " + action);
+            fixture.Document.UndoServer.PerformRedo();
+            await fixture.Ready(() => !PropertyBusy());
+            Check(ValuesChoice() == PanelOutputValues.Items && !CanValues(), "Redo restores Items fallback: " + action);
+        }
+        bool PropertyBusy() => (bool)fixture.Session.GetType().GetProperty("IsBusy")!.GetValue(fixture.Session)!;
+        bool CanValues() => (bool)component.GetType().GetProperty("CanOutputValues", Instance)!.GetValue(component)!;
+        PanelOutputValues ValuesChoice() => (PanelOutputValues)component.GetType().GetProperty("OutputValues", Instance)!.GetValue(component)!;
+
+        Call(component, "SetTreeOperations", 1, false, true, false, false);
+        Call(component, "SetOutputScope", PanelOutputScope.Selected);
+        fixture.Query(new PanelQueryOptions { Search = "> 9", SortMode = PanelSortMode.ValueDescending });
+        await fixture.Ready(() => !PropertyBusy());
+        fixture.Document.UndoServer.Clear();
+        Call(component, "ClearFilters");
+        await fixture.Ready(() => !PropertyBusy());
+        Check(Options(fixture).Search == "" && Options(fixture).SortMode == PanelSortMode.SourceOrder &&
+            (bool)component.GetType().GetProperty("ReverseTree", Instance)!.GetValue(component)! &&
+            (PanelOutputScope)component.GetType().GetProperty("OutputScope", Instance)!.GetValue(component)! == PanelOutputScope.Selected &&
+            fixture.Document.UndoServer.UndoCount == 1, "Clear filters keeps tree tools and B/F scope");
+        fixture.Document.UndoServer.PerformUndo();
+        await fixture.Ready(() => !PropertyBusy());
+        Check(Options(fixture).Search == "> 9", "Clear filters Undo restores filters");
+        fixture.Document.UndoServer.Clear();
+        Call(component, "ResetAll");
+        await fixture.Ready(() => !PropertyBusy());
+        Check(!(bool)component.GetType().GetProperty("ReverseTree", Instance)!.GetValue(component)! &&
+            (PanelOutputScope)component.GetType().GetProperty("OutputScope", Instance)!.GetValue(component)! == PanelOutputScope.Filtered &&
+            fixture.Document.UndoServer.UndoCount == 1, "Reset all resets tree tools and B/F scope in one step");
+        fixture.Document.UndoServer.PerformUndo();
+        await fixture.Ready(() => !PropertyBusy());
+        Check((bool)component.GetType().GetProperty("ReverseTree", Instance)!.GetValue(component)! && Options(fixture).Search == "> 9",
+            "Reset all Undo restores tools and filters");
+        Call(component, "ResetAll");
+
         using var curve = new LineCurve(Point3d.Origin, new Point3d(1, 2, 3));
         var group = new GH_GeometryGroup(); group.Objects.Add(new GH_Point(Point3d.Origin));
         var inputs = new IGH_Goo[] { new GH_ObjectWrapper(Point3d.Origin), new GH_ObjectWrapper(curve),
