@@ -351,7 +351,7 @@ internal static class UxInteractionChecks
 
         fixture.Document.UndoServer.Clear();
         Call(component, "ClearFilters");
-        Check(fixture.Document.UndoServer.UndoCount == 0, "Clear filters with no filters or selection records no undo");
+        Check(fixture.Document.UndoServer.UndoCount == 0, "Clear filters with no filters records no undo");
         fixture.Select(0);
         bool resetRecordedUndo = (bool)component.GetType().GetMethod("ResetAll", Instance)!.Invoke(component, Array.Empty<object>())!;
         Check(!resetRecordedUndo && fixture.Document.UndoServer.UndoCount == 0 && fixture.SelectedCount == 0,

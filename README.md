@@ -119,8 +119,8 @@ The footer's tree tools run in a fixed order — **Simplify → Trim → Flatten
 
 - **Create set** groups equal displayed values per branch (or across the tree with Flatten). Rows use set index **k**. **Out Items** sends all members in **{path;k}** branches (**{k}** when flattened); **Out Values** sends each unique value once at displayed precision. List-length sets group original branches as **{k;path}**. An occurrence badge such as **9×** lists every original path and index.
 - **Units** converts numbers and geometry metrics (mm ↔ m, mm² ↔ m², mm³ ↔ m³, rad ↔ deg), sets **Decimal places**, and can **Round up by factor**. Unit conversion, Round up by factor, then explicit Decimal places define one presented number shared by the rows, Values output, clipboard, comparisons and Stats. Numeric Items also leave at this precision; geometry is never modified. Factors apply to plain numbers, geometry metrics, X/Y/Z and dimensional properties, including angles. Counts, indices, dates, colour channels, axis components and matrix entries ignore the factor; integer properties stay integers. Rounding uses the faithful 15-digit decimal form when possible, so 2.675 at 2 decimal places becomes 2.68, as in Excel. Hover a rounded row to see its raw value and rounding.
-- **Clear filters** clears search, mode, type, path, invalid-only, sorting, selection and scroll in one Undo step.
-- **Reset all** (header ↻) also resets tree tools, units, rounding, decimals, Out Items/Values and B + F follow. It keeps Preview mode, item order, D|F split and size. One Undo restores the settings.
+- **Clear filters** clears search, mode, type, path, invalid-only, sorting, selection and scroll. One Undo restores the filters.
+- **Reset all** (header ↻) also resets tree tools, units, rounding, decimals, Out Items | Values and B + F follow. It keeps Preview mode, item order, D|F split and size. One Undo restores the settings.
 
 ### Select, preview and copy
 
@@ -157,7 +157,7 @@ The **D|F** chip is hidden until F has data. Split view saves with the definitio
 
 **Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. With explicit decimals or a factor, the Values tooltip says "Sends the values exactly as shown"; in Automatic it says "Sends full-precision values; the display may be abbreviated"; the ports always read **D** and **S**. Numbers use the shown units and explicit rounding; Automatic keeps full wire precision except for compact displayed Create set Values; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
 
-The Out Items/Values switch resets to Items whenever hidden (for example, returning to Text with Create set off). Undo restores both settings.
+The Out Items | Values switch resets to Items whenever hidden (for example, returning to Text with Create set off). Undo restores both settings.
 
 Right-click the component → **B + F follow** to make B and F follow the **Results** (default) or only the **Selection**. Ports always read **D**, **S**, **B**, **F**; B/F tooltips state the current scope. With Items output and nothing filtered or transformed, D forwards its input unchanged.
 
@@ -168,7 +168,7 @@ Right-click the component → **B + F follow** to make B and F follow the **Resu
 
 ### Keyboard and mouse
 
-Clicking inside the panel focuses it and keeps your selection; Esc clears the selection, then releases focus. A green ring shows focus; without focus, keys and wheel go to Grasshopper as usual. Double-click, Clear filters, Reset all and changes to the input's structure also clear the selection.
+Clicking inside the panel focuses it and keeps your selection; the first Esc clears the selection and the next releases focus. A green ring shows focus; without focus, keys and wheel go to Grasshopper as usual. Double-click, Clear filters, Reset all and changes to the input's structure also clear the selection.
 
 | Key | Action |
 | --- | --- |

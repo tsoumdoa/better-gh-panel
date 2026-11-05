@@ -337,7 +337,7 @@ namespace BetterGhPanel
 
         internal void ClearFilters()
         {
-            if (HasFilters(Session.Options) || RowSelection.Count > 0) RecordUndoEvent("Clear filters");
+            if (HasFilters(Session.Options)) RecordUndoEvent("Clear filters");
             ClearFiltersCore();
         }
 
@@ -914,9 +914,9 @@ namespace BetterGhPanel
             p[1].Optional = true;
         }
 
-        private const string MaskDescription = "True/False mask of the matching items in the original D input tree. Preserves original paths and item counts. Every member of a kept or selected set is True. This mask conveys membership, not transformed ordering.";
+        private const string MaskDescription = "True/False mask, in the original D input tree, of the items B + F follow. Preserves original paths and item counts. Every member of a kept or selected set is True. This mask conveys membership, not transformed ordering.";
 
-        private const string PairedDescription = "Raw paired F items for the matching items, at D's transformed destinations. Equal branches follow item membership; scoped unequal branches emit their whole F branch once per group. Empty D partners are included when D retains the branch, without item filters or Create set; path and list-length filters preserve them. Sets use {path;k} ({k} when flattened; {k;path} for list-length sets), in both output modes. F values and types are unchanged. F must have the same branch count as D; exact paths pair first, then remaining branches in tree order.";
+        private const string PairedDescription = "Raw paired F items for the items B + F follow, at D's transformed destinations. Equal branches follow item membership; scoped unequal branches emit their whole F branch once per group. Empty D partners are included when D retains the branch, without item filters or Create set; path and list-length filters preserve them. Sets use {path;k} ({k} when flattened; {k;path} for list-length sets), in both output modes. F values and types are unchanged. F must have the same branch count as D; exact paths pair first, then remaining branches in tree order.";
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {

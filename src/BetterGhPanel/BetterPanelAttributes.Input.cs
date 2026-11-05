@@ -346,13 +346,15 @@ namespace BetterGhPanel
 
         private void RestoreView(PanelQueryResult result)
         {
-            if (ReferenceEquals(result.Snapshot, _selectionRestore?.Snapshot) ||
-                ReferenceEquals(result.Snapshot, _viewRestore?.Snapshot)) return;
+            // A cancelled live edit can republish the stashed (old) snapshot; only the
+            // replacement input may consume an upstream-recompute stash.
+            if (_selectionRestore != null && ReferenceEquals(result.Snapshot, _selectionRestore.Snapshot)) return;
             bool? sameStructure = null;
             if (_selectionRestore != null)
             {
-                if (_savedSelection != null && !PanelOwner.CreateSetTree)
-                    sameStructure = _selection.Rebind(_savedSelection, result);
+                sameStructure = PanelRowSelection.SameStructure(_selectionRestore.Snapshot, result.Snapshot);
+                if (sameStructure == true && _savedSelection != null && !PanelOwner.CreateSetTree)
+                    _selection.Rebind(_savedSelection, result);
                 _selectionRestore = null;
                 _savedSelection = null;
             }
