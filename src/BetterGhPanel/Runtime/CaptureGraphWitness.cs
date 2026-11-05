@@ -21,11 +21,57 @@ namespace BetterGhPanel.Runtime
         internal MeasurementReferenceState Reference { get; }
     }
 
+    // Rhino Matrix owns native memory. Freeze its bounded cells into managed data
+    // rather than retaining an undisposed GH_Matrix/native copy in the witness.
+    internal sealed class CapturedMatrixValue
+    {
+        private CapturedMatrixValue(bool hasValue, bool valid, int rows, int columns, double[] cells)
+        { HasValue = hasValue; Valid = valid; Rows = rows; Columns = columns; Cells = cells; }
+        internal bool HasValue { get; }
+        internal bool Valid { get; }
+        internal int Rows { get; }
+        internal int Columns { get; }
+        internal double[] Cells { get; }
+        internal static CapturedMatrixValue? Capture(Matrix? matrix)
+        {
+            if (matrix == null) return new CapturedMatrixValue(false, false, 0, 0, Array.Empty<double>());
+            if (matrix.GetType() != typeof(Matrix)) return null;
+            int rows = matrix.RowCount, columns = matrix.ColumnCount;
+            if (rows < 0 || columns < 0 || (long)rows * columns > SafeGooInspection.MaxNodesPerRoot) return null;
+            bool valid = matrix.IsValid;
+            var cells = new double[valid ? rows * columns : 0];
+            for (int i = 0; i < cells.Length; i++) cells[i] = matrix[i / columns, i % columns];
+            return new CapturedMatrixValue(true, valid, rows, columns, cells);
+        }
+        internal bool IsCurrent(Matrix? matrix)
+        {
+            if (matrix == null) return !HasValue;
+            if (!HasValue || matrix.GetType() != typeof(Matrix) || matrix.IsValid != Valid || matrix.RowCount != Rows || matrix.ColumnCount != Columns) return false;
+            for (int i = 0; i < Cells.Length; i++)
+                if (BitConverter.DoubleToInt64Bits(Cells[i]) != BitConverter.DoubleToInt64Bits(matrix[i / Columns, i % Columns])) return false;
+            return true;
+        }
+        internal BetterGhPanel.Core.PanelNumericSummary? Summary() => Valid ?
+            BetterGhPanel.Core.PanelNumericSummary.Matrix(Rows, Columns, (r, c) => Cells[r * Columns + c]) : null;
+    }
+
+    internal readonly struct CapturedCultureValue
+    {
+        internal CapturedCultureValue(System.Globalization.CultureInfo? culture) { Name = culture?.Name; EnglishName = culture?.EnglishName; }
+        internal string? Name { get; }
+        internal string? EnglishName { get; }
+        internal bool IsCurrent(System.Globalization.CultureInfo? culture) => culture == null ? Name == null :
+            culture.GetType() == typeof(System.Globalization.CultureInfo) && culture.Name == Name && culture.EnglishName == EnglishName;
+    }
+
     // Structural evidence retained with a snapshot. Group and wrapper references
     // are weak; managed row copies share the snapshot's source-holder array.
     // It never calls a wrapper/group validity, formatting, preview or copy method.
     internal sealed class CaptureGraphWitness
     {
+        // GH_StructurePath.Value normalizes null to an empty path; keep a marker
+        // for the distinct null state rather than constructing a different value.
+        internal static readonly object NullPath = new object();
         private readonly List<Node> _nodes = new List<Node>();
         private readonly IGH_Goo?[]? _managedHolders;
         private readonly CapturedManagedValue[]? _managedCopies;
@@ -35,19 +81,28 @@ namespace BetterGhPanel.Runtime
         { _managedHolders = holders; _managedCopies = copies; }
 
         // Direct managed values already occur once per input row. Keep their
-        // immutable copies in one linear witness, outside the group traversal
-        // budget, rather than allocating a graph per value.
+        // immutable copies in one linear witness rather than allocating a graph
+        // per value. Variable-size copies share the capture traversal budget.
         internal static CaptureGraphWitness ForManagedValues(IGH_Goo?[] holders, CapturedManagedValue[] copies) =>
             new CaptureGraphWitness(holders, copies);
 
-        internal static bool TryCopyStandaloneValue(IGH_Goo? value, out CapturedManagedValue captured)
+        internal static bool TryCopyStandaloneValue(IGH_Goo? value, ref int remaining, out CapturedManagedValue captured)
         {
             captured = default;
             if (value == null) return false;
             Type type = value.GetType();
             if (type == typeof(GH_Number) || type == typeof(GH_Integer) || type == typeof(GH_String) || type == typeof(GH_Boolean)) return false;
-            return TryCaptureManagedValue(value, out captured);
+            if (remaining == 0 && (type == typeof(GH_Matrix) || type == typeof(GH_StructurePath))) return false;
+            if (!TryCaptureManagedValue(value, out captured)) return false;
+            int cost = CapturedCost(captured);
+            if (cost > remaining) { remaining = 0; captured = default; return false; }
+            remaining -= cost;
+            return true;
         }
+
+        private static int CapturedCost(CapturedManagedValue value) => value.Raw is CapturedMatrixValue matrix
+            ? Math.Max(1, matrix.Rows * matrix.Columns) : value.Copy?.GetType() == typeof(GH_StructurePath)
+                ? Math.Max(1, ((GH_StructurePath)value.Copy).Value?.Length ?? 0) : ReferenceEquals(value.Raw, NullPath) ? 1 : 0;
 
         internal static bool ManagedValueCurrent(IGH_Goo? holder, CapturedManagedValue captured)
         {
@@ -55,6 +110,12 @@ namespace BetterGhPanel.Runtime
             {
                 var copy = captured.Copy;
                 if (!captured.Available) return true;
+                if (ReferenceEquals(captured.Raw, NullPath))
+                    return holder?.GetType() == typeof(GH_StructurePath) && ((GH_StructurePath)holder).Value is null;
+                if (captured.Raw is CapturedMatrixValue matrix)
+                    return holder?.GetType() == typeof(GH_Matrix) && matrix.IsCurrent(((GH_Matrix)holder).Value);
+                if (captured.Raw is CapturedCultureValue culture)
+                    return holder?.GetType() == typeof(GH_Culture) && culture.IsCurrent(((GH_Culture)holder).Value);
                 if (captured.Raw is Box box)
                 {
                     if (holder == null || holder.GetType() != typeof(GH_Box) || !Same(((GH_Box)holder).Value, box)) return false;
@@ -80,6 +141,27 @@ namespace BetterGhPanel.Runtime
             captured = default;
             object? rawValue = null;
             IGH_Goo? copy = null;
+            if (value.GetType() == typeof(GH_Matrix))
+            {
+                var matrix = CapturedMatrixValue.Capture(((GH_Matrix)value).Value);
+                if (matrix == null) return false;
+                captured = new CapturedManagedValue(null, matrix, matrix.Valid ? BetterGhPanel.Core.PanelValidity.VerifiedValid : BetterGhPanel.Core.PanelValidity.VerifiedInvalid,
+                    true, false, false, default);
+                return true;
+            }
+            if (value.GetType() == typeof(GH_Culture))
+            {
+                var culture = ((GH_Culture)value).Value;
+                if (culture != null && culture.GetType() != typeof(System.Globalization.CultureInfo)) return false;
+                captured = new CapturedManagedValue(null, new CapturedCultureValue(culture), culture == null ? BetterGhPanel.Core.PanelValidity.VerifiedInvalid : BetterGhPanel.Core.PanelValidity.VerifiedValid,
+                    true, false, false, default);
+                return true;
+            }
+            if (value.GetType() == typeof(GH_StructurePath) && ((GH_StructurePath)value).Value is null)
+            {
+                captured = new CapturedManagedValue(null, NullPath, BetterGhPanel.Core.PanelValidity.VerifiedInvalid, true, false, false, default);
+                return true;
+            }
             if (value.GetType() == typeof(GH_Box)) rawValue = ((GH_Box)value).Value;
             else if (!TryCopyManagedValue(value, out copy) || copy == null) return false;
             bool hasReference = SafeGooInspection.TryGetMeasurementReference(value, out var raw, false, deferManagedLoad: true);
@@ -220,8 +302,18 @@ namespace BetterGhPanel.Runtime
                         bool readable = geometry == null || !trusted || SafeGooInspection.MeasurementSourceCanRead(geometry);
                         result._nodes.Add(new Node(value, trusted, geometry, readable, hasReference, reference));
                     }
-                    else if (value is IGH_Goo managed && TryCaptureManagedValue(managed, out var captured))
+                    else if (value is IGH_Goo managed && IsManagedValueType(type))
+                    {
+                        // The bounded copy has at most 4,096 cells/indices. This
+                        // visit already paid one node; charge its remaining size.
+                        if (!TryCaptureManagedValue(managed, out var captured)) return false;
+                        int extra = Math.Max(0, CapturedCost(captured) - 1);
+                        if (extra > captureRemaining) { captureRemaining = 0; return false; }
+                        captureRemaining -= extra;
+                        if (extra > rootRemaining) return false;
+                        rootRemaining -= extra;
                         result._nodes.Add(new Node(value, captured));
+                    }
                 }
                 witness = result;
                 return true;
@@ -241,7 +333,7 @@ namespace BetterGhPanel.Runtime
                     if (_managedHolders == null || _managedHolders.Length != _managedCopies.Length) return false;
                     for (int i = 0; i < _managedCopies.Length; i++)
                     {
-                        visits++;
+                        visits += Math.Max(1, CapturedCost(_managedCopies[i]));
                         if (!ManagedValueCurrent(_managedHolders[i], _managedCopies[i])) return false;
                     }
                 }
@@ -317,7 +409,7 @@ namespace BetterGhPanel.Runtime
             {
                 visits = 1;
                 if (!_value.TryGetTarget(out var value)) return false;
-                if (_hasManagedValue) return ManagedValueCurrent(value as IGH_Goo, _managedValue);
+                if (_hasManagedValue) { visits = Math.Max(1, CapturedCost(_managedValue)); return ManagedValueCurrent(value as IGH_Goo, _managedValue); }
                 Type type = value.GetType();
                 if (type == typeof(GH_ObjectWrapper)) return TargetIs(((GH_ObjectWrapper)value).Value);
                 if (type == typeof(GH_GeometricGooWrapper)) return TargetIs(((GH_GeometricGooWrapper)value).InternalGoo);
@@ -418,6 +510,15 @@ namespace BetterGhPanel.Runtime
             else if (type == typeof(GH_Circle)) copy = new GH_Circle(((GH_Circle)value).Value);
             else if (type == typeof(GH_Rectangle)) copy = new GH_Rectangle(((GH_Rectangle)value).Value);
             else if (type == typeof(GH_MeshFace)) copy = new GH_MeshFace(((GH_MeshFace)value).Value);
+            else if (type == typeof(GH_LonLatCoordinate))
+            { var v = (GH_LonLatCoordinate)value; copy = new GH_LonLatCoordinate(v.Longitude, v.Latitude); }
+            else if (type == typeof(GH_StructurePath))
+            {
+                var path = ((GH_StructurePath)value).Value;
+                if (path == null || path.GetType() != typeof(Grasshopper.Kernel.Data.GH_Path) || path.Length > SafeGooInspection.MaxNodesPerRoot)
+                { copy = null; return false; }
+                copy = new GH_StructurePath(new Grasshopper.Kernel.Data.GH_Path((int[])path.Indices.Clone()));
+            }
             else if (type == typeof(GH_Transform))
             {
                 var transforms = ((GH_Transform)value).CompoundTransforms;
@@ -430,11 +531,7 @@ namespace BetterGhPanel.Runtime
             return true;
         }
 
-        internal static bool IsManagedValueType(Type type) => type == typeof(GH_Number) || type == typeof(GH_Integer) ||
-            type == typeof(GH_String) || type == typeof(GH_Boolean) || type == typeof(GH_Point) || type == typeof(GH_Vector) ||
-            type == typeof(GH_Colour) || type == typeof(GH_Interval) || type == typeof(GH_Interval2D) || type == typeof(GH_Guid) ||
-            type == typeof(GH_ComplexNumber) || type == typeof(GH_Time) || type == typeof(GH_Plane) || type == typeof(GH_Line) || type == typeof(GH_Arc) ||
-            type == typeof(GH_Circle) || type == typeof(GH_Rectangle) || type == typeof(GH_Box) || type == typeof(GH_MeshFace);
+        internal static bool IsManagedValueType(Type type) => StockGooSupport.Has(type, StockTypeFacets.Managed);
 
         private static bool SameManagedValue(object value, IGH_Goo copy)
         {
@@ -467,6 +564,16 @@ namespace BetterGhPanel.Runtime
             { var a = ((GH_Box)value).Value; var b = ((GH_Box)copy).Value; return Same(a.Plane, b.Plane) && Same(a.X, b.X) && Same(a.Y, b.Y) && Same(a.Z, b.Z); }
             if (type == typeof(GH_MeshFace))
             { var a = ((GH_MeshFace)value).Value; var b = ((GH_MeshFace)copy).Value; return a.A == b.A && a.B == b.B && a.C == b.C && a.D == b.D; }
+            if (type == typeof(GH_LonLatCoordinate))
+            { var a = (GH_LonLatCoordinate)value; var b = (GH_LonLatCoordinate)copy; return Same(a.Longitude, b.Longitude) && Same(a.Latitude, b.Latitude); }
+            if (type == typeof(GH_StructurePath))
+            {
+                var a = ((GH_StructurePath)value).Value; var b = ((GH_StructurePath)copy).Value;
+                if (a is null || b is null) return ReferenceEquals(a, b);
+                if (a.GetType() != typeof(Grasshopper.Kernel.Data.GH_Path) || a.Length != b.Length) return false;
+                for (int i = 0; i < a.Length; i++) if (a.Indices[i] != b.Indices[i]) return false;
+                return true;
+            }
             if (type == typeof(GH_Transform))
             {
                 var a = ((GH_Transform)value).CompoundTransforms; var b = ((GH_Transform)copy).CompoundTransforms;

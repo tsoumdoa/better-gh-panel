@@ -19,6 +19,13 @@ is reached through a group or wrapper; an unloaded reference is not loaded by
 the preview or an action. The native fixtures exercise standalone, grouped and
 wrapped loaded references and cancellation on reference retargeting.
 
+Exact `GH_TextDot` / `TextDot` uses the owned compatibility path, including
+metadata, byte, source/reference and retirement checks. Display capture shares
+its text-length limit; native getters materialize strings before checking length.
+`DrawDot` receives the owned dot, retained through flush; frame uses point bounds.
+Annotation/hatch/block/detail metadata does not admit preview/copy without an
+owned strategy for their styles, patterns and definitions.
+
 Points, lines, arcs, circles, rectangles, boxes, bounded polylines and meshes
 are reconstructed from value fields. Bounded NURBS curves use a value-only
 reconstruction adapted from the 67-assertion Rhino 8.36 candidate at `7a2d0e8`:

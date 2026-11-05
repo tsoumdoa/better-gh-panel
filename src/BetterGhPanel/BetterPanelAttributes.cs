@@ -669,6 +669,8 @@ namespace BetterGhPanel
             bool sorted = PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder;
             bool grouped = list.Height >= BranchHeight + RowHeight;
             bool displayMetric = !paired && (PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null);
+            bool numericMetric = displayMetric && (!PanelProperties.IsProperty(PanelOwner.Session.Options.SearchMode) ||
+                PanelProperties.Kind(PanelOwner.Session.Options.SearchMode) == PanelPropertyKind.Number);
             bool showTypes = paired ? PanelOwner.PairedSnapshot?.TypeCounts.Count > 1 : displayMetric || result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
             using var rowRenderer = new CanvasRowRenderer(g, PanelOwner.PanelSplit ? Math.Max(result.Snapshot.Rows.Count, PanelOwner.PairedSnapshot?.Rows.Count ?? 0) : result.Snapshot.Rows.Count, sorted);
             if (!paired && PanelOwner.CreateSetTree) SizeSetColumn(g, rowRenderer, result);
@@ -797,9 +799,9 @@ namespace BetterGhPanel
                     if (!grouped)
                         rowRenderer.DrawCell(g, dataRow.Path, mono, Accent,
                             new RectangleF(bounds.X + rowRenderer.GutterWidth + 9, y, Math.Max(0, pathWidth - 12), RowHeight));
-                    // Geometry summaries already name their type; reserve the extra
-                    // label only for values whose text does not identify their type.
-                    bool showRowType = showTypes && !(paired && result.DisplaySet != null) && (displayMetric || row.GeometryInfo == null);
+                    // Analytic summaries name their type. Native metadata summaries
+                    // (for example dot text/location) use the catalog's separate label.
+                    bool showRowType = showTypes && !(paired && result.DisplaySet != null) && (displayMetric || row.GeometryInfo == null || StockTypeLabels.SeparateLabel(row.TypeName));
                     float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
                     var projectedType = !paired && result.DisplaySet != null ? result.DisplaySet.Values[sourcePosition] : null;
                     // A glyph as well as the colour bar, so validity never relies on colour alone.
@@ -812,7 +814,7 @@ namespace BetterGhPanel
                     }
                     rowRenderer.DrawValue(g, PanelValuePresentation.Visualize(paired ? result.DisplaySet != null ? PairedSetValue(sourcePosition) : PairedDisplayValue(row) : PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition)), font, Ink,
                         new RectangleF(bounds.X + valueStart + 3 + marker, y, Math.Max(0, valueRight - bounds.X - valueStart - 3 - marker), RowHeight),
-                        projectedType != null ? projectedType.Number.HasValue : !(paired && result.DisplaySet != null) && (displayMetric || row.NumericValue.HasValue));
+                        projectedType != null ? projectedType.Number.HasValue : !(paired && result.DisplaySet != null) && (numericMetric || !displayMetric && row.NumericValue.HasValue));
                     if (showRowType)
                         rowRenderer.DrawCell(g, projectedType != null
                                 ? projectedType.Number.HasValue ? "Num" : "Text" : CanvasMenu.ShortTypeName(row.TypeName), small, Muted,

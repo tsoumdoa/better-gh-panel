@@ -429,10 +429,10 @@ internal static partial class PreviewSafetyChecks
             snapshot.Rows[5].TypeName == "Group" && snapshot.Rows[0].TypeIdentityAvailable && snapshot.Rows[1].TypeIdentityAvailable &&
             snapshot.Rows[5].TypeIdentityAvailable && new[] { 0, 1, 5 }.All(i => snapshot.Rows[i].Validity == PanelValidity.VerifiedValid),
             "capture retains exact cloud/extrusion/group identities and verifies their valid contents");
-        Check(snapshot.Rows[0].DisplayValue == "<Point Cloud>" && snapshot.Rows[1].DisplayValue == "<Extrusion>" &&
+        Check(snapshot.Rows[0].DisplayValue == "2 points" && snapshot.Rows[1].DisplayValue == "Extr · 1 profile" &&
             PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = "Point Cloud" }).RowPositions.SequenceEqual(new[] { 0 }) &&
             PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = "Extrusion" }).RowPositions.SequenceEqual(new[] { 1 }) &&
-            PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = "<Point Cloud>" }).RowPositions.Contains(0) &&
+            PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = "2 points" }).RowPositions.Contains(0) &&
             PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = snapshot.Rows[5].DisplayValue }).RowPositions.Contains(5),
             "type and text searches use the known stock identities and captured group summary");
         Check(snapshot.SupportsSearchMode(PanelSearchMode.Text) && snapshot.SupportsSearchMode(PanelSearchMode.Regex) &&

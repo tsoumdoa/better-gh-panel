@@ -86,6 +86,7 @@ namespace BetterGhPanel.Runtime
                     PanelValidity validity;
                     PanelGeometryInfo? geometry = null;
                     PanelComponents? components = null;
+                    PanelNumericSummary? numericSummary = null;
                     IReadOnlyDictionary<PanelSearchMode, PanelPropertyValue?>? properties = null;
                     PanelGroupSummary? groupSummary = null;
                     PanelSearchCapabilities capabilities;
@@ -135,13 +136,30 @@ namespace BetterGhPanel.Runtime
                         else if (managed.Available)
                         {
                             validity = managed.Validity;
+                            if (ReferenceEquals(managed.Raw, CaptureGraphWitness.NullPath)) display = "<null>";
+                            else if (managed.Raw is CapturedMatrixValue matrix)
+                            {
+                                numericSummary = matrix.Summary();
+                                display = numericSummary?.Format(PanelUnits.AutomaticDecimals) ?? (matrix.HasValue ? "<empty>" : "<null>");
+                                if (matrix.Valid) properties = new Dictionary<PanelSearchMode, PanelPropertyValue?>
+                                {
+                                    [PanelSearchMode.RowCount] = PanelPropertyValue.Integer(matrix.Rows),
+                                    [PanelSearchMode.ColumnCount] = PanelPropertyValue.Integer(matrix.Columns)
+                                };
+                            }
+                            else if (managed.Raw is CapturedCultureValue culture)
+                            {
+                                display = culture.Name == null ? "Null culture" : culture.Name.Length == 0 ? "Invariant culture" : culture.Name + " · " + culture.EnglishName;
+                                if (culture.Name != null) properties = new Dictionary<PanelSearchMode, PanelPropertyValue?>
+                                { [PanelSearchMode.CultureName] = PanelPropertyValue.String(culture.Name), [PanelSearchMode.EnglishName] = PanelPropertyValue.String(culture.EnglishName ?? "") };
+                            }
                             if (validity == PanelValidity.VerifiedInvalid) reason = "The value is invalid.";
                             else if (validity == PanelValidity.Unverified) reason = "Validity could not be safely verified.";
                         }
                         else validity = graphComplete ? SafeGooInspection.Validity(item, budget, out reason, out capturedGeometry, graph, graphVisitObserver, directLeaf) : PanelValidity.Unverified;
                         if (!graphComplete) reason = "Validity could not be safely verified (capture graph limit).";
                         if (!scalar.Available && inspected != null && identity.Group == null && (graphComplete || graph != null))
-                            display = FormatSummary(inspected, type, out number, out stringValue);
+                            display = FormatSummary(inspected, type, out number, out stringValue, out numericSummary);
 
                         if (inspected != null && validity == PanelValidity.VerifiedValid)
                         {
@@ -155,6 +173,8 @@ namespace BetterGhPanel.Runtime
                                 var vector = ((GH_Vector)inspected).Value;
                                 components = new PanelComponents(vector.X, vector.Y, vector.Z, geometryUnits);
                             }
+                            else if (PanelPropertyCapture.Origin(capturedGeometry) is Point3d origin)
+                                components = new PanelComponents(origin.X, origin.Y, origin.Z, geometryUnits);
                             if (scalar.Available && scalar.IsNumeric) properties = PanelProperties.Empty;
                             else if (scalar.Available)
                             {
@@ -178,9 +198,10 @@ namespace BetterGhPanel.Runtime
                             // can enter either reconstruction or the compatibility fallback.
                             bool supported = capturedGeometry != null && hasReference && directLeaf.HasValue && directLeaf.Value.Trusted;
                             if (geometry?.CanMeasure == true && !supported) geometry = geometry.WithUnavailableMeasurement();
+                            if (capturedGeometry is TextDot || capturedGeometry is TextEntity || capturedGeometry is Leader) stringValue = geometry?.Description;
                             display = geometry?.FormatCompact(PanelUnitConversion.None, PanelUnits.AutomaticDecimals) ?? display;
                         }
-                        capabilities = Capabilities(inspected, validity, capturedGeometry);
+                        capabilities = Capabilities(inspected, validity, capturedGeometry) | (components == null ? PanelSearchCapabilities.None : PanelSearchCapabilities.Components);
                         inspectionObserver?.Invoke(rows.Count, item);
                     }
                     catch (Exception)
@@ -191,13 +212,14 @@ namespace BetterGhPanel.Runtime
                         stringValue = null;
                         geometry = null;
                         components = null;
+                        numericSummary = null;
                         properties = null;
                         capabilities = PanelSearchCapabilities.None;
                     }
                     finally { GC.KeepAlive(capturedGeometry); }
                     rows.Add(new PanelRow(i, path, type, display, number, validity,
                         typeIdentityAvailable: typeAvailable, searchCapabilities: capabilities, isNull: item == null && !scalars[position].Available,
-                        geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary, components: components, properties: properties, rawNumericValue: scalars[position].RawNumber));
+                        geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary, components: components, properties: properties, rawNumericValue: scalars[position].RawNumber, numericSummary: numericSummary));
                     source.Add(item);
                     geometrySources.Add(directLeaf.HasValue ? new CapturedMeasurementSource(directLeaf.Value) : null);
                     if (graph != null) graphs.Add((rows.Count - 1, graph));
@@ -244,7 +266,7 @@ namespace BetterGhPanel.Runtime
                 {
                     try
                     {
-                        if (CaptureGraphWitness.TryCopyStandaloneValue(item, out var value))
+                        if (CaptureGraphWitness.TryCopyStandaloneValue(item, ref remaining, out var value))
                         {
                             managed ??= new CapturedManagedValue[tree.DataCount];
                             managed[position] = value;
@@ -334,6 +356,7 @@ namespace BetterGhPanel.Runtime
             if (type == typeof(GH_Number) || type == typeof(GH_Integer)) return PanelSearchCapabilities.Value;
             if (validity == PanelValidity.Unverified) return PanelSearchCapabilities.None;
             if (type == typeof(GH_Point) || type == typeof(GH_Vector)) return PanelSearchCapabilities.Components;
+            if (geometry is Dimension && !(geometry is AngularDimension)) return PanelSearchCapabilities.Length;
             if (type == typeof(GH_Line) || type == typeof(GH_Arc) || type == typeof(GH_Circle) || type == typeof(GH_Curve))
                 return PanelSearchCapabilities.Length;
             if (type == typeof(GH_Rectangle) || type == typeof(GH_Surface)) return PanelSearchCapabilities.Area;
@@ -345,10 +368,11 @@ namespace BetterGhPanel.Runtime
             return PanelSearchCapabilities.None;
         }
 
-        private static string FormatSummary(IGH_Goo? goo, string type, out double? numeric, out string? stringValue)
+        private static string FormatSummary(IGH_Goo? goo, string type, out double? numeric, out string? stringValue, out PanelNumericSummary? summary)
         {
             numeric = null;
             stringValue = null;
+            summary = null;
             if (goo == null) return "<null>";
             Type runtime = goo.GetType();
             if (runtime == typeof(GH_Number))
@@ -394,6 +418,23 @@ namespace BetterGhPanel.Runtime
             }
             if (runtime == typeof(GH_Guid)) return ((GH_Guid)goo).Value.ToString("D");
             if (runtime == typeof(GH_Time)) return ((GH_Time)goo).Value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+            if (runtime == typeof(GH_ComplexNumber))
+            { var v = ((GH_ComplexNumber)goo).Value; summary = PanelNumericSummary.Complex(v.Real, v.Imaginary); return summary.Format(PanelUnits.AutomaticDecimals); }
+            if (runtime == typeof(GH_MeshFace))
+            { var face = ((GH_MeshFace)goo).Value; return face.IsTriangle ? $"({face.A}, {face.B}, {face.C})" : $"({face.A}, {face.B}, {face.C}, {face.D})"; }
+            if (runtime == typeof(GH_LonLatCoordinate))
+            { var v = (GH_LonLatCoordinate)goo; summary = PanelNumericSummary.Location(v.Latitude, v.Longitude); return summary.Format(PanelUnits.AutomaticDecimals); }
+            if (runtime == typeof(GH_StructurePath)) return ((GH_StructurePath)goo).Value.ToString();
+            if (runtime == typeof(GH_Field)) return ((GH_Field)goo).Elements is { } elements ? GeometryHints.Count(elements.Count, "field element") : "Null field";
+            if (runtime == typeof(GH_Material)) return ((GH_Material)goo).Value == null ? "Null material" : "Material";
+            if (runtime == typeof(GH_Transform))
+            {
+                var transforms = ((GH_Transform)goo).CompoundTransforms;
+                var t = transforms.Count == 0 ? Transform.Identity : ((Grasshopper.Kernel.Types.Transforms.Generic)transforms[0]).Transform;
+                if (t == Transform.Identity) return "Identity";
+                summary = PanelNumericSummary.Matrix(4, 4, (r, c) => t[r, c]);
+                return summary.Format(PanelUnits.AutomaticDecimals);
+            }
             return "<" + type + ">";
         }
 

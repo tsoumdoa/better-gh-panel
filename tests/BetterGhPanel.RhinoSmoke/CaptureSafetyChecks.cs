@@ -138,9 +138,9 @@ internal static class CaptureSafetyChecks
         Check(HostileNumber.Calls == 0 && ReferenceEquals(converted.Branches[0][0], hostileNumber) &&
             ReferenceEquals(converted.Branches[0][1], unset) && ((GH_Number)converted.Branches[0][2]).Value == 2,
             "Conversion never reads subclass values and preserves exact finite invalid unset values");
-        var describe = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!.GetMethod("Describe", Static)!;
+        var describe = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!.GetMethod("DescribeCaptured", Static)!;
         HostileCurve.Calls = 0;
-        Check(describe.Invoke(null, new object[] { hostileCurve, "mm" }) == null && HostileCurve.Calls == 0,
+        Check(describe.Invoke(null, new object?[] { hostileCurve, null, "mm" }) == null && HostileCurve.Calls == 0,
             "Geometry descriptions never read subclass Value or delegated metadata");
         VerifyBudgets(Capture);
         Console.WriteLine("PASS: Plugin-controlled capture identities, validity, sets, outputs and budgets.");

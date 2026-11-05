@@ -27,6 +27,15 @@ internal static class WysiwygValuesChecks
     private static async Task Verify(Assembly assembly)
     {
         using var fixture = new PanelHostFixture.Fixture(assembly);
+        async Task<bool> ClipboardIs(string expected)
+        {
+            // Eto/WPF publishes through the UI clipboard owner. Let its message
+            // loop deliver the exact text before a WinForms consumer reads it;
+            // never retry the copy or accept a different value.
+            string actual = "";
+            await fixture.Ready(() => (actual = Forms.Clipboard.GetText()) == expected);
+            return actual == expected;
+        }
         var component = fixture.Component;
         var attributes = component.Attributes;
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
@@ -128,7 +137,7 @@ internal static class WysiwygValuesChecks
             Check(!copy.IsEmpty, "Hover paints the copy glyph and creates its hit target together");
             PanelTestAdapter.CanvasClick(canvas, new PointF(copy.X + copy.Width / 2, copy.Y + copy.Height / 2));
             await fixture.Ready(() => Field<string>(attributes, "_actionStatus") == "Copied {0;2;52}");
-            Check(Forms.Clipboard.GetText() == "{0;2;52}" && fixture.SelectedCount == 1, "Heading glyph copies the exact path without changing selection");
+            Check(await ClipboardIs("{0;2;52}") && fixture.SelectedCount == 1, "Heading glyph copies the exact path without changing selection");
             Call(attributes, "UpdateHover", canvas, new PointF(bounds.X - 20, bounds.Y)); Render();
             Check(Property<RectangleF>(Field<IEnumerable>(attributes, "_branchHits").Cast<object>().First(), "CopyBounds").IsEmpty,
                 "Leaving a heading removes its copy hit target");
@@ -144,34 +153,32 @@ internal static class WysiwygValuesChecks
                 "Native row menu contains Copy as table");
             Call(attributes, "CloseRowMenu");
             string copied = await (Task<string>)Call(component, "CopyValuesAsync", fixture.Result.Snapshot, new[] { 0 })!;
-            Check(copied == "Value copied" && Forms.Clipboard.GetText() == "1300.00", "Native clipboard matches the rounded Length wire value");
+            Check(copied == "Value copied" && await ClipboardIs("1300.00"), "Native clipboard matches the rounded Length wire value");
             fixture.SelectAt(1, toggle: true);
             await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 2);
             var actionType = assembly.GetType("BetterGhPanel.UI.PanelRowAction", true)!;
             async Task<string> Copy(string action) => await (Task<string>)Call(component, "CopyAddressesAsync", fixture.Result.Snapshot, new[] { 0, 1 }, Enum.Parse(actionType, action), null, false)!;
             string addressStatus = await Copy("CopyAddresses");
-            string addressText = Forms.Clipboard.GetText();
-            Check(addressStatus == "Addresses copied" && addressText == "{0;2;52}(0)" + Environment.NewLine + "{0;2;52}(1)",
-                "Native addresses use the exact visible path and index; status=" + addressStatus + "; clipboard=" + addressText.Replace(Environment.NewLine, " / "));
+            Check(addressStatus == "Addresses copied" && await ClipboardIs("{0;2;52}(0)" + Environment.NewLine + "{0;2;52}(1)"),
+                "Native addresses use the exact visible path and index");
             await Copy("CopyTable");
-            Check(Forms.Clipboard.GetText() == "Path\tIndex\tValue" + Environment.NewLine +
-                "{0;2;52}\t0\t1300.00 mm" + Environment.NewLine + "{0;2;52}\t1\t1350.00 mm", "Native TSV preserves shown values and unit labels");
+            Check(await ClipboardIs("Path\tIndex\tValue" + Environment.NewLine + "{0;2;52}\t0\t1300.00 mm" + Environment.NewLine + "{0;2;52}\t1\t1350.00 mm"), "Native TSV preserves shown values and unit labels");
             Render();
             var keyTarget = assembly.GetType("BetterGhPanel.UI.IPanelInputTarget", true)!;
             keyTarget.GetMethod("HandleKey")!.Invoke(attributes, new object[] { canvas, Forms.Keys.Control | Forms.Keys.Shift | Forms.Keys.C });
             await fixture.Ready(() => Field<string>(attributes, "_actionStatus") == "Addresses copied");
-            Check(Forms.Clipboard.GetText() == "{0;2;52}", "Ctrl/Cmd+Shift+C copies unique selected paths");
+            Check(await ClipboardIs("{0;2;52}"), "Ctrl/Cmd+Shift+C copies unique selected paths");
 
             Call(component, "SetOutputValues", PanelOutputValues.Items);
             Call(component, "SetTreeOperations", 0, false, false, false, true);
             await fixture.Ready(() => fixture.Result.DisplaySet != null && fixture.Sinks[0].VolatileData.PathCount == 2);
             await Copy("CopyAddresses");
-            Check(Forms.Clipboard.GetText() == "{0;2;52;0}" + Environment.NewLine + "{0;2;52;1}",
+            Check(await ClipboardIs("{0;2;52;0}" + Environment.NewLine + "{0;2;52;1}"),
                 "Create-set Items copy the same branches D sends");
             Call(component, "SetTreeOperations", 0, true, false, false, true);
             await fixture.Ready(() => fixture.Result.DisplaySet != null && fixture.Sinks[0].VolatileData.Paths[0].ToString() == "{0}");
             await Copy("CopyAddresses");
-            Check(Forms.Clipboard.GetText() == "{0}" + Environment.NewLine + "{1}", "Flattened set addresses match D branches");
+            Check(await ClipboardIs("{0}" + Environment.NewLine + "{1}"), "Flattened set addresses match D branches");
             Call(component, "SetTreeOperations", 0, false, false, false, false);
             await fixture.Ready(() => fixture.Result.DisplaySet == null);
         }

@@ -58,7 +58,7 @@ namespace BetterGhPanel.Core
             new PanelGeometryInfo(Description, Value, Power, Units, MetricName, MetricLabel, CanMeasure, Details, MeasurementUnavailable, length, HasArea, AreaValue, Properties);
 
         public string FormatCompact(PanelUnitConversion conversion, int decimals, double roundUpFactor = 0) => Description +
-            (Value.HasValue ? " · " + MetricLabel + " " + FormatValue(conversion, decimals, roundUpFactor) : "");
+            (Value.HasValue ? (Description.Length == 0 ? "" : " · ") + (MetricLabel.Length == 0 ? "" : MetricLabel + " ") + FormatValue(conversion, decimals, roundUpFactor) : "");
 
         public string FormatDetails(PanelUnitConversion conversion, int decimals, double roundUpFactor = 0) =>
             (Value.HasValue ? MetricName + ": " + FormatValue(conversion, decimals, roundUpFactor) + "\n" : "") +

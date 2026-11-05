@@ -459,6 +459,7 @@ internal static class BranchPairingChecks
             f.ClearSelection(); f.SelectBranch(representative);
             await Ready(() => Field<long>(component, "_publishedSelectionVersion") == Field<long>(component, "_selectionVersion"));
             await (Task<string>)Call(component, "CopyPairedValuesAsync", f.Result.Snapshot, Array.Empty<int>())!;
+            await f.Ready(() => Forms.Clipboard.GetText() == string.Join(Environment.NewLine, f.Values(3).Split(',')));
             Check(Forms.Clipboard.GetText() == string.Join(Environment.NewLine, f.Values(3).Split(',')),
                 "List-length F set copying includes its full emitted group");
             Render();

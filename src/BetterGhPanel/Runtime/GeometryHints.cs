@@ -10,23 +10,6 @@ namespace BetterGhPanel.Runtime
 {
     internal static class GeometryHints
     {
-        // Only analytic measurements and stored properties belong in the snapshot.
-        internal static PanelGeometryInfo? Describe(IGH_Goo goo, string units)
-        {
-            if (SafeGooInspection.IsGeometryHolder(goo.GetType()))
-            {
-                if (!SafeGooInspection.TryGetTrustedGeometry(goo, out GeometryBase? geometry) || geometry == null) return null;
-                try
-                {
-                    if ((goo.GetType() == typeof(GH_Curve) || goo.GetType() == typeof(GH_Surface) || goo.GetType() == typeof(GH_Brep)) &&
-                        !SafeGooInspection.MeasurementSourceCanRead(geometry)) return null;
-                    return geometry.IsValid ? DescribeCaptured(goo, geometry, units) : null;
-                }
-                finally { GC.KeepAlive(geometry); }
-            }
-            return DescribeCaptured(goo, null, units);
-        }
-
         // The caller validates this exact inner object before this method. Never read
         // a mutable holder again after checking it, and never dispatch through a subclass.
         internal static PanelGeometryInfo? DescribeCaptured(IGH_Goo goo, GeometryBase? geometry, string units)
@@ -38,6 +21,17 @@ namespace BetterGhPanel.Runtime
         private static PanelGeometryInfo? DescribeCapturedCore(IGH_Goo goo, GeometryBase? geometry, string units)
         {
             Type type = goo.GetType();
+            if (geometry is TextDot dot) return new PanelGeometryInfo(PanelPropertyCapture.BoundedText(dot.Text));
+            if (geometry is Dimension dimension) return new PanelGeometryInfo("", dimension.NumericValue,
+                geometry is AngularDimension ? -1 : 1, geometry is AngularDimension ? "rad" : units,
+                geometry is AngularDimension ? "Angle" : "Length", "");
+            if (geometry is AnnotationBase annotation) return new PanelGeometryInfo(PanelPropertyCapture.BoundedText(annotation.PlainText));
+            if (geometry?.GetType() == typeof(InstanceReferenceGeometry))
+                return new PanelGeometryInfo("Definition " + ((InstanceReferenceGeometry)geometry).ParentIdefId.ToString("D"));
+            if (geometry?.GetType() == typeof(DetailView))
+                return new PanelGeometryInfo(((DetailView)geometry).IsPerspectiveProjection ? "Perspective" : "Parallel");
+            if (geometry?.GetType() == typeof(Hatch))
+                return new PanelGeometryInfo("Pattern " + ((Hatch)geometry).PatternIndex);
             if (type == typeof(GH_Line)) return LineInfo(((GH_Line)goo).Value, units);
             if (type == typeof(GH_Arc)) return ArcInfo(((GH_Arc)goo).Value, units);
             if (type == typeof(GH_Circle)) return CircleInfo(((GH_Circle)goo).Value, units);
@@ -55,9 +49,9 @@ namespace BetterGhPanel.Runtime
             if (type == typeof(GH_Brep) && geometry is Brep brep) return BrepInfo(brep);
             if (type == typeof(GH_Mesh) && geometry is Mesh mesh)
                 return MeshInfo(mesh);
-            if (type == typeof(GH_SubD) && geometry is SubD) return new PanelGeometryInfo("<SubD>");
-            if (type == typeof(GH_Extrusion) && geometry is Extrusion) return new PanelGeometryInfo("<Extrusion>");
-            if (type == typeof(GH_PointCloud) && geometry is PointCloud) return new PanelGeometryInfo("<Point Cloud>");
+            if (type == typeof(GH_SubD) && geometry is SubD) return new PanelGeometryInfo("SubD · " + Count(((SubD)geometry).Faces.Count, "face"));
+            if (type == typeof(GH_Extrusion) && geometry is Extrusion) return new PanelGeometryInfo("Extr · " + Count(((Extrusion)geometry).ProfileCount, "profile"));
+            if (type == typeof(GH_PointCloud) && geometry is PointCloud) return new PanelGeometryInfo(Count(((PointCloud)geometry).Count, "point"));
             return null;
         }
 
@@ -348,6 +342,6 @@ namespace BetterGhPanel.Runtime
                 .WithAdditionalLength(arc.Length)
             : new PanelGeometryInfo("Arc", arc.Length, units: units, details: ArcDetails(arc));
         private static string Closed(bool closed) => closed ? "closed" : "open";
-        private static string Count(int count, string noun) => count + " " + noun + (count == 1 ? "" : "s");
+        internal static string Count(int count, string noun) => count + " " + noun + (count == 1 ? "" : "s");
     }
 }

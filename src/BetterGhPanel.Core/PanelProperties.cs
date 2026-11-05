@@ -65,9 +65,10 @@ namespace BetterGhPanel.Core
         public static bool IsMetadata(PanelSearchMode mode) => mode == PanelSearchMode.DataType || mode == PanelSearchMode.Validity || mode == PanelSearchMode.BranchPath || mode == PanelSearchMode.ItemIndex;
         public static PanelPropertyKind Kind(PanelSearchMode mode) => mode switch
         {
-            PanelSearchMode.Closed or PanelSearchMode.Solid or PanelSearchMode.Planar or PanelSearchMode.Trimmed or PanelSearchMode.BooleanValue => PanelPropertyKind.Boolean,
+            PanelSearchMode.Closed or PanelSearchMode.Solid or PanelSearchMode.Planar or PanelSearchMode.Trimmed or PanelSearchMode.BooleanValue or PanelSearchMode.ProjectionLocked => PanelPropertyKind.Boolean,
             PanelSearchMode.Shape or PanelSearchMode.GroupName or PanelSearchMode.ColourName or PanelSearchMode.TextValue or PanelSearchMode.GuidValue or
-                PanelSearchMode.DataType or PanelSearchMode.Validity or PanelSearchMode.BranchPath => PanelPropertyKind.Text,
+                PanelSearchMode.DataType or PanelSearchMode.Validity or PanelSearchMode.BranchPath or PanelSearchMode.FontFace or
+                PanelSearchMode.CultureName or PanelSearchMode.EnglishName or PanelSearchMode.DefinitionId or PanelSearchMode.Projection => PanelPropertyKind.Text,
             PanelSearchMode.DateTime => PanelPropertyKind.DateTime,
             _ => PanelPropertyKind.Number
         };
@@ -91,6 +92,14 @@ namespace BetterGhPanel.Core
             PanelSearchMode.TextValue => "Text value", PanelSearchMode.CharacterCount => "Text · character count", PanelSearchMode.GuidValue => "GUID value",
             PanelSearchMode.Real => "Complex · real", PanelSearchMode.Imaginary => "Complex · imaginary", PanelSearchMode.Phase => "Complex · phase",
             PanelSearchMode.Determinant => "Transform · determinant", PanelSearchMode.ProfileCount => "Extrusion · profile count", PanelSearchMode.PointCount => "Point count",
+            PanelSearchMode.DefinitionId => "Block · definition ID", PanelSearchMode.Projection => "Detail · projection",
+            PanelSearchMode.ProjectionLocked => "Detail · projection locked",
+            PanelSearchMode.PageToModelRatio => "Detail · page to model ratio", PanelSearchMode.DimensionAngle => "Dimension · angle",
+            PanelSearchMode.DotFontSize => "Dot · font size", PanelSearchMode.FontFace => "Dot · font face",
+            PanelSearchMode.Latitude => "Location · latitude", PanelSearchMode.Longitude => "Location · longitude",
+            PanelSearchMode.CultureName => "Culture · name", PanelSearchMode.EnglishName => "Culture · English name",
+            PanelSearchMode.RowCount => "Matrix · rows", PanelSearchMode.ColumnCount => "Matrix · columns", PanelSearchMode.PathDepth => "Path · depth",
+            PanelSearchMode.PatternIndex => "Hatch · pattern index", PanelSearchMode.PatternScale => "Hatch · scale", PanelSearchMode.PatternRotation => "Hatch · rotation",
             PanelSearchMode.DataType => "Data type", PanelSearchMode.Validity => "Validity", PanelSearchMode.BranchPath => "Branch path", PanelSearchMode.ItemIndex => "Item index",
             _ => mode >= PanelSearchMode.M00 && mode <= PanelSearchMode.M33 ? "Transform · " + mode : mode.ToString()
         };

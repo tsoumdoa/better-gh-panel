@@ -30,7 +30,7 @@ namespace BetterGhPanel.Core
             new Conversion("m → mm", "mm", 1000, sourceUnits: "m", power: 1),
             new Conversion("mm² → m²", "m²", 1000000, divide: true, sourceUnits: "mm", power: 2),
             new Conversion("m² → mm²", "mm²", 1000000, sourceUnits: "m", power: 2),
-            new Conversion("rad → deg", "°", 180 / Math.PI),
+            new Conversion("rad → deg", "°", 180 / Math.PI, sourceUnits: "rad", power: -1),
             new Conversion("deg → rad", "rad", Math.PI / 180),
             new Conversion("mm³ → m³", "m³", 1000000000, divide: true, sourceUnits: "mm", power: 3),
             new Conversion("m³ → mm³", "mm³", 1000000000, sourceUnits: "m", power: 3)

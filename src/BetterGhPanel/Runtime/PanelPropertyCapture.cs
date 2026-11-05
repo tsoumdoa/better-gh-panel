@@ -87,6 +87,9 @@ namespace BetterGhPanel.Runtime
                     for (int r = 0; r < 4; r++) for (int c = 0; c < 4; c++) N(PanelSearchMode.M00 + r * 4 + c, transform[r, c]);
                 }
             }
+            else if (type == typeof(GH_LonLatCoordinate))
+            { var location = (GH_LonLatCoordinate)goo; N(PanelSearchMode.Latitude, location.Latitude); N(PanelSearchMode.Longitude, location.Longitude); }
+            else if (type == typeof(GH_StructurePath) && ((GH_StructurePath)goo).Value is { } path) I(PanelSearchMode.PathDepth, path.Length);
             return values;
         }
 
@@ -96,7 +99,31 @@ namespace BetterGhPanel.Runtime
             void N(PanelSearchMode mode, double value, int power = 0) => values[mode] = PanelPropertyValue.Numeric(value, power, units);
             void I(PanelSearchMode mode, int value) => values[mode] = PanelPropertyValue.Integer(value);
             void B(PanelSearchMode mode, bool value) => values[mode] = PanelPropertyValue.Boolean(value);
-            if (geometry is Curve curve)
+            void Text(string text)
+            { text = BoundedText(text); values[PanelSearchMode.TextValue] = PanelPropertyValue.String(text); I(PanelSearchMode.CharacterCount, text.Length); }
+            if (geometry.GetType() == typeof(TextDot))
+            {
+                var dot = (TextDot)geometry; Text(dot.Text);
+                I(PanelSearchMode.DotFontSize, dot.FontHeight); values[PanelSearchMode.FontFace] = PanelPropertyValue.String(dot.FontFace);
+            }
+            else if (geometry is AnnotationBase annotation)
+            {
+                Text(annotation.PlainText);
+                if (annotation is AngularDimension dimension) N(PanelSearchMode.DimensionAngle, dimension.NumericValue, -1);
+            }
+            else if (geometry.GetType() == typeof(InstanceReferenceGeometry))
+                values[PanelSearchMode.DefinitionId] = PanelPropertyValue.String(((InstanceReferenceGeometry)geometry).ParentIdefId.ToString("D"));
+            else if (geometry.GetType() == typeof(DetailView))
+            {
+                var detail = (DetailView)geometry; values[PanelSearchMode.Projection] = PanelPropertyValue.String(detail.IsPerspectiveProjection ? "Perspective" : "Parallel"); B(PanelSearchMode.ProjectionLocked, detail.IsProjectionLocked);
+                N(PanelSearchMode.PageToModelRatio, detail.PageToModelRatio);
+            }
+            else if (geometry.GetType() == typeof(Hatch))
+            {
+                var hatch = (Hatch)geometry; I(PanelSearchMode.PatternIndex, hatch.PatternIndex);
+                N(PanelSearchMode.PatternScale, hatch.PatternScale); N(PanelSearchMode.PatternRotation, hatch.PatternRotation, -1);
+            }
+            else if (geometry is Curve curve)
             {
                 I(PanelSearchMode.Degree, curve.Degree); B(PanelSearchMode.Closed, curve.IsClosed);
                 if (curve is PolylineCurve polyline) I(PanelSearchMode.SegmentCount, polyline.PointCount - 1);
@@ -134,6 +161,11 @@ namespace BetterGhPanel.Runtime
             else if (geometry is PointCloud cloud) I(PanelSearchMode.PointCount, cloud.Count);
             return values;
         }
+
+        internal static Point3d? Origin(GeometryBase? geometry) => geometry is TextDot dot ? dot.Point :
+            geometry is AnnotationBase annotation ? annotation.Plane.Origin : geometry is Hatch hatch ? hatch.Plane.Origin : (Point3d?)null;
+        internal static string BoundedText(string text) => text.Length <= PanelNativeGeometry.MaxTextCharacters ? text :
+            throw new InvalidOperationException("Native text exceeds the capture limit.");
 
         private static void Analytic(Dictionary<PanelSearchMode, PanelPropertyValue?> values, int degree, bool closed, string shape)
         {

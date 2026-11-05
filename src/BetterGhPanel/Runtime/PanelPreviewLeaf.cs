@@ -288,6 +288,7 @@ namespace BetterGhPanel.Runtime
                 for (int i = 0; i < 4 && current(); i++) args.Pipeline.DrawLine(rect.Corner(i), rect.Corner((i + 1) % 4), args.Color, args.Thickness);
             else if (_value is Box box) args.Pipeline.DrawBox(box, args.Color, args.Thickness);
             else if (_value is Sphere sphere) args.Pipeline.DrawSphere(sphere, args.Color, args.Thickness);
+            else if (_value is TextDot dot) args.Pipeline.DrawDot(dot, args.Color, Color.White, args.Color);
             else if (_value is Curve curve) args.Pipeline.DrawCurve(curve, args.Color, args.Thickness);
             else if (_value is CloudPoints cloud)
             {

@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopFixtures = new Set([
   'preview-safety', 'preview-reentrant-draw', 'preview-native-resources',
-  'preview-compatibility-draw', 'preview-retirement-seam', 'preview-additional-draw'
+  'preview-compatibility-draw', 'preview-retirement-seam', 'preview-additional-draw', 'stock-types'
 ]);
 const startupPhases = new Set(['identity', 'host-startup', 'host-startup-failed', 'grasshopper-startup', 'host-preparation-failed']);
 
