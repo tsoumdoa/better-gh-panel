@@ -281,8 +281,7 @@ internal static class CaptureSafetyChecks
         var mask = (GH_Structure<GH_Boolean>)outputOps.GetMethod("Mask", Static)!.Invoke(null, new object[] { tree, addresses, result.RowPositions })!;
         var paired = new GH_Structure<IGH_Goo>();
         for (int i = 0; i < tree.DataCount; i++) paired.Append(new GH_String("F" + i), new GH_Path(0));
-        var pairs = (GH_Structure<IGH_Goo>)outputOps.GetMethod("Pair", Static)!.Invoke(null, new object?[] { tree, paired, tree, addresses, null })!;
-        var filteredPairs = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Filter", Static)!.Invoke(null, new object[] { pairs, result })!;
+        var filteredPairs = PanelTestAdapter.PairedOutput(assembly, tree, paired, addresses, result);
         Check(ReferenceEquals(filtered.Branches[0][0], expected) && ReferenceEquals(selected.Branches[0][0], expected) &&
             mask.Branches[0].Count(item => item.Value) == 1 && mask.Branches[0][position].Value &&
             ((GH_String)filteredPairs.Branches[0][0]).Value == "F" + position,
@@ -300,9 +299,7 @@ internal static class CaptureSafetyChecks
         var mask = (GH_Structure<GH_Boolean>)outputOps.GetMethod("Mask", Static)!.Invoke(null, new object[] { tree, addresses, filter.RowPositions })!;
         var paired = new GH_Structure<IGH_Goo>();
         for (int i = 0; i < tree.DataCount; i++) paired.Append(new GH_String("F" + i), new GH_Path(0));
-        var args = new object?[] { tree, paired, tree, addresses, null };
-        var pairs = (GH_Structure<IGH_Goo>)outputOps.GetMethod("Pair", Static)!.Invoke(null, args)!;
-        var filteredPairs = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Filter", Static)!.Invoke(null, new object[] { pairs, filter })!;
+        var filteredPairs = PanelTestAdapter.PairedOutput(assembly, tree, paired, addresses, filter);
         Check(ReferenceEquals(filtered.Branches[0][0], expected) && ReferenceEquals(selected.Branches[0][0], expected) &&
             mask.Branches[0].Count(v => v.Value) == 1 && mask.Branches[0][4].Value &&
             ((GH_String)filteredPairs.Branches[0][0]).Value == "F4",

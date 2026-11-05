@@ -25,6 +25,7 @@ namespace BetterGhPanel.UI
         internal static Color Muted => Rgb(120, 127, 123);
         internal static Color Accent => Rgb(77, 115, 94);
         internal static Color Warning => Rgb(180, 106, 67);
+        internal static Color PairingWarning => Dark ? Color.FromArgb(235, 183, 84) : Color.FromArgb(139, 88, 12);
         internal static Color Unverified => Rgb(103, 112, 166);
         // Translucent overlays drawn above any control or row on hover.
         internal static Color Hover => Color.FromArgb(Dark ? 40 : 26, Dark ? 170 : 77, Dark ? 214 : 115, Dark ? 186 : 94);

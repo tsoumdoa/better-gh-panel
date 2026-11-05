@@ -19,8 +19,9 @@ namespace BetterGhPanel
         private bool _scrollLocked = true, _scrollingPaired;
         private PanelQueryResult? _captionResult;
         private PanelSnapshot? _captionPairedSnapshot;
+        private PanelQueryResult? _captionSummaryResult;
+        private int _pairedItemCount;
         private string _pairedTypeSummary = "";
-        private readonly Dictionary<string, List<int>> _pairedBranchRows = new Dictionary<string, List<int>>(StringComparer.Ordinal);
 
         private RectangleF ListBounds => _pairedList.IsEmpty ? _list : RectangleF.Union(_list, _pairedList);
         private bool ListContains(PointF point) => _list.Contains(point) || _pairedList.Contains(point);
@@ -88,28 +89,30 @@ namespace BetterGhPanel
             string pairSummary = "…";
             if (current && PanelOwner.PairedSnapshot != null)
             {
-                if (!ReferenceEquals(_captionResult, session.Result) || !ReferenceEquals(_captionPairedSnapshot, PanelOwner.PairedSnapshot))
+                if (!ReferenceEquals(_captionResult, session.Result) || !ReferenceEquals(_captionPairedSnapshot, PanelOwner.PairedSnapshot) ||
+                    !ReferenceEquals(_captionSummaryResult, PanelOwner.PairedData!.SummaryResult))
                 {
                     _captionResult = session.Result;
                     _captionPairedSnapshot = PanelOwner.PairedSnapshot;
-                    _pairedBranchRows.Clear();
+                    _captionSummaryResult = PanelOwner.PairedData!.SummaryResult;
+                    _pairedItemCount = 0;
                     var types = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (int position in session.Result.RowPositions)
+                    var result = session.Result;
+                    IEnumerable<Runtime.PanelPairedData.Summary> summaries = result.DisplaySet?.IsBranchSet == false ? PanelOwner.PairedData!.SetSummaries.Values : PanelOwner.PairedData!.BranchSummaries.Values;
+                    foreach (var summary in summaries)
                     {
-                        var row = PanelOwner.PairedSnapshot.Rows[position];
-                        types.Add(row.TypeName);
-                        if (!DisplayListLengths) continue;
-                        if (!_pairedBranchRows.TryGetValue(row.Path, out var positions))
-                            _pairedBranchRows.Add(row.Path, positions = new List<int>());
-                        if (positions.Count < 5) positions.Add(position);
+                        _pairedItemCount += summary.Count;
+                        foreach (int item in summary.Preview) types.Add(PanelOwner.PairedSnapshot.Rows[item].TypeName);
                     }
                     _pairedTypeSummary = TypeSummary(types);
                 }
-                pairSummary = $"{session.Result.RowPositions.Count:N0} · {_pairedTypeSummary}";
+                pairSummary = PanelOwner.PairedSummaryCurrent ? $"{_pairedItemCount:N0} · {_pairedTypeSummary}" : "…";
             }
             Text(graphics, "F", bold, Accent, _pairedCaption, trim);
             bool mismatch = PanelOwner.PairedError != null;
-            Text(graphics, mismatch ? "Paired · " : "Paired  " + pairSummary, small, Muted,
+            var pairing = PanelOwner.PairedData;
+            string caption = pairing != null && pairing.Caption != "Paired by branch" ? pairing.Caption : "Paired  " + pairSummary;
+            Text(graphics, mismatch ? "Paired · " : caption, small, Muted,
                 new RectangleF(_pairedCaption.X + 16, _pairedCaption.Y, _pairedCaption.Width - 16, _pairedCaption.Height), trim);
             if (mismatch)
             {
@@ -130,19 +133,34 @@ namespace BetterGhPanel
 
         private string PairedBranchValue(string path)
         {
+            PanelOwner.PairedData!.BranchSummaries.TryGetValue(path, out var summary);
+            return PairedSummary(summary, PanelOwner.Session.Result.DisplaySet != null);
+        }
+
+        private string PairedSetValue(int position)
+        {
+            PanelOwner.PairedData!.SetSummaries.TryGetValue(position, out var summary);
+            return PairedSummary(summary, true);
+        }
+
+        private string PairedSummary(Runtime.PanelPairedData.Summary? summary, bool set)
+        {
+            if (!PanelOwner.PairedSummaryCurrent) return "…";
             var snapshot = PanelOwner.PairedSnapshot;
-            if (snapshot == null || !_pairedBranchRows.TryGetValue(path, out var positions)) return "<empty branch>";
-            // Branch-level Display value has one D row for an entire F branch.
-            // Keep its raw values in order, bounded to the available cell.
-            var values = positions.Take(4).Select(index => Short(PanelValuePresentation.Visualize(PairedDisplayValue(snapshot.Rows[index])), 120));
-            return string.Join(" · ", values) + (positions.Count > 4 ? " …" : "");
+            if (snapshot == null || summary == null || summary.Count == 0) return set ? "<empty set>" : "<empty branch>";
+            var values = summary.Preview.Select(index => Short(PanelValuePresentation.Visualize(PairedDisplayValue(snapshot.Rows[index])), 120));
+            return string.Join(" · ", values) + (summary.Count > summary.Preview.Count
+                ? " … +" + (summary.Count - summary.Preview.Count) + (set ? " in this set" : " items") : "");
         }
 
         internal void ClearPaneSummary()
         {
             _captionResult = null;
             _captionPairedSnapshot = null;
-            _pairedBranchRows.Clear();
+            _pairViewResult = null;
+            _pairViewData = null;
+            _pairView.Clear();
+            _pairItemOffsets = _pairSuccessors = Array.Empty<int>();
         }
 
         private bool SplitTooltip(PointF point, GH_TooltipDisplayEventArgs e)
@@ -153,7 +171,7 @@ namespace BetterGhPanel
                 e.Title = "D | F split view";
                 e.Text = PanelOwner.PanelSplit ? "On" : "Off";
                 e.Description = PanelOwner.CanSplit || PanelOwner.PanelSplit ? "Show paired values beside D. The saved width is doubled; selection is shared." :
-                    PanelOwner.PairedError ?? "Connect F with exactly the same paths and branch lengths as D to enable split view.";
+                    PanelOwner.PairedError ?? "F must have the same number of branches as D.";
                 return true;
             }
             if (_scrollLock.Contains(point) && PanelOwner.CanSplit)
@@ -167,7 +185,7 @@ namespace BetterGhPanel
             {
                 e.Title = "F does not match D";
                 e.Text = PanelOwner.PairedError;
-                e.Description = "Pairing uses original branch paths and item indices, before tree tools.";
+                e.Description = "F must have the same number of branches as D. Exact paths pair first; remaining branches pair in tree order, before tree tools.";
                 return true;
             }
             return false;
@@ -188,7 +206,7 @@ namespace BetterGhPanel
             Text(graphics, message, small, mismatch ? Ink : Muted,
                 new RectangleF(_pairedList.X + inset, _pairedList.Y + 2, width, height), format);
             if (mismatch)
-                Text(graphics, "F must have the same branch paths and item counts as D (before tree tools).", small, Muted,
+                Text(graphics, "Pairing needs the same number of branches.", small, Muted,
                     new RectangleF(_pairedList.X + 6, _pairedList.Y + height + 6, _pairedList.Width - 12, _pairedList.Height), format);
             graphics.Restore(state);
         }
@@ -228,14 +246,13 @@ namespace BetterGhPanel
             var result = PanelOwner.Session.Result;
             int target;
             if (DisplayListLengths) target = Array.IndexOf(result.BranchPaths.ToArray(), path!);
-            else if (path == null) target = result.TryGetViewIndex(position, out int index) ? result.ViewIndex.OffsetOfItem(index) : -1;
+            else if (path == null) target = result.TryGetViewIndex(position, out int index) ? ViewOffset(result, index) : -1;
             else
             {
                 target = -1;
-                for (int index = 0; index < result.ViewIndex.Count; index++)
+                for (int index = 0; index < ViewCount(result); index++)
                 {
-                    result.ViewIndex.TryGet(index, out int item, out string? empty);
-                    if ((empty ?? result.Snapshot.Rows[result.RowPositions[item]].Path) != path) continue;
+                    if (ViewPath(result, index) != path) continue;
                     target = index;
                     break;
                 }

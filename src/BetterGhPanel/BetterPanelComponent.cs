@@ -542,9 +542,9 @@ namespace BetterGhPanel
             CanvasTextInput.CloseActive(this);
             (Attributes as BetterPanelAttributes)?.ClosePresentationControls();
             PanelSplit = split;
-            if (split && PairedSnapshot == null && _pairedQueryTree != null)
+            if (split && PairedSnapshot == null && _pairedInputTree != null)
             {
-                PairedSnapshot = SnapshotCapture.CaptureForMeasurements(_pairedQueryTree, out _pairedSourceItems,
+                PairedSnapshot = SnapshotCapture.CaptureForMeasurements(_pairedInputTree, out _pairedSourceItems,
                     out _pairedMeasurementSources, out _pairedCaptureGraphs, PanelUnitConversion.None, _geometryUnits, null, null, null, null, null);
                 _pairedHasGeometry = HasGeometry(PairedSnapshot);
                 // F geometry was labelled with the units of the last solve. If the document
@@ -787,12 +787,17 @@ namespace BetterGhPanel
         private async Task<string> CopyValuesCoreAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, bool paired)
         {
             CancelPendingCopy();
-            if (!TryGetActionPositions(snapshot, positions, out var ordered)) return "Data changed; select rows again";
+            bool branchSet = paired && Session.Result.DisplaySet?.IsBranchSet == true;
+            IReadOnlyList<int> ordered = Array.Empty<int>();
+            if (!branchSet && !TryGetActionPositions(snapshot, positions, out ordered)) return "Data changed; select rows again";
             var pairedSnapshot = paired ? PairedSnapshot : null;
             if (paired && (!CanSplit || pairedSnapshot == null)) return "Data changed; select rows again";
             long clipboardGeneration = PanelGeometryActions.BeginClipboard();
             var session = _session!;
             var result = session.Result;
+            var branchSelection = branchSet ? new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal) : null;
+            var branches = branchSet ? result.BranchPaths.Where(path => branchSelection!.Contains(path)).ToArray() : Array.Empty<string>();
+            if (branchSet && (branches.Length == 0 || !ReferenceEquals(snapshot, session.Snapshot))) return "Data changed; select branches again";
             var source = _sourceItems;
             long selectionVersion = RowSelection.Version;
             var cancellation = new CancellationTokenSource();
@@ -812,7 +817,7 @@ namespace BetterGhPanel
                         outcome == PanelCommitOutcome.Committed && !PanelGeometryActions.ClipboardCurrent(clipboardGeneration)
                             ? "Copy context changed during clipboard publication; clipboard state is uncertain." :
                         outcome != PanelCommitOutcome.Committed ? "Copy cancelled" :
-                        ordered.Count == 1 ? "Value copied" : ordered.Count + " values copied";
+                        branchSet ? "F set values copied" : ordered.Count == 1 ? "Value copied" : ordered.Count + " values copied";
                     completion.TrySetResult(status);
                     if (ReferenceEquals(_copyCancellation, cancellation)) { _copyCancellation = null; cancellation.Dispose(); }
                 }
@@ -824,12 +829,12 @@ namespace BetterGhPanel
                         ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, result) &&
                         ReferenceEquals(_sourceItems, source) &&
                         (!paired || CanSplit && ReferenceEquals(PairedSnapshot, pairedSnapshot)) &&
-                        PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion);
+                        (branchSet ? RowSelection.Version == selectionVersion : PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion));
                     if (!measured || !SelectionCurrent()) Finish(PanelCommitOutcome.Stale);
                     else
                     {
-                        var text = string.Join(Environment.NewLine, ordered.Select(position => paired
-                            ? BetterPanelAttributes.PairedDisplayValue(pairedSnapshot!.Rows[position]) : CopyValue(snapshot, position)));
+                        var text = branchSet ? PairedBranchValues(result, branches) : string.Join(Environment.NewLine, ordered.Select(position => paired
+                            ? PairedValue(position) : CopyValue(snapshot, position)));
                         // Measurements cover only queued geometry; value-only
                         // rows and unmeasured geometry can change too.
                         bool Current() => SelectionCurrent() && CapturedSnapshotCurrent(snapshot) && SelectionCurrent() &&
@@ -883,7 +888,7 @@ namespace BetterGhPanel
         {
             p.AddGenericParameter("Data", "D", "Any typed data tree to inspect", GH_ParamAccess.tree);
             p[0].Optional = true;
-            p.AddGenericParameter("Paired data", "F", "Optional data paired with D by original path and item index. Paths and branch lengths must match exactly. F follows the primary tree tools and membership; its values are not converted.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Paired data", "F", "Optional data paired with D by original branch identity. F must have the same number of branches as D. Exact paths pair first, then remaining branches in tree order; items pair by index. F values are not converted.", GH_ParamAccess.tree);
             p[1].Optional = true;
         }
 
@@ -892,7 +897,7 @@ namespace BetterGhPanel
             p.AddGenericParameter("Data", "D", "Matching Items or displayed Values after tree tools, units and filters. Set Items: all members in {path;k} ({k} when flattened); list-length sets use {k;path}. Set Values: unique values at displayed precision. Other Values keep full precision; unavailable values are null. Sorting changes only the view.", GH_ParamAccess.tree);
             p.AddGenericParameter("Selected data", "S", "Selected Items or Values in tree order. Set Items include every member and keep the same group paths as D. Empty when no rows are selected.", GH_ParamAccess.tree);
             p.AddBooleanParameter("Membership mask", "B", "True at original D input positions retained by the B + F source setting (Filtered by default, or Selected). Preserves original paths and item counts. Every member of a kept or selected set is True. This mask conveys membership, not transformed ordering.", GH_ParamAccess.tree);
-            p.AddGenericParameter("Paired results", "F", "Paired input values corresponding to the B + F source setting (Filtered by default, or Selected), in the primary transformed tree order. Sets group every member as {path;k} ({k} when flattened; {k;path} for list-length sets). F retains its original values and types in both output modes.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Paired results", "F", "Raw paired F items for the B + F source (Filtered by default, or Selected), at D's transformed destinations. Equal branches follow item membership; scoped unequal branches emit their whole F branch once per group. Empty D partners are included when D retains the branch, without item filters or Create set; path and list-length filters preserve them. Sets use {path;k} ({k} when flattened; {k;path} for list-length sets), in both output modes. F values and types are unchanged. F must have the same branch count as D; exact paths pair first, then remaining branches in tree order.", GH_ParamAccess.tree);
         }
 
         private void ScheduleOutput()
@@ -990,7 +995,7 @@ namespace BetterGhPanel
                     var queryScalars = CapturedScalar.Convert(scalarInputs, conversion, roundUpFactor);
                     var queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.ApplyCaptured(preConversionTree, conversion, scalarInputs, roundUpFactor));
                     var inputSeed = SnapshotCapture.PrepareInputs(queryTree);
-                    CapturePairedInput(da, inputTree, queryTree, retainedSources, out var pairedTree, out var pairedError,
+                    CapturePairedInput(da, inputTree, retainedSources, out var pairedTree, out var pairedError,
                         out var livePairedTree, out var capturedPairedTree, out bool pairedPresent);
                     var context = ReadGeometryContext(out var unitSystem, out double tolerance, out string units);
                     if (!Current()) return;
@@ -999,7 +1004,7 @@ namespace BetterGhPanel
                     var pairedSources = Array.Empty<IGH_Goo?>();
                     var pairedMeasurements = Array.Empty<CapturedMeasurementSource?>();
                     var pairedGraphs = Array.Empty<CaptureGraphWitness>();
-                    var pairedSnapshot = PanelSplit && pairedTree != null ? SnapshotCapture.CaptureForMeasurements(pairedTree,
+                    var pairedSnapshot = PanelSplit && pairedTree != null ? SnapshotCapture.CaptureForMeasurements(capturedPairedTree!,
                         out pairedSources, out pairedMeasurements, out pairedGraphs, PanelUnitConversion.None, units, null, null, null, null, null) : null;
                     StructureObserverForTesting?.Invoke(liveInputTree, livePairedTree);
                     if (!Current()) return;
@@ -1020,7 +1025,8 @@ namespace BetterGhPanel
                     // locals together only while this solve still owns the component.
                     _inputTree = inputTree; _preConversionTree = preConversionTree; _queryTree = queryTree; _retainedSources = retainedSources;
                     _liveInputTree = liveInputTree; _livePairedTree = livePairedTree; _pairedInputTree = capturedPairedTree; _pairedInputPresent = pairedPresent;
-                    _pairedQueryTree = pairedTree; _pairedError = pairedError;
+                    _pairedError = pairedError;
+                    PairedData = pairedTree;
                     PairedSnapshot = pairedSnapshot;
                     _pairedSourceItems = pairedSources; _pairedMeasurementSources = pairedMeasurements; _pairedCaptureGraphs = pairedGraphs;
                     bool retainContext = _geometryContext.Equals(context);

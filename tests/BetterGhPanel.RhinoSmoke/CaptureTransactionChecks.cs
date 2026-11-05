@@ -392,7 +392,9 @@ internal static class CaptureTransactionChecks
                         measuredEntryVisits > 0 && measuredEntryVisits <= 8L * visible &&
                         measuredSourceChecks > 0 && measuredSourceChecks <= 4L * visible &&
                         (long)holderVisits.GetValue(component)! == count && validationVisits == 5L * count &&
-                        reconstructionVisits == 3L * count + expected && publicationItems == 2L * count + 2L * expected,
+                        // D selection and B scan D; mapped F visits only its scoped
+                        // member traversal, output items and the one retained branch path.
+                        reconstructionVisits == 2L * count + 4L * expected + 1 && publicationItems == 2L * count + 2L * expected,
                         "a measured selection gesture checks all captured holders once; cache reads are limited to rendered rows without a cache scan/copy");
                     Check(PreviewCount("PreviewCount") > 0 && ReferenceEquals(result,
                         preview.GetType().GetField("_orderResult", Private)!.GetValue(preview)) == labels,

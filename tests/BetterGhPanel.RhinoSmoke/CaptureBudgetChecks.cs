@@ -209,14 +209,12 @@ internal static class CaptureBudgetChecks
         var outputOps = assembly.GetType("BetterGhPanel.Runtime.PanelOutputOperations", true)!;
         var data = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Filter", Static)!.Invoke(null, new object[] { input, query })!;
         var selection = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Select", Static)!.Invoke(null, new object[] { input, new[] { selected } })!;
-        var addresses = Enumerable.Range(0, input.DataCount).Select(i => new PanelSourceAddress("{0}", i)).ToArray();
+        var addresses = Enumerable.Range(0, input.DataCount).Select(snapshot.SourceAddressAt).ToArray();
         var mask = (GH_Structure<GH_Boolean>)outputOps.GetMethod("Mask", Static)!.Invoke(null, new object[] { input, addresses, query.RowPositions })!;
         var paired = new GH_Structure<IGH_Goo>();
         var values = paired.EnsurePath(new GH_Path(0));
         for (int i = 0; i < input.DataCount; i++) values.Add(new GH_Integer(i));
-        var pairedArgs = new object?[] { input, paired, input, addresses, null };
-        var pair = (GH_Structure<IGH_Goo>)outputOps.GetMethod("Pair", Static)!.Invoke(null, pairedArgs)!;
-        var filteredPair = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Filter", Static)!.Invoke(null, new object[] { pair, query })!;
+        var filteredPair = PanelTestAdapter.PairedOutput(assembly, input, paired, addresses, query);
         var position = query.RowPositions.ToList().IndexOf(selected);
         Check(position >= 0 && ReferenceEquals(data.Branches[0][position], input.Branches[0][selected]) &&
             ReferenceEquals(selection.Branches[0][0], input.Branches[0][selected]) && mask.Branches[0][selected].Value &&

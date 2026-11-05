@@ -90,6 +90,18 @@ internal static class PanelTestAdapter
         }
     }
 
+    internal static Grasshopper.Kernel.Data.GH_Structure<Grasshopper.Kernel.Types.IGH_Goo> PairedOutput(Assembly assembly,
+        Grasshopper.Kernel.Data.GH_Structure<Grasshopper.Kernel.Types.IGH_Goo> data,
+        Grasshopper.Kernel.Data.GH_Structure<Grasshopper.Kernel.Types.IGH_Goo> paired,
+        System.Collections.Generic.IReadOnlyList<BetterGhPanel.Core.PanelSourceAddress> sources, BetterGhPanel.Core.PanelQueryResult query)
+    {
+        var operations = assembly.GetType("BetterGhPanel.Runtime.PanelOutputOperations", true)!;
+        var pair = operations.GetMethod("Pair", BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, new object?[] { data, paired, sources, 0, false, false, false, null })!;
+        return (Grasshopper.Kernel.Data.GH_Structure<Grasshopper.Kernel.Types.IGH_Goo>)pair.GetType()
+            .GetMethod("Output", PrivateInstance)!.Invoke(pair, new object?[] { query, query.RowPositions, query.BranchPaths, false, false, null, false })!;
+    }
+
     internal static void Render(GH_Component component, GH_Canvas canvas, Graphics graphics) =>
         component.Attributes.GetType().GetMethod("Render", PrivateInstance)!
             .Invoke(component.Attributes, new object[] { canvas, graphics, GH_CanvasChannel.Objects });

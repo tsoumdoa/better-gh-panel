@@ -149,10 +149,7 @@ internal static class CaptureStockGeometryChecks
         var mask = (GH_Structure<GH_Boolean>)outputs.GetMethod("Mask", Static)!.Invoke(null, new object[] { tree, addresses, query.RowPositions })!;
         var paired = new GH_Structure<IGH_Goo>();
         for (int i = 0; i < tree.DataCount; i++) paired.Append(new GH_Integer(i), new GH_Path(0));
-        var pair = (GH_Structure<IGH_Goo>)outputs.GetMethod("Pair", Static)!.Invoke(null, new object?[] { tree, paired, tree, addresses, null })!;
-        var filteredPair = (GH_Structure<IGH_Goo>)(set
-            ? outputs.GetMethod("SetItems", Static)!.Invoke(null, new object?[] { pair, query, query.RowPositions, query.BranchPaths, false, null })!
-            : trees.GetMethod("Filter", Static)!.Invoke(null, new object[] { pair, query })!);
+        var filteredPair = PanelTestAdapter.PairedOutput(assembly, tree, paired, addresses, query);
         var expectedPath = set ? new GH_Path(0, 0) : new GH_Path(0);
         Check(data.DataCount == 1 && selection.DataCount == 1 &&
             data.PathCount == 1 && data.Paths[0].CompareTo(expectedPath) == 0 &&

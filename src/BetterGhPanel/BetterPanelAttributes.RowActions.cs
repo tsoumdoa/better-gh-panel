@@ -173,7 +173,7 @@ namespace BetterGhPanel
                 if (position < 0 || position >= result.Snapshot.Rows.Count || !_selection.Contains(position)) return;
                 var row = result.Snapshot.Rows[position];
                 bool projected = result.DisplaySet?.Values.ContainsKey(position) == true;
-                string value = _rowMenuPaired && PanelOwner.PairedSnapshot != null ? PairedDisplayValue(PanelOwner.PairedSnapshot.Rows[position]) :
+                string value = _rowMenuPaired && PanelOwner.PairedSnapshot != null ? PanelOwner.PairedValue(position) :
                     !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
                     ? row.StringValue : PanelOwner.DisplayValue(result.Snapshot, row, position);
                 try { PanelFullValueWindow.Show(value); }
@@ -239,7 +239,7 @@ namespace BetterGhPanel
         private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas, bool paired = false)
         {
             var positions = _selection.OrderedPositions(result);
-            if (positions.Count == 0) return;
+            if (positions.Count == 0 && !(paired && result.DisplaySet?.IsBranchSet == true && _selection.BranchPaths(result).Count > 0)) return;
             InvalidateCopyStatus();
             long generation = _actionGeneration;
             _copyPending = true;
