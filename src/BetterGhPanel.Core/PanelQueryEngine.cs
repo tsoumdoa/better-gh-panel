@@ -24,7 +24,7 @@ namespace BetterGhPanel.Core
             if (options == null) return false;
             try
             {
-                _ = new PanelSearchFilter(options, CultureInfo.CurrentCulture);
+                _ = new PanelSearchFilter(options);
                 if (options.BranchPath != null) _ = NormalizeBranchPath(options.BranchPath);
                 return true;
             }
@@ -39,18 +39,17 @@ namespace BetterGhPanel.Core
             cancellationToken.ThrowIfCancellationRequested();
             // Capture options now, before either execution or handoff can be deferred.
             var query = options.Clone();
-            var culture = CultureInfo.ReadOnly((CultureInfo)CultureInfo.CurrentCulture.Clone());
-            return new PanelQueryWork(work => ExecuteSteps(snapshot, query, cancellationToken, measuredGeometry, culture, work).GetEnumerator());
+            return new PanelQueryWork(work => ExecuteSteps(snapshot, query, cancellationToken, measuredGeometry, work).GetEnumerator());
         }
 
         private static IEnumerable<PanelQueryResult?> ExecuteSteps(PanelSnapshot snapshot, PanelQueryOptions query,
             CancellationToken cancellationToken, IReadOnlyDictionary<int, PanelGeometryInfo>? measuredGeometry,
-            IFormatProvider culture, PanelQueryWork work)
+            PanelQueryWork work)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var search = new PanelSearchFilter(query, culture);
+            var search = new PanelSearchFilter(query);
             var scope = new PanelQueryScope(snapshot, query, search);
-            var set = query.CreateSet ? new PanelDisplaySet(snapshot, query, culture) : null;
+            var set = query.CreateSet ? new PanelDisplaySet(snapshot, query) : null;
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
@@ -67,6 +66,23 @@ namespace BetterGhPanel.Core
             var stringValues = new Dictionary<PanelText, ValueCount>(new PanelTextComparer());
             var uniqueValues = new List<ValueCount>();
             var scalarCount = 0;
+            var warnings = new PanelDataWarnings();
+            var lengths = new Dictionary<int, int>();
+            for (int i = 0; i < snapshot.Branches.Count; i++)
+            {
+                if (work.ShouldYield()) yield return null;
+                CheckCancellation(i, cancellationToken);
+                int length = snapshot.Branches[i].ItemCount;
+                lengths.TryGetValue(length, out int frequency);
+                lengths[length] = frequency + 1;
+            }
+            foreach (var entry in lengths)
+            {
+                if (work.ShouldYield()) yield return null;
+                cancellationToken.ThrowIfCancellationRequested();
+                if (snapshot.Branches.Count >= 4 && (long)entry.Value * 4 >= (long)snapshot.Branches.Count * 3 && entry.Value < snapshot.Branches.Count)
+                { warnings.MajorityLength = entry.Key; warnings.OutlierBranches = snapshot.Branches.Count - entry.Value; }
+            }
 
             // Empty branches remain visible when browsing the tree, but not in item-filter results.
             if (!scope.HasItemFilter)
@@ -84,6 +100,7 @@ namespace BetterGhPanel.Core
                 }
             }
 
+            string? numericUnits = null;
             var numericCount = 0;
             var nullCount = 0;
             var invalidCount = 0;
@@ -97,6 +114,9 @@ namespace BetterGhPanel.Core
                 if (work.ShouldYield()) yield return null;
                 CheckCancellation(i, cancellationToken);
                 var row = snapshot.Rows[i];
+                if (row.IsNull) warnings.NullCount++;
+                else if (row.Validity == PanelValidity.VerifiedInvalid) warnings.InvalidCount++;
+                else if (row.Validity == PanelValidity.Unverified) warnings.UnverifiedCount++;
                 if (!scope.MatchesRow(row)) continue;
                 PanelGeometryInfo? measured = null;
                 measuredGeometry?.TryGetValue(i, out measured);
@@ -105,16 +125,23 @@ namespace BetterGhPanel.Core
                 if (set != null && !set.IncludeRow(i, measured)) continue;
 
                 rowPositions.Add(i);
-                outputValues?.Add(i, PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured));
-                if (propertySortValues != null) propertySortValues.Add(i, PanelDisplayedValue.Capture(snapshot, row, query, measured, culture));
+                var metric = set == null && query.DisplayFilterValue
+                    ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor) : null;
+                outputValues?.Add(i, metric);
+                if (propertySortValues != null) propertySortValues.Add(i, PanelDisplayedValue.Capture(snapshot, row, query, measured));
                 if (sortText != null && !row.IsNull && !HasFiniteNumber(row))
-                    sortText.Add(i, PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture));
+                    sortText.Add(i, PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, query.RoundUpFactor));
                 branches.Add(row.Path);
                 Increment(branchCounts, row.Path);
                 if (set?.IsBranchSet == true) continue;
                 var projected = set == null ? null : set.Values[i];
-                var numeric = projected != null ? projected.Number : HasFiniteNumber(row) ? row.NumericValue : null;
-                PanelText? text = projected != null ? projected.Number.HasValue ? (PanelText?)null : projected.SemanticText :
+                double? numeric = projected?.Number;
+                if (projected == null)
+                    numeric = query.DisplayFilterValue
+                        ? metric?.Kind == PanelPropertyKind.Number ? metric.Number : (double?)null
+                        : HasFiniteNumber(row) ? PanelUnits.Transform(row.NumericValue!.Value, PanelUnitConversion.None, 0, query.DecimalPlaces) : (double?)null;
+                if (numeric.HasValue && (double.IsNaN(numeric.Value) || double.IsInfinity(numeric.Value))) numeric = null;
+                PanelText? text = projected != null ? projected.Number.HasValue || projected.Unavailable ? (PanelText?)null : projected.SemanticText :
                     row.StringValue != null ? new PanelText(row.StringValue) : (PanelText?)null;
                 Increment(typeCounts, projected == null ? row.TypeName : projected.Number.HasValue ? "Number" : "Text");
                 if (projected == null && row.IsNull) nullCount++;
@@ -147,7 +174,9 @@ namespace BetterGhPanel.Core
                         scalarCount++;
                     }
                 }
-                if (!numeric.HasValue) continue;
+                if (!numeric.HasValue || double.IsNaN(numeric.Value) || double.IsInfinity(numeric.Value)) continue;
+                string units = query.DisplayFilterValue ? PanelFilterValue.UnitSymbol(snapshot, row, query.SearchMode, measured) : PanelUnits.Symbol(snapshot.UnitConversion);
+                numericUnits = numericUnits == null ? units : numericUnits == units ? units : "";
                 var value = numeric.Value;
                 numericCount++;
                 minimum = Math.Min(minimum, value);
@@ -244,7 +273,7 @@ namespace BetterGhPanel.Core
                 invalidCount, numericCount == 0 ? (double?)null : minimum,
                 numericCount == 0 ? (double?)null : maximum, numericCount == 0 ? (double?)null : mean,
                 new ReadOnlyDictionary<string, int>(typeCounts), new ReadOnlyDictionary<string, int>(branchCounts),
-                Array.AsReadOnly(frequencies), scalarCount, unverifiedCount, filteredSourceStatuses);
+                Array.AsReadOnly(frequencies), scalarCount, unverifiedCount, filteredSourceStatuses, numericUnits ?? "");
             PanelDisplaySetResult? displaySet = null;
             if (set != null)
                 foreach (var step in set.Complete(work, cancellationToken))
@@ -260,14 +289,14 @@ namespace BetterGhPanel.Core
                 viewIndices.Add(positions[index], index);
             }
             cancellationToken.ThrowIfCancellationRequested();
-            yield return new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues);
+            yield return new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings);
         }
 
         public static bool RequiresGeometryMeasurements(PanelQueryOptions options)
         {
             if (options == null) throw new ArgumentNullException(nameof(options));
             if (UsesDisplayedText(options)) return true;
-            if (SetNeedsGeometry(options)) return true;
+            if (PresentationNeedsGeometry(options)) return true;
             bool hasSearch = !(options.DisplayFilterValue && options.SearchMode >= PanelSearchMode.Value) && !string.IsNullOrWhiteSpace(options.Search);
             if (hasSearch && (options.SearchMode == PanelSearchMode.Length ||
                 options.SearchMode == PanelSearchMode.Area || options.SearchMode == PanelSearchMode.Volume || PanelProperties.IsProperty(options.SearchMode))) return true;
@@ -297,7 +326,7 @@ namespace BetterGhPanel.Core
             var query = options.Clone();
             var filter = new PanelSearchFilter(query);
             var sorting = query.SortMode != PanelSortMode.SourceOrder;
-            bool setGeometry = SetNeedsGeometry(query);
+            bool setGeometry = PresentationNeedsGeometry(query);
             if (!sorting && !setGeometry && (!filter.HasFilter || !filter.IsGeometry && !filter.UsesDisplayText)) return Array.Empty<int>();
             var scope = new PanelQueryScope(snapshot, query, filter);
             var candidates = new List<int>();
@@ -314,7 +343,7 @@ namespace BetterGhPanel.Core
             return candidates.AsReadOnly();
         }
 
-        private static bool SetNeedsGeometry(PanelQueryOptions query) => (query.CreateSet || query.OutputValues && query.DisplayFilterValue) &&
+        private static bool PresentationNeedsGeometry(PanelQueryOptions query) => (query.CreateSet || query.OutputValues && query.DisplayFilterValue) &&
             (!query.DisplayFilterValue || query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(query.SearchMode));
 
         /// <summary>Accepts a semicolon-separated path with or without braces. Blank means all branches.</summary>

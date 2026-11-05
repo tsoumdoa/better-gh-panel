@@ -123,6 +123,10 @@ namespace BetterGhPanel
                 case Keys.End when none || control:
                     SetPaneOffset(canvas, MaximumOffset, paired);
                     return true;
+                case Keys.C when modifiers == (Keys.Control | Keys.Shift):
+                    if (!current || _selection.Count == 0) return false;
+                    CopySelectedValues(result, canvas, PanelOwner.PanelSplit && PanelOwner.CanSplit && _copyPaired, PanelRowAction.CopyPaths);
+                    return true;
                 case Keys.C when control:
                     // With no rows selected, Ctrl+C keeps copying Grasshopper objects.
                     if (!current || _selection.Count == 0 || DisplayListLengths && !(result.DisplaySet?.IsBranchSet == true && _copyPaired)) return false;
@@ -241,6 +245,7 @@ namespace BetterGhPanel
             yield return _close; yield return _display;
             if (!_split.IsEmpty) yield return _split;
             if (PanelOwner.PanelSplit) yield return _scrollLock;
+            foreach (var warning in _warningHits) yield return warning.Bounds;
             yield return _jump; yield return _reset; yield return _preview;
             if (SearchClearVisible) yield return _searchClear;
             yield return _filter; yield return _search;

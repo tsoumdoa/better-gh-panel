@@ -15,8 +15,8 @@ internal static class QueryPolicyChecks
 
         changed = original.Clone();
         changed.DecimalPlaces = 2;
-        Check(!PanelQueryPolicy.SameQuery(original, changed) && PanelQueryPolicy.SameOutputFilter(original, changed),
-            "Precision alone is a view change for an unfiltered tree");
+        Check(!PanelQueryPolicy.SameQuery(original, changed) && !PanelQueryPolicy.SameOutputFilter(original, changed),
+            "Precision changes numeric items on the wire even for an unfiltered tree");
 
         var text = new PanelQueryOptions { Search = "alpha" };
         var textPrecision = text.Clone();
@@ -25,8 +25,8 @@ internal static class QueryPolicyChecks
             "Precision can change membership of displayed-text searches");
         text.Search = "> 2.5";
         textPrecision.Search = text.Search;
-        Check(PanelQueryPolicy.SameOutputFilter(text, textPrecision),
-            "Explicit numeric comparisons in text mode use full precision");
+        Check(!PanelQueryPolicy.SameOutputFilter(text, textPrecision),
+            "Explicit numeric comparisons in text mode use presented numbers");
 
         var regex = new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = " " };
         var regexPrecision = regex.Clone();

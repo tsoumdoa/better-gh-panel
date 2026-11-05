@@ -179,7 +179,7 @@ namespace BetterGhPanel.UI
         }
 
         internal static string TypeDetails(PanelQueryResult result) =>
-            string.Join(", ", OrderedTypes(TypeCounts(result)).Select(pair => $"{pair.Key}: {pair.Value:N0}"));
+            string.Join(", ", OrderedTypes(TypeCounts(result)).Select(pair => System.FormattableString.Invariant($"{pair.Key}: {pair.Value:N0}")));
 
         private static IReadOnlyDictionary<string, int> TypeCounts(PanelQueryResult result) =>
             result.Statistics.TypeCounts.Count > 0 ? result.Statistics.TypeCounts : result.Snapshot.TypeCounts;
@@ -516,10 +516,10 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.Comparison) return ComparisonChoiceAt(index).Label;
             if (index == 0) return "All branches";
             if (index == 1) return _branchFilter.Length == 0 ? "Jump to exact path…" :
-                "Jump to {" + Unbraced(_branchFilter) + "}  ·  " + (_branchMatches?.Length ?? 0).ToString("N0") + " matching";
+                "Jump to {" + Unbraced(_branchFilter) + "}  ·  " + (_branchMatches?.Length ?? 0).ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " matching";
             var branch = _snapshot.Branches[BranchIndex(index)];
             var path = branch.Path.Length <= 150 ? branch.Path : branch.Path.Substring(0, 149) + "…";
-            return path + "   ·   " + branch.ItemCount.ToString("N0");
+            return path + "   ·   " + branch.ItemCount.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
         }
 
         internal string StatisticsDetails(int index, int decimals) =>

@@ -45,9 +45,7 @@ namespace BetterGhPanel
             _pairedTrackHit = new RectangleF(_panel.Right - 21, _list.Y, 8, height);
         }
 
-        private string OutputPortLabel(IGH_Param parameter) => PanelOwner.OutputsValues &&
-            (ReferenceEquals(parameter, Owner.Params.Output[0]) || ReferenceEquals(parameter, Owner.Params.Output[1]))
-                ? parameter.NickName + "·V" : PanelOwner.OutputScope == PanelOutputScope.Selected &&
+        private string OutputPortLabel(IGH_Param parameter) => PanelOwner.OutputScope == PanelOutputScope.Selected &&
             (ReferenceEquals(parameter, Owner.Params.Output[2]) || ReferenceEquals(parameter, Owner.Params.Output[3]))
                 ? parameter.NickName + "·S" : parameter.NickName;
 
@@ -81,7 +79,7 @@ namespace BetterGhPanel
             }
             var session = PanelOwner.Session;
             bool current = session.HasCurrentResult && !PanelOwner.Locked;
-            string dataSummary = current ? $"{session.Result.RowPositions.Count:N0} · {TypeSummary(session.Result.Statistics.TypeCounts.Keys)}" : "…";
+            string dataSummary = current ? System.FormattableString.Invariant($"{session.Result.RowPositions.Count:N0} · {TypeSummary(session.Result.Statistics.TypeCounts.Keys)}") : "…";
             using var bold = new Font(small, FontStyle.Bold);
             Text(graphics, "D", bold, Accent, _dataCaption, trim);
             Text(graphics, "Data  " + dataSummary, small, Muted,
@@ -106,7 +104,7 @@ namespace BetterGhPanel
                     }
                     _pairedTypeSummary = TypeSummary(types);
                 }
-                pairSummary = PanelOwner.PairedSummaryCurrent ? $"{_pairedItemCount:N0} · {_pairedTypeSummary}" : "…";
+                pairSummary = PanelOwner.PairedSummaryCurrent ? System.FormattableString.Invariant($"{_pairedItemCount:N0} · {_pairedTypeSummary}") : "…";
             }
             Text(graphics, "F", bold, Accent, _pairedCaption, trim);
             bool mismatch = PanelOwner.PairedError != null;

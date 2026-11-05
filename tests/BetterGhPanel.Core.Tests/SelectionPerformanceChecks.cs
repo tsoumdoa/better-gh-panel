@@ -117,8 +117,9 @@ internal static class SelectionPerformanceChecks
         var oldFiltered = selection.OrderedPositions(filtered);
         visits = 0;
         var newFiltered = selection.OrderedPositions(sameOrderNewResult);
+        int identityVisits = visits;
         Check(newFiltered.SequenceEqual(oldFiltered) && !ReferenceEquals(oldFiltered, newFiltered) &&
-            !selection.IsCurrentOrderedPositions(sameOrderNewResult, oldFiltered) && visits <= 4,
+            !selection.IsCurrentOrderedPositions(sameOrderNewResult, oldFiltered) && identityVisits <= 4,
             "Result identity invalidates an ordered list even if membership and ordering are identical");
         var replacement = PanelQueryEngine.Execute(new PanelSnapshot(snapshot.Rows, snapshot.Branches), new PanelQueryOptions());
         Check(selection.OrderedPositions(replacement).Count == 0, "A new snapshot never reuses source positions");

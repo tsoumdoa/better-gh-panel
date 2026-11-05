@@ -14,12 +14,13 @@ namespace BetterGhPanel.Runtime
         {
             var values = new Dictionary<PanelSearchMode, PanelPropertyValue?>();
             void N(PanelSearchMode mode, double value, int power = 0) => values[mode] = PanelPropertyValue.Numeric(value, power, units);
+            void I(PanelSearchMode mode, int value) => values[mode] = PanelPropertyValue.Integer(value);
             Type type = goo.GetType();
             if (type == typeof(GH_Vector)) N(PanelSearchMode.Magnitude, ((GH_Vector)goo).Value.Length, 1);
             else if (type == typeof(GH_Colour))
             {
                 var colour = ((GH_Colour)goo).Value;
-                N(PanelSearchMode.Red, colour.R); N(PanelSearchMode.Green, colour.G); N(PanelSearchMode.Blue, colour.B); N(PanelSearchMode.Alpha, colour.A);
+                I(PanelSearchMode.Red, colour.R); I(PanelSearchMode.Green, colour.G); I(PanelSearchMode.Blue, colour.B); I(PanelSearchMode.Alpha, colour.A);
                 if (colour.IsNamedColor) values[PanelSearchMode.ColourName] = PanelPropertyValue.String(colour.Name);
             }
             else if (type == typeof(GH_Interval))
@@ -32,8 +33,8 @@ namespace BetterGhPanel.Runtime
             else if (type == typeof(GH_Time))
             {
                 var date = ((GH_Time)goo).Value; values[PanelSearchMode.DateTime] = PanelPropertyValue.Time(date);
-                N(PanelSearchMode.Year, date.Year); N(PanelSearchMode.Month, date.Month); N(PanelSearchMode.Day, date.Day);
-                N(PanelSearchMode.Hour, date.Hour); N(PanelSearchMode.Minute, date.Minute); N(PanelSearchMode.Second, date.Second);
+                I(PanelSearchMode.Year, date.Year); I(PanelSearchMode.Month, date.Month); I(PanelSearchMode.Day, date.Day);
+                I(PanelSearchMode.Hour, date.Hour); I(PanelSearchMode.Minute, date.Minute); I(PanelSearchMode.Second, date.Second);
             }
             else if (type == typeof(GH_Guid)) values[PanelSearchMode.GuidValue] = PanelPropertyValue.String(((GH_Guid)goo).Value.ToString("D"));
             else if (type == typeof(GH_Line)) Analytic(values, 1, false, "Linear");
@@ -93,11 +94,12 @@ namespace BetterGhPanel.Runtime
         {
             var values = new Dictionary<PanelSearchMode, PanelPropertyValue?>();
             void N(PanelSearchMode mode, double value, int power = 0) => values[mode] = PanelPropertyValue.Numeric(value, power, units);
+            void I(PanelSearchMode mode, int value) => values[mode] = PanelPropertyValue.Integer(value);
             void B(PanelSearchMode mode, bool value) => values[mode] = PanelPropertyValue.Boolean(value);
             if (geometry is Curve curve)
             {
-                N(PanelSearchMode.Degree, curve.Degree); B(PanelSearchMode.Closed, curve.IsClosed);
-                if (curve is PolylineCurve polyline) N(PanelSearchMode.SegmentCount, polyline.PointCount - 1);
+                I(PanelSearchMode.Degree, curve.Degree); B(PanelSearchMode.Closed, curve.IsClosed);
+                if (curve is PolylineCurve polyline) I(PanelSearchMode.SegmentCount, polyline.PointCount - 1);
                 if (curve is LineCurve) Analytic(values, 1, false, "Linear");
                 else if (curve is ArcCurve arc)
                 {
@@ -113,29 +115,29 @@ namespace BetterGhPanel.Runtime
             }
             else if (geometry is Brep brep)
             {
-                N(PanelSearchMode.FaceCount, brep.Faces.Count);
+                I(PanelSearchMode.FaceCount, brep.Faces.Count);
                 if (!surface)
-                { B(PanelSearchMode.Solid, brep.IsSolid); B(PanelSearchMode.Closed, brep.IsSolid); N(PanelSearchMode.EdgeCount, brep.Edges.Count); N(PanelSearchMode.VertexCount, brep.Vertices.Count); }
+                { B(PanelSearchMode.Solid, brep.IsSolid); B(PanelSearchMode.Closed, brep.IsSolid); I(PanelSearchMode.EdgeCount, brep.Edges.Count); I(PanelSearchMode.VertexCount, brep.Vertices.Count); }
                 if (brep.Faces.Count == 1)
                 {
                     if (surface)
-                    { B(PanelSearchMode.Trimmed, !brep.IsSurface); N(PanelSearchMode.DegreeU, brep.Faces[0].Degree(0)); N(PanelSearchMode.DegreeV, brep.Faces[0].Degree(1)); }
+                    { B(PanelSearchMode.Trimmed, !brep.IsSurface); I(PanelSearchMode.DegreeU, brep.Faces[0].Degree(0)); I(PanelSearchMode.DegreeV, brep.Faces[0].Degree(1)); }
                     values[PanelSearchMode.Planar] = measured ? PanelPropertyValue.Boolean(brep.Faces[0].IsPlanar()) : null;
                 }
             }
             else if (geometry is Mesh mesh)
-            { B(PanelSearchMode.Closed, mesh.IsClosed); N(PanelSearchMode.VertexCount, mesh.Vertices.Count); N(PanelSearchMode.FaceCount, mesh.Faces.Count); }
+            { B(PanelSearchMode.Closed, mesh.IsClosed); I(PanelSearchMode.VertexCount, mesh.Vertices.Count); I(PanelSearchMode.FaceCount, mesh.Faces.Count); }
             else if (geometry is SubD subd)
-            { B(PanelSearchMode.Solid, subd.IsSolid); B(PanelSearchMode.Closed, subd.IsSolid); N(PanelSearchMode.VertexCount, subd.Vertices.Count); N(PanelSearchMode.EdgeCount, subd.Edges.Count); N(PanelSearchMode.FaceCount, subd.Faces.Count); }
+            { B(PanelSearchMode.Solid, subd.IsSolid); B(PanelSearchMode.Closed, subd.IsSolid); I(PanelSearchMode.VertexCount, subd.Vertices.Count); I(PanelSearchMode.EdgeCount, subd.Edges.Count); I(PanelSearchMode.FaceCount, subd.Faces.Count); }
             else if (geometry is Extrusion extrusion)
-            { B(PanelSearchMode.Solid, extrusion.IsSolid); B(PanelSearchMode.Closed, extrusion.IsSolid); N(PanelSearchMode.ProfileCount, extrusion.ProfileCount); N(PanelSearchMode.Height, extrusion.PathStart.DistanceTo(extrusion.PathEnd), 1); }
-            else if (geometry is PointCloud cloud) N(PanelSearchMode.PointCount, cloud.Count);
+            { B(PanelSearchMode.Solid, extrusion.IsSolid); B(PanelSearchMode.Closed, extrusion.IsSolid); I(PanelSearchMode.ProfileCount, extrusion.ProfileCount); N(PanelSearchMode.Height, extrusion.PathStart.DistanceTo(extrusion.PathEnd), 1); }
+            else if (geometry is PointCloud cloud) I(PanelSearchMode.PointCount, cloud.Count);
             return values;
         }
 
         private static void Analytic(Dictionary<PanelSearchMode, PanelPropertyValue?> values, int degree, bool closed, string shape)
         {
-            values[PanelSearchMode.Degree] = PanelPropertyValue.Numeric(degree);
+            values[PanelSearchMode.Degree] = PanelPropertyValue.Integer(degree);
             values[PanelSearchMode.Closed] = PanelPropertyValue.Boolean(closed);
             values[PanelSearchMode.Planar] = PanelPropertyValue.Boolean(true);
             values[PanelSearchMode.Shape] = PanelPropertyValue.String(shape);

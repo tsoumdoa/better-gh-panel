@@ -27,8 +27,8 @@ namespace BetterGhPanel.UI
         internal RectangleF Next { get; private set; }
         internal RectangleF Table { get; private set; }
         internal static string Summary(PanelSetOccurrences occurrences) =>
-            $"{occurrences.Count:N0} " + (occurrences.Count == 1 ? "occurrence" : "occurrences") +
-            $" · {occurrences.BranchCount:N0} input " + (occurrences.BranchCount == 1 ? "branch" : "branches");
+            System.FormattableString.Invariant($"{occurrences.Count:N0} ") + (occurrences.Count == 1 ? "occurrence" : "occurrences") +
+            System.FormattableString.Invariant($" · {occurrences.BranchCount:N0} input ") + (occurrences.BranchCount == 1 ? "branch" : "branches");
 
         internal void Toggle(PanelQueryResult result, int position)
         {

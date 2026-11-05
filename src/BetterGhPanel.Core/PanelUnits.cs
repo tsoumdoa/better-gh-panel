@@ -1,5 +1,5 @@
 using System;
-using System.Globalization;
+using System.Threading;
 
 namespace BetterGhPanel.Core
 {
@@ -49,27 +49,59 @@ namespace BetterGhPanel.Core
         public static bool IsRoundingFactor(double factor) => factor > 0 && !double.IsInfinity(factor);
 
         /// <summary>Rounds numeric output toward positive infinity after unit conversion. Zero disables rounding.</summary>
-        public static double Transform(double value, PanelUnitConversion conversion, double roundUpFactor = 0)
+        public static double Transform(double value, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = AutomaticDecimals)
         {
-            value = Convert(value, conversion);
+            value = RoundUp(Convert(value, conversion), roundUpFactor);
+            if (!double.IsNaN(value) && !double.IsInfinity(value) && decimals >= 0 && Math.Abs(value) < PanelNumber.IntegerBoundary)
+                value = PanelNumber.ToDouble(PanelNumber.RoundedDecimal(value, Math.Min(MaximumDecimals, decimals)));
+            return value == 0 ? 0 : value;
+        }
+
+        public static bool TryParseOperand(string text, out double value) => PanelNumber.TryParse(text, out value);
+
+        // Settings usually share one factor across the entire solve/query. Cache
+        // its guarded decimal cast, rather than converting it for every value.
+        private sealed class Factor
+        {
+            internal readonly double Value;
+            internal readonly decimal Decimal;
+            internal readonly bool Faithful;
+            internal Factor(double value) { Value = value; Faithful = PanelNumber.FaithfulDecimal(value, out Decimal); }
+        }
+        private static Factor _factor = new Factor(0);
+
+        private static double RoundUp(double value, double roundUpFactor)
+        {
             if (!IsRoundingFactor(roundUpFactor) || double.IsNaN(value) || double.IsInfinity(value)) return value;
-            // Decimal remainder preserves ordinary entered multiples (0.07 / 0.01)
-            // without allocating strings, dividing tiny values to zero or overflowing a quotient.
+            long bits = BitConverter.DoubleToInt64Bits(Math.Abs(value));
+            int exponent = (int)((bits >> 52) & 2047);
+            double resolution = exponent <= 52 ? BitConverter.Int64BitsToDouble(1L << Math.Max(0, exponent - 1)) : BitConverter.Int64BitsToDouble((long)(exponent - 52) << 52);
+            if (roundUpFactor < resolution) return value;
+            var prepared = Volatile.Read(ref _factor);
+            if (prepared.Value != roundUpFactor) { prepared = new Factor(roundUpFactor); Volatile.Write(ref _factor, prepared); }
             try
             {
-                decimal number = (decimal)value, factor = (decimal)roundUpFactor;
-                if (factor > 0 && (double)number == value && (double)factor == roundUpFactor)
+                if (prepared.Faithful && prepared.Decimal > 0 && Math.Abs(value) < 79228162514264337593543950336d)
                 {
+                    decimal number = (decimal)value, factor = prepared.Decimal;
+                    if (number == 0 && value > 0) return roundUpFactor;
+                    if ((double)number != value) return DoubleCeil(value, roundUpFactor);
                     decimal remainder = number % factor;
-                    return (double)(remainder == 0 ? number : number - remainder + (number > 0 ? factor : 0));
+                    if (remainder == 0) return value;
+                    double rounded = PanelNumber.ToDouble(number - remainder + (number > 0 ? factor : 0));
+                    return rounded >= value ? rounded : DoubleCeil(value, roundUpFactor);
                 }
             }
             catch (OverflowException) { }
+            return DoubleCeil(value, roundUpFactor);
+        }
+
+        private static double DoubleCeil(double value, double roundUpFactor)
+        {
             double quotient = value / roundUpFactor;
-            // A factor below the value's floating-point resolution cannot change it.
             if (Math.Abs(quotient) >= 4503599627370496d) return value;
             if (quotient == 0 && value > 0) return roundUpFactor;
-            return Math.Ceiling(quotient) * roundUpFactor;
+            return Math.Max(value, Math.Ceiling(quotient) * roundUpFactor);
         }
 
         public static string Label(PanelUnitConversion conversion) => Definition(conversion).Label;
@@ -101,17 +133,19 @@ namespace BetterGhPanel.Core
         // Geometry retains its model units. Convert only a matching source unit and
         // dimension; numeric output conversion must never scale the geometry itself.
         public static string FormatGeometry(double value, int power, string units, PanelUnitConversion conversion, int decimals,
-            bool includeUnits = true)
+            bool includeUnits = true, double roundUpFactor = 0)
         {
             if (double.IsNaN(value) || double.IsInfinity(value) || value < 0) return "unavailable";
             var matchingConversion = GeometryConversion(power, units, conversion);
             if (matchingConversion != PanelUnitConversion.None)
             {
-                var converted = Convert(value, matchingConversion);
+                var converted = Transform(value, matchingConversion, roundUpFactor, decimals);
                 return double.IsInfinity(converted) ? "unavailable" : Format(converted,
-                    includeUnits ? matchingConversion : PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6");
+                    includeUnits ? matchingConversion : PanelUnitConversion.None, decimals, "G6");
             }
-            return Format(value, PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture, "G6") +
+            value = Transform(value, PanelUnitConversion.None, roundUpFactor, decimals);
+            if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";
+            return Format(value, PanelUnitConversion.None, decimals, "G6") +
                 (includeUnits ? " " + units + (power == 2 ? "²" : power == 3 ? "³" : "") : "");
         }
 
@@ -126,13 +160,18 @@ namespace BetterGhPanel.Core
                 ? conversion : PanelUnitConversion.None;
         }
 
-        // Formatting never rounds the value carried by the output wire.
+        /// <summary>Runtime-independent round-trip text for a finite unique numeric value.</summary>
+        public static string FormatRoundTrip(double value) => double.IsNaN(value) || double.IsInfinity(value)
+            ? "unavailable" : PanelNumber.RoundTrip(value);
+
+        // Automatic keeps the compact display without rounding the wire.
         public static string Format(double value, PanelUnitConversion conversion, int decimals,
-            IFormatProvider? culture = null, string automaticFormat = "G12")
+            string automaticFormat = "G12")
         {
             decimals = Math.Max(AutomaticDecimals, Math.Min(MaximumDecimals, decimals));
-            string text = value.ToString(decimals < 0 ? automaticFormat : "F" + decimals,
-                culture ?? CultureInfo.CurrentCulture);
+            if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";
+            string text = decimals >= 0 ? PanelNumber.Fixed(value, decimals)
+                : PanelNumber.General(value, automaticFormat == "G6" ? 6 : 12);
             string symbol = Symbol(conversion);
             return symbol.Length == 0 ? text : text + " " + symbol;
         }

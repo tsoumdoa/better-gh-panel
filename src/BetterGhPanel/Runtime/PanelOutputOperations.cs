@@ -96,7 +96,7 @@ namespace BetterGhPanel.Runtime
                 foreach (int position in positions.OrderBy(value => value))
                 {
                     var value = set.Values[position];
-                    IGH_Goo item = value.Number.HasValue ? new GH_Number(value.Number.Value) : new GH_String(value.Text);
+                    IGH_Goo item = value.Unavailable ? null! : value.Number.HasValue ? new GH_Number(value.Number.Value) : new GH_String(value.Text);
                     result.Append(item, lookup.Path(query.Snapshot.Rows[position].Path));
                     values++;
                 }

@@ -8,20 +8,25 @@ using Rhino;
 namespace BetterGhPanel.Runtime
 {
     // Temporary immutable scalar values taken before callback-bearing capture.
-    // Strings are referenced, never copied; no scalar array survives the solve.
+    // Strings are referenced, never copied. The solve retains the original and
+    // presented arrays as immutable witnesses for subsequent currency checks.
     internal readonly struct CapturedScalar
     {
         private const byte None = 0, Number = 1, Integer = 2, Text = 3, Boolean = 4;
         private readonly byte _kind;
         private readonly double _number;
+        private readonly double? _rawNumber;
         private readonly string? _text;
         private readonly bool _valid;
-        private CapturedScalar(byte kind, double number, string? text, bool valid)
-        { _kind = kind; _number = number; _text = text; _valid = valid; }
+        private CapturedScalar(byte kind, double number, string? text, bool valid, double? rawNumber = null)
+        { _rawNumber = rawNumber; _kind = kind; _number = number; _text = text; _valid = valid; }
         internal bool Available => _kind != None;
+        internal bool IsInteger => _kind == Integer;
         internal bool IsNumeric => _kind == Number || _kind == Integer;
         internal bool IsValid => _valid;
         internal double NumericValue => _number;
+        internal bool IsNegativeZero => IsNumeric && _number == 0 && BitConverter.DoubleToInt64Bits(_number) < 0;
+        internal double? RawNumber => IsNumeric ? _rawNumber ?? _number : (double?)null;
         internal PanelValidity Validity => _valid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
 
         internal static CapturedScalar[] Capture(GH_Structure<IGH_Goo> tree)
@@ -50,16 +55,19 @@ namespace BetterGhPanel.Runtime
             return values;
         }
 
-        internal static CapturedScalar[] Convert(CapturedScalar[] source, PanelUnitConversion conversion, double roundUpFactor = 0)
+        internal static CapturedScalar[] Convert(CapturedScalar[] source, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = PanelUnits.AutomaticDecimals)
         {
-            if (conversion == PanelUnitConversion.None && roundUpFactor == 0) return source;
+            if (conversion == PanelUnitConversion.None && roundUpFactor == 0 && decimals < 0) return source;
             var result = (CapturedScalar[])source.Clone();
             for (int i = 0; i < result.Length; i++)
             {
                 var value = source[i];
                 if (!value.IsNumeric || !value.IsValid) continue;
-                double converted = PanelUnits.Transform(value._number, conversion, roundUpFactor);
-                result[i] = new CapturedScalar(Number, converted, null, RhinoMath.IsValidDouble(converted));
+                double converted = PanelUnits.Transform(value._number, conversion, roundUpFactor, decimals);
+                // An overflowing conversion has no finite display-unit raw value.
+                // Retain the finite source as the witness of transformed unavailability.
+                double raw = double.IsNaN(converted) || double.IsInfinity(converted) ? value._number : PanelUnits.Convert(value._number, conversion);
+                result[i] = new CapturedScalar(value.IsInteger && conversion == PanelUnitConversion.None && roundUpFactor == 0 ? Integer : Number, converted, null, value.IsValid, raw);
             }
             return result;
         }
@@ -67,7 +75,7 @@ namespace BetterGhPanel.Runtime
         internal string Format(out double? numeric, out string? text)
         {
             numeric = null; text = null;
-            if (_kind == Number) { numeric = _number; return _number.ToString("G12", CultureInfo.InvariantCulture); }
+            if (_kind == Number) { numeric = _number; return PanelUnits.Format(_number, PanelUnitConversion.None, PanelUnits.AutomaticDecimals); }
             if (_kind == Integer) { numeric = _number; return ((int)_number).ToString(CultureInfo.InvariantCulture); }
             if (_kind == Text) { text = _text; return _text ?? "<null text>"; }
             if (_kind == Boolean) return _number != 0 ? "True" : "False";

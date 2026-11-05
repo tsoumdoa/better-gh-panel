@@ -23,7 +23,9 @@ namespace BetterGhPanel
         private PointF _rowMenuAnchor;
         private int _rowMenuSourcePosition = -1;
         private bool _rowMenuPaired;
+        private string? _rowMenuPath;
         private bool _rowMenuPaged;
+        private int _rowMenuPage;
         private DateTime _copiedUntil;
         private DateTime _rowActionDismissedUntil;
         private string _actionStatus = string.Empty;
@@ -55,13 +57,31 @@ namespace BetterGhPanel
             var actions = _rowMenuPendingActions;
             if (!_preservePaintedTargets)
                 _rowMenuActions = Enumerable.Repeat(new CanvasRowAction(PanelRowAction.Unpainted, "", ""), actions.Length).ToArray();
+            float top = _rowMenuBounds.Y;
             for (int i = 0; i < actions.Length; i++)
             {
-                var bounds = new RectangleF(_rowMenuBounds.X + 1, _rowMenuBounds.Y + i * CanvasRowActions.RowHeight,
-                    _rowMenuBounds.Width - 2, CanvasRowActions.RowHeight);
+                var bounds = new RectangleF(_rowMenuBounds.X + 1, top,
+                    _rowMenuBounds.Width - 2, actions[i].Action == PanelRowAction.Separator ? 5 : CanvasRowActions.RowHeight);
+                top += bounds.Height;
+                if (actions[i].Action == PanelRowAction.Separator)
+                {
+                    using var separator = new Pen(PanelTheme.Rgb(224, 229, 222));
+                    g.DrawLine(separator, bounds.Left + 8, bounds.Y + bounds.Height / 2, bounds.Right - 8, bounds.Y + bounds.Height / 2);
+                    continue;
+                }
                 if (i == _rowMenuHovered) Fill(g, PanelTheme.Rgb(226, 236, 226), bounds);
-                Text(g, actions[i].Label, font, actions[i].Enabled ? Ink : PanelTheme.Rgb(176, 182, 178),
-                    new RectangleF(bounds.X + 8, bounds.Y, bounds.Width - 16, bounds.Height), trim);
+                string label = actions[i].Label;
+                int pathStart = actions[i].Action == PanelRowAction.CopyPath ? label.IndexOf("  {", StringComparison.Ordinal) : -1;
+                if (pathStart >= 0)
+                {
+                    using var mono = new Font(FontFamily.GenericMonospace, font.Size, font.Style, font.Unit);
+                    using var right = (StringFormat)trim.Clone();
+                    right.Alignment = StringAlignment.Far;
+                    Text(g, label.Substring(pathStart + 2), mono, Muted, new RectangleF(bounds.X + 80, bounds.Y, bounds.Width - 88, bounds.Height), right);
+                    label = label.Substring(0, pathStart);
+                }
+                Text(g, label, font, actions[i].Enabled ? Ink : PanelTheme.Rgb(176, 182, 178),
+                    new RectangleF(bounds.X + 8, bounds.Y, pathStart >= 0 ? 72 : bounds.Width - 16, bounds.Height), trim);
                 // Partial invalidations must not activate a row that has not
                 // actually been painted at its new position.
                 var target = new RectangleF(_rowMenuBounds.X, bounds.Y, _rowMenuBounds.Width, bounds.Height);
@@ -72,9 +92,21 @@ namespace BetterGhPanel
             _rowMenuPainted = _rowMenuActions.Any(action => action.Action != PanelRowAction.Unpainted);
         }
 
+        private int RowMenuIndex(PointF point)
+        {
+            float top = _rowMenuBounds.Y;
+            for (int i = 0; i < _rowMenuPendingActions.Length; i++)
+            {
+                float height = _rowMenuPendingActions[i].Action == PanelRowAction.Separator ? 5 : CanvasRowActions.RowHeight;
+                if (point.Y >= top && point.Y < top + height) return _rowMenuPendingActions[i].Action == PanelRowAction.Separator ? -1 : i;
+                top += height;
+            }
+            return -1;
+        }
+
         private bool RowMenuTargetPainted(PointF point)
         {
-            int index = (int)((point.Y - _rowMenuBounds.Y) / CanvasRowActions.RowHeight);
+            int index = RowMenuIndex(point);
             return _rowMenuPainted && _rowMenuBounds.Contains(point) && index >= 0 && index < _rowMenuActions.Length &&
                 _rowMenuActions[index].Action != PanelRowAction.Unpainted;
         }
@@ -120,6 +152,28 @@ namespace BetterGhPanel
                 canvas.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
+            foreach (var heading in _branchHits)
+            {
+                if (!heading.Bounds.Contains(e.CanvasLocation)) continue;
+                _rowContextHandled = true;
+                _rowMenuPath = heading.Path;
+                _rowMenuPaired = _pairedList.Contains(e.CanvasLocation);
+                string copyPath = _rowMenuPaired ? string.Join(", ", PanelOwner.PairedPaths(heading.Path)) : heading.Path;
+                var choices = new System.Collections.Generic.List<CanvasRowAction>
+                {
+                    new CanvasRowAction(PanelRowAction.CopyPath, "Copy path  " + copyPath, "Copy the branch path."),
+                    new CanvasRowAction(PanelRowAction.CopyPathBare, "Copy path as " + copyPath.Trim('{', '}'), "Copy without braces.")
+                };
+                if (_selection.Count > 0) choices.Add(new CanvasRowAction(PanelRowAction.CopyPaths, "Copy paths of selected rows", "Unique paths in tree order, one per line."));
+                choices.Add(new CanvasRowAction(PanelRowAction.Separator, "", ""));
+                choices.Add(new CanvasRowAction(PanelRowAction.ShowBranch, "Show only this branch", "Filter Paths to this branch."));
+                _rowMenuAllActions = choices.ToArray();
+                _rowMenuPaged = choices.Count * CanvasRowActions.RowHeight > _panel.Height - HeaderHeight - 6;
+                _rowMenuAnchor = e.CanvasLocation;
+                ShowRowMenu(result, 0);
+                canvas.Invalidate();
+                return GH_ObjectResponse.Handled;
+            }
             foreach (var hit in _rowHits)
             {
                 if (!hit.Bounds.Contains(e.CanvasLocation)) continue;
@@ -131,9 +185,11 @@ namespace BetterGhPanel
                 TrackSelectionCanvas(canvas);
                 var options = PanelOwner.Session.Options;
                 bool filtered = options.Search.Length > 0 || options.TypeName != null || options.OnlyInvalid || options.BranchPath != null;
+                _rowMenuPath = null;
                 _rowMenuPaired = _copyPaired = _pairedList.Contains(e.CanvasLocation);
                 _rowMenuAllActions = CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered,
-                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX, _rowMenuPaired);
+                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX, _rowMenuPaired,
+                    !_rowMenuPaired && result.DisplaySet != null && !result.DisplaySet.IsBranchSet && PanelOwner.OutputValues == PanelOutputValues.Items);
                 _rowMenuAnchor = e.CanvasLocation;
                 _rowMenuSourcePosition = hit.SourcePosition;
                 _rowMenuPaged = CanvasRowActions.NeedsPages(_panel.Height - HeaderHeight - 6);
@@ -146,13 +202,16 @@ namespace BetterGhPanel
 
         private void ShowRowMenu(PanelQueryResult result, int page)
         {
+            _rowMenuPage = page;
             _rowMenuResult = result;
             _rowMenuPainted = false;
             _rowMenuHovered = -1;
-            _rowMenuPendingActions = _rowMenuPaged ? CanvasRowActions.Page(_rowMenuAllActions, page) : _rowMenuAllActions;
+            _rowMenuPendingActions = !_rowMenuPaged ? _rowMenuAllActions : _rowMenuPath == null ? CanvasRowActions.Page(_rowMenuAllActions, page) :
+                page == 0 ? _rowMenuAllActions.Take(3).Concat(new[] { new CanvasRowAction(PanelRowAction.NextPage, "More actions…", "Show the remaining branch actions.") }).ToArray() :
+                _rowMenuAllActions.Skip(3).Concat(new[] { new CanvasRowAction(PanelRowAction.PreviousPage, "Previous actions…", "Return to the first branch actions.") }).ToArray();
             _rowMenuActions = Enumerable.Repeat(new CanvasRowAction(PanelRowAction.Unpainted, "", ""), _rowMenuPendingActions.Length).ToArray();
             float width = Math.Min(300, _panel.Width - 28);
-            float height = _rowMenuPendingActions.Length * CanvasRowActions.RowHeight;
+            float height = _rowMenuPendingActions.Sum(action => action.Action == PanelRowAction.Separator ? 5 : CanvasRowActions.RowHeight);
             _rowMenuBounds = new RectangleF(
                 Math.Max(_panel.Left + 14, Math.Min(_rowMenuAnchor.X, _panel.Right - width - 14)),
                 Math.Max(_panel.Top + HeaderHeight, Math.Min(_rowMenuAnchor.Y, _panel.Bottom - height - 6)), width, height);
@@ -161,11 +220,20 @@ namespace BetterGhPanel
         private void ChooseRowAction(PanelRowAction action, PanelQueryResult result, GH_Canvas canvas)
         {
             var positions = _selection.OrderedPositions(result);
-            if (positions.Count == 0) return;
+            if (action == PanelRowAction.ShowBranch && _rowMenuPath != null)
+            {
+                SetBranchFilter(_rowMenuPath);
+                canvas.Invalidate();
+                return;
+            }
+            if (action == PanelRowAction.CopyPath || action == PanelRowAction.CopyPathBare || action == PanelRowAction.CopyPaths ||
+                action == PanelRowAction.CopyAddresses || action == PanelRowAction.CopyTable)
+            { CopySelectedValues(result, canvas, _rowMenuPaired, action, action == PanelRowAction.CopyPath || action == PanelRowAction.CopyPathBare ? _rowMenuPath : null); return; }
             if (action == PanelRowAction.NextPage || action == PanelRowAction.PreviousPage)
             {
-                if (_rowMenuPaged) ShowRowMenu(result, action == PanelRowAction.NextPage ? 1 : 0);
+                if (_rowMenuPaged) ShowRowMenu(result, action == PanelRowAction.NextPage ? _rowMenuPage + 1 : _rowMenuPage - 1);
             }
+            else if (positions.Count == 0) return;
             else if (action == PanelRowAction.ViewFullValue)
             {
                 if (!PanelOwner.CapturedSnapshotCurrent(result.Snapshot)) return;
@@ -223,7 +291,7 @@ namespace BetterGhPanel
             PanelOwner.HighlightRows(result.Snapshot, positions);
             TrackSelectionCanvas(canvas);
             int branches = positions.Select(position => result.Snapshot.Rows[position].Path).Distinct().Count();
-            _actionStatus = $"{CanvasRowActions.IndexLabel(indices)} · {_selection.Count:N0} selected · {branches:N0} branches";
+            _actionStatus = System.FormattableString.Invariant($"{CanvasRowActions.IndexLabel(indices)} · {_selection.Count:N0} selected · {branches:N0} branches");
             _copiedUntil = DateTime.UtcNow.AddSeconds(5);
         }
 
@@ -236,10 +304,11 @@ namespace BetterGhPanel
             _actionStatus = string.Empty;
         }
 
-        private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas, bool paired = false)
+        private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas, bool paired = false, PanelRowAction action = PanelRowAction.CopyValues, string? path = null)
         {
             var positions = _selection.OrderedPositions(result);
-            if (positions.Count == 0 && !(paired && result.DisplaySet?.IsBranchSet == true && _selection.BranchPaths(result).Count > 0)) return;
+            if (positions.Count == 0 && path == null && action != PanelRowAction.CopyPaths &&
+                !(paired && result.DisplaySet?.IsBranchSet == true && _selection.BranchPaths(result).Count > 0)) return;
             InvalidateCopyStatus();
             long generation = _actionGeneration;
             _copyPending = true;
@@ -247,7 +316,7 @@ namespace BetterGhPanel
             canvas.Invalidate();
             long before = PanelGeometryActions.ClipboardGeneration;
             string status;
-            try { status = await (paired ? PanelOwner.CopyPairedValuesAsync(result.Snapshot, positions) : PanelOwner.CopyValuesAsync(result.Snapshot, positions)); }
+            try { status = await (action != PanelRowAction.CopyValues ? PanelOwner.CopyAddressesAsync(result.Snapshot, positions, action, path, paired) : paired ? PanelOwner.CopyPairedValuesAsync(result.Snapshot, positions) : PanelOwner.CopyValuesAsync(result.Snapshot, positions)); }
             catch (Exception) { status = "Could not copy values. Try again."; }
             Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
             {
@@ -264,13 +333,13 @@ namespace BetterGhPanel
         private bool RowActionTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             if (_rowMenuResult == null || !_rowMenuPainted || !_rowMenuBounds.Contains(point)) return false;
-            int index = (int)((point.Y - _rowMenuBounds.Y) / CanvasRowActions.RowHeight);
+            int index = RowMenuIndex(point);
             if (RowsAreCurrent(_rowMenuResult) && index >= 0 && index < _rowMenuActions.Length &&
                 _rowMenuActions[index].Action != PanelRowAction.Unpainted)
             {
                 var action = _rowMenuActions[index];
                 e.Title = action.Label;
-                e.Text = action.Action == PanelRowAction.ViewFullValue ? "The row you right-clicked" : $"{_selection.Count:N0} selected";
+                e.Text = action.Action == PanelRowAction.ViewFullValue ? "The row you right-clicked" : System.FormattableString.Invariant($"{_selection.Count:N0} selected");
                 e.Description = PanelTextPreview.ForTooltip(action.Enabled ? action.Description : "Unavailable: " + action.DisabledReason);
             }
             return true;

@@ -26,7 +26,7 @@ namespace BetterGhPanel
         private static Color Accent => PanelTheme.Accent;
         private RectangleF _panel, _search, _filter, _type, _sort, _branch, _jump, _reset, _resize, _list, _track, _footer;
         private RectangleF _trim, _simplify, _flatten, _reverse, _createSet, _units;
-        private const float OutputControlWidth = 104;
+        private const float OutputControlWidth = 92;
         private RectangleF _outLabel, _outItems, _outValues;
         private RectangleF _display, _preview, _move, _statistics, _selectAll, _close, _restore;
         // The visible scroll track stays slim; its grab target is wider.
@@ -219,6 +219,7 @@ namespace BetterGhPanel
             _paintedDocument = null;
             _rowHits.Clear();
             _branchHits.Clear();
+            _warningHits.Clear();
             _setHits.Clear();
             _paintedDetailTargets.Clear();
             _paintedListBackground = false;
@@ -361,13 +362,14 @@ namespace BetterGhPanel
             {
                 float outputLeft = _selectAll.Left - 4 - OutputControlWidth;
                 float outputTop = _selectAll.Y;
-                _outLabel = new RectangleF(outputLeft, outputTop, 23, 16);
-                _outItems = new RectangleF(_outLabel.Right, outputTop, 38, 16);
-                _outValues = new RectangleF(_outItems.Right, outputTop, 43, 16);
+                _outLabel = new RectangleF(outputLeft, outputTop, 20, 16);
+                _outItems = new RectangleF(_outLabel.Right, outputTop, 34, 16);
+                _outValues = new RectangleF(_outItems.Right, outputTop, 38, 16);
             }
+            _warningsHeight = WarningStripHeight(footerHeight);
             // Keep interactive content beyond native grip picking's 12-unit
             // radius on both edges, including rows and the scroll track.
-            _list = new RectangleF(_panel.X + 14, _panel.Y + 52, _panel.Width - 33, Math.Max(RowHeight, _panel.Height - 56 - footerHeight));
+            _list = new RectangleF(_panel.X + 14, _panel.Y + 52 + _warningsHeight, _panel.Width - 33, Math.Max(RowHeight, _panel.Height - 56 - footerHeight - _warningsHeight));
             _track = new RectangleF(_panel.Right - 18, _list.Y, 4, _list.Height);
             _trackHit = new RectangleF(_panel.Right - 21, _list.Y, 8, _list.Height);
             LayoutSplitPanes();
@@ -455,9 +457,10 @@ namespace BetterGhPanel
                 }
                 // Minimum Half split needs a one-line footer to fit a value row below the pane captions.
                 bool singleLine = PanelOwner.PanelSplit && _panel.Height < 140 || _panel.Width >= 500 &&
-                    graphics.MeasureString(FooterStatus(result, singleLine: true), small).Width <=
+                    graphics.MeasureString(CanvasStatistics.Summary(result) + " · " + OutputLabel(result), small).Width <=
                         _panel.Width - 357 - (PanelOwner.CanOutputValues ? OutputControlWidth + 4 : 0);
-                if (singleLine != _singleLineFooter || PanelOwner.CanOutputValues == _outLabel.IsEmpty)
+                if (singleLine != _singleLineFooter || PanelOwner.CanOutputValues == _outLabel.IsEmpty ||
+                    _warningsHeight != WarningStripHeight(singleLine ? 20 : 36))
                 {
                     _singleLineFooter = singleLine;
                     Layout();
@@ -493,6 +496,7 @@ namespace BetterGhPanel
                     if (branchClear) DrawClear(graphics, _branchClear);
                     DrawJumpAction(graphics);
                     DrawResetAction(graphics);
+                    RenderWarnings(graphics, result, small);
                     RenderRows(graphics, result, visibleRegion, font, small, mono, trim);
                     if (_scrollLocked) _pairedOffset = _offset;
                     if (PanelOwner.PanelSplit) RenderRows(graphics, result, visibleRegion, font, small, mono, trim, paired: true);
@@ -695,10 +699,10 @@ namespace BetterGhPanel
                             {
                                 var count = CanvasStatistics.BranchCount(result, extraPath);
                                 float countWidth = Math.Min(list.Width / 2, g.MeasureString(count, small).Width + 6);
-                                Text(g, extraPath, mono, Accent, new RectangleF(list.X + 6, y, list.Width - countWidth - 18, BranchHeight), trim);
+                                Text(g, extraPath, mono, Accent, new RectangleF(list.X + 6, y, list.Width - countWidth - 36, BranchHeight), trim);
                                 Text(g, count, small, Muted, new RectangleF(list.Right - countWidth - 6, y, countWidth, BranchHeight), trim);
                             }
-                            if (TargetPainted(g, headingBounds)) AddBranchHit(headingBounds, extraPath);
+                            if (!paired) DrawBranchExtras(g, result, headingBounds, extraPath, mono, small, trim, countText: CanvasStatistics.BranchCount(result, extraPath));
                             y += BranchHeight;
                             previousPath = extraPath;
                         }
@@ -730,12 +734,12 @@ namespace BetterGhPanel
                             var count = CanvasStatistics.BranchCount(result, emptyPath);
                             float countWidth = Math.Min(list.Width / 2, g.MeasureString(count, small).Width + 6);
                             if (paired) DrawPairedHeading(g, emptyPath, emptyBounds, small, mono, trim);
-                            else Text(g, emptyPath, mono, Accent, new RectangleF(list.X + 6, y, list.Width - countWidth - 18, height), trim);
+                            else Text(g, emptyPath, mono, Accent, new RectangleF(list.X + 6, y, list.Width - countWidth - 36, height), trim);
                             if (!paired) Text(g, count, small, Muted, new RectangleF(list.Right - countWidth - 6, y, countWidth, height), trim);
                         }
                         else rowRenderer.DrawCell(g, emptyPath, mono, Accent,
                             new RectangleF(list.X + 6, y, list.Width - 12, height));
-                        if (TargetPainted(g, emptyBounds)) AddBranchHit(emptyBounds, emptyPath);
+                        if (!paired || !grouped) DrawBranchExtras(g, result, emptyBounds, emptyPath, mono, small, trim, countText: CanvasStatistics.BranchCount(result, emptyPath), paired: paired);
                         shown++;
                         y += height;
                         previousPath = null;
@@ -755,10 +759,10 @@ namespace BetterGhPanel
                         if (paired) DrawPairedHeading(g, dataRow.Path, branchBounds, small, mono, trim);
                         else
                         {
-                            Text(g, dataRow.Path, mono, Accent, new RectangleF(list.X + 6, y, list.Width - countWidth - 18, BranchHeight), trim);
+                            Text(g, dataRow.Path, mono, Accent, new RectangleF(list.X + 6, y, list.Width - countWidth - 36, BranchHeight), trim);
                             Text(g, count, small, Muted, new RectangleF(list.Right - countWidth - 6, y, countWidth, BranchHeight), trim);
                         }
-                        if (TargetPainted(g, branchBounds)) AddBranchHit(branchBounds, dataRow.Path);
+                        if (!paired) DrawBranchExtras(g, result, branchBounds, dataRow.Path, mono, small, trim, countText: count);
                         y += BranchHeight;
                         previousPath = dataRow.Path;
                     }
@@ -867,7 +871,7 @@ namespace BetterGhPanel
             if (filters > 0) return filters == 1 ? "1 filter on" : filters + " filters on";
             if (result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count)
                 return "filtered";
-            return PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.RoundUpFactor > 0
+            return PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.RoundUpFactor > 0 || PanelOwner.DecimalPlaces >= 0
                 ? "tools on" : PanelOwner.OutputsValues ? "values out" : "output = input";
         }
 
@@ -893,9 +897,9 @@ namespace BetterGhPanel
             TreeToolIcons.Draw(g, _reverse, TreeToolIcon.Reverse, PanelOwner.ReverseTree);
             TreeToolIcons.Draw(g, _createSet, TreeToolIcon.CreateSet, PanelOwner.CreateSetTree);
             string unitLabel = PanelOwner.UnitConversion == PanelUnitConversion.None ? "Units" : PanelUnits.Label(PanelOwner.UnitConversion).Replace(" → ", "→");
-            string precision = (PanelOwner.DecimalPlaces < 0 ? "" : $" · {PanelOwner.DecimalPlaces}dp") +
-                (PanelOwner.RoundUpFactor > 0 ? " · round " + PanelOwner.RoundUpFactor.ToString("G4", System.Globalization.CultureInfo.InvariantCulture) : "");
-            DropdownControl(g, _units, unitLabel + precision, small, trim,
+            string precision = (PanelOwner.RoundUpFactor > 0 ? "↑" + PanelOwner.RoundUpFactor.ToString("G4", System.Globalization.CultureInfo.InvariantCulture) : "") +
+                (PanelOwner.DecimalPlaces < 0 ? "" : (PanelOwner.RoundUpFactor > 0 ? " · " : "") + PanelOwner.DecimalPlaces + "dp");
+            DropdownControl(g, _units, precision.Length == 0 ? unitLabel : unitLabel == "Units" ? precision : unitLabel + " · " + precision, small, trim,
                 PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor > 0);
         }
 
@@ -924,6 +928,7 @@ namespace BetterGhPanel
             centered.Alignment = StringAlignment.Center;
             Text(g, "Items", small, PanelOwner.OutputsValues ? Muted : Accent, _outItems, centered);
             Text(g, "Values", small, PanelOwner.OutputsValues ? Accent : Muted, _outValues, centered);
+
         }
 
         private string FooterStatus(PanelQueryResult result, bool singleLine)
@@ -934,11 +939,11 @@ namespace BetterGhPanel
             return PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
                 _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
                 !string.IsNullOrEmpty(PanelOwner.PreviewStatus) ? PanelOwner.PreviewStatus :
-                selected > 0 ? $"{selected:N0} selected" + (DisplayListLengths ? " branches" : " · right-click to copy") :
+                selected > 0 ? System.FormattableString.Invariant($"{selected:N0} selected") + (DisplayListLengths ? " branches" : " · right-click to copy") :
                 singleLine ? CanvasStatistics.Summary(result) + " · " + output :
-                DisplayListLengths ? $"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} branches · {output}" :
-                _firstShownItem < 0 ? $"{result.RowPositions.Count:N0} items · {output}" :
-                $"{_firstShownItem + 1:N0}–{_lastShownItem + 1:N0}/{result.RowPositions.Count:N0} · {output}";
+                DisplayListLengths ? System.FormattableString.Invariant($"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} branches · {output}") :
+                _firstShownItem < 0 ? System.FormattableString.Invariant($"{result.RowPositions.Count:N0} items · {output}") :
+                System.FormattableString.Invariant($"{_firstShownItem + 1:N0}–{_lastShownItem + 1:N0}/{result.RowPositions.Count:N0} · {output}");
         }
 
         private RectangleF Thumb(bool paired)
@@ -1049,9 +1054,11 @@ namespace BetterGhPanel
             return visible.Width > 0 && visible.Height > 0 && FullyVisible(graphics, visible);
         }
 
-        private void AddBranchHit(RectangleF bounds, string path)
+        private void AddBranchHit(RectangleF bounds, string path, RectangleF copyBounds = default)
         {
-            if (!_branchHits.Any(hit => hit.Bounds == bounds && hit.Path == path)) _branchHits.Add(new BranchHit(bounds, path));
+            int index = _branchHits.FindIndex(hit => hit.Bounds == bounds && hit.Path == path);
+            var target = new BranchHit(bounds, path, copyBounds);
+            if (index < 0) _branchHits.Add(target); else _branchHits[index] = target;
         }
 
         private static (bool Toggle, bool Range, bool AcrossBranches) RowModifiers()
@@ -1148,7 +1155,7 @@ namespace BetterGhPanel
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }
-                int index = _rowMenuBounds.Contains(point) ? (int)((point.Y - _rowMenuBounds.Y) / 20) : -1;
+                int index = _rowMenuBounds.Contains(point) ? RowMenuIndex(point) : -1;
                 // Capture identity before closing releases the menu choices.
                 PanelRowAction? action = index >= 0 && index < _rowMenuActions.Length ? _rowMenuActions[index].Action : (PanelRowAction?)null;
                 string? disabled = index >= 0 && index < _rowMenuActions.Length ? _rowMenuActions[index].DisabledReason : null;
@@ -1285,7 +1292,7 @@ namespace BetterGhPanel
                     int itemCount = branchView ? jumpResult.BranchPaths.Count : jumpResult.RowPositions.Count;
                     if (!int.TryParse(text.Trim(), out var row))
                     {
-                        ShowNotice(sender, $"Enter a row number from 1 to {Math.Max(1, itemCount):N0}");
+                        ShowNotice(sender, System.FormattableString.Invariant($"Enter a row number from 1 to {Math.Max(1, itemCount):N0}"));
                         return;
                     }
                     // Put the requested item first; grouped branch headings can change
@@ -1293,7 +1300,7 @@ namespace BetterGhPanel
                     int index = Math.Max(0, Math.Min(Math.Max(0, itemCount - 1), row <= 1 ? 0 : row - 1));
                     _offset = itemCount == 0 ? 0 : branchView ? index : ViewOffset(jumpResult, index);
                     if (itemCount > 0 && (row < 1 || row > itemCount))
-                        ShowNotice(sender, $"Row {row:N0} is out of range · showing row {index + 1:N0} of {itemCount:N0}");
+                        ShowNotice(sender, System.FormattableString.Invariant($"Row {row:N0} is out of range · showing row {index + 1:N0} of {itemCount:N0}"));
                     InvalidatePaintedHits();
                     sender.Invalidate();
                 });
@@ -1308,9 +1315,15 @@ namespace BetterGhPanel
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
+            if (TryWarningClick(point, sender)) return GH_ObjectResponse.Handled;
             foreach (var hit in _branchHits)
                 if (hit.Bounds.Contains(point))
                 {
+                    if (hit.CopyBounds.Contains(point))
+                    {
+                        CopySelectedValues(currentResult, sender, _pairedList.Contains(point), PanelRowAction.CopyPath, hit.Path);
+                        return GH_ObjectResponse.Handled;
+                    }
                     InvalidateCopyStatus();
                     // Only an accepted row or heading selection chooses which pane Ctrl+C copies.
                     _copyPaired = _pairedList.Contains(point);
@@ -1650,7 +1663,7 @@ namespace BetterGhPanel
                 _move.Contains(e.CanvasLocation) ? Cursors.SizeAll : setControl ? Cursors.Hand : Cursors.Default;
             if (PaintedViewIsCurrent() && _menu.Hover(e.CanvasLocation)) sender.Invalidate();
             int rowMenuHovered = _rowMenuResult != null && RowsAreCurrent(_rowMenuResult) && RowMenuTargetPainted(e.CanvasLocation)
-                ? (int)((e.CanvasY - _rowMenuBounds.Y) / 20) : -1;
+                ? RowMenuIndex(e.CanvasLocation) : -1;
             if (rowMenuHovered != _rowMenuHovered) { _rowMenuHovered = rowMenuHovered; sender.Invalidate(); }
             if (_resizing)
             {
@@ -1784,7 +1797,7 @@ namespace BetterGhPanel
             {
                 e.Title = "Select all rows";
                 e.Text = !PanelOwner.Locked && PanelOwner.Session.HasCurrentResult
-                    ? $"{PanelOwner.Session.Result.RowPositions.Count:N0} matching items"
+                    ? System.FormattableString.Invariant($"{PanelOwner.Session.Result.RowPositions.Count:N0} matching items")
                     : PanelOwner.Locked ? "Disabled" : PanelOwner.Session.IsBusy ? "Recomputing…" : "Selection unavailable";
                 e.Description = "Select every matching row, including offscreen rows. Shortcut while focused: Ctrl+A.";
                 return;
@@ -1825,13 +1838,13 @@ namespace BetterGhPanel
             else if (_outLabel.Contains(point) || _outItems.Contains(point) || _outValues.Contains(point))
             {
                 e.Title = "Output: Items / Values";
-                e.Description = "Items sends the source data; Values sends the displayed property. Sets group all member items by set index. Values without a set keep full precision; unavailable values are null.";
+                e.Description = _outValues.Contains(point) ? (PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor != 0 ? "Sends the values exactly as shown" : "Sends full-precision values; the display may be abbreviated") : "Items sends the source data; Values sends the displayed property. Sets group all member items by set index; unavailable values are null.";
             }
             else if (_units.Contains(point))
             {
                 e.Title = "Units and decimals";
                 e.Text = "Changes numeric output";
-                e.Description = "Convert mm ↔ m, mm² ↔ m², mm³ ↔ m³ or rad ↔ deg; set display decimals (0–12); or round output up to a factor (factor 5: 12.1 → 15).";
+                e.Description = "Convert mm ↔ m, mm² ↔ m², mm³ ↔ m³ or rad ↔ deg; set explicit decimals (0–12), shared with numeric output; or round output up to a factor (factor 5: 12.1 → 15).";
             }
             else if (_trim.Contains(point) || _simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point) || _createSet.Contains(point))
             {
@@ -1880,7 +1893,7 @@ namespace BetterGhPanel
                     : options.SearchMode == PanelSearchMode.ListLength
                     ? "Compare each branch's item count with >, >=, <, <=, = or != (a bare number means =)."
                     : PanelProperties.IsProperty(options.SearchMode) ? CanvasMenu.PropertyHelp(options.SearchMode)
-                    : "Compare with >, >=, <, <=, = or != (a bare number means =) at full precision. Rows without this value are excluded.";
+                    : "Compare with >, >=, <, <=, = or != (a bare number means =) against the shown number. Rows without this value are excluded.";
                 if (options.DisplayFilterValue)
                     e.Description = "Shows each item's value; n/a means none. Click the search field to filter by it.";
                 else if (!CanvasMenu.HasValueChoices(options.SearchMode)) e.Description += " Rows update as you type; Enter applies, Esc cancels.";
@@ -1920,7 +1933,7 @@ namespace BetterGhPanel
                     return;
                 }
                 e.Title = "Row selection and copy";
-                e.Text = _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus : $"{_selection.Count:N0} selected";
+                e.Text = _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus : System.FormattableString.Invariant($"{_selection.Count:N0} selected");
                 if (PanelOwner.Session.HasCurrentResult) e.Text += " · " + CanvasStatistics.Summary(PanelOwner.Session.Result);
                 e.Description = FooterStatus(PanelOwner.Session.Result, _singleLineFooter) + "\n\nClick to select; Ctrl/Cmd toggles, Shift extends, Alt/Option picks the same index in every branch. Right-click to copy or frame.\n\n" + KeyboardHint;
             }
@@ -1931,7 +1944,9 @@ namespace BetterGhPanel
                     {
                         e.Title = "Select branch " + hit.Path;
                         e.Text = CanvasStatistics.BranchCount(PanelOwner.Session.Result, hit.Path);
-                        e.Description = "Select this branch's matching rows. Double-click to clear.";
+                        e.Description = hit.CopyBounds.Contains(point) ? "Copy " + (_pairedList.Contains(point) ? string.Join(", ", PanelOwner.PairedPaths(hit.Path)) : hit.Path) : "Select this branch's matching rows. Double-click to clear. Right-click for branch actions.";
+                        if (!_pairedList.Contains(point) && PanelOwner.Session.Result.Warnings.IsOutlier(PanelOwner.Session.Result.Snapshot, hit.Path))
+                            e.Description += "\nMost branches have " + PanelOwner.Session.Result.Warnings.MajorityLength + " items";
                         if (PanelOwner.Session.Result.DisplaySet?.BranchOccurrences.TryGetValue(hit.Path, out var occurrences) == true)
                         {
                             e.Text = "List length: " + PanelOwner.Session.Snapshot.BranchItemCounts[hit.Path] + " · " + occurrences.Count + " branches";
@@ -1969,17 +1984,25 @@ namespace BetterGhPanel
                         details = value + "\n" + (string.IsNullOrWhiteSpace(row.InvalidReason) ? "Validity could not be verified." : row.InvalidReason);
                     else if (geometry != null)
                     {
-                        details = geometry.FormatDetails(snapshot.UnitConversion, PanelOwner.DecimalPlaces);
+                        details = geometry.FormatDetails(snapshot.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
                         if (PanelOwner.Session.IsGeometryPending(snapshot, hit.SourcePosition)) details += "\nCalculating measurement…";
                         else if (PanelOwner.Session.HasGeometryMeasurement(snapshot, hit.SourcePosition) && !geometry.Value.HasValue)
                             details += "\nMeasurement unavailable.";
                     }
                     else details = value;
-                    if (PanelOwner.Session.Options.DisplayFilterValue)
+                    string rounding = PanelFilterValue.RoundingDescription(snapshot, row, PanelOwner.Session.Options, geometry);
+                    // The rounding line already describes the shown metric. Retain
+                    // the labeled geometry details without repeating its compact summaries.
+                    if (PanelOwner.Session.Options.DisplayFilterValue && !(rounding.Length > 0 && geometry != null))
                         details = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode) + ": " + value + "\n" +
-                            PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, PanelOwner.DecimalPlaces, geometry) + "\n" + details;
+                            PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, PanelOwner.DecimalPlaces, geometry, roundUpFactor: PanelOwner.RoundUpFactor) + "\n" + details;
+                    if (rounding.Length > 0) details = rounding + "\n" + details;
                     if (setOccurrences != null)
+                    {
                         details += "\nFiltered source occurrences: " + CanvasStatistics.SourceStatuses(setOccurrences.SourceStatuses);
+                        if (PanelOwner.OutputValues == PanelOutputValues.Items)
+                            details += "\nD output branch: " + PanelItemOrder.Address(PanelOwner.Session.Result, hit.SourcePosition, true, PanelOwner.FlattenTree);
+                    }
                     e.Description = PanelTextPreview.ForTooltip(details) + "\n\nClick to select · Ctrl/Cmd toggles · Shift extends · Alt/Option same index · right-click for more";
                     break;
                 }
@@ -2091,7 +2114,8 @@ namespace BetterGhPanel
 
         private readonly struct BranchHit
         {
-            internal BranchHit(RectangleF bounds, string path) { Bounds = bounds; Path = path; }
+            internal BranchHit(RectangleF bounds, string path, RectangleF copyBounds) { Bounds = bounds; Path = path; CopyBounds = copyBounds; }
+            internal RectangleF CopyBounds { get; }
             internal RectangleF Bounds { get; }
             internal string Path { get; }
         }

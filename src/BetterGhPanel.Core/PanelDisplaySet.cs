@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Globalization;
 using System.Threading;
 
 namespace BetterGhPanel.Core
@@ -10,34 +9,42 @@ namespace BetterGhPanel.Core
     public sealed class PanelDisplayedValue
     {
         private readonly PanelText _text, _copyText;
-        internal PanelDisplayedValue(PanelText text, PanelText copyText, double? number)
-        { _text = text; _copyText = copyText; Number = number; }
+        internal PanelDisplayedValue(PanelText text, PanelText copyText, double? number, bool unavailable = false)
+        { _text = text; _copyText = copyText; Number = number; Unavailable = unavailable; }
+        public bool Unavailable { get; }
         public string Text => _text.ToString();
         public string CopyText => _copyText.ToString();
         public double? Number { get; }
         internal PanelText SemanticText => _text;
 
         internal static PanelDisplayedValue Capture(PanelSnapshot snapshot, PanelRow row, PanelQueryOptions query,
-            PanelGeometryInfo? measured, IFormatProvider culture)
+            PanelGeometryInfo? measured)
         {
             PanelText text, copy;
             bool numeric;
             if (query.DisplayFilterValue)
             {
-                text = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured));
-                copy = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false));
+                text = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, roundUpFactor: query.RoundUpFactor));
+                copy = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false, roundUpFactor: query.RoundUpFactor));
                 numeric = !PanelProperties.IsProperty(query.SearchMode) || PanelProperties.Kind(query.SearchMode) == PanelPropertyKind.Number;
             }
             else
             {
-                text = PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, culture);
+                text = PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, query.RoundUpFactor);
                 numeric = !row.IsNull && row.IsValid && row.NumericValue.HasValue;
                 copy = numeric ? new PanelText(PanelUnits.Format(row.NumericValue!.Value, PanelUnitConversion.None,
-                    query.DecimalPlaces, CultureInfo.InvariantCulture)) : text;
+                    query.DecimalPlaces)) : text;
             }
-            double? number = numeric && double.TryParse(copy.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed) &&
-                !double.IsNaN(parsed) && !double.IsInfinity(parsed) ? parsed : (double?)null;
-            return new PanelDisplayedValue(text, copy, number);
+            var presented = query.DisplayFilterValue
+                ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor)
+                : numeric ? PanelFilterValue.OutputValue(snapshot, row, PanelSearchMode.Value, measured, query.DecimalPlaces) : null;
+            bool unavailable = numeric && presented == null || PanelValuePresentation.IsTransformedUnavailable(row);
+            // Automatic deliberately preserves main's compact set grouping/value semantics.
+            double? number = presented?.Kind == PanelPropertyKind.Number ? presented.Number : (double?)null;
+            if (query.DecimalPlaces < 0 && number.HasValue)
+                number = PanelNumber.GeneralValue(number.Value, query.DisplayFilterValue &&
+                    query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume ? 6 : 12);
+            return new PanelDisplayedValue(text, copy, number, unavailable);
         }
     }
 
@@ -97,7 +104,6 @@ namespace BetterGhPanel.Core
     {
         private readonly PanelSnapshot _snapshot;
         private readonly PanelQueryOptions _query;
-        private readonly IFormatProvider _culture;
         private readonly PanelTextComparer _textComparer = new PanelTextComparer();
         private readonly Dictionary<string, Dictionary<PanelText, int>> _seen = new Dictionary<string, Dictionary<PanelText, int>>(StringComparer.Ordinal);
         private readonly Dictionary<int, PanelDisplayedValue> _values = new Dictionary<int, PanelDisplayedValue>();
@@ -113,8 +119,8 @@ namespace BetterGhPanel.Core
         private readonly Dictionary<string, List<string>> _branchLocations = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         private readonly Dictionary<string, PanelSourceStatusCounts> _branchStatuses = new Dictionary<string, PanelSourceStatusCounts>(StringComparer.Ordinal);
 
-        internal PanelDisplaySet(PanelSnapshot snapshot, PanelQueryOptions query, IFormatProvider culture)
-        { _snapshot = snapshot; _query = query; _culture = culture; }
+        internal PanelDisplaySet(PanelSnapshot snapshot, PanelQueryOptions query)
+        { _snapshot = snapshot; _query = query; }
         internal bool IsBranchSet => _query.DisplayFilterValue && _query.SearchMode == PanelSearchMode.ListLength;
         internal IReadOnlyDictionary<int, PanelDisplayedValue> Values => _values;
 
@@ -150,7 +156,7 @@ namespace BetterGhPanel.Core
                 _allMembers.Add(position);
                 return included;
             }
-            var value = PanelDisplayedValue.Capture(_snapshot, row, _query, measured, _culture);
+            var value = PanelDisplayedValue.Capture(_snapshot, row, _query, measured);
             if (!_seen.TryGetValue(row.Path, out var branch))
             {
                 branch = new Dictionary<PanelText, int>(_textComparer);

@@ -34,10 +34,10 @@ namespace BetterGhPanel.Core
                     CultureInfo.InvariantCulture, DateTimeStyles.None, out _date))
                     throw new ArgumentException("Enter a date as yyyy-MM-dd or yyyy-MM-dd HH:mm:ss (optional fractional seconds).");
             }
-            else if (!double.TryParse(_text, NumberStyles.Float, CultureInfo.InvariantCulture, out _number) || double.IsNaN(_number) || double.IsInfinity(_number))
+            else if (!PanelUnits.TryParseOperand(_text, out _number) || double.IsNaN(_number) || double.IsInfinity(_number))
                 throw new ArgumentException("Enter a finite number with >, >=, <, <=, = or !=.");
         }
-        internal bool Matches(PanelPropertyValue value, PanelUnitConversion conversion)
+        internal bool Matches(PanelPropertyValue value, PanelUnitConversion conversion, int decimals, double roundUpFactor)
         {
             if (value.Kind != _kind) return false;
             int comparison;
@@ -45,7 +45,7 @@ namespace BetterGhPanel.Core
             else if (_kind == PanelPropertyKind.DateTime) comparison = value.Date.Ticks.CompareTo(_date.Ticks);
             else
             {
-                double number = value.Converted(conversion);
+                double number = _kind == PanelPropertyKind.Number ? value.Presented(conversion, decimals, roundUpFactor) : value.Number;
                 if (double.IsNaN(number) || double.IsInfinity(number)) return false;
                 comparison = number.CompareTo(_number);
             }

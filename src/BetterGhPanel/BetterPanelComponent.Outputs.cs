@@ -28,6 +28,9 @@ namespace BetterGhPanel
         private IReadOnlyList<PanelSourceAddress> _retainedSources = Array.Empty<PanelSourceAddress>();
         private string? _pairedError;
         internal PanelPairedData? PairedData { get; private set; }
+        internal IEnumerable<string> PairedPaths(string path) => PairedData?.BranchesAt(path)
+            .Where(pair => pair.Data.ItemCount > 0 || PanelPairedData.EmptyPartnersInScope(Session.Options))
+            .Select(pair => pair.Paired.Path) ?? Enumerable.Empty<string>();
         internal PanelRow? PairedRow(int position) => PairedData?.ItemAt(position) is int item ? PairedSnapshot?.Rows[item] : null;
         internal string PairedValue(int position)
         {

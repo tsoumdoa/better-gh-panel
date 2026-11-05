@@ -139,6 +139,7 @@ internal static class BranchPairingChecks
         {
             f.ClearSelection(); f.Select(0); f.Select(3, toggle: true); f.Select(14, toggle: true);
             string status = await (Task<string>)Call(component, "CopyPairedValuesAsync", f.Result.Snapshot, new[] { 0, 3, 14 })!;
+            await f.Ready(() => Forms.Clipboard.GetText() == "Branch name" + Environment.NewLine + Environment.NewLine + "F2-0");
             Check(status == "3 values copied" && Forms.Clipboard.GetText() == "Branch name" + Environment.NewLine + Environment.NewLine + "F2-0",
                 "F copying uses raw mapped values and an empty line for a missing F item");
         }
@@ -445,6 +446,7 @@ internal static class BranchPairingChecks
                     f.ClearSelection(); f.Select(position);
                     await Ready(() => Field<long>(component, "_publishedSelectionVersion") == Field<long>(component, "_selectionVersion"));
                     string copyStatus = await (Task<string>)Call(component, "CopyPairedValuesAsync", f.Result.Snapshot, new[] { position })!;
+                    await f.Ready(() => Forms.Clipboard.GetText() == string.Join(Environment.NewLine, emitted));
                     Check(Forms.Clipboard.GetText() == string.Join(Environment.NewLine, emitted),
                         scenario + ": copying an F set cell includes every emitted group member exactly once (" + copyStatus + ")");
                 }

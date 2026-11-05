@@ -12,7 +12,7 @@ namespace BetterGhPanel.Runtime
 
         internal static bool SameOutputFilter(PanelQueryOptions left, PanelQueryOptions right) =>
             SameFilterSettings(left, right) &&
-            (left.DecimalPlaces == right.DecimalPlaces || !right.CreateSet && !PanelQueryEngine.UsesDisplayedText(right));
+            left.DecimalPlaces == right.DecimalPlaces;
 
         // While a query is pending or has failed, an unfiltered tree may pass through.
         internal static bool HasOutputFilter(PanelQueryOptions options) =>
@@ -28,11 +28,11 @@ namespace BetterGhPanel.Runtime
             if (!HasOutputFilter(options) || snapshot.UnverifiedCount == 0 && snapshot.UnavailableTypeIdentityCount == 0)
                 return string.Empty;
             string identity = snapshot.UnavailableTypeIdentityCount == 1 ? "type identity" : "type identities";
-            return $"Input: {snapshot.UnverifiedCount:N0} unverified · {snapshot.UnavailableTypeIdentityCount:N0} {identity} unavailable. Active filters may omit some values.";
+            return System.FormattableString.Invariant($"Input: {snapshot.UnverifiedCount:N0} unverified · {snapshot.UnavailableTypeIdentityCount:N0} {identity} unavailable. Active filters may omit some values.");
         }
 
         private static bool SameFilterSettings(PanelQueryOptions left, PanelQueryOptions right) =>
-            left.Search == right.Search && left.SearchMode == right.SearchMode && left.TypeName == right.TypeName &&
+            left.RoundUpFactor == right.RoundUpFactor && left.Search == right.Search && left.SearchMode == right.SearchMode && left.TypeName == right.TypeName &&
             left.BranchPath == right.BranchPath && left.BranchPrefix == right.BranchPrefix &&
             left.OnlyInvalid == right.OnlyInvalid && left.DisplayFilterValue == right.DisplayFilterValue &&
             left.CreateSet == right.CreateSet && left.OutputValues == right.OutputValues;

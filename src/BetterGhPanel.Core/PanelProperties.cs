@@ -10,8 +10,8 @@ namespace BetterGhPanel.Core
     /// <summary>An immutable captured value. Null dictionary entries advertise deferred properties.</summary>
     public sealed class PanelPropertyValue
     {
-        private PanelPropertyValue(PanelPropertyKind kind, double number = 0, string text = "", int power = 0, string units = "", DateTime date = default)
-        { Kind = kind; Number = number; Text = text; Power = power; Units = units; Date = date; }
+        private PanelPropertyValue(PanelPropertyKind kind, double number = 0, string text = "", int power = 0, string units = "", DateTime date = default, bool integer = false)
+        { Kind = kind; Number = number; Text = text; Power = power; Units = units; Date = date; KeepInteger = integer; }
         public PanelPropertyKind Kind { get; }
         public double Number { get; }
         public string Text { get; }
@@ -20,28 +20,34 @@ namespace BetterGhPanel.Core
         public string Units { get; }
         public DateTime Date { get; }
         public static PanelPropertyValue Numeric(double value, int power = 0, string units = "") => new PanelPropertyValue(PanelPropertyKind.Number, value, power: power, units: units);
+        public static PanelPropertyValue Integer(int value) => new PanelPropertyValue(PanelPropertyKind.Number, value, integer: true);
         public static PanelPropertyValue Boolean(bool value) => new PanelPropertyValue(PanelPropertyKind.Boolean, value ? 1 : 0);
         public static PanelPropertyValue String(string value) => new PanelPropertyValue(PanelPropertyKind.Text, text: value);
         public static PanelPropertyValue Time(DateTime value) => new PanelPropertyValue(PanelPropertyKind.DateTime, date: value);
         public double Converted(PanelUnitConversion conversion) => Power == -1
             ? PanelUnits.Convert(Number, conversion == PanelUnitConversion.RadiansToDegrees ? conversion : PanelUnitConversion.None)
             : Power == 0 ? Number : PanelUnits.ConvertGeometry(Number, Power, Units, conversion);
-        public string Format(PanelUnitConversion conversion, int decimals, bool includeUnits)
+        internal bool KeepInteger { get; }
+        internal double Presented(PanelUnitConversion conversion, int decimals, double roundUpFactor) =>
+            PanelUnits.Transform(Converted(conversion), PanelUnitConversion.None, Power == 0 ? 0 : roundUpFactor, KeepInteger ? -1 : decimals);
+        public string Format(PanelUnitConversion conversion, int decimals, bool includeUnits, double roundUpFactor = 0)
         {
             if (Kind == PanelPropertyKind.Text) return Text;
             if (Kind == PanelPropertyKind.Boolean) return Number == 0 ? "False" : "True";
             if (Kind == PanelPropertyKind.DateTime) return Date.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture);
-            double value = Converted(conversion);
+            double value = Presented(conversion, decimals, roundUpFactor);
             if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";
-            string suffix = "";
-            if (includeUnits && Power != 0)
-            {
-                bool converted = Power == -1 ? conversion == PanelUnitConversion.RadiansToDegrees :
-                    PanelUnits.ConvertGeometry(1, Power, Units, conversion) != 1;
-                suffix = converted ? PanelUnits.Symbol(conversion) : Power == -1 ? "rad" : Units + (Power == 2 ? "²" : Power == 3 ? "³" : "");
-            }
-            return PanelUnits.Format(value, PanelUnitConversion.None, decimals, CultureInfo.InvariantCulture) + (suffix.Length == 0 ? "" : " " + suffix);
+            string suffix = includeUnits ? UnitSymbol(conversion) : "";
+            return PanelUnits.Format(value, PanelUnitConversion.None, KeepInteger ? -1 : decimals) + (suffix.Length == 0 ? "" : " " + suffix);
         }
+        public string UnitSymbol(PanelUnitConversion conversion)
+        {
+            if (Power == 0) return "";
+            bool converted = Power == -1 ? conversion == PanelUnitConversion.RadiansToDegrees :
+                PanelUnits.ConvertGeometry(1, Power, Units, conversion) != 1;
+            return converted ? PanelUnits.Symbol(conversion) : Power == -1 ? "rad" : Units + (Power == 2 ? "²" : Power == 3 ? "³" : "");
+        }
+
     }
 
     public static class PanelProperties
@@ -95,7 +101,7 @@ namespace BetterGhPanel.Core
                 PanelSearchMode.DataType => PanelPropertyValue.String(row.TypeName),
                 PanelSearchMode.Validity => PanelPropertyValue.String(row.IsNull ? "Null" : row.Validity == PanelValidity.VerifiedValid ? "Valid" : row.Validity == PanelValidity.VerifiedInvalid ? "Invalid" : "Unverified"),
                 PanelSearchMode.BranchPath => PanelPropertyValue.String(row.Path),
-                PanelSearchMode.ItemIndex => PanelPropertyValue.Numeric(row.OriginalIndex),
+                PanelSearchMode.ItemIndex => PanelPropertyValue.Integer(row.OriginalIndex),
                 _ => null
             };
             if (IsMetadata(mode)) return true;

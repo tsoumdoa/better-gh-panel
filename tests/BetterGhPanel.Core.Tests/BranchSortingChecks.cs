@@ -107,8 +107,8 @@ internal static class BranchSortingChecks
                 Positions(result, direction == PanelSortMode.ValueAscending ? new[] { 3, 1, 2, 0 } : new[] { 1, 3, 0, 2 });
                 options.DecimalPlaces = 0;
                 result = PanelQueryEngine.Execute(snapshot, options, measuredGeometry: measured);
-                Check(result.RowPositions.Take(2).SequenceEqual(new[] { 1, 3 }),
-                    "Equal formatted geometry keys keep source order within their branch in both directions");
+                Check(result.RowPositions.Take(2).SequenceEqual(direction == PanelSortMode.ValueAscending ? new[] { 3, 1 } : new[] { 1, 3 }),
+                    "AwayFromZero presents 0.5 as 1 while 0.2 presents as 0");
             }
         }
         finally { CultureInfo.CurrentCulture = previous; }

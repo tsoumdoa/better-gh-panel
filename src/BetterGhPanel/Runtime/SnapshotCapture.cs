@@ -162,7 +162,7 @@ namespace BetterGhPanel.Runtime
                                 if (stringValue != null)
                                 {
                                     captured[PanelSearchMode.TextValue] = PanelPropertyValue.String(stringValue);
-                                    captured[PanelSearchMode.CharacterCount] = PanelPropertyValue.Numeric(stringValue.Length);
+                                    captured[PanelSearchMode.CharacterCount] = PanelPropertyValue.Integer(stringValue.Length);
                                 }
                                 else if (inspected.GetType() == typeof(GH_Boolean)) captured[PanelSearchMode.BooleanValue] = PanelPropertyValue.Boolean(display == "True");
                                 properties = captured;
@@ -171,7 +171,7 @@ namespace BetterGhPanel.Runtime
                             if (groupSummary != null) properties = new Dictionary<PanelSearchMode, PanelPropertyValue?>
                             {
                                 [PanelSearchMode.GroupName] = PanelPropertyValue.String(groupSummary.Name),
-                                [PanelSearchMode.ObjectCount] = PanelPropertyValue.Numeric(groupSummary.Count)
+                                [PanelSearchMode.ObjectCount] = PanelPropertyValue.Integer(groupSummary.Count)
                             };
                             geometry = GeometryHints.DescribeCaptured(inspected!, capturedGeometry, geometryUnits);
                             // Only a standalone exact holder and its captured inner object
@@ -196,8 +196,8 @@ namespace BetterGhPanel.Runtime
                     }
                     finally { GC.KeepAlive(capturedGeometry); }
                     rows.Add(new PanelRow(i, path, type, display, number, validity,
-                        typeIdentityAvailable: typeAvailable, searchCapabilities: capabilities, isNull: item == null,
-                        geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary, components: components, properties: properties));
+                        typeIdentityAvailable: typeAvailable, searchCapabilities: capabilities, isNull: item == null && !scalars[position].Available,
+                        geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary, components: components, properties: properties, rawNumericValue: scalars[position].RawNumber));
                     source.Add(item);
                     geometrySources.Add(directLeaf.HasValue ? new CapturedMeasurementSource(directLeaf.Value) : null);
                     if (graph != null) graphs.Add((rows.Count - 1, graph));

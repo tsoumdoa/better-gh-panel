@@ -346,10 +346,13 @@ internal static class PreviewGeometryChecks
             object frame = actionType.GetMethod("Frame", Static)!.Invoke(null, new object[] { largeSources })!;
             Check(Property<bool>(frame, "Success") && Property<int>(frame, "Count") == 6 && Property<int>(frame, "Skipped") == 0,
                 "standalone and grouped compatibility-size curves frame without skips");
-            copy = Copy(assembly, largeSources);
+            beforeCopy = GetClipboardSequenceNumber();
+            copy = actionType.GetMethod("CopyGeometryWithArchiveObserver", Static)!.Invoke(null,
+                new object[] { largeSources, doc.ModelUnitSystem, doc.ModelAbsoluteTolerance, observeArchive })!;
+            afterCopy = GetClipboardSequenceNumber();
             Check(Property<bool>(copy, "Success") && Property<int>(copy, "Count") == 6 && Property<int>(copy, "Skipped") == 0,
                 "standalone and grouped compatibility-size curves copy without skips: " + DescribeCopy(copy));
-            using (var archive = ClipboardArchive())
+            using (var archive = ClipboardArchive(preparedDigest, preparedLength, beforeCopy, afterCopy))
             {
                 var geometries = ArchiveGeometry(archive);
                 Check(geometries.OfType<NurbsCurve>().Count(value => SameNurbs(value, largeNurbs) && value.GetUserString("source") == "large nurbs") == 2 &&

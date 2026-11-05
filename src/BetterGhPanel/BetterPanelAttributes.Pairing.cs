@@ -158,11 +158,15 @@ namespace BetterGhPanel
                 Text(graphics, heading.DataCount, small, PanelTheme.PairingWarning, badge, trim);
                 right = badge.X;
             }
-            float pathWidth = Math.Min(right - bounds.X - 12, graphics.MeasureString(path, mono).Width + 3);
+            float pathWidth = Math.Min(right - bounds.X - 12, graphics.MeasureString(path, mono, int.MaxValue, trim).Width);
             Text(graphics, path, mono, Accent, new RectangleF(bounds.X + 6, bounds.Y, pathWidth, bounds.Height), trim);
+            string suffix = heading.ByOrder ? " ← F " + heading.Paths : "";
             if (heading.ByOrder)
-                Text(graphics, " ← F " + heading.Paths, mono, Muted,
+                Text(graphics, suffix, mono, Muted,
                     new RectangleF(bounds.X + 6 + pathWidth, bounds.Y, Math.Max(0, right - bounds.X - pathWidth - 12), bounds.Height), trim);
+            // The glyph follows the complete D ← F label and never enters the count/badge.
+            DrawBranchExtras(graphics, PanelOwner.Session.Result, bounds, path, mono, small, trim, paired: true,
+                label: path + suffix, labelBounds: new RectangleF(bounds.X + 6, bounds.Y, Math.Max(0, right - bounds.X - 12), bounds.Height));
         }
     }
 }

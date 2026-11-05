@@ -270,7 +270,7 @@ internal static class OutputValuesChecks
         fixture.Solve();
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 2 && fixture.Sinks[0].VolatileData.AllData(false).FirstOrDefault() is GH_Number);
         var values = fixture.Sinks[0].VolatileData.AllData(false).ToArray();
-        Check(((GH_Number)values[0]).Value == 1.23456789 && values[1] == null, "Values retain full precision and a null unavailable slot");
+        Check(((GH_Number)values[0]).Value == 1.23 && values[1] == null, "Values retain presented precision and a null unavailable slot");
         fixture.Query(new PanelQueryOptions { DisplayFilterValue = true, SearchMode = PanelSearchMode.Closed });
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).FirstOrDefault() is GH_Boolean);
         Check(fixture.Sinks[0].VolatileData.AllData(false).First() is GH_Boolean boolean && !boolean.Value, "Boolean properties publish typed GH_Boolean");

@@ -28,7 +28,7 @@ public sealed class OutputValuesChecks
     }
 
     [Fact]
-    public void ValuesFreezeFullPrecisionTypesAndUnavailableSlots()
+    public void ValuesFreezePresentedNumbersTypesAndUnavailableSlots()
     {
         var date = new DateTime(2026, 1, 2, 3, 4, 5);
         var properties = new Dictionary<PanelSearchMode, PanelPropertyValue?> {
@@ -48,7 +48,7 @@ public sealed class OutputValuesChecks
             var result = PanelQueryEngine.Execute(snapshot, query);
             var value = result.OutputValues![0]!;
             Assert.Equal(properties[mode]!.Kind, value.Kind);
-            if (mode == PanelSearchMode.Radius) Assert.Equal(1234.56789 / 1000, value.Number);
+            if (mode == PanelSearchMode.Radius) Assert.Equal(1.23, value.Number);
             if (mode == PanelSearchMode.Closed) Assert.Equal(0, value.Number);
             if (mode == PanelSearchMode.TextValue) Assert.Equal("n/a", value.Text);
             if (mode == PanelSearchMode.DateTime) Assert.Equal(date, value.Date);
@@ -63,7 +63,7 @@ public sealed class OutputValuesChecks
         Assert.Equal(new[] { 0 }, PanelQueryEngine.GeometryCandidates(pending, query));
         Assert.Null(PanelQueryEngine.Execute(pending, query).OutputValues![0]);
         query.OutputValues = false;
-        Assert.False(PanelQueryEngine.RequiresGeometryMeasurements(query));
+        Assert.False(PanelQueryEngine.RequiresGeometryMeasurements(query)); // Plain display keeps visible-row measurement.
     }
 
     [Fact]
