@@ -203,10 +203,12 @@ internal sealed class CanvasEditorAdapter
     }
     internal void Blur() => Input.Parent?.Parent?.Focus();
     internal void Cancel() => Key(System.Windows.Forms.Keys.Escape);
-    internal void ClickCancel()
+    internal void ClickCancel() => ClickButton(10);
+    internal void ClickOk() => ClickButton(30);
+    private void ClickButton(int fromRight)
     {
         var host = Input.Parent!;
-        int x = host.ClientSize.Width - Grasshopper.Global_Proc.UiAdjust(10), y = host.ClientSize.Height / 2;
+        int x = host.ClientSize.Width - Grasshopper.Global_Proc.UiAdjust(fromRight), y = host.ClientSize.Height / 2;
         var point = (IntPtr)((y << 16) | (x & 0xffff));
         SendMessage(host.Handle, 0x0201, (IntPtr)1, point);
         SendMessage(host.Handle, 0x0202, IntPtr.Zero, point);

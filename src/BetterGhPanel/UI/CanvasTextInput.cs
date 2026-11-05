@@ -11,15 +11,16 @@ namespace BetterGhPanel.UI
 {
     // Uses the same host-owned text overlay as Grasshopper's native sliders.
     // Bounds are projected once when the editor opens; the host owns keyboard focus.
-    // Esc, Cancel and deliberate Panel+ closes abandon. Every other close accepts
-    // valid input; only Enter may accept an invalid search. Each editor completes once.
+    // Esc, Cancel and deliberate Panel+ closes abandon. Enter and OK submit.
+    // Every other close accepts only changed, valid text. Each editor completes once.
     internal sealed class CanvasTextInput : GH_TextBoxInputBase
     {
         private const int LiveDelay = 250;
         private static WeakReference<CanvasTextInput>? _active;
         private static CanvasTextInput? _pending;
         private Action? _decision;
-        private bool _enter;
+        private bool _submit;
+        private string _startingText = string.Empty;
         private Func<string, bool>? _valid;
         private Grasshopper.Kernel.GH_Document? _document;
         private Action<string>? _accepted;
@@ -55,6 +56,7 @@ namespace BetterGhPanel.UI
             {
                 Bounds = bounds,
                 _owner = owner,
+                _startingText = current ?? string.Empty,
                 _document = canvas.Document,
                 _valid = valid,
                 _canvas = new WeakReference<GH_Canvas>(canvas),
@@ -73,12 +75,10 @@ namespace BetterGhPanel.UI
             var host = canvas.Controls.Cast<Control>().LastOrDefault(control => control.Controls.OfType<TextBox>().Any());
             var box = host?.Controls.OfType<TextBox>().FirstOrDefault();
             if (host == null || box == null) return;
-            box.PreviewKeyDown += (_, e) => { if (e.KeyCode == Keys.Enter) _enter = true; };
             // KeyDown still runs after the host hides the box, before deferred Decide.
             box.KeyDown += (_, e) =>
             {
                 if (e.KeyCode == Keys.Escape || e.KeyCode == Keys.Cancel) _escaped = true;
-                if (e.KeyCode == Keys.Enter) _enter = true;
             };
             // Grasshopper paints Cancel in the rightmost 20 UI-scaled pixels.
             bool OnCancel(Point point) => point.X >= host.ClientSize.Width - Grasshopper.Global_Proc.UiAdjust(20)
@@ -131,7 +131,7 @@ namespace BetterGhPanel.UI
 
         // The host reports Enter/OK after hiding. Decide only after all host events,
         // so Escape and Cancel can mark abandonment before any callback runs.
-        protected override void HandleTextInputAccepted(string text) { }
+        protected override void HandleTextInputAccepted(string text) => _submit = true;
 
         private void Finish(string text)
         {
@@ -145,7 +145,7 @@ namespace BetterGhPanel.UI
             _accepted = null;
             _abandoned = null;
             _changed = null;
-            if (_escaped || _programmaticClose || !live || (!_enter && _valid != null && !_valid(text)))
+            if (_escaped || _programmaticClose || !live || (!_submit && (string.Equals(text, _startingText, StringComparison.Ordinal) || _valid != null && !_valid(text))))
             {
                 abandoned?.Invoke();
                 return;

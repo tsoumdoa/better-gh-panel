@@ -1065,9 +1065,12 @@ namespace BetterGhPanel
 
         public override GH_ObjectResponse RespondToMouseDown(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
-            if (e.Button == MouseButtons.Left && _reset.Contains(e.CanvasLocation)) CanvasTextInput.CloseActive(PanelOwner);
-            CanvasTextInput.CompletePending();
-            CancelQueryEditor();
+            if (e.Button == MouseButtons.Left && _panel.Contains(e.CanvasLocation))
+            {
+                if (_reset.Contains(e.CanvasLocation)) CanvasTextInput.CloseActive(PanelOwner);
+                CanvasTextInput.CompletePending();
+                CancelQueryEditor();
+            }
             if (e.Button == MouseButtons.Left || e.Button == MouseButtons.Right) _keyboardCursor = -1;
             if (_paintedCanvas != null && !ReferenceEquals(_paintedCanvas, sender)) InvalidatePaintedHits();
             if (PanelOwner.PanelMinimized)
@@ -1288,10 +1291,12 @@ namespace BetterGhPanel
                     // Put the requested item first; grouped branch headings can change
                     // page capacity, so previous-page size must not hide the final item.
                     int index = Math.Max(0, Math.Min(Math.Max(0, itemCount - 1), row <= 1 ? 0 : row - 1));
-                    _offset = itemCount == 0 ? 0 : branchView ? index : ViewOffset(jumpResult, index);
+                    int offset = itemCount == 0 ? 0 : branchView ? index : ViewOffset(jumpResult, index);
+                    bool changed = _offset != offset;
+                    _offset = offset;
                     if (itemCount > 0 && (row < 1 || row > itemCount))
                         ShowNotice(sender, System.FormattableString.Invariant($"Row {row:N0} is out of range · showing row {index + 1:N0} of {itemCount:N0}"));
-                    InvalidatePaintedHits();
+                    if (changed) InvalidatePaintedHits();
                     sender.Invalidate();
                 }, valid: text => int.TryParse(text.Trim(), out _));
                 return GH_ObjectResponse.Handled;

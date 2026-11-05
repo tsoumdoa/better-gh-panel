@@ -971,6 +971,9 @@ namespace BetterGhPanel
 
         public override void ClearData()
         {
+            // An upstream click may have hidden an editor without yielding to its
+            // deferred completion. Keep that edit before replacing its snapshot.
+            if (!_preserveQuery) CanvasTextInput.CompletePending();
             ++_solveGeneration;
             if (!_issuingCaptureRetry) _captureRetries = 0;
             // Grasshopper expires the component before collecting its next input.

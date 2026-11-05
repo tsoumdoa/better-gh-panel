@@ -81,7 +81,12 @@ internal static class UxInteractionChecks
             if (outcome == "enter") { edit.Submit("> 50"); edit.Blur(); }
             else if (outcome == "escape") edit.Cancel();
             else if (outcome == "cancel") edit.ClickCancel();
-            else if (outcome == "reset") Call(component, "ResetAll");
+            else if (outcome == "reset")
+            {
+                Render();
+                var reset = PanelTestAdapter.Bounds(component, CanvasControl.Reset);
+                PanelTestAdapter.CanvasClick(canvas, new PointF(reset.Left + reset.Width / 2, reset.Top + reset.Height / 2));
+            }
             else edit.Blur();
             await Task.Delay(300);
             bool didCommit = outcome == "blur" || outcome == "enter";
@@ -90,6 +95,40 @@ internal static class UxInteractionChecks
                 "Editor outcome has exactly the expected undo count: " + outcome);
             Check(Options(fixture).Search == (didCommit ? "> 50" : ""), "Editor outcome preserves or commits text: " + outcome);
         }
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex });
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+        fixture.Document.UndoServer.Clear();
+        var okEdit = Search(); okEdit.Type("Wall("); okEdit.ClickOk();
+        await fixture.Ready(() => Options(fixture).Search == "Wall(", allowError: true);
+        Check(fixture.Document.UndoServer.UndoCount == 1, "OK submits invalid input exactly like Enter");
+        foreach (var choice in new[] { (Menu: "Branch", Index: 1), (Menu: "Units", Index: 10), (Menu: "Units", Index: 12) })
+        {
+            Call(component, "ResetAll");
+            await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+            fixture.Select(0);
+            fixture.Document.UndoServer.Clear();
+            Call(attributes, "OpenMenu", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasMenuKind", true)!, choice.Menu), canvas);
+            Call(attributes, "ChooseMenu", choice.Index, canvas);
+            CanvasEditorAdapter.Active(assembly).Blur();
+            await Task.Delay(50);
+            Check(Options(fixture).BranchPath == null && Options(fixture).DecimalPlaces < 0 && Options(fixture).RoundUpFactor == 0 &&
+                fixture.SelectedCount == 1 && fixture.Document.UndoServer.UndoCount == 0,
+                "An unchanged prefilled default abandons on blur: " + choice);
+        }
+        fixture.Query(new PanelQueryOptions());
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+        fixture.Document.UndoServer.Clear();
+        var upstreamEdit = Search(); upstreamEdit.Type("> 50"); upstreamEdit.Blur();
+        // No yield: expiry must finish the pending edit before replacing its input.
+        fixture.Source.PersistentData.Append(new GH_Number(100), new GH_Path(0));
+        fixture.Solve();
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 30);
+        Check(Options(fixture).Search == "> 50" && fixture.Document.UndoServer.UndoCount == 1,
+            "An upstream recompute accepts the pending text and applies it to new input");
+        fixture.Source.PersistentData.Clear();
+        fixture.Source.PersistentData.AppendRange(Enumerable.Range(0, 80).Select(i => (IGH_Goo)new GH_Number(i)), new GH_Path(0));
+        fixture.Solve();
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 29);
         fixture.Query(new PanelQueryOptions());
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
         var rowEdit = Search();
