@@ -101,7 +101,7 @@ pass or establish the identity of a future merged release package.
 
 - `PanelQueryPolicy` keeps query equality, downstream output equivalence and active-filter decisions separate. Output equivalence ignores sorting, but includes explicit decimal precision and factor rounding because they affect presented values and numeric Items.
 - `GeometryMeasurementQueue` owns prepared work, cancellation and worker handoff; `PanelSession` retains query state and publication. New measurement providers must preserve UI dispatch, copy ownership, context checks and safe retention across unit changes.
-- Host fixtures now use the production preparation seam; the unused HostMeasurementPreparation helper has been removed. Test support explicitly distinguishes witnessed retention from witnessless operations. The real compatibility admission limit and queue ownership checks remain in production.
+- Host fixtures now use the production preparation seam; the unused HostMeasurementPreparation helper has been removed. The real compatibility admission limit and queue ownership checks remain in production.
 - Selection gestures repeat cancellation, highlighting and repaint side effects. Consolidate only after distinguishing gesture updates from query-completion synchronization and document changes.
 - The archived HTML prototype is documented as a visual reference and has an independent data engine. Removing it is a product/documentation decision, not dead-code cleanup in the native plugin.
 

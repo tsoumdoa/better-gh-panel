@@ -174,7 +174,7 @@ Click inside the panel to focus it (a green ring appears). Without focus, every 
 npm run check
 ```
 
-Runs the core tests, native coordinator and packaging checks, builds and stages both Rhino runtimes, and flags unused private members, usings and parameters (not unused internal/public members), and verifies C# source is UTF-8. It doesn't launch Rhino. Run it before opening or merging a PR; GitHub Actions CI is disabled.
+Runs the core tests, native coordinator and packaging checks, builds and stages both Rhino runtimes, flags unused private members, usings and parameters (not unused internal or public members), and checks that C# source is UTF-8. It doesn't launch Rhino. Run it before opening or merging a PR; GitHub Actions CI is disabled.
 
 To build a Yak package, run `dotnet build BetterGhPanel.sln -c Release` then `node scripts/package.mjs`. During development, run affected native Rhino regressions with `tests/BetterGhPanel.RhinoSmoke/run.ps1 -Fixture ui-ux,row-selection` (choose names from `fixtures.json`). Run the full inventory for broad runtime changes and releases; launcher self-tests run separately. See the [validation instructions](docs/maintainability.md#validation) for commands and optional diagnostics. See also:
 

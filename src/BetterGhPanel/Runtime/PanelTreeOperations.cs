@@ -53,7 +53,6 @@ namespace BetterGhPanel.Runtime
         internal static GH_Structure<IGH_Goo> Select(GH_Structure<IGH_Goo> source, IReadOnlyList<int> positions) =>
             positions.Count == 0 ? new GH_Structure<IGH_Goo>() : FilterRows(source, new HashSet<int>(positions), null);
 
-
         // Filter retains matching empty paths; selection emits only selected rows.
         // Both traverse the tree rather than the view/selection order.
         private static GH_Structure<IGH_Goo> FilterRows(GH_Structure<IGH_Goo> source, HashSet<int> positions, HashSet<string>? paths)

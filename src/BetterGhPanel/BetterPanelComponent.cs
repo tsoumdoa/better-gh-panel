@@ -364,7 +364,6 @@ namespace BetterGhPanel
             Instances.ActiveCanvas?.Invalidate();
         }
 
-
         private sealed class PanelUndo<T> : GH_UndoAction
         {
             private readonly Guid _component;
@@ -395,7 +394,6 @@ namespace BetterGhPanel
             if (!PanelQueryPolicy.SameQuery(before, after))
                 RecordUndoEvent(name, new PanelUndo<PanelQueryOptions>(InstanceGuid, before.Clone(), after.Clone(), (component, options) => { (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor(); component.Session.UpdateQuery(options); }));
         }
-
 
         // Ends a live edit. A committed edit publishes like any other query change;
         // an abandoned one already restored the original query, so outputs and the
@@ -561,7 +559,6 @@ namespace BetterGhPanel
         private static bool HasGeometry(PanelSnapshot snapshot) =>
             snapshot.Rows.Any(row => row.GeometryInfo != null || row.Components != null);
 
-
         private void ApplyPanelMinimized(bool minimized)
         {
             CanvasTextInput.CloseActive(this);
@@ -571,7 +568,6 @@ namespace BetterGhPanel
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
         }
-
 
         internal void SetUnits(PanelUnitConversion conversion, int decimals, double? roundUpFactor = null)
         {

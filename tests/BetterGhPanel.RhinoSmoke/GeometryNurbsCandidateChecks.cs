@@ -169,7 +169,7 @@ internal static class GeometryNurbsCandidateChecks
         using var session = (IDisposable)Activator.CreateInstance(sessionType, new object[] { (Action)(() => { }) })!;
         var candidate = CandidateMethod(assembly, "PrepareTrustedCurve");
         var counter = new Counter();
-        var resolverFactory = typeof(GeometryNurbsCandidateChecks).GetMethod("CreateResolver", BindingFlags.Static | BindingFlags.NonPublic)!
+        var resolverFactory = typeof(GeometryNurbsCandidateChecks).GetMethod(nameof(CreateResolver), BindingFlags.Static | BindingFlags.NonPublic)!
             .MakeGenericMethod(candidate.ReturnType);
         var resolver = resolverFactory.Invoke(null, new object[] { assembly, source, counter })!;
         sessionType.GetMethod("SetGeometryPreparationResolver", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(session, new[] { resolver });
@@ -197,11 +197,8 @@ internal static class GeometryNurbsCandidateChecks
         Check(counter.Calls == 4 && Math.Abs(before - after) > 1e-7, "changed curve is measured again");
     }
 
-    // Invoked through MakeGenericMethod above for the runtime preparation type.
-#pragma warning disable IDE0051
     private static Func<int, T?> CreateResolver<T>(Assembly assembly, NurbsCurve source, Counter counter) where T : class =>
         _ => { counter.Calls++; return (T?)Prepare(assembly, "PrepareTrustedCurve", source); };
-#pragma warning restore IDE0051
     private sealed class Counter { internal int Calls; }
 
     private static NurbsCurve RationalCurve()

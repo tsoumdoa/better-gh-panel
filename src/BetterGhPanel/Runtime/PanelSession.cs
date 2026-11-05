@@ -210,7 +210,6 @@ namespace BetterGhPanel.Runtime
             else Notify(); // View resets can clear transient state even when options are unchanged.
         }
 
-
         private void QueueQuery()
         {
             _queryCancellation?.Cancel();

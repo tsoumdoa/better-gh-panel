@@ -76,7 +76,6 @@ namespace BetterGhPanel
             Instances.ActiveCanvas?.Invalidate();
         }
 
-
         internal void SetOutputScope(PanelOutputScope scope)
         {
             if (!Enum.IsDefined(typeof(PanelOutputScope), scope) || OutputScope == scope) return;
@@ -93,7 +92,6 @@ namespace BetterGhPanel
             ScheduleOutput();
             Instances.ActiveCanvas?.Invalidate();
         }
-
 
         private void ClearOutputSources()
         {
