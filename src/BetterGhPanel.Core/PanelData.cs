@@ -103,7 +103,7 @@ namespace BetterGhPanel.Core
             PanelValidity validity, bool typeIdentityAvailable = true, PanelSearchCapabilities? searchCapabilities = null,
             bool isNull = false, PanelGeometryInfo? geometryInfo = null, string invalidReason = "", string? stringValue = null,
             PanelSetOccurrences? setOccurrences = null, PanelGroupSummary? groupSummary = null, PanelComponents? components = null,
-            IReadOnlyDictionary<PanelSearchMode, PanelPropertyValue?>? properties = null, double? rawNumericValue = null)
+            IReadOnlyDictionary<PanelSearchMode, PanelPropertyValue?>? properties = null, double? rawNumericValue = null, PanelNumericSummary? numericSummary = null)
         {
             OriginalIndex = originalIndex;
             Path = path ?? string.Empty;
@@ -113,6 +113,7 @@ namespace BetterGhPanel.Core
             NumericValue = numericValue;
             RawNumericValue = rawNumericValue ?? numericValue;
             Components = components;
+            NumericSummary = numericSummary;
             Properties = PanelProperties.Freeze(properties);
             IsNull = isNull;
             Validity = validity;
@@ -135,6 +136,7 @@ namespace BetterGhPanel.Core
         public double? NumericValue { get; }
         public double? RawNumericValue { get; }
         public PanelComponents? Components { get; }
+        public PanelNumericSummary? NumericSummary { get; }
         public IReadOnlyDictionary<PanelSearchMode, PanelPropertyValue?> Properties { get; }
         public bool IsNull { get; }
         /// <summary>True only when validity was verified. Use Validity to distinguish invalid from unverified.</summary>
@@ -376,10 +378,10 @@ namespace BetterGhPanel.Core
         M31,
         M32,
         M33,
-        DotFontSize, FontFace, TextHeight,
+        DotFontSize, FontFace,
         Latitude, Longitude, CultureName, EnglishName, RowCount, ColumnCount, PathDepth,
         PatternIndex, PatternScale, PatternRotation,
-        DefinitionId, ParallelProjection, PerspectiveProjection, ProjectionLocked, PageToModelRatio, DimensionAngle
+        DefinitionId, Projection, ProjectionLocked, PageToModelRatio, DimensionAngle
     }
 
     public sealed class PanelQueryOptions

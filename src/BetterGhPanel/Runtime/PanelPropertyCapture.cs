@@ -108,15 +108,14 @@ namespace BetterGhPanel.Runtime
             }
             else if (geometry is AnnotationBase annotation)
             {
-                Text(annotation.PlainText); N(PanelSearchMode.TextHeight, annotation.TextHeight, 1);
+                Text(annotation.PlainText);
                 if (annotation is AngularDimension dimension) N(PanelSearchMode.DimensionAngle, dimension.NumericValue, -1);
             }
             else if (geometry.GetType() == typeof(InstanceReferenceGeometry))
                 values[PanelSearchMode.DefinitionId] = PanelPropertyValue.String(((InstanceReferenceGeometry)geometry).ParentIdefId.ToString("D"));
             else if (geometry.GetType() == typeof(DetailView))
             {
-                var detail = (DetailView)geometry; B(PanelSearchMode.ParallelProjection, detail.IsParallelProjection);
-                B(PanelSearchMode.PerspectiveProjection, detail.IsPerspectiveProjection); B(PanelSearchMode.ProjectionLocked, detail.IsProjectionLocked);
+                var detail = (DetailView)geometry; values[PanelSearchMode.Projection] = PanelPropertyValue.String(detail.IsPerspectiveProjection ? "Perspective" : "Parallel"); B(PanelSearchMode.ProjectionLocked, detail.IsProjectionLocked);
                 N(PanelSearchMode.PageToModelRatio, detail.PageToModelRatio);
             }
             else if (geometry.GetType() == typeof(Hatch))
@@ -165,7 +164,7 @@ namespace BetterGhPanel.Runtime
 
         internal static Point3d? Origin(GeometryBase? geometry) => geometry is TextDot dot ? dot.Point :
             geometry is AnnotationBase annotation ? annotation.Plane.Origin : geometry is Hatch hatch ? hatch.Plane.Origin : (Point3d?)null;
-        internal static string BoundedText(string text) => text.Length <= PanelNativeGeometry.MaxMetadataBytes ? text :
+        internal static string BoundedText(string text) => text.Length <= PanelNativeGeometry.MaxTextCharacters ? text :
             throw new InvalidOperationException("Native text exceeds the capture limit.");
 
         private static void Analytic(Dictionary<PanelSearchMode, PanelPropertyValue?> values, int degree, bool closed, string shape)

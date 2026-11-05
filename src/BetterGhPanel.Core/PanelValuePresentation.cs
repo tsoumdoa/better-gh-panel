@@ -16,6 +16,7 @@ namespace BetterGhPanel.Core
             if (IsTransformedUnavailable(row)) return new PanelText("unavailable");
             if (row.Validity == PanelValidity.VerifiedInvalid) return row.GroupSummary != null
                 ? new PanelText(row.GroupSummary, true) : new PanelText("Invalid · " + row.DisplayValue);
+            if (row.NumericSummary != null) return new PanelText(row.NumericSummary.Format(decimals));
             var geometry = measuredGeometry ?? row.GeometryInfo;
             if (geometry != null) return new PanelText(geometry.FormatCompact(conversion, decimals, roundUpFactor) +
                 (geometry.MeasurementUnavailable ? " · measurement unavailable" : ""));

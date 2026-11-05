@@ -86,6 +86,7 @@ namespace BetterGhPanel.Runtime
                     PanelValidity validity;
                     PanelGeometryInfo? geometry = null;
                     PanelComponents? components = null;
+                    PanelNumericSummary? numericSummary = null;
                     IReadOnlyDictionary<PanelSearchMode, PanelPropertyValue?>? properties = null;
                     PanelGroupSummary? groupSummary = null;
                     PanelSearchCapabilities capabilities;
@@ -135,9 +136,11 @@ namespace BetterGhPanel.Runtime
                         else if (managed.Available)
                         {
                             validity = managed.Validity;
-                            if (managed.Raw is CapturedMatrixValue matrix)
+                            if (ReferenceEquals(managed.Raw, CaptureGraphWitness.NullPath)) display = "<null>";
+                            else if (managed.Raw is CapturedMatrixValue matrix)
                             {
-                                display = matrix.Summary();
+                                numericSummary = matrix.Summary();
+                                display = numericSummary?.Format(PanelUnits.AutomaticDecimals) ?? (matrix.HasValue ? "<empty>" : "<null>");
                                 if (matrix.Valid) properties = new Dictionary<PanelSearchMode, PanelPropertyValue?>
                                 {
                                     [PanelSearchMode.RowCount] = PanelPropertyValue.Integer(matrix.Rows),
@@ -156,7 +159,7 @@ namespace BetterGhPanel.Runtime
                         else validity = graphComplete ? SafeGooInspection.Validity(item, budget, out reason, out capturedGeometry, graph, graphVisitObserver, directLeaf) : PanelValidity.Unverified;
                         if (!graphComplete) reason = "Validity could not be safely verified (capture graph limit).";
                         if (!scalar.Available && inspected != null && identity.Group == null && (graphComplete || graph != null))
-                            display = FormatSummary(inspected, type, out number, out stringValue);
+                            display = FormatSummary(inspected, type, out number, out stringValue, out numericSummary);
 
                         if (inspected != null && validity == PanelValidity.VerifiedValid)
                         {
@@ -209,13 +212,14 @@ namespace BetterGhPanel.Runtime
                         stringValue = null;
                         geometry = null;
                         components = null;
+                        numericSummary = null;
                         properties = null;
                         capabilities = PanelSearchCapabilities.None;
                     }
                     finally { GC.KeepAlive(capturedGeometry); }
                     rows.Add(new PanelRow(i, path, type, display, number, validity,
                         typeIdentityAvailable: typeAvailable, searchCapabilities: capabilities, isNull: item == null && !scalars[position].Available,
-                        geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary, components: components, properties: properties, rawNumericValue: scalars[position].RawNumber));
+                        geometryInfo: geometry, invalidReason: reason, stringValue: stringValue, groupSummary: groupSummary, components: components, properties: properties, rawNumericValue: scalars[position].RawNumber, numericSummary: numericSummary));
                     source.Add(item);
                     geometrySources.Add(directLeaf.HasValue ? new CapturedMeasurementSource(directLeaf.Value) : null);
                     if (graph != null) graphs.Add((rows.Count - 1, graph));
@@ -262,7 +266,7 @@ namespace BetterGhPanel.Runtime
                 {
                     try
                     {
-                        if (CaptureGraphWitness.TryCopyStandaloneValue(item, out var value))
+                        if (CaptureGraphWitness.TryCopyStandaloneValue(item, ref remaining, out var value))
                         {
                             managed ??= new CapturedManagedValue[tree.DataCount];
                             managed[position] = value;
@@ -364,10 +368,11 @@ namespace BetterGhPanel.Runtime
             return PanelSearchCapabilities.None;
         }
 
-        private static string FormatSummary(IGH_Goo? goo, string type, out double? numeric, out string? stringValue)
+        private static string FormatSummary(IGH_Goo? goo, string type, out double? numeric, out string? stringValue, out PanelNumericSummary? summary)
         {
             numeric = null;
             stringValue = null;
+            summary = null;
             if (goo == null) return "<null>";
             Type runtime = goo.GetType();
             if (runtime == typeof(GH_Number))
@@ -414,23 +419,24 @@ namespace BetterGhPanel.Runtime
             if (runtime == typeof(GH_Guid)) return ((GH_Guid)goo).Value.ToString("D");
             if (runtime == typeof(GH_Time)) return ((GH_Time)goo).Value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
             if (runtime == typeof(GH_ComplexNumber))
-            { var v = ((GH_ComplexNumber)goo).Value; return string.Format(CultureInfo.InvariantCulture, "{0:G8} {1} {2:G8}i", v.Real, v.Imaginary < 0 ? "−" : "+", Math.Abs(v.Imaginary)); }
+            { var v = ((GH_ComplexNumber)goo).Value; summary = PanelNumericSummary.Complex(v.Real, v.Imaginary); return summary.Format(PanelUnits.AutomaticDecimals); }
             if (runtime == typeof(GH_MeshFace))
             { var face = ((GH_MeshFace)goo).Value; return face.IsTriangle ? $"({face.A}, {face.B}, {face.C})" : $"({face.A}, {face.B}, {face.C}, {face.D})"; }
             if (runtime == typeof(GH_LonLatCoordinate))
-            { var v = (GH_LonLatCoordinate)goo; return string.Format(CultureInfo.InvariantCulture, "{0:G8}° {1}, {2:G8}° {3}", Math.Abs(v.Latitude), v.Latitude < 0 ? "S" : "N", Math.Abs(v.Longitude), v.Longitude < 0 ? "W" : "E"); }
+            { var v = (GH_LonLatCoordinate)goo; summary = PanelNumericSummary.Location(v.Latitude, v.Longitude); return summary.Format(PanelUnits.AutomaticDecimals); }
             if (runtime == typeof(GH_StructurePath))
-            { var path = ((GH_StructurePath)goo).Value; if (path?.GetType() == typeof(GH_Path) && path.Length <= SafeGooInspection.MaxNodesPerRoot) return path.ToString(); }
+            { var path = ((GH_StructurePath)goo).Value; if (path == null) return "<null>"; if (path.GetType() == typeof(GH_Path) && path.Length <= SafeGooInspection.MaxNodesPerRoot) return path.ToString(); }
             if (runtime == typeof(GH_Field)) return ((GH_Field)goo).Elements is { } elements ? elements.Count + " field elements" : "Null field";
-            if (runtime == typeof(GH_Material)) return ((GH_Material)goo).Value == null ? "Null material" : ((GH_Material)goo).Type + " material";
+            if (runtime == typeof(GH_Material)) return ((GH_Material)goo).Value == null ? "Null material" : "Material";
             if (runtime == typeof(GH_Transform))
             {
                 var transforms = ((GH_Transform)goo).CompoundTransforms;
-                if (transforms.Count == 0) return "Identity";
+                if (transforms.Count == 0) { summary = PanelNumericSummary.Matrix(4, 4, (r, c) => r == c ? 1 : 0); return "Identity"; }
                 if (transforms.Count == 1 && transforms[0]?.GetType() == typeof(Grasshopper.Kernel.Types.Transforms.Generic))
                 {
                     var t = ((Grasshopper.Kernel.Types.Transforms.Generic)transforms[0]).Transform;
-                    return MatrixSummary.Format(4, 4, (r, c) => t[r, c]);
+                    summary = PanelNumericSummary.Matrix(4, 4, (r, c) => t[r, c]);
+                    return summary.Format(PanelUnits.AutomaticDecimals);
                 }
                 return transforms.Count + " compound transforms";
             }

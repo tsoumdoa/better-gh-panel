@@ -801,7 +801,7 @@ namespace BetterGhPanel
                             new RectangleF(bounds.X + rowRenderer.GutterWidth + 9, y, Math.Max(0, pathWidth - 12), RowHeight));
                     // Analytic summaries name their type. Native metadata summaries
                     // (for example dot text/location) use the catalog's separate label.
-                    bool showRowType = showTypes && !(paired && result.DisplaySet != null) && (displayMetric || row.GeometryInfo == null || StockGooSupport.SeparateLabel(row.TypeName));
+                    bool showRowType = showTypes && !(paired && result.DisplaySet != null) && (displayMetric || row.GeometryInfo == null || StockTypeLabels.SeparateLabel(row.TypeName));
                     float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
                     var projectedType = !paired && result.DisplaySet != null ? result.DisplaySet.Values[sourcePosition] : null;
                     // A glyph as well as the colour bar, so validity never relies on colour alone.

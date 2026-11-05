@@ -286,7 +286,7 @@ namespace BetterGhPanel.Runtime
             {
                 if (!trusted || (IsCapturedGeometryHolder(holderType) && !hasReference)) return PanelValidity.Unverified;
                 if (!standalone && hasReference && (reference.Referenced || reference.Id != Guid.Empty) &&
-                    (StockGooSupport.Has(holderType, StockTypeFacets.Measure) || reference.Document == 0 || reference.ObjectSerial == 0))
+                    (StockGooSupport.Has(holderType, StockTypeFacets.UnverifiedGroupReference) || reference.Document == 0 || reference.ObjectSerial == 0))
                     return PanelValidity.Unverified;
                 if (geometry == null) return PanelValidity.VerifiedInvalid;
                 if (!standalone && (geometry.GetType() == typeof(PolylineCurve) || geometry.GetType() == typeof(NurbsCurve)) &&
@@ -335,7 +335,7 @@ namespace BetterGhPanel.Runtime
             Type type = goo.GetType();
             if (type == typeof(GH_Curve))
             { var holder = (GH_Curve)goo; id = holder.ReferenceID; referenced = holder.IsReferencedGeometry; loaded = holder.IsGeometryLoaded; edge = holder.ReferenceEdge; }
-            else if (IsCapturedGeometryHolder(type) && !StockGooSupport.Has(type, StockTypeFacets.Preview) && goo is IGH_GeometricGoo metadata)
+            else if (IsCapturedGeometryHolder(type) && StockGooSupport.Has(type, StockTypeFacets.ShapeOnlyLoad) && goo is IGH_GeometricGoo metadata)
             {
                 // Annotation, hatch and block IsGeometryLoaded may consult model
                 // styles/definitions (including externally supplied subclasses).

@@ -429,7 +429,7 @@ internal static partial class PreviewSafetyChecks
             snapshot.Rows[5].TypeName == "Group" && snapshot.Rows[0].TypeIdentityAvailable && snapshot.Rows[1].TypeIdentityAvailable &&
             snapshot.Rows[5].TypeIdentityAvailable && new[] { 0, 1, 5 }.All(i => snapshot.Rows[i].Validity == PanelValidity.VerifiedValid),
             "capture retains exact cloud/extrusion/group identities and verifies their valid contents");
-        Check(snapshot.Rows[0].DisplayValue == "2 points" && snapshot.Rows[1].DisplayValue == "Extrusion · 1 profile" &&
+        Check(snapshot.Rows[0].DisplayValue == "2 points" && snapshot.Rows[1].DisplayValue == "Extr · 1 profile" &&
             PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = "Point Cloud" }).RowPositions.SequenceEqual(new[] { 0 }) &&
             PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = "Extrusion" }).RowPositions.SequenceEqual(new[] { 1 }) &&
             PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = "2 points" }).RowPositions.Contains(0) &&

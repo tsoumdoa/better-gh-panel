@@ -45,7 +45,7 @@ namespace BetterGhPanel.UI
     }
 
     // One owner for menu lifetime, snapshot validity, layout, and paging.
-    internal sealed partial class CanvasMenu
+    internal sealed class CanvasMenu
     {
         internal const string ItemOrderDescription = "Show zero-based item indices within each branch, after tree tools and before filtering or sorting. " +
             "Each branch starts at 0; filters and selection preserve the original indices. Points use their locations; other geometry uses bounding-box centers. " +
@@ -188,7 +188,7 @@ namespace BetterGhPanel.UI
             types.OrderByDescending(pair => pair.Value).ThenBy(pair => pair.Key, StringComparer.Ordinal);
 
         // Abbreviations are presentation only; filters and saved settings keep the full goo type name.
-        internal static partial string ShortTypeName(string name);
+        internal static string ShortTypeName(string name) => StockTypeLabels.ShortName(name);
 
         internal void Close()
         {

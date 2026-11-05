@@ -16,6 +16,7 @@ namespace BetterGhPanel.Runtime
         internal const int MaxComponents = 1024;
         internal const int MaxCollection = 256;
         internal const int MaxMetadataBytes = 64 * 1024;
+        internal const int MaxTextCharacters = 64 * 1024;
         internal const int MaxLegacyCurvePoints = 32768;
         internal const int MaxPointCloudPoints = 32768;
         private const int MaxVertexEstimate = 16 * 1024;
@@ -200,7 +201,7 @@ namespace BetterGhPanel.Runtime
                     else if (type == typeof(TextDot))
                     {
                         var dot = (TextDot)value;
-                        if (dot.Text.Length > MaxMetadataBytes || dot.SecondaryText.Length > MaxMetadataBytes || dot.FontFace.Length > 1024)
+                        if (dot.Text.Length > MaxTextCharacters || dot.SecondaryText.Length > MaxTextCharacters || dot.FontFace.Length > 1024)
                         { budget.MarkLimit(); return false; }
                     }
                     else if (type != typeof(Point) && type != typeof(LineCurve) && type != typeof(ArcCurve) &&

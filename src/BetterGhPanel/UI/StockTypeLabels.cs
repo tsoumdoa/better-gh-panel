@@ -1,0 +1,64 @@
+using System;
+using System.Collections.Generic;
+
+namespace BetterGhPanel.UI
+{
+    // Presentation only: names never grant permission to inspect a value.
+    internal static class StockTypeLabels
+    {
+        private static readonly Dictionary<string, (string Label, bool Separate)> Names =
+            new Dictionary<string, (string, bool)>(StringComparer.Ordinal)
+            {
+                ["Group"] = ("Group", false),
+                ["Number"] = ("Num", false),
+                ["Integer"] = ("Int", false),
+                ["Text"] = ("Text", false),
+                ["Boolean"] = ("Bool", false),
+                ["Colour"] = ("Col", false),
+                ["Domain"] = ("Dom", false),
+                ["Domain²"] = ("Dom²", false),
+                ["Guid"] = ("Guid", false),
+                ["Time"] = ("Time", false),
+                ["Point"] = ("Pt", false),
+                ["Plane"] = ("Pln", false),
+                ["Vector"] = ("Vec", false),
+                ["Line"] = ("Ln", false),
+                ["Arc"] = ("Arc", false),
+                ["Circle"] = ("Cir", false),
+                ["Rectangle"] = ("Rect", false),
+                ["Box"] = ("Box", false),
+                ["Curve"] = ("Crv", false),
+                ["Surface"] = ("Srf", false),
+                ["Brep"] = ("Brep", false),
+                ["Mesh"] = ("Mesh", false),
+                ["SubD"] = ("SubD", false),
+                ["Extrusion"] = ("Extr", false),
+                ["Point Cloud"] = ("Cloud", true),
+                ["Transform"] = ("Xform", false),
+                ["Meshface"] = ("Face", false),
+                ["Complex"] = ("Cplx", false),
+                ["Text Dot"] = ("Dot", true),
+                ["Text Entity"] = ("TxtEnt", true),
+                ["Leader"] = ("Ldr", true),
+                ["Angular Dimension"] = ("ADim", true),
+                ["Linear Dimension"] = ("LDim", true),
+                ["Ordinate Dimension"] = ("ODim", true),
+                ["Radial Dimension"] = ("RDim", true),
+                ["Radial Centermark"] = ("CMark", true),
+                ["Hatch"] = ("Hatch", true),
+                ["Block Instance"] = ("Block", true),
+                ["Detail View"] = ("Detail", true),
+                ["Culture"] = ("Culture", false),
+                ["Location"] = ("Loc", false),
+                ["Path"] = ("Path", false),
+                ["Matrix"] = ("Matrix", false),
+                ["Material"] = ("Mat", false),
+                ["Field"] = ("Field", false),
+                ["MeshParameters"] = ("MeshParams", false),
+                ["Predicate"] = ("Predicate", false),
+                ["Light"] = ("Light", false),
+            };
+        internal static string ShortName(string name) => Names.TryGetValue(name, out var entry) ? entry.Label : name;
+        internal static bool SeparateLabel(string name) => Names.TryGetValue(name, out var entry) && entry.Separate;
+    }
+}

@@ -17,6 +17,7 @@
     <Compile Include="../BetterGhPanel.RhinoSmoke/SmokeAssertions.cs" Link="SmokeAssertions.cs" />
     <!-- Pure UI policy can be checked on Windows and Mac without loading Rhino. -->
     <Compile Include="../../src/BetterGhPanel/UI/CanvasPanelSize.cs" Link="CanvasPanelSize.cs" />
+    <Compile Include="../../src/BetterGhPanel/UI/StockTypeLabels.cs" Link="StockTypeLabels.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/CanvasMenu.cs" Link="CanvasMenu.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/CanvasRowActions.cs" Link="CanvasRowActions.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/PanelTextPreview.cs" Link="PanelTextPreview.cs" />

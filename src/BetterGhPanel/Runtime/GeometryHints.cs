@@ -45,9 +45,9 @@ namespace BetterGhPanel.Runtime
             if (geometry?.GetType() == typeof(InstanceReferenceGeometry))
                 return new PanelGeometryInfo("Definition " + ((InstanceReferenceGeometry)geometry).ParentIdefId.ToString("D"));
             if (geometry?.GetType() == typeof(DetailView))
-            { var detail = (DetailView)geometry; return new PanelGeometryInfo((detail.IsPerspectiveProjection ? "Perspective" : "Parallel") + " · ratio " + detail.PageToModelRatio.ToString("G8", CultureInfo.InvariantCulture)); }
+                return new PanelGeometryInfo(((DetailView)geometry).IsPerspectiveProjection ? "Perspective" : "Parallel");
             if (geometry?.GetType() == typeof(Hatch))
-            { var hatch = (Hatch)geometry; return new PanelGeometryInfo("Pattern " + hatch.PatternIndex + " · scale " + hatch.PatternScale.ToString("G8", CultureInfo.InvariantCulture)); }
+                return new PanelGeometryInfo("Pattern " + ((Hatch)geometry).PatternIndex);
             if (type == typeof(GH_Line)) return LineInfo(((GH_Line)goo).Value, units);
             if (type == typeof(GH_Arc)) return ArcInfo(((GH_Arc)goo).Value, units);
             if (type == typeof(GH_Circle)) return CircleInfo(((GH_Circle)goo).Value, units);
@@ -65,9 +65,9 @@ namespace BetterGhPanel.Runtime
             if (type == typeof(GH_Brep) && geometry is Brep brep) return BrepInfo(brep);
             if (type == typeof(GH_Mesh) && geometry is Mesh mesh)
                 return MeshInfo(mesh);
-            if (type == typeof(GH_SubD) && geometry is SubD) return new PanelGeometryInfo("SubD · " + ((SubD)geometry).Faces.Count + " faces");
-            if (type == typeof(GH_Extrusion) && geometry is Extrusion) return new PanelGeometryInfo("Extrusion · " + ((Extrusion)geometry).ProfileCount + (((Extrusion)geometry).ProfileCount == 1 ? " profile" : " profiles"));
-            if (type == typeof(GH_PointCloud) && geometry is PointCloud) return new PanelGeometryInfo(((PointCloud)geometry).Count + " points");
+            if (type == typeof(GH_SubD) && geometry is SubD) return new PanelGeometryInfo("SubD · " + Count(((SubD)geometry).Faces.Count, "face"));
+            if (type == typeof(GH_Extrusion) && geometry is Extrusion) return new PanelGeometryInfo("Extr · " + Count(((Extrusion)geometry).ProfileCount, "profile"));
+            if (type == typeof(GH_PointCloud) && geometry is PointCloud) return new PanelGeometryInfo(Count(((PointCloud)geometry).Count, "point"));
             return null;
         }
 

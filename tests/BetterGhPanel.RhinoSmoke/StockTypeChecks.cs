@@ -33,6 +33,18 @@ internal static class StockTypeChecks
     private static void Number(PanelRow row, PanelSearchMode mode, double expected) => Check(
         PanelProperties.TryGet(row, mode, null, out var value) && value != null && value.Number == expected, mode + " is captured");
 
+    private static bool Current(Assembly assembly, string method, params object?[] args) =>
+        (bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod(method, Static)!.Invoke(null, args)!;
+    private static void Output(PanelHostFixture.Fixture fixture, PanelOutputValues mode) =>
+        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { mode });
+    private static void Budget(Assembly assembly, IGH_Goo value, int size)
+    {
+        var tree = new GH_Structure<IGH_Goo>(); tree.AppendRange(Enumerable.Repeat(value, 1000), new GH_Path(0));
+        var seed = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("PrepareInputs", Static)!.Invoke(null, new object[] { tree })!;
+        var incomplete = Property<bool[]>(seed, "Incomplete");
+        Check(incomplete.Take(100000 / size).All(v => !v) && incomplete.Skip(100000 / size).All(v => v), "aggregate capture budget charges " + value.GetType().Name + " by size");
+    }
+
     private static async Task Verify(Assembly assembly)
     {
         var rhino = RhinoDoc.ActiveDoc ?? throw new InvalidOperationException("Stock types need a Rhino document.");
@@ -57,13 +69,13 @@ internal static class StockTypeChecks
         Check(PanelFilterValue.Format(snapshot, snapshot.Rows[0], PanelSearchMode.FontFace, -1) == "Arial", "dot font face is selectable");
         Check(snapshot.Rows[1].DisplayValue == "Level 01", "text entity displays its text");
         Check(snapshot.Rows[2].GeometryInfo?.Value == 4 && PanelValuePresentation.FormatDisplay(snapshot.Rows[2], PanelUnitConversion.None, 2) == "4.00 mm", "linear dimension displays an ordinary length metric");
-        Number(snapshot.Rows[1], PanelSearchMode.TextHeight, 2); Number(snapshot.Rows[4], PanelSearchMode.RowCount, 2);
+        Number(snapshot.Rows[4], PanelSearchMode.RowCount, 2);
         Number(snapshot.Rows[5], PanelSearchMode.PathDepth, 2); Number(snapshot.Rows[6], PanelSearchMode.Latitude, 22.3);
         Check(snapshot.Rows[3].DisplayValue.StartsWith("en-GB", StringComparison.Ordinal) && snapshot.Rows[5].DisplayValue == "{2;7}", "culture and path have value summaries");
         matrixHolder.Value[0, 1] = 5;
-        Check(!(bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("GraphSourcesCurrent", Static)!.Invoke(null, new[] { captured[3] })!, "matrix edits invalidate the managed witness");
+        Check(!Current(assembly, "GraphSourcesCurrent", captured[3]), "matrix edits invalidate the managed witness");
         holder.Value = new TextDot("replacement", Point3d.Origin);
-        Check(!(bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("MeasurementSourcesCurrent", Static)!.Invoke(null, new[] { captured[1], captured[2] })!, "dot replacement invalidates captured geometry");
+        Check(!Current(assembly, "MeasurementSourcesCurrent", captured[1], captured[2]), "dot replacement invalidates captured geometry");
         holder.Value.Dispose(); holder.Value = dot;
         using var innerSubclass = new NativeDotSubclass();
         var rejected = (PanelSnapshot)Capture(assembly, new HostileDot(), new GH_TextDot(), new GH_TextDot(Guid.NewGuid()), new GH_TextDot { Value = innerSubclass })[0]!;
@@ -81,14 +93,14 @@ internal static class StockTypeChecks
             var referencedCapture = Capture(assembly, referenced);
             Check(((PanelSnapshot)referencedCapture[0]!).Rows[0].Validity == PanelValidity.VerifiedValid, "loaded dot reference has trusted native validity");
             referenced.ReferenceID = Guid.NewGuid();
-            Check(!(bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("MeasurementSourcesCurrent", Static)!.Invoke(null, new[] { referencedCapture[1], referencedCapture[2] })!, "retargeting a dot reference invalidates its capture");
+            Check(!Current(assembly, "MeasurementSourcesCurrent", referencedCapture[1], referencedCapture[2]), "retargeting a dot reference invalidates its capture");
         }
         finally { rhino.Objects.Delete(referenceId, true); rhino.Modified = modified; }
 
         var cultureHolder = new GH_Culture(CultureInfo.GetCultureInfo("en-GB"));
         var cultureCapture = Capture(assembly, cultureHolder);
         cultureHolder.Value = CultureInfo.GetCultureInfo("en-US");
-        Check(!(bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("GraphSourcesCurrent", Static)!.Invoke(null, new[] { cultureCapture[3] })!, "culture identity replacement invalidates its string witness");
+        Check(!Current(assembly, "GraphSourcesCurrent", cultureCapture[3]), "culture identity replacement invalidates its string witness");
         var nullPath = new GH_StructurePath(); typeof(GH_StructurePath).GetField("m_value", Instance)!.SetValue(nullPath, null);
         var pathProperties = (Dictionary<PanelSearchMode, PanelPropertyValue?>)assembly.GetType("BetterGhPanel.Runtime.PanelPropertyCapture", true)!.GetMethod("Scalar", Static)!.Invoke(null, new object[] { nullPath, "mm" })!;
         var emptyField = (GH_Field)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(GH_Field));
@@ -110,6 +122,20 @@ internal static class StockTypeChecks
         Check(southern.Rows[0].DisplayValue == "22.3° S, 114.17° W", "location labels negative coordinates S/W");
         var matrixSummary = (PanelSnapshot)Capture(assembly, new GH_Transform(Transform.Translation(0, 3, 4)), new GH_Transform(Transform.Identity))[0]!;
         Check(matrixSummary.Rows[0].DisplayValue.StartsWith("4 × 4 [", StringComparison.Ordinal) && matrixSummary.Rows[0].DisplayValue.Contains("3") && matrixSummary.Rows[0].DisplayValue.Contains("4") && matrixSummary.Rows[1].DisplayValue == "Identity", "transform summary includes all rows and recognizes identity");
+
+        using var largeMatrix = new Matrix(64, 64); largeMatrix[0, 0] = 1;
+        Budget(assembly, new GH_Matrix(largeMatrix), 4096);
+        Budget(assembly, new GH_StructurePath(new GH_Path(Enumerable.Range(0, 4096).ToArray())), 4096);
+        using var graphMatrix = new Matrix(63, 63); graphMatrix[0, 0] = 1;
+        var witnessType = assembly.GetType("BetterGhPanel.Runtime.CaptureGraphWitness", true)!;
+        object?[] graphArgs = { new GH_ObjectWrapper(new GH_Matrix(graphMatrix)), 5000, null };
+        bool graphCaptured = (bool)witnessType.GetMethod("TryCapture", Static)!.Invoke(null, graphArgs)!;
+        object?[] visits = { 0 };
+        Check(graphCaptured && (int)graphArgs[1]! == 1030 && (bool)witnessType.GetMethod("IsCurrent", Instance, null, new[] { typeof(int).MakeByRefType() }, null)!.Invoke(graphArgs[2], visits)! && (int)visits[0]! == 3970, "graph matrix capture and recheck count cells rather than one node");
+        var nullWrapped = new GH_ObjectWrapper(nullPath);
+        using var emptyMatrix = new Matrix(0, 0);
+        var emptyValues = (PanelSnapshot)Capture(assembly, nullPath, nullWrapped, new GH_Matrix { Value = null }, new GH_Matrix(emptyMatrix))[0]!;
+        Check(emptyValues.Rows.All(row => row.Validity == PanelValidity.VerifiedInvalid) && emptyValues.Rows[0].DisplayValue == "<null>" && emptyValues.Rows[2].DisplayValue == "<null>" && emptyValues.Rows[3].DisplayValue == "<empty>", "null path and matrix values have consistent invalid/empty presentation: " + string.Join(" / ", emptyValues.Rows.Select(row => row.Validity + " " + row.DisplayValue + " " + row.InvalidReason)));
 
         var highlight = Activator.CreateInstance(assembly.GetType("BetterGhPanel.Runtime.PanelGeometryHighlight", true)!, true)!;
         object Call(string name, params object[] args) => highlight.GetType().GetMethod(name, Instance)!.Invoke(highlight, args)!;
@@ -152,11 +178,11 @@ internal static class StockTypeChecks
         var set = PanelQueryEngine.Execute(dots, new PanelQueryOptions { CreateSet = true });
         Check(set.RowPositions.Count == 2 && set.DisplaySet!.Members[0].Count == 2, "Create set groups equal dot text across different locations");
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.TextValue, DisplayFilterValue = true });
-        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Values });
+        Output(fixture, PanelOutputValues.Values);
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).FirstOrDefault() is GH_String);
         Check(fixture.Sinks[0].VolatileData.AllData(false).Cast<GH_String>().Select(item => item.Value).SequenceEqual(new[] { "Lobby α", "Roof terrace — north wing, long annotation", "Lobby α" }), "Values output emits selected dot text properties");
         Check(fixture.Component.Params.Output[0].NickName == "D" && fixture.Component.Params.Output[1].NickName == "S", "output port names remain D and S");
-        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Items });
+        Output(fixture, PanelOutputValues.Items);
         fixture.Query(new PanelQueryOptions());
         fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { new GH_Point(new Point3d(1, 2, 3)), textHolder, new GH_String("Text row") }, new GH_Path(1));
         fixture.Solve(); await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 6 && fixture.Sinks[0].VolatileData.DataCount == 6);
@@ -172,7 +198,7 @@ internal static class StockTypeChecks
         fixture.Source.PersistentData.Append(new GH_TextDot(new TextDot("Below threshold", new Point3d(100, 0, 0))), new GH_Path(1));
         PanelTestAdapter.Units(fixture.Component, PanelUnitConversion.MillimetersToMeters, 2);
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.X, Search = ">= 1.23", DecimalPlaces = 2 });
-        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Values });
+        Output(fixture, PanelOutputValues.Values);
         fixture.Solve(); await fixture.Ready(() => fixture.Result.RowPositions.Count == 2 && fixture.Sinks[0].VolatileData.AllData(false).Count(item => item is GH_TextDot) == 2);
         Check(fixture.Result.RowPositions.SequenceEqual(new[] { 0, 1 }), "X comparisons use converted dot components and retain typed Items");
         SavePanel(fixture, canvas, "dots-x-filter.png");
@@ -181,9 +207,8 @@ internal static class StockTypeChecks
         fixture.Select(0); await fixture.Ready(() => fixture.Sinks[1].VolatileData.AllData(false).OfType<GH_Number>().Select(n => n.Value).SequenceEqual(new[] { 1.23 }));
         Check(Math.Abs(fixture.Result.Statistics.Mean!.Value - 1.79) < 1e-9 && PanelFilterValue.Format(fixture.Result.Snapshot, fixture.Result.Snapshot.Rows[0], PanelSearchMode.X, 2) == "1.23", "dot X filter, Stats and D/S share converted explicit precision");
         SavePanel(fixture, canvas, "dots-x-values.png");
-        SavePair("dots-x-filter.png", "dots-x-values.png", "dots-x-converted.png");
 
-        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Items });
+        Output(fixture, PanelOutputValues.Items);
         fixture.Source.PersistentData.Clear(); fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { dimensionHolder, angularHolder }, new GH_Path(0));
         PanelTestAdapter.Units(fixture.Component, PanelUnitConversion.RadiansToDegrees, 2); fixture.Query(new PanelQueryOptions { DecimalPlaces = 2 });
         fixture.Solve(); await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 2 && fixture.Result.Snapshot.Rows.Count == 2);
@@ -191,7 +216,7 @@ internal static class StockTypeChecks
             PanelValuePresentation.FormatDisplay(fixture.Result.Snapshot.Rows[1], PanelUnitConversion.RadiansToDegrees, 2) == "90.00 °", "linear/angular dimension summaries respect units and precision");
         SavePanel(fixture, canvas, "dimensions.png");
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Length, Search = "= 4.00", TypeName = "Linear Dimension", DecimalPlaces = 2 });
-        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Values });
+        Output(fixture, PanelOutputValues.Values);
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 1 && fixture.Sinks[0].VolatileData.AllData(false).SingleOrDefault() is GH_LinearDimension);
         Check(fixture.Result.RowPositions.SequenceEqual(new[] { 0 }), "linear dimension comparison retains its typed item");
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Length, TypeName = "Linear Dimension", DisplayFilterValue = true, DecimalPlaces = 2 });
@@ -203,14 +228,19 @@ internal static class StockTypeChecks
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.DimensionAngle, TypeName = "Angular Dimension", DisplayFilterValue = true, DecimalPlaces = 2 });
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).OfType<GH_Number>().Select(n => n.Value).SequenceEqual(new[] { 90.0 }));
         Check(fixture.Result.Statistics.Mean == 90, "angular dimension comparison/Stats/Values share converted degrees");
-        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Items });
-        PanelTestAdapter.Units(fixture.Component, PanelUnitConversion.None, -1); fixture.Source.PersistentData.Clear();
-        fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { textHolder, dimensionHolder, new GH_Culture(new CultureInfo("en-GB")), matrixHolder, pathHolder, location }, new GH_Path(1));
+        Output(fixture, PanelOutputValues.Items);
+        PanelTestAdapter.Units(fixture.Component, PanelUnitConversion.None, 2); fixture.Source.PersistentData.Clear();
+        fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { textHolder, dimensionHolder, new GH_Culture(new CultureInfo("en-GB")), matrixHolder, pathHolder, new GH_LonLatCoordinate(114.174, 22.304), new GH_ComplexNumber(new Complex(1.234, -2.346)) }, new GH_Path(1));
+        matrixHolder.Value[0, 1] = 5.6789;
         using var comparisonCurve = new LineCurve(new Point3d(0, 0, 0), new Point3d(6, 0, 0));
         fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { new GH_Point(new Point3d(1, 2, 3)), new GH_Curve(comparisonCurve), new GH_Number(42) }, new GH_Path(2));
-        fixture.Query(new PanelQueryOptions()); fixture.Solve();
-        await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 9 && fixture.Sinks[0].VolatileData.DataCount == 9);
-        Check(fixture.Sinks[0].VolatileData.AllData(false).Select(item => item.GetType()).SequenceEqual(new[] { typeof(GH_TextEntity), typeof(GH_LinearDimension), typeof(GH_Culture), typeof(GH_Matrix), typeof(GH_StructurePath), typeof(GH_LonLatCoordinate), typeof(GH_Point), typeof(GH_Curve), typeof(GH_Number) }), "mixed Items output preserves the newly supported types");
+        fixture.Query(new PanelQueryOptions { DecimalPlaces = 2 }); fixture.Solve();
+        await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 10 && fixture.Sinks[0].VolatileData.DataCount == 10);
+        Check(fixture.Sinks[0].VolatileData.AllData(false).Select(item => item.GetType()).SequenceEqual(new[] { typeof(GH_TextEntity), typeof(GH_LinearDimension), typeof(GH_Culture), typeof(GH_Matrix), typeof(GH_StructurePath), typeof(GH_LonLatCoordinate), typeof(GH_ComplexNumber), typeof(GH_Point), typeof(GH_Curve), typeof(GH_Number) }), "mixed Items output preserves the newly supported types");
+        var mixed = fixture.Result.Snapshot;
+        Check(PanelValuePresentation.FormatDisplay(mixed.Rows[3], PanelUnitConversion.None, 2) == "2 × 2 [1.00, 5.68; 0.00, 2.00]" &&
+            PanelValuePresentation.FormatDisplay(mixed.Rows[5], PanelUnitConversion.None, 2) == "22.30° N, 114.17° E" &&
+            PanelValuePresentation.FormatDisplay(mixed.Rows[6], PanelUnitConversion.None, 2) == "1.23 - 2.35i", "native numeric summaries use active decimal places");
         SavePanel(fixture, canvas, "stock-types-mixed.png");
     }
 
@@ -229,14 +259,6 @@ internal static class StockTypeChecks
         using var image = new Bitmap(canvas.Width, canvas.Height); using var graphics = Graphics.FromImage(image);
         graphics.Clear(Color.FromArgb(238, 238, 238)); canvas.Viewport.ApplyProjection(graphics);
         PanelTestAdapter.Render(fixture.Component, canvas, graphics); if (path != null) image.Save(path);
-    }
-    private static void SavePair(string first, string second, string name)
-    {
-        string? path = ImagePath(name); if (path == null) return;
-        using var left = new Bitmap(ImagePath(first)!); using var right = new Bitmap(ImagePath(second)!);
-        using var image = new Bitmap(left.Width + right.Width, Math.Max(left.Height, right.Height));
-        using var graphics = Graphics.FromImage(image);
-        graphics.DrawImageUnscaled(left, 0, 0); graphics.DrawImageUnscaled(right, left.Width, 0); image.Save(path);
     }
     private static Task SaveViewport(PanelHostFixture.Fixture fixture, RhinoDoc rhino)
     {

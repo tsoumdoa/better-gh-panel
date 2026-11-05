@@ -50,4 +50,25 @@ public sealed class StockTypeChecks
             angle.FormatCompact(PanelUnitConversion.DegreesToRadians, 2));
     }
 
+    [Fact]
+    public void NumericSummariesSharePrecisionWithTextFiltersCopiesAndSets()
+    {
+        PanelRow Row(int index, PanelNumericSummary summary) => new PanelRow(index, "{0}", "Stock value", "capture text", null,
+            PanelValidity.VerifiedValid, numericSummary: summary);
+        var snapshot = new PanelSnapshot(new[] {
+            Row(0, PanelNumericSummary.Complex(1.231, -2.341)), Row(1, PanelNumericSummary.Complex(1.234, -2.344)),
+            Row(2, PanelNumericSummary.Location(-22.304, 114.174)),
+            Row(3, PanelNumericSummary.Matrix(2, 2, (r, c) => r == c ? 1.234 : 0))
+        }, new[] { new PanelBranch("{0}", 4) });
+        Assert.Equal("1.23 - 2.34i", PanelValuePresentation.FormatDisplay(snapshot.Rows[0], PanelUnitConversion.None, 2));
+        Assert.Equal("22.30° S, 114.17° E", PanelValuePresentation.FormatDisplay(snapshot.Rows[2], PanelUnitConversion.RadiansToDegrees, 2));
+        Assert.Equal("2 × 2 [1.23, 0.00; 0.00, 1.23]", PanelValuePresentation.FormatDisplay(snapshot.Rows[3], PanelUnitConversion.None, 2));
+        Assert.Equal(new[] { 0, 1 }, PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = "1.23 - 2.34i", DecimalPlaces = 2 }).RowPositions);
+        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { CreateSet = true, DecimalPlaces = 2 });
+        Assert.Equal(new[] { 0, 2, 3 }, result.RowPositions);
+        Assert.Equal(new[] { 0, 1 }, result.DisplaySet!.Members[0]);
+        Assert.Equal("1.23 - 2.34i", result.DisplaySet.Values[0].CopyText);
+        Assert.Equal(4, PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { CreateSet = true, DecimalPlaces = 3 }).RowPositions.Count);
+    }
+
 }

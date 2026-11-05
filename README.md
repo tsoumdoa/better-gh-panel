@@ -90,13 +90,13 @@ Comparisons test the numbers shown, after unit conversion, factor rounding and a
 | Complex numbers / transforms | Real, imaginary, magnitude, phase; determinant and matrix entries |
 | SubD / extrusion / point cloud | Vertex/edge/face counts, solid/closed; extrusion height and profiles; point count |
 | Text Dots | Text, character count, X/Y/Z, font size (screen pixels) and font face |
-| Text entities / leaders / dimensions / centermarks | Text, character count, origin X/Y/Z and text height (model units); dimension length and angle |
-| Hatches | Pattern index, scale, rotation (radians) and origin X/Y/Z |
+| Text entities / leaders / dimensions / centermarks | Text, character count, origin X/Y/Z; dimension length and angle |
+| Hatches | Pattern index, scale, rotation and origin X/Y/Z |
 | Culture / location / path / matrix | Culture name and English name; latitude/longitude (degrees); path depth; matrix row/column counts |
-| Block instances / detail views | Block definition ID; detail projection type, projection lock and page-to-model ratio |
+| Block instances / detail views | Block definition ID; detail projection, projection lock and page-to-model ratio |
 | Every input | Data type, validity, branch path and zero-based item index |
 
-Text Dots now support text display, coordinate filters, viewport preview and geometry copy; annotation and additional stock properties are listed above.
+Text Dots display their text and support coordinate filters, viewport preview and geometry copy.
 
 Unsupported properties show `n/a`. Text comparisons are exact; quote text to keep surrounding spaces (`= " 001 "`).
 

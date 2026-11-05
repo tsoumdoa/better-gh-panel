@@ -204,7 +204,7 @@ namespace BetterGhPanel.Runtime
             }
             else if (node is GeometryBase geometry)
             {
-                if (!SafeGooInspection.IsTrustedGeometry(geometry) && type != typeof(PointCloud) && type != typeof(Extrusion))
+                if (!SafeGooInspection.IsTrustedGeometry(geometry))
                 { capturedValue = geometry; unavailable = true; return null; }
                 value = geometry;
             }
