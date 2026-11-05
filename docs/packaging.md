@@ -1,5 +1,7 @@
 # Build and Yak packaging
 
+Patch `0.2.4-beta` makes displayed values authoritative: round up and explicit Decimal places reach every shown number, D/S Values and numeric Items output, comparisons and Stats, identically on net48 and net7. D | F pairs by branch count, so item counts may differ. Branch headings and rows copy their addresses, and a data-warnings strip flags nulls, invalid items and branch-length outliers. It adds `branch-pairing`, `wysiwyg-values` and `pairing-wysiwyg` to the native inventory (23 fixtures).
+
 Patch `0.2.3-beta` adds the Items/Values output switch and one branch per set value with set-index rows; selected set rows expand to all members for output, preview and framing. Saved definitions with Create set on keep Values output, preserving existing wiring.
 
 Patch `0.2.2-beta` makes picking a filter mode show its values immediately, with filtering as an optional second step from the search field, and replaces typed Validity and Boolean comparisons with one-click value choices (Valid/Invalid/Unverified/Null, True/False). Clear (×) removes the filter first, then the displayed values. Saved query formats are unchanged.
@@ -30,19 +32,19 @@ McNeel's separate public Yak registry still serves the original packages. Publis
 
 New builds use the Yak package name `panel-plus` and stage to `artifacts/panel-plus-<version>/`. The old published package retains its original name; installing the renamed package may require removing the old package first to avoid loading both copies.
 
-The current beta is [`0.2.3-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.3-beta), following `0.2.2-beta`, distributed through Yak and GitHub Releases. The `artifacts/panel-plus-0.2.3-beta/` stage contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `panel-plus-0.2.3-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
+The current beta is [`0.2.4-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.4-beta), following `0.2.3-beta`, distributed through Yak and GitHub Releases. The `artifacts/panel-plus-0.2.4-beta/` stage contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `panel-plus-0.2.4-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
 ```text
-yak install --source artifacts/panel-plus-0.2.3-beta panel-plus 0.2.3-beta
+yak install --source artifacts/panel-plus-0.2.4-beta panel-plus 0.2.4-beta
 ```
 
 Replace `yak` with the full executable path if it is not on PATH. On Windows it is normally `C:\Program Files\Rhino 8\System\Yak.exe`; on Mac it is normally `/Applications/Rhino 8.app/Contents/Resources/bin/yak`. Restart Rhino and open Grasshopper afterward. Local install uses Yak's package directory and avoids copying a second `.gha` into the Grasshopper Libraries folder.
 
 For native validation, run `tests/BetterGhPanel.RhinoSmoke/run.ps1 -PluginPath <extracted net7.0/BetterGhPanel.gha>`. The coordinator stops launching fixtures when an identified Rhino host fails or times out before fixture execution. Its failed outcome retains the startup phase and exception, and the run summary lists every unrun fixture; an incomplete run cannot pass. Failures inside a fixture still allow the remaining fixtures to run. Host reports also record the process ID and actual .NET runtime.
 
-The current native inventory contains 20 focused regressions for capture safety, geometry ownership, reentrant drawing, resource disposal, native clipboard integrity, row selection and UI/UX state transitions. The older general behavior smoke suite and obsolete diagnostic probes were removed; the `ui-ux` and `row-selection` fixtures cover the current interaction regressions. There is no separate smoke suite. Each fixture starts a fresh Rhino process to isolate native crashes; use `-Fixture <name>` for a targeted check. The historical 66-fixture release results below describe the previous inventory.
+The current native inventory contains 23 focused regressions for capture safety, geometry ownership, reentrant drawing, resource disposal, native clipboard integrity, row selection, UI/UX state transitions, branch pairing and presented values. The older general behavior smoke suite and obsolete diagnostic probes were removed; the `ui-ux` and `row-selection` fixtures cover the current interaction regressions. There is no separate smoke suite. Each fixture starts a fresh Rhino process to isolate native crashes; use `-Fixture <name>` for a targeted check. The historical 66-fixture release results below describe the previous inventory.
 
 If a host fails in `host-startup`, save the run directory and check for a startup dialog or Windows Application Error before rerunning. After saving work and closing interactive Rhino sessions, reproduce just the affected fixture with `run.ps1 -PluginPath <path> -Fixture preview-admission-freshness -TimeoutSeconds 45` (substitute the recorded fixture name). A passing repeat establishes recovery only; it does not establish the earlier cause. Run the complete inventory against the same extracted package before treating validation as complete. Do not change installed runtimes, plug-ins or user settings solely because startup failed.
 
