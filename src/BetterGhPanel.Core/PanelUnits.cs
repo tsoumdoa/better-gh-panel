@@ -85,11 +85,11 @@ namespace BetterGhPanel.Core
                 {
                     decimal number = (decimal)value, factor = prepared.Decimal;
                     if (number == 0 && value > 0) return roundUpFactor;
-                    if ((double)number != value) return DoubleCeil(value, roundUpFactor);
+
                     decimal remainder = number % factor;
-                    if (remainder == 0) return value;
+                    if (remainder == 0) return PanelNumber.ToDouble(number);
                     double rounded = PanelNumber.ToDouble(number - remainder + (number > 0 ? factor : 0));
-                    return rounded >= value ? rounded : DoubleCeil(value, roundUpFactor);
+                    return rounded;
                 }
             }
             catch (OverflowException) { }

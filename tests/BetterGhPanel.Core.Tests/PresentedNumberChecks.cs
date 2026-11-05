@@ -1,3 +1,4 @@
+using BetterGhPanel.UI;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -6,12 +7,26 @@ using Xunit;
 
 public sealed class PresentedNumberChecks
 {
+    [Fact]
+    public void AutomaticGeometryStatisticsMatchRows()
+    {
+        var row = new PanelRow(0, "{0}", "Curve", "Curve", null,
+            geometryInfo: new PanelGeometryInfo("Curve", 1.23456789, units: "mm"));
+        var snapshot = new PanelSnapshot(new[] { row }, new[] { new PanelBranch("{0}", 1) });
+        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { DisplayFilterValue = true, SearchMode = PanelSearchMode.Length });
+        Assert.Equal("1.23457 mm", PanelFilterValue.Format(snapshot, row, PanelSearchMode.Length, -1));
+        Assert.Equal("1×  Number: 1.23457 mm", CanvasStatistics.Label(result, 9, -1));
+        Assert.Equal("Numbers: 1 · Min: 1.23457 mm", CanvasStatistics.Label(result, 2, -1));
+    }
+
     [Theory]
+    [InlineData(1500.0000000000002, .5, -1, 1500)]
+    [InlineData(.30000000000000004, .1, -1, .3)]
     [InlineData(12.1, .25, 0, 13)]
     [InlineData(-12.1, .25, 0, -12)]
     [InlineData(2.67, .01, 2, 2.67)]
     [InlineData(2.675, .001, 2, 2.68)]
-    [InlineData(0.30000000000000004, 1e-20, 1, .4)]
+    [InlineData(0.30000000000000004, 1e-20, 1, .3)]
     [InlineData(0.29999999999999993, 1e-20, 1, .3)]
     public void FactorDecimalPlacesCeil(double value, double factor, int places, double expected) =>
         Assert.Equal(expected, PanelUnits.Transform(value, PanelUnitConversion.None, factor, places));

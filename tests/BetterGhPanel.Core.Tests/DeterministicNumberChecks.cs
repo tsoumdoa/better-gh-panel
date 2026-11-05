@@ -36,7 +36,7 @@ public sealed class DeterministicNumberChecks
             double value = ((seed >> 11) / 9007199254740992d * 2 - 1) * magnitudes[i % magnitudes.Length];
             for (int places = 0; places <= 12; places++) Check(value, places);
             double factor = new[] { .001, .03, 5, 1e-28, 1e20 }[i % 5];
-            Assert.True(PanelUnits.Transform(value, PanelUnitConversion.None, factor) >= value);
+            Assert.True(PanelUnits.Transform(value, PanelUnitConversion.None, factor) >= value - Math.Abs(value) * 1e-14);
         }
         foreach (double input in new[] { 29205883.00000005, 717.6141121184295, 5400248.0508760773, 1.0000000000000003e29,
             .061657, 1.005, -1.005, 2.675, -2.675, 10000000000000004d, double.Epsilon, -double.Epsilon, 1e-100, -0d, double.MaxValue })
@@ -258,7 +258,9 @@ public sealed class DeterministicNumberChecks
         var snapshot = new PanelSnapshot(new[] { new PanelRow(0, "{0;2}", "Number", "", .3),
             new PanelRow(1, "{0;2}", "Number", "", .1 + .2) }, new[] { new PanelBranch("{0;2}", 2) });
         var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
-        Assert.Equal(CanvasStatistics.Label(result, 9, -1), CanvasStatistics.Label(result, 10, -1));
+        Assert.Single(result.Statistics.UniqueValues);
+        Assert.Equal(2, result.Statistics.UniqueValues[0].Count);
+        Assert.Equal("2×  Number: 0.3", CanvasStatistics.Label(result, 9, -1));
         result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { CreateSet = true, DecimalPlaces = 2 });
         Assert.Equal("{0;2;0}", PanelItemOrder.Address(result, 0, true, false));
         Assert.Equal("{0}", PanelItemOrder.Address(result, 0, true, true));

@@ -110,6 +110,7 @@ namespace BetterGhPanel.Core
             TypeName = typeName ?? string.Empty;
             _displayValue = displayValue ?? string.Empty;
             _groupSummary = groupSummary;
+
             NumericValue = numericValue;
             RawNumericValue = rawNumericValue ?? numericValue;
             Components = components;
@@ -426,13 +427,15 @@ namespace BetterGhPanel.Core
     public sealed class PanelValueFrequency
     {
         private readonly PanelText? _stringValue;
-        internal PanelValueFrequency(double? numericValue, PanelText? stringValue, int count)
+        internal PanelValueFrequency(double? numericValue, PanelText? stringValue, int count, string? presentedText = null)
         {
+            PresentedText = presentedText;
             NumericValue = numericValue;
             _stringValue = stringValue;
             Count = count;
         }
 
+        public string? PresentedText { get; }
         public double? NumericValue { get; }
         public string? StringValue => _stringValue?.ToString();
         public int Count { get; }
@@ -444,8 +447,9 @@ namespace BetterGhPanel.Core
             int invalidCount, double? minimum, double? maximum, double? mean,
             IReadOnlyDictionary<string, int> typeCounts, IReadOnlyDictionary<string, int> branchItemCounts,
             IReadOnlyList<PanelValueFrequency> uniqueValues, int scalarCount, int unverifiedCount,
-            PanelSourceStatusCounts filteredSourceStatuses, string numericUnits = "")
+            PanelSourceStatusCounts filteredSourceStatuses, string numericUnits = "", string automaticFormat = "G12")
         {
+            AutomaticFormat = automaticFormat;
             NumericUnits = numericUnits;
             ItemCount = itemCount;
             BranchCount = branchCount;
@@ -472,6 +476,7 @@ namespace BetterGhPanel.Core
         public int UnverifiedCount { get; }
         /// <summary>Filtered input occurrences before Create set, independent of representatives.</summary>
         public PanelSourceStatusCounts FilteredSourceStatuses { get; }
+        public string AutomaticFormat { get; }
         public string NumericUnits { get; }
         public double? Minimum { get; }
         public double? Maximum { get; }

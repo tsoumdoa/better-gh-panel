@@ -45,9 +45,9 @@ namespace BetterGhPanel.Core
 
         internal static decimal RoundedDecimal(double value, int places, bool ceiling = false)
         {
-            if (FaithfulDecimal(value, out decimal number))
-                return ceiling ? decimal.Ceiling(number * (decimal)Tens[places]) / (decimal)Tens[places]
-                    : Math.Round(number, places, MidpointRounding.AwayFromZero);
+            if (ceiling && Math.Abs(value) < 79228162514264337593543950336d || FaithfulDecimal(value, out _))
+                return ceiling ? decimal.Ceiling((decimal)value * (decimal)Tens[places]) / (decimal)Tens[places]
+                    : Math.Round((decimal)value, places, MidpointRounding.AwayFromZero);
             Binary(value, out var numerator, out var denominator);
             var coefficient = ceiling ? BigInteger.DivRem(numerator * Tens[places], denominator, out var remainder)
                 + (value > 0 && !remainder.IsZero ? 1 : 0) : Rounded(numerator * Tens[places], denominator);
