@@ -330,9 +330,14 @@ namespace BetterGhPanel
 
         public override void CreateAttributes() => m_attributes = new BetterPanelAttributes(this);
 
+        private static bool HasFilters(PanelQueryOptions options) =>
+            !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue ||
+            options.TypeName != null || options.BranchPath != null || options.BranchPrefix || options.OnlyInvalid ||
+            options.SortMode != PanelSortMode.SourceOrder;
+
         internal void ClearFilters()
         {
-            RecordUndoEvent("Clear filters");
+            if (HasFilters(Session.Options) || RowSelection.Count > 0) RecordUndoEvent("Clear filters");
             ClearFiltersCore();
         }
 
@@ -447,7 +452,7 @@ namespace BetterGhPanel
             return false;
         }
 
-        internal void ResetAll()
+        internal bool ResetAll()
         {
             _discardViewRestore = true;
             var options = Session.Options;
@@ -473,6 +478,7 @@ namespace BetterGhPanel
             }
             finally { _discardViewRestore = false; }
             Instances.ActiveCanvas?.Invalidate();
+            return settingsChanged;
         }
 
         internal void SetCanvasSize(float width, float height)
@@ -908,12 +914,16 @@ namespace BetterGhPanel
             p[1].Optional = true;
         }
 
+        private const string MaskDescription = "True/False mask of the matching items in the original D input tree. Preserves original paths and item counts. Every member of a kept or selected set is True. This mask conveys membership, not transformed ordering.";
+
+        private const string PairedDescription = "Raw paired F items for the matching items, at D's transformed destinations. Equal branches follow item membership; scoped unequal branches emit their whole F branch once per group. Empty D partners are included when D retains the branch, without item filters or Create set; path and list-length filters preserve them. Sets use {path;k} ({k} when flattened; {k;path} for list-length sets), in both output modes. F values and types are unchanged. F must have the same branch count as D; exact paths pair first, then remaining branches in tree order.";
+
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
             p.AddGenericParameter("Data", "D", "Matching Items or displayed Values after tree tools, units and filters. Set Items: all members in {path;k} ({k} when flattened); list-length sets use {k;path}. Set Values: unique values at displayed precision. Values use the shown rounding; unavailable values are null. Sorting changes only the view.", GH_ParamAccess.tree);
             p.AddGenericParameter("Selected data", "S", "Selected Items or Values in tree order. Set Items include every member and keep the same group paths as D. Empty when no rows are selected.", GH_ParamAccess.tree);
-            p.AddBooleanParameter("Membership mask", "B", "True at original D input positions retained by the B + F follow setting (Results by default, or Selection). Preserves original paths and item counts. Every member of a kept or selected set is True. This mask conveys membership, not transformed ordering.", GH_ParamAccess.tree);
-            p.AddGenericParameter("Paired results", "F", "Raw paired F items for the B + F follow setting (Results by default, or Selection), at D's transformed destinations. Equal branches follow item membership; scoped unequal branches emit their whole F branch once per group. Empty D partners are included when D retains the branch, without item filters or Create set; path and list-length filters preserve them. Sets use {path;k} ({k} when flattened; {k;path} for list-length sets), in both output modes. F values and types are unchanged. F must have the same branch count as D; exact paths pair first, then remaining branches in tree order.", GH_ParamAccess.tree);
+            p.AddBooleanParameter("Membership mask", "B", MaskDescription, GH_ParamAccess.tree);
+            p.AddGenericParameter("Paired results", "F", PairedDescription, GH_ParamAccess.tree);
         }
 
         private void ScheduleOutput()

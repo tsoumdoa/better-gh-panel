@@ -635,7 +635,7 @@ namespace BetterGhPanel
             }
             if (PanelOwner.Session.Error != null)
             {
-                Text(g, "Filter needs attention. Edit filter or Reset all.", small, Muted,
+                Text(g, "Edit the filter or Clear filters.", small, Muted,
                     new RectangleF(list.X + 6, list.Y, list.Width - 12, 22), trim);
                 if (!paired) PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, Array.Empty<int>());
                 return;
@@ -1208,8 +1208,8 @@ namespace BetterGhPanel
             if (HandleSplitClick(sender, e)) return GH_ObjectResponse.Handled;
             if (_reset.Contains(point))
             {
-                PanelOwner.ResetAll();
-                ShowNotice(sender, "Reset all · Undo restores the previous settings");
+                bool recordedUndo = PanelOwner.ResetAll();
+                ShowNotice(sender, recordedUndo ? "Reset all · Undo restores the previous settings" : "Reset all");
                 return GH_ObjectResponse.Handled;
             }
             if (HandleSetDetailsClick(sender, e)) return GH_ObjectResponse.Handled;
@@ -1865,7 +1865,7 @@ namespace BetterGhPanel
             else if (_reset.Contains(point))
             {
                 e.Title = "Reset all";
-                e.Description = "Clears filters, sorting and selection, turns off tree tools and units, and sets Out to Items and B + F to Results. Keeps Preview, item order, D|F and size. Undo restores everything.";
+                e.Description = "Clears filters, sorting and selection, turns off tree tools and units, and sets Out to Items and B + F to Results. Keeps Preview, item order, D|F and size. Undo restores the settings.";
             }
             else if (_search.Contains(point))
             {
@@ -1915,7 +1915,7 @@ namespace BetterGhPanel
                 {
                     e.Title = "Filter needs attention";
                     e.Text = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode);
-                    e.Description = PanelOwner.Session.Error + "\n\nEdit the filter or use Clear filters.";
+                    e.Description = PanelOwner.Session.Error + "\n\nEdit the filter or use Clear filters (right-click menu).";
                     return;
                 }
                 e.Title = "Row selection and copy";

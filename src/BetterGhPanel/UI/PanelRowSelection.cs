@@ -81,9 +81,10 @@ namespace BetterGhPanel.UI
             return true;
         }
 
-        internal void Rebind(PanelRowSelection previous, PanelQueryResult result)
+        internal bool Rebind(PanelRowSelection previous, PanelQueryResult result)
         {
-            if (previous._result == null || !SameStructure(previous._result.Snapshot, result.Snapshot)) { Clear(); return; }
+            if (previous._result == null || !SameStructure(previous._result.Snapshot, result.Snapshot)) { Clear(); return false; }
+            bool hadSelection = Count > 0 || previous.Count > 0;
             _positions.Clear();
             _positions.UnionWith(previous._positions);
             _emptyBranches.Clear();
@@ -96,7 +97,11 @@ namespace BetterGhPanel.UI
                 _emptyBranches.RemoveWhere(path => !result.ContainsBranchPath(path));
             else _emptyBranches.Clear();
             RebuildIndex(result);
-            NotifyChanged();
+            _orderedPositions = null;
+            _branchPaths = null;
+            _lastBulkValid = false;
+            if (hadSelection || Count > 0) NotifyChanged();
+            return true;
         }
 
         internal void Synchronize(PanelQueryResult result)

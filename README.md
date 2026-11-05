@@ -32,9 +32,9 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 **Behaviour changes**
 
-- S survives recomputes with the same paths and branch lengths; filtered-out rows drop from the selection.
+- S survives recomputes with the same paths and branch lengths when Create set is off; filtered-out rows drop from the selection.
 - Clicking blank canvas or empty panel space keeps the selection.
-- Items/Values resets to Items when hidden; one Undo restores both settings.
+- Out Items | Values resets to Items when hidden; one Undo restores both settings.
 - Reset commands are now **Clear filters** and **Reset all**; the header ↻ is Reset all.
 - The **·S** port suffix is removed. B/F tooltips state Results or Selection.
 
@@ -168,7 +168,7 @@ Right-click the component → **B + F follow** to make B and F follow the **Resu
 
 ### Keyboard and mouse
 
-Click inside the panel to focus it; this keeps your selection. Esc or double-click clears it, as do Clear filters, Reset all and changes to the input's structure.
+Clicking inside the panel focuses it and keeps your selection; Esc clears the selection, then releases focus. A green ring shows focus; without focus, keys and wheel go to Grasshopper as usual. Double-click, Clear filters, Reset all and changes to the input's structure also clear the selection.
 
 | Key | Action |
 | --- | --- |

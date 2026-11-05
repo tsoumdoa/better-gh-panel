@@ -109,6 +109,27 @@ internal static class UxInteractionChecks
                 "Returning to the original query and pressing Enter preserves redo and selection as a no-op");
         }
 
+        fixture.Query(new PanelQueryOptions());
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+        fixture.Select(0);
+        foreach (int position in new[] { 1, 2, 3, 4 }) fixture.Select(position, toggle: true);
+        await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 5);
+        var interrupted = Search();
+        await Preview(interrupted, "> 50", 29);
+        var oldSnapshot = fixture.Result.Snapshot;
+        fixture.Solve();
+        await fixture.Ready(() => !ReferenceEquals(oldSnapshot, fixture.Result.Snapshot) && fixture.Result.RowPositions.Count == 80 &&
+            fixture.Sinks[1].VolatileData.DataCount == 5);
+        Check(fixture.SelectedCount == 5 && fixture.Values(1) == "0,1,2,3,4",
+            "Upstream recompute cancels live search and re-binds all committed selected positions");
+        Render();
+        var panelSpace = PanelTestAdapter.Bounds(component, CanvasControl.Panel);
+        PanelTestAdapter.CanvasClick(canvas, new PointF(panelSpace.Left + 3, panelSpace.Top + panelSpace.Height / 2));
+        Check(fixture.SelectedCount == 5, "Clicking empty panel space keeps the selection");
+        fixture.Select(0);
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = ".*" });
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+
         var committed = Search();
         await Preview(committed, "7[0-9]", 10);
         committed.Submit("7[0-9]");
@@ -327,6 +348,14 @@ internal static class UxInteractionChecks
         Check((bool)component.GetType().GetProperty("ReverseTree", Instance)!.GetValue(component)! && Options(fixture).Search == "> 9",
             "Reset all Undo restores tools and filters");
         Call(component, "ResetAll");
+
+        fixture.Document.UndoServer.Clear();
+        Call(component, "ClearFilters");
+        Check(fixture.Document.UndoServer.UndoCount == 0, "Clear filters with no filters or selection records no undo");
+        fixture.Select(0);
+        bool resetRecordedUndo = (bool)component.GetType().GetMethod("ResetAll", Instance)!.Invoke(component, Array.Empty<object>())!;
+        Check(!resetRecordedUndo && fixture.Document.UndoServer.UndoCount == 0 && fixture.SelectedCount == 0,
+            "Selection-only Reset all reports that no settings undo was recorded");
 
         using var curve = new LineCurve(Point3d.Origin, new Point3d(1, 2, 3));
         var group = new GH_GeometryGroup(); group.Objects.Add(new GH_Point(Point3d.Origin));

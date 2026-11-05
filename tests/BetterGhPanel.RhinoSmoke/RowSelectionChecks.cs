@@ -158,5 +158,12 @@ internal static class RowSelectionChecks
         fixture.Solve();
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 81 && fixture.Sinks[1].VolatileData.DataCount == 0);
         Check(fixture.SelectedCount == 0, "Structural input replacement clears Selection");
+        component.GetType().GetMethod("SetTreeOperations", Instance)!.Invoke(component, new object[] { 0, false, false, false, true });
+        await fixture.Ready(() => fixture.Result.DisplaySet != null);
+        fixture.Select(fixture.Result.RowPositions[0]);
+        var setSnapshot = fixture.Result.Snapshot;
+        fixture.Solve();
+        await fixture.Ready(() => !ReferenceEquals(setSnapshot, fixture.Result.Snapshot) && fixture.Sinks[1].VolatileData.DataCount == 0);
+        Check(fixture.SelectedCount == 0, "Create set selections clear on upstream recompute");
     }
 }

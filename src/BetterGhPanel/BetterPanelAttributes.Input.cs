@@ -335,27 +335,32 @@ namespace BetterGhPanel
 
         internal void StashViewForRestore()
         {
+            EndQueryPreview(_previewOwner);
             var result = _lastResult;
             // A second expiry before the next result keeps the original stash.
             if (result == null) return;
             _selectionRestore = result;
-            _savedSelection = _selection.CopyForPreview();
+            _savedSelection = PanelOwner.CreateSetTree ? null : PanelOwner.CommittedSelection.CopyForPreview();
             _viewRestore = _offset == 0 && _pairedOffset == 0 ? null : new ViewRestore(result.Snapshot, _offset, _pairedOffset, DisplayListLengths);
         }
 
         private void RestoreView(PanelQueryResult result)
         {
-            if (_selectionRestore != null && _savedSelection != null)
+            if (ReferenceEquals(result.Snapshot, _selectionRestore?.Snapshot) ||
+                ReferenceEquals(result.Snapshot, _viewRestore?.Snapshot)) return;
+            bool? sameStructure = null;
+            if (_selectionRestore != null)
             {
-                if (PanelRowSelection.SameStructure(_selectionRestore.Snapshot, result.Snapshot))
-                    _selection.Rebind(_savedSelection, result);
+                if (_savedSelection != null && !PanelOwner.CreateSetTree)
+                    sameStructure = _selection.Rebind(_savedSelection, result);
                 _selectionRestore = null;
                 _savedSelection = null;
             }
             var restore = _viewRestore;
             if (restore == null) return;
             _viewRestore = null;
-            if (restore.ListLengths != DisplayListLengths || !PanelRowSelection.SameStructure(restore.Snapshot, result.Snapshot)) return;
+            if (restore.ListLengths != DisplayListLengths ||
+                !(sameStructure ?? PanelRowSelection.SameStructure(restore.Snapshot, result.Snapshot))) return;
             _offset = Math.Max(0, Math.Min(MaximumOffset, restore.Offset));
             _pairedOffset = _scrollLocked ? _offset : Math.Max(0, Math.Min(MaximumOffset, restore.PairedOffset));
         }

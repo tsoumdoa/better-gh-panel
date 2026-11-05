@@ -10,7 +10,7 @@ namespace BetterGhPanel.UI
     {
         internal const int OverviewRows = 9;
         internal const string Scope = "Statistics describe the current results, after tree tools, unit conversion and presentation rounding. " +
-            "With Create set, statistics describe the displayed output values; Source counts after filters are listed separately. " +
+            "With Create set, statistics describe the displayed output values; source counts after filters are listed separately. " +
             "Orange row marks mean invalid; blue means unverified. Set row marks describe their source occurrences. " +
             "Totals describe the tree before filters and sets. Item counts include all data types.";
         internal const string UniqueScope = "Unique values include valid finite Number/Integer values and Text values. " +

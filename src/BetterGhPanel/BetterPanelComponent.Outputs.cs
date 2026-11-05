@@ -16,6 +16,7 @@ namespace BetterGhPanel
     {
         private readonly PanelRowSelection _committedSelection = new PanelRowSelection();
         private PanelRowSelection? _queryPreviewSelection;
+        internal PanelRowSelection CommittedSelection => _committedSelection;
         internal PanelRowSelection RowSelection => _queryPreviewSelection ?? _committedSelection;
         internal PanelOutputScope OutputScope { get; private set; }
         internal PanelOutputValues OutputValues { get; private set; }
@@ -99,8 +100,8 @@ namespace BetterGhPanel
         {
             if (Params.Output.Count < 4) return;
             var scope = OutputScope == PanelOutputScope.Filtered ? "Results" : "Selection";
-            Params.Output[2].Description = "B: True/False mask of the " + scope + " in the original D tree shape. Every member of a retained set is True; ordering is unchanged.";
-            Params.Output[3].Description = "F: Raw paired items of the " + scope + " at D's transformed destinations. Equal branches follow item membership; unequal branches emit their whole F branch once per group. Values and types are unchanged.";
+            Params.Output[2].Description = MaskDescription + " B + F follow: " + scope + ".";
+            Params.Output[3].Description = PairedDescription + " B + F follow: " + scope + ".";
         }
 
         private void ClearOutputSources()

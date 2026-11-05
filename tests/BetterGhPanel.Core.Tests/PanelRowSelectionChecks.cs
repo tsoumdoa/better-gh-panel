@@ -30,6 +30,12 @@ internal static class PanelRowSelectionChecks
         rebound.Rebind(retained, replacement);
         Expect(rebound, replacement);
 
+        int emptyNotifications = 0;
+        rebound.Changed += (_, __) => emptyNotifications++;
+        retained.Synchronize(replacement);
+        rebound.Rebind(retained, Query(Sample()));
+        if (emptyNotifications != 0) throw new InvalidOperationException("Empty rebind must not publish a selection change.");
+
         var snapshot = Sample();
         var source = Query(snapshot);
         var selection = new PanelRowSelection();
