@@ -43,18 +43,51 @@ namespace BetterGhPanel.Core
             return remainder * 2 >= denominator ? quotient + 1 : quotient;
         }
 
-        internal static decimal RoundedDecimal(double value, int places, bool ceiling = false)
+        internal static decimal RoundedDecimal(double value, int places)
         {
-            if (ceiling && Math.Abs(value) < 79228162514264337593543950336d || FaithfulDecimal(value, out _))
-                return ceiling ? decimal.Ceiling((decimal)value * (decimal)Tens[places]) / (decimal)Tens[places]
-                    : Math.Round((decimal)value, places, MidpointRounding.AwayFromZero);
+            if (FaithfulDecimal(value, out decimal number))
+                return Math.Round(number, places, MidpointRounding.AwayFromZero);
             Binary(value, out var numerator, out var denominator);
-            var coefficient = ceiling ? BigInteger.DivRem(numerator * Tens[places], denominator, out var remainder)
-                + (value > 0 && !remainder.IsZero ? 1 : 0) : Rounded(numerator * Tens[places], denominator);
+            var coefficient = Rounded(numerator * Tens[places], denominator);
             // |v| < 2^53 and places <= 12, so the coefficient fits 96 bits.
             return new decimal((int)(uint)(coefficient & uint.MaxValue),
                 (int)(uint)((coefficient >> 32) & uint.MaxValue),
                 (int)(uint)((coefficient >> 64) & uint.MaxValue), value < 0, (byte)places);
+        }
+
+        private static void DecimalRational(decimal value, out BigInteger n, out BigInteger d)
+        {
+            var bits = decimal.GetBits(value);
+            n = (BigInteger)(uint)bits[0] + ((BigInteger)(uint)bits[1] << 32) + ((BigInteger)(uint)bits[2] << 64);
+            if (value < 0) n = -n;
+            d = Tens[(bits[3] >> 16) & 255];
+        }
+
+        private static BigInteger Ceiling(BigInteger n, BigInteger d)
+        {
+            var q = BigInteger.DivRem(n, d, out var r);
+            return r.Sign > 0 ? q + 1 : q;
+        }
+
+        internal static double FactorCeiling(double value, double factor, int places, bool skipFactor = false)
+        {
+            Binary(value, out var n, out var d);
+            if (value < 0) n = -n;
+            // Preserve integer digits. Only discard a nearby 15-digit decimal's noise.
+            if (value != Math.Truncate(value) && Math.Abs(value) < 1e15)
+            {
+                decimal trimmed = (decimal)value;
+                double candidate = ToDouble(trimmed);
+                long distance = Math.Abs(BitConverter.DoubleToInt64Bits(candidate) - BitConverter.DoubleToInt64Bits(value));
+                if (trimmed != 0 && distance <= 4) DecimalRational(trimmed, out n, out d);
+            }
+            BigInteger fn, fd;
+            if (FaithfulDecimal(factor, out var decimalFactor) && decimalFactor > 0)
+                DecimalRational(decimalFactor, out fn, out fd);
+            else Binary(factor, out fn, out fd);
+            if (!skipFactor) { n = Ceiling(n * fd, d * fn) * fn; d = fd; }
+            if (places >= 0) { n = Ceiling(n * Tens[places], d); d = Tens[places]; }
+            return n.IsZero ? 0 : RationalDouble(BigInteger.Abs(n), d, n.Sign < 0, 0);
         }
 
         internal static double ToDouble(decimal number)

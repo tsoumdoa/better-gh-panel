@@ -113,10 +113,10 @@ internal static class WysiwygValuesChecks
         }
         Render();
         var tooltip = PanelTestAdapter.Tooltip(component, canvas, 0);
-        Check(tooltip.Description.Contains("Shown 1300.00") && tooltip.Description.Contains("raw 1263.4718") && tooltip.Description.Contains("rounded up by 50"),
+        Check(tooltip.Description.Contains("Shown 1300.00") && tooltip.Description.Contains("raw 1263.4718") && tooltip.Description.Contains("rounded to factor 50"),
             "Rounded Length native tooltip exposes raw metric and rounding reason");
         Check(tooltip.Description.Split(new[] { "Shown " }, StringSplitOptions.None).Length == 2 &&
-            tooltip.Description.Split('\n').Contains("Shown 1300.00 mm · raw 1263.4718 mm · rounded up by 50"), "Raw tooltip adds exactly one rounding line");
+            tooltip.Description.Split('\n').Contains("Shown 1300.00 mm · raw 1263.4718 mm · rounded to factor 50"), "Raw tooltip adds exactly one rounding line");
         Check(!tooltip.Description.Contains("Geometry · length:") && !tooltip.Description.Contains("Ln · L") &&
             tooltip.Description.Contains("Length: 1300.00 mm") && tooltip.Description.Contains("Degree: 1"),
             "Raw tooltip keeps the main labeled geometry details without repeated compact summaries");

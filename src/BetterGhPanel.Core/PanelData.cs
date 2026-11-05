@@ -110,7 +110,6 @@ namespace BetterGhPanel.Core
             TypeName = typeName ?? string.Empty;
             _displayValue = displayValue ?? string.Empty;
             _groupSummary = groupSummary;
-
             NumericValue = numericValue;
             RawNumericValue = rawNumericValue ?? numericValue;
             Components = components;
@@ -427,14 +426,16 @@ namespace BetterGhPanel.Core
     public sealed class PanelValueFrequency
     {
         private readonly PanelText? _stringValue;
-        internal PanelValueFrequency(double? numericValue, PanelText? stringValue, int count, string? presentedText = null)
+        internal PanelValueFrequency(double? numericValue, PanelText? stringValue, int count, string? presentedText = null, int distinctCount = 1)
         {
+            DistinctCount = distinctCount;
             PresentedText = presentedText;
             NumericValue = numericValue;
             _stringValue = stringValue;
             Count = count;
         }
 
+        public int DistinctCount { get; }
         public string? PresentedText { get; }
         public double? NumericValue { get; }
         public string? StringValue => _stringValue?.ToString();

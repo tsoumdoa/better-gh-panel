@@ -16,7 +16,7 @@ namespace BetterGhPanel.UI
         internal const string UniqueScope = "Unique values include valid finite Number/Integer values and Text values. " +
             "Numbers group by presented text. Text preserves case and whitespace; text and numbers stay separate. " +
             "Null, invalid, nonfinite and other data types are excluded. Values appear in first source occurrence order. " +
-            "Numeric equality and frequency use presented numbers, including explicit decimal places. Hover a value for its complete text.";
+            "Numeric equality and frequency use presented numbers, including explicit decimal places. Hover a value for its first raw value and merge count.";
 
         internal static string Summary(PanelQueryResult result) =>
             Count(result.Statistics.ItemCount, Total(result)) + (result.DisplaySet?.IsBranchSet == true ? " values · " : " items · ") +
@@ -60,6 +60,7 @@ namespace BetterGhPanel.UI
             string text = value.NumericValue.HasValue
                 ? "Number: " + (full ? FormatNumber(value.NumericValue.Value, result, decimals, unique: true) : value.PresentedText ?? FormatNumber(value.NumericValue.Value, result, decimals))
                 : "Text: " + Quote(value.StringValue!, full);
+            if (full && value.DistinctCount > 1) text = "Merged from " + value.DistinctCount + " distinct values; first raw value: " + text;
             return FormattableString.Invariant($"{value.Count:N0}×  {text}");
         }
 

@@ -62,6 +62,7 @@ namespace BetterGhPanel.Core
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var branchCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+            var numericCache = new Dictionary<(double, string), ValueCount>();
             var numericValues = new Dictionary<string, ValueCount>(StringComparer.Ordinal);
             var stringValues = new Dictionary<PanelText, ValueCount>(new PanelTextComparer());
             var uniqueValues = new List<ValueCount>();
@@ -153,14 +154,20 @@ namespace BetterGhPanel.Core
                     {
                         // Numeric equality deliberately unifies integer/number values and signed zero.
                         var number = numeric.Value == 0 ? 0 : numeric.Value;
-                        string presentedText = query.DisplayFilterValue
-                            ? PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, true, query.RoundUpFactor)
-                            : PanelUnits.Format(number, snapshot.UnitConversion, query.DecimalPlaces);
-                        if (!numericValues.TryGetValue(presentedText, out var frequency))
+                        string unitsKey = query.DisplayFilterValue ? PanelFilterValue.UnitSymbol(snapshot, row, query.SearchMode, measured) : PanelUnits.Symbol(snapshot.UnitConversion);
+                        var cacheKey = (number, unitsKey);
+                        if (!numericCache.TryGetValue(cacheKey, out var frequency))
                         {
-                            frequency = new ValueCount(number, null) { PresentedText = presentedText };
-                            numericValues.Add(presentedText, frequency);
-                            uniqueValues.Add(frequency);
+                            string format = query.DisplayFilterValue && query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume ? "G6" : "G12";
+                            string presentedText = PanelUnits.Format(number, PanelUnitConversion.None, query.DecimalPlaces, format) + (unitsKey.Length == 0 ? "" : " " + unitsKey);
+                            if (query.DecimalPlaces >= 0 || !numericValues.TryGetValue(presentedText, out frequency))
+                            {
+                                frequency = new ValueCount(number, null) { PresentedText = presentedText };
+                                if (query.DecimalPlaces < 0) numericValues.Add(presentedText, frequency);
+                                uniqueValues.Add(frequency);
+                            }
+                            else frequency.DistinctCount++;
+                            numericCache.Add(cacheKey, frequency);
                         }
                         frequency.Count++;
                         scalarCount++;
@@ -269,7 +276,7 @@ namespace BetterGhPanel.Core
                 if (work.ShouldYield()) yield return null;
                 CheckCancellation(index, cancellationToken);
                 var value = uniqueValues[index];
-                frequencies[index] = new PanelValueFrequency(value.Number, value.Text, value.Count, value.PresentedText);
+                frequencies[index] = new PanelValueFrequency(value.Number, value.Text, value.Count, value.PresentedText, value.DistinctCount);
             }
             cancellationToken.ThrowIfCancellationRequested();
             var statistics = new PanelStatistics(set?.IsBranchSet == true ? branches.Count : positions.Length, branches.Count, numericCount, nullCount,
@@ -377,6 +384,7 @@ namespace BetterGhPanel.Core
 
         private sealed class ValueCount
         {
+            internal int DistinctCount = 1;
             internal string? PresentedText;
             internal ValueCount(double? number, PanelText? text) { Number = number; Text = text; }
             internal double? Number { get; }

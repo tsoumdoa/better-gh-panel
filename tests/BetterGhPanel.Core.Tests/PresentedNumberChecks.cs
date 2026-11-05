@@ -19,9 +19,74 @@ public sealed class PresentedNumberChecks
         Assert.Equal("Numbers: 1 · Min: 1.23457 mm", CanvasStatistics.Label(result, 2, -1));
     }
 
+    [Fact]
+    public void SeededFactorOracleAcrossDecimalPlaces()
+    {
+        var random = new System.Random(50421);
+        foreach (decimal factor in new[] { .25m, .3m, .07m, .000000000001m, 1m })
+        for (int places = 0; places <= 12; places++)
+        {
+            decimal scale = 1;
+            for (int d = 0; d < places; d++) scale *= 10;
+            double previous = double.NegativeInfinity;
+            decimal input = -1000;
+            for (int i = 0; i < 100; i++)
+            {
+                input += random.Next(1, 10000) / 100m;
+                decimal factored = decimal.Ceiling(input / factor) * factor;
+                Assert.Equal(0m, factored % factor);
+                double factorResult = PanelUnits.Transform((double)input, PanelUnitConversion.None, (double)factor);
+                Assert.Equal((double)factored, factorResult);
+                double result = PanelUnits.Transform((double)input, PanelUnitConversion.None, (double)factor, places);
+                Assert.Equal((double)(decimal.Ceiling(factored * scale) / scale), result);
+                Assert.True((decimal)result >= input);
+                Assert.True(result >= previous);
+                previous = result;
+            }
+        }
+    }
+
+    [Fact]
+    public void StatisticsGroupConvertedCoordinatesAndProperties()
+    {
+        var rows = new[] {
+            new PanelRow(0, "{0}", "Point", "", null, PanelValidity.VerifiedValid, components: new PanelComponents(1000, 0, 0, "mm")),
+            new PanelRow(1, "{0}", "Point", "", null, PanelValidity.VerifiedValid, components: new PanelComponents(1000, 0, 0, "mm"))
+        };
+        var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", 2) }, unitConversion: PanelUnitConversion.MillimetersToMeters);
+        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { DisplayFilterValue = true, SearchMode = PanelSearchMode.X, DecimalPlaces = 2 });
+        Assert.Single(result.Statistics.UniqueValues);
+        Assert.Equal(2, result.Statistics.UniqueValues[0].Count);
+        Assert.Equal("1.00 m", result.Statistics.UniqueValues[0].PresentedText);
+    }
+
+    [Fact]
+    public void StatisticsKeepPropertyUnitSymbolsSeparate()
+    {
+        var rows = new[] {
+            new PanelRow(0, "{0}", "Example", "", null, PanelValidity.VerifiedValid,
+                properties: new Dictionary<PanelSearchMode, PanelPropertyValue?> { [PanelSearchMode.Radius] = PanelPropertyValue.Numeric(1000, 1, "mm") }),
+            new PanelRow(1, "{0}", "Example", "", null, PanelValidity.VerifiedValid,
+                properties: new Dictionary<PanelSearchMode, PanelPropertyValue?> { [PanelSearchMode.Radius] = PanelPropertyValue.Numeric(1, 1, "ft") })
+        };
+        var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", 2) }, unitConversion: PanelUnitConversion.MillimetersToMeters);
+        foreach (int decimals in new[] { -1, 2 })
+        {
+            var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { DisplayFilterValue = true, SearchMode = PanelSearchMode.Radius, DecimalPlaces = decimals });
+            Assert.Equal(2, result.Statistics.UniqueValues.Count);
+            Assert.Contains("m", result.Statistics.UniqueValues[0].PresentedText!);
+            Assert.Contains("ft", result.Statistics.UniqueValues[1].PresentedText!);
+        }
+    }
+
     [Theory]
     [InlineData(1500.0000000000002, .5, -1, 1500)]
     [InlineData(.30000000000000004, .1, -1, .3)]
+    [InlineData(1000000000000001, 1, -1, 1000000000000001)]
+    [InlineData(9007199254740991, 1, -1, 9007199254740991)]
+    [InlineData(12345678901234.56, .07, 2, 12345678901234.63)]
+    [InlineData(79595447042768.58, .25, 8, 79595447042768.75)]
+    [InlineData(3e-30, 1e-30, 2, .01)]
     [InlineData(12.1, .25, 0, 13)]
     [InlineData(-12.1, .25, 0, -12)]
     [InlineData(2.67, .01, 2, 2.67)]

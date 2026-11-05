@@ -36,7 +36,7 @@ public sealed class DeterministicNumberChecks
             double value = ((seed >> 11) / 9007199254740992d * 2 - 1) * magnitudes[i % magnitudes.Length];
             for (int places = 0; places <= 12; places++) Check(value, places);
             double factor = new[] { .001, .03, 5, 1e-28, 1e20 }[i % 5];
-            Assert.True(PanelUnits.Transform(value, PanelUnitConversion.None, factor) >= value - Math.Abs(value) * 1e-14);
+            if (Math.Abs(value) < 7.9e28) Assert.True((decimal)PanelUnits.Transform(value, PanelUnitConversion.None, factor) >= (decimal)value);
         }
         foreach (double input in new[] { 29205883.00000005, 717.6141121184295, 5400248.0508760773, 1.0000000000000003e29,
             .061657, 1.005, -1.005, 2.675, -2.675, 10000000000000004d, double.Epsilon, -double.Epsilon, 1e-100, -0d, double.MaxValue })
@@ -260,6 +260,7 @@ public sealed class DeterministicNumberChecks
         var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
         Assert.Single(result.Statistics.UniqueValues);
         Assert.Equal(2, result.Statistics.UniqueValues[0].Count);
+        Assert.Contains("Merged from 2 distinct values", CanvasStatistics.Label(result, 9, -1, full: true));
         Assert.Equal("2×  Number: 0.3", CanvasStatistics.Label(result, 9, -1));
         result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { CreateSet = true, DecimalPlaces = 2 });
         Assert.Equal("{0;2;0}", PanelItemOrder.Address(result, 0, true, false));
