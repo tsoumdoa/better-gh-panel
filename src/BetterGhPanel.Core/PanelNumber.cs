@@ -4,7 +4,7 @@ using System.Numerics;
 
 namespace BetterGhPanel.Core
 {
-    // No double formatting/parsing participates in decimal rounding. A faithful
+    // Without a factor, no double formatting/parsing participates in rounding. A faithful
     // 15-digit decimal cast preserves the original Panel+ / Excel semantics;
     // otherwise round the exact binary rational, including subnormal values.
     internal static class PanelNumber
@@ -43,65 +43,46 @@ namespace BetterGhPanel.Core
             return remainder * 2 >= denominator ? quotient + 1 : quotient;
         }
 
-        internal static decimal RoundedDecimal(double value, int places, bool ceiling = false)
+        internal static decimal RoundedDecimal(double value, int places)
         {
             if (FaithfulDecimal(value, out decimal number))
-                return ceiling ? decimal.Ceiling(number * (decimal)Tens[places]) / (decimal)Tens[places]
-                    : Math.Round(number, places, MidpointRounding.AwayFromZero);
+                return Math.Round(number, places, MidpointRounding.AwayFromZero);
             Binary(value, out var numerator, out var denominator);
-            var coefficient = ceiling ? BigInteger.DivRem(numerator * Tens[places], denominator, out var remainder)
-                + (value > 0 && !remainder.IsZero ? 1 : 0) : Rounded(numerator * Tens[places], denominator);
+            var coefficient = Rounded(numerator * Tens[places], denominator);
             // |v| < 2^53 and places <= 12, so the coefficient fits 96 bits.
             return new decimal((int)(uint)(coefficient & uint.MaxValue),
                 (int)(uint)((coefficient >> 32) & uint.MaxValue),
                 (int)(uint)((coefficient >> 64) & uint.MaxValue), value < 0, (byte)places);
         }
 
-        private static decimal NearestFactorMultiple(double value, decimal factor)
+        private static readonly decimal[] DecimalScales = DecimalPowers();
+        private static decimal[] DecimalPowers()
         {
-            Binary(value, out var numerator, out var denominator);
-            var bits = decimal.GetBits(factor);
-            var coefficient = (BigInteger)(uint)bits[0] + ((BigInteger)(uint)bits[1] << 32) + ((BigInteger)(uint)bits[2] << 64);
-            var scale = Tens[(bits[3] >> 16) & 255];
-            var k = Rounded(numerator * scale, denominator * coefficient);
-            if (value < 0) k = -k;
-            return (decimal)k * factor;
+            var scales = new decimal[13]; scales[0] = 1;
+            for (int i = 1; i < scales.Length; i++) scales[i] = scales[i - 1] * 10;
+            return scales;
         }
 
-        internal static double FactorDecimalCeiling(double input, double rounded, double factor, int places)
+        private static readonly bool LegacyRoundTrip = Environment.Version.Major < 5;
+        internal static decimal FullPrecisionDecimal(double value) => decimal.Parse(
+            LegacyRoundTrip ? RoundTrip(value) : value.ToString("R", CultureInfo.InvariantCulture),
+            NumberStyles.Float, CultureInfo.InvariantCulture);
+
+        internal static double DecimalFactor(double value, decimal factor, int factorPlaces, int places)
         {
-            if (FaithfulDecimal(factor, out decimal decimalFactor) && decimalFactor > 0)
+            decimal number = FullPrecisionDecimal(value);
+            decimal remainder = number % factor;
+            if (remainder != 0) number = number - remainder + (number > 0 ? factor : 0);
+            // A factor grid with at most places decimals is already on the dp grid.
+            if (places >= 0 && factorPlaces > places)
             {
-                try
-                {
-                    // Reconstruct the nearest grid point from the exact binary
-                    // value; double division can select an adjacent integer k.
-                    decimal multiple = NearestFactorMultiple(rounded, decimalFactor);
-                    double intended = ToDouble(multiple);
-                    long distance = intended == 0 && rounded == 0 ? 0 :
-                        Math.Abs(BitConverter.DoubleToInt64Bits(intended) - BitConverter.DoubleToInt64Bits(rounded));
-                    // A previously emitted decimal multiple can itself make the base
-                    // binary factor step advance. Preserve that exact grid point.
-                    decimal inputMultiple = NearestFactorMultiple(input, decimalFactor);
-                    if (ToDouble(inputMultiple) == input) multiple = inputMultiple;
-                    decimal scale = (decimal)Tens[places];
-                    bool commensurate = decimal.Truncate(decimalFactor * scale) == decimalFactor * scale;
-                    // The base guard can retain a nongrid input. For commensurate
-                    // settings, emit the next factor grid point rather than an
-                    // intermediate dp point that would drift on the next call.
-                    if (rounded == input && intended != input && commensurate && distance <= 4)
-                    {
-                        if (ToDouble(multiple) < input) multiple += decimalFactor;
-                        return ToDouble(multiple);
-                    }
-                    if ((rounded != input || intended == input) && distance <= 4)
-                    {
-                        return ToDouble(decimal.Ceiling(multiple * scale) / scale);
-                    }
-                }
-                catch (OverflowException) { }
+                decimal scale = DecimalScales[places];
+                number = decimal.Ceiling(number * scale) / scale;
             }
-            return ToDouble(RoundedDecimal(rounded, places, ceiling: true));
+            // Strip trailing scale left by the input before converting. This
+            // keeps ordinary grid values on ToDouble's fast exact-operand path.
+            number /= 1.0000000000000000000000000000m;
+            return ToDouble(number);
         }
 
         internal static double ToDouble(decimal number)

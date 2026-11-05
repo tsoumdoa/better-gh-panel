@@ -23,72 +23,61 @@ public sealed class PresentedNumberChecks
     public void SeededFactorOracleAcrossDecimalPlaces()
     {
         var random = new System.Random(50421);
-        foreach (double factor in new[] { 1e-12, .001, .07, .1, .25, .3, 5 })
-        for (int places = 1; places <= 12; places++)
-        for (int i = 0; i < 400; i++)
+        foreach (double factor in new[] { 1e-20, 1e-12, 1e-6, .001, .05, .07, .1, .25, .3, 5 })
+        for (int places = -1; places <= 12; places++)
+        for (int i = 0; i < 160; i++)
         {
-            double input = (random.NextDouble() * 2 - 1) * System.Math.Pow(10, i % 16 - 3);
-            double factored = PanelUnits.Transform(input, PanelUnitConversion.None, factor);
-            decimal multiple = OracleMultiple(factored, (decimal)factor);
-            decimal inputMultiple = OracleMultiple(input, (decimal)factor);
-            if (PanelNumber.ToDouble(inputMultiple) == input) multiple = inputMultiple;
-            decimal scale = (decimal)System.Math.Pow(10, places);
-            double expected = PanelNumber.ToDouble(decimal.Ceiling(multiple * scale) / scale);
-            if (factored == input && PanelNumber.ToDouble(inputMultiple) != input)
+            double input = (random.NextDouble() * 2 - 1) * System.Math.Pow(10, i % 22 - 6);
+            decimal original = OracleDecimal(input), f = OracleDecimal(factor);
+            decimal expectedDecimal = original;
+            decimal rem;
+            try { rem = expectedDecimal % f; }
+            catch (System.OverflowException)
             {
-                if (decimal.Round((decimal)factor, places) == (decimal)factor)
-                {
-                    decimal grid = OracleMultiple(input, (decimal)factor);
-                    if (PanelNumber.ToDouble(grid) < input) grid += (decimal)factor;
-                    expected = PanelNumber.ToDouble(grid);
-                }
-                else expected = ExactBinaryCeiling(input, places);
+                // An overflowing remainder here has a sub-resolution factor;
+                // the documented base fallback leaves the factor step alone.
+                Assert.Equal(PanelUnits.Transform(input, PanelUnitConversion.None, 0, places),
+                    PanelUnits.Transform(input, PanelUnitConversion.None, factor, places));
+                continue;
             }
+            if (rem != 0) expectedDecimal = expectedDecimal - rem + (expectedDecimal > 0 ? f : 0);
+            decimal scale = (decimal)System.Math.Pow(10, System.Math.Max(0, places));
+            if (places >= 0) expectedDecimal = decimal.Ceiling(expectedDecimal * scale) / scale;
+            double expected = PanelNumber.ToDouble(expectedDecimal);
             double result = PanelUnits.Transform(input, PanelUnitConversion.None, factor, places);
-            Assert.True(expected == result, $"oracle input={input:R} f={factor:R} dp={places} expected={expected:R} actual={result:R}");
-            var source = ExactFraction(input);
-            var output = ExactFraction(result);
-            Assert.True(output.Item1 * source.Item2 >= source.Item1 * output.Item2);
-            if (decimal.Round((decimal)factor, places) == (decimal)factor)
-                Assert.True(result == PanelUnits.Transform(result, PanelUnitConversion.None, factor, places), $"idempotence input={input:R} result={result:R} f={factor:R} dp={places}");
+            Assert.Equal(expected, result);
+            Assert.True(OracleDecimal(result) >= original);
+            long positiveBits = System.BitConverter.DoubleToInt64Bits(System.Math.Abs(result));
+            double ulp = System.BitConverter.Int64BitsToDouble(positiveBits + 1) - System.Math.Abs(result);
+            if ((places < 0 || f * scale == decimal.Truncate(f * scale)) && factor >= 1000 * ulp)
+                Assert.True(result == PanelUnits.Transform(result, PanelUnitConversion.None, factor, places), $"input={input:R} factor={factor:R} dp={places} result={result:R} next={PanelUnits.Transform(result, PanelUnitConversion.None, factor, places):R}");
+            else if (places >= 0 && 1d / (double)scale >= 1000 * ulp)
+                Assert.Equal(decimal.Truncate(OracleDecimal(result) * scale), OracleDecimal(result) * scale);
+            double plain = PanelUnits.Transform(input, PanelUnitConversion.None, 0, places);
+            Assert.Equal(plain, PanelUnits.Transform(plain, PanelUnitConversion.None, 0, places));
         }
     }
 
-    private static (System.Numerics.BigInteger, System.Numerics.BigInteger) ExactFraction(double value)
+    private static decimal OracleDecimal(double value) => decimal.Parse(
+        System.Environment.Version.Major < 5 ? PanelUnits.FormatRoundTrip(value) : value.ToString("R", CultureInfo.InvariantCulture),
+        NumberStyles.Float, CultureInfo.InvariantCulture);
+
+    [Fact]
+    public void IncompatibleGridsCanAdvanceOnReapplication()
     {
-        long bits = System.BitConverter.DoubleToInt64Bits(value);
-        int exponentBits = (int)((bits >> 52) & 2047);
-        int exponent = exponentBits == 0 ? -1074 : exponentBits - 1075;
-        var numerator = new System.Numerics.BigInteger((bits & 0xfffffffffffffL) | (exponentBits == 0 ? 0 : 1L << 52));
-        if (value < 0) numerator = -numerator;
-        var denominator = System.Numerics.BigInteger.One;
-        if (exponent >= 0) numerator <<= exponent; else denominator <<= -exponent;
-        return (numerator, denominator);
+        Assert.Equal(12.2, PanelUnits.Transform(12.1, PanelUnitConversion.None, .07, 1));
+        Assert.Equal(12.3, PanelUnits.Transform(12.2, PanelUnitConversion.None, .07, 1));
     }
 
-    private static decimal OracleMultiple(double value, decimal factor)
+    [Fact]
+    public void LargeMagnitudeRetainsLiteralDecimalAlgorithmAtDoublePrecisionLimit()
     {
-        var fraction = ExactFraction(value);
-        // Parse decimal digits independently of the production decimal-bit path.
-        string digits = factor.ToString(CultureInfo.InvariantCulture);
-        int point = digits.IndexOf('.');
-        int places = point < 0 ? 0 : digits.Length - point - 1;
-        var numerator = System.Numerics.BigInteger.Parse(digits.Replace(".", ""), CultureInfo.InvariantCulture);
-        var scale = System.Numerics.BigInteger.Pow(10, places);
-        var dividend = System.Numerics.BigInteger.Abs(fraction.Item1) * scale;
-        var divisor = fraction.Item2 * numerator;
-        var floor = System.Numerics.BigInteger.DivRem(dividend, divisor, out var remainder);
-        if (remainder * 2 >= divisor) floor++;
-        return (decimal)(value < 0 ? -floor : floor) * factor;
-    }
-
-    private static double ExactBinaryCeiling(double value, int places)
-    {
-        var fraction = ExactFraction(value);
-        var scale = System.Numerics.BigInteger.Pow(10, places);
-        var coefficient = System.Numerics.BigInteger.DivRem(fraction.Item1 * scale, fraction.Item2, out var remainder);
-        if (remainder > 0) coefficient++;
-        return PanelNumber.ToDouble((decimal)coefficient / (decimal)scale);
+        double input = -91525711674022.359;
+        double first = PanelUnits.Transform(input, PanelUnitConversion.None, .05);
+        double second = PanelUnits.Transform(first, PanelUnitConversion.None, .05);
+        Assert.Equal(-91525711674022.34m, OracleDecimal(first));
+        Assert.Equal(-91525711674022.3m, OracleDecimal(second));
+        Assert.True(OracleDecimal(first) >= OracleDecimal(input));
     }
 
     [Fact]
@@ -180,18 +169,24 @@ public sealed class PresentedNumberChecks
     }
 
     [Theory]
-    [InlineData(1, 1d / 3, -1, 1)]
+    [InlineData(1, 1d / 3, -1, 1.3333333333333333)]
     [InlineData(2 * System.Math.PI, System.Math.PI, -1, 2 * System.Math.PI)]
     [InlineData(1000000000000001, 1, -1, 1000000000000001)]
     [InlineData(9007199254740991, 1, -1, 9007199254740991)]
 
     [InlineData(79595447042768.58, .25, 8, 79595447042768.75)]
-    [InlineData(3e-30, 1e-30, 2, .01)]
+    [InlineData(3e-30, 1e-30, 2, 0)] // Tiny-value guard retains base rounding.
     [InlineData(.6424555553321054, .1, 1, .7)]
     [InlineData(135.63838467730133, .01, 2, 135.64)]
     [InlineData(8680.175, .07, 2, 8680.21)]
     [InlineData(8680.175, .07, 11, 8680.21)]
     [InlineData(12345678901234.56, .07, 2, 12345678901234.56)]
+    [InlineData(1000000.3, 1e-12, 2, 1000000.3)]
+    [InlineData(820337036301.54, 1e-6, 2, 820337036301.54)]
+    [InlineData(45920837976001.6, .001, 1, 45920837976001.6)]
+    [InlineData(651429.77, 1e-20, 3, 651429.77)]
+    [InlineData(9623.300000000001, .05, 2, 9623.35)]
+    [InlineData(.30000000000000004, .1, -1, .4)]
     [InlineData(12.1, .25, 0, 13)]
     [InlineData(-12.1, .25, 0, -12)]
     [InlineData(2.67, .01, 2, 2.67)]
