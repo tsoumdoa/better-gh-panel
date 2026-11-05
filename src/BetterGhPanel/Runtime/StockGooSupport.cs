@@ -62,7 +62,7 @@ namespace BetterGhPanel.Runtime
             T(typeof(GH_MeshFace), "Meshface", "Face", M),
             T(typeof(GH_ComplexNumber), "Complex", "Cplx", M),
             Native<GH_TextDot, TextDot>("Text Dot", "Dot", P, g => g.Value, true),
-            Native<GH_TextEntity, TextEntity>("Text Entity", "Txt", G, g => g.Value, true),
+            Native<GH_TextEntity, TextEntity>("Text Entity", "TxtEnt", G, g => g.Value, true),
             Native<GH_Leader, Leader>("Leader", "Ldr", G, g => g.Value, true),
             Native<GH_AngularDimension, AngularDimension>("Angular Dimension", "ADim", G, g => g.Value, true),
             Native<GH_LinearDimension, LinearDimension>("Linear Dimension", "Dim", G, g => g.Value, true),
