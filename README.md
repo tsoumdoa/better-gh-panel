@@ -34,8 +34,8 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 - With Round up by factor, Decimal places now also rounds up.
 - Stats show the same numbers as the rows in Automatic.
-- Picking a numeric mode opens the editor.
-- One � clears the search.
+- Picking a comparison mode (numbers, dates, text properties) opens the editor.
+- One × clears the search.
 - Clicking away applies a typed filter.
 - Ctrl+C copies selected rows in every view.
 
@@ -88,7 +88,7 @@ Type in the search field: rows update as you type, **Enter** or clicking away ap
 | List length · per branch | `>= 3`, `= 0` |
 | Input-specific properties (below) | `>= 2`, `>= 2026-01-01` |
 
-Comparisons test the numbers shown, after unit conversion, factor rounding and any explicit decimal places. Automatic keeps full precision. Picking a numeric or date comparison mode shows its values and opens the editor. Validity offers Valid/Invalid/Unverified/Null; Boolean properties offer True/False. **×** clears the expression and returns to Text mode; Undo restores both. Combine searches with the **Types** filter (including *invalid only*) and **Paths** (`0;2;4` or `{0;2;4}`, including descendants). **Asc/Desc** sorts within each branch and adds Excel-style row numbers; wire outputs always keep tree order.
+Comparisons test the numbers shown, after unit conversion, factor rounding and any explicit decimal places. Automatic keeps full precision. Picking a comparison mode (numbers, dates, text properties) shows its values and opens the editor. Validity offers Valid/Invalid/Unverified/Null; Boolean properties offer True/False. **×** clears the expression and returns to Text mode; Undo restores both. Combine searches with the **Types** filter (including *invalid only*) and **Paths** (`0;2;4` or `{0;2;4}`, including descendants). **Asc/Desc** sorts within each branch and adds Excel-style row numbers; wire outputs always keep tree order.
 
 **Behaviour changes:** Numbers now always use "." as the decimal separator, so saved text/regex filters written with "," need updating. Decimal places now also rounds numbers sent on D and S.
 

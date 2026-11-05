@@ -113,8 +113,8 @@ namespace BetterGhPanel
             if (!keepViewRestore) { _viewRestore = null; _selectionRestore = null; _savedSelection = null; }
             ClearHover();
             _keyboardCursor = -1;
-            CancelQueryEditor();
             CanvasTextInput.CloseActive(PanelOwner);
+            CancelQueryEditor();
             _setDetails.Close();
             InvalidatePaintedHits();
             _setCountResult = null;
@@ -1065,6 +1065,8 @@ namespace BetterGhPanel
 
         public override GH_ObjectResponse RespondToMouseDown(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
+            if (e.Button == MouseButtons.Left && _reset.Contains(e.CanvasLocation)) CanvasTextInput.CloseActive(PanelOwner);
+            CanvasTextInput.CompletePending();
             CancelQueryEditor();
             if (e.Button == MouseButtons.Left || e.Button == MouseButtons.Right) _keyboardCursor = -1;
             if (_paintedCanvas != null && !ReferenceEquals(_paintedCanvas, sender)) InvalidatePaintedHits();
@@ -1241,7 +1243,7 @@ namespace BetterGhPanel
                     if (int.TryParse(text.Trim(), out var depth) && depth >= 0)
                         PanelOwner.SetTreeOperations(depth, PanelOwner.FlattenTree, PanelOwner.ReverseTree, PanelOwner.SimplifyTree, PanelOwner.CreateSetTree);
                     else ShowNotice(sender, "Trim depth must be a whole number, 0 or more (0 turns Trim off)");
-                });
+                }, valid: text => int.TryParse(text.Trim(), out int depth) && depth >= 0);
                 return GH_ObjectResponse.Handled;
             }
             if (_simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point) || _createSet.Contains(point))
@@ -1291,7 +1293,7 @@ namespace BetterGhPanel
                         ShowNotice(sender, System.FormattableString.Invariant($"Row {row:N0} is out of range · showing row {index + 1:N0} of {itemCount:N0}"));
                     InvalidatePaintedHits();
                     sender.Invalidate();
-                });
+                }, valid: text => int.TryParse(text.Trim(), out _));
                 return GH_ObjectResponse.Handled;
             }
             // Moving the panel is a presentation control, so keep its row selection.
@@ -1391,13 +1393,13 @@ namespace BetterGhPanel
                             PanelUnits.IsRoundingFactor(factor))
                             PanelOwner.SetUnits(PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, factor);
                         else ShowNotice(canvas, "Rounding factor must be a positive number, using . for decimals (for example 5 or 0.25)");
-                    });
+                    }, valid: text => double.TryParse(text.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double factor) && PanelUnits.IsRoundingFactor(factor));
                 else CanvasTextInput.Show(canvas, PanelOwner, _units, Math.Max(0, PanelOwner.DecimalPlaces).ToString(), text =>
                 {
                     if (int.TryParse(text.Trim(), out var decimals) && decimals >= 0 && decimals <= PanelUnits.MaximumDecimals)
                         PanelOwner.SetUnits(PanelOwner.UnitConversion, decimals);
                     else ShowNotice(canvas, $"Decimal places must be a whole number from 0 to {PanelUnits.MaximumDecimals}");
-                });
+                }, valid: text => int.TryParse(text.Trim(), out int decimals) && decimals >= 0 && decimals <= PanelUnits.MaximumDecimals);
                 canvas.Invalidate();
                 return;
             }
@@ -1440,7 +1442,12 @@ namespace BetterGhPanel
             {
                 // Digits typed into the open menu jump straight to that path.
                 if (branchFilter.Length > 0) SetBranchFilter(branchFilter);
-                else ShowQueryEditor(canvas, _branch, options.BranchPath ?? "{0}", SetBranchFilter);
+                else ShowQueryEditor(canvas, _branch, options.BranchPath ?? "{0}", SetBranchFilter, valid: text =>
+                {
+                    var query = PanelOwner.Session.Options;
+                    query.BranchPath = text;
+                    return PanelQueryEngine.IsValidSearch(query);
+                });
                 canvas.Invalidate();
                 return;
             }
@@ -1512,7 +1519,7 @@ namespace BetterGhPanel
         {
             object? token = null;
             ShowQueryEditor(canvas, _search, current, text => CommitQuery(token, undoName, build(text)),
-                text => PreviewQuery(token!, build(text)), () => EndQueryPreview(token));
+                text => PreviewQuery(token!, build(text)), () => EndQueryPreview(token), text => PanelQueryEngine.IsValidSearch(build(text)));
             token = _queryEditor;
         }
 
@@ -1574,7 +1581,7 @@ namespace BetterGhPanel
         }
 
         private void ShowQueryEditor(GH_Canvas canvas, RectangleF bounds, string current, Action<string> accepted,
-            Action<string>? changed = null, Action? abandoned = null)
+            Action<string>? changed = null, Action? abandoned = null, Func<string, bool>? valid = null)
         {
             CancelQueryEditor();
             var session = PanelOwner.Session;
@@ -1600,12 +1607,13 @@ namespace BetterGhPanel
                 }
                 accepted(text);
                 canvas.Invalidate();
-            }, changed, abandoned);
+            }, changed, abandoned, valid);
             _queryEditor = editor;
         }
 
         internal void CancelQueryEditor()
         {
+            CanvasTextInput.CompletePending();
             ++_queryEditorGeneration;
             EndQueryPreview(_previewOwner);
             CanvasTextInput.Close(_queryEditor);

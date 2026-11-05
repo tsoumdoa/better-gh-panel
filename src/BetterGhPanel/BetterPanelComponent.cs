@@ -337,6 +337,8 @@ namespace BetterGhPanel
 
         internal void ClearFilters()
         {
+            CanvasTextInput.CloseActive(this);
+            CanvasTextInput.CompletePending();
             if (HasFilters(Session.Options)) RecordUndoEvent("Clear filters");
             ClearFiltersCore();
         }
@@ -412,7 +414,7 @@ namespace BetterGhPanel
                 var afterValues = CanOutputValuesFor(CreateSetTree, after) ? beforeValues : PanelOutputValues.Items;
                 RecordUndoEvent(name, new PanelUndo<Tuple<PanelQueryOptions, PanelOutputValues>>(InstanceGuid,
                     Tuple.Create(before.Clone(), beforeValues), Tuple.Create(after.Clone(), afterValues),
-                    (component, state) => { (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor(); component.OutputValues = state.Item2; component.Session.UpdateQuery(state.Item1); component.ScheduleOutput(); }));
+                    (component, state) => { CanvasTextInput.CloseActive(component); (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor(); component.OutputValues = state.Item2; component.Session.UpdateQuery(state.Item1); component.ScheduleOutput(); }));
             }
         }
 
@@ -454,6 +456,8 @@ namespace BetterGhPanel
 
         internal bool ResetAll()
         {
+            CanvasTextInput.CloseActive(this);
+            CanvasTextInput.CompletePending();
             _discardViewRestore = true;
             var options = Session.Options;
             bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0 || DecimalPlaces >= 0;
@@ -764,10 +768,11 @@ namespace BetterGhPanel
             PanelRowAction action = PanelRowAction.CopyValues, string? path = null)
         {
             CancelPendingCopy();
+            bool listLengthCopy = path == null && action == PanelRowAction.CopyValues && Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength;
             bool branchSet = path == null && action == PanelRowAction.CopyValues && Session.Result.DisplaySet?.IsBranchSet == true;
             IReadOnlyList<int> ordered;
             if (path != null || action == PanelRowAction.CopyPaths && RowSelection.Count > 0) ordered = positions;
-            else if (branchSet) ordered = Array.Empty<int>();
+            else if (branchSet || listLengthCopy) ordered = Array.Empty<int>();
             else if (!TryGetActionPositions(snapshot, positions, out ordered)) return "Data changed; select rows again";
             var pairedSnapshot = paired ? PairedSnapshot : null;
             if (paired && (!CanSplit || pairedSnapshot == null)) return "Data changed; select rows again";
@@ -776,9 +781,9 @@ namespace BetterGhPanel
             long clipboardGeneration = PanelGeometryActions.BeginClipboard();
             var session = _session!;
             var result = session.Result;
-            var branchSelection = branchSet ? new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal) : null;
-            var branches = branchSet ? result.BranchPaths.Where(branchPath => branchSelection!.Contains(branchPath)).ToArray() : Array.Empty<string>();
-            if (branchSet && (branches.Length == 0 || !ReferenceEquals(snapshot, session.Snapshot))) return "Data changed; select branches again";
+            var branchSelection = branchSet || listLengthCopy ? new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal) : null;
+            var branches = branchSet || listLengthCopy ? result.BranchPaths.Where(branchPath => branchSelection!.Contains(branchPath)).ToArray() : Array.Empty<string>();
+            if ((branchSet || listLengthCopy) && (branches.Length == 0 || !ReferenceEquals(snapshot, session.Snapshot))) return "Data changed; select branches again";
             var source = _sourceItems;
             long selectionVersion = RowSelection.Version;
             var cancellation = new CancellationTokenSource();
@@ -787,7 +792,8 @@ namespace BetterGhPanel
                 ? ordered.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
                     session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray() : ordered;
             bool addressOnly = action != PanelRowAction.CopyValues && action != PanelRowAction.CopyTable;
-            bool measured = addressOnly || paired || await session.MeasureGeometryAsync(snapshot, measurementPositions, cancellation.Token);
+            bool measured = addressOnly || paired || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, cancellation.Token);
+            int copiedCount = branches.Length;
             var completion = new TaskCompletionSource<string>();
             // Rhino does not guarantee a SynchronizationContext for every canvas
             // callback. Live goo and the system clipboard belong to its UI thread.
@@ -801,6 +807,8 @@ namespace BetterGhPanel
                         outcome != PanelCommitOutcome.Committed ? "Copy cancelled" :
                         path != null ? "Copied " + pathText :
                         addressOnly ? "Addresses copied" : action == PanelRowAction.CopyTable ? "Table copied" :
+                        listLengthCopy && !paired ? copiedCount + (copiedCount == 1 ? " count copied" : " counts copied") :
+                        listLengthCopy && paired && !branchSet ? copiedCount + (copiedCount == 1 ? " value copied" : " values copied") :
                         branchSet ? "F set values copied" : ordered.Count == 1 ? "Value copied" : ordered.Count + " values copied";
                     completion.TrySetResult(status);
                     if (ReferenceEquals(_copyCancellation, cancellation)) { _copyCancellation = null; cancellation.Dispose(); }
@@ -813,7 +821,7 @@ namespace BetterGhPanel
                         ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, result) &&
                         ReferenceEquals(_sourceItems, source) &&
                         (!paired || CanSplit && ReferenceEquals(PairedSnapshot, pairedSnapshot)) &&
-                        (path != null || action == PanelRowAction.CopyPaths || branchSet ? RowSelection.Version == selectionVersion && (path == null || result.ContainsBranchPath(path)) : PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion));
+                        (path != null || action == PanelRowAction.CopyPaths || branchSet || listLengthCopy ? RowSelection.Version == selectionVersion && (path == null || result.ContainsBranchPath(path)) : PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion));
                     if (!measured || !SelectionCurrent()) Finish(PanelCommitOutcome.Stale);
                     else
                     {
@@ -857,9 +865,17 @@ namespace BetterGhPanel
                                 return snapshot.Rows[position].Path + "\t" + index.ToString(CultureInfo.InvariantCulture) + "\t" + value;
                             }));
                         else if (branchSet) text = paired ? PairedBranchValues(result, branches) : string.Join(Environment.NewLine, branches.Select(branch => snapshot.BranchItemCounts[branch].ToString(CultureInfo.InvariantCulture)));
-                        else if (!paired && session.Options.DisplayFilterValue && session.Options.SearchMode == PanelSearchMode.ListLength)
-                            text = string.Join(Environment.NewLine, ordered.GroupBy(position => result.DisplaySet?.IsBranchSet == true
-                                ? position.ToString(CultureInfo.InvariantCulture) : snapshot.Rows[position].Path).Select(group => Value(group.First())));
+                        else if (listLengthCopy && paired)
+                        {
+                            var paths = new HashSet<string>(branches, StringComparer.Ordinal);
+                            var members = Enumerable.Range(0, snapshot.Rows.Count).Where(position => paths.Contains(snapshot.Rows[position].Path)).ToArray();
+                            var values = PairedData!.BranchItems(snapshot, members, branches, true)
+                                .Select(item => BetterPanelAttributes.PairedDisplayValue(pairedSnapshot!.Rows[item.Item])).ToArray();
+                            copiedCount = values.Length;
+                            text = string.Join(Environment.NewLine, values);
+                        }
+                        else if (listLengthCopy)
+                            text = string.Join(Environment.NewLine, branches.Select(branch => snapshot.BranchItemCounts[branch].ToString(CultureInfo.InvariantCulture)));
                         else text = string.Join(Environment.NewLine, ordered.Select(Value));
                         // Measurements cover only queued geometry; value-only
                         // rows and unmeasured geometry can change too.
@@ -920,7 +936,7 @@ namespace BetterGhPanel
 
         private const string MaskDescription = "True/False mask, in the original D input tree, of the items B + F follow. Preserves original paths and item counts. Every member of a kept or selected set is True. This mask conveys membership, not transformed ordering.";
 
-        private const string PairedDescription = "F sends the F items paired with the D items that B + F follow, at D's transformed paths. Values and types are unchanged.";
+        private const string PairedDescription = "F sends the F items paired with what D sends, at D's paths; an unequal branch sends its whole F branch. Values and types are unchanged.";
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {

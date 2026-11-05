@@ -35,6 +35,9 @@ internal static class UxInteractionChecks
         var component = fixture.Component;
         var attributes = component.Attributes;
         using var canvas = new GH_Canvas { Document = fixture.Document, Size = new Size(1000, 700) };
+        using var editorHost = new Forms.Form { ClientSize = canvas.Size, ShowInTaskbar = false };
+        editorHost.Controls.Add(canvas);
+        editorHost.Show();
         _ = canvas.Handle;
         canvas.Viewport.Size = canvas.Size; canvas.Viewport.Target = System.Drawing.Point.Empty;
         canvas.Viewport.Zoom = 1; canvas.Viewport.ComputeProjection();
@@ -68,15 +71,16 @@ internal static class UxInteractionChecks
                 "Debounced host textbox input starts a live query preview");
         }
 
-        foreach (string outcome in new[] { "blur", "enter", "unchanged", "escape", "reset" })
+        foreach (string outcome in new[] { "blur", "enter", "unchanged", "escape", "cancel", "invalid", "reset" })
         {
-            fixture.Query(new PanelQueryOptions { Search = outcome == "reset" ? "> -1" : "" });
+            fixture.Query(new PanelQueryOptions { SearchMode = outcome == "invalid" ? PanelSearchMode.Regex : PanelSearchMode.Text, Search = outcome == "reset" ? "> -1" : "" });
             await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
             fixture.Document.UndoServer.Clear();
             var edit = Search();
-            if (outcome != "unchanged") edit.Type("> 50");
+            if (outcome != "unchanged") edit.Type(outcome == "invalid" ? "Wall(" : "> 50");
             if (outcome == "enter") { edit.Submit("> 50"); edit.Blur(); }
             else if (outcome == "escape") edit.Cancel();
+            else if (outcome == "cancel") edit.ClickCancel();
             else if (outcome == "reset") Call(component, "ResetAll");
             else edit.Blur();
             await Task.Delay(300);
@@ -85,6 +89,34 @@ internal static class UxInteractionChecks
             Check(fixture.Document.UndoServer.UndoCount == (didCommit || outcome == "reset" ? 1 : 0),
                 "Editor outcome has exactly the expected undo count: " + outcome);
             Check(Options(fixture).Search == (didCommit ? "> 50" : ""), "Editor outcome preserves or commits text: " + outcome);
+        }
+        fixture.Query(new PanelQueryOptions());
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+        var rowEdit = Search();
+        await Preview(rowEdit, "> 50", 29);
+        Render();
+        var filteredRow = PanelTestAdapter.RowBounds(component, 51);
+        PanelTestAdapter.CanvasClick(canvas, new PointF(filteredRow.X + 80, filteredRow.Y + filteredRow.Height / 2));
+        Check(Options(fixture).Search == "> 50" && PanelTestAdapter.SelectedPosition(component) == 51,
+            "Clicking a filtered row applies the pending query and selects the row");
+        using (var other = new PanelHostFixture.Fixture(assembly))
+        using (var otherCanvas = new GH_Canvas { Document = other.Document, Size = canvas.Size })
+        {
+            editorHost.Controls.Add(otherCanvas);
+            otherCanvas.BringToFront();
+            otherCanvas.Viewport.Size = otherCanvas.Size; otherCanvas.Viewport.Zoom = 1; otherCanvas.Viewport.ComputeProjection();
+            other.Component.Attributes.PerformLayout();
+            other.Solve();
+            await other.Ready(() => other.Result.Snapshot != null);
+            fixture.Query(new PanelQueryOptions());
+            await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+            canvas.BringToFront();
+            var first = Search(); first.Type("> 50");
+            Call(other.Component.Attributes, "EditSearch", otherCanvas);
+            Check(Options(fixture).Search == "> 50", "Opening another Panel+ editor applies the first query");
+            CanvasEditorAdapter.Active(assembly).Cancel();
+            await Task.Delay(50);
+            canvas.BringToFront();
         }
         foreach (string display in new[] { "Full", "Half" })
         {
@@ -100,7 +132,7 @@ internal static class UxInteractionChecks
             await Task.Delay(50);
         }
         Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, "Full"));
-        Call(component, "SetCanvasSize", 360f, 400f);
+        Call(component, "SetCanvasSize", 360f, 360f);
 
         foreach (bool asynchronous in new[] { false, true })
         {
@@ -197,6 +229,26 @@ internal static class UxInteractionChecks
                 "Ctrl+C handles selected list-length rows");
             await fixture.Ready(() => Forms.Clipboard.GetText() == "80");
             Check(Forms.Clipboard.GetText() == "80", "List-length copy emits one count per branch");
+            Call(component, "SetPanelSplit", true);
+            foreach (int partnerCount in new[] { 79, 81, 80 })
+            {
+                fixture.Paired.PersistentData.Clear();
+                fixture.Paired.PersistentData.AppendRange(Enumerable.Range(0, partnerCount).Select(i => (IGH_Goo)new GH_String("F raw " + i)), new GH_Path(0));
+                fixture.Solve();
+                await fixture.Ready(() => fixture.Sinks[3].VolatileData.DataCount == partnerCount);
+                attributes.PerformLayout(); Render();
+                var pane = Field<RectangleF>(attributes, "_pairedList");
+                PanelTestAdapter.CanvasClick(canvas, new PointF(pane.Left + 50, pane.Top + 23));
+                Forms.Clipboard.SetText("sentinel");
+                Check((bool)input.Invoke(attributes, new object[] { canvas, Forms.Keys.Control | Forms.Keys.C })!,
+                    "Ctrl+C handles the F branch in plain list-length view");
+                string expected = string.Join(Environment.NewLine, Enumerable.Range(0, partnerCount).Select(i => "F raw " + i));
+                await fixture.Ready(() => Forms.Clipboard.GetText() == expected && !Field<bool>(attributes, "_copyPending"));
+                Check(Field<string>(attributes, "_actionStatus") == partnerCount + " values copied",
+                    "F branch copy includes every raw item without missing-partner blank lines");
+            }
+            Call(component, "SetPanelSplit", false);
+
             fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, DisplayFilterValue = true, CreateSet = true });
             await fixture.Ready(() => fixture.Result.DisplaySet?.IsBranchSet == true);
             fixture.ClearSelection(); fixture.SelectBranch("{0}");
@@ -437,5 +489,6 @@ internal static class UxInteractionChecks
                 .Invoke(component, new object[] { new[] { i } })!;
             Check(available == (i < 4), "Geometry actions recognize supported wrappers and reject plain values at row " + i);
         }
+        Call(component, "SetCanvasSize", 360f, 360f);
     }
 }
