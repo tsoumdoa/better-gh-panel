@@ -81,9 +81,9 @@ namespace BetterGhPanel.UI
             return true;
         }
 
-        internal bool Rebind(PanelRowSelection previous, PanelQueryResult result)
+        internal void Rebind(PanelRowSelection previous, PanelQueryResult result)
         {
-            if (previous._result == null || !SameStructure(previous._result.Snapshot, result.Snapshot)) { Clear(); return false; }
+            if (previous._result == null || !SameStructure(previous._result.Snapshot, result.Snapshot)) { Clear(); return; }
             bool hadSelection = Count > 0 || previous.Count > 0;
             _positions.Clear();
             _positions.UnionWith(previous._positions);
@@ -101,7 +101,6 @@ namespace BetterGhPanel.UI
             _branchPaths = null;
             _lastBulkValid = false;
             if (hadSelection || Count > 0) NotifyChanged();
-            return true;
         }
 
         internal void Synchronize(PanelQueryResult result)
