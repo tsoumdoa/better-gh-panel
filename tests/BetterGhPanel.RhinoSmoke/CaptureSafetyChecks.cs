@@ -18,10 +18,8 @@ using Rhino.Geometry;
 internal static class CaptureSafetyChecks
 {
     private const BindingFlags Static = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
-    internal static int AssertionCount { get; private set; }
     internal static void VerifyManaged(Assembly assembly)
     {
-        AssertionCount = 0;
         CaptureTransactionChecks.VerifyNestedDataAccess();
         CaptureBudgetChecks.Verify(assembly);
         CaptureStockGeometryChecks.VerifyManaged(assembly);
@@ -448,7 +446,6 @@ internal static class CaptureSafetyChecks
     private static void Check(bool condition, string message)
     {
         SmokeAssertions.Check(condition, message);
-        AssertionCount++;
     }
 
     private sealed class HostileNumber : GH_Number

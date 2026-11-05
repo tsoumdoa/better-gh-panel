@@ -197,8 +197,11 @@ internal static class GeometryNurbsCandidateChecks
         Check(counter.Calls == 4 && Math.Abs(before - after) > 1e-7, "changed curve is measured again");
     }
 
+    // Invoked through MakeGenericMethod above for the runtime preparation type.
+#pragma warning disable IDE0051
     private static Func<int, T?> CreateResolver<T>(Assembly assembly, NurbsCurve source, Counter counter) where T : class =>
         _ => { counter.Calls++; return (T?)Prepare(assembly, "PrepareTrustedCurve", source); };
+#pragma warning restore IDE0051
     private sealed class Counter { internal int Calls; }
 
     private static NurbsCurve RationalCurve()

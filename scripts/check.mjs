@@ -19,6 +19,15 @@ const checks = [
     '--diagnostics', 'IDE0005', 'IDE0051', 'IDE0052', 'IDE0059', 'IDE0060', '--severity', 'info']],
 ];
 
+if (process.platform === 'win32') {
+  const smoke = 'tests/BetterGhPanel.RhinoSmoke/BetterGhPanel.RhinoSmoke.csproj';
+  checks.push(['dotnet', ['build', smoke, '-c', 'Release', '--nologo']],
+    ['dotnet', ['format', 'style', smoke, '--verify-no-changes', '--no-restore',
+      '--diagnostics', 'IDE0005', 'IDE0051', 'IDE0052', 'IDE0059', 'IDE0060', '--severity', 'info']]);
+} else {
+  console.log('Skipping Windows-only RhinoSmoke compile and style checks on this platform.');
+}
+
 for (const [command, args] of checks) {
   const result = spawnSync(command, args, { cwd: root, stdio: 'inherit' });
   if (result.error) console.error(result.error.message);
