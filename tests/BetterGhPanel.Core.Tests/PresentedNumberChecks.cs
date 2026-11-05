@@ -23,37 +23,70 @@ public sealed class PresentedNumberChecks
     public void SeededFactorOracleAcrossDecimalPlaces()
     {
         var random = new System.Random(50421);
-        foreach (double factor in new[] { .1, .01, .05, .2, .07, .25 })
-        for (int places = 1; places <= 4; places++)
-        for (int i = 0; i < 1000; i++)
+        foreach (double factor in new[] { 1e-12, .001, .07, .1, .25, .3, 5 })
+        for (int places = 1; places <= 12; places++)
+        for (int i = 0; i < 400; i++)
         {
-            double input = random.NextDouble() * System.Math.Pow(10, i % 14);
+            double input = (random.NextDouble() * 2 - 1) * System.Math.Pow(10, i % 16 - 3);
             double factored = PanelUnits.Transform(input, PanelUnitConversion.None, factor);
-            decimal multiple = (decimal)new System.Numerics.BigInteger(System.Math.Round(factored / factor)) * (decimal)factor;
-            decimal inputMultiple = (decimal)new System.Numerics.BigInteger(System.Math.Round(input / factor)) * (decimal)factor;
+            decimal multiple = OracleMultiple(factored, (decimal)factor);
+            decimal inputMultiple = OracleMultiple(input, (decimal)factor);
             if (PanelNumber.ToDouble(inputMultiple) == input) multiple = inputMultiple;
             decimal scale = (decimal)System.Math.Pow(10, places);
             double expected = PanelNumber.ToDouble(decimal.Ceiling(multiple * scale) / scale);
             if (factored == input && PanelNumber.ToDouble(inputMultiple) != input)
-                expected = ExactBinaryCeiling(input, places);
+            {
+                if (decimal.Round((decimal)factor, places) == (decimal)factor)
+                {
+                    decimal grid = OracleMultiple(input, (decimal)factor);
+                    if (PanelNumber.ToDouble(grid) < input) grid += (decimal)factor;
+                    expected = PanelNumber.ToDouble(grid);
+                }
+                else expected = ExactBinaryCeiling(input, places);
+            }
             double result = PanelUnits.Transform(input, PanelUnitConversion.None, factor, places);
             Assert.True(expected == result, $"oracle input={input:R} f={factor:R} dp={places} expected={expected:R} actual={result:R}");
-            Assert.True(result >= input);
-            decimal resultMultiple = (decimal)new System.Numerics.BigInteger(System.Math.Round(result / factor)) * (decimal)factor;
-            if (decimal.Round((decimal)factor, places) == (decimal)factor && PanelNumber.ToDouble(resultMultiple) == result)
+            var source = ExactFraction(input);
+            var output = ExactFraction(result);
+            Assert.True(output.Item1 * source.Item2 >= source.Item1 * output.Item2);
+            if (decimal.Round((decimal)factor, places) == (decimal)factor)
                 Assert.True(result == PanelUnits.Transform(result, PanelUnitConversion.None, factor, places), $"idempotence input={input:R} result={result:R} f={factor:R} dp={places}");
         }
     }
 
-    private static double ExactBinaryCeiling(double value, int places)
+    private static (System.Numerics.BigInteger, System.Numerics.BigInteger) ExactFraction(double value)
     {
         long bits = System.BitConverter.DoubleToInt64Bits(value);
-        int exponent = (int)((bits >> 52) & 2047) - 1075;
-        var numerator = new System.Numerics.BigInteger((bits & 0xfffffffffffffL) | (1L << 52));
+        int exponentBits = (int)((bits >> 52) & 2047);
+        int exponent = exponentBits == 0 ? -1074 : exponentBits - 1075;
+        var numerator = new System.Numerics.BigInteger((bits & 0xfffffffffffffL) | (exponentBits == 0 ? 0 : 1L << 52));
+        if (value < 0) numerator = -numerator;
         var denominator = System.Numerics.BigInteger.One;
         if (exponent >= 0) numerator <<= exponent; else denominator <<= -exponent;
+        return (numerator, denominator);
+    }
+
+    private static decimal OracleMultiple(double value, decimal factor)
+    {
+        var fraction = ExactFraction(value);
+        // Parse decimal digits independently of the production decimal-bit path.
+        string digits = factor.ToString(CultureInfo.InvariantCulture);
+        int point = digits.IndexOf('.');
+        int places = point < 0 ? 0 : digits.Length - point - 1;
+        var numerator = System.Numerics.BigInteger.Parse(digits.Replace(".", ""), CultureInfo.InvariantCulture);
         var scale = System.Numerics.BigInteger.Pow(10, places);
-        var coefficient = System.Numerics.BigInteger.DivRem(numerator * scale, denominator, out var remainder);
+        var dividend = System.Numerics.BigInteger.Abs(fraction.Item1) * scale;
+        var divisor = fraction.Item2 * numerator;
+        var floor = System.Numerics.BigInteger.DivRem(dividend, divisor, out var remainder);
+        if (remainder * 2 >= divisor) floor++;
+        return (decimal)(value < 0 ? -floor : floor) * factor;
+    }
+
+    private static double ExactBinaryCeiling(double value, int places)
+    {
+        var fraction = ExactFraction(value);
+        var scale = System.Numerics.BigInteger.Pow(10, places);
+        var coefficient = System.Numerics.BigInteger.DivRem(fraction.Item1 * scale, fraction.Item2, out var remainder);
         if (remainder > 0) coefficient++;
         return PanelNumber.ToDouble((decimal)coefficient / (decimal)scale);
     }
@@ -122,6 +155,28 @@ public sealed class PresentedNumberChecks
             Assert.Contains("m", result.Statistics.UniqueValues[0].PresentedText!);
             Assert.Contains("ft", result.Statistics.UniqueValues[1].PresentedText!);
         }
+    }
+
+    [Theory]
+    [InlineData(-4111711901664.5996, .3, 1)]
+    [InlineData(2611424723924.8003, .1, 3)]
+    [InlineData(19568874370105.973, .07, 2)]
+    [InlineData(502282399452.42303, .001, 4)]
+    [InlineData(60128756780237.305, .1, 2)]
+    public void GuardedCommensurateResultsRemainOnFactorGrid(double input, double factor, int places)
+    {
+        double result = PanelUnits.Transform(input, PanelUnitConversion.None, factor, places);
+        Assert.True(result >= input);
+        Assert.Equal(result, PanelUnits.Transform(result, PanelUnitConversion.None, factor, places));
+    }
+
+    [Theory]
+    [InlineData(4199.999847542495)]
+    [InlineData(7581.197553119248)]
+    [InlineData(7875.019851082479)]
+    public void EmittedFineFactorGridPointsRemainStable(double value)
+    {
+        Assert.Equal(value, PanelUnits.Transform(value, PanelUnitConversion.None, 1e-12, 12));
     }
 
     [Theory]

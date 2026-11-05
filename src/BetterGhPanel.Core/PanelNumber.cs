@@ -57,25 +57,45 @@ namespace BetterGhPanel.Core
                 (int)(uint)((coefficient >> 64) & uint.MaxValue), value < 0, (byte)places);
         }
 
+        private static decimal NearestFactorMultiple(double value, decimal factor)
+        {
+            Binary(value, out var numerator, out var denominator);
+            var bits = decimal.GetBits(factor);
+            var coefficient = (BigInteger)(uint)bits[0] + ((BigInteger)(uint)bits[1] << 32) + ((BigInteger)(uint)bits[2] << 64);
+            var scale = Tens[(bits[3] >> 16) & 255];
+            var k = Rounded(numerator * scale, denominator * coefficient);
+            if (value < 0) k = -k;
+            return (decimal)k * factor;
+        }
+
         internal static double FactorDecimalCeiling(double input, double rounded, double factor, int places)
         {
             if (FaithfulDecimal(factor, out decimal decimalFactor) && decimalFactor > 0)
             {
                 try
                 {
-                    // BigInteger preserves every integer digit of k; a double-to-
-                    // decimal cast would trim k to 15 significant digits again.
-                    decimal multiple = (decimal)new BigInteger(Math.Round(rounded / factor)) * decimalFactor;
+                    // Reconstruct the nearest grid point from the exact binary
+                    // value; double division can select an adjacent integer k.
+                    decimal multiple = NearestFactorMultiple(rounded, decimalFactor);
                     double intended = ToDouble(multiple);
                     long distance = intended == 0 && rounded == 0 ? 0 :
                         Math.Abs(BitConverter.DoubleToInt64Bits(intended) - BitConverter.DoubleToInt64Bits(rounded));
                     // A previously emitted decimal multiple can itself make the base
                     // binary factor step advance. Preserve that exact grid point.
-                    decimal inputMultiple = (decimal)new BigInteger(Math.Round(input / factor)) * decimalFactor;
+                    decimal inputMultiple = NearestFactorMultiple(input, decimalFactor);
                     if (ToDouble(inputMultiple) == input) multiple = inputMultiple;
+                    decimal scale = (decimal)Tens[places];
+                    bool commensurate = decimal.Truncate(decimalFactor * scale) == decimalFactor * scale;
+                    // The base guard can retain a nongrid input. For commensurate
+                    // settings, emit the next factor grid point rather than an
+                    // intermediate dp point that would drift on the next call.
+                    if (rounded == input && intended != input && commensurate && distance <= 4)
+                    {
+                        if (ToDouble(multiple) < input) multiple += decimalFactor;
+                        return ToDouble(multiple);
+                    }
                     if ((rounded != input || intended == input) && distance <= 4)
                     {
-                        decimal scale = (decimal)Tens[places];
                         return ToDouble(decimal.Ceiling(multiple * scale) / scale);
                     }
                 }
