@@ -59,13 +59,13 @@ namespace BetterGhPanel.Core
                 {
                     var prepared = Volatile.Read(ref _factor);
                     if (prepared.Value != roundUpFactor) { prepared = new Factor(roundUpFactor); Volatile.Write(ref _factor, prepared); }
-                    if (prepared.FullPrecision > 0)
-                        return PanelNumber.DecimalFactor(value, prepared.FullPrecision, prepared.FullPrecisionPlaces, Math.Min(MaximumDecimals, decimals));
+                    if (prepared.FullPrecision > 0 && PanelNumber.TryDecimalFactor(value, prepared.FullPrecision,
+                        prepared.FullPrecisionPlaces, Math.Min(MaximumDecimals, decimals), out double result)) return result;
                 }
                 catch (OverflowException) { }
             }
             // Preserve the base binary/decimal path for special values, |v| >=
-            // 2^53, tiny nonzero values below 1e-27, and decimal overflow.
+            // 2^53, tiny nonzero values below 1e-27, inexact decimal parsing, and decimal overflow.
             value = RoundUp(value, roundUpFactor);
             if (!double.IsNaN(value) && !double.IsInfinity(value) && decimals >= 0 && Math.Abs(value) < PanelNumber.IntegerBoundary)
                 value = PanelNumber.ToDouble(PanelNumber.RoundedDecimal(value, Math.Min(MaximumDecimals, decimals)));

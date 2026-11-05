@@ -80,6 +80,18 @@ public sealed class PresentedNumberChecks
         Assert.True(OracleDecimal(first) >= OracleDecimal(input));
     }
 
+    [Theory]
+    [InlineData(1.00000000000003e-15, 1e-20)]
+    [InlineData(5.00000000000004e-16, 1e-18)]
+    [InlineData(-4.556411977185128e-21, 1e-27)]
+    public void InexactDecimalInputsUseBaseFactorPath(double input, double factor)
+    {
+        double expected = System.Math.Max(input, System.Math.Ceiling(input / factor) * factor);
+        double result = PanelUnits.Transform(input, PanelUnitConversion.None, factor);
+        Assert.Equal(expected, result);
+        Assert.True(result >= input);
+    }
+
     [Fact]
     public void FastAutomaticKeysMatchFormatter()
     {

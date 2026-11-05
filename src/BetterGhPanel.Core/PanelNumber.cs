@@ -64,13 +64,21 @@ namespace BetterGhPanel.Core
         }
 
         private static readonly bool LegacyRoundTrip = Environment.Version.Major < 5;
-        internal static decimal FullPrecisionDecimal(double value) => decimal.Parse(
-            LegacyRoundTrip ? RoundTrip(value) : value.ToString("R", CultureInfo.InvariantCulture),
-            NumberStyles.Float, CultureInfo.InvariantCulture);
-
-        internal static double DecimalFactor(double value, decimal factor, int factorPlaces, int places)
+        internal static decimal FullPrecisionDecimal(double value)
         {
+            if (FaithfulDecimal(value, out decimal number) && ToDouble(number) == value) return number;
+            return decimal.Parse(LegacyRoundTrip ? RoundTrip(value) : value.ToString("R", CultureInfo.InvariantCulture),
+                NumberStyles.Float, CultureInfo.InvariantCulture);
+        }
+
+        internal static bool TryDecimalFactor(double value, decimal factor, int factorPlaces, int places, out double result)
+        {
+            result = 0;
             decimal number = FullPrecisionDecimal(value);
+            // Round-trip strings have at most 17 significant digits. At or
+            // above 1e-12 their decimal scale fits 28 places exactly; only
+            // smaller magnitudes can lose digits during decimal parsing.
+            if (Math.Abs(value) < 1e-12 && ToDouble(number) != value) return false;
             decimal remainder = number % factor;
             if (remainder != 0) number = number - remainder + (number > 0 ? factor : 0);
             // A factor grid with at most places decimals is already on the dp grid.
@@ -82,7 +90,8 @@ namespace BetterGhPanel.Core
             // Strip trailing scale left by the input before converting. This
             // keeps ordinary grid values on ToDouble's fast exact-operand path.
             number /= 1.0000000000000000000000000000m;
-            return ToDouble(number);
+            result = ToDouble(number);
+            return true;
         }
 
         internal static double ToDouble(decimal number)
