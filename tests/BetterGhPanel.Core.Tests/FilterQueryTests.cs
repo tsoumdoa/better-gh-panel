@@ -1,7 +1,6 @@
 using Xunit;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Threading;
@@ -478,13 +477,11 @@ public class FilterQueryTests
             new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = @"^door-\d{2}$", BranchPath = "{1}", TypeName = "Text" });
         Assert.True(restricted.RowPositions.SequenceEqual(new[] { 1 }), "Regex composes with branch and type filters");
         var hostile = Snapshot(new PanelRow(0, "{0}", "Text", new string('a', 50000) + "!", null));
-        var watch = Stopwatch.StartNew();
         Assert.ThrowsAny<ArgumentException>(() => PanelQueryEngine.Execute(hostile,
             new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "^(a+)+$" }));
         // Each short input is cheap; a whole tree must still have a finite budget.
         var repeated = new PanelRow(0, "{0}", "Text", new string('a', 14) + "!", null);
         var aggregate = new PanelSnapshot(Enumerable.Repeat(repeated, 100000).ToArray(), new[] { new PanelBranch("{0}", 100000) });
-        watch.Restart();
         Assert.ThrowsAny<ArgumentException>(() => PanelQueryEngine.Execute(aggregate,
             new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "^(a+)+$" }));
     }

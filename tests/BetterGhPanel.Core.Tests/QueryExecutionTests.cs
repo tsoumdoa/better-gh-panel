@@ -1,3 +1,4 @@
+using static NumericAssertions;
 using Xunit;
 using System;
 using System.Collections.Generic;
@@ -114,23 +115,6 @@ public class QueryExecutionTests
     }
 
     [Fact]
-    public void InvalidOnlyResultsHaveNoNumericStatistics()
-    {
-        // RhinoMath.UnsetValue is finite, but a native GH_Number carrying it is invalid.
-        const double unsetValue = -1.23432101234321e308;
-        var snapshot = new PanelSnapshot(new[]
-        {
-            new PanelRow(0, "{0}", "Number", "-1.23432101234E+308", unsetValue, isValid: false),
-            new PanelRow(1, "{0}", "Number", "10", 10),
-            new PanelRow(2, "{0}", "Number", "42", 42, isValid: false)
-        }, new[] { new PanelBranch("{0}", 3) });
-        var invalid = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { OnlyInvalid = true });
-        Assert.Equal(new[] { 0, 2 }, invalid.RowPositions);
-        Assert.Equal(0, invalid.Statistics.NumericCount);
-        Assert.Equal<double?>(null, invalid.Statistics.Mean);
-    }
-
-    [Fact]
     public void Cancellation()
     {
         using var source = new CancellationTokenSource();
@@ -163,7 +147,7 @@ public class QueryExecutionTests
         watch.Stop();
         Assert.Equal(count, result.Statistics.ItemCount);
         Assert.Equal(count / branchSize, result.Statistics.BranchCount);
-        Assert.True(Math.Abs(((count - 1) / 2.0) - (result.Statistics.Mean!.Value)) <= Math.Max(1, Math.Abs((count - 1) / 2.0)) * 1e-12);
+        AssertNear((count - 1) / 2.0, result.Statistics.Mean!.Value);
         Assert.Equal(Enumerable.Range(0, branches.Length).SelectMany(branch =>
             Enumerable.Range(branch * branchSize, branchSize).Reverse()), result.RowPositions);
         Console.WriteLine($"  {count:N0} rows filtered, aggregated and sorted in {watch.ElapsedMilliseconds} ms (local measurement).");

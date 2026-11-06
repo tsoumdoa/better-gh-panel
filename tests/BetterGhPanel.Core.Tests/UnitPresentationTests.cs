@@ -1,3 +1,4 @@
+using static NumericAssertions;
 using Xunit;
 using System;
 using System.Globalization;
@@ -8,14 +9,14 @@ public class UnitPresentationTests
     [Fact]
     public void UnitConversionsAndFormatting()
     {
-        Assert.True(Math.Abs((1.23456789) - (PanelUnits.Convert(1234.56789, PanelUnitConversion.MillimetersToMeters))) <= Math.Max(1, Math.Abs(1.23456789)) * 1e-12);
-        Assert.True(Math.Abs((1234.56789) - (PanelUnits.Convert(1.23456789, PanelUnitConversion.MetersToMillimeters))) <= Math.Max(1, Math.Abs(1234.56789)) * 1e-12);
-        Assert.True(Math.Abs((1) - (PanelUnits.Convert(1000000, PanelUnitConversion.SquareMillimetersToSquareMeters))) <= Math.Max(1, Math.Abs(1)) * 1e-12);
-        Assert.True(Math.Abs((1000000) - (PanelUnits.Convert(1, PanelUnitConversion.SquareMetersToSquareMillimeters))) <= Math.Max(1, Math.Abs(1000000)) * 1e-12);
-        Assert.True(Math.Abs((180) - (PanelUnits.Convert(Math.PI, PanelUnitConversion.RadiansToDegrees))) <= Math.Max(1, Math.Abs(180)) * 1e-12);
-        Assert.True(Math.Abs((Math.PI) - (PanelUnits.Convert(180, PanelUnitConversion.DegreesToRadians))) <= Math.Max(1, Math.Abs(Math.PI)) * 1e-12);
+        AssertNear(1.23456789, PanelUnits.Convert(1234.56789, PanelUnitConversion.MillimetersToMeters));
+        AssertNear(1234.56789, PanelUnits.Convert(1.23456789, PanelUnitConversion.MetersToMillimeters));
+        AssertNear(1, PanelUnits.Convert(1000000, PanelUnitConversion.SquareMillimetersToSquareMeters));
+        AssertNear(1000000, PanelUnits.Convert(1, PanelUnitConversion.SquareMetersToSquareMillimeters));
+        AssertNear(180, PanelUnits.Convert(Math.PI, PanelUnitConversion.RadiansToDegrees));
+        AssertNear(Math.PI, PanelUnits.Convert(180, PanelUnitConversion.DegreesToRadians));
         foreach (var pair in new[] { PanelUnitConversion.MillimetersToMeters, PanelUnitConversion.SquareMillimetersToSquareMeters, PanelUnitConversion.RadiansToDegrees })
-            Assert.True(Math.Abs((-1234.5) - (PanelUnits.Convert(PanelUnits.Convert(-1234.5, pair), (PanelUnitConversion)((int)pair + 1)))) <= Math.Max(1, Math.Abs(-1234.5)) * 1e-12);
+            AssertNear(-1234.5, PanelUnits.Convert(PanelUnits.Convert(-1234.5, pair), (PanelUnitConversion)((int)pair + 1)));
         Assert.Equal("1.23 m", PanelUnits.Format(1.23456789, PanelUnitConversion.MillimetersToMeters, 2));
         Assert.Equal("1.23456789 m", PanelUnits.Format(1.23456789, PanelUnitConversion.MillimetersToMeters, -1));
         Assert.Equal("1 m²", PanelUnits.Format(1, PanelUnitConversion.SquareMillimetersToSquareMeters, 0));
@@ -28,7 +29,7 @@ public class UnitPresentationTests
         }
         finally { CultureInfo.CurrentCulture = previousCulture; }
         Assert.Equal("1.000000000000", PanelUnits.Format(1, PanelUnitConversion.None, 100));
-        Assert.Equal(true, double.IsNaN(PanelUnits.Convert(double.NaN, PanelUnitConversion.RadiansToDegrees)));
+        Assert.True(double.IsNaN(PanelUnits.Convert(double.NaN, PanelUnitConversion.RadiansToDegrees)));
         Assert.Equal(double.PositiveInfinity, PanelUnits.Convert(double.PositiveInfinity, PanelUnitConversion.MillimetersToMeters));
     }
 
@@ -68,8 +69,8 @@ public class UnitPresentationTests
     [Fact]
     public void CubicConversionsWorkInBothDirections()
     {
-        Assert.True(Math.Abs((1) - (PanelUnits.Convert(1000000000, PanelUnitConversion.CubicMillimetersToCubicMeters))) <= Math.Max(1, Math.Abs(1)) * 1e-12);
-        Assert.True(Math.Abs((1000000000) - (PanelUnits.Convert(1, PanelUnitConversion.CubicMetersToCubicMillimeters))) <= Math.Max(1, Math.Abs(1000000000)) * 1e-12);
+        AssertNear(1, PanelUnits.Convert(1000000000, PanelUnitConversion.CubicMillimetersToCubicMeters));
+        AssertNear(1000000000, PanelUnits.Convert(1, PanelUnitConversion.CubicMetersToCubicMillimeters));
     }
 
     [Fact]

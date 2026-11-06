@@ -3,6 +3,7 @@ using BetterGhPanel.Core;
 using System;
 using System.Collections.Generic;
 
+[Collection("NurbsCandidateLimits")]
 public class NurbsCandidateLimitTests
 {
     [Fact]

@@ -36,24 +36,7 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 - **Rounding that never rounds down.** With Round up by factor, Decimal places also rounds up, and Stats show the same numbers as the rows.
 - **Behaviour changes:** Out Items | Values falls back to Items whenever the switch is hidden. The **·S** port suffix is gone. "Reset panel view" and "Reset tree tools" are replaced by Clear filters. Clicking away from any inline editor now applies a changed, valid value instead of discarding it. Inputs whose full-precision digits sit above a step (such as 0.1+0.2) still round up to the next step.
 
-**[`0.2.5-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.5-beta)**
-
-- **Text Dots are fully supported.** Rows show the dot's text; X/Y/Z, font size and font face work as properties; selected dots preview, highlight, frame and copy in Rhino.
-- **More types show real values.** Text entities, leaders, dimensions (`4.00 mm`, `90.00 °`), hatches, blocks, detail views, culture, location (`22.30° N, 114.17° E`), path, matrix, complex numbers, SubD, extrusions, point clouds, transforms and mesh faces now show values and properties instead of just their type name, following Units and Decimal places.
-- **Behaviour changes:** SubD, Extrusion, Point Cloud, Transform, Complex and Mesh Face rows show summaries instead of `<SubD>`-style names, so a saved text filter like `<SubD>` stops matching. With values shown, text and true/false values are left-aligned.
-
-**[`0.2.4-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.4-beta)**
-
-- **What you see is what you send.** Round up and Decimal places now apply to every number the panel shows, including Length, Area, Volume, properties and X/Y/Z. D and S send exactly those numbers, and filters and Stats use them too. Hover a rounded value to see the raw one.
-- **D | F pairs by branch.** F only needs the same number of branches as D; item counts may differ. Missing and extra F items are marked in the pane.
-- **Copy branch addresses.** Hover a branch heading to copy `{0;2;52}`, or right-click a row for `{0;2;52}(3)` or a table for Excel.
-- **Data checks.** A short strip flags nulls, invalid items and branches whose length differs from the rest; click it to filter to them.
-- **Behaviour changes:** Decimal places now rounds what D and S send, and numbers always use `.` as the decimal separator.
-
-**[`0.2.3-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.3-beta)**
-
-- **Send items or values.** When the panel shows a value (Length, Area, Validity, …) or a set, the new **Out Items | Values** switch next to **Select all** chooses what D and S send: the original data, for example the curves you filtered by length, or the values you see.
-- **One branch per set value.** With Create set and **Items**, every matching item goes to `{path;k}`, and set rows are numbered by that **k**. Selecting a set row sends, previews and frames all of its members.
+See [CHANGELOG](CHANGELOG.md) for earlier releases.
 
 ## Features
 
@@ -193,19 +176,7 @@ Clicking inside the panel focuses it and keeps your selection; the first Esc cle
 
 ## Development
 
-```text
-npm run check
-```
-
-Runs the core tests, native coordinator and packaging checks, builds and stages both Rhino runtimes, flags unused private members, usings and parameters (not unused internal or public members), and checks that C# source is UTF-8. On Windows with Rhino 8 installed it also compiles and style-checks the native smoke host (skipped otherwise), so don't run it while a native run is in progress. It never launches Rhino. Run it before opening or merging a PR; GitHub Actions CI is disabled.
-
-To build a Yak package, run `dotnet build BetterGhPanel.sln -c Release` then `node scripts/package.mjs`. During development, run affected native Rhino regressions with `tests/BetterGhPanel.RhinoSmoke/run.ps1 -Fixture ui-ux,row-selection` (choose names from `fixtures.json`). Run the full inventory for broad runtime changes and releases; launcher self-tests run separately. See the [validation instructions](docs/maintainability.md#validation) for commands and optional diagnostics. See also:
-
-- [Build, packaging and release validation](docs/packaging.md)
-- [Current architecture](docs/current-architecture.md) and [maintainability guide](docs/maintainability.md)
-- [Geometry measurement](docs/geometry-measurement-safety.md) and [preview](docs/geometry-preview-safety.md) safety
-
-The original interactive HTML design study is preserved in `prototype/` (`npm start`, then <http://localhost:5173>); it uses generated data and is a visual reference only.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and validation.
 
 ## License
 

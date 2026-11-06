@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 
 // This links the production queue, rather than a model of its state machine.
+[Collection("NurbsCandidateLimits")]
 public class GeometryQueueTests
 {
 

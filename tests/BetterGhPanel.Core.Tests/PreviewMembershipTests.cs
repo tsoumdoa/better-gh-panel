@@ -61,6 +61,10 @@ public class PreviewMembershipTests
     [Fact]
     public void SelectAllClassificationIsBoundedBySelectionSize()
     {
+        selection.SelectAt(result, 40000, 40000);
+        classification.UpdateSelection(selection, result, selection.OrderedPositions(result), (_, __) => changes++);
+        selection.SelectAt(result, 12, 12, toggle: true);
+        classification.UpdateSelection(selection, result, selection.OrderedPositions(result), (_, __) => changes++);
         visits = 0;
         selection.SelectAll(result);
         var all = selection.OrderedPositions(result);
@@ -125,6 +129,8 @@ public class PreviewMembershipTests
     [Fact]
     public void DenseRangeTogglesDoNotScanSelectedRows()
     {
+        selection.SelectAll(result);
+        classification.UpdateSelection(selection, result, selection.OrderedPositions(result), (_, __) => changes++);
         selection.Clear();
         selection.SelectAt(result, 10000, 10000);
         selection.SelectAt(result, 69999, 69999, range: true);

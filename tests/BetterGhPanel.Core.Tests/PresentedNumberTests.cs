@@ -233,7 +233,6 @@ public sealed class PresentedNumberTests
         };
         var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", 2) });
         var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Length, DisplayFilterValue = true, OutputValues = true, DecimalPlaces = 2 };
-        _ = PanelQueryEngine.Execute(snapshot, options);
         options.DisplayFilterValue = false; options.Search = "= 4.5";
         Assert.Equal(new[] { 0, 1 }, PanelQueryEngine.Execute(snapshot, options).RowPositions);
         options.RoundUpFactor = 5;
