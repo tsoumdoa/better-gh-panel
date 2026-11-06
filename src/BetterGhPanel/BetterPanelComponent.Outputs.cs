@@ -3,10 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using BetterGhPanel.Core;
 using BetterGhPanel.Runtime;
-using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
-using Grasshopper.Kernel.Parameters;
 using Grasshopper.Kernel.Types;
 
 namespace BetterGhPanel
@@ -17,8 +15,6 @@ namespace BetterGhPanel
         private PanelRowSelection? _queryPreviewSelection;
         internal PanelRowSelection CommittedSelection => _committedSelection;
         internal PanelRowSelection RowSelection => _queryPreviewSelection ?? _committedSelection;
-        internal PanelOutputScope OutputScope { get; private set; }
-        internal PanelOutputValues OutputValues { get; private set; }
         internal static bool CanOutputValuesFor(bool createSet, PanelQueryOptions options) => createSet || options.DisplayFilterValue;
         internal bool CanOutputValues => CanOutputValuesFor(CreateSetTree, Session.Options);
         internal bool OutputsValues => CanOutputValues && OutputValues == PanelOutputValues.Values;
@@ -59,42 +55,6 @@ namespace BetterGhPanel
         private GH_Structure<IGH_Goo>? _filteredData, _filteredPair;
         private GH_Structure<GH_Boolean>? _filteredMask;
 
-        internal void SetOutputValues(PanelOutputValues values)
-        {
-            if (!Enum.IsDefined(typeof(PanelOutputValues), values) || OutputValues == values) return;
-            RecordUndoEvent("Panel+ output Items / Values", new PanelUndo<PanelOutputValues>(InstanceGuid, OutputValues, values, (component, value) => component.ApplyOutputValues(value)));
-            ApplyOutputValues(values);
-        }
-
-        private void ApplyOutputValues(PanelOutputValues values)
-        {
-            OutputValues = values;
-            _cachedOutputResult = null;
-            Session.UpdateQuery(Session.Options);
-            Attributes.ExpireLayout();
-            OnPingDocument()?.Modified();
-            ScheduleOutput();
-            Instances.ActiveCanvas?.Invalidate();
-        }
-
-        internal void SetOutputScope(PanelOutputScope scope)
-        {
-            if (!Enum.IsDefined(typeof(PanelOutputScope), scope) || OutputScope == scope) return;
-            // Scope changes must not reload the component and discard its selection.
-            RecordUndoEvent("Panel+ B + F follow", new PanelUndo<PanelOutputScope>(InstanceGuid, OutputScope, scope, (component, value) => component.ApplyOutputScope(value)));
-            ApplyOutputScope(scope);
-        }
-
-        private void ApplyOutputScope(PanelOutputScope scope)
-        {
-            OutputScope = scope;
-            UpdateOutputDescriptions();
-            Attributes.ExpireLayout();
-            OnPingDocument()?.Modified();
-            ScheduleOutput();
-            Instances.ActiveCanvas?.Invalidate();
-        }
-
         private void UpdateOutputDescriptions()
         {
             if (Params.Output.Count < 4) return;
@@ -122,25 +82,6 @@ namespace BetterGhPanel
             _filteredData = _filteredPair = null;
             _filteredMask = null;
         }
-
-        private void CapturePairedInput(IGH_DataAccess da, GH_Structure<IGH_Goo> inputTree,
-            IReadOnlyList<PanelSourceAddress> retainedSources, out PanelPairedData? pairedTree, out string? error,
-            out GH_Structure<IGH_Goo>? livePairedTree, out GH_Structure<IGH_Goo>? capturedPairedTree, out bool present)
-        {
-            pairedTree = null;
-            error = null;
-            livePairedTree = capturedPairedTree = null;
-            present = PairedInputPresent();
-            if (!present) return;
-            if (!da.GetDataTree(1, out GH_Structure<IGH_Goo> paired)) paired = new GH_Structure<IGH_Goo>();
-            livePairedTree = paired;
-            capturedPairedTree = PanelTreeOperations.CopyStructure(paired);
-            pairedTree = PanelOutputOperations.Pair(inputTree, capturedPairedTree, retainedSources,
-                TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out error);
-        }
-
-        internal bool PairedInputPresent() => Params.Input[1].SourceCount != 0 ||
-            !(Params.Input[1] is Param_GenericObject input) || input.PersistentData.PathCount != 0;
 
         private void PublishOutputs(IGH_DataAccess da, Func<bool> solveCurrent)
         {
