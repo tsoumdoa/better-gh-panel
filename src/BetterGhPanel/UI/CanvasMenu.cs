@@ -7,7 +7,6 @@ using BetterGhPanel.Core;
 namespace BetterGhPanel.UI
 {
     internal enum CanvasMenuKind { None, Type, Sort, Branch, Units, SearchMode, Comparison, Preview, Statistics }
-    internal enum PanelPreviewMode { Selected, FilteredResults, Off }
     internal enum CanvasComparison { GreaterThan, AtLeast, LessThan, AtMost, Equal, NotEqual }
     internal enum CanvasNumberSetting { Automatic, Custom, RoundingOff, RoundingFactor }
 
@@ -456,7 +455,7 @@ namespace BetterGhPanel.UI
                 if (choice.Conversion.HasValue) return PanelUnits.Label(choice.Conversion.Value);
                 if (choice.Setting == CanvasNumberSetting.RoundingOff) return "Rounding: off";
                 if (choice.Setting == CanvasNumberSetting.RoundingFactor) return "Round up by factor…" +
-                    (roundUpFactor > 0 ? " (" + roundUpFactor.ToString("G6", System.Globalization.CultureInfo.InvariantCulture) + ")" : "");
+                    (roundUpFactor > 0 ? " (" + PanelUnits.FormatFactor(roundUpFactor, "G6") + ")" : "");
                 if (choice.Setting == CanvasNumberSetting.Automatic) return "Decimals: automatic";
                 return "Decimal places…" + (decimals >= 0 ? " (" + decimals + ")" : "");
             }

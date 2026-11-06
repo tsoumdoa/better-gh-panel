@@ -64,7 +64,7 @@ namespace BetterGhPanel.Runtime
             var source = new List<IGH_Goo?>(tree.DataCount);
             var geometrySources = new List<CapturedMeasurementSource?>(tree.DataCount);
             var graphs = new List<(int position, CaptureGraphWitness witness)>();
-            var budget = new SafeGooInspection.Budget();
+            var budget = new SafeGooInspection.InspectionBudget();
             // A summary is immutable for this capture generation and may be shared
             // across references; no ancestor-dependent validity is memoized.
             var groupSummaries = new Dictionary<GH_GeometryGroup, (string name, int count, PanelGroupSummary summary)>();

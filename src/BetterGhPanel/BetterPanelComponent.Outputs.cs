@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using BetterGhPanel.Core;
 using BetterGhPanel.Runtime;
-using BetterGhPanel.UI;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;

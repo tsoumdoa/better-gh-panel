@@ -1,8 +1,7 @@
 using System.Linq;
 
-namespace BetterGhPanel.UI
+namespace BetterGhPanel.Core
 {
-    internal enum PanelRowAction { FrameSelection, CopyValues, CopyGeometry, SelectIndices, ViewFullValue, NextPage, PreviousPage, CopyAddresses, CopyTable, CopyPaths, CopyPath, CopyPathBare, ShowBranch, Separator, Unpainted }
 
     internal readonly struct CanvasRowAction
     {

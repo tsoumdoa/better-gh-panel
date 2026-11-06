@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace BetterGhPanel.UI
+namespace BetterGhPanel.Core
 {
     // Retain the ordered selection, rather than dropping its unvisited suffix
     // at the per-turn budget. Sparse toggles do not restart or scan that suffix.

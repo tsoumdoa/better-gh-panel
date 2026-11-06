@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using BetterGhPanel.Core;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
@@ -46,11 +45,11 @@ namespace BetterGhPanel.Runtime
         private static readonly Type? ModelDataType = typeof(IGH_Goo).Assembly.GetType("Grasshopper.Rhinoceros.ModelData");
         private static readonly Type? ModelValueType = typeof(IGH_Goo).Assembly.GetType("Grasshopper.Rhinoceros.ModelValue");
         private static readonly Dictionary<Type, string> ModelTypeNames = new Dictionary<Type, string>();
-        internal const int MaxDepth = 64;
-        internal const int MaxNodesPerRoot = 4096;
+
+
         internal const int MaxNodesPerCapture = 100000;
 
-        internal sealed class Budget
+        internal sealed class InspectionBudget
         {
             internal int Remaining = MaxNodesPerCapture;
             internal int Visits { get; private set; }
@@ -89,7 +88,7 @@ namespace BetterGhPanel.Runtime
             bool known = true;
             string? name = null;
             GH_GeometryGroup? group = null;
-            for (int depth = 0; depth < MaxDepth && current != null; depth++)
+            for (int depth = 0; depth < InspectionLimits.MaxDepth && current != null; depth++)
             {
                 if (!seen.Add(current)) { known = false; break; }
                 Type type = current.GetType();
@@ -125,7 +124,7 @@ namespace BetterGhPanel.Runtime
             return new Identity(name ?? SafeName(root.GetType()), known, group);
         }
 
-        internal static PanelValidity Validity(IGH_Goo? root, Budget budget, out string reason, out GeometryBase? capturedGeometry,
+        internal static PanelValidity Validity(IGH_Goo? root, InspectionBudget budget, out string reason, out GeometryBase? capturedGeometry,
             CaptureGraphWitness? graph = null, Action<object>? visitObserver = null, CapturedGeometryLeaf? directLeaf = null)
         {
             reason = "";
@@ -153,7 +152,7 @@ namespace BetterGhPanel.Runtime
                 reason = "Validity could not be safely verified (capture graph unavailable).";
                 return PanelValidity.Unverified;
             }
-            int remaining = MaxNodesPerRoot;
+            int remaining = InspectionLimits.MaxNodesPerRoot;
             var active = new HashSet<object>(ReferenceComparer.Instance);
             var stack = new Stack<Frame>();
             stack.Push(new Frame(root, 0));
@@ -165,7 +164,7 @@ namespace BetterGhPanel.Runtime
                 {
                     frame.Entered = true;
                     if (remaining <= 0 || budget.Remaining <= 0) { unknown = true; break; }
-                    if (frame.Depth >= MaxDepth || !budget.Take(ref remaining) || !active.Add(frame.Node))
+                    if (frame.Depth >= InspectionLimits.MaxDepth || !budget.Take(ref remaining) || !active.Add(frame.Node))
                     { unknown = true; stack.Pop(); continue; }
                     Type type = frame.Node.GetType();
                     visitObserver?.Invoke(frame.Node);
@@ -203,11 +202,11 @@ namespace BetterGhPanel.Runtime
                 if (frame.Node.GetType() == typeof(GH_GeometryGroup))
                 {
                     var children = frame.Children!;
-                    if (frame.NextChild < children.Length)
+                    if (frame.Next < children.Length)
                     {
                         // Null slots count toward direct summaries and work limits too.
                         if (!budget.Take(ref remaining)) { unknown = true; break; }
-                        var child = children[frame.NextChild++];
+                        var child = children[frame.Next++];
                         if (child != null) stack.Push(new Frame(child, frame.Depth + 1));
                         continue;
                     }
@@ -247,12 +246,12 @@ namespace BetterGhPanel.Runtime
                     if (leafType == typeof(GH_Matrix))
                     {
                         var matrix = ((GH_Matrix)goo).Value;
-                        if (matrix != null && (matrix.GetType() != typeof(Matrix) || (long)matrix.RowCount * matrix.ColumnCount > MaxNodesPerRoot)) return PanelValidity.Unverified;
+                        if (matrix != null && (matrix.GetType() != typeof(Matrix) || (long)matrix.RowCount * matrix.ColumnCount > InspectionLimits.MaxNodesPerRoot)) return PanelValidity.Unverified;
                     }
                     if (leafType == typeof(GH_StructurePath))
                     {
                         var path = ((GH_StructurePath)goo).Value;
-                        if (path != null && (path.GetType() != typeof(Grasshopper.Kernel.Data.GH_Path) || path.Length > MaxNodesPerRoot)) return PanelValidity.Unverified;
+                        if (path != null && (path.GetType() != typeof(Grasshopper.Kernel.Data.GH_Path) || path.Length > InspectionLimits.MaxNodesPerRoot)) return PanelValidity.Unverified;
                     }
                     // A constant stock TypeName does not make a goo's validity path safe:
                     // some stock holders can contain externally supplied implementations.
@@ -502,20 +501,6 @@ namespace BetterGhPanel.Runtime
         }
 
         private static string SafeName(Type type) => type.Name.Length == 0 ? "Unknown" : type.Name;
-        private sealed class Frame
-        {
-            internal Frame(object node, int depth) { Node = node; Depth = depth; }
-            internal readonly object Node;
-            internal readonly int Depth;
-            internal bool Entered;
-            internal int NextChild;
-            internal object?[]? Children;
-        }
-        private sealed class ReferenceComparer : IEqualityComparer<object>
-        {
-            internal static readonly ReferenceComparer Instance = new ReferenceComparer();
-            public new bool Equals(object? x, object? y) => ReferenceEquals(x, y);
-            public int GetHashCode(object obj) => RuntimeHelpers.GetHashCode(obj);
-        }
+
     }
 }

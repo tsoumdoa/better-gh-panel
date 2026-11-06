@@ -1,8 +1,6 @@
 using System;
 using System.Linq;
 using BetterGhPanel.Core;
-using BetterGhPanel.UI;
-using BetterGhPanel.Runtime;
 
 internal static class CapturePolicyChecks
 {

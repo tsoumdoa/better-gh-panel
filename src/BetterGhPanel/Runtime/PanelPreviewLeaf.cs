@@ -58,7 +58,7 @@ namespace BetterGhPanel.Runtime
         // retained storage. Check the aggregate before allocating arrays or
         // invoking any native construction. Individual Rhino calls can still
         // have a platform-dependent peak; this is not a native sandbox.
-        internal static bool TryEstimate(object value, PanelGeometrySources.Budget budget, ref int remaining,
+        internal static bool TryEstimate(object value, PanelGeometrySources.OperationBudget budget, ref int remaining,
             out long bytes, out PanelNativeGeometry.Scan? scan, Func<bool>? current = null)
         {
             if (!TryEstimateCore(value, budget, ref remaining, out bytes, out scan, current)) return false;
@@ -68,7 +68,7 @@ namespace BetterGhPanel.Runtime
             return !(value is GeometryBase geometry) || (geometry.IsValid && (current == null || current()));
         }
 
-        private static bool TryEstimateCore(object value, PanelGeometrySources.Budget budget, ref int remaining,
+        private static bool TryEstimateCore(object value, PanelGeometrySources.OperationBudget budget, ref int remaining,
             out long bytes, out PanelNativeGeometry.Scan? scan, Func<bool>? current)
         {
             bytes = 512;
@@ -118,7 +118,7 @@ namespace BetterGhPanel.Runtime
         }
 
         internal static PanelPreviewLeaf? Create(object value, long bytes, PanelNativeGeometry.Scan? scan,
-            PanelGeometrySources.Budget budget, ref int remaining, Action<int> meshStatus, Func<bool>? current = null,
+            PanelGeometrySources.OperationBudget budget, ref int remaining, Action<int> meshStatus, Func<bool>? current = null,
             Func<long, bool>? canRetireMeshes = null, Action<Mesh[], int[][]?, long>? retireMeshes = null)
         {
             GeometryBase? owned = null;

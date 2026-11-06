@@ -1,10 +1,10 @@
-namespace BetterGhPanel.Runtime
+namespace BetterGhPanel.Core
 {
     // The value capture allocates control-point and knot arrays and an owned
     // curve. Keep the arithmetic independent of Rhino for managed checks.
     internal static class PanelNurbsLimits
     {
-        internal const int MaxOrder = 12, MaxPoints = 1024;
+        internal const int MaxOrder = NurbsCandidateLimits.MaxOrder, MaxPoints = NurbsCandidateLimits.MaxCurvePoints;
         internal static bool Curve(int dimension, int order, int count, int knots, out long bytes)
         {
             bytes = 0;
@@ -19,7 +19,7 @@ namespace BetterGhPanel.Runtime
         internal static bool Surface(int orderU, int orderV, int countU, int countV, int knotsU, int knotsV)
         {
             return orderU >= 2 && orderU <= MaxOrder && orderV >= 2 && orderV <= MaxOrder &&
-                countU >= orderU && countV >= orderV && (long)countU * countV <= 4096 &&
+                countU >= orderU && countV >= orderV && (long)countU * countV <= NurbsCandidateLimits.MaxSurfacePoints &&
                 knotsU == countU + orderU - 2 && knotsV == countV + orderV - 2;
         }
     }

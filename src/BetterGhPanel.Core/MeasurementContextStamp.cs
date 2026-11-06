@@ -1,6 +1,6 @@
 using System;
 
-namespace BetterGhPanel.Runtime
+namespace BetterGhPanel.Core
 {
     // A managed comparison of the Rhino context used to capture and measure.
     internal readonly struct MeasurementContextStamp : IEquatable<MeasurementContextStamp>

@@ -1,5 +1,5 @@
+using BetterGhPanel.Core;
 using System;
-using BetterGhPanel.Runtime;
 
 internal static class PreviewNurbsLimitChecks
 {

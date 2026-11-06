@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using BetterGhPanel.Core;
 
-namespace BetterGhPanel.UI
+namespace BetterGhPanel.Core
 {
     // Source positions identify rows only within the snapshot that supplied them.
     internal sealed class PanelRowSelection

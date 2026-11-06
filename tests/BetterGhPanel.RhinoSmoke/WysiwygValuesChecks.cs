@@ -159,7 +159,7 @@ internal static class WysiwygValuesChecks
             Check(copied == "Value copied" && await ClipboardIs("1300.00"), "Native clipboard matches the rounded Length wire value");
             fixture.SelectAt(1, toggle: true);
             await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 2);
-            var actionType = assembly.GetType("BetterGhPanel.UI.PanelRowAction", true)!;
+            var actionType = typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelRowAction", true)!;
             async Task<string> Copy(string action) => await (Task<string>)Call(component, "CopyAddressesAsync", fixture.Result.Snapshot, new[] { 0, 1 }, Enum.Parse(actionType, action), null, false)!;
             string addressStatus = await Copy("CopyAddresses");
             Check(addressStatus == "Addresses copied" && await ClipboardIs("{0;2;52}(0)" + Environment.NewLine + "{0;2;52}(1)"),
@@ -267,7 +267,7 @@ internal static class WysiwygValuesChecks
         fixture.Query(new PanelQueryOptions { DecimalPlaces = 2 });
         await fixture.Ready(() => fixture.Result.RowPositions.Count > 0);
         PanelTestAdapter.Resize(component, 300, 220);
-        Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, "Half"));
+        Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Half"));
         attributes.PerformLayout(); Render();
         Check(Field<float>(attributes, "_warningsHeight") == 0 && Field<RectangleF>(attributes, "_list").Bottom <= Field<RectangleF>(attributes, "_footer").Top &&
             Field<System.Collections.Generic.List<(RectangleF Bounds, int Kind)>>(attributes, "_warningHits").Count == 0,

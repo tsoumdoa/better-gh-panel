@@ -51,10 +51,10 @@ internal static class OutputValuesChecks
         var highlight = component.GetType().GetField("_highlight", Instance)!.GetValue(component)!;
         Check(Property<int>(highlight, "PreviewCount") == 2 && Property<BoundingBox>(highlight, "ClippingBox").Max.X >= 46,
             "Selected set preview covers both geometries including the later occurrence");
-        Call(component, "SetPreviewMode", Enum.Parse(assembly.GetType("BetterGhPanel.UI.PanelPreviewMode", true)!, "FilteredResults"));
+        Call(component, "SetPreviewMode", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelPreviewMode", true)!, "FilteredResults"));
         Call(component, "HighlightRows", fixture.Result.Snapshot, new[] { 1 });
         Check(Property<int>(highlight, "PreviewCount") == 5, "Filtered set preview includes every member alongside the selected group");
-        Call(component, "SetPreviewMode", Enum.Parse(assembly.GetType("BetterGhPanel.UI.PanelPreviewMode", true)!, "Selected"));
+        Call(component, "SetPreviewMode", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelPreviewMode", true)!, "Selected"));
 
         Call(component, "SetOutputValues", PanelOutputValues.Values);
         await fixture.Ready(() => Paths(fixture, 0) == "{0}" && fixture.Values(0) == "2,6" && fixture.Values(1) == "6");
@@ -70,7 +70,7 @@ internal static class OutputValuesChecks
         PanelTestAdapter.Resize(component, 300, 220);
         foreach (bool half in new[] { false, true })
         {
-            if (half) Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, "Half"));
+            if (half) Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Half"));
             component.Attributes.PerformLayout();
             RectangleF Bounds(string name) => (RectangleF)component.Attributes.GetType().GetField(name, Instance)!.GetValue(component.Attributes)!;
             var items = Bounds("_outItems"); var values = Bounds("_outValues"); var units = Bounds("_units");
@@ -87,7 +87,7 @@ internal static class OutputValuesChecks
         Check(Paths(fixture, 3) == "{0},{1}", "Flattened set Items and F use {k}");
         await BranchSets(fixture);
         await TypedValues(fixture);
-        await FooterLayout(fixture, assembly);
+        await FooterLayout(fixture);
     }
 
     private static void SelectionWork(Assembly assembly)
@@ -138,7 +138,7 @@ internal static class OutputValuesChecks
         }
     }
 
-    private static async Task FooterLayout(PanelHostFixture.Fixture fixture, Assembly assembly)
+    private static async Task FooterLayout(PanelHostFixture.Fixture fixture)
     {
         var component = fixture.Component;
         var attributes = component.Attributes;
@@ -167,7 +167,7 @@ internal static class OutputValuesChecks
         foreach (float width in new[] { 300f, 360f, 640f })
         {
             PanelTestAdapter.Resize(component, width, 220);
-            Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, "Full"));
+            Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Full"));
             await Query(PanelSearchMode.Text);
             string[] controls = { "_trim", "_simplify", "_flatten", "_reverse", "_createSet", "_units", "_selectAll", "_statistics" };
             var before = controls.Select(Bounds).ToArray();
@@ -191,7 +191,7 @@ internal static class OutputValuesChecks
         Call(component, "SetPanelSplit", true);
         foreach (string display in new[] { "Full", "Half" })
         {
-            Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, display));
+            Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, display));
             await Query(PanelSearchMode.Text);
             await Query(PanelSearchMode.ListLength);
             var pairing = Property<object>(component, "PairedData");

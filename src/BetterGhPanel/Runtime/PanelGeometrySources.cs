@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
@@ -14,13 +13,13 @@ namespace BetterGhPanel.Runtime
     internal static class PanelGeometrySources
     {
         private static readonly object EndNode = new object(), NullSlot = new object();
-        internal const int MaxNodesPerRoot = 4096;
+
         internal const int MaxNodesPerOperation = 20000;
         internal const int MaxLeavesPerRoot = 1024;
-        internal const int MaxDepth = 64;
+
         internal const long MaxValueSnapshotWorkBytes = 8L * 1024 * 1024;
 
-        internal sealed class Budget
+        internal sealed class OperationBudget
         {
             internal int Remaining = MaxNodesPerOperation;
             internal int Visits { get; private set; }
@@ -55,9 +54,9 @@ namespace BetterGhPanel.Runtime
             internal readonly List<object> Graph = new List<object>();
             internal bool Unavailable;
             internal bool Exhausted;
-            internal int Remaining = MaxNodesPerRoot;
+            internal int Remaining = InspectionLimits.MaxNodesPerRoot;
 
-            internal bool ReserveValue(long bytes, Budget budget)
+            internal bool ReserveValue(long bytes, OperationBudget budget)
             {
                 if (!budget.TakeValueBytes(bytes)) return false;
                 if (_reserve != null && !_reserve(bytes)) { budget.MarkLimit(); return false; }
@@ -106,14 +105,14 @@ namespace BetterGhPanel.Runtime
             return true;
         }
 
-        internal static Inspection Inspect(IGH_Goo? root, Budget budget, bool allowStandalonePreview,
+        internal static Inspection Inspect(IGH_Goo? root, OperationBudget budget, bool allowStandalonePreview,
             Func<long, bool>? reserveValue = null, Action<long>? releaseValue = null)
         {
             var result = new Inspection(reserveValue, releaseValue);
             if (root == null) return result;
             var stack = new Stack<Frame>();
             var active = new HashSet<object>(ReferenceComparer.Instance);
-            int rootRemaining = MaxNodesPerRoot;
+            int rootRemaining = InspectionLimits.MaxNodesPerRoot;
             stack.Push(new Frame(root, 0));
             try
             {
@@ -123,7 +122,7 @@ namespace BetterGhPanel.Runtime
                     if (!frame.Entered)
                     {
                         frame.Entered = true;
-                        if (frame.Depth >= MaxDepth || !budget.Take(ref rootRemaining))
+                        if (frame.Depth >= InspectionLimits.MaxDepth || !budget.Take(ref rootRemaining))
                         { result.Unavailable = result.Exhausted = true; break; }
                         if (!active.Add(frame.Node)) { budget.MarkUnavailable("cyclic group or wrapper"); result.Unavailable = true; break; }
                         result.Graph.Add(frame.Node);
@@ -183,7 +182,7 @@ namespace BetterGhPanel.Runtime
             return result;
         }
 
-        private static object? CaptureLeaf(object node, bool allowStandalonePreview, bool nested, Inspection inspection, Budget budget,
+        private static object? CaptureLeaf(object node, bool allowStandalonePreview, bool nested, Inspection inspection, OperationBudget budget,
             out bool unavailable, out object? capturedValue)
         {
             unavailable = false;
@@ -260,7 +259,7 @@ namespace BetterGhPanel.Runtime
             return valid ? value : null;
         }
 
-        private static bool TryCapturePolyline(Polyline source, Inspection inspection, Budget budget, out PolylineSnapshot? snapshot)
+        private static bool TryCapturePolyline(Polyline source, Inspection inspection, OperationBudget budget, out PolylineSnapshot? snapshot)
         {
             snapshot = null;
             int count = source.Count;
@@ -372,20 +371,5 @@ namespace BetterGhPanel.Runtime
             internal IGH_PreviewData Value { get; }
         }
 
-        private sealed class Frame
-        {
-            internal Frame(object node, int depth) { Node = node; Depth = depth; }
-            internal readonly object Node;
-            internal readonly int Depth;
-            internal bool Entered;
-            internal int Next;
-        }
-
-        private sealed class ReferenceComparer : IEqualityComparer<object>
-        {
-            internal static readonly ReferenceComparer Instance = new ReferenceComparer();
-            public new bool Equals(object? x, object? y) => ReferenceEquals(x, y);
-            public int GetHashCode(object value) => RuntimeHelpers.GetHashCode(value);
-        }
     }
 }

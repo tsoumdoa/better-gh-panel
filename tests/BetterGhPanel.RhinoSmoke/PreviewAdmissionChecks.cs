@@ -31,7 +31,7 @@ internal static partial class PreviewSafetyChecks
             rhino.Views.ActiveView = view;
             highlight = Activator.CreateInstance(loaded.GetType("BetterGhPanel.Runtime.PanelGeometryHighlight", true)!, true)!;
             VerifyInvalidNativeAdmission(loaded, highlight, rhino);
-            VerifySelectedRecovery(loaded, highlight);
+            VerifySelectedRecovery(highlight);
             foreach (bool copy in new[] { false, true })
             foreach (bool set in new[] { false, true }) await VerifySemanticAction(loaded, copy, set, rhino);
         }
@@ -168,7 +168,7 @@ internal static partial class PreviewSafetyChecks
         return valid;
     }
 
-    private static void VerifySelectedRecovery(Assembly assembly, object highlight)
+    private static void VerifySelectedRecovery(object highlight)
     {
         foreach (int count in new[] { 200, 1100 })
         {
@@ -176,7 +176,7 @@ internal static partial class PreviewSafetyChecks
             var snapshot = new PanelSnapshot(Enumerable.Range(0, count).Select(i => new PanelRow(i, "{0}", "Point", i.ToString(), null)).ToArray(),
                 new[] { new PanelBranch("{0}", count) });
             var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
-            object selection = Activator.CreateInstance(assembly.GetType("BetterGhPanel.UI.PanelRowSelection", true)!, Instance,
+            object selection = Activator.CreateInstance(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelRowSelection", true)!, Instance,
                 null, new object?[] { null }, null)!;
             Method(selection, "SelectAll").Invoke(selection, new object?[] { result, null, false });
             void Update()

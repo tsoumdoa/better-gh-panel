@@ -1,3 +1,4 @@
+using BetterGhPanel.Core;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -35,14 +36,14 @@ namespace BetterGhPanel.Runtime
         // Compatibility preview uses Rhino's normal duplication callbacks after
         // bounded structural preflight. Individual native/callback work is not
         // a hard sandbox; the retained snapshot still has a reserved size cap.
-        internal static bool TryScanForCopy(GeometryBase geometry, PanelGeometrySources.Budget budget, ref int rootRemaining,
+        internal static bool TryScanForCopy(GeometryBase geometry, PanelGeometrySources.OperationBudget budget, ref int rootRemaining,
             Func<bool>? current, out Scan? scan)
             => TryScan(geometry, budget, ref rootRemaining, false, true, current, out scan);
 
-        internal static bool TryScanForBounds(GeometryBase geometry, PanelGeometrySources.Budget budget, ref int rootRemaining)
+        internal static bool TryScanForBounds(GeometryBase geometry, PanelGeometrySources.OperationBudget budget, ref int rootRemaining)
             => TryScan(geometry, budget, ref rootRemaining, true, false, null, out _);
 
-        private static bool TryScan(GeometryBase geometry, PanelGeometrySources.Budget budget, ref int rootRemaining,
+        private static bool TryScan(GeometryBase geometry, PanelGeometrySources.OperationBudget budget, ref int rootRemaining,
             bool forBounds, bool allowCustom, Func<bool>? current, out Scan? scan)
         {
             scan = null;
@@ -64,7 +65,7 @@ namespace BetterGhPanel.Runtime
                     if (++nodes > MaxComponents) { budget.MarkLimit(); return false; }
                     if (!budget.Take(ref rootRemaining)) return false;
                     Node node = pending.Pop();
-                    if (node.Depth >= PanelGeometrySources.MaxDepth) { budget.MarkLimit(); return false; }
+                    if (node.Depth >= InspectionLimits.MaxDepth) { budget.MarkLimit(); return false; }
                     var value = node.Value;
                     Type type = value.GetType();
                     // Reject large clouds/profile tables before inspecting
@@ -237,7 +238,7 @@ namespace BetterGhPanel.Runtime
             return true;
         }
 
-        private static bool WriteMetadata(GeometryBase geometry, BinaryWriter writer, PanelGeometrySources.Budget budget,
+        private static bool WriteMetadata(GeometryBase geometry, BinaryWriter writer, PanelGeometrySources.OperationBudget budget,
             bool allowCustom, Func<bool>? current, ref int bytes, ref bool hasMetadata, ref bool unverifiedCustom)
         {
             if (!geometry.HasUserData)
@@ -304,7 +305,7 @@ namespace BetterGhPanel.Runtime
         }
 
         private static bool WriteDictionary(GeometryBase geometry, UserData data, BinaryWriter writer,
-            PanelGeometrySources.Budget budget, bool allowCustom, ref int bytes, ref bool unverifiedCustom)
+            PanelGeometrySources.OperationBudget budget, bool allowCustom, ref int bytes, ref bool unverifiedCustom)
         {
             var dictionary = geometry.UserDictionary;
             if (dictionary == null) return false;
@@ -331,7 +332,7 @@ namespace BetterGhPanel.Runtime
             return bytes <= MaxMetadataBytes;
         }
 
-        private static bool WriteTransform(UserData data, BinaryWriter writer, PanelGeometrySources.Budget budget, ref int bytes)
+        private static bool WriteTransform(UserData data, BinaryWriter writer, PanelGeometrySources.OperationBudget budget, ref int bytes)
         {
             if ((long)bytes + 16 * sizeof(double) > MaxMetadataBytes) { budget.MarkLimit(); return false; }
             var transform = data.Transform;
@@ -340,7 +341,7 @@ namespace BetterGhPanel.Runtime
             return true;
         }
 
-        private static bool WriteString(BinaryWriter writer, string value, PanelGeometrySources.Budget budget, ref int bytes)
+        private static bool WriteString(BinaryWriter writer, string value, PanelGeometrySources.OperationBudget budget, ref int bytes)
         {
             if (value.Length > 4096 || (long)bytes + value.Length * 3L + 8 > MaxMetadataBytes)
             { budget.MarkLimit(); return false; }
@@ -348,7 +349,7 @@ namespace BetterGhPanel.Runtime
             return true;
         }
 
-        private static bool WriteValue(BinaryWriter writer, object value, PanelGeometrySources.Budget budget, bool allowCustom,
+        private static bool WriteValue(BinaryWriter writer, object value, PanelGeometrySources.OperationBudget budget, bool allowCustom,
             ref int bytes, ref bool unverifiedCustom)
         {
             Type type = value.GetType();

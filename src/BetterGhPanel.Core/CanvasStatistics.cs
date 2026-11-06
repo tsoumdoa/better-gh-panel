@@ -1,9 +1,8 @@
 using System;
 using System.Globalization;
 using System.Text;
-using BetterGhPanel.Core;
 
-namespace BetterGhPanel.UI
+namespace BetterGhPanel.Core
 {
     // Presentation reads completed aggregates only. Opening or painting Stats never scans rows.
     internal static class CanvasStatistics

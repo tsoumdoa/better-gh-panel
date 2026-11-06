@@ -205,7 +205,7 @@ internal static class ProductionCurveMeasurementChecks
         await second.Ready(() => Snapshot(second).Rows.Count == 1);
         var firstSnapshot = Snapshot(first); var secondSnapshot = Snapshot(second);
         var prepare = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!.GetMethod("PrepareMeasurement", Static)!;
-        var reserve = assembly.GetType("BetterGhPanel.Runtime.NurbsCandidateLimits", true)!.GetMethods(Static)
+        var reserve = typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.NurbsCandidateLimits", true)!.GetMethods(Static)
             .Single(method => method.Name == "TryReserve" && method.GetParameters().Length == 1);
         var held = new List<IDisposable>();
         try

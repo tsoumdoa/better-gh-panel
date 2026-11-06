@@ -1,6 +1,6 @@
 using System;
 
-namespace BetterGhPanel.UI
+namespace BetterGhPanel.Core
 {
     internal enum PanelCommitOutcome { Committed, Deferred, Stale, Uncertain }
 

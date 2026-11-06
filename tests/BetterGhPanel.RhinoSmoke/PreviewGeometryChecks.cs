@@ -671,7 +671,7 @@ internal static class PreviewGeometryChecks
             var result = first?.Geometry ?? throw new InvalidOperationException("Archive object/geometry is null");
             Console.WriteLine("Archived dictionary: " + Dictionary(result));
             var scanType = assembly.GetType("BetterGhPanel.Runtime.PanelNativeGeometry", true)!;
-            var budgetType = assembly.GetType("BetterGhPanel.Runtime.PanelGeometrySources+Budget", true)!;
+            var budgetType = assembly.GetType("BetterGhPanel.Runtime.PanelGeometrySources+OperationBudget", true)!;
             byte[] Scan(GeometryBase value)
             {
                 object budget = Activator.CreateInstance(budgetType, true)!;

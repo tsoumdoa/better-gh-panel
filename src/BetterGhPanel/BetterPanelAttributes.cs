@@ -5,7 +5,6 @@ using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
 using BetterGhPanel.Core;
-using BetterGhPanel.Runtime;
 using BetterGhPanel.UI;
 using Grasshopper.GUI;
 using Grasshopper.GUI.Canvas;
@@ -885,7 +884,7 @@ namespace BetterGhPanel
             TreeToolIcons.Draw(g, _reverse, TreeToolIcon.Reverse, PanelOwner.ReverseTree);
             TreeToolIcons.Draw(g, _createSet, TreeToolIcon.CreateSet, PanelOwner.CreateSetTree);
             string unitLabel = PanelOwner.UnitConversion == PanelUnitConversion.None ? "Units" : PanelUnits.Label(PanelOwner.UnitConversion).Replace(" → ", "→");
-            string precision = (PanelOwner.RoundUpFactor > 0 ? "↑" + PanelOwner.RoundUpFactor.ToString("G4", System.Globalization.CultureInfo.InvariantCulture) : "") +
+            string precision = (PanelOwner.RoundUpFactor > 0 ? "↑" + PanelUnits.FormatFactor(PanelOwner.RoundUpFactor, "G4") : "") +
                 (PanelOwner.DecimalPlaces < 0 ? "" : (PanelOwner.RoundUpFactor > 0 ? " · " : "") + PanelOwner.DecimalPlaces + "dp");
             DropdownControl(g, _units, precision.Length == 0 ? unitLabel : unitLabel == "Units" ? precision : unitLabel + " · " + precision, small, trim,
                 PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor > 0);
@@ -1392,7 +1391,7 @@ namespace BetterGhPanel
                     PanelOwner.SetUnits(PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, 0);
                 else if (selectedUnit.Value.Setting == CanvasNumberSetting.RoundingFactor)
                     CanvasTextInput.Show(canvas, PanelOwner, _units,
-                        (PanelOwner.RoundUpFactor > 0 ? PanelOwner.RoundUpFactor : 1).ToString("R", System.Globalization.CultureInfo.InvariantCulture), text =>
+                        PanelUnits.FormatFactor(PanelOwner.RoundUpFactor > 0 ? PanelOwner.RoundUpFactor : 1, "R"), text =>
                     {
                         if (double.TryParse(text.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double factor) &&
                             PanelUnits.IsRoundingFactor(factor))
