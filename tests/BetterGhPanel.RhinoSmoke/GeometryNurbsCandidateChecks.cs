@@ -1,4 +1,3 @@
-using static PanelTestAdapter;
 using static SmokeAssertions;
 using System;
 using System.Diagnostics;
