@@ -95,3 +95,5 @@ The `BetterPanelAttributes.RowView.cs` partial owns the shared row-view index an
 `BetterPanelAttributes` keeps D and F viewport state in its private `_d` and `_f` `PaneView` instances (scroll offsets, visible counts, pane rectangles, captions, and drag flags).
 
 `BetterPanelAttributes.Layout.cs` computes the immutable `PanelLayout` of fixed controls and regions once per layout. Pane rectangles remain in `PaneView`; set-details geometry stays in `CanvasSetDetails` because render and input also update it.
+
+`BetterPanelAttributes.Controls.cs` owns the fixed-control hit table, click handlers and tooltip builders. Explicit click, hover and tooltip priorities preserve their original overlap rules and insertion points around split panes, menus, set details and painted warning targets.

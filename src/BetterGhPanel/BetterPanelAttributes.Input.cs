@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
@@ -245,24 +246,23 @@ namespace BetterGhPanel
         // Hover feedback: a translucent fill on the control or row under the pointer.
         private IEnumerable<RectangleF> HoverControls()
         {
-            yield return _layout.Close; yield return _layout.Display;
+            foreach (var entry in ControlHits.Where(entry => entry.HoverOrder >= 0 && entry.HoverOrder <= 1).OrderBy(entry => entry.HoverOrder))
+                if (entry.Visible(ControlPath.Hover)) yield return entry.Rect(_layout);
             if (!_layout.Split.IsEmpty) yield return _layout.Split;
             if (PanelOwner.PanelSplit) yield return _layout.ScrollLock;
-            foreach (var warning in _warningHits) yield return warning.Bounds;
-            yield return _layout.Jump; yield return _layout.Reset; yield return _layout.Preview;
-            if (SearchClearVisible) yield return _layout.SearchClear;
-            yield return _layout.Filter; yield return _layout.Search;
-            if (BranchClearVisible) yield return _layout.BranchClear;
-            yield return _layout.Type; yield return _layout.Sort; yield return _layout.Branch;
-            yield return _layout.SelectAll; yield return _layout.Statistics;
-            yield return _layout.Trim; yield return _layout.Simplify; yield return _layout.Flatten; yield return _layout.Reverse; yield return _layout.CreateSet; yield return _layout.Units;
-            if (PanelOwner.CanOutputValues) { yield return _layout.OutItems; yield return _layout.OutValues; }
+            foreach (var entry in ControlHits.Where(entry => entry.HoverOrder >= 2 && entry.HoverOrder < 100).OrderBy(entry => entry.HoverOrder))
+            {
+                if (!entry.Visible(ControlPath.Hover)) continue;
+                if (entry.HoverRects != null)
+                    foreach (var bounds in entry.HoverRects()) yield return bounds;
+                else yield return entry.Rect(_layout);
+            }
         }
 
         private RectangleF HoverTargetAt(PointF point, out bool control)
         {
             control = true;
-            if (PanelOwner.PanelMinimized) return _layout.Restore.Contains(point) ? _layout.Restore : RectangleF.Empty;
+            if (PanelOwner.PanelMinimized) return ControlAt(ControlPath.Hover, point, 100, 100)?.Rect(_layout) ?? RectangleF.Empty;
             control = false;
             if (_menu.Kind != CanvasMenuKind.None || _rowMenuResult != null || _resizing || (_d.Scrolling || _f.Scrolling)) return RectangleF.Empty;
             foreach (var bounds in HoverControls())
