@@ -6,7 +6,7 @@ using BetterGhPanel.Core;
 public class PanelRowSelectionTests
 {
     [Fact]
-    public void PreservesBehaviour()
+    public void SelectionRebindsSurvivingRowsAndRespectsGestureRules()
     {
         var original = Query(Sample());
         var retained = new PanelRowSelection();
@@ -104,9 +104,6 @@ public class PanelRowSelectionTests
         Expect(selection, empty);
         selection.SelectAll(source);
         Expect(selection, Query(Sample())); // new input invalidates bulk selection too
-
-
-
     }
 
     [Fact]

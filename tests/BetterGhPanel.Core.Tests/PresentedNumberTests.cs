@@ -206,7 +206,7 @@ public sealed class PresentedNumberTests
         Assert.Equal(expected, PanelUnits.Transform(value, PanelUnitConversion.None, factor, places));
 
     [Fact]
-    public void PresentedMetricsPropertiesComponentsAndScalarsAgreeWithOutputComparisonsAndStats()
+    public void PresentedMetricsAgreeWithOutputStatisticsAndFormatting()
     {
         var rows = new[] {
             new PanelRow(0, "{0}", "Curve", "Curve", null, geometryInfo: new PanelGeometryInfo("Curve", 4.4999999, units: "mm")),
@@ -222,27 +222,55 @@ public sealed class PresentedNumberTests
         Assert.Single(result.Statistics.UniqueValues);
         Assert.Equal(2, result.Statistics.UniqueValues[0].Count);
         Assert.Equal("4.50 mm", PanelFilterValue.Format(snapshot, rows[0], options.SearchMode, 2));
+    }
+
+    [Fact]
+    public void MetricComparisonsUsePresentedRoundingAndRoundUpFactors()
+    {
+        var rows = new[] {
+            new PanelRow(0, "{0}", "Curve", "Curve", null, geometryInfo: new PanelGeometryInfo("Curve", 4.4999999, units: "mm")),
+            new PanelRow(1, "{0}", "Curve", "Curve", null, geometryInfo: new PanelGeometryInfo("Curve", 4.501, units: "mm"))
+        };
+        var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", 2) });
+        var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Length, DisplayFilterValue = true, OutputValues = true, DecimalPlaces = 2 };
+        _ = PanelQueryEngine.Execute(snapshot, options);
         options.DisplayFilterValue = false; options.Search = "= 4.5";
         Assert.Equal(new[] { 0, 1 }, PanelQueryEngine.Execute(snapshot, options).RowPositions);
         options.RoundUpFactor = 5;
         Assert.Empty(PanelQueryEngine.Execute(snapshot, options).RowPositions);
         Assert.Equal("5.00 mm", PanelFilterValue.Format(snapshot, rows[0], options.SearchMode, 2, roundUpFactor: 5));
+    }
 
+    [Theory]
+    [InlineData(PanelSearchMode.Radius)]
+    [InlineData(PanelSearchMode.X)]
+    public void PresentedPropertiesAndComponentsAgreeWithOutputComparisons(PanelSearchMode mode)
+    {
+        var options = new PanelQueryOptions { DisplayFilterValue = false, OutputValues = true, DecimalPlaces = 2, Search = "= 4.5" };
         var property = new PanelRow(0, "{0}", "Example", "", null, PanelValidity.VerifiedValid,
-            components: new PanelComponents(4.4999999, 0, 0, "mm"),
-            properties: new Dictionary<PanelSearchMode, PanelPropertyValue?> { [PanelSearchMode.Radius] = PanelPropertyValue.Numeric(4.4999999) });
-        snapshot = new PanelSnapshot(new[] { property }, new[] { new PanelBranch("{0}", 1) });
-        foreach (var mode in new[] { PanelSearchMode.Radius, PanelSearchMode.X })
-        {
-            options.SearchMode = mode; options.RoundUpFactor = 0;
-            Assert.Single(PanelQueryEngine.Execute(snapshot, options).RowPositions);
-            Assert.Equal(4.5, PanelFilterValue.OutputValue(snapshot, property, mode, null, 2)!.Number);
-        }
+        components: new PanelComponents(4.4999999, 0, 0, "mm"),
+        properties: new Dictionary<PanelSearchMode, PanelPropertyValue?> { [PanelSearchMode.Radius] = PanelPropertyValue.Numeric(4.4999999) });
+        var snapshot = new PanelSnapshot(new[] { property }, new[] { new PanelBranch("{0}", 1) });
+        options.SearchMode = mode; options.RoundUpFactor = 0;
+        Assert.Single(PanelQueryEngine.Execute(snapshot, options).RowPositions);
+        Assert.Equal(4.5, PanelFilterValue.OutputValue(snapshot, property, mode, null, 2)!.Number);
+    }
+
+    [Fact]
+    public void PresentedScalarsAgreeWithComparisonsAndStatistics()
+    {
+        var options = new PanelQueryOptions { DisplayFilterValue = false, OutputValues = true, DecimalPlaces = 2, Search = "= 4.5" };
         var scalar = new PanelRow(0, "{0}", "Number", "captured", 4.4999999);
-        snapshot = new PanelSnapshot(new[] { scalar }, new[] { new PanelBranch("{0}", 1) });
+        var snapshot = new PanelSnapshot(new[] { scalar }, new[] { new PanelBranch("{0}", 1) });
         options.SearchMode = PanelSearchMode.Value;
         Assert.Single(PanelQueryEngine.Execute(snapshot, options).RowPositions);
         Assert.Equal(4.5, PanelQueryEngine.Execute(snapshot, options).Statistics.Minimum);
+    }
+
+    [Fact]
+    public void ScalarDisplayUsesInvariantCulture()
+    {
+        var scalar = new PanelRow(0, "{0}", "Number", "captured", 4.4999999);
         var previousCulture = CultureInfo.CurrentCulture;
         try
         {
@@ -250,19 +278,50 @@ public sealed class PresentedNumberTests
             Assert.Equal("4.50", PanelValuePresentation.FormatDisplay(scalar, PanelUnitConversion.None, 2));
         }
         finally { CultureInfo.CurrentCulture = previousCulture; }
+    }
+
+    [Fact]
+    public void RoundingDescriptionIsEmptyForAutomaticPrecision()
+    {
+        var options = new PanelQueryOptions { DisplayFilterValue = false, OutputValues = true, DecimalPlaces = 2, Search = "= 4.5" };
+        var scalar = new PanelRow(0, "{0}", "Number", "captured", 4.4999999);
+        var snapshot = new PanelSnapshot(new[] { scalar }, new[] { new PanelBranch("{0}", 1) });
+        options.SearchMode = PanelSearchMode.Value;
         Assert.Contains("2 decimal places", PanelFilterValue.RoundingDescription(snapshot, scalar, options));
         options.DecimalPlaces = -1;
         Assert.Equal("", PanelFilterValue.RoundingDescription(snapshot, scalar, options));
+    }
+
+    [Fact]
+    public void GeometryStatisticsRetainUnconvertedSourceUnits()
+    {
+        var options = new PanelQueryOptions { DisplayFilterValue = false, OutputValues = true, DecimalPlaces = 2, Search = "= 4.5" };
         var feet = new PanelRow(0, "{0}", "Curve", "", null, geometryInfo: new PanelGeometryInfo("Curve", 12.345, units: "ft"));
-        snapshot = new PanelSnapshot(new[] { feet }, new[] { new PanelBranch("{0}", 1) }, PanelUnitConversion.MillimetersToMeters);
+        var snapshot = new PanelSnapshot(new[] { feet }, new[] { new PanelBranch("{0}", 1) }, PanelUnitConversion.MillimetersToMeters);
         options.SearchMode = PanelSearchMode.Length; options.Search = ""; options.DisplayFilterValue = true; options.DecimalPlaces = 2;
-        result = PanelQueryEngine.Execute(snapshot, options);
+        var result = PanelQueryEngine.Execute(snapshot, options);
         Assert.Equal("ft", result.Statistics.NumericUnits);
         Assert.Contains("12.35 ft", BetterGhPanel.Core.CanvasStatistics.Label(result, 2, 2));
+    }
+
+    [Fact]
+    public void ItemIndexStatisticsHaveNoLengthUnits()
+    {
+        var options = new PanelQueryOptions { DisplayFilterValue = false, OutputValues = true, DecimalPlaces = 2, Search = "= 4.5" };
+        var feet = new PanelRow(0, "{0}", "Curve", "", null, geometryInfo: new PanelGeometryInfo("Curve", 12.345, units: "ft"));
+        var snapshot = new PanelSnapshot(new[] { feet }, new[] { new PanelBranch("{0}", 1) }, PanelUnitConversion.MillimetersToMeters);
+        options.SearchMode = PanelSearchMode.Length; options.Search = ""; options.DisplayFilterValue = true; options.DecimalPlaces = 2;
         options.SearchMode = PanelSearchMode.ItemIndex;
-        result = PanelQueryEngine.Execute(snapshot, options);
+        var result = PanelQueryEngine.Execute(snapshot, options);
         Assert.Equal("", result.Statistics.NumericUnits);
         Assert.DoesNotContain(" m", BetterGhPanel.Core.CanvasStatistics.Label(result, 2, 2));
+    }
+
+    [Fact]
+    public void CircleLengthIsRoundedAfterComputingCircumference()
+    {
+        var feet = new PanelRow(0, "{0}", "Curve", "", null, geometryInfo: new PanelGeometryInfo("Curve", 12.345, units: "ft"));
+        var snapshot = new PanelSnapshot(new[] { feet }, new[] { new PanelBranch("{0}", 1) }, PanelUnitConversion.MillimetersToMeters);
         var circle = new PanelRow(0, "{0}", "Circle", "", null, geometryInfo: new PanelGeometryInfo("Circle", 2, metricName: "Radius"));
         Assert.Equal(15, PanelFilterValue.OutputValue(snapshot, circle, PanelSearchMode.Length, null, -1, 5)!.Number);
     }

@@ -4,7 +4,7 @@ using BetterGhPanel.Core;
 public class PreviewNurbsLimitTests
 {
     [Fact]
-    public void PreservesBehaviour()
+    public void PreviewLimitsRejectMalformedAndOversizedControlNets()
     {
         Assert.True(PanelNurbsLimits.Curve(3, 3, 4, 5, out long ordinary) && ordinary > 0,
             "ordinary rational-curve dimensions are accepted with a preparation reservation");
@@ -22,6 +22,5 @@ public class PreviewNurbsLimitTests
             !PanelNurbsLimits.Surface(int.MaxValue, 3, int.MaxValue, 64, int.MaxValue, 65),
             "borrowed NURBS surface limits reject excessive or malformed control nets from counts alone");
     }
-
 
 }

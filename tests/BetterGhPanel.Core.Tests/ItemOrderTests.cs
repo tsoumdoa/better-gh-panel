@@ -6,7 +6,7 @@ using BetterGhPanel.UI;
 public class ItemOrderTests
 {
     [Fact]
-    public void PreservesBehaviour()
+    public void LabelDeclutteringAndPreviewMenuKeepItemOrderAccessible()
     {
         var grid = new LabelCollisionGrid();
         Assert.True(grid.TryAdd(new RectangleF(40, 40, 30, 24)), "The first priority label occupies its screen rectangle");
@@ -38,6 +38,5 @@ public class ItemOrderTests
             !menu.IsSelected(3, options, PanelUnitConversion.None, -1, PanelPreviewMode.FilteredResults, false),
             "The saved order-label checkbox is independent from the mutually exclusive preview scope");
     }
-
 
 }

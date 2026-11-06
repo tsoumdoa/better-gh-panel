@@ -6,7 +6,7 @@ using BetterGhPanel.Core;
 public class PanelActionCommitTests
 {
     [Fact]
-    public void PreservesBehaviour()
+    public void DeferredCommitsRevalidateOwnershipAndSelectionRevision()
     {
         var gate = new PanelActionCommit();
         int published = 0, status = 0;
@@ -73,6 +73,5 @@ public class PanelActionCommitTests
         });
         Assert.True(published == 2 && status == 1, "a deferred value-copy commit rechecks its selection revision");
     }
-
 
 }

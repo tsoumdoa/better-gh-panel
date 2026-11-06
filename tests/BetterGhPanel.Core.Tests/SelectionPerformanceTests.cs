@@ -1,29 +1,32 @@
 using Xunit;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Linq;
 using BetterGhPanel.Core;
 
 public class SelectionPerformanceTests
 {
-    [Fact]
-    public void PreservesBehaviour()
+    private const int count = 80000;
+    private readonly PanelSnapshot snapshot;
+    private readonly PanelQueryResult result;
+    private int visits, notifications;
+    private readonly Action visit;
+    private readonly PanelRowSelection selection;
+
+    public SelectionPerformanceTests()
     {
-        const int count = 80000;
-        var snapshot = new PanelSnapshot(Enumerable.Range(0, count)
+        snapshot = new PanelSnapshot(Enumerable.Range(0, count)
             .Select(i => new PanelRow(i % (count / 2), i < count / 2 ? "{0}" : "{1}", "Number", i.ToString(), i)).ToArray(),
             new[] { new PanelBranch("{0}", count / 2), new PanelBranch("{1}", count / 2), new PanelBranch("{2}", 0) });
-        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
-        int visits = 0, notifications = 0;
-        Action visit = () => visits++;
-        var selection = new PanelRowSelection(visit);
+        result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
+        visit = () => visits++;
+        selection = new PanelRowSelection(visit);
         selection.Changed += (_, __) => notifications++;
+    }
 
-        // The selection and action/label preparation executed by a sparse click
-        // must not walk the result. Preview drawing and output construction are
-        // separate work, and filtered-preview classification is not tested here.
-        var clock = Stopwatch.StartNew();
+    [Fact]
+    public void SparseSelectionActionsAndLabelsVisitOnlySelectedRows()
+    {
         selection.SelectAt(result, 39000, 39000, preserveSelected: true);
         var first = selection.OrderedPositions(result);
         Assert.True(PanelActionPositions.TryGet(result, count, selection, first, out var trusted, visit) && ReferenceEquals(first, trusted),
@@ -32,20 +35,28 @@ public class SelectionPerformanceTests
             "The label uses the captured original item index");
         Assert.True(selection.Indices(result).SequenceEqual(new[] { 39000 }), "The context action uses selected original indices");
         Assert.True(first.SequenceEqual(new[] { 39000 }) && visits <= 6, "The first sparse gesture visits only its row");
-        var firstElapsed = clock.Elapsed;
-        int firstVisits = visits;
+    }
+
+    [Fact]
+    public void RepeatedSparseGesturesReuseOrderWithoutNotification()
+    {
+        selection.SelectAt(result, 39000, 39000, preserveSelected: true);
+        var first = selection.OrderedPositions(result);
         int firstNotifications = notifications;
         visits = 0;
-        clock.Restart();
         selection.SelectAt(result, 39000, 39000, preserveSelected: true);
         var repeated = selection.OrderedPositions(result);
         Assert.True(PanelActionPositions.TryGet(result, count, selection, repeated, out _, visit), "Repeated row action remains valid");
         Assert.True(PanelItemOrder.TryGetNumber(result, 39000, out _, visit), "Repeated label lookup remains valid");
         Assert.True(selection.Indices(result).Length == 1 && ReferenceEquals(first, repeated) && visits <= 3 && notifications == firstNotifications,
             "Repeated unchanged gestures reuse ordering and do not notify");
-        var repeatedElapsed = clock.Elapsed;
-        Console.WriteLine($"  80,000-row sparse selection/action/label: first {firstElapsed.TotalMilliseconds:F3} ms, repeated {repeatedElapsed.TotalMilliseconds:F3} ms; visits {firstVisits} / {visits}.");
+    }
 
+    [Fact]
+    public void MembershipChangesInvalidateCachedOrderAndOldActionsAreValidated()
+    {
+        selection.SelectAt(result, 39000, 39000, preserveSelected: true);
+        var first = selection.OrderedPositions(result);
         visits = 0;
         selection.SelectAt(result, 12, 12, toggle: true);
         var changed = selection.OrderedPositions(result);
@@ -59,14 +70,31 @@ public class SelectionPerformanceTests
         bool readOnly = false;
         try { ((IList<int>)changed)[0] = 100; } catch (NotSupportedException) { readOnly = true; }
         Assert.True(readOnly, "A cached selection cannot be mutated by an action consumer");
+    }
 
+    [Fact]
+    public void MismatchedPaintedHitsLeaveSelectionUnchanged()
+    {
+        selection.SelectAt(result, 39000, 39000, preserveSelected: true);
+        _ = selection.OrderedPositions(result);
+        selection.SelectAt(result, 12, 12, toggle: true);
+        _ = selection.OrderedPositions(result);
         visits = 0;
         int beforeBadHit = notifications;
         selection.SelectAt(result, 39000, 12);
         selection.SelectAt(result, 12, -1);
         Assert.True(selection.OrderedPositions(result).SequenceEqual(new[] { 12, 39000 }) && notifications == beforeBadHit,
             "Mismatched and out-of-range painted hits cannot change selection");
-        actionVisits = 0;
+    }
+
+    [Fact]
+    public void ArbitraryActionsValidateDeduplicateAndRejectInvalidPositions()
+    {
+        selection.SelectAt(result, 39000, 39000, preserveSelected: true);
+        var first = selection.OrderedPositions(result);
+        selection.SelectAt(result, 12, 12, toggle: true);
+        var changed = selection.OrderedPositions(result);
+        int actionVisits = 0;
         Assert.True(PanelActionPositions.TryGet(result, count, selection, new[] { 39000, 12, 39000 }, out var arbitrary, () => actionVisits++) &&
             arbitrary.SequenceEqual(new[] { 12, 39000 }) && actionVisits == 5,
             "Arbitrary action inputs are validated, deduplicated and ordered without a result scan");
@@ -75,11 +103,21 @@ public class SelectionPerformanceTests
             !PanelActionPositions.TryGet(result, 10, selection, changed, out _) &&
             !PanelActionPositions.TryGet(result, count, selection, Array.Empty<int>(), out _),
             "Arbitrary, out-of-bounds, source-mismatched and empty action inputs are rejected");
+    }
+
+    [Fact]
+    public void DisabledOrMissingLabelsDoNotInspectRows()
+    {
         Assert.True(!PanelItemOrder.TryGetNumber(null, 12, out _, visit) && !PanelItemOrder.TryGetNumber(result, -1, out _, visit),
             "Labels disabled or absent from the result cannot create an entry");
         int disabledLabelVisits = 0;
         Assert.True(!PanelItemOrder.TryGetNumber(null, 12, out _, () => disabledLabelVisits++) && disabledLabelVisits == 0,
             "Disabled item labels do not inspect rows");
+    }
+
+    [Fact]
+    public void ReverseLookupIndexesDenseAndSparseViewsAndBranchLocalLabels()
+    {
         Assert.True(new[] { 0, 4095, 4096, 8191, count - 1 }.All(position =>
             result.TryGetViewIndex(position, out int index) && index == position),
             "Dense reverse lookup crosses allocation-page boundaries");
@@ -89,7 +127,15 @@ public class SelectionPerformanceTests
         Assert.True(sparseResult.RowPositions.Count == 9 && sparseResult.TryGetViewIndex(79991, out int sparseIndex) && sparseIndex == 0 &&
             sparseResult.TryGetViewIndex(79999, out sparseIndex) && sparseIndex == 8 && !sparseResult.TryGetViewIndex(0, out _),
             "Sparse reverse lookup contains only matching rows in view order");
+    }
 
+    [Fact]
+    public void SortingReordersSelectionAndPreservesTheRangeAnchor()
+    {
+        selection.SelectAt(result, 39000, 39000, preserveSelected: true);
+        _ = selection.OrderedPositions(result);
+        selection.SelectAt(result, 12, 12, toggle: true);
+        var changed = selection.OrderedPositions(result);
         var descending = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
         visits = 0;
         int beforeSort = notifications;
@@ -103,7 +149,18 @@ public class SelectionPerformanceTests
         selection.SelectAt(descending, 10, 39989, range: true);
         Assert.True(selection.OrderedPositions(descending).SequenceEqual(Enumerable.Range(10, 3).Reverse()),
             "Range selection retains its anchor across sorting");
+    }
 
+    [Fact]
+    public void FilteringPrunesSelectionAndInvalidatesOldResultIdentity()
+    {
+        selection.SelectAt(result, 39000, 39000, preserveSelected: true);
+        var first = selection.OrderedPositions(result);
+        selection.SelectAt(result, 12, 12, toggle: true);
+        var changed = selection.OrderedPositions(result);
+        var descending = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
+        selection.OrderedPositions(descending);
+        selection.SelectAt(descending, 10, 39989, range: true);
         var filtered = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = "> 39000" });
         visits = 0;
         int beforeFilter = notifications;
@@ -122,50 +179,75 @@ public class SelectionPerformanceTests
         Assert.True(newFiltered.SequenceEqual(oldFiltered) && !ReferenceEquals(oldFiltered, newFiltered) &&
             !selection.IsCurrentOrderedPositions(sameOrderNewResult, oldFiltered) && identityVisits <= 4,
             "Result identity invalidates an ordered list even if membership and ordering are identical");
+    }
+
+    [Fact]
+    public void ReplacementSnapshotsDiscardSelectedSourcePositions()
+    {
+        var filtered = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = "> 39000" });
+        selection.SelectAt(filtered, 39001, 0, range: true);
         var replacement = PanelQueryEngine.Execute(new PanelSnapshot(snapshot.Rows, snapshot.Branches), new PanelQueryOptions());
         Assert.True(selection.OrderedPositions(replacement).Count == 0, "A new snapshot never reuses source positions");
+    }
 
+    [Fact]
+    public void DenseRangesReuseCurrentActionMembershipWithBoundedWork()
+    {
         selection.Clear();
         selection.SelectAt(result, 0, 0);
         visits = 0;
-        clock.Restart();
         selection.SelectAt(result, 59999, 59999, range: true);
         var dense = selection.OrderedPositions(result);
         Assert.True(PanelActionPositions.TryGet(result, count, selection, dense, out var denseAction, visit) && ReferenceEquals(dense, denseAction),
             "Dense selection actions reuse the current ordered membership");
         Assert.True(dense.Count == 60000 && dense[0] == 0 && dense[59999] == 59999 && visits <= 3 * count,
             "A dense range preserves view order with bounded linear work");
-        var denseElapsed = clock.Elapsed;
-        int denseVisits = visits;
+    }
+
+    [Fact]
+    public void RepeatedDenseRangesReuseOrderWithoutNotification()
+    {
+        selection.SelectAt(result, 0, 0);
+        selection.SelectAt(result, 59999, 59999, range: true);
+        var dense = selection.OrderedPositions(result);
         int denseNotifications = notifications;
         visits = 0;
-        clock.Restart();
         selection.SelectAt(result, 59999, 59999, range: true);
         Assert.True(ReferenceEquals(dense, selection.OrderedPositions(result)) &&
             PanelActionPositions.TryGet(result, count, selection, dense, out _, visit) && notifications == denseNotifications && visits <= 2 * 60000 + 2,
             "Repeating a dense range reuses its ordered list without another result scan");
-        var denseRepeatElapsed = clock.Elapsed;
-        int denseRepeatVisits = visits;
+    }
+
+    [Fact]
+    public void SelectAllReusesImmutableResultOrderWithBoundedWork()
+    {
         visits = 0;
-        clock.Restart();
         selection.SelectAll(result);
         var all = selection.OrderedPositions(result);
         Assert.True(PanelActionPositions.TryGet(result, count, selection, all, out var allAction, visit) && ReferenceEquals(all, allAction),
             "Select-all actions use the already validated result order");
         Assert.True(ReferenceEquals(all, result.RowPositions) && all.Count == count && visits <= 2 * count,
             "Select all makes one membership pass and reuses the immutable result order");
-        var allElapsed = clock.Elapsed;
-        int allVisits = visits;
+    }
+
+    [Fact]
+    public void RepeatedSelectAllDoesNoRowVisitsOrNotification()
+    {
+        selection.SelectAll(result);
+        var all = selection.OrderedPositions(result);
         int allNotifications = notifications;
         visits = 0;
-        clock.Restart();
         selection.SelectAll(result);
         Assert.True(ReferenceEquals(all, selection.OrderedPositions(result)) &&
             PanelActionPositions.TryGet(result, count, selection, all, out _, visit) && visits == 0 && notifications == allNotifications,
             "Repeated select all performs no row visits or notification");
-        var allRepeatElapsed = clock.Elapsed;
-        Console.WriteLine($"  Dense range: {denseElapsed.TotalMilliseconds:F3} / {denseRepeatElapsed.TotalMilliseconds:F3} ms; visits {denseVisits} / {denseRepeatVisits}. " +
-            $"Select all: {allElapsed.TotalMilliseconds:F3} / {allRepeatElapsed.TotalMilliseconds:F3} ms; visits {allVisits} / {visits}.");
+    }
+
+    [Fact]
+    public void SelectAllAnchorsLaterRangesAndMembershipChangesInvalidateItsShortcut()
+    {
+        selection.SelectAll(result);
+        _ = selection.OrderedPositions(result);
         selection.SelectAt(result, 3, 3, range: true);
         Assert.True(selection.OrderedPositions(result).SequenceEqual(new[] { 0, 1, 2, 3 }), "Select all anchors a later range at the first visible row");
         visits = 0;
@@ -173,6 +255,5 @@ public class SelectionPerformanceTests
         Assert.True(selection.OrderedPositions(result).Count == count && visits >= count,
             "Membership changes invalidate the repeated select-all shortcut");
     }
-
 
 }

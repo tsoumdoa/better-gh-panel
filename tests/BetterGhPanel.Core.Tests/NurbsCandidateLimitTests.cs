@@ -6,7 +6,7 @@ using System.Collections.Generic;
 public class NurbsCandidateLimitTests
 {
     [Fact]
-    public void PreservesBehaviour()
+    public void CandidateLimitsBoundPayloadsAndReleaseReservations()
     {
         Assert.True(NurbsCandidateLimits.Curve(2, 2, 2, 2, out int small) && small == 144, "valid 2D curve payload");
         Assert.True(NurbsCandidateLimits.Curve(3, 12, 1024, 1034, out int largest) && largest == 41104, "largest curve payload");
@@ -46,6 +46,5 @@ public class NurbsCandidateLimitTests
         using var restored = NurbsCandidateLimits.TryReserve(surface);
         Assert.True(restored != null, "all reservations released");
     }
-
 
 }
