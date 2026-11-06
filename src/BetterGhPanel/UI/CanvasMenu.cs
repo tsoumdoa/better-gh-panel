@@ -362,7 +362,7 @@ namespace BetterGhPanel.UI
             InvalidatePaint();
         }
 
-        private static string Unbraced(string path) => PanelQueryEngine.UnbracedPath(path);
+        private static string Unbraced(string path) => path.Replace("{", "").Replace("}", "").Replace(" ", "");
 
         // Keyboard and wheel navigation. The hovered row is the keyboard cursor.
         internal void MoveHover(int step)
@@ -455,7 +455,7 @@ namespace BetterGhPanel.UI
                 if (choice.Conversion.HasValue) return PanelUnits.Label(choice.Conversion.Value);
                 if (choice.Setting == CanvasNumberSetting.RoundingOff) return "Rounding: off";
                 if (choice.Setting == CanvasNumberSetting.RoundingFactor) return "Round up by factor…" +
-                    (roundUpFactor > 0 ? " (" + PanelUnits.FormatFactor(roundUpFactor) + ")" : "");
+                    (roundUpFactor > 0 ? " (" + PanelUnits.FormatFactor(roundUpFactor, "G6") + ")" : "");
                 if (choice.Setting == CanvasNumberSetting.Automatic) return "Decimals: automatic";
                 return "Decimal places…" + (decimals >= 0 ? " (" + decimals + ")" : "");
             }

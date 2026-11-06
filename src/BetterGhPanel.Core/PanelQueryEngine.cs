@@ -355,8 +355,6 @@ namespace BetterGhPanel.Core
             (!query.DisplayFilterValue || query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(query.SearchMode));
 
         /// <summary>Accepts a semicolon-separated path with or without braces. Blank means all branches.</summary>
-        internal static string UnbracedPath(string path) => path.Replace("{", "").Replace("}", "").Replace(" ", "");
-
         public static string? NormalizeBranchPath(string? path)
         {
             if (string.IsNullOrWhiteSpace(path)) return null;

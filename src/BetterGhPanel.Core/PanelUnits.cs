@@ -19,7 +19,7 @@ namespace BetterGhPanel.Core
 
     public static class PanelUnits
     {
-        internal static string FormatFactor(double factor, string format = "G6") =>
+        internal static string FormatFactor(double factor, string format) =>
             factor.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
 
         public const int AutomaticDecimals = -1;

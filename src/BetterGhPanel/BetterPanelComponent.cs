@@ -697,7 +697,7 @@ namespace BetterGhPanel
             private readonly IGH_Goo?[] _source;
             private readonly long? _selection;
             internal ActionStamp(BetterPanelComponent owner, PanelSession session, PanelSnapshot snapshot,
-                PanelQueryResult result, IGH_Goo?[] source, long? selection = null)
+                PanelQueryResult result, IGH_Goo?[] source, long? selection)
             { _owner = owner; _session = session; _snapshot = snapshot; _result = result; _source = source; _selection = selection; }
             internal bool IsCurrent() => ReferenceEquals(_owner._session, _session) && _session.HasCurrentResult &&
                 ReferenceEquals(_session.Snapshot, _snapshot) && ReferenceEquals(_session.Result, _result) &&
@@ -802,7 +802,7 @@ namespace BetterGhPanel
             var branches = branchSet || listLengthCopy ? result.BranchPaths.Where(branchPath => branchSelection!.Contains(branchPath)).ToArray() : Array.Empty<string>();
             if ((branchSet || listLengthCopy) && (branches.Length == 0 || !ReferenceEquals(snapshot, session.Snapshot))) return "Data changed; select branches again";
             var source = _sourceItems;
-            var stamp = new ActionStamp(this, session, snapshot, result, source);
+            var stamp = new ActionStamp(this, session, snapshot, result, source, selection: null);
             long selectionVersion = RowSelection.Version;
             var cancellation = new CancellationTokenSource();
             _copyCancellation = cancellation;
