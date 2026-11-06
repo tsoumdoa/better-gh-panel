@@ -9,15 +9,13 @@ Runs the core tests, native coordinator and packaging checks, builds and stages 
 To build a Yak package, run `dotnet build BetterGhPanel.sln -c Release` then `node scripts/package.mjs`. During development, run affected native Rhino regressions with `tests/BetterGhPanel.RhinoSmoke/run.ps1 -Fixture ui-ux,row-selection` (choose names from `fixtures.json`). Run the full inventory for broad runtime changes and releases; launcher self-tests run separately. See the [validation instructions](#validation) for commands and optional diagnostics. See also:
 
 - [Build, packaging and release validation](docs/packaging.md)
-- [Current architecture](docs/architecture.md) and [maintainability guide](docs/maintainability.md)
+- [Current architecture](docs/architecture.md)
 - [Geometry measurement](docs/geometry-measurement-safety.md) and [preview](docs/geometry-preview-safety.md) safety
 
 The original interactive HTML design study is preserved in `prototype/` (`npm start`, then <http://localhost:5173>); it uses generated data and is a visual reference only.
 
 
 ## Validation
-
-Run `npm run check` before updating main or opening or merging a PR. It runs the discoverable solution tests, coordinator report and child-process checks, packaging checks, both runtime builds and unused-code diagnostics without starting Rhino.
 
 During development, run the native fixtures affected by the change with `-Fixture`: for example, `ui-ux,row-selection` for canvas interactions, `property-inspection` for inspection properties, or the relevant capture/measurement/preview fixtures for runtime changes. Changes across the shared host, capture or preview lifecycle warrant the full inventory. Release validation requires the full inventory against the plugin extracted from the final Yak archive. Core.Tests exercises the deterministic number pipeline on Windows .NET Framework and net8.0; native Mac runtime validation remains a separate coverage gap.
 
@@ -36,9 +34,9 @@ The current inventory contains 24 fixtures. The full run starts one sequential R
 
 Reports record the host mode, idle integration, loaded plugin and Core paths and SHA-256, and fixture assertion count. The coordinator rejects incomplete, failed, stale, mismatched, empty or malformed reports and abnormal process exits. Fixture failures allow the remaining fixtures to run; an identified host startup failure stops further launches and records which fixtures did not run. `-TimeoutSeconds` changes the per-process timeout. `--identity-only <fixture> <plugin-path>` on the host executable writes the pre-start identity report without starting Rhino; it remains incomplete and is not a fixture pass. The build removes any stale host-local Core copy so the host can bind the Core next to the requested plugin.
 
-For capture changes, also use `--tree-only <plugin-path>` on the host executable to run managed capture safety and group-cycle checks with the installed SDK assemblies, without starting Rhino. It shares the managed safety suite with `capture-safety` and adds a focused cycle/search check. The historical `output`, `filter-metadata` and `filter-ui` fixtures have been removed.
+For capture changes, also use `--tree-only <plugin-path>` on the host executable to run managed capture safety and group-cycle checks with the installed SDK assemblies, without starting Rhino. It shares the managed safety suite with `capture-safety` and adds a focused cycle/search check.
 
-The retained suite checks native capture freshness, ownership, preview disposal, actual drawing and Paste, output publication, live-search history and row-hit regressions. Property capture uses representative values per handler and one settings round trip. The cyclic-wrapper draw regression now lives in `preview-native-resources`; the overlapping `preview-conduit-resources` fixture and cosmetic footer checks have been removed. `preview-retirement-seam` retains its active-callback and post-capture disposal assertions without the diagnostic idle-observer delay.
+The suite checks capture freshness, ownership, preview disposal, drawing and Paste, output publication, live-search history and row hits. Property capture uses representative values per handler and a settings round trip.
 
 For clipboard transport diagnosis only, set `$env:PANEL_SMOKE_RAW_CLIPBOARD = '1'` before running `-Fixture preview-geometry`, then remove it with `Remove-Item Env:PANEL_SMOKE_RAW_CLIPBOARD`. This adds the separate-process raw-byte/hash probe. Normal runs still verify clipboard archive contents and actual Rhino Paste.
 
