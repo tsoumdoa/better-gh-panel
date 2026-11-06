@@ -186,6 +186,7 @@ public class SelectionPerformanceTests
     {
         var filtered = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Search = "> 39000" });
         selection.SelectAt(filtered, 39001, 0, range: true);
+        Assert.Equal(new[] { 39001 }, selection.OrderedPositions(filtered));
         var replacement = PanelQueryEngine.Execute(new PanelSnapshot(snapshot.Rows, snapshot.Branches), new PanelQueryOptions());
         Assert.True(selection.OrderedPositions(replacement).Count == 0, "A new snapshot never reuses source positions");
     }
@@ -221,6 +222,9 @@ public class SelectionPerformanceTests
     [Fact]
     public void SelectAllReusesImmutableResultOrderWithBoundedWork()
     {
+        selection.SelectAt(result, 0, 0);
+        selection.SelectAt(result, 59999, 59999, range: true);
+        selection.OrderedPositions(result);
         visits = 0;
         selection.SelectAll(result);
         var all = selection.OrderedPositions(result);
