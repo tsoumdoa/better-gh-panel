@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.7-beta
+
+- **Maintenance release.** Shared model helpers, component responsibilities and canvas controls are organized for easier maintenance, with no intended change to controls, saved settings or data outputs.
+- **Clearer regression coverage.** Core checks run as individual xUnit tests, and native preview checks are grouped by fixture with shared reflection helpers.
+- **Easier contributor navigation.** Subsystem architecture, build instructions, release history and validation records now have dedicated documents.
+
 
 ## 0.2.6-beta
 
