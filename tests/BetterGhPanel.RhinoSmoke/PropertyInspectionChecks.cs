@@ -127,18 +127,18 @@ internal static class PropertyInspectionChecks
         await fixture.Ready(() => fixture.Result.RowPositions.SequenceEqual(new[] { 0 }) && fixture.Sinks[0].VolatileData.DataCount == 1);
         Check(fixture.Sinks[0].VolatileData.AllData(false).Single() is GH_Curve, "property comparison retains typed geometry on D");
         Check(fixture.Values(3) == "10", "paired data follows property filters");
-        fixture.Component.GetType().GetMethod("SetTreeOperations", FlagsInstanceNonPublicPublic)!.Invoke(fixture.Component, new object[] { 0, false, false, false, true });
-        fixture.Component.GetType().GetMethod("SetOutputValues", FlagsInstanceNonPublicPublic)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Values });
+        fixture.Component.GetType().GetMethod("SetTreeOperations", AnyInstance)!.Invoke(fixture.Component, new object[] { 0, false, false, false, true });
+        fixture.Component.GetType().GetMethod("SetOutputValues", AnyInstance)!.Invoke(fixture.Component, new object[] { PanelOutputValues.Values });
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.FaceCount, DisplayFilterValue = true, CreateSet = true, TypeName = "Mesh" });
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).SingleOrDefault() is GH_Number number && number.Value == 6);
         Check(fixture.Values(3) == "20", "property sets retain paired source provenance");
-        string copied = (string)fixture.Component.GetType().GetMethod("CopyValue", FlagsInstanceNonPublicPublic)!.Invoke(fixture.Component, new object[] { fixture.Result.Snapshot, 1 })!;
+        string copied = (string)fixture.Component.GetType().GetMethod("CopyValue", AnyInstance)!.Invoke(fixture.Component, new object[] { fixture.Result.Snapshot, 1 })!;
         Check(copied == "6", "Copy values uses selected property numbers");
 
         var chunk = new GH_IO.Serialization.GH_LooseChunk("Panel"); Check(fixture.Component.Write(chunk), "property settings write");
         var restored = (GH_Component)Activator.CreateInstance(fixture.Component.GetType())!;
         restored.CreateAttributes(); Check(restored.Read(chunk), "property settings read");
-        var saved = (PanelQueryOptions)restored.GetType().GetField("_savedOptions", FlagsInstanceNonPublicPublic)!.GetValue(restored)!;
+        var saved = (PanelQueryOptions)restored.GetType().GetField("_savedOptions", AnyInstance)!.GetValue(restored)!;
         Check(saved.SearchMode == PanelSearchMode.FaceCount && saved.DisplayFilterValue, "property display survives save/load");
         restored.DocumentContextChanged(fixture.Document, GH_DocumentContext.Close);
     }

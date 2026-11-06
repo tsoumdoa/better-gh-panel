@@ -4,7 +4,8 @@ using System.Reflection;
 using System.Threading.Tasks;
 using Rhino;
 
-
+// Every assertion in this fixture is plugin-controlled except the separately
+// identified real-solve/document-cache probe at the end.
 internal static partial class PreviewSafetyChecks
 {
     internal static async Task Run(Assembly assembly)

@@ -42,7 +42,7 @@ internal static partial class PreviewSafetyChecks
             { if (DateTime.UtcNow > deadline) throw new TimeoutException("Cross-component action queries did not complete"); await Task.Delay(25); }
             var firstSnapshot = (PanelSnapshot)firstSession.GetType().GetProperty("Snapshot")!.GetValue(firstSession)!;
             var secondSnapshot = (PanelSnapshot)secondSession.GetType().GetProperty("Snapshot")!.GetValue(secondSession)!;
-            var firstSource = ReflectField2106128985<IGH_Goo?[]>(first, "_sourceItems");
+            var firstSource = FieldValue<IGH_Goo?[]>(first, "_sourceItems");
             var custom = new StandalonePointPreview(); firstSource[0] = custom;
             string? newerFrame = null;
             custom.OnBounds = () => newerFrame = (string?)Method(second, "FrameRows").Invoke(second, new object[] { secondSnapshot, new[] { 1 } });
@@ -69,7 +69,7 @@ internal static partial class PreviewSafetyChecks
                 "a newer copy from another component remains on the clipboard after an older duplicate callback returns");
 
             var actionType = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!;
-            var clipboardGate = actionType.GetMethod("CommitClipboard", FlagsNonPublicPublicStatic)!;
+            var clipboardGate = actionType.GetMethod("CommitClipboard", AnyStatic)!;
             string? deferredStatus = null, initialStatus = null;
             Action olderWriter = () =>
             {
@@ -103,7 +103,7 @@ internal static partial class PreviewSafetyChecks
                     "a newer queued clipboard generation cancels the prior queued status and publishes last");
             }
 
-            var secondSource = ReflectField2106128985<IGH_Goo?[]>(second, "_sourceItems");
+            var secondSource = FieldValue<IGH_Goo?[]>(second, "_sourceItems");
             var mutablePoint = (GH_Point)secondSource[1]!;
             Point3d original = mutablePoint.Value;
             deferredStatus = null;
@@ -119,7 +119,7 @@ internal static partial class PreviewSafetyChecks
                 "a queued copy rechecks the captured source graph when dispatched");
             mutablePoint.Value = original;
 
-            var secondSelection = ReflectProperty403875335<object>(second, "RowSelection");
+            var secondSelection = PropertyValue<object>(second, "RowSelection");
             var secondResult = (PanelQueryResult)secondSession.GetType().GetProperty("Result")!.GetValue(secondSession)!;
             deferredStatus = null;
             olderWriter = () =>
@@ -151,7 +151,7 @@ internal static partial class PreviewSafetyChecks
             finally { rhino.ModelAbsoluteTolerance = tolerance; }
 
             var viewport = rhino.Views.ActiveView.ActiveViewport;
-            var frameGate = actionType.GetMethod("CommitFrame", FlagsNonPublicPublicStatic)!;
+            var frameGate = actionType.GetMethod("CommitFrame", AnyStatic)!;
             string? frameStatus = null, queuedFrame = null;
             Action olderCamera = () =>
             {
@@ -193,17 +193,17 @@ internal static partial class PreviewSafetyChecks
         Guid first = rhino.Objects.AddPoint(value), second = rhino.Objects.AddPoint(value);
         var point = new GH_Point(value) { ReferenceID = first };
         point.ReferenceType(GH_PointRefType.point_object);
-        var observerField = highlight.GetType().GetField("_admissionObserver", FlagsInstanceNonPublicPublic)!;
+        var observerField = highlight.GetType().GetField("_admissionObserver", AnyInstance)!;
         try
         {
             Check(point.IsReferencedGeometry && point.IsGeometryLoaded && point.ReferenceID == first,
                 "the point reference fixture starts with a loaded same-value source");
             var witnessType = assembly.GetType("BetterGhPanel.Runtime.CaptureGraphWitness", true)!;
             object?[] captureArgs = { point, 20000, null };
-            bool captured = (bool)witnessType.GetMethod("TryCapture", FlagsNonPublicPublicStatic)!.Invoke(null, captureArgs)!;
+            bool captured = (bool)witnessType.GetMethod("TryCapture", AnyStatic)!.Invoke(null, captureArgs)!;
             var witness = captureArgs[2]!;
             Method(witness, "ResolveContexts").Invoke(witness, Array.Empty<object>());
-            var isCurrent = witnessType.GetMethod("IsCurrent", FlagsInstanceNonPublicPublic, null, Type.EmptyTypes, null)!;
+            var isCurrent = witnessType.GetMethod("IsCurrent", AnyInstance, null, Type.EmptyTypes, null)!;
             Check(captured && (bool)isCurrent.Invoke(witness, Array.Empty<object>())!,
                 "the captured point witness accepts the original reference");
             point.ReferenceID = second;
@@ -223,7 +223,7 @@ internal static partial class PreviewSafetyChecks
             var custom = new StandalonePointPreview();
             custom.OnBounds = () => point.ReferenceID = second;
             object framed = Frame(assembly, new IGH_Goo?[] { point, custom });
-            Check(!ReflectProperty403875335<bool>(framed, "Success") && viewport.CameraTarget == target && point.Value == value,
+            Check(!PropertyValue<bool>(framed, "Success") && viewport.CameraTarget == target && point.Value == value,
                 "a same-value point retarget during a later bounds callback cancels frame");
             point.ReferenceID = first;
             using var curve = new LineCurve(Point3d.Origin, new Point3d(3, 0, 0));
@@ -232,7 +232,7 @@ internal static partial class PreviewSafetyChecks
             CopyRoundTripUserData.DuplicateAt = 1; CopyRoundTripUserData.TriggeredGeneration = 0;
             CopyRoundTripUserData.OnDuplicateAction = () => point.ReferenceID = second;
             object copied = Copy(assembly, new IGH_Goo?[] { point, new GH_Curve { Value = curve } });
-            Check(!ReflectProperty403875335<bool>(copied, "Success") && Forms.Clipboard.GetText() == "keep point reference clipboard" &&
+            Check(!PropertyValue<bool>(copied, "Success") && Forms.Clipboard.GetText() == "keep point reference clipboard" &&
                 point.Value == value && CopyRoundTripUserData.TriggeredGeneration > 0,
                 "a same-value point retarget during duplication cancels copy before publication");
 
@@ -242,14 +242,14 @@ internal static partial class PreviewSafetyChecks
             custom.OnBounds = () => replaced = rhino.Objects.Replace(first, value);
             target = viewport.CameraTarget;
             framed = Frame(assembly, new IGH_Goo?[] { point, custom });
-            Check(replaced && rhino.Objects.FindId(first).RuntimeSerialNumber != serial && !ReflectProperty403875335<bool>(framed, "Success") &&
+            Check(replaced && rhino.Objects.FindId(first).RuntimeSerialNumber != serial && !PropertyValue<bool>(framed, "Success") &&
                 viewport.CameraTarget == target && point.ReferenceID == first && point.Value == value,
                 "replacing the referenced Rhino object under the same ID cancels frame");
             serial = rhino.Objects.FindId(first).RuntimeSerialNumber; replaced = false;
             CopyRoundTripUserData.TriggeredGeneration = 0;
             CopyRoundTripUserData.OnDuplicateAction = () => replaced = rhino.Objects.Replace(first, value);
             copied = Copy(assembly, new IGH_Goo?[] { point, new GH_Curve { Value = curve } });
-            Check(replaced && rhino.Objects.FindId(first).RuntimeSerialNumber != serial && !ReflectProperty403875335<bool>(copied, "Success") &&
+            Check(replaced && rhino.Objects.FindId(first).RuntimeSerialNumber != serial && !PropertyValue<bool>(copied, "Success") &&
                 Forms.Clipboard.GetText() == "keep point reference clipboard" && point.ReferenceID == first && point.Value == value,
                 "replacing the referenced Rhino object under the same ID cancels copy");
         }
@@ -277,7 +277,7 @@ internal static partial class PreviewSafetyChecks
             viewport.LockedProjection = false;
             var item = new IGH_Goo?[] { new GH_Point(new Point3d(19, 0, 0)) };
             var normalFrame = Frame(assembly, item);
-            Check(ReflectProperty403875335<bool>(normalFrame, "Success"), "unchanged frame publication context remains valid");
+            Check(PropertyValue<bool>(normalFrame, "Success"), "unchanged frame publication context remains valid");
             var target = viewport.CameraTarget;
             bool dispatching = false, lockChanged = false;
             int checks = 0;
@@ -291,19 +291,19 @@ internal static partial class PreviewSafetyChecks
             };
             Action frameWriter = () =>
             {
-                frameStarted = actionType.GetMethod("FrameWithCompletion", FlagsNonPublicPublicStatic)!.Invoke(null,
+                frameStarted = actionType.GetMethod("FrameWithCompletion", AnyStatic)!.Invoke(null,
                     new object?[] { new IGH_Goo?[] { new GH_Point(new Point3d(90, 0, 0)) }, frameCurrent, typedFrameDone });
                 dispatching = true;
             };
-            actionType.GetMethod("CommitFrame", FlagsNonPublicPublicStatic)!.Invoke(null,
+            actionType.GetMethod("CommitFrame", AnyStatic)!.Invoke(null,
                 new object?[] { viewport.Id, (Func<bool>)(() => true), frameWriter, null });
-            Check(frameStarted != null && ReflectProperty403875335<bool>(frameStarted, "Deferred") && lockChanged && frameCompletion != null &&
-                !ReflectProperty403875335<bool>(frameCompletion, "Success") && ReflectProperty403875335<string>(frameCompletion, "Error").Contains("cancelled") && viewport.CameraTarget == target,
+            Check(frameStarted != null && PropertyValue<bool>(frameStarted, "Deferred") && lockChanged && frameCompletion != null &&
+                !PropertyValue<bool>(frameCompletion, "Success") && PropertyValue<string>(frameCompletion, "Error").Contains("cancelled") && viewport.CameraTarget == target,
                 $"a deferred frame rechecks a viewport lock changed by its final source predicate (checks={checks})");
             viewport.LockedProjection = false;
 
             var normalCopy = Copy(assembly, item);
-            Check(ReflectProperty403875335<bool>(normalCopy, "Success"), "unchanged clipboard publication context remains valid");
+            Check(PropertyValue<bool>(normalCopy, "Success"), "unchanged clipboard publication context remains valid");
             Forms.Clipboard.SetText("keep late-context clipboard");
             dispatching = false; checks = 0;
             bool toleranceChanged = false;
@@ -317,14 +317,14 @@ internal static partial class PreviewSafetyChecks
             };
             Action clipboardWriter = () =>
             {
-                copyStarted = actionType.GetMethod("CopyGeometryWithCompletion", FlagsNonPublicPublicStatic)!.Invoke(null,
+                copyStarted = actionType.GetMethod("CopyGeometryWithCompletion", AnyStatic)!.Invoke(null,
                     new object?[] { item, rhino.ModelUnitSystem, tolerance, copyCurrent, typedCopyDone });
                 dispatching = true;
             };
-            actionType.GetMethod("CommitClipboard", FlagsNonPublicPublicStatic)!.Invoke(null,
+            actionType.GetMethod("CommitClipboard", AnyStatic)!.Invoke(null,
                 new object?[] { (Func<bool>)(() => true), clipboardWriter, null });
-            Check(copyStarted != null && ReflectProperty403875335<bool>(copyStarted, "Deferred") && toleranceChanged && copyCompletion != null &&
-                !ReflectProperty403875335<bool>(copyCompletion, "Success") && ReflectProperty403875335<string>(copyCompletion, "Error").Contains("cancelled") && Forms.Clipboard.GetText() == "keep late-context clipboard",
+            Check(copyStarted != null && PropertyValue<bool>(copyStarted, "Deferred") && toleranceChanged && copyCompletion != null &&
+                !PropertyValue<bool>(copyCompletion, "Success") && PropertyValue<string>(copyCompletion, "Error").Contains("cancelled") && Forms.Clipboard.GetText() == "keep late-context clipboard",
                 $"a deferred copy rechecks tolerance changed by its final source predicate (checks={checks})");
         }
         finally
@@ -351,10 +351,10 @@ internal static partial class PreviewSafetyChecks
                 Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && !Bounds(assembly, values[i]!).IsValid,
                     "unsupported standalone geometry " + i + " reports partial preview and unavailable bounds");
                 object framed = Frame(assembly, new IGH_Goo?[] { values[i], new GH_Point(new Point3d(10, 0, 0)) });
-                Check(ReflectProperty403875335<bool>(framed, "Success") && ReflectProperty403875335<int>(framed, "Skipped") == 1,
+                Check(PropertyValue<bool>(framed, "Success") && PropertyValue<int>(framed, "Skipped") == 1,
                     "frame visibly skips unsupported standalone geometry " + i);
                 object copied = Copy(assembly, new IGH_Goo?[] { values[i], new GH_Point(new Point3d(10, 0, 0)) });
-                Check(ReflectProperty403875335<bool>(copied, "Success") && ReflectProperty403875335<int>(copied, "Count") == 1 && ReflectProperty403875335<int>(copied, "Skipped") == 1,
+                Check(PropertyValue<bool>(copied, "Success") && PropertyValue<int>(copied, "Count") == 1 && PropertyValue<int>(copied, "Skipped") == 1,
                     "copy visibly skips unsupported standalone geometry " + i);
             }
             var group = new GH_GeometryGroup(); group.Objects.Add(new GH_Point(Point3d.Origin)); group.Objects.Add(new HostileCurveHolder());
@@ -364,8 +364,8 @@ internal static partial class PreviewSafetyChecks
                 "a group with an unsupported hostile child is not silently admitted or dispatched");
             object groupFrame = Frame(assembly, new IGH_Goo?[] { group, new GH_Point(new Point3d(10, 0, 0)) });
             object groupCopy = Copy(assembly, new IGH_Goo?[] { group, new GH_Point(new Point3d(10, 0, 0)) });
-            Check(ReflectProperty403875335<bool>(groupFrame, "Success") && ReflectProperty403875335<int>(groupFrame, "Skipped") == 1 &&
-                ReflectProperty403875335<bool>(groupCopy, "Success") && ReflectProperty403875335<int>(groupCopy, "Skipped") == 1 && HostileCurveHolder.Calls == 0,
+            Check(PropertyValue<bool>(groupFrame, "Success") && PropertyValue<int>(groupFrame, "Skipped") == 1 &&
+                PropertyValue<bool>(groupCopy, "Success") && PropertyValue<int>(groupCopy, "Skipped") == 1 && HostileCurveHolder.Calls == 0,
                 "frame and copy report the skipped group and preserve the separate supported point");
             Check(RhinoApp.RunScript(rhino.RuntimeSerialNumber, "_Paste", false), "Rhino accepts the partial-action clipboard");
             var deadline = DateTime.UtcNow.AddSeconds(20);
@@ -378,8 +378,8 @@ internal static partial class PreviewSafetyChecks
             Forms.Clipboard.SetText("keep oversized clipboard");
             Set(highlight, new IGH_Goo?[] { tooLong }, new[] { 0 }, new[] { 0 });
             object oversized = Copy(assembly, new IGH_Goo?[] { tooLong, new GH_Point(Point3d.Origin) });
-            Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && !ReflectProperty403875335<bool>(oversized, "Success") &&
-                ReflectProperty403875335<bool>(oversized, "Exhausted") && Forms.Clipboard.GetText() == "keep oversized clipboard",
+            Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && !PropertyValue<bool>(oversized, "Success") &&
+                PropertyValue<bool>(oversized, "Exhausted") && Forms.Clipboard.GetText() == "keep oversized clipboard",
                 "an oversized wrapped polyline exhausts the action visibly without replacing the clipboard");
         }
         finally
@@ -403,7 +403,7 @@ internal static partial class PreviewSafetyChecks
         foreach (bool labels in new[] { false, true })
         {
             int visits = 0;
-            var selection = Activator.CreateInstance(selectionType, FlagsInstanceNonPublicPublic, null, new object[] { (Action)(() => visits++) }, null)!;
+            var selection = Activator.CreateInstance(selectionType, AnyInstance, null, new object[] { (Action)(() => visits++) }, null)!;
             Method(selection, "SelectAll").Invoke(selection, new object?[] { result, null, false });
             var ordered = (IReadOnlyList<int>)Method(selection, "OrderedPositions").Invoke(selection, new object[] { result })!;
             Method(highlight, "SetOrderResult").Invoke(highlight, new object?[] { labels ? result : null });
@@ -412,13 +412,13 @@ internal static partial class PreviewSafetyChecks
             Method(selection, "SelectAt").Invoke(selection, new object[] { result, 4000, 4000, true, false, false });
             ordered = (IReadOnlyList<int>)Method(selection, "OrderedPositions").Invoke(selection, new object[] { result })!;
             Method(highlight, "SetScopeChecked").Invoke(highlight, new object[] { source, result, filtered, ordered, (Func<bool>)(() => true), selection });
-            Check(visits <= 2 && ReflectProperty403875335<int>(highlight, "LastVisitedRows") <= 1 && ordered.Count == count - 1,
+            Check(visits <= 2 && PropertyValue<int>(highlight, "LastVisitedRows") <= 1 && ordered.Count == count - 1,
                 "dense deselection avoids full-result ordering and preview visits in both preview modes and label settings");
             visits = 0;
             Method(selection, "SelectAt").Invoke(selection, new object[] { result, 4000, 4000, true, false, false });
             ordered = (IReadOnlyList<int>)Method(selection, "OrderedPositions").Invoke(selection, new object[] { result })!;
             Method(highlight, "SetScopeChecked").Invoke(highlight, new object[] { source, result, filtered, ordered, (Func<bool>)(() => true), selection });
-            Check(visits <= 2 && ReflectProperty403875335<int>(highlight, "LastVisitedRows") <= 1 && ordered.Count == count,
+            Check(visits <= 2 && PropertyValue<int>(highlight, "LastVisitedRows") <= 1 && ordered.Count == count,
                 "reselecting one dense member updates only that preview classification");
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
         }

@@ -42,8 +42,8 @@ internal static class WysiwygValuesChecks
         fixture.Solve();
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 2);
         Call(component, "SetUnits", PanelUnitConversion.None, 2, (double?)50);
-        await fixture.Ready(() => fixture.Result.Snapshot != null && ReflectProperty403875335<PanelQueryOptions>(fixture.Session, "Options").RoundUpFactor == 50);
-        var options = ReflectProperty403875335<PanelQueryOptions>(fixture.Session, "Options");
+        await fixture.Ready(() => fixture.Result.Snapshot != null && PropertyValue<PanelQueryOptions>(fixture.Session, "Options").RoundUpFactor == 50);
+        var options = PropertyValue<PanelQueryOptions>(fixture.Session, "Options");
         options.DisplayFilterValue = true; options.SearchMode = PanelSearchMode.Length;
         fixture.Query(options);
         Call(component, "SetOutputValues", PanelOutputValues.Values);
@@ -120,36 +120,36 @@ internal static class WysiwygValuesChecks
         Capture("rounded-length-raw-tooltip", tooltip);
         fixture.ClearSelection();
         PanelTestAdapter.Resize(component, 560, 360); attributes.PerformLayout(); Render();
-        Check(!ReflectField2106128985<bool>(attributes, "_singleLineFooter") && PanelTestAdapter.LayoutRect(attributes, "OutValues").Right < PanelTestAdapter.LayoutRect(attributes, "SelectAll").Left,
+        Check(!FieldValue<bool>(attributes, "_singleLineFooter") && PanelTestAdapter.LayoutRect(attributes, "OutValues").Right < PanelTestAdapter.LayoutRect(attributes, "SelectAll").Left,
             "560px Values footer reserves separate status and Units rows");
         Capture("footer-560-values");
         fixture.SelectAt(0); Render();
-        var heading = ReflectField2106128985<IEnumerable>(attributes, "_branchHits").Cast<object>().First();
-        var bounds = ReflectProperty403875335<RectangleF>(heading, "Bounds");
-        Check(ReflectProperty403875335<RectangleF>(heading, "CopyBounds").IsEmpty, "An unhovered heading has no copy hit target");
+        var heading = FieldValue<IEnumerable>(attributes, "_branchHits").Cast<object>().First();
+        var bounds = PropertyValue<RectangleF>(heading, "Bounds");
+        Check(PropertyValue<RectangleF>(heading, "CopyBounds").IsEmpty, "An unhovered heading has no copy hit target");
         Call(attributes, "UpdateHover", canvas, new PointF(bounds.X + 20, bounds.Y + bounds.Height / 2));
         Capture("branch-copy-hover");
-        heading = ReflectField2106128985<IEnumerable>(attributes, "_branchHits").Cast<object>().First();
+        heading = FieldValue<IEnumerable>(attributes, "_branchHits").Cast<object>().First();
         var clipboard = Forms.Clipboard.GetDataObject();
         try
         {
-            var copy = ReflectProperty403875335<RectangleF>(heading, "CopyBounds");
+            var copy = PropertyValue<RectangleF>(heading, "CopyBounds");
             Check(!copy.IsEmpty, "Hover paints the copy glyph and creates its hit target together");
             PanelTestAdapter.CanvasClick(canvas, new PointF(copy.X + copy.Width / 2, copy.Y + copy.Height / 2));
-            await fixture.Ready(() => ReflectField2106128985<string>(attributes, "_actionStatus") == "Copied {0;2;52}");
+            await fixture.Ready(() => FieldValue<string>(attributes, "_actionStatus") == "Copied {0;2;52}");
             Check(await ClipboardIs("{0;2;52}") && fixture.SelectedCount == 1, "Heading glyph copies the exact path without changing selection");
             Call(attributes, "UpdateHover", canvas, new PointF(bounds.X - 20, bounds.Y)); Render();
-            Check(ReflectProperty403875335<RectangleF>(ReflectField2106128985<IEnumerable>(attributes, "_branchHits").Cast<object>().First(), "CopyBounds").IsEmpty,
+            Check(PropertyValue<RectangleF>(FieldValue<IEnumerable>(attributes, "_branchHits").Cast<object>().First(), "CopyBounds").IsEmpty,
                 "Leaving a heading removes its copy hit target");
             Render();
             PanelTestAdapter.CanvasClick(canvas, new PointF(bounds.X + 20, bounds.Y + bounds.Height / 2), Forms.MouseButtons.Right);
             Capture("branch-heading-menu");
-            Check(ReflectField2106128985<Array>(attributes, "_rowMenuActions").Length == 5, "Heading menu includes selected paths and branch-only filtering");
+            Check(FieldValue<Array>(attributes, "_rowMenuActions").Length == 5, "Heading menu includes selected paths and branch-only filtering");
             Call(attributes, "CloseRowMenu"); Render();
             var row = PanelTestAdapter.RowBounds(component, 0);
             PanelTestAdapter.CanvasClick(canvas, new PointF(row.X + 80, row.Y + row.Height / 2), Forms.MouseButtons.Right);
             Capture("row-address-table-menu");
-            Check(ReflectField2106128985<Array>(attributes, "_rowMenuActions").Cast<object>().Any(action => ReflectProperty403875335<object>(action, "Action").ToString() == "CopyTable"),
+            Check(FieldValue<Array>(attributes, "_rowMenuActions").Cast<object>().Any(action => PropertyValue<object>(action, "Action").ToString() == "CopyTable"),
                 "Native row menu contains Copy as table");
             Call(attributes, "CloseRowMenu");
             string copied = await (Task<string>)Call(component, "CopyValuesAsync", fixture.Result.Snapshot, new[] { 0 })!;
@@ -166,7 +166,7 @@ internal static class WysiwygValuesChecks
             Render();
             var keyTarget = assembly.GetType("BetterGhPanel.UI.IPanelInputTarget", true)!;
             keyTarget.GetMethod("HandleKey")!.Invoke(attributes, new object[] { canvas, Forms.Keys.Control | Forms.Keys.Shift | Forms.Keys.C });
-            await fixture.Ready(() => ReflectField2106128985<string>(attributes, "_actionStatus") == "Addresses copied");
+            await fixture.Ready(() => FieldValue<string>(attributes, "_actionStatus") == "Addresses copied");
             Check(await ClipboardIs("{0;2;52}"), "Ctrl/Cmd+Shift+C copies unique selected paths");
 
             Call(component, "SetOutputValues", PanelOutputValues.Items);
@@ -214,7 +214,7 @@ internal static class WysiwygValuesChecks
         fixture.Source.PersistentData.Append(new GH_Integer(42), path); fixture.Solve();
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).FirstOrDefault() is GH_Integer);
         Check(fixture.Result.Snapshot.Rows[0].TypeName == "Integer", "Explicit decimals retain Integer goo and its type filter identity");
-        options = ReflectProperty403875335<PanelQueryOptions>(fixture.Session, "Options"); options.TypeName = "Integer"; fixture.Query(options);
+        options = PropertyValue<PanelQueryOptions>(fixture.Session, "Options"); options.TypeName = "Integer"; fixture.Query(options);
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 1);
         fixture.Source.PersistentData.Clear();
         fixture.Source.PersistentData.Append(new GH_Number(-0.0), path); fixture.Solve();
@@ -239,25 +239,25 @@ internal static class WysiwygValuesChecks
         await fixture.Ready(() => fixture.Result.Warnings.UnverifiedCount == 1);
         foreach (int kind in new[] { 0, 1, 2, 3 })
         {
-            var restricted = ReflectProperty403875335<PanelQueryOptions>(fixture.Session, "Options");
+            var restricted = PropertyValue<PanelQueryOptions>(fixture.Session, "Options");
             restricted.SearchMode = PanelSearchMode.Regex; restricted.Search = "no matches";
             restricted.TypeName = "Integer"; restricted.OnlyInvalid = true; restricted.BranchPath = "{99}";
             fixture.Query(restricted);
             await fixture.Ready(() => fixture.Result.RowPositions.Count == 0);
             attributes.PerformLayout(); Render();
-            var hits = ReflectField2106128985<System.Collections.Generic.List<(RectangleF Bounds, int Kind)>>(attributes, "_warningHits");
+            var hits = FieldValue<System.Collections.Generic.List<(RectangleF Bounds, int Kind)>>(attributes, "_warningHits");
             var warning = hits.Single(hit => hit.Kind == kind);
             fixture.Document.UndoServer.Clear();
             PanelTestAdapter.CanvasClick(canvas, new PointF(warning.Bounds.X + warning.Bounds.Width / 2, warning.Bounds.Y + 8));
             await fixture.Ready(() => kind == 3 ? fixture.Result.BranchPaths.Count == 2 : fixture.Result.RowPositions.Count == 1);
-            var jumped = ReflectProperty403875335<PanelQueryOptions>(fixture.Session, "Options");
+            var jumped = PropertyValue<PanelQueryOptions>(fixture.Session, "Options");
             Check(jumped.TypeName == null && !jumped.OnlyInvalid && jumped.BranchPath == null && jumped.Search != "no matches" &&
-                jumped.DecimalPlaces == 2 && ReflectProperty403875335<PanelUnitConversion>(component, "UnitConversion") == PanelUnitConversion.MillimetersToMeters &&
-                ReflectProperty403875335<bool>(component, "ReverseTree") && fixture.Document.UndoServer.UndoCount == 1,
+                jumped.DecimalPlaces == 2 && PropertyValue<PanelUnitConversion>(component, "UnitConversion") == PanelUnitConversion.MillimetersToMeters &&
+                PropertyValue<bool>(component, "ReverseTree") && fixture.Document.UndoServer.UndoCount == 1,
                 "Warning jump clears restrictions, keeps units/tree tools, and records one Undo step: " + kind);
             fixture.Document.UndoServer.PerformUndo();
             await fixture.Ready(() => fixture.Result.RowPositions.Count == 0);
-            var restored = ReflectProperty403875335<PanelQueryOptions>(fixture.Session, "Options");
+            var restored = PropertyValue<PanelQueryOptions>(fixture.Session, "Options");
             Check(restored.Search == "no matches" && restored.TypeName == "Integer" && restored.OnlyInvalid && restored.BranchPath == "{99}",
                 "One Undo restores all prior warning-click restrictions: " + kind);
         }
@@ -266,8 +266,8 @@ internal static class WysiwygValuesChecks
         PanelTestAdapter.Resize(component, 300, 220);
         Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Half"));
         attributes.PerformLayout(); Render();
-        Check(ReflectField2106128985<float>(attributes, "_warningsHeight") == 0 && PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Bottom <= PanelTestAdapter.LayoutRect(attributes, "Footer").Top &&
-            ReflectField2106128985<System.Collections.Generic.List<(RectangleF Bounds, int Kind)>>(attributes, "_warningHits").Count == 0,
+        Check(FieldValue<float>(attributes, "_warningsHeight") == 0 && PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Bottom <= PanelTestAdapter.LayoutRect(attributes, "Footer").Top &&
+            FieldValue<System.Collections.Generic.List<(RectangleF Bounds, int Kind)>>(attributes, "_warningHits").Count == 0,
             "Compact Half hides warnings and keeps rows above footer with no stale warning hit targets");
         Capture("compact-half");
     }

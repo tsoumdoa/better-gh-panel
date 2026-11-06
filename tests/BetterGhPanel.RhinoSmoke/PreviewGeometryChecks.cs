@@ -66,7 +66,7 @@ internal static class PreviewGeometryChecks
         var values = new IGH_Goo?[] { curve, polyHolder, surfaceHolder, solidHolder, subdHolder };
         Set(highlight, values, new[] { 0, 1, 2, 3, 4 }, new[] { 0, 2 });
         Check(Count(highlight) == 5 && Box(highlight).Contains(subd.GetBoundingBox(false).Center) &&
-            ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+            PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
             "ordinary NURBS, polycurve, surface, Brep and SubD receive bounded owned previews");
         var oldBounds = Box(highlight);
         Check(nurbs.Points.SetPoint(1, new Point4d(40, 60, 0, 2)), "live NURBS changes after admission");
@@ -75,7 +75,7 @@ internal static class PreviewGeometryChecks
         Check(!Box(highlight).Equals(oldBounds), "a new generation rebuilds the NURBS snapshot and bounds together");
 
         object copied = Copy(assembly, values);
-        if (!ReflectProperty403875335<bool>(copied, "Success") || ReflectProperty403875335<int>(copied, "Count") != 5 || ReflectProperty403875335<int>(copied, "Skipped") != 0)
+        if (!PropertyValue<bool>(copied, "Success") || PropertyValue<int>(copied, "Count") != 5 || PropertyValue<int>(copied, "Skipped") != 0)
         {
             Console.WriteLine("Combined ordinary geometry copy: " + DescribeCopy(copied));
             for (int i = 0; i < values.Length; i++)
@@ -83,7 +83,7 @@ internal static class PreviewGeometryChecks
                     DescribeCopy(Copy(assembly, new[] { values[i] })));
             DiagnoseDictionaryArchive(assembly, nurbs);
         }
-        Check(ReflectProperty403875335<bool>(copied, "Success") && ReflectProperty403875335<int>(copied, "Count") == 5 && ReflectProperty403875335<int>(copied, "Skipped") == 0,
+        Check(PropertyValue<bool>(copied, "Success") && PropertyValue<int>(copied, "Count") == 5 && PropertyValue<int>(copied, "Skipped") == 0,
             "explicit geometry copy retains all five ordinary native geometry rows: " + DescribeCopy(copied));
         using var file = ClipboardArchive();
         var geometries = ArchiveGeometry(file);
@@ -110,8 +110,8 @@ internal static class PreviewGeometryChecks
         Check(Count(highlight) == 2 && nurbs.HasUserData && PolylineSafetyUserData.Callbacks == 0,
             "standalone and grouped NURBS previews reconstruct values without custom UserData callbacks");
         object copied = Copy(assembly, new IGH_Goo?[] { holder });
-        Check(!ReflectProperty403875335<bool>(copied, "Success") && ReflectProperty403875335<int>(copied, "Skipped") == 1 && nurbs.HasUserData &&
-            ReflectProperty403875335<string>(copied, "Error").Contains("custom") && PolylineSafetyUserData.Callbacks > 0,
+        Check(!PropertyValue<bool>(copied, "Success") && PropertyValue<int>(copied, "Skipped") == 1 && nurbs.HasUserData &&
+            PropertyValue<string>(copied, "Error").Contains("custom") && PolylineSafetyUserData.Callbacks > 0,
             "explicit copy reports the throwing custom callback and leaves the source metadata intact");
         PolylineSafetyUserData.Reset(false);
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
@@ -125,7 +125,7 @@ internal static class PreviewGeometryChecks
         var holder = new GH_Brep { Value = brep };
         Check(brep.HasUserData && brep.Curves3D[0].HasUserData, "root and nested SDK dictionary metadata exist on the input Brep");
         object result = Copy(assembly, new IGH_Goo?[] { holder });
-        Check(ReflectProperty403875335<bool>(result, "Success") && ReflectProperty403875335<int>(result, "Count") == 1,
+        Check(PropertyValue<bool>(result, "Success") && PropertyValue<int>(result, "Count") == 1,
             "bounded SDK dictionaries on root and nested Brep objects are eligible for explicit copy");
         using var file = ClipboardArchive();
         var copied = ArchiveGeometry(file).OfType<Brep>().Single();
@@ -150,7 +150,7 @@ internal static class PreviewGeometryChecks
             (customBrep.Curves3D[0].UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 52,
             "standalone and grouped Breps with benign custom metadata use owned compatibility previews without altering the source");
         object customCopy = Copy(assembly, new IGH_Goo?[] { customHolder, customGroup });
-        Check(ReflectProperty403875335<bool>(customCopy, "Success") && ReflectProperty403875335<int>(customCopy, "Count") == 2 && ReflectProperty403875335<bool>(customCopy, "UnverifiedMetadata"),
+        Check(PropertyValue<bool>(customCopy, "Success") && PropertyValue<int>(customCopy, "Count") == 2 && PropertyValue<bool>(customCopy, "UnverifiedMetadata"),
             "standalone and grouped Breps with custom metadata copy with the incomplete-witness status");
         using (var customArchive = ClipboardArchive())
             Check(ArchiveGeometry(customArchive).OfType<Brep>().Count(value =>
@@ -172,7 +172,7 @@ internal static class PreviewGeometryChecks
             (customPoly.SegmentCurve(0).UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 62,
             "standalone and grouped polycurves with benign nested metadata remain previewable and preserve the source");
         object customPolyCopy = Copy(assembly, new IGH_Goo?[] { customPolyHolder, customPolyGroup });
-        Check(ReflectProperty403875335<bool>(customPolyCopy, "Success") && ReflectProperty403875335<int>(customPolyCopy, "Count") == 2 && ReflectProperty403875335<bool>(customPolyCopy, "UnverifiedMetadata"),
+        Check(PropertyValue<bool>(customPolyCopy, "Success") && PropertyValue<int>(customPolyCopy, "Count") == 2 && PropertyValue<bool>(customPolyCopy, "UnverifiedMetadata"),
             "standalone and grouped polycurves with custom metadata copy with a visible incomplete-witness status");
         using (var customPolyArchive = ClipboardArchive())
             Check(ArchiveGeometry(customPolyArchive).OfType<PolyCurve>().Count(value =>
@@ -185,8 +185,8 @@ internal static class PreviewGeometryChecks
         complexCurve.UserDictionary.Set("integer-array", new[] { 1, 2, 3 });
         var complex = new GH_Curve { Value = complexCurve };
         object partial = Copy(assembly, new IGH_Goo?[] { new GH_Point(Point3d.Origin), complex });
-        Check(ReflectProperty403875335<bool>(partial, "Success") && ReflectProperty403875335<int>(partial, "Count") == 2 &&
-            ReflectProperty403875335<int>(partial, "Skipped") == 0 && complexCurve.UserDictionary.ContainsKey("integer-array"),
+        Check(PropertyValue<bool>(partial, "Success") && PropertyValue<int>(partial, "Count") == 2 &&
+            PropertyValue<int>(partial, "Skipped") == 0 && complexCurve.UserDictionary.ContainsKey("integer-array"),
             "common dictionary arrays and another selected point are copied without dropping metadata");
         using (var arrayArchive = ClipboardArchive())
         {
@@ -207,7 +207,7 @@ internal static class PreviewGeometryChecks
         Check(Count(highlight) == 0 && PolylineSafetyUserData.Callbacks > 0 && Status(highlight).Contains("partial") && attachedMesh!.HasUserData,
             "automatic compatibility preview visibly rejects a throwing cached-mesh callback and preserves the source");
         object cacheCopy = Copy(assembly, new IGH_Goo?[] { cachedHolder });
-        Check(Count(highlight) == 0 && !ReflectProperty403875335<bool>(cacheCopy, "Success") && attachedMesh!.HasUserData &&
+        Check(Count(highlight) == 0 && !PropertyValue<bool>(cacheCopy, "Success") && attachedMesh!.HasUserData &&
             PolylineSafetyUserData.Callbacks > 0, "explicit copy reports throwing cached-mesh metadata and leaves the source intact");
         PolylineSafetyUserData.Reset(false);
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
@@ -223,10 +223,10 @@ internal static class PreviewGeometryChecks
         var largeGroup = new GH_GeometryGroup(); largeGroup.Objects.Add(holder);
         Set(highlight, new IGH_Goo?[] { holder, largeGroup }, new[] { 0, 1 }, new[] { 0 });
         Check(Count(highlight) == 2 && Box(highlight).Contains(new Point3d(1024, 0, 0)) &&
-            ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+            PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
             "standalone and grouped NURBS beyond narrow reconstruction use bounded compatibility snapshots");
         object largeCopy = Copy(assembly, new IGH_Goo?[] { holder, largeGroup });
-        Check(ReflectProperty403875335<bool>(largeCopy, "Success") && ReflectProperty403875335<int>(largeCopy, "Count") == 2 && ReflectProperty403875335<int>(largeCopy, "Skipped") == 0,
+        Check(PropertyValue<bool>(largeCopy, "Success") && PropertyValue<int>(largeCopy, "Count") == 2 && PropertyValue<int>(largeCopy, "Skipped") == 0,
             "compatibility-size standalone and grouped NURBS copy without skips: " + DescribeCopy(largeCopy));
         using (var largeArchive = ClipboardArchive())
             Check(ArchiveGeometry(largeArchive).OfType<NurbsCurve>().Count(curve => curve.Points.Count == 1025) == 2,
@@ -236,10 +236,10 @@ internal static class PreviewGeometryChecks
         var polylineHolder = new GH_Curve { Value = polyline };
         var polylineGroup = new GH_GeometryGroup(); polylineGroup.Objects.Add(polylineHolder);
         Set(highlight, new IGH_Goo?[] { polylineHolder, polylineGroup }, new[] { 0, 1 }, new[] { 0 });
-        Check(Count(highlight) == 2 && Box(highlight).Max.X == 2048 && ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+        Check(Count(highlight) == 2 && Box(highlight).Max.X == 2048 && PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
             "standalone and grouped 2049-point polylines receive bounded compatibility previews");
         object polylineCopy = Copy(assembly, new IGH_Goo?[] { polylineHolder, polylineGroup });
-        Check(ReflectProperty403875335<bool>(polylineCopy, "Success") && ReflectProperty403875335<int>(polylineCopy, "Count") == 2 && ReflectProperty403875335<int>(polylineCopy, "Skipped") == 0,
+        Check(PropertyValue<bool>(polylineCopy, "Success") && PropertyValue<int>(polylineCopy, "Count") == 2 && PropertyValue<int>(polylineCopy, "Skipped") == 0,
             "compatibility-size polylines copy without skips: " + DescribeCopy(polylineCopy));
         using (var polylineArchive = ClipboardArchive())
             Check(ArchiveGeometry(polylineArchive).OfType<PolylineCurve>().Count(value => value.PointCount == 2049 && value.GetUserString("long") == "preserved") == 2 &&
@@ -248,8 +248,8 @@ internal static class PreviewGeometryChecks
         var group = new GH_GeometryGroup(); group.Objects.Add(new GH_Brep { Value = brep });
         var repeated = Enumerable.Repeat<IGH_Goo?>(group, 300).ToArray();
         Set(highlight, repeated, Enumerable.Range(0, repeated.Length).ToArray(), Array.Empty<int>());
-        Check(ReflectProperty403875335<int>(highlight, "LastVisitedNodes") <= 20000 && ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024 &&
-            ReflectProperty403875335<string>(highlight, "Status").Contains("partial"), "repeated Breps obey aggregate inspection and retained-resource limits");
+        Check(PropertyValue<int>(highlight, "LastVisitedNodes") <= 20000 && PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024 &&
+            PropertyValue<string>(highlight, "Status").Contains("partial"), "repeated Breps obey aggregate inspection and retained-resource limits");
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
         var snapshot = new PanelSnapshot(Enumerable.Range(0, repeated.Length)
             .Select(i => new PanelRow(i, "{0}", "Group", "group", null)).ToArray(),
@@ -259,8 +259,8 @@ internal static class PreviewGeometryChecks
         for (int i = 280; i < 290; i++)
         {
             Method(highlight, "SetScope").Invoke(highlight, new object[] { repeated, result, true, new[] { i } });
-            Check(ReflectProperty403875335<int>(highlight, "Count") == 1 && ReflectProperty403875335<int>(highlight, "LastVisitedRows") <= 1 &&
-                ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+            Check(PropertyValue<int>(highlight, "Count") == 1 && PropertyValue<int>(highlight, "LastVisitedRows") <= 1 &&
+                PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
                 "successive explicit Brep selections recover through bounded eviction without rescanning filtered rows");
         }
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
@@ -294,10 +294,10 @@ internal static class PreviewGeometryChecks
             uint beforeCopy = GetClipboardSequenceNumber();
             Action<byte[]> observeArchive = bytes => { preparedLength = bytes.Length; preparedDigest = SHA256.HashData(bytes); };
             object copy = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!
-                .GetMethod("CopyGeometryWithArchiveObserver", FlagsNonPublicPublicStatic)!.Invoke(null,
+                .GetMethod("CopyGeometryWithArchiveObserver", AnyStatic)!.Invoke(null,
                     new object[] { new IGH_Goo?[] { group }, doc.ModelUnitSystem, doc.ModelAbsoluteTolerance, observeArchive })!;
             uint afterCopy = GetClipboardSequenceNumber();
-            Check(ReflectProperty403875335<bool>(copy, "Success") && !ReflectProperty403875335<bool>(copy, "UnverifiedMetadata"),
+            Check(PropertyValue<bool>(copy, "Success") && !PropertyValue<bool>(copy, "UnverifiedMetadata"),
                 "ordinary root and nested user strings can be copied with the SDK dictionary");
             using (var archive = ClipboardArchive(preparedDigest, preparedLength, beforeCopy, afterCopy))
             {
@@ -343,14 +343,14 @@ internal static class PreviewGeometryChecks
             var polyGroup = new GH_GeometryGroup(); polyGroup.Objects.Add(polyHolder);
             var largeSources = new IGH_Goo?[] { nurbsHolder, nurbsGroup, curvedHolder, curvedGroup, polyHolder, polyGroup };
             var actionType = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!;
-            object frame = actionType.GetMethod("Frame", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { largeSources })!;
-            Check(ReflectProperty403875335<bool>(frame, "Success") && ReflectProperty403875335<int>(frame, "Count") == 6 && ReflectProperty403875335<int>(frame, "Skipped") == 0,
+            object frame = actionType.GetMethod("Frame", AnyStatic)!.Invoke(null, new object[] { largeSources })!;
+            Check(PropertyValue<bool>(frame, "Success") && PropertyValue<int>(frame, "Count") == 6 && PropertyValue<int>(frame, "Skipped") == 0,
                 "standalone and grouped compatibility-size curves frame without skips");
             beforeCopy = GetClipboardSequenceNumber();
-            copy = actionType.GetMethod("CopyGeometryWithArchiveObserver", FlagsNonPublicPublicStatic)!.Invoke(null,
+            copy = actionType.GetMethod("CopyGeometryWithArchiveObserver", AnyStatic)!.Invoke(null,
                 new object[] { largeSources, doc.ModelUnitSystem, doc.ModelAbsoluteTolerance, observeArchive })!;
             afterCopy = GetClipboardSequenceNumber();
-            Check(ReflectProperty403875335<bool>(copy, "Success") && ReflectProperty403875335<int>(copy, "Count") == 6 && ReflectProperty403875335<int>(copy, "Skipped") == 0,
+            Check(PropertyValue<bool>(copy, "Success") && PropertyValue<int>(copy, "Count") == 6 && PropertyValue<int>(copy, "Skipped") == 0,
                 "standalone and grouped compatibility-size curves copy without skips: " + DescribeCopy(copy));
             using (var archive = ClipboardArchive(preparedDigest, preparedLength, beforeCopy, afterCopy))
             {
@@ -381,7 +381,7 @@ internal static class PreviewGeometryChecks
                 "serializable managed metadata and user strings are attached to the source");
             CopyRoundTripUserData.Callbacks = 0;
             copy = Copy(assembly, new IGH_Goo?[] { new GH_Curve { Value = curve } });
-            Check(ReflectProperty403875335<bool>(copy, "Success") && ReflectProperty403875335<bool>(copy, "UnverifiedMetadata") && CopyRoundTripUserData.Callbacks > 0,
+            Check(PropertyValue<bool>(copy, "Success") && PropertyValue<bool>(copy, "UnverifiedMetadata") && CopyRoundTripUserData.Callbacks > 0,
                 "explicit copy invokes normal managed callbacks and visibly reports the incomplete custom-data witness");
             using (var archive = ClipboardArchive())
             {
@@ -406,14 +406,14 @@ internal static class PreviewGeometryChecks
             CopyRoundTripUserData.DuplicateCalls = 0; CopyRoundTripUserData.DuplicateAt = 1; CopyRoundTripUserData.TriggeredGeneration = 0;
             CopyRoundTripUserData.OnDuplicateAction = () => point.Value = new Point3d(99, 0, 0);
             copy = Copy(assembly, new IGH_Goo?[] { groupWithPoint });
-            Check(!ReflectProperty403875335<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep callback clipboard" &&
+            Check(!PropertyValue<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep callback clipboard" &&
                 point.Value.X == 99 && (curve.UserData.Find(typeof(CopyRoundTripUserData)) as CopyRoundTripUserData)?.Value == 73,
                 "an actual duplicate callback changing a grouped point cancels clipboard publication and preserves source metadata");
             point.Value = Point3d.Origin;
             CopyRoundTripUserData.DuplicateCalls = 0; CopyRoundTripUserData.DuplicateAt = 2; CopyRoundTripUserData.TriggeredGeneration = 0;
             CopyRoundTripUserData.OnDuplicateAction = () => point.Value = new Point3d(101, 0, 0);
             copy = Copy(assembly, new IGH_Goo?[] { groupWithPoint });
-            Check(CopyRoundTripUserData.DuplicateCalls >= 2 && CopyRoundTripUserData.TriggeredGeneration == 2 && !ReflectProperty403875335<bool>(copy, "Success") &&
+            Check(CopyRoundTripUserData.DuplicateCalls >= 2 && CopyRoundTripUserData.TriggeredGeneration == 2 && !PropertyValue<bool>(copy, "Success") &&
                 Forms.Clipboard.GetText() == "keep callback clipboard" && point.Value.X == 101,
                 "a File3dm Add duplication callback changing the group is rejected before clipboard publication");
             CopyRoundTripUserData.DuplicateAt = 1;
@@ -424,21 +424,21 @@ internal static class PreviewGeometryChecks
             {
                 CopyRoundTripUserData.OnDuplicateAction = () => doc.ModelUnitSystem = originalUnits == UnitSystem.Millimeters ? UnitSystem.Inches : UnitSystem.Millimeters;
                 copy = Copy(assembly, new IGH_Goo?[] { new GH_Curve { Value = curve } });
-                Check(!ReflectProperty403875335<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep callback clipboard",
+                Check(!PropertyValue<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep callback clipboard",
                     "changing model units in a duplicate callback cancels before replacing the clipboard");
                 doc.ModelUnitSystem = originalUnits;
                 CopyRoundTripUserData.OnDuplicateAction = () => doc.ModelAbsoluteTolerance = originalTolerance * 2;
                 copy = Copy(assembly, new IGH_Goo?[] { new GH_Curve { Value = curve } });
-                Check(!ReflectProperty403875335<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep callback clipboard",
+                Check(!PropertyValue<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep callback clipboard",
                     "changing model tolerance in a duplicate callback cancels before replacing the clipboard");
                 doc.ModelAbsoluteTolerance = originalTolerance;
                 using var alternateDoc = RhinoDoc.CreateHeadless(null);
                 RhinoDoc selectedDoc = doc;
                 CopyRoundTripUserData.OnDuplicateAction = () => selectedDoc = alternateDoc;
-                copy = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!.GetMethod("CopyGeometryWithContext", FlagsNonPublicPublicStatic)!
+                copy = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!.GetMethod("CopyGeometryWithContext", AnyStatic)!
                     .Invoke(null, new object[] { new IGH_Goo?[] { new GH_Curve { Value = curve } }, originalUnits, originalTolerance,
                         (Func<bool>)(() => true), (Func<RhinoDoc?>)(() => selectedDoc) })!;
-                Check(!ReflectProperty403875335<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep callback clipboard" &&
+                Check(!PropertyValue<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep callback clipboard" &&
                     alternateDoc.RuntimeSerialNumber != doc.RuntimeSerialNumber,
                     "switching the action context to another actual Rhino document cancels clipboard publication");
             }
@@ -517,11 +517,11 @@ internal static class PreviewGeometryChecks
             Check(Count(highlight) == 3 && Box(highlight).Contains(new Point3d(105, 2, 0)),
                 "loaded referenced geometry previews as a standalone, group member and wrapped group");
             object actions = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!;
-            var bounds = (BoundingBox)((Type)actions).GetMethod("GetBounds", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { wrapped })!;
-            object frame = ((Type)actions).GetMethod("Frame", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { new IGH_Goo?[] { wrapped } })!;
+            var bounds = (BoundingBox)((Type)actions).GetMethod("GetBounds", AnyStatic)!.Invoke(null, new object[] { wrapped })!;
+            object frame = ((Type)actions).GetMethod("Frame", AnyStatic)!.Invoke(null, new object[] { new IGH_Goo?[] { wrapped } })!;
             object copy = Copy(assembly, new IGH_Goo?[] { wrapped });
-            Check(bounds.IsValid && bounds.Contains(new Point3d(105, 2, 0)) && ReflectProperty403875335<bool>(frame, "Success") &&
-                ReflectProperty403875335<bool>(copy, "Success") && ReflectProperty403875335<int>(copy, "Count") == 1,
+            Check(bounds.IsValid && bounds.Contains(new Point3d(105, 2, 0)) && PropertyValue<bool>(frame, "Success") &&
+                PropertyValue<bool>(copy, "Success") && PropertyValue<int>(copy, "Count") == 1,
                 "loaded referenced geometry inside a wrapped group remains frameable and copyable");
             using var archive = ClipboardArchive();
             Check(archive.Objects.Count == 1 && ArchiveGeometry(archive).Single().GetBoundingBox(false).Contains(new Point3d(105, 2, 0)) &&
@@ -529,19 +529,19 @@ internal static class PreviewGeometryChecks
                 "referenced source stays linked while the clipboard receives its geometry");
             Curve captured = referenced.Value;
             var target = view.ActiveViewport.CameraTarget;
-            frame = ((Type)actions).GetMethod("Frame", FlagsNonPublicPublicStatic)!.Invoke(null,
+            frame = ((Type)actions).GetMethod("Frame", AnyStatic)!.Invoke(null,
                 new object[] { ChangeReferenceAfterPreparation(referenced, alternate, captured) })!;
-            Check(!ReflectProperty403875335<bool>(frame, "Success") && view.ActiveViewport.CameraTarget == target,
+            Check(!PropertyValue<bool>(frame, "Success") && view.ActiveViewport.CameraTarget == target,
                 "retargeting a loaded reference with the same inner curve cancels frame without camera motion");
             referenced.Value = captured; referenced.ReferenceID = id;
             Forms.Clipboard.SetText("keep reference clipboard");
             copy = Copy(assembly, ChangeReferenceAfterPreparation(referenced, alternate, captured));
-            Check(!ReflectProperty403875335<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep reference clipboard",
+            Check(!PropertyValue<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep reference clipboard",
                 "retargeting a loaded reference with the same inner curve cancels copy without changing the clipboard");
             referenced.Value = captured; referenced.ReferenceID = id;
             referenced.ReferenceEdge = -1;
             copy = Copy(assembly, ChangeReferenceEdgeAfterPreparation(referenced, captured));
-            Check(!ReflectProperty403875335<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep reference clipboard",
+            Check(!PropertyValue<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep reference clipboard",
                 "changing the referenced component on the same loaded holder cancels copy");
             referenced.ReferenceEdge = -1;
             Check(captured.UserData.Add(new CopyRoundTripUserData { Value = 41 }),
@@ -551,7 +551,7 @@ internal static class PreviewGeometryChecks
             CopyRoundTripUserData.DuplicateCalls = 0; CopyRoundTripUserData.TriggeredGeneration = 0; CopyRoundTripUserData.DuplicateAt = 1;
             CopyRoundTripUserData.OnDuplicateAction = () => referenced.ReferenceID = alternate;
             copy = Copy(assembly, new IGH_Goo?[] { referenced });
-            Check(!ReflectProperty403875335<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep reference clipboard" &&
+            Check(!PropertyValue<bool>(copy, "Success") && Forms.Clipboard.GetText() == "keep reference clipboard" &&
                 referenced.ReferenceID == alternate && referenced.IsGeometryLoaded && ReferenceEquals(referenced.Value, captured) &&
                 CopyRoundTripUserData.DuplicateCalls > 0 && CopyRoundTripUserData.TriggeredGeneration > 0,
                 $"a duplicate callback retargeting the same loaded holder and inner curve cancels clipboard publication " +
@@ -620,11 +620,11 @@ internal static class PreviewGeometryChecks
         return geometry.ToArray();
     }
     private static object Copy(Assembly assembly, IEnumerable<IGH_Goo?> values) => assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!
-        .GetMethod("CopyGeometry", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { values, RhinoDoc.ActiveDoc.ModelUnitSystem, RhinoDoc.ActiveDoc.ModelAbsoluteTolerance })!;
+        .GetMethod("CopyGeometry", AnyStatic)!.Invoke(null, new object[] { values, RhinoDoc.ActiveDoc.ModelUnitSystem, RhinoDoc.ActiveDoc.ModelAbsoluteTolerance })!;
     private static string DescribeCopy(object result) =>
-        $"success={ReflectProperty403875335<bool>(result, "Success")}, count={ReflectProperty403875335<int>(result, "Count")}, " +
-        $"skipped={ReflectProperty403875335<int>(result, "Skipped")}, exhausted={ReflectProperty403875335<bool>(result, "Exhausted")}, " +
-        $"detail={ReflectProperty403875335<string?>(result, "Detail") ?? "<none>"}, error={ReflectProperty403875335<string?>(result, "Error") ?? "<none>"}";
+        $"success={PropertyValue<bool>(result, "Success")}, count={PropertyValue<int>(result, "Count")}, " +
+        $"skipped={PropertyValue<int>(result, "Skipped")}, exhausted={PropertyValue<bool>(result, "Exhausted")}, " +
+        $"detail={PropertyValue<string?>(result, "Detail") ?? "<none>"}, error={PropertyValue<string?>(result, "Error") ?? "<none>"}";
     private static void DiagnoseDictionaryArchive(Assembly assembly, GeometryBase source)
     {
         try
@@ -676,9 +676,9 @@ internal static class PreviewGeometryChecks
             {
                 object budget = Activator.CreateInstance(budgetType, true)!;
                 object?[] args = { value, budget, 4096, (Func<bool>)(() => true), null };
-                bool ok = (bool)scanType.GetMethod("TryScanForCopy", FlagsNonPublicPublicStatic)!.Invoke(null, args)!;
+                bool ok = (bool)scanType.GetMethod("TryScanForCopy", AnyStatic)!.Invoke(null, args)!;
                 if (!ok || args[4] == null) throw new InvalidOperationException("Metadata scan failed");
-                return ReflectProperty403875335<byte[]>(args[4]!, "Metadata");
+                return PropertyValue<byte[]>(args[4]!, "Metadata");
             }
             var a = Scan(source); var b = Scan(result);
             int difference = 0; while (difference < Math.Min(a.Length, b.Length) && a[difference] == b[difference]) difference++;
@@ -689,10 +689,10 @@ internal static class PreviewGeometryChecks
     }
     private static void Set(object highlight, IGH_Goo?[] values, int[] positions, int[] selected) =>
         Method(highlight, "Set").Invoke(highlight, new object[] { values, positions, selected });
-    private static int Count(object value) => ReflectProperty403875335<int>(value, "PreviewCount");
-    private static string Status(object value) => ReflectProperty403875335<string>(value, "Status");
-    private static BoundingBox Box(object value) => ReflectProperty403875335<BoundingBox>(value, "ClippingBox");
-    private static MethodInfo Method(object value, string name) => value.GetType().GetMethod(name, FlagsInstanceNonPublicPublic)!;
+    private static int Count(object value) => PropertyValue<int>(value, "PreviewCount");
+    private static string Status(object value) => PropertyValue<string>(value, "Status");
+    private static BoundingBox Box(object value) => PropertyValue<BoundingBox>(value, "ClippingBox");
+    private static MethodInfo Method(object value, string name) => value.GetType().GetMethod(name, AnyInstance)!;
 }
 
 [Guid("7f647aaa-e4d3-4b9f-ad13-82a5c6d7af9c")]

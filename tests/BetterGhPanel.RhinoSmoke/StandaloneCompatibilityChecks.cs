@@ -30,7 +30,7 @@ internal static class StandaloneCompatibilityChecks
         using var owned = previous == null ? new GH_DocumentEditor() : null;
         var editor = previous ?? owned!;
         _ = editor.Handle;
-        var setEditor = typeof(Instances).GetMethod("SetDocumentEditor", FlagsNonPublicStatic)!;
+        var setEditor = typeof(Instances).GetMethod("SetDocumentEditor", NonPublicStatic)!;
         setEditor.Invoke(null, new object?[] { editor });
         try
         {
@@ -375,13 +375,13 @@ internal static class StandaloneCompatibilityChecks
         try
         {
             var doc = Rhino.RhinoDoc.ActiveDoc ?? throw new InvalidOperationException("An active Rhino document is required");
-            var copy = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!.GetMethod("CopyGeometry", FlagsNonPublicStatic)!;
+            var copy = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!.GetMethod("CopyGeometry", NonPublicStatic)!;
             var result = copy.Invoke(null, new object[] { new IGH_Goo[] { new GH_Curve { Value = poly } },
                 doc.ModelUnitSystem, doc.ModelAbsoluteTolerance })!;
             var resultType = result.GetType();
-            Check((bool)resultType.GetProperty("Success", FlagsInstanceNonPublic)!.GetValue(result)! &&
-                (int)resultType.GetProperty("Count", FlagsInstanceNonPublic)!.GetValue(result)! == 1 &&
-                (int)resultType.GetProperty("Skipped", FlagsInstanceNonPublic)!.GetValue(result)! == 0 &&
+            Check((bool)resultType.GetProperty("Success", NonPublicInstance)!.GetValue(result)! &&
+                (int)resultType.GetProperty("Count", NonPublicInstance)!.GetValue(result)! == 1 &&
+                (int)resultType.GetProperty("Skipped", NonPublicInstance)!.GetValue(result)! == 0 &&
                 CompatibilityUserData.RootDuplicates > 0 && CompatibilityUserData.NestedDuplicates > 0 &&
                 ReferenceEquals(root, poly.UserData.Find(typeof(CompatibilityUserData))) &&
                 ReferenceEquals(nested, poly.SegmentCurve(0).UserData.Find(typeof(CompatibilityUserData))),
@@ -434,11 +434,11 @@ internal static class StandaloneCompatibilityChecks
         new Point3d(0, 10, 0), Point3d.Origin }), 1e-8).Single();
     private static bool Near(double? actual, double expected) => actual.HasValue && Math.Abs(actual.Value - expected) < Math.Max(1e-7, Math.Abs(expected) * 1e-7);
     private static PanelSnapshot Snapshot(PanelHostFixture.Fixture f) => (PanelSnapshot)f.Session.GetType().GetProperty("Snapshot")!.GetValue(f.Session)!;
-    private static IGH_Goo?[] Sources(PanelHostFixture.Fixture f) => (IGH_Goo?[])f.Component.GetType().GetField("_sourceItems", FlagsInstanceNonPublic)!.GetValue(f.Component)!;
-    private static bool Has(PanelHostFixture.Fixture f, PanelSnapshot s, int i) => (bool)f.Session.GetType().GetMethod("HasGeometryMeasurement", FlagsInstanceNonPublic)!.Invoke(f.Session, new object[] { s, i })!;
-    private static PanelGeometryInfo? Details(PanelHostFixture.Fixture f, PanelSnapshot s, int i) => (PanelGeometryInfo?)f.Session.GetType().GetMethod("GetGeometryDetails", FlagsInstanceNonPublic)!.Invoke(f.Session, new object[] { s, i });
+    private static IGH_Goo?[] Sources(PanelHostFixture.Fixture f) => (IGH_Goo?[])f.Component.GetType().GetField("_sourceItems", NonPublicInstance)!.GetValue(f.Component)!;
+    private static bool Has(PanelHostFixture.Fixture f, PanelSnapshot s, int i) => (bool)f.Session.GetType().GetMethod("HasGeometryMeasurement", NonPublicInstance)!.Invoke(f.Session, new object[] { s, i })!;
+    private static PanelGeometryInfo? Details(PanelHostFixture.Fixture f, PanelSnapshot s, int i) => (PanelGeometryInfo?)f.Session.GetType().GetMethod("GetGeometryDetails", NonPublicInstance)!.Invoke(f.Session, new object[] { s, i });
     private static Task<bool> Measure(PanelHostFixture.Fixture f, PanelSnapshot s, params int[] positions) =>
-        (Task<bool>)f.Session.GetType().GetMethod("MeasureGeometryAsync", FlagsInstanceNonPublic)!.Invoke(f.Session, new object[] { s, positions, CancellationToken.None })!;
+        (Task<bool>)f.Session.GetType().GetMethod("MeasureGeometryAsync", NonPublicInstance)!.Invoke(f.Session, new object[] { s, positions, CancellationToken.None })!;
     private static async Task<bool> Result(Task<bool> task) { await Wait(() => task.IsCompleted); return await task; }
     private static async Task Wait(Func<bool> condition)
     {

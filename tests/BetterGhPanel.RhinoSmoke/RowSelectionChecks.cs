@@ -42,9 +42,9 @@ internal static class RowSelectionChecks
             if (hole.HasValue) graphics.SetClip(hole.Value, CombineMode.Exclude);
             PanelTestAdapter.Render(component, canvas, graphics);
         }
-        void Invalidate() => attributes.GetType().GetMethod("InvalidatePaintedHits", FlagsInstanceNonPublic)!
+        void Invalidate() => attributes.GetType().GetMethod("InvalidatePaintedHits", NonPublicInstance)!
             .Invoke(attributes, new object[] { true });
-        int Field(string name) => (int)attributes.GetType().GetField(name, FlagsInstanceNonPublic)!.GetValue(attributes)!;
+        int Field(string name) => (int)attributes.GetType().GetField(name, NonPublicInstance)!.GetValue(attributes)!;
 
         foreach (float zoom in new[] { 0.73f, 1f, 1.27f })
         foreach (float pan in new[] { 0f, 0.5f })
@@ -118,7 +118,7 @@ internal static class RowSelectionChecks
         Check(ReferenceEquals(paintedResult, fixture.Result) && PanelTestAdapter.SelectedPosition(component) == 3,
             "A selection-only solution retains current hits for the next normal click");
 
-        attributes.GetType().GetMethod("SuppressTrailingDoubleClick", FlagsInstanceNonPublic)!.Invoke(attributes, Array.Empty<object>());
+        attributes.GetType().GetMethod("SuppressTrailingDoubleClick", NonPublicInstance)!.Invoke(attributes, Array.Empty<object>());
         var point = PointOn(4);
         PanelTestAdapter.CanvasClick(canvas, point);
         Check(PanelTestAdapter.SelectedPosition(component) == 4,
@@ -129,7 +129,7 @@ internal static class RowSelectionChecks
         attributes.RespondToMouseDoubleClick(canvas, doubleClick);
         Check(fixture.SelectedCount == 0, "A real double-click retains the existing explicit deselection behavior");
 
-        attributes.GetType().GetMethod("SetOffset", FlagsInstanceNonPublic)!.Invoke(attributes, new object[] { canvas, 5 });
+        attributes.GetType().GetMethod("SetOffset", NonPublicInstance)!.Invoke(attributes, new object[] { canvas, 5 });
         PanelTestAdapter.CanvasClick(canvas, point);
         Check(fixture.SelectedCount == 0, "An offset change cannot select a row using its old painted address");
         Render();
@@ -158,7 +158,7 @@ internal static class RowSelectionChecks
         fixture.Solve();
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 81 && fixture.Sinks[1].VolatileData.DataCount == 0);
         Check(fixture.SelectedCount == 0, "Structural input replacement clears Selection");
-        component.GetType().GetMethod("SetTreeOperations", FlagsInstanceNonPublic)!.Invoke(component, new object[] { 0, false, false, false, true });
+        component.GetType().GetMethod("SetTreeOperations", NonPublicInstance)!.Invoke(component, new object[] { 0, false, false, false, true });
         await fixture.Ready(() => fixture.Result.DisplaySet != null);
         fixture.Select(fixture.Result.RowPositions[0]);
         var setSnapshot = fixture.Result.Snapshot;

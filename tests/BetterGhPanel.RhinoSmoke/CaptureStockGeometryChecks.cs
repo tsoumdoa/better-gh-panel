@@ -21,16 +21,16 @@ internal static class CaptureStockGeometryChecks
     {
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!;
         var args = new object?[] { tree, null, null, null, PanelUnitConversion.None, "mm", null, observer, visitor, null, null };
-        var snapshot = (PanelSnapshot)capture.GetMethod("CaptureForMeasurements", FlagsNonPublicStatic)!.Invoke(null, args)!;
+        var snapshot = (PanelSnapshot)capture.GetMethod("CaptureForMeasurements", NonPublicStatic)!.Invoke(null, args)!;
         return new object?[] { snapshot, args[1], args[2], args[3] };
     }
 
     private static bool HoldersCurrent(Assembly assembly, object?[] result) => (bool)assembly
-        .GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("MeasurementSourcesCurrent", FlagsNonPublicStatic)!
+        .GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("MeasurementSourcesCurrent", NonPublicStatic)!
         .Invoke(null, new[] { result[1], result[2] })!;
 
     private static bool GraphsCurrent(Assembly assembly, object?[] result) => (bool)assembly
-        .GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("GraphSourcesCurrent", FlagsNonPublicStatic)!
+        .GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("GraphSourcesCurrent", NonPublicStatic)!
         .Invoke(null, new[] { result[3] })!;
 
     internal static void VerifyManaged(Assembly assembly)
@@ -141,12 +141,12 @@ internal static class CaptureStockGeometryChecks
         var outputs = assembly.GetType("BetterGhPanel.Runtime.PanelOutputOperations", true)!;
         object[] selectedArgs = { tree, query.RowPositions };
         object?[] setArgs = { tree, query, query.RowPositions, query.BranchPaths, false, null };
-        var data = (GH_Structure<IGH_Goo>)(set ? outputs.GetMethod("SetItems", FlagsNonPublicStatic)!.Invoke(null, setArgs)! :
-            trees.GetMethod("Filter", FlagsNonPublicStatic)!.Invoke(null, new object[] { tree, query })!);
-        var selection = (GH_Structure<IGH_Goo>)(set ? outputs.GetMethod("SetItems", FlagsNonPublicStatic)!.Invoke(null, setArgs)! :
-            trees.GetMethod("Select", FlagsNonPublicStatic)!.Invoke(null, selectedArgs)!);
+        var data = (GH_Structure<IGH_Goo>)(set ? outputs.GetMethod("SetItems", NonPublicStatic)!.Invoke(null, setArgs)! :
+            trees.GetMethod("Filter", NonPublicStatic)!.Invoke(null, new object[] { tree, query })!);
+        var selection = (GH_Structure<IGH_Goo>)(set ? outputs.GetMethod("SetItems", NonPublicStatic)!.Invoke(null, setArgs)! :
+            trees.GetMethod("Select", NonPublicStatic)!.Invoke(null, selectedArgs)!);
         var addresses = snapshot.Rows.Select((_, i) => snapshot.SourceAddressAt(i)).ToArray();
-        var mask = (GH_Structure<GH_Boolean>)outputs.GetMethod("Mask", FlagsNonPublicStatic)!.Invoke(null, new object[] { tree, addresses, query.RowPositions })!;
+        var mask = (GH_Structure<GH_Boolean>)outputs.GetMethod("Mask", NonPublicStatic)!.Invoke(null, new object[] { tree, addresses, query.RowPositions })!;
         var paired = new GH_Structure<IGH_Goo>();
         for (int i = 0; i < tree.DataCount; i++) paired.Append(new GH_Integer(i), new GH_Path(0));
         var filteredPair = PanelTestAdapter.PairedOutput(assembly, tree, paired, addresses, query);
@@ -166,7 +166,7 @@ internal static class CaptureStockGeometryChecks
         var previous = Instances.DocumentEditor;
         using var owned = previous == null ? new GH_DocumentEditor() : null;
         var editor = previous ?? owned!; _ = editor.Handle;
-        var setEditor = typeof(Instances).GetMethod("SetDocumentEditor", FlagsNonPublicStatic)!;
+        var setEditor = typeof(Instances).GetMethod("SetDocumentEditor", NonPublicStatic)!;
         setEditor.Invoke(null, new object?[] { editor });
         try
         {
@@ -384,7 +384,7 @@ internal static class CaptureStockGeometryChecks
             PanelValidity.Unverified, PanelValidity.VerifiedValid, PanelValidity.VerifiedValid }) &&
             live[7] == null && live[8] == null && snapshot.Rows[7].IsNull && snapshot.Rows[8].IsNull &&
             fixture.Result.Statistics.InvalidCount == 3 && fixture.Result.Statistics.UnverifiedCount == 1 && fixture.Result.Statistics.NullCount == 2;
-        var setTreeOperations = fixture.Component.GetType().GetMethod("SetTreeOperations", FlagsInstanceNonPublic)!;
+        var setTreeOperations = fixture.Component.GetType().GetMethod("SetTreeOperations", NonPublicInstance)!;
         foreach (var item in new[] { ("Point Cloud", 1), ("Extrusion", 3), ("Group", 5) })
         foreach (bool set in new[] { false, true })
         {
@@ -422,7 +422,7 @@ internal static class CaptureStockGeometryChecks
         var access = new NestedCaptureDataAccess();
         access.Primary.AppendRange(new IGH_Goo[] { cloud, extrusion, Group("unresolved", cloud, extrusion) }, new GH_Path(0));
         access.Paired.AppendRange(new IGH_Goo[] { new GH_Integer(0), new GH_Integer(1), new GH_Integer(2) }, new GH_Path(0));
-        fixture.Component.GetType().GetMethod("SolveInstance", FlagsInstanceNonPublic)!.Invoke(fixture.Component, new object[] { access });
+        fixture.Component.GetType().GetMethod("SolveInstance", NonPublicInstance)!.Invoke(fixture.Component, new object[] { access });
         var snapshot = (PanelSnapshot)fixture.Session.GetType().GetProperty("Snapshot")!.GetValue(fixture.Session)!;
         Check(snapshot.Rows.Count == 3 && snapshot.Rows.All(row => row.Validity == PanelValidity.Unverified) &&
             snapshot.Rows.Select(row => row.TypeName).SequenceEqual(new[] { "Point Cloud", "Extrusion", "Group" }) &&
@@ -441,7 +441,7 @@ internal static class CaptureStockGeometryChecks
         fixture.Paired.PersistentData.Append(new GH_Integer(0), new GH_Path(0));
         fixture.Paired.PersistentData.Append(new GH_Integer(1), new GH_Path(0));
         fixture.Query(new PanelQueryOptions { OnlyInvalid = true });
-        var hook = fixture.Component.GetType().GetProperty("CaptureObserverForTesting", FlagsInstanceNonPublic)!;
+        var hook = fixture.Component.GetType().GetProperty("CaptureObserverForTesting", NonPublicInstance)!;
         bool changed = false;
         void Replace(IGH_Goo source)
         {

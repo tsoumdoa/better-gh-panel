@@ -16,7 +16,7 @@ internal static class UxInteractionChecks
 {
     internal static Task Run(Assembly assembly) => PanelHostFixture.RunWithEditor(assembly, Verify);
     private static object? Call(object owner, string name, params object?[] args) =>
-        owner.GetType().GetMethod(name, FlagsInstanceNonPublicPublic, null, args.Select(value => value!.GetType()).ToArray(), null)!.Invoke(owner, args);
+        owner.GetType().GetMethod(name, AnyInstance, null, args.Select(value => value!.GetType()).ToArray(), null)!.Invoke(owner, args);
     private static PanelQueryOptions Options(PanelHostFixture.Fixture fixture) =>
         (PanelQueryOptions)fixture.Session.GetType().GetProperty("Options")!.GetValue(fixture.Session)!;
 
@@ -66,7 +66,7 @@ internal static class UxInteractionChecks
         {
             editor.Type(text);
             await fixture.Ready(() => fixture.Result.RowPositions.Count == matches);
-            Check((bool)component.GetType().GetProperty("QueryPreviewActive", FlagsInstanceNonPublicPublic)!.GetValue(component)!,
+            Check((bool)component.GetType().GetProperty("QueryPreviewActive", AnyInstance)!.GetValue(component)!,
                 "Debounced host textbox input starts a live query preview");
         }
 
@@ -135,14 +135,14 @@ internal static class UxInteractionChecks
         PanelTestAdapter.CanvasClick(canvas, new PointF(trim.Left + trim.Width / 2, trim.Top + trim.Height / 2));
         var trimEdit = CanvasEditorAdapter.Active(assembly); trimEdit.Type("2"); trimEdit.Blur();
         int trimPublications = 0;
-        var publicationHook = component.GetType().GetProperty("BeforeOutputValidationForTesting", FlagsInstanceNonPublicPublic)!;
+        var publicationHook = component.GetType().GetProperty("BeforeOutputValidationForTesting", AnyInstance)!;
         var previousHook = publicationHook.GetValue(component);
         publicationHook.SetValue(component, (Action)(() => trimPublications++));
         try
         {
             fixture.Solve();
             await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 80);
-            Check((int)component.GetType().GetProperty("TrimDepth", FlagsInstanceNonPublicPublic)!.GetValue(component)! == 2 && trimPublications == 1,
+            Check((int)component.GetType().GetProperty("TrimDepth", AnyInstance)!.GetValue(component)! == 2 && trimPublications == 1,
                 "Trim committed during upstream expiry publishes once without a nested solution");
         }
         finally { publicationHook.SetValue(component, previousHook); }
@@ -196,11 +196,11 @@ internal static class UxInteractionChecks
             fixture.Query(new PanelQueryOptions { SearchMode = asynchronous ? PanelSearchMode.Regex : PanelSearchMode.Text,
                 Search = asynchronous ? ".*" : "" });
             await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 80 &&
-                ReferenceEquals(ReflectField2106128985<PanelQueryResult>(component, "_cachedOutputResult"), fixture.Result));
+                ReferenceEquals(FieldValue<PanelQueryResult>(component, "_cachedOutputResult"), fixture.Result));
             SeedRedo();
             fixture.Select(0);
             await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1 &&
-                ReflectField2106128985<long>(component, "_publishedSelectionVersion") == ReflectField2106128985<long>(component, "_selectionVersion"));
+                FieldValue<long>(component, "_publishedSelectionVersion") == FieldValue<long>(component, "_selectionVersion"));
             Call(attributes, "SetOffset", canvas, 18);
             Render();
             int solutions = fixture.Solutions;
@@ -300,8 +300,8 @@ internal static class UxInteractionChecks
                 Check((bool)input.Invoke(attributes, new object[] { canvas, Forms.Keys.Control | Forms.Keys.C })!,
                     "Ctrl+C handles the F branch in plain list-length view");
                 string expected = string.Join(Environment.NewLine, Enumerable.Range(0, partnerCount).Select(i => "F raw " + i));
-                await fixture.Ready(() => Forms.Clipboard.GetText() == expected && !ReflectField2106128985<bool>(attributes, "_copyPending"));
-                Check(ReflectField2106128985<string>(attributes, "_actionStatus") == partnerCount + " values copied",
+                await fixture.Ready(() => Forms.Clipboard.GetText() == expected && !FieldValue<bool>(attributes, "_copyPending"));
+                Check(FieldValue<string>(attributes, "_actionStatus") == partnerCount + " values copied",
                     "F branch copy includes every raw item without missing-partner blank lines");
             }
             Call(component, "SetPanelSplit", false);
@@ -369,16 +369,16 @@ internal static class UxInteractionChecks
         var clipboard = Forms.Clipboard.GetDataObject();
         try
         {
-            var actions = ReflectField2106128985<Array>(attributes, "_rowMenuActions").Cast<object>().ToArray();
-            int copyIndex = Array.FindIndex(actions, action => action.GetType().GetProperty("Action", FlagsInstanceNonPublicPublic)!.GetValue(action)!.ToString() == "CopyValues");
-            var menu = ReflectField2106128985<RectangleF>(attributes, "_rowMenuBounds");
+            var actions = FieldValue<Array>(attributes, "_rowMenuActions").Cast<object>().ToArray();
+            int copyIndex = Array.FindIndex(actions, action => action.GetType().GetProperty("Action", AnyInstance)!.GetValue(action)!.ToString() == "CopyValues");
+            var menu = FieldValue<RectangleF>(attributes, "_rowMenuBounds");
             PanelTestAdapter.CanvasClick(canvas, new PointF(menu.X + 30, menu.Y + copyIndex * 20 + 10));
-            await fixture.Ready(() => ReflectField2106128985<string>(attributes, "_actionStatus") == "Value copied");
+            await fixture.Ready(() => FieldValue<string>(attributes, "_actionStatus") == "Value copied");
             Check(Forms.Clipboard.GetText() == "F raw 74", "The F row menu copies the raw paired value rather than D's value");
             var captured = fixture.Result.Snapshot;
             var pairedValue = (GH_String)fixture.Paired.VolatileData.AllData(false).ElementAt(74);
             pairedValue.Value = "F mutated 74";
-            string status = await (Task<string>)component.GetType().GetMethod("CopyPairedValuesAsync", FlagsInstanceNonPublicPublic)!
+            string status = await (Task<string>)component.GetType().GetMethod("CopyPairedValuesAsync", AnyInstance)!
                 .Invoke(component, new object[] { captured, new[] { 74 } })!;
             Check(status == "Copy cancelled" && Forms.Clipboard.GetText() == "F raw 74" &&
                 !(bool)Call(component, "CapturedSnapshotCurrent", captured)!,
@@ -391,13 +391,13 @@ internal static class UxInteractionChecks
             Render();
             PanelTestAdapter.CanvasClick(canvas, new PointF(dataList.Right - 10, dataRow.Y + dataRow.Height / 2), Forms.MouseButtons.Right);
             Render();
-            var dataMenu = ReflectField2106128985<RectangleF>(attributes, "_rowMenuBounds");
+            var dataMenu = FieldValue<RectangleF>(attributes, "_rowMenuBounds");
             var menuPoint = new PointF(Math.Max(dataMenu.X + 30, pairedList.X + 10), dataMenu.Y + copyIndex * 20 + 10);
             PanelTestAdapter.CanvasClick(canvas, menuPoint);
-            await fixture.Ready(() => !ReflectField2106128985<bool>(attributes, "_copyPending"));
+            await fixture.Ready(() => !FieldValue<bool>(attributes, "_copyPending"));
             // The suppressed second click of a double-click lands on F once the menu has closed.
             Render(); PanelTestAdapter.CanvasClick(canvas, menuPoint, clicks: 2);
-            Check(dataMenu.Right > pairedList.X + 10 && !ReflectField2106128985<bool>(attributes, "_copyPaired") && !ReflectField2106128985<bool>(attributes, "_keyboardPaired"),
+            Check(dataMenu.Right > pairedList.X + 10 && !FieldValue<bool>(attributes, "_copyPaired") && !FieldValue<bool>(attributes, "_keyboardPaired"),
                 "Clicking a D row menu where it overlaps F keeps Ctrl+C and keyboard scrolling on D");
         }
         finally
@@ -432,9 +432,9 @@ internal static class UxInteractionChecks
         var f60 = PanelTestAdapter.RowBounds(component, 60);
         PanelTestAdapter.CanvasClick(canvas, new PointF(f60.X + 80, f60.Y + f60.Height / 2));
         for (int i = 0; i < 19; i++) { Key(Forms.Keys.Down); Render(); }
-        bool f79Visible = ReflectField2106128985<System.Collections.IEnumerable>(attributes, "_rowHits").Cast<object>().Any(hit =>
-            (int)hit.GetType().GetProperty("SourcePosition", FlagsInstanceNonPublicPublic)!.GetValue(hit)! == 79 &&
-            pairedList.Contains((RectangleF)hit.GetType().GetProperty("Bounds", FlagsInstanceNonPublicPublic)!.GetValue(hit)!));
+        bool f79Visible = FieldValue<System.Collections.IEnumerable>(attributes, "_rowHits").Cast<object>().Any(hit =>
+            (int)hit.GetType().GetProperty("SourcePosition", AnyInstance)!.GetValue(hit)! == 79 &&
+            pairedList.Contains((RectangleF)hit.GetType().GetProperty("Bounds", AnyInstance)!.GetValue(hit)!));
         int dataOffset = PanelTestAdapter.Offset(component);
         Key(Forms.Keys.Home); Render();
         bool home = PanelTestAdapter.PaneField<int>(attributes, true, "Offset") == 0 && PanelTestAdapter.Offset(component) == dataOffset;
@@ -449,7 +449,7 @@ internal static class UxInteractionChecks
         fixture.Query(new PanelQueryOptions { Search = "> 9", SortMode = PanelSortMode.ValueDescending });
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 70);
         Render(); PanelTestAdapter.CanvasClick(canvas, linkPoint); Render();
-        Check(PanelTestAdapter.PaneField<int>(attributes, true, "Offset") == PanelTestAdapter.Offset(component) && ReflectField2106128985<bool>(attributes, "_scrollLocked") &&
+        Check(PanelTestAdapter.PaneField<int>(attributes, true, "Offset") == PanelTestAdapter.Offset(component) && FieldValue<bool>(attributes, "_scrollLocked") &&
             PanelTestAdapter.PaneField<RectangleF>(attributes, false, "TrackHit").IsEmpty,
             "Relinking snaps F back to D and removes D's middle track target");
 
@@ -459,7 +459,7 @@ internal static class UxInteractionChecks
         var disconnectedSplit = PanelTestAdapter.LayoutRect(attributes, "Split");
         PanelTestAdapter.CanvasClick(canvas, new PointF(disconnectedSplit.X + 14, disconnectedSplit.Y + 9));
         attributes.PerformLayout();
-        Check(!disconnectedSplit.IsEmpty && !(bool)component.GetType().GetProperty("PanelSplit", FlagsInstanceNonPublicPublic)!.GetValue(component)! &&
+        Check(!disconnectedSplit.IsEmpty && !(bool)component.GetType().GetProperty("PanelSplit", AnyInstance)!.GetValue(component)! &&
             PanelTestAdapter.LayoutRect(attributes, "Split").IsEmpty,
             "Disconnecting F retains the active split toggle until it closes the split, then hides it");
         attributes.PerformLayout();
@@ -494,8 +494,8 @@ internal static class UxInteractionChecks
             Check(ValuesChoice() == PanelOutputValues.Items && !CanValues(), "Redo restores Items fallback: " + action);
         }
         bool PropertyBusy() => (bool)fixture.Session.GetType().GetProperty("IsBusy")!.GetValue(fixture.Session)!;
-        bool CanValues() => (bool)component.GetType().GetProperty("CanOutputValues", FlagsInstanceNonPublicPublic)!.GetValue(component)!;
-        PanelOutputValues ValuesChoice() => (PanelOutputValues)component.GetType().GetProperty("OutputValues", FlagsInstanceNonPublicPublic)!.GetValue(component)!;
+        bool CanValues() => (bool)component.GetType().GetProperty("CanOutputValues", AnyInstance)!.GetValue(component)!;
+        PanelOutputValues ValuesChoice() => (PanelOutputValues)component.GetType().GetProperty("OutputValues", AnyInstance)!.GetValue(component)!;
 
         Call(component, "SetTreeOperations", 1, false, true, false, false);
         Call(component, "SetOutputScope", PanelOutputScope.Selected);
@@ -505,8 +505,8 @@ internal static class UxInteractionChecks
         Call(component, "ClearFilters");
         await fixture.Ready(() => !PropertyBusy());
         Check(Options(fixture).Search == "" && Options(fixture).SortMode == PanelSortMode.SourceOrder &&
-            (bool)component.GetType().GetProperty("ReverseTree", FlagsInstanceNonPublicPublic)!.GetValue(component)! &&
-            (PanelOutputScope)component.GetType().GetProperty("OutputScope", FlagsInstanceNonPublicPublic)!.GetValue(component)! == PanelOutputScope.Selected &&
+            (bool)component.GetType().GetProperty("ReverseTree", AnyInstance)!.GetValue(component)! &&
+            (PanelOutputScope)component.GetType().GetProperty("OutputScope", AnyInstance)!.GetValue(component)! == PanelOutputScope.Selected &&
             fixture.Document.UndoServer.UndoCount == 1, "Clear filters keeps tree tools and B/F scope");
         fixture.Document.UndoServer.PerformUndo();
         await fixture.Ready(() => !PropertyBusy());
@@ -514,12 +514,12 @@ internal static class UxInteractionChecks
         fixture.Document.UndoServer.Clear();
         Call(component, "ResetAll");
         await fixture.Ready(() => !PropertyBusy());
-        Check(!(bool)component.GetType().GetProperty("ReverseTree", FlagsInstanceNonPublicPublic)!.GetValue(component)! &&
-            (PanelOutputScope)component.GetType().GetProperty("OutputScope", FlagsInstanceNonPublicPublic)!.GetValue(component)! == PanelOutputScope.Filtered &&
+        Check(!(bool)component.GetType().GetProperty("ReverseTree", AnyInstance)!.GetValue(component)! &&
+            (PanelOutputScope)component.GetType().GetProperty("OutputScope", AnyInstance)!.GetValue(component)! == PanelOutputScope.Filtered &&
             fixture.Document.UndoServer.UndoCount == 1, "Reset all resets tree tools and B/F scope in one step");
         fixture.Document.UndoServer.PerformUndo();
         await fixture.Ready(() => !PropertyBusy());
-        Check((bool)component.GetType().GetProperty("ReverseTree", FlagsInstanceNonPublicPublic)!.GetValue(component)! && Options(fixture).Search == "> 9",
+        Check((bool)component.GetType().GetProperty("ReverseTree", AnyInstance)!.GetValue(component)! && Options(fixture).Search == "> 9",
             "Reset all Undo restores tools and filters");
         Call(component, "ResetAll");
 
@@ -528,7 +528,7 @@ internal static class UxInteractionChecks
         Call(component, "ClearFilters");
         Check(fixture.Document.UndoServer.UndoCount == 0, "Clear filters with only a selection records no undo");
         fixture.Select(0);
-        bool resetRecordedUndo = (bool)component.GetType().GetMethod("ResetAll", FlagsInstanceNonPublicPublic)!.Invoke(component, Array.Empty<object>())!;
+        bool resetRecordedUndo = (bool)component.GetType().GetMethod("ResetAll", AnyInstance)!.Invoke(component, Array.Empty<object>())!;
         Check(!resetRecordedUndo && fixture.Document.UndoServer.UndoCount == 0 && fixture.SelectedCount == 0,
             "Selection-only Reset all reports that no settings undo was recorded");
 
@@ -542,7 +542,7 @@ internal static class UxInteractionChecks
         await fixture.Ready(() => fixture.Result.RowPositions.Count == inputs.Length);
         for (int i = 0; i < inputs.Length; i++)
         {
-            bool available = (bool)component.GetType().GetMethod("SelectionHasGeometry", FlagsInstanceNonPublicPublic)!
+            bool available = (bool)component.GetType().GetMethod("SelectionHasGeometry", AnyInstance)!
                 .Invoke(component, new object[] { new[] { i } })!;
             Check(available == (i < 4), "Geometry actions recognize supported wrappers and reject plain values at row " + i);
         }

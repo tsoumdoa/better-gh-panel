@@ -35,9 +35,9 @@ internal static partial class PreviewSafetyChecks
             view.ActiveViewport.ZoomBoundingBox(new BoundingBox(new Point3d(-4, -4, -2), new Point3d(4, 4, 2)));
             document.Properties.KeepOpen = true; document.PreviewMode = GH_PreviewMode.Shaded;
             document.AddObject(component, false);
-            object highlight = ReflectField2106128985<object>(component, "_highlight");
+            object highlight = FieldValue<object>(component, "_highlight");
             var leafType = assembly.GetType("BetterGhPanel.Runtime.PanelPreviewLeaf", true)!;
-            var live = leafType.GetProperty("LiveGeneratedMeshes", FlagsNonPublicPublicStatic)!;
+            var live = leafType.GetProperty("LiveGeneratedMeshes", AnyStatic)!;
             var holder = new GH_Brep { Value = brep };
             var group = new GH_GeometryGroup(); group.Objects.Add(holder);
             GeometryBase? wireOwned = null, meshOwned = null, resetOwned = null;
@@ -63,11 +63,11 @@ internal static partial class PreviewSafetyChecks
                     {
                         wireCalled = true;
                         Method(component, "ClearHighlight").Invoke(component, Array.Empty<object>());
-                        int calls = ReflectProperty403875335<int>(highlight, "DrawWireCalls");
+                        int calls = PropertyValue<int>(highlight, "DrawWireCalls");
                         Method(highlight, "ReleaseOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
                         component.DrawViewportWires(args);
-                        wireGuarded = !wireOwned.Disposed && ReflectProperty403875335<bool>(highlight, "RetirementPending") &&
-                            ReflectProperty403875335<int>(highlight, "DrawWireCalls") == calls;
+                        wireGuarded = !wireOwned.Disposed && PropertyValue<bool>(highlight, "RetirementPending") &&
+                            PropertyValue<int>(highlight, "DrawWireCalls") == calls;
                     };
                     component.DrawViewportWires(args);
                     wireFrameHeld = !wireOwned.Disposed;
@@ -76,14 +76,14 @@ internal static partial class PreviewSafetyChecks
                     resetOwned = OwnedGeometry(highlight).OfType<Brep>().Single();
                     document.PreviewMeshType = GH_PreviewMesh.LowQuality;
                     component.DrawViewportMeshes(args);
-                    var firstEntry = ((IEnumerable)ReflectField2106128985<object>(highlight, "_entries")).Cast<object>().Single();
+                    var firstEntry = ((IEnumerable)FieldValue<object>(highlight, "_entries")).Cast<object>().Single();
                     object firstValue = firstEntry.GetType().GetProperty("Value")!.GetValue(firstEntry)!;
-                    object firstLeaf = ((IEnumerable)ReflectField2106128985<object>(firstValue, "Leaves")).Cast<object>().Single();
-                    resetMeshes = ReflectField2106128985<Mesh[]?>(firstLeaf, "_generatedMeshes") ?? Array.Empty<Mesh>();
+                    object firstLeaf = ((IEnumerable)FieldValue<object>(firstValue, "Leaves")).Cast<object>().Single();
+                    resetMeshes = FieldValue<Mesh[]?>(firstLeaf, "_generatedMeshes") ?? Array.Empty<Mesh>();
                     document.PreviewMeshType = GH_PreviewMesh.HighQuality;
                     component.DrawViewportMeshes(args);
                     resetHeld = resetMeshes.Length > 0 && resetMeshes.All(mesh => !mesh.Disposed) &&
-                        !resetOwned.Disposed && ReflectProperty403875335<bool>(highlight, "RetirementPending");
+                        !resetOwned.Disposed && PropertyValue<bool>(highlight, "RetirementPending");
 
                     var customMesh = new StandalonePointPreview();
                     Set(highlight, new IGH_Goo?[] { group, customMesh }, new[] { 0, 1 }, new[] { 0, 1 });
@@ -91,14 +91,14 @@ internal static partial class PreviewSafetyChecks
                     customMesh.OnMesh = () =>
                     {
                         meshCalled = true;
-                        int calls = ReflectProperty403875335<int>(highlight, "DrawMeshCalls");
+                        int calls = PropertyValue<int>(highlight, "DrawMeshCalls");
                         component.DocumentContextChanged(document, GH_DocumentContext.Close);
                         Method(highlight, "ReleaseOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
                         component.DrawViewportMeshes(args);
-                        heldBytes = ReflectProperty403875335<long>(highlight, "RetainedBytes");
+                        heldBytes = PropertyValue<long>(highlight, "RetainedBytes");
                         meshGuarded = !wireOwned.Disposed && !resetOwned.Disposed && !meshOwned.Disposed &&
                             resetMeshes.All(mesh => !mesh.Disposed) && (int)live.GetValue(null)! > 0 &&
-                            ReflectProperty403875335<bool>(highlight, "RetirementPending") && ReflectProperty403875335<int>(highlight, "DrawMeshCalls") == calls &&
+                            PropertyValue<bool>(highlight, "RetirementPending") && PropertyValue<int>(highlight, "DrawMeshCalls") == calls &&
                             heldBytes > 0 && heldBytes <= 16L * 1024 * 1024;
                     };
                     component.DrawViewportMeshes(args);
@@ -120,14 +120,14 @@ internal static partial class PreviewSafetyChecks
                 "simulated idle and nested wire draw cannot release a cleared generation during its active callback");
             Check(resetHeld && meshCalled && meshGuarded && meshFrameHeld && meshOwned != null && !meshOwned.Disposed,
                 "mesh reset and document close retain drawn geometry through callback and capture return, including simulated reentrant idle");
-            int releases = ReflectProperty403875335<int>(highlight, "IdleReleases");
+            int releases = PropertyValue<int>(highlight, "IdleReleases");
             Method(highlight, "ReleaseOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
             Check(wireOwned!.Disposed && resetOwned!.Disposed && meshOwned!.Disposed && resetMeshes.All(mesh => mesh.Disposed) &&
-                (int)live.GetValue(null)! == 0 && ReflectProperty403875335<long>(highlight, "RetainedBytes") == 0 &&
-                !ReflectProperty403875335<bool>(highlight, "RetirementPending") && ReflectProperty403875335<int>(highlight, "IdleReleases") == releases + 1,
+                (int)live.GetValue(null)! == 0 && PropertyValue<long>(highlight, "RetainedBytes") == 0 &&
+                !PropertyValue<bool>(highlight, "RetirementPending") && PropertyValue<int>(highlight, "IdleReleases") == releases + 1,
                 "the explicit post-capture retirement seam releases all retired resources and clears its pending subscription");
             Method(highlight, "ReleaseOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
-            Check((int)live.GetValue(null)! == 0 && ReflectProperty403875335<long>(highlight, "RetainedBytes") == 0,
+            Check((int)live.GetValue(null)! == 0 && PropertyValue<long>(highlight, "RetainedBytes") == 0,
                 "repeated retirement does not dispose or account for the same resources twice");
         }
         finally

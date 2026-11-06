@@ -11,16 +11,15 @@ internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Filter, Jump, R
 // The .gha is loaded separately. Keep plugin-owned reflection in this adapter.
 internal static class PanelTestAdapter
 {
-    internal const BindingFlags FlagsInstanceNonPublicPublic = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-    internal static T ReflectProperty403875335<T>(object target, string name) => (T)target.GetType().GetProperty(name, FlagsInstanceNonPublicPublic)!.GetValue(target)!;
-    internal static T ReflectField2106128985<T>(object target, string name) => (T)target.GetType().GetField(name, FlagsInstanceNonPublicPublic)!.GetValue(target)!;
-    internal const BindingFlags FlagsNonPublicStatic = BindingFlags.Static | BindingFlags.NonPublic;
-    internal const BindingFlags FlagsNonPublicPublicStatic = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
-    internal const BindingFlags FlagsInstanceNonPublic = BindingFlags.Instance | BindingFlags.NonPublic;
+    internal const BindingFlags AnyInstance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+    internal static T PropertyValue<T>(object target, string name) => (T)target.GetType().GetProperty(name, AnyInstance)!.GetValue(target)!;
+    internal static T FieldValue<T>(object target, string name) => (T)target.GetType().GetField(name, AnyInstance)!.GetValue(target)!;
+    internal const BindingFlags NonPublicStatic = BindingFlags.Static | BindingFlags.NonPublic;
+    internal const BindingFlags AnyStatic = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+    internal const BindingFlags NonPublicInstance = BindingFlags.Instance | BindingFlags.NonPublic;
 
-    internal static object? Call(object owner, string name, params object?[] args) => owner.GetType().GetMethod(name, FlagsInstanceNonPublicPublic)!.Invoke(owner, args);
+    internal static object? Call(object owner, string name, params object?[] args) => owner.GetType().GetMethod(name, AnyInstance)!.Invoke(owner, args);
 
-    private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
     internal static object Session(GH_Component component) => Property<object>(component, "Session");
     internal static bool HasSession(GH_Component component) => Field<object?>(component, "_session") != null;
     internal static bool GeometryRunning(object session) => Field<object?>(Field<object>(session, "_geometry"), "_running") != null;
@@ -30,7 +29,7 @@ internal static class PanelTestAdapter
     internal static Action UseSyntheticCapture(object session)
     {
         var previous = Field<object?>(session, "_captureCurrent");
-        var setter = session.GetType().GetMethod("SetCaptureCurrentResolver", PrivateInstance)!;
+        var setter = session.GetType().GetMethod("SetCaptureCurrentResolver", NonPublicInstance)!;
         var snapshotProperty = session.GetType().GetProperty("Snapshot", BindingFlags.Instance | BindingFlags.Public)!;
         setter.Invoke(session, new object[] { (Func<BetterGhPanel.Core.PanelSnapshot, bool>)(snapshot =>
             ReferenceEquals(snapshotProperty.GetValue(session), snapshot)) });
@@ -40,29 +39,29 @@ internal static class PanelTestAdapter
     internal static Action SaveGeometryResolver(object session)
     {
         var preparation = Field<object?>(session, "_geometryPreparationResolver");
-        return () => session.GetType().GetMethod("SetGeometryPreparationResolver", PrivateInstance)!.Invoke(session, new[] { preparation });
+        return () => session.GetType().GetMethod("SetGeometryPreparationResolver", NonPublicInstance)!.Invoke(session, new[] { preparation });
     }
     internal static int Preset(GH_Component component) => Property<int>(component, "PreviewSize");
     internal static string PreviewMode(GH_Component component) => Property<object>(component, "PreviewMode").ToString()!;
     internal static bool ShowItemOrder(GH_Component component) => Property<bool>(component, "ShowItemOrder");
     internal static void ShowItemOrder(GH_Component component, bool show) =>
-        component.GetType().GetMethod("SetShowItemOrder", PrivateInstance)!.Invoke(component, new object[] { show });
+        component.GetType().GetMethod("SetShowItemOrder", NonPublicInstance)!.Invoke(component, new object[] { show });
     internal static void PreviewMode(GH_Component component, string mode)
     {
-        var method = component.GetType().GetMethod("SetPreviewMode", PrivateInstance)!;
+        var method = component.GetType().GetMethod("SetPreviewMode", NonPublicInstance)!;
         method.Invoke(component, new[] { Enum.Parse(method.GetParameters()[0].ParameterType, mode) });
     }
     internal static SizeF Size(GH_Component component) => new SizeF(Property<float>(component, "CanvasWidth"), Property<float>(component, "CanvasHeight"));
     internal static bool Minimized(GH_Component component) => Property<bool>(component, "PanelMinimized");
     internal static void Minimize(GH_Component component, bool minimized) =>
-        component.GetType().GetMethod("SetPanelMinimized", PrivateInstance)!.Invoke(component, new object[] { minimized });
+        component.GetType().GetMethod("SetPanelMinimized", NonPublicInstance)!.Invoke(component, new object[] { minimized });
     internal static string CapsuleSummary(GH_Component component) =>
-        (string)component.Attributes.GetType().GetMethod("CapsuleSummary", PrivateInstance)!.Invoke(component.Attributes, Array.Empty<object>())!;
+        (string)component.Attributes.GetType().GetMethod("CapsuleSummary", NonPublicInstance)!.Invoke(component.Attributes, Array.Empty<object>())!;
     internal static int Hits(GH_Component component, string field) => ((ICollection)Field<object>(component.Attributes, field)).Count;
     internal static int TrimDepth(GH_Component component) => Property<int>(component, "TrimDepth");
     internal static bool TreeFlag(GH_Component component, string name) => Property<bool>(component, name + "Tree");
     internal static void TreeTools(GH_Component component, int depth, bool flatten, bool reverse, bool simplify, bool createSet = false) =>
-        component.GetType().GetMethod("SetTreeOperations", PrivateInstance)!.Invoke(component, new object[] { depth, flatten, reverse, simplify, createSet });
+        component.GetType().GetMethod("SetTreeOperations", NonPublicInstance)!.Invoke(component, new object[] { depth, flatten, reverse, simplify, createSet });
     internal static BetterGhPanel.Core.PanelUnitConversion Conversion(GH_Component component) => Property<BetterGhPanel.Core.PanelUnitConversion>(component, "UnitConversion");
     internal static int Decimals(GH_Component component) => Property<int>(component, "DecimalPlaces");
     internal static int Offset(GH_Component component) => PanelTestAdapter.PaneField<int>(component.Attributes, false, "Offset");
@@ -70,19 +69,19 @@ internal static class PanelTestAdapter
     {
         var selection = Field<object>(component.Attributes, "_selection");
         var result = Session(component).GetType().GetProperty("Result")!.GetValue(Session(component));
-        var positions = (System.Collections.Generic.IReadOnlyList<int>)selection.GetType().GetMethod("OrderedPositions", PrivateInstance)!
+        var positions = (System.Collections.Generic.IReadOnlyList<int>)selection.GetType().GetMethod("OrderedPositions", NonPublicInstance)!
             .Invoke(selection, new[] { result })!;
         return positions.Count == 0 ? -1 : positions[0];
     }
     internal static bool MenuOpen(GH_Component component) => Property<object>(Field<object>(component.Attributes, "_menu"), "Kind").ToString() != "None";
-    internal static void ClearFilters(GH_Component component) => component.GetType().GetMethod("ClearFilters", PrivateInstance)!.Invoke(component, Array.Empty<object>());
+    internal static void ClearFilters(GH_Component component) => component.GetType().GetMethod("ClearFilters", NonPublicInstance)!.Invoke(component, Array.Empty<object>());
     internal static void Units(GH_Component component, BetterGhPanel.Core.PanelUnitConversion conversion, int decimals) =>
-        component.GetType().GetMethod("SetUnits", PrivateInstance)!.Invoke(component, new object?[] { conversion, decimals, null });
+        component.GetType().GetMethod("SetUnits", NonPublicInstance)!.Invoke(component, new object?[] { conversion, decimals, null });
     internal static string CopyValue(GH_Component component, BetterGhPanel.Core.PanelSnapshot snapshot, int position) =>
-        (string)component.GetType().GetMethod("CopyValue", PrivateInstance)!.Invoke(component, new object[] { snapshot, position })!;
+        (string)component.GetType().GetMethod("CopyValue", NonPublicInstance)!.Invoke(component, new object[] { snapshot, position })!;
 
     internal static void Resize(GH_Component component, float width, float height) =>
-        component.GetType().GetMethod("SetCanvasSize", PrivateInstance)!.Invoke(component, new object[] { width, height });
+        component.GetType().GetMethod("SetCanvasSize", NonPublicInstance)!.Invoke(component, new object[] { width, height });
     internal static RectangleF Bounds(GH_Component component, CanvasControl control) =>
         control == CanvasControl.List || control == CanvasControl.Track
             ? PaneField<RectangleF>(component.Attributes, false, control.ToString())
@@ -110,11 +109,11 @@ internal static class PanelTestAdapter
         var pair = operations.GetMethod("Pair", BindingFlags.Static | BindingFlags.NonPublic)!
             .Invoke(null, new object?[] { data, paired, sources, 0, false, false, false, null })!;
         return (Grasshopper.Kernel.Data.GH_Structure<Grasshopper.Kernel.Types.IGH_Goo>)pair.GetType()
-            .GetMethod("Output", PrivateInstance)!.Invoke(pair, new object?[] { query, query.RowPositions, query.BranchPaths, false, false, null, false })!;
+            .GetMethod("Output", NonPublicInstance)!.Invoke(pair, new object?[] { query, query.RowPositions, query.BranchPaths, false, false, null, false })!;
     }
 
     internal static void Render(GH_Component component, GH_Canvas canvas, Graphics graphics) =>
-        component.Attributes.GetType().GetMethod("Render", PrivateInstance)!
+        component.Attributes.GetType().GetMethod("Render", NonPublicInstance)!
             .Invoke(component.Attributes, new object[] { canvas, graphics, GH_CanvasChannel.Objects });
 
     internal static void CanvasClick(GH_Canvas canvas, PointF point,
@@ -124,7 +123,7 @@ internal static class PanelTestAdapter
         var args = new System.Windows.Forms.MouseEventArgs(button, clicks, location.X, location.Y, 0);
         // Raise the host's normal control event for Grasshopper hit dispatch.
         foreach (string name in new[] { "OnMouseDown", "OnMouseUp" })
-            typeof(System.Windows.Forms.Control).GetMethod(name, PrivateInstance)!.Invoke(canvas, new object[] { args });
+            typeof(System.Windows.Forms.Control).GetMethod(name, NonPublicInstance)!.Invoke(canvas, new object[] { args });
     }
 
     internal static GH_TooltipDisplayEventArgs Tooltip(GH_Component component, GH_Canvas canvas, int sourcePosition)
@@ -161,17 +160,17 @@ internal static class PanelTestAdapter
     }
 
     internal static string DisplayValue(GH_Component component, BetterGhPanel.Core.PanelSnapshot snapshot, int position) =>
-        (string)component.GetType().GetMethod("DisplayValue", PrivateInstance)!
+        (string)component.GetType().GetMethod("DisplayValue", NonPublicInstance)!
             .Invoke(component, new object[] { snapshot, snapshot.Rows[position], position })!;
 
-    private static T Property<T>(object owner, string name) => (T)owner.GetType().GetProperty(name, PrivateInstance)!.GetValue(owner)!;
+    private static T Property<T>(object owner, string name) => (T)owner.GetType().GetProperty(name, NonPublicInstance)!.GetValue(owner)!;
     internal static RectangleF LayoutRect(object attributes, string name) =>
         Property<RectangleF>(Field<object>(attributes, "_layout"), name);
 
     internal static T PaneField<T>(object attributes, bool paired, string name) =>
         Field<T>(Field<object>(attributes, paired ? "_f" : "_d"), name);
 
-    private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, PrivateInstance)!.GetValue(owner)!;
+    private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, NonPublicInstance)!.GetValue(owner)!;
 }
 
 // Host-owned textbox internals are isolated from the behavioral assertions too.

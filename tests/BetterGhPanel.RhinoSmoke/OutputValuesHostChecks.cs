@@ -29,29 +29,29 @@ internal static class OutputValuesHostChecks
             fixture.Paired.PersistentData.Append(new GH_Integer(i), new GH_Path(0));
         }
         fixture.Solve(); await fixture.Ready(() => fixture.Result.RowPositions.Count == 5);
-        Check(ReflectProperty403875335<PanelOutputValues>(component, "OutputValues") == PanelOutputValues.Items, "New components default to Items");
+        Check(PropertyValue<PanelOutputValues>(component, "OutputValues") == PanelOutputValues.Items, "New components default to Items");
         Call(component, "SetTreeOperations", 0, false, false, false, true);
         fixture.Query(new PanelQueryOptions { CreateSet = true, DisplayFilterValue = true, SearchMode = PanelSearchMode.Length });
         await fixture.Ready(() => Paths(fixture, 0) == "{0;0},{0;1}" && fixture.Sinks[0].VolatileData.DataCount == 5);
         Check(fixture.Sinks[0].VolatileData.AllData(false).All(item => item is GH_Line) && fixture.Values(3) == "0,2,3,1,4",
             "Set Items and paired F group every original member in tree order");
         Check(fixture.Sinks[2].VolatileData.AllData(false).Cast<GH_Boolean>().All(item => item.Value), "Filtered set mask keeps every duplicate");
-        await fixture.Ready(() => ReferenceEquals(component.GetType().GetField("_cachedOutputResult", FlagsInstanceNonPublicPublic)!.GetValue(component), fixture.Result));
+        await fixture.Ready(() => ReferenceEquals(component.GetType().GetField("_cachedOutputResult", AnyInstance)!.GetValue(component), fixture.Result));
         var filteredResult = fixture.Result;
-        var filteredData = component.GetType().GetField("_filteredData", FlagsInstanceNonPublicPublic)!.GetValue(component);
+        var filteredData = component.GetType().GetField("_filteredData", AnyInstance)!.GetValue(component);
         fixture.Select(1); fixture.Scope(PanelOutputScope.Selected);
         await fixture.Ready(() => Paths(fixture, 1) == "{0;1}" && fixture.Sinks[1].VolatileData.DataCount == 2 && fixture.Values(3) == "1,4");
         Check(fixture.Sinks[2].VolatileData.AllData(false).Cast<GH_Boolean>().Select(item => item.Value).SequenceEqual(new[] { false, true, false, false, true }),
             "Selected set mask marks all members and S/F retain k without renumbering");
-        Check(!ReferenceEquals(filteredResult, fixture.Result) || ReferenceEquals(filteredData, component.GetType().GetField("_filteredData", FlagsInstanceNonPublicPublic)!.GetValue(component)),
+        Check(!ReferenceEquals(filteredResult, fixture.Result) || ReferenceEquals(filteredData, component.GetType().GetField("_filteredData", AnyInstance)!.GetValue(component)),
             "Selection-only publication reuses filtered D for the same completed result");
         Call(component, "HighlightRows", fixture.Result.Snapshot, new[] { 1 });
-        var highlight = component.GetType().GetField("_highlight", FlagsInstanceNonPublicPublic)!.GetValue(component)!;
-        Check(ReflectProperty403875335<int>(highlight, "PreviewCount") == 2 && ReflectProperty403875335<BoundingBox>(highlight, "ClippingBox").Max.X >= 46,
+        var highlight = component.GetType().GetField("_highlight", AnyInstance)!.GetValue(component)!;
+        Check(PropertyValue<int>(highlight, "PreviewCount") == 2 && PropertyValue<BoundingBox>(highlight, "ClippingBox").Max.X >= 46,
             "Selected set preview covers both geometries including the later occurrence");
         Call(component, "SetPreviewMode", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelPreviewMode", true)!, "FilteredResults"));
         Call(component, "HighlightRows", fixture.Result.Snapshot, new[] { 1 });
-        Check(ReflectProperty403875335<int>(highlight, "PreviewCount") == 5, "Filtered set preview includes every member alongside the selected group");
+        Check(PropertyValue<int>(highlight, "PreviewCount") == 5, "Filtered set preview includes every member alongside the selected group");
         Call(component, "SetPreviewMode", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelPreviewMode", true)!, "Selected"));
 
         Call(component, "SetOutputValues", PanelOutputValues.Values);
@@ -192,8 +192,8 @@ internal static class OutputValuesHostChecks
             Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, display));
             await Query(PanelSearchMode.Text);
             await Query(PanelSearchMode.ListLength);
-            var pairing = ReflectProperty403875335<object>(component, "PairedData");
-            var pairedRows = (System.Collections.IDictionary)pairing.GetType().GetField("BranchSummaries", FlagsInstanceNonPublicPublic)!.GetValue(pairing)!;
+            var pairing = PropertyValue<object>(component, "PairedData");
+            var pairedRows = (System.Collections.IDictionary)pairing.GetType().GetField("BranchSummaries", AnyInstance)!.GetValue(pairing)!;
             Check(!PanelTestAdapter.PaneField<RectangleF>(attributes, false, "Caption").IsEmpty && !Bounds("ScrollLock").IsEmpty && pairedRows.Count > 0 &&
                 PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Height >= 17 && PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Bottom <= Bounds("Footer").Top,
                 "Minimum split " + display + " retains captions, relinking, paired branch content and a full data row");
@@ -204,7 +204,7 @@ internal static class OutputValuesHostChecks
                 var click = new Grasshopper.GUI.GH_CanvasMouseEvent(canvas.Viewport,
                     new System.Windows.Forms.MouseEventArgs(System.Windows.Forms.MouseButtons.Left, 1, (int)location.X, (int)location.Y, 0));
                 attributes.RespondToMouseDown(canvas, click);
-                Check((bool)attributes.GetType().GetField("_scrollLocked", FlagsInstanceNonPublicPublic)!.GetValue(attributes)! == expected,
+                Check((bool)attributes.GetType().GetField("_scrollLocked", AnyInstance)!.GetValue(attributes)! == expected,
                     "Minimum split " + display + " can unlink and relink scrolling");
                 Render();
             }
@@ -219,12 +219,12 @@ internal static class OutputValuesHostChecks
         {
             var restored = (GH_Component)Activator.CreateInstance(fixture.Component.GetType())!;
             restored.CreateAttributes();
-            Check(restored.Read(chunk) && ReflectProperty403875335<PanelOutputValues>(restored, "OutputValues") == expected, message);
+            Check(restored.Read(chunk) && PropertyValue<PanelOutputValues>(restored, "OutputValues") == expected, message);
             if (enableValues)
             {
-                Call(ReflectProperty403875335<object>(restored, "Session"), "UpdateQuery",
+                Call(PropertyValue<object>(restored, "Session"), "UpdateQuery",
                     new PanelQueryOptions { SearchMode = PanelSearchMode.Value, DisplayFilterValue = true });
-                Check(ReflectProperty403875335<PanelOutputValues>(restored, "OutputValues") == PanelOutputValues.Items,
+                Check(PropertyValue<PanelOutputValues>(restored, "OutputValues") == PanelOutputValues.Items,
                     "Enabling value display after load does not resurrect a hidden Values choice");
             }
             restored.DocumentContextChanged(fixture.Document, GH_DocumentContext.Close);

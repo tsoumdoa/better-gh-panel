@@ -1,3 +1,4 @@
+using static SmokeAssertions;
 using static PanelTestAdapter;
 using System;
 using System.Drawing;
@@ -131,12 +132,12 @@ internal static class CaptureSafetyChecks
         var unset = new GH_Number(Rhino.RhinoMath.UnsetValue);
         unitTree.AppendRange(new IGH_Goo[] { hostileNumber, unset, new GH_Number(2000) }, new GH_Path(0));
         HostileNumber.Calls = 0;
-        var convert = assembly.GetType("BetterGhPanel.Runtime.PanelUnitOperations", true)!.GetMethod("Apply", FlagsNonPublicPublicStatic)!;
+        var convert = assembly.GetType("BetterGhPanel.Runtime.PanelUnitOperations", true)!.GetMethod("Apply", AnyStatic)!;
         var converted = (GH_Structure<IGH_Goo>)convert.Invoke(null, new object[] { unitTree, PanelUnitConversion.MillimetersToMeters })!;
         Check(HostileNumber.Calls == 0 && ReferenceEquals(converted.Branches[0][0], hostileNumber) &&
             ReferenceEquals(converted.Branches[0][1], unset) && ((GH_Number)converted.Branches[0][2]).Value == 2,
             "Conversion never reads subclass values and preserves exact finite invalid unset values");
-        var describe = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!.GetMethod("DescribeCaptured", FlagsNonPublicPublicStatic)!;
+        var describe = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!.GetMethod("DescribeCaptured", AnyStatic)!;
         HostileCurve.Calls = 0;
         Check(describe.Invoke(null, new object?[] { hostileCurve, null, "mm" }) == null && HostileCurve.Calls == 0,
             "Geometry descriptions never read subclass Value or delegated metadata");
@@ -180,7 +181,7 @@ internal static class CaptureSafetyChecks
 
     private static void VerifyStockIdentities(Assembly assembly, CaptureTree capture)
     {
-        var method = assembly.GetType("BetterGhPanel.Runtime.SafeGooInspection", true)!.GetMethod("TrustedTypeName", FlagsNonPublicPublicStatic)!;
+        var method = assembly.GetType("BetterGhPanel.Runtime.SafeGooInspection", true)!.GetMethod("TrustedTypeName", AnyStatic)!;
         var gh = typeof(IGH_Goo).Assembly;
         int audited = 0;
         foreach (var type in gh.GetTypes().Where(type => type.Namespace == "Grasshopper.Kernel.Types" &&
@@ -273,10 +274,10 @@ internal static class CaptureSafetyChecks
     {
         var treeOps = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!;
         var outputOps = assembly.GetType("BetterGhPanel.Runtime.PanelOutputOperations", true)!;
-        var filtered = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Filter", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { tree, result })!;
-        var selected = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Select", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { tree, result.RowPositions })!;
+        var filtered = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Filter", AnyStatic)!.Invoke(null, new object[] { tree, result })!;
+        var selected = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Select", AnyStatic)!.Invoke(null, new object[] { tree, result.RowPositions })!;
         var addresses = snapshot.Rows.Select((_, i) => snapshot.SourceAddressAt(i)).ToArray();
-        var mask = (GH_Structure<GH_Boolean>)outputOps.GetMethod("Mask", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { tree, addresses, result.RowPositions })!;
+        var mask = (GH_Structure<GH_Boolean>)outputOps.GetMethod("Mask", AnyStatic)!.Invoke(null, new object[] { tree, addresses, result.RowPositions })!;
         var paired = new GH_Structure<IGH_Goo>();
         for (int i = 0; i < tree.DataCount; i++) paired.Append(new GH_String("F" + i), new GH_Path(0));
         var filteredPairs = PanelTestAdapter.PairedOutput(assembly, tree, paired, addresses, result);
@@ -291,10 +292,10 @@ internal static class CaptureSafetyChecks
     {
         var treeOps = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!;
         var outputOps = assembly.GetType("BetterGhPanel.Runtime.PanelOutputOperations", true)!;
-        var filtered = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Filter", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { tree, filter })!;
-        var selected = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Select", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { tree, filter.RowPositions })!;
+        var filtered = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Filter", AnyStatic)!.Invoke(null, new object[] { tree, filter })!;
+        var selected = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Select", AnyStatic)!.Invoke(null, new object[] { tree, filter.RowPositions })!;
         var addresses = snapshot.Rows.Select((_, i) => snapshot.SourceAddressAt(i)).ToArray();
-        var mask = (GH_Structure<GH_Boolean>)outputOps.GetMethod("Mask", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { tree, addresses, filter.RowPositions })!;
+        var mask = (GH_Structure<GH_Boolean>)outputOps.GetMethod("Mask", AnyStatic)!.Invoke(null, new object[] { tree, addresses, filter.RowPositions })!;
         var paired = new GH_Structure<IGH_Goo>();
         for (int i = 0; i < tree.DataCount; i++) paired.Append(new GH_String("F" + i), new GH_Path(0));
         var filteredPairs = PanelTestAdapter.PairedOutput(assembly, tree, paired, addresses, filter);
@@ -303,7 +304,7 @@ internal static class CaptureSafetyChecks
             ((GH_String)filteredPairs.Branches[0][0]).Value == "F4",
             "Wrapped type filters preserve typed D/S and aligned B/F membership");
         var set = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = "{Group}", Search = "Facade A", CreateSet = true });
-        var output = (GH_Structure<IGH_Goo>)outputOps.GetMethod("DisplaySet", FlagsNonPublicPublicStatic)!
+        var output = (GH_Structure<IGH_Goo>)outputOps.GetMethod("DisplaySet", AnyStatic)!
             .Invoke(null, new object?[] { tree, set, set.RowPositions, set.BranchPaths, null })!;
         Check(((GH_String)output.Branches[0][0]).Value == "Group (Facade A) with 2 objects",
             "Create set emits the captured group summary while preserving representative membership");
@@ -442,10 +443,6 @@ internal static class CaptureSafetyChecks
         var group = new GH_GeometryGroup { Name = name };
         for (int i = 0; i < count; i++) group.Objects.Add(null!);
         return group;
-    }
-    private static void Check(bool condition, string message)
-    {
-        SmokeAssertions.Check(condition, message);
     }
 
     private sealed class HostileNumber : GH_Number

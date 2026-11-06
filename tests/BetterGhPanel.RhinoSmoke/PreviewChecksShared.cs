@@ -16,7 +16,7 @@ using Forms = System.Windows.Forms;
 internal static partial class PreviewSafetyChecks
 {
     private static object Copy(Assembly assembly, IEnumerable<IGH_Goo?> values) => assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!
-        .GetMethod("CopyGeometry", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { values, RhinoDoc.ActiveDoc.ModelUnitSystem, RhinoDoc.ActiveDoc.ModelAbsoluteTolerance })!;
+        .GetMethod("CopyGeometry", AnyStatic)!.Invoke(null, new object[] { values, RhinoDoc.ActiveDoc.ModelUnitSystem, RhinoDoc.ActiveDoc.ModelAbsoluteTolerance })!;
     private static File3dm ClipboardArchive()
     {
         object data = Forms.Clipboard.GetData("Rhino 8 3DM Geometry")!;
@@ -30,16 +30,16 @@ internal static partial class PreviewSafetyChecks
         return File3dm.FromByteArray(bytes) ?? throw new InvalidOperationException("Invalid geometry clipboard archive.");
     }
     private static object Frame(Assembly assembly, IEnumerable<IGH_Goo?> values) => assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!
-        .GetMethod("Frame", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { values })!;
+        .GetMethod("Frame", AnyStatic)!.Invoke(null, new object[] { values })!;
     private static BoundingBox Bounds(Assembly assembly, IGH_Goo value) => (BoundingBox)assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!
-        .GetMethod("GetBounds", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { value })!;
+        .GetMethod("GetBounds", AnyStatic)!.Invoke(null, new object[] { value })!;
     private static void Set(object highlight, IGH_Goo?[] values, int[] positions, int[] selected) =>
         Method(highlight, "Set").Invoke(highlight, new object[] { values, positions, selected });
     private static void Scope(object highlight, IGH_Goo?[] values, PanelQueryResult result, int[] selected) =>
         Method(highlight, "SetScope").Invoke(highlight, new object[] { values, result, true, selected });
-    private static BoundingBox Box(object highlight) => ReflectProperty403875335<BoundingBox>(highlight, "ClippingBox");
-    private static int Count(object highlight) => ReflectProperty403875335<int>(highlight, "PreviewCount");
-    private static string Status(object highlight) => ReflectProperty403875335<string>(highlight, "Status");
+    private static BoundingBox Box(object highlight) => PropertyValue<BoundingBox>(highlight, "ClippingBox");
+    private static int Count(object highlight) => PropertyValue<int>(highlight, "PreviewCount");
+    private static string Status(object highlight) => PropertyValue<string>(highlight, "Status");
     private static int GreenPixels(Bitmap bitmap)
     {
         int count = 0;
@@ -83,7 +83,7 @@ internal static partial class PreviewSafetyChecks
         Console.WriteLine($"Compatibility region {bounds}: {target.Name}={count}, pixels={x0},{y0}-{x1},{y1}");
         return count > 10;
     }
-    private static MethodInfo Method(object value, string name) => value.GetType().GetMethod(name, FlagsInstanceNonPublicPublic)!;
+    private static MethodInfo Method(object value, string name) => value.GetType().GetMethod(name, AnyInstance)!;
 
     private sealed class HostileLineCurve : LineCurve
     {
