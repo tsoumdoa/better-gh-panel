@@ -1,18 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
-using System.Globalization;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using System.Windows.Forms;
 using BetterGhPanel.Core;
 using BetterGhPanel.Runtime;
 using BetterGhPanel.UI;
 using GH_IO.Serialization;
 using Grasshopper;
 using Grasshopper.Kernel;
-using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 using Grasshopper.Kernel.Undo;
 
@@ -403,11 +397,17 @@ namespace BetterGhPanel
             reader.TryGetBoolean("PanelInvalid", ref invalid);
             reader.TryGetInt32("PanelSort", ref sort);
             bool hasLegacySize = reader.TryGetInt32("PanelSize", ref size);
-            _savedOptions = new PanelQueryOptions { Search = search, TypeName = string.IsNullOrEmpty(type) ? null : type,
+            _savedOptions = new PanelQueryOptions
+            {
+                Search = search,
+                TypeName = string.IsNullOrEmpty(type) ? null : type,
                 DisplayFilterValue = displayFilterValue && searchMode >= (int)PanelSearchMode.Value && Enum.IsDefined(typeof(PanelSearchMode), searchMode),
                 SearchMode = Enum.IsDefined(typeof(PanelSearchMode), searchMode) ? (PanelSearchMode)searchMode : PanelSearchMode.Text,
-                BranchPath = string.IsNullOrEmpty(branch) ? null : branch, BranchPrefix = prefix, OnlyInvalid = invalid,
-                SortMode = Enum.IsDefined(typeof(PanelSortMode), sort) ? (PanelSortMode)sort : PanelSortMode.SourceOrder };
+                BranchPath = string.IsNullOrEmpty(branch) ? null : branch,
+                BranchPrefix = prefix,
+                OnlyInvalid = invalid,
+                SortMode = Enum.IsDefined(typeof(PanelSortMode), sort) ? (PanelSortMode)sort : PanelSortMode.SourceOrder
+            };
             size = Math.Max(0, Math.Min(CanvasPanelSize.PresetNames.Length - 1, size));
             float width = hasLegacySize ? CanvasPanelSize.PresetWidth(size) : CanvasPanelSize.DefaultWidth;
             float height = hasLegacySize ? CanvasPanelSize.PresetHeight(size) : CanvasPanelSize.DefaultHeight;
