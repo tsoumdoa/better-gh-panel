@@ -1,0 +1,208 @@
+using Xunit;
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Linq;
+using BetterGhPanel.Core;
+using BetterGhPanel.UI;
+
+public class CanvasMenuChoiceTests
+{
+
+
+    [Fact]
+    public void PartialPaintEligibility()
+    {
+        var menu = new CanvasMenu();
+        menu.Toggle(CanvasMenuKind.SearchMode, PanelSnapshot.Empty, new PanelQueryOptions());
+        menu.Layout(new RectangleF(0, 0, 300, 110), default, default, default, search: new RectangleF(12, 24, 100, 20));
+        var first = new PointF(menu.Bounds.Left + 8, menu.Bounds.Top + 10);
+        var second = new PointF(menu.Bounds.Left + 8, menu.Bounds.Top + 30);
+        var previous = new PointF(menu.Bounds.Left + 8, menu.Bounds.Bottom - 10);
+        var next = new PointF(menu.Bounds.Right - 8, menu.Bounds.Bottom - 10);
+        menu.BeginPaint();
+        menu.MarkRowPainted(0);
+        menu.MarkPagePainted(false);
+        Assert.True(menu.IsPaintedAt(first) && menu.TrySelect(first, out int firstIndex) && firstIndex == 0,
+            "A fully painted menu row is actionable when neighboring targets are clipped");
+        Assert.True(menu.Hover(first) && menu.HoveredIndex == 0, "A fully painted menu row can be hovered");
+        menu.InvalidatePaint();
+        menu.BeginPaint();
+        menu.MarkRowPainted(0);
+        menu.MarkPagePainted(false);
+        Assert.True(menu.HoveredIndex == 0, "Repainting retains the active menu hover highlight");
+        menu.BeginPaint(preserve: true);
+        Assert.True(menu.IsPaintedAt(first) && menu.IsPaintedAt(next),
+            "An unchanged page retains targets painted in an earlier complete region");
+        Assert.True(!menu.IsPaintedAt(second) && !menu.TrySelect(second, out _) && menu.Hover(second) && menu.HoveredIndex == -1 &&
+            !menu.IsPaintedAt(previous) && !menu.TrySelect(previous, out _) && menu.Offset == 0,
+            "Clipped rows and the unpainted half of a pager cannot be selected or hovered");
+        Assert.True(menu.IsPaintedAt(next) && !menu.TrySelect(next, out _) && menu.Offset > 0 && !menu.IsPaintedAt(first),
+            "A painted pager advances and invalidates every target until the next page is painted");
+        menu.BeginPaint();
+        menu.MarkRowPainted(0);
+        Assert.True(menu.TrySelect(first, out int nextIndex) && nextIndex == menu.Offset,
+            "The new page becomes actionable only after its own row is painted");
+        menu.Layout(new RectangleF(10, 10, 300, 110), default, default, default, search: new RectangleF(22, 34, 100, 20));
+        Assert.True(!menu.HasPaintedTargets, "Moving the menu invalidates its previously painted geometry");
+    }
+
+    [Fact]
+    public void SearchCapabilitiesAndPaging()
+    {
+        var snapshot = new PanelSnapshot(Array.Empty<PanelRow>(), Array.Empty<PanelBranch>());
+        var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 7", DisplayFilterValue = false };
+        var supported = new HashSet<PanelSearchMode> { PanelSearchMode.Text, PanelSearchMode.Regex, PanelSearchMode.Length, PanelSearchMode.ListLength };
+        var menu = new CanvasMenu();
+        menu.Toggle(CanvasMenuKind.SearchMode, snapshot, options, supportedSearchModes: supported);
+        supported.Clear(); // An open menu captures its own choice identities.
+        var expected = new[] { PanelSearchMode.Text, PanelSearchMode.Regex, PanelSearchMode.Length, PanelSearchMode.Area, PanelSearchMode.ListLength };
+        Assert.True(Enumerable.Range(0, menu.Count).Select(menu.SearchModeAt).SequenceEqual(expected),
+            "Unavailable earlier modes are omitted, while the saved area mode remains in canonical order");
+        Assert.True(menu.IsSelected(3, options, PanelUnitConversion.None, -1) && menu.Label(3) == "Geometry · area" &&
+            options.SearchMode == PanelSearchMode.Area && options.Search == "> 7" && !options.DisplayFilterValue,
+            "Keeping an unavailable saved mode does not change its expression or display setting");
+        menu.Layout(new RectangleF(0, 0, 300, 110), default, default, default, search: new RectangleF(12, 24, 100, 20));
+        var clicked = new List<PanelSearchMode>();
+        int previousOffset = -1;
+        while (menu.Offset != previousOffset)
+        {
+            previousOffset = menu.Offset;
+            menu.MarkPainted();
+            for (int row = 0; row < menu.Visible && menu.Offset + row < menu.Count; row++)
+            {
+                Assert.True(menu.TrySelect(new PointF(menu.Bounds.Left + 10, menu.Bounds.Top + row * 20 + 10), out int index),
+                    "A visible search choice is selectable");
+                clicked.Add(menu.SearchModeAt(index));
+            }
+            Assert.True(!menu.TrySelect(new PointF(menu.Bounds.Right - 5, menu.Bounds.Bottom - 5), out _),
+                "Paging does not select a search choice");
+        }
+        Assert.True(clicked.Distinct().SequenceEqual(expected), "Paged clicks resolve the actual modes, including choices following omitted modes");
+        Assert.True(menu.Offset > 0, "Compact search menu reaches a later page");
+        menu.TrySelect(new PointF(menu.Bounds.Left + 5, menu.Bounds.Bottom - 5), out _);
+        Assert.True(menu.Offset < previousOffset, "Previous page returns toward the first search choices");
+        Assert.True(menu.IsCurrent(snapshot) && !menu.IsCurrent(new PanelSnapshot(Array.Empty<PanelRow>(), Array.Empty<PanelBranch>())),
+            "A menu cannot act on a replacement snapshot");
+        menu.Close();
+        menu.Toggle(CanvasMenuKind.SearchMode, snapshot, options, supportedSearchModes: Array.Empty<PanelSearchMode>());
+        Assert.True(menu.Count == 1 && menu.SearchModeAt(0) == PanelSearchMode.Area && menu.IsSelected(0, options, PanelUnitConversion.None, -1),
+            "Even an empty supported set retains the active saved mode");
+        menu.Close();
+        menu.Toggle(CanvasMenuKind.SearchMode, snapshot, new PanelQueryOptions());
+        Assert.True(Enumerable.Range(0, menu.Count).Select(menu.SearchModeAt).SequenceEqual(
+            new[] { PanelSearchMode.Text, PanelSearchMode.Regex, PanelSearchMode.Value, PanelSearchMode.Length, PanelSearchMode.Area, PanelSearchMode.Volume,
+                PanelSearchMode.X, PanelSearchMode.Y, PanelSearchMode.Z, PanelSearchMode.ListLength }.Concat(
+                    Enum.GetValues(typeof(PanelSearchMode)).Cast<PanelSearchMode>().Where(PanelProperties.IsProperty))),
+            "The default includes the complete search menu");
+    }
+
+    [Fact]
+    public void ChoiceIdentityAndPersistedValues()
+    {
+        Assert.True((int)PanelSearchMode.Text == 0 && (int)PanelSearchMode.Regex == 1 && (int)PanelSearchMode.Value == 2 &&
+            (int)PanelSearchMode.Length == 3 && (int)PanelSearchMode.Area == 4 && (int)PanelSearchMode.Volume == 5 && (int)PanelSearchMode.ListLength == 6,
+            "Persisted search mode values remain unchanged");
+        Assert.True((int)PanelSortMode.SourceOrder == 0 && (int)PanelSortMode.ValueAscending == 1 && (int)PanelSortMode.ValueDescending == 2 &&
+            (int)PanelPreviewMode.Selected == 0 && (int)PanelPreviewMode.FilteredResults == 1 && (int)PanelPreviewMode.Off == 2,
+            "Persisted sort and preview values remain unchanged");
+        var conversions = new[] { PanelUnitConversion.None, PanelUnitConversion.MillimetersToMeters, PanelUnitConversion.MetersToMillimeters,
+            PanelUnitConversion.SquareMillimetersToSquareMeters, PanelUnitConversion.SquareMetersToSquareMillimeters,
+            PanelUnitConversion.RadiansToDegrees, PanelUnitConversion.DegreesToRadians,
+            PanelUnitConversion.CubicMillimetersToCubicMeters, PanelUnitConversion.CubicMetersToCubicMillimeters };
+        Assert.True(conversions.Select(value => (int)value).SequenceEqual(Enumerable.Range(0, conversions.Length)),
+            "Persisted unit conversion values remain unchanged");
+        var menu = new CanvasMenu();
+        var options = new PanelQueryOptions();
+        menu.Toggle(CanvasMenuKind.Sort, PanelSnapshot.Empty, options);
+        foreach (PanelSortMode mode in Enum.GetValues(typeof(PanelSortMode)))
+        {
+            int index = Enumerable.Range(0, menu.Count).Single(i => menu.SortModeAt(i) == mode);
+            options.SortMode = mode;
+            Assert.True(menu.IsSelected(index, options, PanelUnitConversion.None, -1), "Sort check follows its typed identity");
+        }
+        menu.Close();
+        menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
+        foreach (PanelPreviewMode mode in Enum.GetValues(typeof(PanelPreviewMode)))
+        {
+            int index = Enumerable.Range(0, menu.Count).Single(i => menu.PreviewChoiceAt(i).Mode == mode);
+            Assert.True(menu.IsSelected(index, options, PanelUnitConversion.None, -1, mode), "Preview check follows its typed identity");
+        }
+        int itemOrder = Enumerable.Range(0, menu.Count).Single(i => menu.PreviewChoiceAt(i).IsItemOrder);
+        Assert.True(menu.IsSectionStart(itemOrder) && menu.IsSelected(itemOrder, options, PanelUnitConversion.None, -1, PanelPreviewMode.Off, true),
+            "Item-order action has a distinct identity and checkmark");
+        menu.Close();
+        menu.Toggle(CanvasMenuKind.Units, PanelSnapshot.Empty, options);
+        foreach (var conversion in conversions)
+        {
+            int index = Enumerable.Range(0, menu.Count).Single(i => menu.UnitChoiceAt(i).Conversion == conversion);
+            Assert.True(menu.Label(index) == PanelUnits.Label(conversion) && menu.IsSelected(index, options, conversion, -1),
+                "Each unit choice retains the corresponding conversion and label");
+        }
+        int automatic = Enumerable.Range(0, menu.Count).Single(i => menu.UnitChoiceAt(i).Setting == CanvasNumberSetting.Automatic);
+        int custom = Enumerable.Range(0, menu.Count).Single(i => menu.UnitChoiceAt(i).Setting == CanvasNumberSetting.Custom);
+        Assert.True(menu.IsSectionStart(automatic) && menu.IsSelected(automatic, options, PanelUnitConversion.None, -1) &&
+            menu.IsSelected(custom, options, PanelUnitConversion.None, 2) && menu.Label(custom, 2) == "Decimal places… (2)",
+            "Decimal actions do not alias a unit conversion");
+        Assert.True(PanelUnits.Convert(1000000000, PanelUnitConversion.CubicMillimetersToCubicMeters) == 1 &&
+            PanelUnits.Convert(180, PanelUnitConversion.DegreesToRadians) == Math.PI,
+            "Typed unit choices leave conversion arithmetic unchanged");
+        menu.Close();
+        menu.Toggle(CanvasMenuKind.Comparison, PanelSnapshot.Empty, options);
+        foreach (CanvasComparison comparison in Enum.GetValues(typeof(CanvasComparison)))
+        {
+            int index = Enumerable.Range(0, menu.Count).Single(i => menu.ComparisonChoiceAt(i).Comparison == comparison);
+            options.SearchMode = PanelSearchMode.Value;
+            options.Search = CanvasMenu.ComparisonOperator(comparison) + " 5";
+            Assert.True(menu.IsSelected(index, options, PanelUnitConversion.None, -1), "Comparison check follows its typed operator");
+        }
+        int display = Enumerable.Range(0, menu.Count).Single(i => menu.ComparisonChoiceAt(i).IsDisplayValue);
+        options.DisplayFilterValue = true;
+        Assert.True(menu.IsSectionStart(display) && menu.IsSelected(display, options, PanelUnitConversion.None, -1),
+            "Show values has its own action identity");
+    }
+
+    [Fact]
+    public void FixedValueChoices()
+    {
+        Assert.True(CanvasMenu.HasValueChoices(PanelSearchMode.Validity) && CanvasMenu.HasValueChoices(PanelSearchMode.Closed) &&
+            !CanvasMenu.HasValueChoices(PanelSearchMode.Area) && !CanvasMenu.HasValueChoices(PanelSearchMode.Text),
+            "Fixed-value modes use pickers while numeric and text modes allow keyboard expressions");
+        foreach (var mode in new[] { PanelSearchMode.Validity, PanelSearchMode.Closed })
+        {
+            var values = mode == PanelSearchMode.Validity ? new[] { "Valid", "Invalid", "Unverified", "Null" } : new[] { "True", "False" };
+            var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Text };
+            var menu = new CanvasMenu();
+            menu.Toggle(CanvasMenuKind.Comparison, PanelSnapshot.Empty, options, comparisonMode: mode);
+            Assert.True(Enumerable.Range(0, menu.Count).Select(i => menu.Label(i)).SequenceEqual(values.Concat(new[] { "Show values · no filter" })) &&
+                Enumerable.Range(0, values.Length).Select(i => menu.ComparisonChoiceAt(i).Value).SequenceEqual(values) &&
+                menu.ComparisonChoiceAt(values.Length).IsDisplayValue && menu.IsSectionStart(values.Length),
+                "Validity and Boolean menus list fixed values in order, followed by a separate Show values action");
+            options.SearchMode = mode;
+            foreach (var value in values)
+            {
+                int index = Array.IndexOf(values, value);
+                foreach (string search in new[] { "  ==  " + value + "  ", value, mode == PanelSearchMode.Validity ? "= \"" + value + "\"" : "= " + value.ToLowerInvariant() })
+                {
+                    options.Search = search;
+                    Assert.True(Enumerable.Range(0, values.Length).Where(i => menu.IsSelected(i, options, PanelUnitConversion.None, -1)).SequenceEqual(new[] { index }),
+                        "Saved equality queries check only the matching fixed value, including implicit equality and quoted validity");
+                }
+            }
+            options.Search = "= " + values[0].ToLowerInvariant();
+            Assert.True(menu.IsSelected(0, options, PanelUnitConversion.None, -1) == (mode == PanelSearchMode.Closed),
+                "Boolean values ignore case, while validity states match ordinally");
+            options.Search = "!= " + values[0];
+            Assert.True(!Enumerable.Range(0, values.Length).Any(i => menu.IsSelected(i, options, PanelUnitConversion.None, -1)),
+                "Legacy inequality queries do not select a fixed value");
+            options.Search = "= " + values[0];
+            options.DisplayFilterValue = true;
+            Assert.True(!menu.IsSelected(0, options, PanelUnitConversion.None, -1), "Show values suppresses fixed-value checkmarks");
+            options.DisplayFilterValue = false;
+            options.SearchMode = PanelSearchMode.Text;
+            Assert.True(!menu.IsSelected(0, options, PanelUnitConversion.None, -1), "A matching query in a different mode does not select a fixed value");
+        }
+    }
+
+
+}
