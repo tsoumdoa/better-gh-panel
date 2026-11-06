@@ -176,19 +176,7 @@ Clicking inside the panel focuses it and keeps your selection; the first Esc cle
 
 ## Development
 
-```text
-npm run check
-```
-
-Runs the core tests, native coordinator and packaging checks, builds and stages both Rhino runtimes, flags unused private members, usings and parameters (not unused internal or public members), and checks that C# source is UTF-8. On Windows with Rhino 8 installed it also compiles and style-checks the native smoke host (skipped otherwise), so don't run it while a native run is in progress. It never launches Rhino. Run it before opening or merging a PR; GitHub Actions CI is disabled.
-
-To build a Yak package, run `dotnet build BetterGhPanel.sln -c Release` then `node scripts/package.mjs`. During development, run affected native Rhino regressions with `tests/BetterGhPanel.RhinoSmoke/run.ps1 -Fixture ui-ux,row-selection` (choose names from `fixtures.json`). Run the full inventory for broad runtime changes and releases; launcher self-tests run separately. See the [validation instructions](docs/maintainability.md#validation) for commands and optional diagnostics. See also:
-
-- [Build, packaging and release validation](docs/packaging.md)
-- [Current architecture](docs/architecture.md) and [maintainability guide](docs/maintainability.md)
-- [Geometry measurement](docs/geometry-measurement-safety.md) and [preview](docs/geometry-preview-safety.md) safety
-
-The original interactive HTML design study is preserved in `prototype/` (`npm start`, then <http://localhost:5173>); it uses generated data and is a visual reference only.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and validation.
 
 ## License
 

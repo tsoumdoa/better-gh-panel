@@ -1,6 +1,6 @@
 # Geometry measurement integration
 
-The current native inventory retains 17 geometry safety and integrity fixtures plus three property/UI regressions. See the [current validation instructions](maintainability.md#validation) for focused development runs, full release validation and optional diagnostics. Run tables and fixture references below record the historical investigations.
+The current native inventory retains 17 geometry safety and integrity fixtures plus three property/UI regressions. See the [current validation instructions](../CONTRIBUTING.md#validation) for focused development runs, full release validation and optional diagnostics. Run tables and fixture references below record the historical investigations.
 
 This experimental compatibility path restores deferred standalone curve length,
 surface and open Brep trimmed area, and solid Brep volume. It uses beta.7's

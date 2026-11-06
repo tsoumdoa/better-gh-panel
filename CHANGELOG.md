@@ -61,7 +61,7 @@ adds selected data (S), an original-input Boolean mask (B), and optional paired 
 
 ## 0.1.20-beta.4
 
-consolidates unit-conversion definitions, shares query scope with measurement preparation, and gives row-menu actions stable named identities. Existing settings and behavior are preserved. See the [maintainability audit](maintainability.md) for feature ownership and deferred findings.
+consolidates unit-conversion definitions, shares query scope with measurement preparation, and gives row-menu actions stable named identities. Existing settings and behavior are preserved. See the [maintainability audit](docs/maintainability.md) for feature ownership and deferred findings.
 
 ## 0.1.20-beta.3
 

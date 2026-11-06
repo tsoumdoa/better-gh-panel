@@ -37,7 +37,7 @@ Install the current public beta with:
 yak install panel-plus 0.2.6-beta
 ```
 
-The release notes below record the validation and host modes used at the time. For the current isolated fixture runner, see [validation](maintainability.md#validation).
+The release notes below record the validation and host modes used at the time. For the current isolated fixture runner, see [validation](../CONTRIBUTING.md#validation).
 
 Validation: `npm run check`, managed `--tree-only`, and focused `--sets-only`, `--outputs-only`, and `--filters-only` against the final extracted Yak archive. The set host checks numeric and converted geometry outputs, equal displayed lengths, empty branches, list counts before grouping, precision changes, filters, source masks/pairs, selection, persistence, Undo/Redo, occurrence tables and Full/Half canvas rendering. Both runtime payloads build; host execution uses Windows .NET 7 and Rhino 8.36. The existing full viewport capture crash described below still limits full-suite validation.
 
