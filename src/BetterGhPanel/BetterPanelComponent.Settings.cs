@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using BetterGhPanel.Core;
 using BetterGhPanel.Runtime;
@@ -146,26 +145,6 @@ namespace BetterGhPanel
             (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
             if (committed) OnPingDocument()?.Modified();
             ScheduleOutput();
-        }
-
-        internal bool SelectionHasGeometry(IReadOnlyList<int> positions)
-        {
-            var source = _sourceItems;
-            var budget = new PanelGeometrySources.OperationBudget();
-            foreach (int position in ExpandSetMembers(positions))
-            {
-                if (position < 0 || position >= source.Length) continue;
-                var item = source[position];
-                if (item is GH_ObjectWrapper)
-                {
-                    using var inspected = PanelGeometrySources.Inspect(item, budget, allowStandalonePreview: true);
-                    // Uncertain wrappers stay available; the action performs its
-                    // full freshness and capability checks when invoked.
-                    if (inspected.Unavailable || inspected.Leaves.Count > 0) return true;
-                }
-                else if (item is IGH_GeometricGoo || item is IGH_PreviewData) return true;
-            }
-            return false;
         }
 
         internal bool ResetAll()

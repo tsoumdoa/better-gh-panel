@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
 using BetterGhPanel.Runtime;
+using Grasshopper.Kernel;
 using Grasshopper.Kernel.Types;
 
 namespace BetterGhPanel
@@ -331,5 +332,25 @@ namespace BetterGhPanel
             return result.Success;
         }
 
+
+        internal bool SelectionHasGeometry(IReadOnlyList<int> positions)
+        {
+            var source = _sourceItems;
+            var budget = new PanelGeometrySources.OperationBudget();
+            foreach (int position in ExpandSetMembers(positions))
+            {
+                if (position < 0 || position >= source.Length) continue;
+                var item = source[position];
+                if (item is GH_ObjectWrapper)
+                {
+                    using var inspected = PanelGeometrySources.Inspect(item, budget, allowStandalonePreview: true);
+                    // Uncertain wrappers stay available; the action performs its
+                    // full freshness and capability checks when invoked.
+                    if (inspected.Unavailable || inspected.Leaves.Count > 0) return true;
+                }
+                else if (item is IGH_GeometricGoo || item is IGH_PreviewData) return true;
+            }
+            return false;
+        }
     }
 }

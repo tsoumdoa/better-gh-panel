@@ -36,10 +36,7 @@ namespace BetterGhPanel.Runtime
         private static long _frameGeneration;
         private static readonly PanelActionCommit ClipboardCommit = new PanelActionCommit();
         private static readonly Dictionary<Guid, PanelActionCommit> FrameCommits = new Dictionary<Guid, PanelActionCommit>();
-        internal static long ClipboardGeneration => Runtime.ClipboardGeneration.Current;
         internal static long FrameGeneration => Interlocked.Read(ref _frameGeneration);
-        internal static long BeginClipboard() => Runtime.ClipboardGeneration.Begin();
-        internal static bool ClipboardCurrent(long generation) => Runtime.ClipboardGeneration.IsCurrent(generation);
         internal static PanelCommitOutcome CommitClipboard(Func<bool> current, Action publish, Action<PanelCommitOutcome>? completed = null) =>
             ClipboardCommit.Run(current, publish, completed);
         internal static PanelCommitOutcome CommitFrame(Guid viewportId, Func<bool> current, Action publish, Action<PanelCommitOutcome>? completed = null)
@@ -231,7 +228,7 @@ namespace BetterGhPanel.Runtime
             Func<bool> current, Func<RhinoDoc?> activeDocument, Action<PanelGeometryActionResult>? completed,
             Action<byte[]>? archiveObserver = null, Func<bool>? snapshotCurrent = null)
         {
-            long generation = BeginClipboard();
+            long generation = ClipboardGeneration.Begin();
             if (!Rhino.Runtime.HostUtils.RunningOnWindows) return Failure("Copy geometry into Rhino is currently supported on Windows only.");
             if (units == UnitSystem.CustomUnits) return Failure("Copy geometry does not yet support custom Rhino model units.");
             var document = activeDocument();
@@ -250,8 +247,8 @@ namespace BetterGhPanel.Runtime
             }
             // The source predicate can itself reenter and change clipboard owner,
             // document, units or tolerance. Fence both sides of that callback.
-            current = () => ClipboardCurrent(generation) && ContextCurrent() && sourceCurrent() &&
-                ClipboardCurrent(generation) && ContextCurrent() && ClipboardCurrent(generation);
+            current = () => ClipboardGeneration.IsCurrent(generation) && ContextCurrent() && sourceCurrent() &&
+                ClipboardGeneration.IsCurrent(generation) && ContextCurrent() && ClipboardGeneration.IsCurrent(generation);
             if (!current()) return Stale();
             int count = 0, skipped = 0, rows = 0;
             long bytes = 0;

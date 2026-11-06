@@ -5,7 +5,6 @@ using BetterGhPanel.Core;
 using BetterGhPanel.Runtime;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
-using Grasshopper.Kernel.Parameters;
 using Grasshopper.Kernel.Types;
 
 namespace BetterGhPanel
@@ -83,25 +82,6 @@ namespace BetterGhPanel
             _filteredData = _filteredPair = null;
             _filteredMask = null;
         }
-
-        private void CapturePairedInput(IGH_DataAccess da, GH_Structure<IGH_Goo> inputTree,
-            IReadOnlyList<PanelSourceAddress> retainedSources, out PanelPairedData? pairedTree, out string? error,
-            out GH_Structure<IGH_Goo>? livePairedTree, out GH_Structure<IGH_Goo>? capturedPairedTree, out bool present)
-        {
-            pairedTree = null;
-            error = null;
-            livePairedTree = capturedPairedTree = null;
-            present = PairedInputPresent();
-            if (!present) return;
-            if (!da.GetDataTree(1, out GH_Structure<IGH_Goo> paired)) paired = new GH_Structure<IGH_Goo>();
-            livePairedTree = paired;
-            capturedPairedTree = PanelTreeOperations.CopyStructure(paired);
-            pairedTree = PanelOutputOperations.Pair(inputTree, capturedPairedTree, retainedSources,
-                TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out error);
-        }
-
-        internal bool PairedInputPresent() => Params.Input[1].SourceCount != 0 ||
-            !(Params.Input[1] is Param_GenericObject input) || input.PersistentData.PathCount != 0;
 
         private void PublishOutputs(IGH_DataAccess da, Func<bool> solveCurrent)
         {
