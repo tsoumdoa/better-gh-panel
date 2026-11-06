@@ -956,7 +956,7 @@ internal static partial class PreviewSafetyChecks
             .Select(i => new PanelRow(i, "{0}", "Point", i.ToString(), null)).ToArray(), new[] { new PanelBranch("{0}", count) });
         var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
         var source = Enumerable.Range(0, count).Select(i => (IGH_Goo?)new GH_Point(new Point3d(i, 0, 0))).ToArray();
-        var selectionType = assembly.GetType("BetterGhPanel.UI.PanelRowSelection", true)!;
+        var selectionType = typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelRowSelection", true)!;
         foreach (bool filtered in new[] { false, true })
         foreach (bool labels in new[] { false, true })
         {

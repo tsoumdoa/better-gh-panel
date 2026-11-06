@@ -1,4 +1,4 @@
-namespace BetterGhPanel.Runtime
+namespace BetterGhPanel.Core
 {
     // The value capture allocates control-point and knot arrays and an owned
     // curve. Keep the arithmetic independent of Rhino for managed checks.

@@ -1,6 +1,6 @@
 using BetterGhPanel.Core;
 
-namespace BetterGhPanel.Runtime
+namespace BetterGhPanel.Core
 {
     // View changes and downstream membership deliberately use different comparisons.
     // Compare normalized options here; the session owns their normalization.

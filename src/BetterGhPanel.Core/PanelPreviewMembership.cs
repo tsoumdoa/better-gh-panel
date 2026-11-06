@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using BetterGhPanel.Core;
 
-namespace BetterGhPanel.UI
+namespace BetterGhPanel.Core
 {
     // Selection classification is independent of the size of the preview
     // result. Updating it only visits old and new selected positions.

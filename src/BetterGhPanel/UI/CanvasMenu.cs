@@ -7,7 +7,6 @@ using BetterGhPanel.Core;
 namespace BetterGhPanel.UI
 {
     internal enum CanvasMenuKind { None, Type, Sort, Branch, Units, SearchMode, Comparison, Preview, Statistics }
-    internal enum PanelPreviewMode { Selected, FilteredResults, Off }
     internal enum CanvasComparison { GreaterThan, AtLeast, LessThan, AtMost, Equal, NotEqual }
     internal enum CanvasNumberSetting { Automatic, Custom, RoundingOff, RoundingFactor }
 

@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace BetterGhPanel.Runtime
+namespace BetterGhPanel.Core
 {
     // Limits concurrently prepared or running compatibility copies across panels.
     // It does not bound the cost or allocation of any individual native call.

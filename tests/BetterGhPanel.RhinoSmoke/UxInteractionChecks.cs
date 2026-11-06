@@ -178,7 +178,7 @@ internal static class UxInteractionChecks
         }
         foreach (string display in new[] { "Full", "Half" })
         {
-            Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, display));
+            Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, display));
             Call(component, "SetCanvasSize", 1f, 1f);
             fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Length });
             attributes.PerformLayout();
@@ -189,7 +189,7 @@ internal static class UxInteractionChecks
             CanvasEditorAdapter.Active(assembly).Cancel();
             await Task.Delay(50);
         }
-        Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, "Full"));
+        Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Full"));
         Call(component, "SetCanvasSize", 360f, 360f);
 
         foreach (bool asynchronous in new[] { false, true })

@@ -2,7 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace BetterGhPanel.Runtime
+namespace BetterGhPanel.Core
 {
     // Payload bounds and one process-wide reservation for both curve providers.
     // These do not bound Rhino's allocator or mass-property working memory.

@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 using BetterGhPanel.Core;
 
-namespace BetterGhPanel.UI
+namespace BetterGhPanel.Core
 {
     internal static class PanelItemOrder
     {

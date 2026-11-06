@@ -259,11 +259,11 @@ public sealed class PresentedNumberChecks
         options.SearchMode = PanelSearchMode.Length; options.Search = ""; options.DisplayFilterValue = true; options.DecimalPlaces = 2;
         result = PanelQueryEngine.Execute(snapshot, options);
         Assert.Equal("ft", result.Statistics.NumericUnits);
-        Assert.Contains("12.35 ft", BetterGhPanel.UI.CanvasStatistics.Label(result, 2, 2));
+        Assert.Contains("12.35 ft", BetterGhPanel.Core.CanvasStatistics.Label(result, 2, 2));
         options.SearchMode = PanelSearchMode.ItemIndex;
         result = PanelQueryEngine.Execute(snapshot, options);
         Assert.Equal("", result.Statistics.NumericUnits);
-        Assert.DoesNotContain(" m", BetterGhPanel.UI.CanvasStatistics.Label(result, 2, 2));
+        Assert.DoesNotContain(" m", BetterGhPanel.Core.CanvasStatistics.Label(result, 2, 2));
         var circle = new PanelRow(0, "{0}", "Circle", "", null, geometryInfo: new PanelGeometryInfo("Circle", 2, metricName: "Radius"));
         Assert.Equal(15, PanelFilterValue.OutputValue(snapshot, circle, PanelSearchMode.Length, null, -1, 5)!.Number);
     }

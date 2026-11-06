@@ -6,5 +6,6 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="BetterGhPanel.Core.Tests" />
+    <InternalsVisibleTo Include="BetterGhPanel" />
   </ItemGroup>
 </Project>

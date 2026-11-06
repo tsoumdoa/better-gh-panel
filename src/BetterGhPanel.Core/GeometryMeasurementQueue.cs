@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace BetterGhPanel.Runtime
+namespace BetterGhPanel.Core
 {
     // A witness is a complete value representation, not a hash or a live source.
     // Its producer is responsible for proving that the bytes describe the exact

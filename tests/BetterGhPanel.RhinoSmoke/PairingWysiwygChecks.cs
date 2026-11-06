@@ -74,7 +74,7 @@ internal static class PairingWysiwygChecks
         Render();
         foreach (string mode in new[] { "Full", "Half" })
         {
-            Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, mode));
+            Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, mode));
             Render();
             var caption = Field<RectangleF>(attributes, "_dataCaption");
             var list = Field<RectangleF>(attributes, "_list");
@@ -85,7 +85,7 @@ internal static class PairingWysiwygChecks
                 mode + " reserves warning strip, split captions, rows and footer without overlap");
             Capture("uneven-warnings-" + mode.ToLowerInvariant());
         }
-        Call(component, "SetCanvasDisplay", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasPanelDisplay", true)!, "Full"));
+        Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Full"));
         Render();
         var clipboard = Forms.Clipboard.GetDataObject();
         try
@@ -105,12 +105,12 @@ internal static class PairingWysiwygChecks
                 Check(Field<bool>(attributes, "_rowMenuPaired") == paired && Field<Array>(attributes, "_rowMenuActions").Cast<object>()
                     .Any(action => Property<string>(action, "Label") == "Copy path  " + (paired ? "{1;0}" : "{0;0}")),
                     "Heading menu labels use the clicked pane's own path");
-                Call(attributes, "ChooseRowAction", Enum.Parse(assembly.GetType("BetterGhPanel.UI.PanelRowAction", true)!, "CopyPathBare"), f.Result, canvas);
+                Call(attributes, "ChooseRowAction", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelRowAction", true)!, "CopyPathBare"), f.Result, canvas);
                 await f.Ready(() => Forms.Clipboard.GetText() == (paired ? "1;0" : "0;0"));
                 Call(attributes, "CloseRowMenu"); Render();
             }
             f.Select(0); await f.Ready(() => f.Sinks[1].VolatileData.DataCount == 1); Render();
-            var actionType = assembly.GetType("BetterGhPanel.UI.PanelRowAction", true)!;
+            var actionType = typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelRowAction", true)!;
             async Task Copy(string action, bool paired, string? path = null) =>
                 await (Task<string>)Call(component, "CopyAddressesAsync", f.Result.Snapshot, new[] { 0 }, Enum.Parse(actionType, action), path!, paired)!;
             await Copy("CopyAddresses", true);

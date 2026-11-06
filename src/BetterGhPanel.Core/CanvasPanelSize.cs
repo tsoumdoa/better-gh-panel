@@ -1,8 +1,7 @@
 using System;
 
-namespace BetterGhPanel.UI
+namespace BetterGhPanel.Core
 {
-    internal enum CanvasPanelDisplay { Full, Half }
 
     // Dimensions are canonical; presets are commands, not separately persisted state.
     internal static class CanvasPanelSize

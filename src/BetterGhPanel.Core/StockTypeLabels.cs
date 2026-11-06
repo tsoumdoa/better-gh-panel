@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace BetterGhPanel.UI
+namespace BetterGhPanel.Core
 {
     // Presentation only: names never grant permission to inspect a value.
     internal static class StockTypeLabels

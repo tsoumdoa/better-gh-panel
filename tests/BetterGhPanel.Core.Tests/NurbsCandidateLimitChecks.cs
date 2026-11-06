@@ -1,6 +1,6 @@
+using BetterGhPanel.Core;
 using System;
 using System.Collections.Generic;
-using BetterGhPanel.Runtime;
 
 internal static class NurbsCandidateLimitChecks
 {

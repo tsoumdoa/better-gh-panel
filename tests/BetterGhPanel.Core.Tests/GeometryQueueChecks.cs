@@ -1,9 +1,9 @@
+using BetterGhPanel.Core;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using BetterGhPanel.Runtime;
 
 // This links the production queue, rather than a model of its state machine.
 internal static class GeometryQueueChecks

@@ -1,7 +1,7 @@
 using System;
 using System.Text;
 
-namespace BetterGhPanel.UI
+namespace BetterGhPanel.Core
 {
     // Native tooltips cannot scroll. Bound both explicit lines and text length;
     // never cut a UTF-16 surrogate pair or a CRLF between the two characters.
