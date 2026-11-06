@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Diagnostics;
 using System.Drawing;
@@ -13,7 +15,6 @@ using Grasshopper.Kernel.Types;
 // Shared setup for the native ownership and clipboard regressions.
 internal static class PanelHostFixture
 {
-    private const BindingFlags Instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
     internal static async Task RunWithEditor(Assembly assembly, Func<Assembly, Task> check)
     {
         // Scheduled solutions need the host editor's native handle, even while
@@ -32,7 +33,6 @@ internal static class PanelHostFixture
         finally { setEditor.Invoke(null, new object?[] { previous }); }
     }
 
-    private static T Property<T>(object owner, string name) => (T)owner.GetType().GetProperty(name, Instance)!.GetValue(owner)!;
     private static async Task Wait(Func<bool> condition)
     {
         var timer = Stopwatch.StartNew();
@@ -42,7 +42,6 @@ internal static class PanelHostFixture
             await Task.Delay(10);
         }
     }
-    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 
     internal sealed class Fixture : IDisposable
     {
@@ -52,9 +51,9 @@ internal static class PanelHostFixture
         internal readonly GH_Component Component;
         internal int Solutions { get; private set; }
         internal object Session => PanelTestAdapter.Session(Component);
-        internal PanelQueryResult Result => Property<PanelQueryResult>(Session, "Result");
-        private object Selection => Property<object>(Component, "RowSelection");
-        internal int SelectedCount => Property<int>(Selection, "Count");
+        internal PanelQueryResult Result => ReflectProperty403875335<PanelQueryResult>(Session, "Result");
+        private object Selection => ReflectProperty403875335<object>(Component, "RowSelection");
+        internal int SelectedCount => ReflectProperty403875335<int>(Selection, "Count");
         internal Fixture(Assembly assembly)
         {
             GH_Document.EnableSolutions = true;
@@ -84,28 +83,28 @@ internal static class PanelHostFixture
         internal void Solve() { Source.ExpireSolution(false); Paired.ExpireSolution(false); Document.NewSolution(false, GH_SolutionMode.Silent); }
         internal string Values(int index) => string.Join(",", Sinks[index].VolatileData.AllData(false).Select(value => value?.ToString() ?? "<null>"));
         internal void Query(PanelQueryOptions options) => Session.GetType().GetMethod("UpdateQuery")!.Invoke(Session, new object[] { options });
-        internal void Scope(PanelOutputScope scope) => Component.GetType().GetMethod("SetOutputScope", Instance)!.Invoke(Component, new object[] { scope });
-        internal void Select(int position, bool toggle = false, bool preserveSelected = false) => Selection.GetType().GetMethod("Select", Instance)!
+        internal void Scope(PanelOutputScope scope) => Component.GetType().GetMethod("SetOutputScope", FlagsInstanceNonPublicPublic)!.Invoke(Component, new object[] { scope });
+        internal void Select(int position, bool toggle = false, bool preserveSelected = false) => Selection.GetType().GetMethod("Select", FlagsInstanceNonPublicPublic)!
             .Invoke(Selection, new object[] { Result, position, toggle, false, preserveSelected });
         internal void SelectAt(int position, bool toggle = false, bool preserveSelected = false)
         {
             Check(Result.TryGetViewIndex(position, out int index), "Native selected row is visible in the current view");
-            Selection.GetType().GetMethod("SelectAt", Instance)!.Invoke(Selection, new object[] { Result, position, index, toggle, false, preserveSelected });
+            Selection.GetType().GetMethod("SelectAt", FlagsInstanceNonPublicPublic)!.Invoke(Selection, new object[] { Result, position, index, toggle, false, preserveSelected });
         }
-        internal void ClearSelection() => Selection.GetType().GetMethod("Clear", Instance)!.Invoke(Selection, Array.Empty<object>());
-        internal void SelectBranch(string path) => Selection.GetType().GetMethod("SelectAll", Instance)!
+        internal void ClearSelection() => Selection.GetType().GetMethod("Clear", FlagsInstanceNonPublicPublic)!.Invoke(Selection, Array.Empty<object>());
+        internal void SelectBranch(string path) => Selection.GetType().GetMethod("SelectAll", FlagsInstanceNonPublicPublic)!
             .Invoke(Selection, new object[] { Result, path, true });
         internal async Task Ready(Func<bool> condition, bool allowError = false)
         {
             try
             {
-                await Wait(() => !Property<bool>(Session, "IsBusy") && (allowError || Property<bool>(Session, "HasCurrentResult")) && condition());
+                await Wait(() => !ReflectProperty403875335<bool>(Session, "IsBusy") && (allowError || ReflectProperty403875335<bool>(Session, "HasCurrentResult")) && condition());
             }
             catch (TimeoutException)
             {
                 Console.Error.WriteLine("Output state: " + string.Join("; ", Enumerable.Range(0, 4).Select(i => i + "=" + Values(i))) +
-                    "; busy=" + Property<bool>(Session, "IsBusy") + "; current=" + Property<bool>(Session, "HasCurrentResult") +
-                    "; error=" + Property<string?>(Session, "Error") + "; matches=" + Result.RowPositions.Count);
+                    "; busy=" + ReflectProperty403875335<bool>(Session, "IsBusy") + "; current=" + ReflectProperty403875335<bool>(Session, "HasCurrentResult") +
+                    "; error=" + ReflectProperty403875335<string?>(Session, "Error") + "; matches=" + Result.RowPositions.Count);
                 throw;
             }
         }

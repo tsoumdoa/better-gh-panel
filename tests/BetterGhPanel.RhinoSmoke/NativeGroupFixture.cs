@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Linq;
 using System.Reflection;
@@ -11,7 +13,6 @@ using Grasshopper.Kernel.Types;
 // never use the original group's name as the oracle after host collection.
 internal static class NativeGroupFixture
 {
-    private const BindingFlags Static = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
     internal sealed class VolatileSource : GH_Param<IGH_Goo>
     {
         private readonly IGH_Goo[] _items;
@@ -31,7 +32,7 @@ internal static class NativeGroupFixture
         typeof(GH_GeometricGooWrapper).GetField("m_goo", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(wrapper, wrapper);
         var tree = new GH_Structure<IGH_Goo>(); tree.AppendRange(new IGH_Goo[] { first, second, wrapper }, new GH_Path(0));
         var args = new object?[] { tree, null, PanelUnitConversion.None, "mm" };
-        var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("Capture", Static)!;
+        var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("Capture", FlagsNonPublicPublicStatic)!;
         var snapshot = (PanelSnapshot)capture.Invoke(null, args)!;
         Check(snapshot.Rows.Count == 3 && ((IGH_Goo?[])args[1]!).SequenceEqual(tree.Branches[0]), "Cycle capture retains the three supplied source identities");
         Check(snapshot.Rows.All(row => row.Validity == PanelValidity.Unverified) && snapshot.InspectionVisitCount < 100,
@@ -42,5 +43,4 @@ internal static class NativeGroupFixture
             "Plugin-controlled search remains usable after bounded cycle inspection");
     }
 
-    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }

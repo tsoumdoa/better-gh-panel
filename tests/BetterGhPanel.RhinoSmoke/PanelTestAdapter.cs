@@ -11,6 +11,15 @@ internal enum CanvasControl { Panel, Type, Sort, Branch, Search, Filter, Jump, R
 // The .gha is loaded separately. Keep plugin-owned reflection in this adapter.
 internal static class PanelTestAdapter
 {
+    internal const BindingFlags FlagsInstanceNonPublicPublic = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+    internal static T ReflectProperty403875335<T>(object target, string name) => (T)target.GetType().GetProperty(name, FlagsInstanceNonPublicPublic)!.GetValue(target)!;
+    internal static T ReflectField2106128985<T>(object target, string name) => (T)target.GetType().GetField(name, FlagsInstanceNonPublicPublic)!.GetValue(target)!;
+    internal const BindingFlags FlagsNonPublicStatic = BindingFlags.Static | BindingFlags.NonPublic;
+    internal const BindingFlags FlagsNonPublicPublicStatic = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+    internal const BindingFlags FlagsInstanceNonPublic = BindingFlags.Instance | BindingFlags.NonPublic;
+
+    internal static object? Call(object owner, string name, params object?[] args) => owner.GetType().GetMethod(name, FlagsInstanceNonPublicPublic)!.Invoke(owner, args);
+
     private const BindingFlags PrivateInstance = BindingFlags.Instance | BindingFlags.NonPublic;
     internal static object Session(GH_Component component) => Property<object>(component, "Session");
     internal static bool HasSession(GH_Component component) => Field<object?>(component, "_session") != null;

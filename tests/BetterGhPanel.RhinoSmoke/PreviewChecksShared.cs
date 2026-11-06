@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -19,10 +21,8 @@ using Forms = System.Windows.Forms;
 
 internal static partial class PreviewSafetyChecks
 {
-    private const BindingFlags Instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-    private const BindingFlags Static = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
     private static object Copy(Assembly assembly, IEnumerable<IGH_Goo?> values) => assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!
-        .GetMethod("CopyGeometry", Static)!.Invoke(null, new object[] { values, RhinoDoc.ActiveDoc.ModelUnitSystem, RhinoDoc.ActiveDoc.ModelAbsoluteTolerance })!;
+        .GetMethod("CopyGeometry", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { values, RhinoDoc.ActiveDoc.ModelUnitSystem, RhinoDoc.ActiveDoc.ModelAbsoluteTolerance })!;
     private static File3dm ClipboardArchive()
     {
         object data = Forms.Clipboard.GetData("Rhino 8 3DM Geometry")!;
@@ -36,16 +36,16 @@ internal static partial class PreviewSafetyChecks
         return File3dm.FromByteArray(bytes) ?? throw new InvalidOperationException("Invalid geometry clipboard archive.");
     }
     private static object Frame(Assembly assembly, IEnumerable<IGH_Goo?> values) => assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!
-        .GetMethod("Frame", Static)!.Invoke(null, new object[] { values })!;
+        .GetMethod("Frame", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { values })!;
     private static BoundingBox Bounds(Assembly assembly, IGH_Goo value) => (BoundingBox)assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!
-        .GetMethod("GetBounds", Static)!.Invoke(null, new object[] { value })!;
+        .GetMethod("GetBounds", FlagsNonPublicPublicStatic)!.Invoke(null, new object[] { value })!;
     private static void Set(object highlight, IGH_Goo?[] values, int[] positions, int[] selected) =>
         Method(highlight, "Set").Invoke(highlight, new object[] { values, positions, selected });
     private static void Scope(object highlight, IGH_Goo?[] values, PanelQueryResult result, int[] selected) =>
         Method(highlight, "SetScope").Invoke(highlight, new object[] { values, result, true, selected });
-    private static BoundingBox Box(object highlight) => Property<BoundingBox>(highlight, "ClippingBox");
-    private static int Count(object highlight) => Property<int>(highlight, "PreviewCount");
-    private static string Status(object highlight) => Property<string>(highlight, "Status");
+    private static BoundingBox Box(object highlight) => ReflectProperty403875335<BoundingBox>(highlight, "ClippingBox");
+    private static int Count(object highlight) => ReflectProperty403875335<int>(highlight, "PreviewCount");
+    private static string Status(object highlight) => ReflectProperty403875335<string>(highlight, "Status");
     private static int GreenPixels(Bitmap bitmap)
     {
         int count = 0;
@@ -89,10 +89,7 @@ internal static partial class PreviewSafetyChecks
         Console.WriteLine($"Compatibility region {bounds}: {target.Name}={count}, pixels={x0},{y0}-{x1},{y1}");
         return count > 10;
     }
-    private static MethodInfo Method(object value, string name) => value.GetType().GetMethod(name, Instance)!;
-    private static T Property<T>(object value, string name) => (T)value.GetType().GetProperty(name, Instance)!.GetValue(value)!;
-    private static T Field<T>(object value, string name) => (T)value.GetType().GetField(name, Instance)!.GetValue(value)!;
-    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
+    private static MethodInfo Method(object value, string name) => value.GetType().GetMethod(name, FlagsInstanceNonPublicPublic)!;
 
     private sealed class HostileLineCurve : LineCurve
     {

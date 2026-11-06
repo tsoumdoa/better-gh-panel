@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Diagnostics;
 using System.Linq;
@@ -12,7 +14,6 @@ using Rhino.Geometry;
 // Managed-only regressions: no RhinoCore, document, clipboard or viewport is opened.
 internal static class CaptureBudgetChecks
 {
-    private const BindingFlags Static = BindingFlags.Static | BindingFlags.NonPublic;
 
     internal static void Verify(Assembly assembly)
     {
@@ -24,18 +25,18 @@ internal static class CaptureBudgetChecks
 
     private static object?[] Capture(Assembly assembly, GH_Structure<IGH_Goo> tree, Action<int, IGH_Goo?>? observer = null)
     {
-        var method = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("CaptureForMeasurements", Static)!;
+        var method = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("CaptureForMeasurements", FlagsNonPublicStatic)!;
         var args = new object?[] { tree, null, null, null, PanelUnitConversion.None, "mm", null, observer, null, null, null };
         var snapshot = (PanelSnapshot)method.Invoke(null, args)!;
         return new object?[] { snapshot, args[1], args[2], args[3] };
     }
 
     private static bool GraphsCurrent(Assembly assembly, object?[] capture) =>
-        (bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("GraphSourcesCurrent", Static)!
+        (bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("GraphSourcesCurrent", FlagsNonPublicStatic)!
             .Invoke(null, new[] { capture[3] })!;
 
     private static bool HoldersCurrent(Assembly assembly, object?[] capture) =>
-        (bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("MeasurementSourcesCurrent", Static)!
+        (bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("MeasurementSourcesCurrent", FlagsNonPublicStatic)!
             .Invoke(null, new[] { capture[1], capture[2] })!;
 
     private static void VerifyManyValues(Assembly assembly)
@@ -207,10 +208,10 @@ internal static class CaptureBudgetChecks
     {
         var treeOps = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!;
         var outputOps = assembly.GetType("BetterGhPanel.Runtime.PanelOutputOperations", true)!;
-        var data = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Filter", Static)!.Invoke(null, new object[] { input, query })!;
-        var selection = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Select", Static)!.Invoke(null, new object[] { input, new[] { selected } })!;
+        var data = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Filter", FlagsNonPublicStatic)!.Invoke(null, new object[] { input, query })!;
+        var selection = (GH_Structure<IGH_Goo>)treeOps.GetMethod("Select", FlagsNonPublicStatic)!.Invoke(null, new object[] { input, new[] { selected } })!;
         var addresses = Enumerable.Range(0, input.DataCount).Select(snapshot.SourceAddressAt).ToArray();
-        var mask = (GH_Structure<GH_Boolean>)outputOps.GetMethod("Mask", Static)!.Invoke(null, new object[] { input, addresses, query.RowPositions })!;
+        var mask = (GH_Structure<GH_Boolean>)outputOps.GetMethod("Mask", FlagsNonPublicStatic)!.Invoke(null, new object[] { input, addresses, query.RowPositions })!;
         var paired = new GH_Structure<IGH_Goo>();
         var values = paired.EnsurePath(new GH_Path(0));
         for (int i = 0; i < input.DataCount; i++) values.Add(new GH_Integer(i));
@@ -222,7 +223,6 @@ internal static class CaptureBudgetChecks
             "filtered D, selected S, original-shape B and paired F preserve typed source membership");
     }
 
-    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 
     private sealed class HostileTransform : ITransform
     {

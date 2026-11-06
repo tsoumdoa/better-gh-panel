@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -17,8 +19,6 @@ using Rhino.Runtime;
 // No measurement resolver is replaced in this fixture.
 internal static class ProductionCurveMeasurementChecks
 {
-    private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
-    private const BindingFlags Static = BindingFlags.Static | BindingFlags.NonPublic;
 
     internal static async Task Run(Assembly assembly)
     {
@@ -26,7 +26,7 @@ internal static class ProductionCurveMeasurementChecks
         using var owned = previous == null ? new GH_DocumentEditor() : null;
         var editor = previous ?? owned!;
         _ = editor.Handle;
-        var setEditor = typeof(Instances).GetMethod("SetDocumentEditor", Static)!;
+        var setEditor = typeof(Instances).GetMethod("SetDocumentEditor", FlagsNonPublicStatic)!;
         setEditor.Invoke(null, new object?[] { editor });
         try
         {
@@ -41,7 +41,7 @@ internal static class ProductionCurveMeasurementChecks
     private static void VerifyGates(Assembly assembly)
     {
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("Capture")!;
-        var prepare = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!.GetMethod("PrepareMeasurement", Static)!;
+        var prepare = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!.GetMethod("PrepareMeasurement", FlagsNonPublicStatic)!;
         PanelSnapshot Capture(IGH_Goo value)
         {
             var tree = new GH_Structure<IGH_Goo>(); tree.Append(value, new GH_Path(0));
@@ -204,8 +204,8 @@ internal static class ProductionCurveMeasurementChecks
         await first.Ready(() => Snapshot(first).Rows.Count == 1);
         await second.Ready(() => Snapshot(second).Rows.Count == 1);
         var firstSnapshot = Snapshot(first); var secondSnapshot = Snapshot(second);
-        var prepare = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!.GetMethod("PrepareMeasurement", Static)!;
-        var reserve = typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.NurbsCandidateLimits", true)!.GetMethods(Static)
+        var prepare = assembly.GetType("BetterGhPanel.Runtime.GeometryHints", true)!.GetMethod("PrepareMeasurement", FlagsNonPublicStatic)!;
+        var reserve = typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.NurbsCandidateLimits", true)!.GetMethods(FlagsNonPublicStatic)
             .Single(method => method.Name == "TryReserve" && method.GetParameters().Length == 1);
         var held = new List<IDisposable>();
         try
@@ -257,19 +257,19 @@ internal static class ProductionCurveMeasurementChecks
     private static PanelSnapshot Snapshot(PanelHostFixture.Fixture fixture) =>
         (PanelSnapshot)fixture.Session.GetType().GetProperty("Snapshot")!.GetValue(fixture.Session)!;
     private static IGH_Goo?[] Sources(PanelHostFixture.Fixture fixture) =>
-        (IGH_Goo?[])fixture.Component.GetType().GetField("_sourceItems", Private)!.GetValue(fixture.Component)!;
+        (IGH_Goo?[])fixture.Component.GetType().GetField("_sourceItems", FlagsInstanceNonPublic)!.GetValue(fixture.Component)!;
     private static bool Has(PanelHostFixture.Fixture fixture, PanelSnapshot snapshot, int position) =>
-        (bool)fixture.Session.GetType().GetMethod("HasGeometryMeasurement", Private)!.Invoke(fixture.Session, new object[] { snapshot, position })!;
+        (bool)fixture.Session.GetType().GetMethod("HasGeometryMeasurement", FlagsInstanceNonPublic)!.Invoke(fixture.Session, new object[] { snapshot, position })!;
     private static PanelGeometryInfo? Details(PanelHostFixture.Fixture fixture, PanelSnapshot snapshot, int position) =>
-        (PanelGeometryInfo?)fixture.Session.GetType().GetMethod("GetGeometryDetails", Private)!.Invoke(fixture.Session, new object[] { snapshot, position });
+        (PanelGeometryInfo?)fixture.Session.GetType().GetMethod("GetGeometryDetails", FlagsInstanceNonPublic)!.Invoke(fixture.Session, new object[] { snapshot, position });
     private static void RequestVisible(PanelHostFixture.Fixture fixture, PanelSnapshot snapshot, params int[] positions) =>
-        fixture.Session.GetType().GetMethod("RequestGeometryMeasurements", Private)!.Invoke(fixture.Session, new object[] { snapshot, positions });
+        fixture.Session.GetType().GetMethod("RequestGeometryMeasurements", FlagsInstanceNonPublic)!.Invoke(fixture.Session, new object[] { snapshot, positions });
     private static Task<bool> Measure(PanelHostFixture.Fixture fixture, PanelSnapshot snapshot, CancellationToken token, params int[] positions) =>
-        (Task<bool>)fixture.Session.GetType().GetMethod("MeasureGeometryAsync", Private)!.Invoke(fixture.Session, new object[] { snapshot, positions, token })!;
+        (Task<bool>)fixture.Session.GetType().GetMethod("MeasureGeometryAsync", FlagsInstanceNonPublic)!.Invoke(fixture.Session, new object[] { snapshot, positions, token })!;
     private static bool WaitingForCapacity(PanelHostFixture.Fixture fixture)
     {
-        var queue = fixture.Session.GetType().GetField("_geometry", Private)!.GetValue(fixture.Session)!;
-        return queue.GetType().GetField("_capacityWait", Private)!.GetValue(queue) != null;
+        var queue = fixture.Session.GetType().GetField("_geometry", FlagsInstanceNonPublic)!.GetValue(fixture.Session)!;
+        return queue.GetType().GetField("_capacityWait", FlagsInstanceNonPublic)!.GetValue(queue) != null;
     }
     private static async Task<bool> Result(Task<bool> task) { await Wait(() => task.IsCompleted); return await task; }
     private static async Task Wait(Func<bool> condition)
@@ -281,5 +281,4 @@ internal static class ProductionCurveMeasurementChecks
             await Task.Delay(10);
         }
     }
-    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }
