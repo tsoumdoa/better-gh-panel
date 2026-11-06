@@ -51,7 +51,22 @@ namespace BetterGhPanel.Core
         /// <summary>Rounds numeric output toward positive infinity after unit conversion. Zero disables rounding.</summary>
         public static double Transform(double value, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = AutomaticDecimals)
         {
-            value = RoundUp(Convert(value, conversion), roundUpFactor);
+            value = Convert(value, conversion);
+            if (IsRoundingFactor(roundUpFactor) && !double.IsNaN(value) && !double.IsInfinity(value) &&
+                Math.Abs(value) < PanelNumber.IntegerBoundary && (value == 0 || Math.Abs(value) >= 1e-27))
+            {
+                try
+                {
+                    var prepared = Volatile.Read(ref _factor);
+                    if (prepared.Value != roundUpFactor) { prepared = new Factor(roundUpFactor); Volatile.Write(ref _factor, prepared); }
+                    if (prepared.FullPrecision > 0 && PanelNumber.TryDecimalFactor(value, prepared.FullPrecision,
+                        prepared.FullPrecisionPlaces, Math.Min(MaximumDecimals, decimals), out double result)) return result;
+                }
+                catch (OverflowException) { }
+            }
+            // Preserve the base binary/decimal path for special values, |v| >=
+            // 2^53, tiny nonzero values below 1e-27, inexact decimal parsing, and decimal overflow.
+            value = RoundUp(value, roundUpFactor);
             if (!double.IsNaN(value) && !double.IsInfinity(value) && decimals >= 0 && Math.Abs(value) < PanelNumber.IntegerBoundary)
                 value = PanelNumber.ToDouble(PanelNumber.RoundedDecimal(value, Math.Min(MaximumDecimals, decimals)));
             return value == 0 ? 0 : value;
@@ -66,7 +81,12 @@ namespace BetterGhPanel.Core
             internal readonly double Value;
             internal readonly decimal Decimal;
             internal readonly bool Faithful;
-            internal Factor(double value) { Value = value; Faithful = PanelNumber.FaithfulDecimal(value, out Decimal); }
+            internal readonly decimal FullPrecision;
+            internal readonly int FullPrecisionPlaces;
+            internal Factor(double value) { Value = value; Faithful = PanelNumber.FaithfulDecimal(value, out Decimal);
+                try { FullPrecision = value > 0 ? PanelNumber.FullPrecisionDecimal(value) : 0; }
+                catch (OverflowException) { FullPrecision = 0; }
+                FullPrecisionPlaces = (decimal.GetBits(FullPrecision)[3] >> 16) & 255; }
         }
         private static Factor _factor = new Factor(0);
 

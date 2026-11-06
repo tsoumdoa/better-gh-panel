@@ -4,7 +4,7 @@ using System.Numerics;
 
 namespace BetterGhPanel.Core
 {
-    // No double formatting/parsing participates in decimal rounding. A faithful
+    // Without a factor, no double formatting/parsing participates in rounding. A faithful
     // 15-digit decimal cast preserves the original Panel+ / Excel semantics;
     // otherwise round the exact binary rational, including subnormal values.
     internal static class PanelNumber
@@ -53,6 +53,45 @@ namespace BetterGhPanel.Core
             return new decimal((int)(uint)(coefficient & uint.MaxValue),
                 (int)(uint)((coefficient >> 32) & uint.MaxValue),
                 (int)(uint)((coefficient >> 64) & uint.MaxValue), value < 0, (byte)places);
+        }
+
+        private static readonly decimal[] DecimalScales = DecimalPowers();
+        private static decimal[] DecimalPowers()
+        {
+            var scales = new decimal[13]; scales[0] = 1;
+            for (int i = 1; i < scales.Length; i++) scales[i] = scales[i - 1] * 10;
+            return scales;
+        }
+
+        private static readonly bool LegacyRoundTrip = Environment.Version.Major < 5;
+        internal static decimal FullPrecisionDecimal(double value)
+        {
+            if (FaithfulDecimal(value, out decimal number) && ToDouble(number) == value) return number;
+            return decimal.Parse(LegacyRoundTrip ? RoundTrip(value) : value.ToString("R", CultureInfo.InvariantCulture),
+                NumberStyles.Float, CultureInfo.InvariantCulture);
+        }
+
+        internal static bool TryDecimalFactor(double value, decimal factor, int factorPlaces, int places, out double result)
+        {
+            result = 0;
+            decimal number = FullPrecisionDecimal(value);
+            // Round-trip strings have at most 17 significant digits. At or
+            // above 1e-12 their decimal scale fits 28 places exactly; only
+            // smaller magnitudes can lose digits during decimal parsing.
+            if (Math.Abs(value) < 1e-12 && ToDouble(number) != value) return false;
+            decimal remainder = number % factor;
+            if (remainder != 0) number = number - remainder + (number > 0 ? factor : 0);
+            // A factor grid with at most places decimals is already on the dp grid.
+            if (places >= 0 && factorPlaces > places)
+            {
+                decimal scale = DecimalScales[places];
+                number = decimal.Ceiling(number * scale) / scale;
+            }
+            // Strip trailing scale left by the input before converting. This
+            // keeps ordinary grid values on ToDouble's fast exact-operand path.
+            number /= 1.0000000000000000000000000000m;
+            result = ToDouble(number);
+            return true;
         }
 
         internal static double ToDouble(decimal number)
@@ -117,6 +156,22 @@ namespace BetterGhPanel.Core
             while (!BelowPower(exponent + 1)) exponent++;
             int scale = precision - 1 - exponent;
             return scale >= 0 ? Rounded(numerator * Tens[scale], denominator) : Rounded(numerator, denominator * Tens[-scale]);
+        }
+
+        // Double arithmetic is exact enough away from a rounding midpoint. Use
+        // the formatter's rational implementation only in that narrow boundary.
+        internal static double GeneralKey(double value, int precision)
+        {
+            if (value == 0) return 0;
+            double magnitude = Math.Abs(value);
+            int exponent = (int)Math.Floor(Math.Log10(magnitude));
+            double scale = Math.Pow(10, precision - 1 - exponent);
+            double scaled = magnitude * scale;
+            if (double.IsInfinity(scale) || scale == 0 || scaled == 0 ||
+                scaled >= Math.Pow(10, precision) - .5 || scaled < Math.Pow(10, precision - 1) ||
+                Math.Abs(scaled - Math.Floor(scaled) - .5) < .001)
+                return GeneralValue(value, precision);
+            return Math.Sign(value) * Math.Floor(scaled + .5) / scale;
         }
 
         internal static double GeneralValue(double value, int precision)

@@ -14,9 +14,9 @@ namespace BetterGhPanel.UI
             "Orange row marks mean invalid; blue means unverified. Set row marks describe their source occurrences. " +
             "Totals describe the tree before filters and sets. Item counts include all data types.";
         internal const string UniqueScope = "Unique values include valid finite Number/Integer values and Text values. " +
-            "Numbers use exact numeric equality (including 1 = 1.0 and +0 = -0). Text preserves case and whitespace; text and numbers stay separate. " +
+            "Numbers group by presented text. Text preserves case and whitespace; text and numbers stay separate. " +
             "Null, invalid, nonfinite and other data types are excluded. Values appear in first source occurrence order. " +
-            "Numeric equality and frequency use presented numbers, including explicit decimal places. Hover a value for its complete text.";
+            "Numeric equality and frequency use presented numbers, including explicit decimal places. Hover a value for its first raw value and merge count.";
 
         internal static string Summary(PanelQueryResult result) =>
             Count(result.Statistics.ItemCount, Total(result)) + (result.DisplaySet?.IsBranchSet == true ? " values · " : " items · ") +
@@ -58,8 +58,9 @@ namespace BetterGhPanel.UI
             }
             var value = stats.UniqueValues[index - OverviewRows];
             string text = value.NumericValue.HasValue
-                ? "Number: " + FormatNumber(value.NumericValue.Value, result, decimals, unique: true)
+                ? "Number: " + (full ? FormatNumber(value.NumericValue.Value, result, decimals, unique: true) : value.PresentedText ?? FormatNumber(value.NumericValue.Value, result, decimals))
                 : "Text: " + Quote(value.StringValue!, full);
+            if (full && value.DistinctCount > 1) text = "Merged from " + value.DistinctCount + " distinct values; first raw value: " + text;
             return FormattableString.Invariant($"{value.Count:N0}×  {text}");
         }
 
@@ -68,7 +69,7 @@ namespace BetterGhPanel.UI
         private static string Number(double? value, PanelQueryResult result, int decimals) => value.HasValue
             ? FormatNumber(value.Value, result, decimals) : "—";
         private static string FormatNumber(double value, PanelQueryResult result, int decimals, bool unique = false) =>
-            (unique && decimals < 0 ? PanelUnits.FormatRoundTrip(value) : PanelUnits.Format(value, PanelUnitConversion.None, decimals)) + (result.Statistics.NumericUnits.Length == 0 ? "" : " " + result.Statistics.NumericUnits);
+            (unique && decimals < 0 ? PanelUnits.FormatRoundTrip(value) : PanelUnits.Format(value, PanelUnitConversion.None, decimals, result.Statistics.AutomaticFormat)) + (result.Statistics.NumericUnits.Length == 0 ? "" : " " + result.Statistics.NumericUnits);
 
         private static string Quote(string value, bool full)
         {

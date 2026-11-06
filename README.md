@@ -32,6 +32,9 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 **Behaviour changes**
 
+- With Round up by factor, Decimal places now also rounds up.
+- Stats show the same numbers as the rows in Automatic.
+
 - S survives recomputes with the same paths and branch lengths when Create set is off; filtered-out rows drop from the selection.
 - Clicking blank canvas or empty panel space keeps the selection.
 - Out Items | Values resets to Items when hidden; one Undo restores both settings.
@@ -118,7 +121,7 @@ Unsupported properties show `n/a`. Text comparisons are exact; quote text to kee
 The footer's tree tools run in a fixed order — **Simplify → Trim → Flatten → Reverse** — then unit conversion, filters and **Create set**:
 
 - **Create set** groups equal displayed values per branch (or across the tree with Flatten). Rows use set index **k**. **Out Items** sends all members in **{path;k}** branches (**{k}** when flattened); **Out Values** sends each unique value once at displayed precision. List-length sets group original branches as **{k;path}**. An occurrence badge such as **9×** lists every original path and index.
-- **Units** converts numbers and geometry metrics (mm ↔ m, mm² ↔ m², mm³ ↔ m³, rad ↔ deg), sets **Decimal places**, and can **Round up by factor**. Unit conversion, Round up by factor, then explicit Decimal places define one presented number shared by the rows, Values output, clipboard, comparisons and Stats. Numeric Items also leave at this precision; geometry is never modified. Factors apply to plain numbers, geometry metrics, X/Y/Z and dimensional properties, including angles. Counts, indices, dates, colour channels, axis components and matrix entries ignore the factor; integer properties stay integers. Rounding uses the faithful 15-digit decimal form when possible, so 2.675 at 2 decimal places becomes 2.68, as in Excel. Hover a rounded row to see its raw value and rounding.
+- **Units** converts numbers and geometry metrics (mm ↔ m, mm² ↔ m², mm³ ↔ m³, rad ↔ deg), sets **Decimal places**, and can **Round up by factor**. Unit conversion, Round up by factor, then explicit Decimal places define one presented number shared by the rows, Values output, clipboard, comparisons and Stats. Numeric Items also leave at this precision; geometry is never modified. Factors apply to plain numbers, geometry metrics, X/Y/Z and dimensional properties, including angles. Counts, indices, dates, colour channels, axis components and matrix entries ignore the factor; integer properties stay integers. With Round up by factor, Panel+ rounds each number's full-precision decimal form up to the factor, then Decimal places also rounds up. Inputs whose full-precision digits sit above a step (e.g. 0.1+0.2 = 0.30000000000000004) round up to the next step. Without a factor, decimal rounding remains half away from zero. Rounding uses the faithful 15-digit decimal form when possible, so 2.675 at 2 decimal places becomes 2.68, as in Excel. Hover a rounded row to see its raw value and rounding.
 - **Clear filters** clears search, mode, type, path, invalid-only, sorting, selection and scroll. One Undo restores the filters.
 - **Reset all** (header ↻) also resets tree tools, units, rounding, decimals, Out Items | Values and B + F follow. It keeps Preview mode, item order, D|F split and size. One Undo restores the settings.
 
@@ -150,12 +153,12 @@ The **D|F** chip is hidden until F has data. Split view saves with the definitio
 
 | Port | Output |
 | --- | --- |
-| **D** | Matching **Items** (default) or displayed **Values**, with the same rounding as shown, in tree order. Set Items: all members in one branch per value; set Values: one list of unique values per source branch. |
+| **D** | Matching **Items** (default) or displayed **Values**, with explicit rounding as shown, in tree order. Automatic sends full precision; Create set Values sends compact displayed set values. Set Items: all members in one branch per value; set Values: one list of unique values per source branch. |
 | **S** | Selected Items or Values. Selected sets include all members and retain D's group paths. Empty when nothing is selected. |
 | **B** | A True/False mask in the original D tree shape, including every member of kept or selected sets. |
 | **F** | Raw paired items at D's transformed paths: equal branches follow item membership; an unequal branch emits its whole F branch once per destination group when any D member is in scope. An empty D branch's F partner is included when D retains that branch, no item filter is active, and Create set is off (item or list-length). Item filters follow the query engine's rule: text/regex or value/property comparisons, type and invalid-only restrictions exclude it; path and list-length restrictions retain it when D still shows the branch. It follows D's destination even after merging or Flatten. Otherwise it is neither emitted nor shown, and is excluded from F heading totals. Sets use the same group paths as set Items in both output modes. |
 
-**Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. With explicit decimals or a factor, the Values tooltip says "Sends the values exactly as shown"; in Automatic it says "Sends full-precision values; the display may be abbreviated"; the ports always read **D** and **S**. Numbers use the shown units and explicit rounding; Automatic keeps full wire precision except for compact displayed Create set Values; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
+**Out Items | Values** appears in the footer when showing values or creating a set; it is also in the component's right-click menu. With explicit decimals, the Values tooltip says "Sends the values exactly as shown." In Automatic with a factor it says "Sends the rounded values at full precision; rows may be abbreviated." Without a factor it says "Sends full-precision values; rows may be abbreviated." Sets say "Sends the displayed set values." The ports always read **D** and **S**. Numbers use the shown units and explicit rounding; Automatic keeps full wire precision except for compact displayed Create set Values; unavailable values output null to preserve row alignment. Older saved sets retain Values output.
 
 The Out Items | Values switch resets to Items whenever hidden (for example, returning to Text with Create set off). Undo restores both settings.
 

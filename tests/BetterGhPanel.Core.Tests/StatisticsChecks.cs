@@ -39,14 +39,13 @@ internal static class StatisticsChecks
     {
         var snapshot = Sample();
         var stats = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions()).Statistics;
-        Check(stats.ScalarCount == 12 && stats.UniqueExcludedCount == 6 && stats.UniqueValues.Count == 9,
+        Check(stats.ScalarCount == 12 && stats.UniqueExcludedCount == 6 && stats.UniqueValues.Count == 8,
             "Only valid finite numbers and explicitly captured strings participate in unique values");
-        Check(stats.UniqueValues[0].NumericValue == 1 && stats.UniqueValues[0].Count == 2 &&
-            stats.UniqueValues[1].NumericValue == 1.0000000000000002 && stats.UniqueValues[1].Count == 1 &&
-            stats.UniqueValues[2].NumericValue == 0 && stats.UniqueValues[2].Count == 2,
+        Check(stats.UniqueValues[0].NumericValue == 1 && stats.UniqueValues[0].Count == 3 &&
+            stats.UniqueValues[1].NumericValue == 0 && stats.UniqueValues[1].Count == 2,
             "Numeric identity unifies integer/number and signed zero without rounding close doubles");
-        Check(stats.UniqueValues.Skip(3).Take(5).Select(value => value.StringValue)
-            .SequenceEqual(new[] { "1", "Alpha", "alpha", " alpha ", "" }) && stats.UniqueValues[4].Count == 2,
+        Check(stats.UniqueValues.Skip(2).Take(5).Select(value => value.StringValue)
+            .SequenceEqual(new[] { "1", "Alpha", "alpha", " alpha ", "" }) && stats.UniqueValues[3].Count == 2,
             "Exact text keeps case, whitespace and empty values separate from numbers");
         Check(stats.UniqueValues.Sum(value => value.Count) == stats.ScalarCount && stats.NullCount == 1 && stats.InvalidCount == 1,
             "All included scalar rows have one frequency and excluded rows retain normal validity counts");
@@ -101,7 +100,7 @@ internal static class StatisticsChecks
             Check(work.Result == null, "Statistics cannot escape while frequencies are still being frozen");
             if (++slices > 200) throw new Exception("Statistics stopped making progress");
         }
-        Check(slices > snapshot.Rows.Count + snapshot.Branches.Count && work.Result!.Statistics.UniqueValues[0].Count == 2,
+        Check(slices > snapshot.Rows.Count + snapshot.Branches.Count && work.Result!.Statistics.UniqueValues[0].Count == 3,
             "The deadline also yields during frequency publication without recounting rows");
         using var cancellation = new CancellationTokenSource();
         using var canceled = PanelQueryEngine.Start(snapshot, new PanelQueryOptions(), cancellation.Token);
