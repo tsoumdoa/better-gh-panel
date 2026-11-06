@@ -794,7 +794,7 @@ namespace BetterGhPanel
             var pairedSnapshot = paired ? PairedSnapshot : null;
             if (paired && (!CanSplit || pairedSnapshot == null)) return "Data changed; select rows again";
             string? pathText = path == null ? null : string.Join(Environment.NewLine, (paired ? PairedPaths(path) : new[] { path })
-                .Select(value => action == PanelRowAction.CopyPathBare ? PanelQueryEngine.UnbracedPath(value) : value));
+                .Select(value => action == PanelRowAction.CopyPathBare ? value.Trim('{', '}') : value));
             long clipboardGeneration = PanelGeometryActions.BeginClipboard();
             var session = _session!;
             var result = session.Result;

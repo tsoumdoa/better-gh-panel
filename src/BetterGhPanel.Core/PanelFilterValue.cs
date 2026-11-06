@@ -163,7 +163,7 @@ namespace BetterGhPanel.Core
             string suffix = raw.Format(snapshot.UnitConversion, PanelUnits.AutomaticDecimals, true).Substring(plain.Length);
             if (row.RawNumericValue.HasValue && (!options.DisplayFilterValue || mode == PanelSearchMode.Value))
                 suffix = PanelUnits.Symbol(snapshot.UnitConversion).Length == 0 ? "" : " " + PanelUnits.Symbol(snapshot.UnitConversion);
-            string reason = factored != number ? " · rounded to factor " + PanelUnits.FormatFactor(options.RoundUpFactor, roundTrip: true) : "";
+            string reason = factored != number ? " · rounded to factor " + PanelUnits.FormatFactor(options.RoundUpFactor, "R") : "";
             if (shown != factored) reason += " · " + options.DecimalPlaces.ToString(CultureInfo.InvariantCulture) + " decimal places";
             return "Shown " + shownText + suffix +
                 " · raw " + number.ToString("R", CultureInfo.InvariantCulture) + suffix + reason;

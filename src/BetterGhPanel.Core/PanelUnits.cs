@@ -19,8 +19,8 @@ namespace BetterGhPanel.Core
 
     public static class PanelUnits
     {
-        internal static string FormatFactor(double factor, bool roundTrip = false) =>
-            factor.ToString(roundTrip ? "R" : "G6", System.Globalization.CultureInfo.InvariantCulture);
+        internal static string FormatFactor(double factor, string format = "G6") =>
+            factor.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
 
         public const int AutomaticDecimals = -1;
         public const int MaximumDecimals = 12;
