@@ -18,7 +18,7 @@ using Rhino.Display;
 using Rhino.FileIO;
 using Rhino.Geometry;
 
-internal static class StockTypeChecks
+internal static class StockTypeHostChecks
 {
     internal static Task Run(Assembly assembly) => PanelHostFixture.RunWithEditor(assembly, Verify);
     private static object?[] Capture(Assembly assembly, params IGH_Goo[] values)

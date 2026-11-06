@@ -11,7 +11,7 @@ using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
 
-internal static class OutputValuesChecks
+internal static class OutputValuesHostChecks
 {
     private static string Paths(PanelHostFixture.Fixture fixture, int output) =>
         string.Join(",", fixture.Sinks[output].VolatileData.Paths.Select(path => path.ToString()));

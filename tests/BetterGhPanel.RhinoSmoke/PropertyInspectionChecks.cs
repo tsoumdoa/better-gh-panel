@@ -17,7 +17,7 @@ internal static class PropertyInspectionChecks
     internal static Task Run(Assembly assembly) => PanelHostFixture.RunWithEditor(assembly, async plugin =>
     {
         await Verify(plugin);
-        await OutputValuesChecks.Run(plugin);
+        await OutputValuesHostChecks.Run(plugin);
     });
 
     private static PanelSnapshot Capture(Assembly assembly, params IGH_Goo[] inputs)
