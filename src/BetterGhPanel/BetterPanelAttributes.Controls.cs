@@ -14,13 +14,18 @@ namespace BetterGhPanel
     internal sealed partial class BetterPanelAttributes
     {
         private enum ControlPath { Click, Hover, Tooltip, Cursor }
+        private enum ControlStep
+        {
+            None, Header, BeforeDetails, BeforeTrack, Main, AfterStaleList,
+            Capsule, BeforeStatisticsMenu, BeforeRowActions
+        }
 
         private sealed class ControlEntry
         {
             internal readonly string Id;
             internal readonly Func<PanelLayout, RectangleF> Rect;
-            internal readonly int ClickOrder, HoverOrder, TooltipOrder, CursorOrder;
-            internal readonly Func<GH_Canvas, GH_CanvasMouseEvent, GH_ObjectResponse>? OnClick;
+            internal readonly ControlStep ClickStep, HoverStep, TooltipStep;
+            internal readonly Func<GH_Canvas, GH_CanvasMouseEvent, GH_ObjectResponse?>? OnClick;
             internal readonly Action<PointF, GH_TooltipDisplayEventArgs>? Tooltip;
             internal readonly Func<ControlPath, bool> Visible;
             internal readonly Func<PointF, bool>? Hit, TooltipHit;
@@ -28,91 +33,96 @@ namespace BetterGhPanel
             internal readonly Func<IEnumerable<RectangleF>>? HoverRects;
 
             internal ControlEntry(string id, Func<PanelLayout, RectangleF> rect,
-                int clickOrder, int hoverOrder, int tooltipOrder,
-                Func<GH_Canvas, GH_CanvasMouseEvent, GH_ObjectResponse>? onClick,
-                Action<PointF, GH_TooltipDisplayEventArgs>? tooltip,
+                Func<GH_Canvas, GH_CanvasMouseEvent, GH_ObjectResponse?>? onClick,
+                Action<PointF, GH_TooltipDisplayEventArgs>? onTooltip,
+                ControlStep click = ControlStep.None, ControlStep hover = ControlStep.None,
+                ControlStep tooltip = ControlStep.None,
                 Func<ControlPath, bool>? visible = null, Func<PointF, bool>? hit = null,
-                Func<PointF, bool>? tooltipHit = null, Cursor? cursor = null, int cursorOrder = -1, Func<IEnumerable<RectangleF>>? hoverRects = null)
+                Func<PointF, bool>? tooltipHit = null, Cursor? cursor = null, Func<IEnumerable<RectangleF>>? hoverRects = null)
             {
                 Id = id; Rect = rect;
-                ClickOrder = clickOrder; HoverOrder = hoverOrder; TooltipOrder = tooltipOrder; CursorOrder = cursorOrder;
-                OnClick = onClick; Tooltip = tooltip; Visible = visible ?? (_ => true);
+                ClickStep = click; HoverStep = hover; TooltipStep = tooltip;
+                OnClick = onClick; Tooltip = onTooltip; Visible = visible ?? (_ => true);
                 Hit = hit; TooltipHit = tooltipHit; Cursor = cursor; HoverRects = hoverRects;
             }
 
-            internal int Order(ControlPath path) => path == ControlPath.Click ? ClickOrder :
-                path == ControlPath.Hover ? HoverOrder : path == ControlPath.Tooltip ? TooltipOrder : CursorOrder;
+            internal ControlStep Step(ControlPath path) => path == ControlPath.Click ? ClickStep :
+                path == ControlPath.Hover ? HoverStep : path == ControlPath.Tooltip ? TooltipStep :
+                Cursor == null ? ControlStep.None : ControlStep.Main;
         }
 
         private ControlEntry[]? _controlHits;
         private ControlEntry[] ControlHits => _controlHits ??= CreateControlHits();
 
-        // Path-specific ranks preserve overlap winners and the existing insertion
-        // points around split panes, menus, details, scrollbars and warning hits.
+        // All paths use this array order within their named insertion step.
+        // Nested clear/filter controls precede their parent fields; SelectAll
+        // precedes the statistics tooltip region; Footer follows its controls.
+        // Resize precedes Move for cursor picking, independently of hover fill.
         private ControlEntry[] CreateControlHits() => new[]
         {
-            new ControlEntry("Close", layout => layout.Close, 0, 0, 0, ClickClose, TooltipClose),
-            new ControlEntry("Display", layout => layout.Display, 1, 1, 2, ClickDisplay, TooltipDisplay),
-            new ControlEntry("Reset", layout => layout.Reset, 2, 4, 20, ClickReset, TooltipReset),
-            new ControlEntry("Resize", layout => layout.Resize, 3, -1, 24, ClickResize, TooltipResize, cursor: Cursors.SizeNWSE, cursorOrder: 0),
-            new ControlEntry("OutItems", layout => layout.OutItems, 4, 21, 9, ClickOutput, TooltipOutput, visible: path => path == ControlPath.Tooltip || PanelOwner.CanOutputValues),
-            new ControlEntry("OutValues", layout => layout.OutValues, 5, 22, 10, ClickOutput, TooltipOutput, visible: path => path == ControlPath.Tooltip || PanelOwner.CanOutputValues),
-            new ControlEntry("Trim", layout => layout.Trim, 6, 15, 12, ClickTrim, TooltipTree),
-            new ControlEntry("Simplify", layout => layout.Simplify, 7, 16, 13, ClickTree, TooltipTree),
-            new ControlEntry("Flatten", layout => layout.Flatten, 8, 17, 14, ClickTree, TooltipTree),
-            new ControlEntry("Reverse", layout => layout.Reverse, 9, 18, 15, ClickTree, TooltipTree),
-            new ControlEntry("CreateSet", layout => layout.CreateSet, 10, 19, 16, ClickTree, TooltipTree),
-            new ControlEntry("SelectAll", layout => layout.SelectAll, 11, 13, 3, ClickSelectAll, TooltipSelectAll),
-            new ControlEntry("Preview", layout => layout.Preview, 12, 5, 7, ClickPreview, TooltipPreview),
-            new ControlEntry("Statistics", layout => layout.Statistics, 13, 14, 4, ClickStatistics, TooltipStatistics, tooltipHit: point => _layout.Statistics.Contains(point) || _layout.Footer.Contains(point) && point.Y < _layout.Units.Y && !_layout.OutLabel.Contains(point) && !_layout.OutItems.Contains(point) && !_layout.OutValues.Contains(point)),
-            new ControlEntry("SearchClear", layout => layout.SearchClear, 14, 6, 5, ClickSearchClear, TooltipSearchClear, visible: path => SearchClearVisible),
-            new ControlEntry("BranchClear", layout => layout.BranchClear, 15, 9, 6, ClickBranchClear, TooltipBranchClear, visible: path => BranchClearVisible),
-            new ControlEntry("Filter", layout => layout.Filter, 16, 7, -1, ClickFilter, null),
-            new ControlEntry("Search", layout => layout.Search, 17, 8, 22, ClickSearch, TooltipSearch),
-            new ControlEntry("Units", layout => layout.Units, 18, 20, 11, ClickUnits, TooltipUnits),
-            new ControlEntry("Type", layout => layout.Type, 19, 10, 17, ClickType, TooltipQuery),
-            new ControlEntry("Sort", layout => layout.Sort, 20, 11, 18, ClickSort, TooltipQuery),
-            new ControlEntry("Branch", layout => layout.Branch, 21, 12, 19, ClickBranch, TooltipQuery),
-            new ControlEntry("Jump", layout => layout.Jump, 22, 3, 23, ClickJump, TooltipJump),
-            new ControlEntry("Move", layout => layout.Move, 23, -1, 1, ClickMove, TooltipMove, cursor: Cursors.SizeAll, cursorOrder: 1),
-            new ControlEntry("OutLabel", layout => layout.OutLabel, -1, -1, 8, null, TooltipOutput),
-            new ControlEntry("Footer", layout => layout.Footer, -1, -1, 25, null, TooltipFooter),
-            new ControlEntry("Restore", layout => layout.Restore, 100, 100, 100, ClickRestore, TooltipRestore),
-            new ControlEntry("Warnings", layout => RectangleF.Empty, 24, 2, 21, ClickWarnings, TooltipWarnings, visible: path => path != ControlPath.Click || RowsAreCurrent(PanelOwner.Session.Result), hit: point => _warningHits.Any(hit => hit.Bounds.Contains(point)), hoverRects: () => _warningHits.Select(hit => hit.Bounds))
+            new ControlEntry("Close", layout => layout.Close, ClickClose, TooltipClose, click: ControlStep.Header, hover: ControlStep.Header, tooltip: ControlStep.BeforeStatisticsMenu),
+            new ControlEntry("Display", layout => layout.Display, ClickDisplay, TooltipDisplay, click: ControlStep.Header, hover: ControlStep.Header, tooltip: ControlStep.Main),
+            new ControlEntry("Resize", layout => layout.Resize, ClickResize, TooltipResize, click: ControlStep.BeforeTrack, tooltip: ControlStep.Main, cursor: Cursors.SizeNWSE),
+            new ControlEntry("Move", layout => layout.Move, ClickMove, TooltipMove, click: ControlStep.Main, tooltip: ControlStep.BeforeRowActions, cursor: Cursors.SizeAll),
+            new ControlEntry("Warnings", layout => RectangleF.Empty, ClickWarnings, TooltipWarnings, click: ControlStep.AfterStaleList, hover: ControlStep.Main, tooltip: ControlStep.Main, hit: point => _warningHits.Any(hit => hit.Bounds.Contains(point)), hoverRects: () => _warningHits.Select(hit => hit.Bounds)),
+            new ControlEntry("Jump", layout => layout.Jump, ClickJump, TooltipJump, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("Reset", layout => layout.Reset, ClickReset, TooltipReset, click: ControlStep.BeforeDetails, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("Preview", layout => layout.Preview, ClickPreview, TooltipPreview, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("SearchClear", layout => layout.SearchClear, ClickSearchClear, TooltipSearchClear, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, visible: path => SearchClearVisible),
+            new ControlEntry("Filter", layout => layout.Filter, ClickFilter, null, click: ControlStep.Main, hover: ControlStep.Main),
+            new ControlEntry("Search", layout => layout.Search, ClickSearch, TooltipSearch, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("BranchClear", layout => layout.BranchClear, ClickBranchClear, TooltipBranchClear, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, visible: path => BranchClearVisible),
+            new ControlEntry("Type", layout => layout.Type, ClickType, TooltipQuery, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("Sort", layout => layout.Sort, ClickSort, TooltipQuery, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("Branch", layout => layout.Branch, ClickBranch, TooltipQuery, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("SelectAll", layout => layout.SelectAll, ClickSelectAll, TooltipSelectAll, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("Statistics", layout => layout.Statistics, ClickStatistics, TooltipStatistics, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, tooltipHit: point => _layout.Statistics.Contains(point) || _layout.Footer.Contains(point) && point.Y < _layout.Units.Y && !_layout.OutLabel.Contains(point) && !_layout.OutItems.Contains(point) && !_layout.OutValues.Contains(point)),
+            new ControlEntry("Trim", layout => layout.Trim, ClickTrim, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("Simplify", layout => layout.Simplify, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("Flatten", layout => layout.Flatten, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("Reverse", layout => layout.Reverse, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("CreateSet", layout => layout.CreateSet, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("Units", layout => layout.Units, ClickUnits, TooltipUnits, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("OutLabel", layout => layout.OutLabel, null, TooltipOutput, tooltip: ControlStep.Main),
+            new ControlEntry("OutItems", layout => layout.OutItems, ClickOutput, TooltipOutput, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, visible: path => path == ControlPath.Tooltip || PanelOwner.CanOutputValues),
+            new ControlEntry("OutValues", layout => layout.OutValues, ClickOutput, TooltipOutput, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, visible: path => path == ControlPath.Tooltip || PanelOwner.CanOutputValues),
+            new ControlEntry("Footer", layout => layout.Footer, null, TooltipFooter, tooltip: ControlStep.Main),
+            new ControlEntry("Restore", layout => layout.Restore, ClickRestore, TooltipRestore, click: ControlStep.Capsule, hover: ControlStep.Capsule, tooltip: ControlStep.Capsule)
         };
 
-        private ControlEntry? ControlAt(ControlPath path, PointF point, int first = 0, int last = int.MaxValue)
+        private ControlEntry? ControlAt(ControlPath path, PointF point, ControlStep step)
         {
-            ControlEntry? best = null;
-            int order = int.MaxValue;
             foreach (var entry in ControlHits)
             {
-                int candidate = entry.Order(path);
-                if (candidate < first || candidate > last || candidate >= order || !entry.Visible(path)) continue;
+                if (entry.Step(path) != step || !entry.Visible(path)) continue;
                 var hit = path == ControlPath.Tooltip ? entry.TooltipHit ?? entry.Hit : entry.Hit;
-                if (!(hit?.Invoke(point) ?? entry.Rect(_layout).Contains(point))) continue;
-                best = entry; order = candidate;
+                if (hit?.Invoke(point) ?? entry.Rect(_layout).Contains(point)) return entry;
             }
-            return best;
+            return null;
         }
 
-        private bool ControlTooltip(PointF point, GH_TooltipDisplayEventArgs e, int first, int last)
+        private bool ControlClick(ControlStep step, GH_Canvas sender, GH_CanvasMouseEvent e, out GH_ObjectResponse response)
         {
-            var entry = ControlAt(ControlPath.Tooltip, point, first, last);
+            var entry = ControlAt(ControlPath.Click, e.CanvasLocation, step);
+            var result = entry?.OnClick?.Invoke(sender, e);
+            response = result.GetValueOrDefault();
+            return result.HasValue;
+        }
+
+        private bool ControlTooltip(PointF point, GH_TooltipDisplayEventArgs e, ControlStep step)
+        {
+            var entry = ControlAt(ControlPath.Tooltip, point, step);
             if (entry == null) return false;
             entry.Tooltip!(point, e);
             return true;
         }
 
-        private GH_ObjectResponse ClickMove(GH_Canvas sender, GH_CanvasMouseEvent e) => base.RespondToMouseDown(sender, e);
+        private GH_ObjectResponse? ClickMove(GH_Canvas sender, GH_CanvasMouseEvent e) => base.RespondToMouseDown(sender, e);
 
-        private GH_ObjectResponse ClickWarnings(GH_Canvas sender, GH_CanvasMouseEvent e)
-        {
-            TryWarningClick(e.CanvasLocation, sender);
-            return GH_ObjectResponse.Handled;
-        }
+        private GH_ObjectResponse? ClickWarnings(GH_Canvas sender, GH_CanvasMouseEvent e) =>
+            TryWarningClick(e.CanvasLocation, sender) ? GH_ObjectResponse.Handled : (GH_ObjectResponse?)null;
 
-        private GH_ObjectResponse ClickClose(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickClose(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             SuppressTrailingDoubleClick();
             PanelOwner.SetPanelMinimized(true);
@@ -122,7 +132,7 @@ namespace BetterGhPanel
             return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickDisplay(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickDisplay(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             // Expanding Half moves this header away from the pointer and can
             // expose a row beneath the second click of the same gesture.
@@ -136,14 +146,14 @@ namespace BetterGhPanel
             return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickReset(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickReset(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             bool recordedUndo = PanelOwner.ResetAll();
             ShowNotice(sender, recordedUndo ? "Reset all · Undo restores the previous settings" : "Reset all");
             return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickResize(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickResize(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             var point = e.CanvasLocation;
             PanelOwner.RecordUndoEvent("Resize Panel+");
@@ -151,14 +161,14 @@ namespace BetterGhPanel
             return GH_ObjectResponse.Capture;
         }
 
-        private GH_ObjectResponse ClickOutput(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickOutput(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             var point = e.CanvasLocation;
             PanelOwner.SetOutputValues(_layout.OutValues.Contains(point) ? PanelOutputValues.Values : PanelOutputValues.Items);
             return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickTrim(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickTrim(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             CanvasTextInput.Show(sender, PanelOwner, _layout.Trim, PanelOwner.TrimDepth.ToString(), text =>
             {
@@ -169,7 +179,7 @@ namespace BetterGhPanel
             return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickTree(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickTree(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             var point = e.CanvasLocation;
             PanelOwner.SetTreeOperations(PanelOwner.TrimDepth,
@@ -180,64 +190,64 @@ namespace BetterGhPanel
             return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickSelectAll(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickSelectAll(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             var result = PanelOwner.Session.Result;
             if (RowsAreCurrent(result)) SelectAllRows(sender, result);
             return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickPreview(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickPreview(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             OpenMenu(CanvasMenuKind.Preview, sender); return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickStatistics(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickStatistics(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             OpenMenu(CanvasMenuKind.Statistics, sender); return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickSearchClear(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickSearchClear(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             ClearSearch(sender); return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickBranchClear(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickBranchClear(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             SetBranchFilter(null); sender.Invalidate(); return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickFilter(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickFilter(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             OpenMenu(CanvasMenuKind.SearchMode, sender); return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickSearch(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickSearch(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             EditSearch(sender); return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickUnits(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickUnits(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             OpenMenu(CanvasMenuKind.Units, sender); return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickType(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickType(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             OpenMenu(CanvasMenuKind.Type, sender); return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickSort(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickSort(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             OpenMenu(CanvasMenuKind.Sort, sender); return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickBranch(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickBranch(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             OpenMenu(CanvasMenuKind.Branch, sender); return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse ClickJump(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickJump(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             var jumpResult = PanelOwner.Session.Result;
             bool branchView = DisplayListLengths;
@@ -270,7 +280,6 @@ namespace BetterGhPanel
             e.Title = "Minimize to capsule";
             e.Text = "Nothing is deleted";
             e.Description = "Shrink to a compact summary on the canvas. Restore reopens the same view.";
-            return;
         }
 
         private void TooltipMove(PointF point, GH_TooltipDisplayEventArgs e)
@@ -278,7 +287,6 @@ namespace BetterGhPanel
             e.Title = "Move Panel+";
             e.Text = "Drag this header";
             e.Description = "Drag to move the component. Clicks here are ordinary Grasshopper gestures, so Ctrl+C copies the component.";
-            return;
         }
 
         private void TooltipDisplay(PointF point, GH_TooltipDisplayEventArgs e)
@@ -286,7 +294,6 @@ namespace BetterGhPanel
             e.Title = PanelOwner.CanvasDisplay == CanvasPanelDisplay.Full ? "Show half panel" : "Show full panel";
             e.Text = "Full ↔ Half";
             e.Description = "Toggle between your saved height and half of it. Wires stay connected.";
-            return;
         }
 
         private void TooltipSelectAll(PointF point, GH_TooltipDisplayEventArgs e)
@@ -296,7 +303,6 @@ namespace BetterGhPanel
                 ? System.FormattableString.Invariant($"{PanelOwner.Session.Result.RowPositions.Count:N0} results")
                 : PanelOwner.Locked ? "Disabled" : PanelOwner.Session.IsBusy ? "Recomputing…" : "Selection unavailable";
             e.Description = "Select every result, including offscreen rows. Shortcut while focused: Ctrl+A.";
-            return;
         }
 
         private void TooltipStatistics(PointF point, GH_TooltipDisplayEventArgs e)
@@ -306,7 +312,6 @@ namespace BetterGhPanel
                 ? CanvasStatistics.Summary(PanelOwner.Session.Result)
                 : PanelOwner.Locked ? "Disabled" : PanelOwner.Session.IsBusy ? "Recomputing…" : "Statistics unavailable";
             e.Description = "Minimum, maximum, average, counts and every unique value with its frequency.";
-            return;
         }
 
         private void TooltipSearchClear(PointF point, GH_TooltipDisplayEventArgs e)
@@ -315,14 +320,12 @@ namespace BetterGhPanel
             e.Description = CanvasMenu.IsComparisonMode(PanelOwner.Session.Options.SearchMode)
                 ? "Clear the filter to show values, then clear values to return to Text search. Undo restores each step."
                 : "Remove the search filter. Undo restores it.";
-            return;
         }
 
         private void TooltipBranchClear(PointF point, GH_TooltipDisplayEventArgs e)
         {
             e.Title = "Show all branches";
             e.Description = "Remove the branch filter. Undo restores it.";
-            return;
         }
 
         private void TooltipPreview(PointF point, GH_TooltipDisplayEventArgs e)
@@ -452,7 +455,7 @@ namespace BetterGhPanel
             e.Description = FooterStatus(PanelOwner.Session.Result, _singleLineFooter) + "\n\nClick to select; Ctrl/Cmd toggles, Shift extends, Alt/Option picks the same index in every branch. Right-click to copy or frame.\n\n" + KeyboardHint;
         }
 
-        private GH_ObjectResponse ClickRestore(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickRestore(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             if (e.Clicks > 1 && DateTime.UtcNow < _rowActionDismissedUntil) return GH_ObjectResponse.Handled;
             SuppressTrailingDoubleClick();

@@ -246,11 +246,11 @@ namespace BetterGhPanel
         // Hover feedback: a translucent fill on the control or row under the pointer.
         private IEnumerable<RectangleF> HoverControls()
         {
-            foreach (var entry in ControlHits.Where(entry => entry.HoverOrder >= 0 && entry.HoverOrder <= 1).OrderBy(entry => entry.HoverOrder))
+            foreach (var entry in ControlHits.Where(entry => entry.HoverStep == ControlStep.Header))
                 if (entry.Visible(ControlPath.Hover)) yield return entry.Rect(_layout);
             if (!_layout.Split.IsEmpty) yield return _layout.Split;
             if (PanelOwner.PanelSplit) yield return _layout.ScrollLock;
-            foreach (var entry in ControlHits.Where(entry => entry.HoverOrder >= 2 && entry.HoverOrder < 100).OrderBy(entry => entry.HoverOrder))
+            foreach (var entry in ControlHits.Where(entry => entry.HoverStep == ControlStep.Main))
             {
                 if (!entry.Visible(ControlPath.Hover)) continue;
                 if (entry.HoverRects != null)
@@ -262,9 +262,9 @@ namespace BetterGhPanel
         private RectangleF HoverTargetAt(PointF point, out bool control)
         {
             control = true;
-            if (PanelOwner.PanelMinimized) return ControlAt(ControlPath.Hover, point, 100, 100)?.Rect(_layout) ?? RectangleF.Empty;
+            if (PanelOwner.PanelMinimized) return ControlAt(ControlPath.Hover, point, ControlStep.Capsule)?.Rect(_layout) ?? RectangleF.Empty;
             control = false;
-            if (_menu.Kind != CanvasMenuKind.None || _rowMenuResult != null || _resizing || (_d.Scrolling || _f.Scrolling)) return RectangleF.Empty;
+            if (_menu.Kind != CanvasMenuKind.None || _rowMenuResult != null || _resizing || _scrolling) return RectangleF.Empty;
             foreach (var bounds in HoverControls())
                 if (!bounds.IsEmpty && bounds.Contains(point)) { control = true; return bounds; }
             if (!RowsAreCurrent(PanelOwner.Session.Result)) return RectangleF.Empty;

@@ -106,6 +106,9 @@ namespace BetterGhPanel
 
         private PanelLayout _layout = new PanelLayout();
 
+        // Computes the immutable fixed-control layout and, in the original
+        // calculation order, updates _d/_f pane rectangles, _warningsHeight and
+        // _singleLineFooter. This helper deliberately includes those layout side effects.
         private PanelLayout ComputePanelLayout()
         {
             if (PanelOwner.PanelMinimized)

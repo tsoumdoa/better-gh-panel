@@ -22,7 +22,6 @@ namespace BetterGhPanel
             internal int Offset, Shown, PreviewOffset, PaintedOffset;
             // The visible scroll track stays slim; its grab target is wider.
             internal RectangleF List, Track, TrackHit, Caption;
-            internal bool Scrolling;
         }
 
         private readonly PaneView _d = new PaneView(), _f = new PaneView();
@@ -65,7 +64,7 @@ namespace BetterGhPanel
         private PanelRowSelection _selection;
         private GH_Canvas? _selectionCanvas;
         private readonly CanvasMenu _menu = new CanvasMenu();
-        private bool _resizing;
+        private bool _resizing, _scrolling;
         private PointF _dragStart;
         private float _startWidth, _startHeight, _thumbGrab;
         private BetterPanelComponent PanelOwner => (BetterPanelComponent)Owner;
@@ -127,7 +126,7 @@ namespace BetterGhPanel
             if (keepViewRestore) _selection.Clear();
             else ClearRowSelection();
             PanelOwner.ClearHighlight();
-            _d.Scrolling = _f.Scrolling = false;
+            _scrolling = false;
             _rowContextHandled = false;
             _menu.Close();
             _rowActionDismissedUntil = default;
@@ -188,7 +187,7 @@ namespace BetterGhPanel
             InvalidatePaintedHits();
             _menu.Close();
             CloseRowMenu();
-            _resizing = _d.Scrolling = _f.Scrolling = _rowContextHandled = false;
+            _resizing = _scrolling = _rowContextHandled = false;
         }
 
         internal void InvalidatePaintedHits(bool closeRowMenu = true)
@@ -1007,8 +1006,8 @@ namespace BetterGhPanel
             if (_paintedCanvas != null && !ReferenceEquals(_paintedCanvas, sender)) InvalidatePaintedHits();
             if (PanelOwner.PanelMinimized)
             {
-                if (e.Button == MouseButtons.Left && ControlAt(ControlPath.Click, e.CanvasLocation, 100, 100) is ControlEntry restore)
-                    return restore.OnClick!(sender, e);
+                if (e.Button == MouseButtons.Left && ControlClick(ControlStep.Capsule, sender, e, out var restoreResponse))
+                    return restoreResponse;
                 return base.RespondToMouseDown(sender, e);
             }
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDown(sender, e);
@@ -1113,23 +1112,23 @@ namespace BetterGhPanel
                 return GH_ObjectResponse.Handled;
             }
             // Close/Display precede split controls; Reset precedes set details.
-            if (ControlAt(ControlPath.Click, point, 0, 1) is ControlEntry header) return header.OnClick!(sender, e);
+            if (ControlClick(ControlStep.Header, sender, e, out var headerResponse)) return headerResponse;
             if (HandleSplitClick(sender, e)) return GH_ObjectResponse.Handled;
-            if (ControlAt(ControlPath.Click, point, 2, 2) is ControlEntry control2) return control2.OnClick!(sender, e);
+            if (ControlClick(ControlStep.BeforeDetails, sender, e, out var resetResponse)) return resetResponse;
             if (HandleSetDetailsClick(sender, e)) return GH_ObjectResponse.Handled;
-            if (ControlAt(ControlPath.Click, point, 3, 3) is ControlEntry control3) return control3.OnClick!(sender, e);
+            if (ControlClick(ControlStep.BeforeTrack, sender, e, out var resizeResponse)) return resizeResponse;
             if ((_d.TrackHit.Contains(point) && Count > _d.Shown) ||
                 (_f.TrackHit.Contains(point) && Count > (_scrollLocked ? _d.Shown : _f.Shown) && (_scrollLocked || PanelOwner.CanSplit)))
             {
                 _dragPaired = _f.TrackHit.Contains(point) && !_scrollLocked;
                 var thumb = Thumb(_dragPaired);
-                if (point.Y >= thumb.Top && point.Y <= thumb.Bottom) { (_dragPaired ? _f : _d).Scrolling = true; _thumbGrab = point.Y - thumb.Y; return GH_ObjectResponse.Capture; }
+                if (point.Y >= thumb.Top && point.Y <= thumb.Bottom) { _scrolling = true; _thumbGrab = point.Y - thumb.Y; return GH_ObjectResponse.Capture; }
                 var pane = _dragPaired ? _f : _d;
                 int offset = pane.Offset, shown = pane.Shown;
                 SetPaneOffset(sender, offset + (point.Y < thumb.Y ? -Math.Max(1, shown) : Math.Max(1, shown)), _dragPaired);
                 return GH_ObjectResponse.Handled;
             }
-            if (ControlAt(ControlPath.Click, point, 4, 23) is ControlEntry control) return control.OnClick!(sender, e);
+            if (ControlClick(ControlStep.Main, sender, e, out var controlResponse)) return controlResponse;
             var currentResult = PanelOwner.Session.Result;
             if (ListContains(point) && !RowsAreCurrent(currentResult))
             {
@@ -1137,7 +1136,7 @@ namespace BetterGhPanel
                 sender.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
-            if (ControlAt(ControlPath.Click, point, 24, 24) is ControlEntry warning) return warning.OnClick!(sender, e);
+            if (ControlClick(ControlStep.AfterStaleList, sender, e, out var warningResponse)) return warningResponse;
             foreach (var hit in _branchHits)
                 if (hit.Bounds.Contains(point))
                 {
@@ -1467,12 +1466,12 @@ namespace BetterGhPanel
             }
             // Hidden controls must not claim a cursor that their mouse-down path
             // cannot act on. An already captured gesture still needs its moves.
-            if (!_resizing && !(_d.Scrolling || _f.Scrolling) && sender.Viewport.Zoom < 0.5f)
+            if (!_resizing && !_scrolling && sender.Viewport.Zoom < 0.5f)
                 return base.RespondToMouseMove(sender, e);
             bool setControl = SetControlAt(e.CanvasLocation);
             bool hoverControl = UpdateHover(sender, e.CanvasLocation);
             setControl |= hoverControl;
-            var cursorControl = ControlAt(ControlPath.Cursor, e.CanvasLocation);
+            var cursorControl = ControlAt(ControlPath.Cursor, e.CanvasLocation, ControlStep.Main);
             sender.Cursor = _resizing ? Cursors.SizeNWSE : cursorControl?.Cursor ?? (setControl ? Cursors.Hand : Cursors.Default);
             if (PaintedViewIsCurrent() && _menu.Hover(e.CanvasLocation)) sender.Invalidate();
             int rowMenuHovered = _rowMenuResult != null && RowsAreCurrent(_rowMenuResult) && RowMenuTargetPainted(e.CanvasLocation)
@@ -1490,7 +1489,7 @@ namespace BetterGhPanel
                 sender.Invalidate();
                 return GH_ObjectResponse.Capture;
             }
-            if (_d.Scrolling || _f.Scrolling)
+            if (_scrolling)
             {
                 var track = _dragPaired || PanelOwner.PanelSplit && _scrollLocked ? _f.Track : _d.Track;
                 float travel = track.Height - Thumb(_dragPaired).Height;
@@ -1509,7 +1508,7 @@ namespace BetterGhPanel
                 _rowContextHandled = false;
                 return GH_ObjectResponse.Handled;
             }
-            if (_resizing || (_d.Scrolling || _f.Scrolling)) { _resizing = false; _d.Scrolling = _f.Scrolling = false; return GH_ObjectResponse.Release; }
+            if (_resizing || _scrolling) { _resizing = false; _scrolling = false; return GH_ObjectResponse.Release; }
             return base.RespondToMouseUp(sender, e);
         }
 
@@ -1564,14 +1563,14 @@ namespace BetterGhPanel
             }
             if (PanelOwner.PanelMinimized)
             {
-                if (ControlTooltip(point, e, 100, 100)) return;
+                if (ControlTooltip(point, e, ControlStep.Capsule)) return;
                 e.Title = "Panel+ capsule";
                 e.Text = CapsuleSummary();
                 e.Description = "Click the window icon to reopen the " + PanelOwner.CanvasDisplay + " panel exactly as you left it.";
                 return;
             }
             // Keep Close before statistics menus, and Move before row actions.
-            if (ControlTooltip(point, e, 0, 0)) return;
+            if (ControlTooltip(point, e, ControlStep.BeforeStatisticsMenu)) return;
             if (_menu.Kind == CanvasMenuKind.Statistics && _menu.Bounds.Contains(point))
             {
                 if (!StatisticsAreCurrent()) { InvalidateStatistics(); return; }
@@ -1587,9 +1586,9 @@ namespace BetterGhPanel
                 else e.Description = "Use Previous and Next to inspect all values.";
                 return;
             }
-            if (ControlTooltip(point, e, 1, 1)) return;
+            if (ControlTooltip(point, e, ControlStep.BeforeRowActions)) return;
             if (RowActionTooltip(point, e)) return;
-            if (ControlTooltip(point, e, 2, 25)) return;
+            if (ControlTooltip(point, e, ControlStep.Main)) return;
             if (RowsAreCurrent(PanelOwner.Session.Result))
             {
                 foreach (var hit in _branchHits)

@@ -85,8 +85,6 @@ namespace BetterGhPanel
             }
             return false;
         }
-
-
     }
 }
 #pragma warning restore CA1416

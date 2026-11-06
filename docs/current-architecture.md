@@ -92,8 +92,10 @@ The `stock-types` inactive-desktop fixture checks native type inspection, WYSIWY
 The component partials group saved settings and archive migration in `BetterPanelComponent.Settings.cs`, capture and publication in `BetterPanelComponent.Capture.cs`, and row actions in `BetterPanelComponent.RowActions.cs`. Construction, session wiring, ports, scheduling and document lifecycle remain in `BetterPanelComponent.cs`; output reconstruction remains in `BetterPanelComponent.Outputs.cs`. Text and geometry copy share `Runtime/ClipboardGeneration.cs`.
 The `BetterPanelAttributes.RowView.cs` partial owns the shared row-view index and branch-heading drawing, including branch copy affordances.
 
-`BetterPanelAttributes` keeps D and F viewport state in its private `_d` and `_f` `PaneView` instances (scroll offsets, visible counts, pane rectangles, captions, and drag flags).
+`BetterPanelAttributes` keeps D and F viewport state in its private `_d` and `_f` `PaneView` instances (scroll offsets, visible counts, pane rectangles and captions).
 
-`BetterPanelAttributes.Layout.cs` computes the immutable `PanelLayout` of fixed controls and regions once per layout. Pane rectangles remain in `PaneView`; set-details geometry stays in `CanvasSetDetails` because render and input also update it.
+`BetterPanelAttributes.Layout.cs` computes the immutable `PanelLayout` class of fixed controls and regions once per layout. Pane rectangles remain in `PaneView`; set-details geometry stays in `CanvasSetDetails` because render and input also update it.
 
-`BetterPanelAttributes.Controls.cs` owns the fixed-control hit table, click handlers and tooltip builders. Explicit click, hover and tooltip priorities preserve their original overlap rules and insertion points around split panes, menus, set details and painted warning targets.
+`BetterPanelAttributes.Controls.cs` owns the fixed-control hit table, click handlers and tooltip builders. All paths walk one shared array order within named per-path steps, preserving nested-control winners and insertion points around split panes, menus, set details and painted warning targets.
+
+`ComputePanelLayout` also updates the `_d`/`_f` pane rectangles, `_warningsHeight`, and `_singleLineFooter` in their original calculation order; it is not a side-effect-free helper. Active scrollbar dragging uses one `_scrolling` flag, with `_dragPaired` selecting the pane.
