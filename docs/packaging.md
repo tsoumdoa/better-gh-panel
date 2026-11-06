@@ -12,7 +12,9 @@ node scripts/package.mjs
 
 Packaging finds Yak in the standard Rhino 8 installation. On a machine without Rhino, `node scripts/package.mjs --stage-only` builds the same folder without creating an archive. Use `--yak <absolute path>` or `YAK_PATH` for a custom installation. Use `--skip-build` only after a successful Release build.
 
-`Directory.Build.props` maps the checkout root to `/_/` in debug records, keeping local usernames and checkout paths out of newly built assemblies and PDBs. Rebuild before packaging.
+`Directory.Build.props` maps the checkout root to `/_/` in debug records, keeping local usernames and checkout paths out of newly built assemblies and PDBs. Rebuild before packaging. Local environment files, binaries and signing keys are git-ignored.
+
+Staging is strict. Before it changes anything, `package.mjs` checks that `Directory.Build.props` has a version and the manifest has its placeholder, that each runtime's build outputs (`BetterGhPanel.gha`, `BetterGhPanel.Core.dll`, and `BetterGhPanel.deps.json` for net7.0) and `assets/icon.png` and `LICENSE` exist and are not empty, and that an existing stage folder holds no unexpected top-level entries.
 
 New builds use the Yak package name `panel-plus` and stage to `artifacts/panel-plus-<version>/`. The old published package retains its original name; installing the renamed package may require removing the old package first to avoid loading both copies.
 
