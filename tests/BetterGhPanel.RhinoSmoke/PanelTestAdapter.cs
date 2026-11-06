@@ -194,12 +194,30 @@ internal sealed class CanvasEditorAdapter
     internal Action<string> CaptureAccepted() => (Action<string>)_type.GetField("_accepted", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(_editor)!;
 
     internal void Type(string text) => Input.Text = text;
-    internal void Cancel() => _type.GetMethod("RespondToEscape")!.Invoke(_editor, Array.Empty<object>());
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
+    private void Key(System.Windows.Forms.Keys key)
+    {
+        SendMessage(Input.Handle, 0x0100, (IntPtr)(int)key, IntPtr.Zero);
+        SendMessage(Input.Handle, 0x0101, (IntPtr)(int)key, IntPtr.Zero);
+    }
+    internal void Blur() => Input.Parent?.Parent?.Focus();
+    internal void Cancel() => Key(System.Windows.Forms.Keys.Escape);
+    internal void ClickCancel() => ClickButton(10);
+    internal void ClickOk() => ClickButton(30);
+    private void ClickButton(int fromRight)
+    {
+        var host = Input.Parent!;
+        int x = host.ClientSize.Width - Grasshopper.Global_Proc.UiAdjust(fromRight), y = host.ClientSize.Height / 2;
+        var point = (IntPtr)((y << 16) | (x & 0xffff));
+        SendMessage(host.Handle, 0x0201, (IntPtr)1, point);
+        SendMessage(host.Handle, 0x0202, IntPtr.Zero, point);
+    }
 
     internal void Submit(string text)
     {
         Input.Text = text;
-        _type.GetMethod("RespondToEnter")!.Invoke(_editor, Array.Empty<object>());
+        Key(System.Windows.Forms.Keys.Enter);
     }
 
     internal void AcceptAgain(string text) =>

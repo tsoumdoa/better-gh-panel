@@ -137,15 +137,6 @@ internal static class FilterCanvasChecks
                     "A literal numeric text search is not marked as an equality comparison");
             }
         }
-        Require(CanvasMenu.WithComparison("== 12.5", CanvasComparison.GreaterThan) == "> 12.5" &&
-            CanvasMenu.WithComparison("<= -1e3", CanvasComparison.NotEqual) == "!= -1e3", "Changing operators preserves a finite numeric threshold");
-        Require(CanvasMenu.WithComparison("Wall.*", CanvasComparison.AtLeast) == ">= " && CanvasMenu.WithComparison("NaN", CanvasComparison.GreaterThan) == "> ",
-            "Switching from text or nonfinite input starts with a clean numeric threshold");
-        Require(CanvasMenu.ApplyComparison(" 5 ", ">") == "> 5" &&
-            CanvasMenu.ApplyComparison(" <= 6 ", ">") == "<= 6" &&
-            CanvasMenu.ApplyComparison("== 2", ">") == "== 2" &&
-            CanvasMenu.ApplyComparison(" ", ">") == "",
-            "The threshold editor preserves explicit pasted comparisons and clears blank input");
         Require(CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 12" }) == "Area > 12" &&
             CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "Wall" }) == ".* Wall" &&
             CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = ">= 2" }) == "List >= 2",

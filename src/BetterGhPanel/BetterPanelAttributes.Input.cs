@@ -129,7 +129,7 @@ namespace BetterGhPanel
                     return true;
                 case Keys.C when control:
                     // With no rows selected, Ctrl+C keeps copying Grasshopper objects.
-                    if (!current || _selection.Count == 0 || DisplayListLengths && !(result.DisplaySet?.IsBranchSet == true && _copyPaired)) return false;
+                    if (!current || _selection.Count == 0) return false;
                     // Copy from the pane whose row was last clicked, whether or not scrolling is linked.
                     CopySelectedValues(result, canvas, PanelOwner.PanelSplit && PanelOwner.CanSplit && _copyPaired);
                     return true;

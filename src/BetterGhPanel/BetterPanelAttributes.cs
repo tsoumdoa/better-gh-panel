@@ -113,8 +113,8 @@ namespace BetterGhPanel
             if (!keepViewRestore) { _viewRestore = null; _selectionRestore = null; _savedSelection = null; }
             ClearHover();
             _keyboardCursor = -1;
-            CancelQueryEditor();
             CanvasTextInput.CloseActive(PanelOwner);
+            CancelQueryEditor();
             _setDetails.Close();
             InvalidatePaintedHits();
             _setCountResult = null;
@@ -1065,7 +1065,12 @@ namespace BetterGhPanel
 
         public override GH_ObjectResponse RespondToMouseDown(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
-            CancelQueryEditor();
+            if (e.Button == MouseButtons.Left && _panel.Contains(e.CanvasLocation))
+            {
+                if (_reset.Contains(e.CanvasLocation)) CanvasTextInput.CloseActive(PanelOwner);
+                CanvasTextInput.CompletePending();
+                CancelQueryEditor();
+            }
             if (e.Button == MouseButtons.Left || e.Button == MouseButtons.Right) _keyboardCursor = -1;
             if (_paintedCanvas != null && !ReferenceEquals(_paintedCanvas, sender)) InvalidatePaintedHits();
             if (PanelOwner.PanelMinimized)
@@ -1241,7 +1246,7 @@ namespace BetterGhPanel
                     if (int.TryParse(text.Trim(), out var depth) && depth >= 0)
                         PanelOwner.SetTreeOperations(depth, PanelOwner.FlattenTree, PanelOwner.ReverseTree, PanelOwner.SimplifyTree, PanelOwner.CreateSetTree);
                     else ShowNotice(sender, "Trim depth must be a whole number, 0 or more (0 turns Trim off)");
-                });
+                }, valid: text => int.TryParse(text.Trim(), out int depth) && depth >= 0);
                 return GH_ObjectResponse.Handled;
             }
             if (_simplify.Contains(point) || _flatten.Contains(point) || _reverse.Contains(point) || _createSet.Contains(point))
@@ -1286,12 +1291,14 @@ namespace BetterGhPanel
                     // Put the requested item first; grouped branch headings can change
                     // page capacity, so previous-page size must not hide the final item.
                     int index = Math.Max(0, Math.Min(Math.Max(0, itemCount - 1), row <= 1 ? 0 : row - 1));
-                    _offset = itemCount == 0 ? 0 : branchView ? index : ViewOffset(jumpResult, index);
+                    int offset = itemCount == 0 ? 0 : branchView ? index : ViewOffset(jumpResult, index);
+                    bool changed = _offset != offset;
+                    _offset = offset;
                     if (itemCount > 0 && (row < 1 || row > itemCount))
                         ShowNotice(sender, System.FormattableString.Invariant($"Row {row:N0} is out of range · showing row {index + 1:N0} of {itemCount:N0}"));
-                    InvalidatePaintedHits();
+                    if (changed) InvalidatePaintedHits();
                     sender.Invalidate();
-                });
+                }, valid: text => int.TryParse(text.Trim(), out _));
                 return GH_ObjectResponse.Handled;
             }
             // Moving the panel is a presentation control, so keep its row selection.
@@ -1391,13 +1398,13 @@ namespace BetterGhPanel
                             PanelUnits.IsRoundingFactor(factor))
                             PanelOwner.SetUnits(PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, factor);
                         else ShowNotice(canvas, "Rounding factor must be a positive number, using . for decimals (for example 5 or 0.25)");
-                    });
+                    }, valid: text => double.TryParse(text.Trim(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double factor) && PanelUnits.IsRoundingFactor(factor));
                 else CanvasTextInput.Show(canvas, PanelOwner, _units, Math.Max(0, PanelOwner.DecimalPlaces).ToString(), text =>
                 {
                     if (int.TryParse(text.Trim(), out var decimals) && decimals >= 0 && decimals <= PanelUnits.MaximumDecimals)
                         PanelOwner.SetUnits(PanelOwner.UnitConversion, decimals);
                     else ShowNotice(canvas, $"Decimal places must be a whole number from 0 to {PanelUnits.MaximumDecimals}");
-                });
+                }, valid: text => int.TryParse(text.Trim(), out int decimals) && decimals >= 0 && decimals <= PanelUnits.MaximumDecimals);
                 canvas.Invalidate();
                 return;
             }
@@ -1409,8 +1416,9 @@ namespace BetterGhPanel
                 if (CanvasMenu.IsComparisonMode(_editingSearchMode))
                 {
                     if (options.SearchMode == _editingSearchMode && (options.DisplayFilterValue || !string.IsNullOrEmpty(options.Search)))
-                    { canvas.Invalidate(); return; }
+                    { EditSearch(canvas); return; }
                     SetSearch(canvas, _editingSearchMode, string.Empty, true);
+                    EditSearch(canvas);
                 }
                 else EditSearch(canvas, _editingSearchMode, options.SearchMode == _editingSearchMode ? options.Search : string.Empty);
                 return;
@@ -1427,18 +1435,6 @@ namespace BetterGhPanel
                     SetSearch(canvas, _editingSearchMode, "= " + selectedComparison.Value.Value, false);
                     return;
                 }
-                var comparisonChoice = selectedComparison.Value.Comparison!.Value;
-                string comparison = CanvasMenu.ComparisonOperator(comparisonChoice);
-                string value = CanvasMenu.WithComparison(options.SearchMode == _editingSearchMode ? options.Search : "", comparisonChoice, _editingSearchMode).Substring(comparison.Length).Trim();
-                var mode = _editingSearchMode;
-                ShowLiveQueryEditor(canvas, value, "Panel comparison", text =>
-                {
-                    var query = PanelOwner.Session.Options;
-                    query.SearchMode = mode;
-                    query.Search = CanvasMenu.ApplyComparison(text, comparison);
-                    query.DisplayFilterValue = query.Search.Length == 0;
-                    return query;
-                });
                 return;
             }
             if (kind == CanvasMenuKind.Type)
@@ -1451,7 +1447,12 @@ namespace BetterGhPanel
             {
                 // Digits typed into the open menu jump straight to that path.
                 if (branchFilter.Length > 0) SetBranchFilter(branchFilter);
-                else ShowQueryEditor(canvas, _branch, options.BranchPath ?? "{0}", SetBranchFilter);
+                else ShowQueryEditor(canvas, _branch, options.BranchPath ?? "{0}", SetBranchFilter, valid: text =>
+                {
+                    var query = PanelOwner.Session.Options;
+                    query.BranchPath = text;
+                    return PanelQueryEngine.IsValidSearch(query);
+                });
                 canvas.Invalidate();
                 return;
             }
@@ -1485,7 +1486,7 @@ namespace BetterGhPanel
         private void EditSearch(GH_Canvas canvas)
         {
             var options = PanelOwner.Session.Options;
-            if (CanvasMenu.IsComparisonMode(options.SearchMode))
+            if (CanvasMenu.HasValueChoices(options.SearchMode))
             {
                 _editingSearchMode = options.SearchMode;
                 OpenMenu(CanvasMenuKind.Comparison, canvas);
@@ -1509,25 +1510,21 @@ namespace BetterGhPanel
             CancelQueryEditor();
             var options = PanelOwner.Session.Options;
             PanelOwner.RecordUndoEvent("Clear Panel+ search");
-            if (CanvasMenu.IsComparisonMode(options.SearchMode))
-            {
-                if (!string.IsNullOrEmpty(options.Search)) options.DisplayFilterValue = true;
-                else { options.SearchMode = PanelSearchMode.Text; options.DisplayFilterValue = false; }
-            }
-            else options.DisplayFilterValue = false;
+            options.SearchMode = PanelSearchMode.Text;
+            options.DisplayFilterValue = false;
             options.Search = string.Empty;
             PanelOwner.Session.UpdateQuery(options);
             canvas.Invalidate();
         }
 
         // Rows follow the search while typing. The preview is view-only: Enter
-        // commits it as one undo step and publishes outputs; Escape or clicking
-        // away restores the previous query, leaving outputs and undo untouched.
+        // or focus loss commits it as one undo step and publishes outputs; Escape
+        // restores the previous query, leaving outputs and undo untouched.
         private void ShowLiveQueryEditor(GH_Canvas canvas, string current, string undoName, Func<string, PanelQueryOptions> build)
         {
             object? token = null;
             ShowQueryEditor(canvas, _search, current, text => CommitQuery(token, undoName, build(text)),
-                text => PreviewQuery(token!, build(text)), () => EndQueryPreview(token));
+                text => PreviewQuery(token!, build(text)), () => EndQueryPreview(token), text => PanelQueryEngine.IsValidSearch(build(text)));
             token = _queryEditor;
         }
 
@@ -1552,6 +1549,7 @@ namespace BetterGhPanel
             var session = PanelOwner.Session;
             if (_previewOriginal == null || !ReferenceEquals(_previewOwner, token))
             {
+                if (PanelQueryPolicy.SameQuery(session.Options, options)) return;
                 PanelOwner.RecordQueryUndo(undoName, session.Options, options);
                 session.UpdateQuery(options);
                 return;
@@ -1588,7 +1586,7 @@ namespace BetterGhPanel
         }
 
         private void ShowQueryEditor(GH_Canvas canvas, RectangleF bounds, string current, Action<string> accepted,
-            Action<string>? changed = null, Action? abandoned = null)
+            Action<string>? changed = null, Action? abandoned = null, Func<string, bool>? valid = null)
         {
             CancelQueryEditor();
             var session = PanelOwner.Session;
@@ -1606,19 +1604,21 @@ namespace BetterGhPanel
                 _queryEditor = null;
                 _queryEditorSnapshot = null;
                 ++_queryEditorGeneration;
-                if (!ReferenceEquals(session, PanelOwner.Session) || !ReferenceEquals(snapshot, session.Snapshot))
+                if (PanelOwner.Locked || canvas.IsDisposed || !canvas.Enabled || canvas.Document?.Enabled != true || !ReferenceEquals(canvas.Document, PanelOwner.OnPingDocument()) ||
+                    !ReferenceEquals(session, PanelOwner.Session) || !ReferenceEquals(snapshot, session.Snapshot))
                 {
                     abandoned?.Invoke();
                     return;
                 }
                 accepted(text);
                 canvas.Invalidate();
-            }, changed, abandoned);
+            }, changed, abandoned, valid);
             _queryEditor = editor;
         }
 
         internal void CancelQueryEditor()
         {
+            CanvasTextInput.CompletePending();
             ++_queryEditorGeneration;
             EndQueryPreview(_previewOwner);
             CanvasTextInput.Close(_queryEditor);
@@ -1866,6 +1866,11 @@ namespace BetterGhPanel
             {
                 e.Title = "Reset all";
                 e.Description = "Clears filters, sorting and selection, turns off tree tools and units, and sets Out to Items and B + F to Results. Keeps Preview, item order, D|F and size. Undo restores the settings.";
+            }
+            else if (_warningHits.Any(hit => hit.Bounds.Contains(point)))
+            {
+                e.Title = "Data checks";
+                e.Description = "Counts the input before filters. Replaces the current filters; Undo restores them.";
             }
             else if (_search.Contains(point))
             {
