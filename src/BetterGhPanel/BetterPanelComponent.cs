@@ -47,7 +47,6 @@ namespace BetterGhPanel
         private int _captureRetries;
         // Fixture injection runs at the same boundary as native capture callbacks.
         internal Action<int, IGH_Goo?>? CaptureObserverForTesting { get; set; }
-        internal Action<object>? GraphVisitObserverForTesting { get; set; }
         internal Action<GH_Structure<IGH_Goo>, GH_Structure<IGH_Goo>?>? StructureObserverForTesting { get; set; }
         internal Action? BeforeOutputValidationForTesting { get; set; }
         private bool _captureDiagnosticsForTesting;
@@ -353,7 +352,7 @@ namespace BetterGhPanel
         internal void SetShowItemOrder(bool show)
         {
             if (ShowItemOrder == show) return;
-            RecordUndoEvent("Panel+ item order", new ItemOrderUndo(InstanceGuid, ShowItemOrder, show));
+            RecordUndoEvent("Panel+ item order", new PanelUndo<bool>(InstanceGuid, ShowItemOrder, show, (component, value) => component.ApplyShowItemOrder(value)));
             ApplyShowItemOrder(show);
         }
 
@@ -365,18 +364,21 @@ namespace BetterGhPanel
             Instances.ActiveCanvas?.Invalidate();
         }
 
-        private sealed class ItemOrderUndo : GH_UndoAction
+        private sealed class PanelUndo<T> : GH_UndoAction
         {
             private readonly Guid _component;
-            private readonly bool _before, _after;
-            internal ItemOrderUndo(Guid component, bool before, bool after)
-            { _component = component; _before = before; _after = after; }
+            private readonly T _before, _after;
+            private readonly Action<BetterPanelComponent, T> _apply;
+            internal PanelUndo(Guid component, T before, T after, Action<BetterPanelComponent, T> apply)
+            { _component = component; _before = before; _after = after; _apply = apply; }
             public override bool ExpiresSolution => false;
             public override bool ExpiresDisplay => false;
             protected override void Internal_Undo(GH_Document doc) => Apply(doc, _before);
             protected override void Internal_Redo(GH_Document doc) => Apply(doc, _after);
-            private void Apply(GH_Document doc, bool show) =>
-                (doc.FindObject(_component, false) as BetterPanelComponent)?.ApplyShowItemOrder(show);
+            private void Apply(GH_Document doc, T value)
+            {
+                if (doc.FindObject(_component, false) is BetterPanelComponent component) _apply(component, value);
+            }
         }
 
         internal void BeginQueryPreview()
@@ -390,26 +392,7 @@ namespace BetterGhPanel
         internal void RecordQueryUndo(string name, PanelQueryOptions before, PanelQueryOptions after)
         {
             if (!PanelQueryPolicy.SameQuery(before, after))
-                RecordUndoEvent(name, new QueryUndo(InstanceGuid, before, after));
-        }
-
-        private sealed class QueryUndo : GH_UndoAction
-        {
-            private readonly Guid _component;
-            private readonly PanelQueryOptions _before, _after;
-            internal QueryUndo(Guid component, PanelQueryOptions before, PanelQueryOptions after)
-            { _component = component; _before = before.Clone(); _after = after.Clone(); }
-            public override bool ExpiresSolution => false;
-            public override bool ExpiresDisplay => false;
-            protected override void Internal_Undo(GH_Document doc) => Apply(doc, _before);
-            protected override void Internal_Redo(GH_Document doc) => Apply(doc, _after);
-            private void Apply(GH_Document doc, PanelQueryOptions options)
-            {
-                var component = doc.FindObject(_component, false) as BetterPanelComponent;
-                if (component == null) return;
-                (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor();
-                component.Session.UpdateQuery(options);
-            }
+                RecordUndoEvent(name, new PanelUndo<PanelQueryOptions>(InstanceGuid, before.Clone(), after.Clone(), (component, options) => { (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor(); component.Session.UpdateQuery(options); }));
         }
 
         // Ends a live edit. A committed edit publishes like any other query change;
@@ -529,14 +512,14 @@ namespace BetterGhPanel
             // A generic component undo reloads the data and clears transient row
             // state. This action changes presentation only, including on undo.
             RecordUndoEvent(minimized ? "Minimize Panel+" : "Restore Panel+",
-                new MinimizedUndo(InstanceGuid, PanelMinimized, minimized));
+                new PanelUndo<bool>(InstanceGuid, PanelMinimized, minimized, (component, value) => component.ApplyPanelMinimized(value)));
             ApplyPanelMinimized(minimized);
         }
 
         internal void SetPanelSplit(bool split)
         {
             if (PanelSplit == split || split && !CanSplit) return;
-            RecordUndoEvent("Panel+ D | F view", new SplitUndo(InstanceGuid, PanelSplit, split));
+            RecordUndoEvent("Panel+ D | F view", new PanelUndo<bool>(InstanceGuid, PanelSplit, split, (component, value) => component.ApplyPanelSplit(value)));
             ApplyPanelSplit(split);
         }
 
@@ -576,20 +559,6 @@ namespace BetterGhPanel
         private static bool HasGeometry(PanelSnapshot snapshot) =>
             snapshot.Rows.Any(row => row.GeometryInfo != null || row.Components != null);
 
-        private sealed class SplitUndo : GH_UndoAction
-        {
-            private readonly Guid _component;
-            private readonly bool _before, _after;
-            internal SplitUndo(Guid component, bool before, bool after)
-            { _component = component; _before = before; _after = after; }
-            public override bool ExpiresSolution => false;
-            public override bool ExpiresDisplay => false;
-            protected override void Internal_Undo(GH_Document doc) => Apply(doc, _before);
-            protected override void Internal_Redo(GH_Document doc) => Apply(doc, _after);
-            private void Apply(GH_Document doc, bool split) =>
-                (doc.FindObject(_component, false) as BetterPanelComponent)?.ApplyPanelSplit(split);
-        }
-
         private void ApplyPanelMinimized(bool minimized)
         {
             CanvasTextInput.CloseActive(this);
@@ -598,20 +567,6 @@ namespace BetterGhPanel
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
-        }
-
-        private sealed class MinimizedUndo : GH_UndoAction
-        {
-            private readonly Guid _component;
-            private readonly bool _before, _after;
-            internal MinimizedUndo(Guid component, bool before, bool after)
-            { _component = component; _before = before; _after = after; }
-            public override bool ExpiresSolution => false;
-            public override bool ExpiresDisplay => false;
-            protected override void Internal_Undo(GH_Document doc) => Apply(doc, _before);
-            protected override void Internal_Redo(GH_Document doc) => Apply(doc, _after);
-            private void Apply(GH_Document doc, bool minimized) =>
-                (doc.FindObject(_component, false) as BetterPanelComponent)?.ApplyPanelMinimized(minimized);
         }
 
         internal void SetUnits(PanelUnitConversion conversion, int decimals, double? roundUpFactor = null)
@@ -1044,7 +999,7 @@ namespace BetterGhPanel
                     var context = ReadGeometryContext(out var unitSystem, out double tolerance, out string units);
                     if (!Current()) return;
                     var snapshot = SnapshotCapture.CaptureForMeasurements(queryTree, out var sources, out var measurementSources, out var graphs,
-                        conversion, units, retainedSources, CaptureObserverForTesting, GraphVisitObserverForTesting, queryScalars, inputSeed);
+                        conversion, units, retainedSources, CaptureObserverForTesting, null, queryScalars, inputSeed);
                     var pairedSources = Array.Empty<IGH_Goo?>();
                     var pairedMeasurements = Array.Empty<CapturedMeasurementSource?>();
                     var pairedGraphs = Array.Empty<CaptureGraphWitness>();

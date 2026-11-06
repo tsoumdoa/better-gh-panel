@@ -169,7 +169,7 @@ internal static class GeometryNurbsCandidateChecks
         using var session = (IDisposable)Activator.CreateInstance(sessionType, new object[] { (Action)(() => { }) })!;
         var candidate = CandidateMethod(assembly, "PrepareTrustedCurve");
         var counter = new Counter();
-        var resolverFactory = typeof(GeometryNurbsCandidateChecks).GetMethod("CreateResolver", BindingFlags.Static | BindingFlags.NonPublic)!
+        var resolverFactory = typeof(GeometryNurbsCandidateChecks).GetMethod(nameof(CreateResolver), BindingFlags.Static | BindingFlags.NonPublic)!
             .MakeGenericMethod(candidate.ReturnType);
         var resolver = resolverFactory.Invoke(null, new object[] { assembly, source, counter })!;
         sessionType.GetMethod("SetGeometryPreparationResolver", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(session, new[] { resolver });

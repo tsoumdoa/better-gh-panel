@@ -34,7 +34,7 @@ McNeel's separate public Yak registry still serves the original packages. Publis
 
 New builds use the Yak package name `panel-plus` and stage to `artifacts/panel-plus-<version>/`. The old published package retains its original name; installing the renamed package may require removing the old package first to avoid loading both copies.
 
-The current beta is [`0.2.5-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.5-beta), following `0.2.4-beta`, distributed through Yak and GitHub Releases. The `artifacts/panel-plus-0.2.5-beta/` stage contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `panel-plus-0.2.5-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; it does not install or launch Rhino. GitHub Actions CI is disabled.
+The current beta is [`0.2.5-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.5-beta), following `0.2.4-beta`, distributed through Yak and GitHub Releases. The `artifacts/panel-plus-0.2.5-beta/` stage contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `panel-plus-0.2.5-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; on Windows with Rhino 8 installed it also compiles and style-checks the native smoke host. It never installs or launches Rhino. GitHub Actions CI is disabled.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
@@ -82,7 +82,7 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 Install the current public beta with:
 
 ```text
-yak install better-gh-panel 0.1.26-beta
+yak install panel-plus 0.2.5-beta
 ```
 
 The release notes below record the validation and host modes used at the time. For the current isolated fixture runner, see [validation](maintainability.md#validation).

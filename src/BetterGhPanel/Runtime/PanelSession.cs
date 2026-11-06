@@ -161,9 +161,6 @@ namespace BetterGhPanel.Runtime
         internal long GeometrySourceScansForTesting => _geometry.SourceScansForTesting;
         internal int GeometryEntryCountForTesting => _geometry.EntryCountForTesting;
         internal void ResetGeometryDiagnosticsForTesting() => _geometry.ResetDiagnosticsForTesting();
-        internal bool CanMeasureGeometry(PanelSnapshot snapshot, int sourcePosition) => !_disposed && ReferenceEquals(snapshot, Snapshot) &&
-            sourcePosition >= 0 && sourcePosition < snapshot.Rows.Count && snapshot.Rows[sourcePosition].IsValid &&
-            snapshot.Rows[sourcePosition].GeometryInfo?.CanMeasure == true && !HasGeometryMeasurement(snapshot, sourcePosition);
         internal void RequestGeometryMeasurements(PanelSnapshot snapshot, IEnumerable<int> visiblePositions) => _geometry.RequestVisible(snapshot, visiblePositions);
         internal Task<bool> MeasureGeometryAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken cancellationToken) =>
             _geometry.MeasureAsync(snapshot, positions, cancellationToken);
@@ -192,7 +189,7 @@ namespace BetterGhPanel.Runtime
             if (next.SearchMode < PanelSearchMode.Value) next.DisplayFilterValue = false;
             if (next.DisplayFilterValue) next.Search = string.Empty;
             // A component owns its formatting setting. Direct query updates and
-            // ResetView cannot silently revert the filter's presentation precision.
+            // Resetting the view cannot silently revert the filter's presentation precision.
             if (_decimalPlacesResolver != null) next.DecimalPlaces = _decimalPlacesResolver();
             if (_roundUpFactorResolver != null) next.RoundUpFactor = _roundUpFactorResolver();
             if (_createSetResolver != null) next.CreateSet = _createSetResolver();
@@ -212,8 +209,6 @@ namespace BetterGhPanel.Runtime
             }
             else Notify(); // View resets can clear transient state even when options are unchanged.
         }
-
-        public void ResetView() => UpdateQuery(new PanelQueryOptions());
 
         private void QueueQuery()
         {

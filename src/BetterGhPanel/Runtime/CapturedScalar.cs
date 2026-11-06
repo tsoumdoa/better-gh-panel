@@ -25,7 +25,6 @@ namespace BetterGhPanel.Runtime
         internal bool IsNumeric => _kind == Number || _kind == Integer;
         internal bool IsValid => _valid;
         internal double NumericValue => _number;
-        internal bool IsNegativeZero => IsNumeric && _number == 0 && BitConverter.DoubleToInt64Bits(_number) < 0;
         internal double? RawNumber => IsNumeric ? _rawNumber ?? _number : (double?)null;
         internal PanelValidity Validity => _valid ? PanelValidity.VerifiedValid : PanelValidity.VerifiedInvalid;
 

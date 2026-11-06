@@ -9,7 +9,6 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Parameters;
 using Grasshopper.Kernel.Types;
-using Grasshopper.Kernel.Undo;
 
 namespace BetterGhPanel
 {
@@ -62,7 +61,7 @@ namespace BetterGhPanel
         internal void SetOutputValues(PanelOutputValues values)
         {
             if (!Enum.IsDefined(typeof(PanelOutputValues), values) || OutputValues == values) return;
-            RecordUndoEvent("Panel+ output Items / Values", new OutputValuesUndo(InstanceGuid, OutputValues, values));
+            RecordUndoEvent("Panel+ output Items / Values", new PanelUndo<PanelOutputValues>(InstanceGuid, OutputValues, values, (component, value) => component.ApplyOutputValues(value)));
             ApplyOutputValues(values);
         }
 
@@ -77,25 +76,11 @@ namespace BetterGhPanel
             Instances.ActiveCanvas?.Invalidate();
         }
 
-        private sealed class OutputValuesUndo : GH_UndoAction
-        {
-            private readonly Guid _component;
-            private readonly PanelOutputValues _before, _after;
-            internal OutputValuesUndo(Guid component, PanelOutputValues before, PanelOutputValues after)
-            { _component = component; _before = before; _after = after; }
-            public override bool ExpiresSolution => false;
-            public override bool ExpiresDisplay => false;
-            protected override void Internal_Undo(GH_Document doc) => Apply(doc, _before);
-            protected override void Internal_Redo(GH_Document doc) => Apply(doc, _after);
-            private void Apply(GH_Document doc, PanelOutputValues values) =>
-                (doc.FindObject(_component, false) as BetterPanelComponent)?.ApplyOutputValues(values);
-        }
-
         internal void SetOutputScope(PanelOutputScope scope)
         {
             if (!Enum.IsDefined(typeof(PanelOutputScope), scope) || OutputScope == scope) return;
             // Scope changes must not reload the component and discard its selection.
-            RecordUndoEvent("Panel+ B + F source", new OutputScopeUndo(InstanceGuid, OutputScope, scope));
+            RecordUndoEvent("Panel+ B + F source", new PanelUndo<PanelOutputScope>(InstanceGuid, OutputScope, scope, (component, value) => component.ApplyOutputScope(value)));
             ApplyOutputScope(scope);
         }
 
@@ -106,20 +91,6 @@ namespace BetterGhPanel
             OnPingDocument()?.Modified();
             ScheduleOutput();
             Instances.ActiveCanvas?.Invalidate();
-        }
-
-        private sealed class OutputScopeUndo : GH_UndoAction
-        {
-            private readonly Guid _component;
-            private readonly PanelOutputScope _before, _after;
-            internal OutputScopeUndo(Guid component, PanelOutputScope before, PanelOutputScope after)
-            { _component = component; _before = before; _after = after; }
-            public override bool ExpiresSolution => false;
-            public override bool ExpiresDisplay => false;
-            protected override void Internal_Undo(GH_Document doc) => Apply(doc, _before);
-            protected override void Internal_Redo(GH_Document doc) => Apply(doc, _after);
-            private void Apply(GH_Document doc, PanelOutputScope scope) =>
-                (doc.FindObject(_component, false) as BetterPanelComponent)?.ApplyOutputScope(scope);
         }
 
         private void ClearOutputSources()
