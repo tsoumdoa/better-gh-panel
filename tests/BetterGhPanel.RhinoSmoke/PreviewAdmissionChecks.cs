@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -125,22 +127,22 @@ internal static partial class PreviewSafetyChecks
                 Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && !Bounds(assembly, value).IsValid,
                     "finite-bounds invalid native geometry cannot enter standalone or grouped preview/bounds " + i);
                 var camera = rhino.Views.ActiveView.ActiveViewport.CameraTarget;
-                var framed = actions.GetMethod("Frame", Static)!.Invoke(null, new object[] { new[] { value } })!;
-                Check(!Property<bool>(framed, "Success") && rhino.Views.ActiveView.ActiveViewport.CameraTarget == camera,
+                var framed = actions.GetMethod("Frame", AnyStatic)!.Invoke(null, new object[] { new[] { value } })!;
+                Check(!PropertyValue<bool>(framed, "Success") && rhino.Views.ActiveView.ActiveViewport.CameraTarget == camera,
                     "invalid native frame preserves the camera " + i);
                 Forms.Clipboard.SetText("invalid admission sentinel");
                 var copied = Copy(assembly, new[] { value });
-                Check(!Property<bool>(copied, "Success") && Forms.Clipboard.GetText() == "invalid admission sentinel",
+                Check(!PropertyValue<bool>(copied, "Success") && Forms.Clipboard.GetText() == "invalid admission sentinel",
                     "invalid native copy preserves the clipboard before any writer starts " + i);
             }
         }
         foreach (var value in new IGH_Goo[] { new GH_Mesh { Value = validMesh }, new GH_Brep { Value = validBrep } })
         {
             Set(highlight, new IGH_Goo?[] { value }, new[] { 0 }, new[] { 0 });
-            var framed = actions.GetMethod("Frame", Static)!.Invoke(null, new object[] { new[] { value } })!;
+            var framed = actions.GetMethod("Frame", AnyStatic)!.Invoke(null, new object[] { new[] { value } })!;
             var copied = Copy(assembly, new[] { value });
             Check(Count(highlight) == 1 && !Status(highlight).Contains("partial") && Bounds(assembly, value).IsValid &&
-                Property<bool>(framed, "Success") && Property<bool>(copied, "Success"),
+                PropertyValue<bool>(framed, "Success") && PropertyValue<bool>(copied, "Success"),
                 "valid native control retains ordinary preview, frame and copy: " + value.GetType().Name);
         }
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
@@ -176,7 +178,7 @@ internal static partial class PreviewSafetyChecks
             var snapshot = new PanelSnapshot(Enumerable.Range(0, count).Select(i => new PanelRow(i, "{0}", "Point", i.ToString(), null)).ToArray(),
                 new[] { new PanelBranch("{0}", count) });
             var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
-            object selection = Activator.CreateInstance(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelRowSelection", true)!, Instance,
+            object selection = Activator.CreateInstance(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelRowSelection", true)!, AnyInstance,
                 null, new object?[] { null }, null)!;
             Method(selection, "SelectAll").Invoke(selection, new object?[] { result, null, false });
             void Update()
@@ -184,23 +186,23 @@ internal static partial class PreviewSafetyChecks
                 var ordered = (IReadOnlyList<int>)Method(selection, "OrderedPositions").Invoke(selection, new object[] { result })!;
                 Method(highlight, "SetScopeChecked").Invoke(highlight, new object[] { source, result, false, ordered, (Func<bool>)(() => true), selection });
             }
-            bool Pending() => Property<bool>(Field<object>(highlight, "_recovery"), "Pending");
+            bool Pending() => PropertyValue<bool>(FieldValue<object>(highlight, "_recovery"), "Pending");
             void Drain()
             {
-                for (int turn = 0; turn < 32 && Field<bool>(highlight, "_recoveryScheduled"); turn++)
+                for (int turn = 0; turn < 32 && FieldValue<bool>(highlight, "_recoveryScheduled"); turn++)
                 {
                     Method(highlight, "RecoverOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
-                    Check(Property<int>(highlight, "LastVisitedRows") <= 128 && Property<int>(highlight, "LastVisitedNodes") <= 20000 &&
-                        Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024, "each preview recovery turn obeys row/graph/resource budgets");
+                    Check(PropertyValue<int>(highlight, "LastVisitedRows") <= 128 && PropertyValue<int>(highlight, "LastVisitedNodes") <= 20000 &&
+                        PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024, "each preview recovery turn obeys row/graph/resource budgets");
                 }
-                Check(!Field<bool>(highlight, "_recoveryScheduled"), "preview recovery stops instead of spinning at capacity");
+                Check(!FieldValue<bool>(highlight, "_recoveryScheduled"), "preview recovery stops instead of spinning at capacity");
             }
             Update();
             Check(Count(highlight) == 128 && Pending() && Status(highlight).Contains("partial"),
                 "select all retains and reports its unadmitted suffix above 128 rows");
             Method(selection, "SelectAt").Invoke(selection, new object[] { result, count - 1, count - 1, true, false, false });
             Update();
-            Check(Status(highlight).Contains("partial") && Property<int>(highlight, "LastVisitedRows") <= 1,
+            Check(Status(highlight).Contains("partial") && PropertyValue<int>(highlight, "LastVisitedRows") <= 1,
                 "a sparse deselection preserves partial status without scanning the dense selection");
             Drain();
             if (count == 200)
@@ -214,17 +216,17 @@ internal static partial class PreviewSafetyChecks
                 {
                     Method(selection, "SelectAt").Invoke(selection, new object[] { result, i, i, true, false, false });
                     Update();
-                    Check(Property<int>(highlight, "LastVisitedRows") <= 1, "capacity-release toggles remain sparse");
+                    Check(PropertyValue<int>(highlight, "LastVisitedRows") <= 1, "capacity-release toggles remain sparse");
                 }
                 Drain();
                 Check(Count(highlight) == 999 && !Pending() && Status(highlight) == string.Empty &&
                     Box(highlight).Contains(new Point3d(1098, 0, 0)), "capacity release recovers deferred selected rows without another solve");
                 Method(selection, "SelectAt").Invoke(selection, new object[] { result, 0, 0, true, false, false }); Update();
-                Check(Count(highlight) == 1000 && Property<int>(highlight, "LastVisitedRows") <= 1,
+                Check(Count(highlight) == 1000 && PropertyValue<int>(highlight, "LastVisitedRows") <= 1,
                     "a previously evicted/deselected row can be selected again with one admission");
             }
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
-            Check(!Pending() && !Field<bool>(highlight, "_recoveryScheduled"), "clearing cancels deferred preview recovery");
+            Check(!Pending() && !FieldValue<bool>(highlight, "_recoveryScheduled"), "clearing cancels deferred preview recovery");
         }
     }
 
@@ -274,7 +276,7 @@ internal static partial class PreviewSafetyChecks
         if (!copy) fixture.Select(input.Length - 1, toggle: true);
         await Ready(() => fixture.Sinks[1].VolatileData.DataCount == (copy ? 1 : 2));
         var snapshot = fixture.Result.Snapshot;
-        var source = Field<IGH_Goo?[]>(fixture.Component, "_sourceItems");
+        var source = FieldValue<IGH_Goo?[]>(fixture.Component, "_sourceItems");
         var currentGroup = (GH_GeometryGroup)source[position]!;
         var currentEarlier = set ? (GH_GeometryGroup)source[0]! : null;
         var currentPreview = (ActionPointPreview)source[input.Length - 1]!;
@@ -394,7 +396,7 @@ internal static partial class PreviewSafetyChecks
             ? $"{item.GetType().Name}(Name={JsonSerializer.Serialize(group.Name)}, directCount={group.Objects.Count})"
             : item?.GetType().Name ?? "<null>";
         var delivered = fixture.Component.Params.Input[0].VolatileData.AllData(false).ToArray();
-        var captured = Field<IGH_Goo?[]>(fixture.Component, "_sourceItems");
+        var captured = FieldValue<IGH_Goo?[]>(fixture.Component, "_sourceItems");
         var snapshot = fixture.Result.Snapshot;
         Console.WriteLine($"SEMANTIC_DELIVERY phase={JsonSerializer.Serialize(phase)} action={(copy ? "copy" : "frame")} set={set} " +
             $"snapshotRows={snapshot.Rows.Count} matches=[{string.Join(",", fixture.Result.RowPositions)}]");

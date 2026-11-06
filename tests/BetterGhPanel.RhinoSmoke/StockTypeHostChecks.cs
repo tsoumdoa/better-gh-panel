@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -16,32 +18,28 @@ using Rhino.Display;
 using Rhino.FileIO;
 using Rhino.Geometry;
 
-internal static class StockTypeChecks
+internal static class StockTypeHostChecks
 {
-    private const BindingFlags Static = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
-    private const BindingFlags Instance = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
     internal static Task Run(Assembly assembly) => PanelHostFixture.RunWithEditor(assembly, Verify);
-    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
-    private static T Property<T>(object value, string name) => (T)value.GetType().GetProperty(name, Instance)!.GetValue(value)!;
     private static object?[] Capture(Assembly assembly, params IGH_Goo[] values)
     {
         var tree = new GH_Structure<IGH_Goo>(); tree.AppendRange(values, new GH_Path(0));
         object?[] args = { tree, null, null, null, PanelUnitConversion.None, "mm", null, null, null, null, null };
-        var snapshot = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("CaptureForMeasurements", Static)!.Invoke(null, args)!;
+        var snapshot = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("CaptureForMeasurements", AnyStatic)!.Invoke(null, args)!;
         return new[] { snapshot, args[1], args[2], args[3] };
     }
     private static void Number(PanelRow row, PanelSearchMode mode, double expected) => Check(
         PanelProperties.TryGet(row, mode, null, out var value) && value != null && value.Number == expected, mode + " is captured");
 
     private static bool Current(Assembly assembly, string method, params object?[] args) =>
-        (bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod(method, Static)!.Invoke(null, args)!;
+        (bool)assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod(method, AnyStatic)!.Invoke(null, args)!;
     private static void Output(PanelHostFixture.Fixture fixture, PanelOutputValues mode) =>
-        fixture.Component.GetType().GetMethod("SetOutputValues", Instance)!.Invoke(fixture.Component, new object[] { mode });
+        fixture.Component.GetType().GetMethod("SetOutputValues", AnyInstance)!.Invoke(fixture.Component, new object[] { mode });
     private static void Budget(Assembly assembly, IGH_Goo value, int size)
     {
         var tree = new GH_Structure<IGH_Goo>(); tree.AppendRange(Enumerable.Repeat(value, 1000), new GH_Path(0));
-        var seed = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("PrepareInputs", Static)!.Invoke(null, new object[] { tree })!;
-        var incomplete = Property<bool[]>(seed, "Incomplete");
+        var seed = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("PrepareInputs", AnyStatic)!.Invoke(null, new object[] { tree })!;
+        var incomplete = PropertyValue<bool[]>(seed, "Incomplete");
         Check(incomplete.Take(100000 / size).All(v => !v) && incomplete.Skip(100000 / size).All(v => v), "aggregate capture budget charges " + value.GetType().Name + " by size");
     }
 
@@ -101,8 +99,8 @@ internal static class StockTypeChecks
         var cultureCapture = Capture(assembly, cultureHolder);
         cultureHolder.Value = CultureInfo.GetCultureInfo("en-US");
         Check(!Current(assembly, "GraphSourcesCurrent", cultureCapture[3]), "culture identity replacement invalidates its string witness");
-        var nullPath = new GH_StructurePath(); typeof(GH_StructurePath).GetField("m_value", Instance)!.SetValue(nullPath, null);
-        var pathProperties = (Dictionary<PanelSearchMode, PanelPropertyValue?>)assembly.GetType("BetterGhPanel.Runtime.PanelPropertyCapture", true)!.GetMethod("Scalar", Static)!.Invoke(null, new object[] { nullPath, "mm" })!;
+        var nullPath = new GH_StructurePath(); typeof(GH_StructurePath).GetField("m_value", AnyInstance)!.SetValue(nullPath, null);
+        var pathProperties = (Dictionary<PanelSearchMode, PanelPropertyValue?>)assembly.GetType("BetterGhPanel.Runtime.PanelPropertyCapture", true)!.GetMethod("Scalar", AnyStatic)!.Invoke(null, new object[] { nullPath, "mm" })!;
         var emptyField = (GH_Field)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(GH_Field));
         var nulls = (PanelSnapshot)Capture(assembly, emptyField, new GH_Material { Value = null })[0]!;
         Check(!pathProperties.ContainsKey(PanelSearchMode.PathDepth) && nulls.Rows[0].DisplayValue == "Null field" && nulls.Rows[1].DisplayValue == "Null material", "null path, field and material values are guarded");
@@ -132,34 +130,34 @@ internal static class StockTypeChecks
         using var graphMatrix = new Matrix(63, 63); graphMatrix[0, 0] = 1;
         var witnessType = assembly.GetType("BetterGhPanel.Runtime.CaptureGraphWitness", true)!;
         object?[] graphArgs = { new GH_ObjectWrapper(new GH_Matrix(graphMatrix)), 5000, null };
-        bool graphCaptured = (bool)witnessType.GetMethod("TryCapture", Static)!.Invoke(null, graphArgs)!;
+        bool graphCaptured = (bool)witnessType.GetMethod("TryCapture", AnyStatic)!.Invoke(null, graphArgs)!;
         object?[] visits = { 0 };
-        Check(graphCaptured && (int)graphArgs[1]! == 1030 && (bool)witnessType.GetMethod("IsCurrent", Instance, null, new[] { typeof(int).MakeByRefType() }, null)!.Invoke(graphArgs[2], visits)! && (int)visits[0]! == 3970, "graph matrix capture and recheck count cells rather than one node");
+        Check(graphCaptured && (int)graphArgs[1]! == 1030 && (bool)witnessType.GetMethod("IsCurrent", AnyInstance, null, new[] { typeof(int).MakeByRefType() }, null)!.Invoke(graphArgs[2], visits)! && (int)visits[0]! == 3970, "graph matrix capture and recheck count cells rather than one node");
         var nullWrapped = new GH_ObjectWrapper(nullPath);
         using var emptyMatrix = new Matrix(0, 0);
         var emptyValues = (PanelSnapshot)Capture(assembly, nullPath, nullWrapped, new GH_Matrix { Value = null }, new GH_Matrix(emptyMatrix))[0]!;
         Check(emptyValues.Rows.All(row => row.Validity == PanelValidity.VerifiedInvalid) && emptyValues.Rows[0].DisplayValue == "<null>" && emptyValues.Rows[2].DisplayValue == "<null>" && emptyValues.Rows[3].DisplayValue == "<empty>", "null path and matrix values have consistent invalid/empty presentation: " + string.Join(" / ", emptyValues.Rows.Select(row => row.Validity + " " + row.DisplayValue + " " + row.InvalidReason)));
 
         var highlight = Activator.CreateInstance(assembly.GetType("BetterGhPanel.Runtime.PanelGeometryHighlight", true)!, true)!;
-        object Call(string name, params object[] args) => highlight.GetType().GetMethod(name, Instance)!.Invoke(highlight, args)!;
+        object Call(string name, params object[] args) => highlight.GetType().GetMethod(name, AnyInstance)!.Invoke(highlight, args)!;
         try
         {
             var group = new GH_GeometryGroup(); group.Objects.Add(holder); group.Objects.Add(new GH_Point(Point3d.Origin));
             Call("Set", new IGH_Goo[] { group }, new[] { 0 }, new[] { 0 });
-            Check(Property<int>(highlight, "PreviewCount") == 1 && Property<string>(highlight, "Status") == "", "dot and point admit owned preview in a group");
-            var bounds = Property<BoundingBox>(highlight, "ClippingBox");
+            Check(PropertyValue<int>(highlight, "PreviewCount") == 1 && PropertyValue<string>(highlight, "Status") == "", "dot and point admit owned preview in a group");
+            var bounds = PropertyValue<BoundingBox>(highlight, "ClippingBox");
             Check(bounds.Contains(dot.Point), "dot contributes viewport clipping bounds");
             var actions = assembly.GetType("BetterGhPanel.Runtime.PanelGeometryActions", true)!;
-            var frame = actions.GetMethod("Frame", Static)!.Invoke(null, new object[] { new IGH_Goo[] { holder } })!;
-            Check(Property<bool>(frame, "Success") && Property<int>(frame, "Skipped") == 0, "dot frames in Rhino");
+            var frame = actions.GetMethod("Frame", AnyStatic)!.Invoke(null, new object[] { new IGH_Goo[] { holder } })!;
+            Check(PropertyValue<bool>(frame, "Success") && PropertyValue<int>(frame, "Skipped") == 0, "dot frames in Rhino");
             var previousClipboard = System.Windows.Forms.Clipboard.GetDataObject();
             try
             {
                 Check(dot.GetUserString("panel.source") == "dot", "preview/frame leave source metadata intact");
                 byte[]? bytes = null;
-                var copy = actions.GetMethod("CopyGeometryWithArchiveObserver", Static)!.Invoke(null, new object[] {
+                var copy = actions.GetMethod("CopyGeometryWithArchiveObserver", AnyStatic)!.Invoke(null, new object[] {
                     new IGH_Goo[] { holder }, rhino.ModelUnitSystem, rhino.ModelAbsoluteTolerance, (Action<byte[]>)(value => bytes = value) })!;
-                Check(Property<bool>(copy, "Success") && Property<int>(copy, "Count") == 1 && bytes != null, "dot copy publishes one Rhino geometry");
+                Check(PropertyValue<bool>(copy, "Success") && PropertyValue<int>(copy, "Count") == 1 && bytes != null, "dot copy publishes one Rhino geometry");
                 using var file = File3dm.FromByteArray(bytes!);
                 var copied = file.Objects.Select(item => item.Geometry).OfType<TextDot>().Single();
                 Check(copied.Text == dot.Text && copied.Point == dot.Point && copied.FontHeight == dot.FontHeight && copied.FontFace == dot.FontFace && copied.SecondaryText == dot.SecondaryText && copied.GetUserString("panel.source") == "dot", "copy archive preserves dot values and font");
@@ -190,9 +188,9 @@ internal static class StockTypeChecks
         fixture.Source.PersistentData.AppendRange(new IGH_Goo[] { new GH_Point(new Point3d(1, 2, 3)), textHolder, new GH_String("Text row") }, new GH_Path(1));
         fixture.Solve(); await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 6 && fixture.Sinks[0].VolatileData.DataCount == 6);
         fixture.Select(0); await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
-        fixture.Component.GetType().GetMethod("HighlightRows", Instance)!.Invoke(fixture.Component, new object[] { fixture.Result.Snapshot, new[] { 0 } });
-        var componentHighlight = fixture.Component.GetType().GetField("_highlight", Instance)!.GetValue(fixture.Component)!;
-        Check(Property<int>(componentHighlight, "PreviewCount") == 1, "selected dot owns one component preview");
+        fixture.Component.GetType().GetMethod("HighlightRows", AnyInstance)!.Invoke(fixture.Component, new object[] { fixture.Result.Snapshot, new[] { 0 } });
+        var componentHighlight = fixture.Component.GetType().GetField("_highlight", AnyInstance)!.GetValue(fixture.Component)!;
+        Check(PropertyValue<int>(componentHighlight, "PreviewCount") == 1, "selected dot owns one component preview");
         SavePanel(fixture, canvas, "dots-mixed.png"); await SaveViewport(fixture, rhino);
 
         fixture.Source.PersistentData.Clear();

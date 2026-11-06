@@ -1,3 +1,4 @@
+using static SmokeAssertions;
 using System;
 using System.Linq;
 using System.Reflection;
@@ -155,11 +156,6 @@ internal static class GeometryPolylineSafetyChecks
             .Invoke(prepared, arguments)!;
         Check(claimed, "worker claims prepared polyline exactly once");
         return (PanelGeometryInfo?)arguments[0];
-    }
-
-    private static void Check(bool condition, string message)
-    {
-        SmokeAssertions.Check(condition, message);
     }
 }
 

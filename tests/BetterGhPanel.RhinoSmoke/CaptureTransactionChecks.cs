@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -16,8 +18,6 @@ using Rhino.Geometry;
 
 internal static class CaptureTransactionChecks
 {
-    private const BindingFlags Static = BindingFlags.Static | BindingFlags.NonPublic;
-    private const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
 
     internal static void VerifyNestedDataAccess()
     {
@@ -37,7 +37,7 @@ internal static class CaptureTransactionChecks
         using var owned = previous == null ? new GH_DocumentEditor() : null;
         var editor = previous ?? owned!;
         _ = editor.Handle;
-        var setEditor = typeof(Instances).GetMethod("SetDocumentEditor", Static)!;
+        var setEditor = typeof(Instances).GetMethod("SetDocumentEditor", NonPublicStatic)!;
         setEditor.Invoke(null, new object?[] { editor });
         try
         {
@@ -74,8 +74,8 @@ internal static class CaptureTransactionChecks
     private static void VerifyScalarRetargetAndRestore(Assembly assembly)
     {
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!;
-        var method = capture.GetMethod("CaptureForMeasurements", Static)!;
-        var current = capture.GetMethod("ManagedRowsCurrent", Static)!;
+        var method = capture.GetMethod("CaptureForMeasurements", NonPublicStatic)!;
+        var current = capture.GetMethod("ManagedRowsCurrent", NonPublicStatic)!;
         var number = new GH_Number(1); var text = new GH_String("before");
         var tree = new GH_Structure<IGH_Goo>();
         tree.AppendRange(new IGH_Goo[] { new GH_Curve { Value = new LineCurve(Point3d.Origin, new Point3d(1, 0, 0)) },
@@ -205,8 +205,8 @@ internal static class CaptureTransactionChecks
             var point = new GH_Point(first);
             Check(point.LoadGeometry(document), "point reference fixture loads a real document point");
             var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!;
-            var method = capture.GetMethod("CaptureForMeasurements", Static)!;
-            var current = capture.GetMethod("GraphSourcesCurrent", Static)!;
+            var method = capture.GetMethod("CaptureForMeasurements", NonPublicStatic)!;
+            var current = capture.GetMethod("GraphSourcesCurrent", NonPublicStatic)!;
             object?[] Capture(IGH_Goo item, Action<int, IGH_Goo?>? observer = null)
             {
                 var tree = new GH_Structure<IGH_Goo>(); tree.Append(item, new GH_Path(0));
@@ -244,7 +244,7 @@ internal static class CaptureTransactionChecks
         fixture.Paired.PersistentData.Append(new GH_String("point"), new GH_Path(0));
         fixture.Solve(); await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 1 && fixture.Sinks[0].VolatileData.DataCount == 1);
         var before = fixture.Result.Snapshot;
-        var hook = fixture.Component.GetType().GetProperty("BeforeOutputValidationForTesting", Private)!;
+        var hook = fixture.Component.GetType().GetProperty("BeforeOutputValidationForTesting", NonPublicInstance)!;
         bool called = false;
         hook.SetValue(fixture.Component, (Action)(() =>
         {
@@ -287,28 +287,28 @@ internal static class CaptureTransactionChecks
         fixture.Solve(); await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == count && fixture.Sinks[0].VolatileData.DataCount == count);
         var component = fixture.Component;
         var type = component.GetType();
-        var selection = type.GetProperty("RowSelection", Private)!.GetValue(component)!;
-        var select = selection.GetType().GetMethod("Select", Private)!;
-        var selectAll = selection.GetType().GetMethod("SelectAll", Private)!;
-        var ordered = selection.GetType().GetMethod("OrderedPositions", Private)!;
-        var highlight = type.GetMethod("HighlightRows", Private)!;
-        var enabled = type.GetProperty("CaptureDiagnosticsForTesting", Private)!;
-        var reset = type.GetMethod("ResetCaptureDiagnosticsForTesting", Private)!;
-        var passes = type.GetProperty("CaptureValidationPassesForTesting", Private)!;
-        var validation = type.GetProperty("CaptureValidationVisitsForTesting", Private)!;
-        var reconstruction = type.GetProperty("OutputReconstructionVisitsForTesting", Private)!;
-        var publication = type.GetProperty("OutputPublicationItemsForTesting", Private)!;
-        var holderVisits = type.GetProperty("CaptureMeasurementSourceVisitsForTesting", Private)!;
-        var entryVisits = type.GetProperty("MeasurementEntryVisitsForTesting", Private)!;
-        var entryCopies = type.GetProperty("MeasurementEntryCopiesForTesting", Private)!;
-        var sourceChecks = type.GetProperty("MeasurementSourceChecksForTesting", Private)!;
-        var sourceScans = type.GetProperty("MeasurementSourceScansForTesting", Private)!;
-        var entryCount = type.GetProperty("MeasurementEntryCountForTesting", Private)!;
+        var selection = type.GetProperty("RowSelection", NonPublicInstance)!.GetValue(component)!;
+        var select = selection.GetType().GetMethod("Select", NonPublicInstance)!;
+        var selectAll = selection.GetType().GetMethod("SelectAll", NonPublicInstance)!;
+        var ordered = selection.GetType().GetMethod("OrderedPositions", NonPublicInstance)!;
+        var highlight = type.GetMethod("HighlightRows", NonPublicInstance)!;
+        var enabled = type.GetProperty("CaptureDiagnosticsForTesting", NonPublicInstance)!;
+        var reset = type.GetMethod("ResetCaptureDiagnosticsForTesting", NonPublicInstance)!;
+        var passes = type.GetProperty("CaptureValidationPassesForTesting", NonPublicInstance)!;
+        var validation = type.GetProperty("CaptureValidationVisitsForTesting", NonPublicInstance)!;
+        var reconstruction = type.GetProperty("OutputReconstructionVisitsForTesting", NonPublicInstance)!;
+        var publication = type.GetProperty("OutputPublicationItemsForTesting", NonPublicInstance)!;
+        var holderVisits = type.GetProperty("CaptureMeasurementSourceVisitsForTesting", NonPublicInstance)!;
+        var entryVisits = type.GetProperty("MeasurementEntryVisitsForTesting", NonPublicInstance)!;
+        var entryCopies = type.GetProperty("MeasurementEntryCopiesForTesting", NonPublicInstance)!;
+        var sourceChecks = type.GetProperty("MeasurementSourceChecksForTesting", NonPublicInstance)!;
+        var sourceScans = type.GetProperty("MeasurementSourceScansForTesting", NonPublicInstance)!;
+        var entryCount = type.GetProperty("MeasurementEntryCountForTesting", NonPublicInstance)!;
         if (measuredGeometry)
         {
             // Populate actual production preparations/workers, not a replacement
             // resolver, synthetic cache entries, or geometry-free point summaries.
-            var batch = (Task<bool>)fixture.Session.GetType().GetMethod("MeasureGeometryAsync", Private)!
+            var batch = (Task<bool>)fixture.Session.GetType().GetMethod("MeasureGeometryAsync", NonPublicInstance)!
                 .Invoke(fixture.Session, new object[] { fixture.Result.Snapshot, Enumerable.Range(0, count).ToArray(), CancellationToken.None })!;
             if (await Task.WhenAny(batch, Task.Delay(TimeSpan.FromSeconds(60))) != batch)
                 throw new TimeoutException("Populating measured selection entries timed out");
@@ -372,7 +372,7 @@ internal static class CaptureTransactionChecks
                 long measuredSourceChecks = (long)sourceChecks.GetValue(component)!;
                 long measuredSourceScans = (long)sourceScans.GetValue(component)!;
                 var preview = Field(fixture, "_highlight")!;
-                int PreviewCount(string property) => (int)preview.GetType().GetProperty(property, Private)!.GetValue(preview)!;
+                int PreviewCount(string property) => (int)preview.GetType().GetProperty(property, NonPublicInstance)!.GetValue(preview)!;
                 Console.WriteLine("SELECTION_GESTURE input=" + (measuredGeometry ? "measured-curves" : "points") +
                     " rows=" + count + " entries=" + entryCount.GetValue(component) + " mode=" + mode + " labels=" + labels + " gesture=" + gesture +
                     " elapsedMs=" + timer.ElapsedMilliseconds + " validationPasses=" + scanPasses +
@@ -397,7 +397,7 @@ internal static class CaptureTransactionChecks
                         reconstructionVisits == 2L * count + 4L * expected + 1 && publicationItems == 2L * count + 2L * expected,
                         "a measured selection gesture checks all captured holders once; cache reads are limited to rendered rows without a cache scan/copy");
                     Check(PreviewCount("PreviewCount") > 0 && ReferenceEquals(result,
-                        preview.GetType().GetField("_orderResult", Private)!.GetValue(preview)) == labels,
+                        preview.GetType().GetField("_orderResult", NonPublicInstance)!.GetValue(preview)) == labels,
                         "both preview scopes build owned geometry with item labels following the requested setting");
                     var d = fixture.Sinks[0].VolatileData.AllData(false).ToArray();
                     var s = fixture.Sinks[1].VolatileData.AllData(false).ToArray();
@@ -428,13 +428,13 @@ internal static class CaptureTransactionChecks
         var component = fixture.Component; var type = component.GetType();
         var snapshot = fixture.Result.Snapshot;
         var source = (GH_Curve)((IGH_Goo?[])Field(fixture, "_sourceItems")!)[0]!;
-        var hook = type.GetProperty("BeforeOutputValidationForTesting", Private)!;
+        var hook = type.GetProperty("BeforeOutputValidationForTesting", NonPublicInstance)!;
         NestedCaptureDataAccess Publish(Action? callback)
         {
             var access = new NestedCaptureDataAccess();
-            type.GetField("_reuseQuery", Private)!.SetValue(component, true);
+            type.GetField("_reuseQuery", NonPublicInstance)!.SetValue(component, true);
             hook.SetValue(component, callback);
-            try { type.GetMethod("SolveInstance", Private)!.Invoke(component, new object[] { access }); }
+            try { type.GetMethod("SolveInstance", NonPublicInstance)!.Invoke(component, new object[] { access }); }
             finally { hook.SetValue(component, null); }
             return access;
         }
@@ -464,8 +464,8 @@ internal static class CaptureTransactionChecks
     private static void VerifyStructureWitness(Assembly assembly)
     {
         var operations = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!;
-        var copy = operations.GetMethod("CopyStructure", Static)!;
-        var matches = operations.GetMethod("StructureStillMatches", Static)!;
+        var copy = operations.GetMethod("CopyStructure", NonPublicStatic)!;
+        var matches = operations.GetMethod("StructureStillMatches", NonPublicStatic)!;
         GH_Structure<IGH_Goo> Make()
         {
             var tree = new GH_Structure<IGH_Goo>();
@@ -508,7 +508,7 @@ internal static class CaptureTransactionChecks
         await fixture.Ready(() => captures >= 2 && fixture.Result.Snapshot.Rows.Count == 2);
         SetObserver(fixture, null);
         var operations = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!;
-        var matches = operations.GetMethod("StructureStillMatches", Static)!;
+        var matches = operations.GetMethod("StructureStillMatches", NonPublicStatic)!;
         bool dCurrent = (bool)matches.Invoke(null, new[] { Field(fixture, "_liveInputTree"), Field(fixture, "_inputTree") })!;
         bool fCurrent = (bool)matches.Invoke(null, new[] { Field(fixture, "_livePairedTree"), Field(fixture, "_pairedInputTree") })!;
         Check(changed && dCurrent && fCurrent && fixture.Component.Params.Output[0].VolatileData.DataCount == 2,
@@ -536,8 +536,8 @@ internal static class CaptureTransactionChecks
     private static void VerifyRetargetAndRestore(Assembly assembly)
     {
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!;
-        var method = capture.GetMethod("CaptureForMeasurements", Static)!;
-        var current = capture.GetMethod("GraphSourcesCurrent", Static)!;
+        var method = capture.GetMethod("CaptureForMeasurements", NonPublicStatic)!;
+        var current = capture.GetMethod("GraphSourcesCurrent", NonPublicStatic)!;
         PanelSnapshot Capture(IGH_Goo root, Action<object>? visitor, out object? graphs)
         {
             var tree = new GH_Structure<IGH_Goo>(); tree.Append(root, new GH_Path(0));
@@ -595,9 +595,9 @@ internal static class CaptureTransactionChecks
     private static void VerifyGraphMutations(Assembly assembly)
     {
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!;
-        var captureMethod = capture.GetMethod("CaptureForMeasurements", Static)!;
-        var graphsCurrent = capture.GetMethod("GraphSourcesCurrent", Static)!;
-        var sourcesCurrent = capture.GetMethod("MeasurementSourcesCurrent", Static)!;
+        var captureMethod = capture.GetMethod("CaptureForMeasurements", NonPublicStatic)!;
+        var graphsCurrent = capture.GetMethod("GraphSourcesCurrent", NonPublicStatic)!;
+        var sourcesCurrent = capture.GetMethod("MeasurementSourcesCurrent", NonPublicStatic)!;
         void CheckGraph(string description, Action<GH_GeometryGroup, GH_ObjectWrapper, GH_Curve> mutate)
         {
             var group = Group();
@@ -636,7 +636,7 @@ internal static class CaptureTransactionChecks
         Action<int, IGH_Goo?> changeEarlier = (position, _) => { if (position == 2) { number.Value = 100; text.Value = "after"; } };
         var scalarArgs = new object?[] { scalarTree, null, null, null, PanelUnitConversion.None, "mm", null, changeEarlier, null, null, null };
         var scalarSnapshot = (PanelSnapshot)captureMethod.Invoke(null, scalarArgs)!;
-        var managedCurrent = capture.GetMethod("ManagedRowsCurrent", Static)!;
+        var managedCurrent = capture.GetMethod("ManagedRowsCurrent", NonPublicStatic)!;
         Check(!(bool)managedCurrent.Invoke(null, new[] { scalarSnapshot, scalarArgs[1] })!,
             "later geometry inspection cannot leave earlier numeric or text values stale");
 
@@ -658,8 +658,8 @@ internal static class CaptureTransactionChecks
     private static void VerifyLargeScalarCapture(Assembly assembly)
     {
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!;
-        var captureMethod = capture.GetMethod("CaptureForMeasurements", Static)!;
-        var current = capture.GetMethod("ManagedRowsCurrentWithVisits", Static)!;
+        var captureMethod = capture.GetMethod("CaptureForMeasurements", NonPublicStatic)!;
+        var current = capture.GetMethod("ManagedRowsCurrentWithVisits", NonPublicStatic)!;
         var tree = new GH_Structure<IGH_Goo>();
         string text = new string('x', 256);
         for (int i = 0; i < 50000; i++) tree.Append(new GH_Number(i), new GH_Path(0));
@@ -674,7 +674,7 @@ internal static class CaptureTransactionChecks
             snapshot.Rows.Count == 100000 && snapshot.Rows.All(row => row.IsValid) && ReferenceEquals(snapshot.Rows[50000].StringValue, text),
             "100k ordinary scalar rows use one linear comparison without graph witnesses or full-string copies");
         var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
-        var filter = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!.GetMethod("Filter", Static)!;
+        var filter = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!.GetMethod("Filter", NonPublicStatic)!;
         var output = (GH_Structure<IGH_Goo>)filter.Invoke(null, new object[] { tree, result })!;
         Check(output.DataCount == 100000 && ReferenceEquals(output.Branches[0][0], tree.Branches[0][0]) &&
             ReferenceEquals(output.Branches[0][99999], tree.Branches[0][99999]), "unchanged large scalar output preserves all typed input values");
@@ -751,7 +751,7 @@ internal static class CaptureTransactionChecks
                 // Exercise the component's real SolveInstance and publication logic
                 // reentrantly, without recursively entering GH_Document.NewSolution.
                 Console.WriteLine("CAPTURE_REENTRY: starting the newer component solve"); Console.Out.Flush();
-                fixture.Component.GetType().GetMethod("SolveInstance", Private)!.Invoke(fixture.Component, new object[] { access });
+                fixture.Component.GetType().GetMethod("SolveInstance", NonPublicInstance)!.Invoke(fixture.Component, new object[] { access });
                 nestedSnapshot = (PanelSnapshot)fixture.Session.GetType().GetProperty("Snapshot")!.GetValue(fixture.Session)!;
                 Console.WriteLine("CAPTURE_REENTRY: newer component solve returned"); Console.Out.Flush();
             }
@@ -799,7 +799,7 @@ internal static class CaptureTransactionChecks
         });
         fixture.Solve();
         await Task.Delay(30);
-        Check(called && oldSession != null && (bool)oldSession.GetType().GetProperty("IsDisposed", Private)!.GetValue(oldSession)! &&
+        Check(called && oldSession != null && (bool)oldSession.GetType().GetProperty("IsDisposed", NonPublicInstance)!.GetValue(oldSession)! &&
             Field(fixture, "_session") == null && Field(fixture, "_queryTree") == null && Field(fixture, "_measurementSnapshot") == null &&
             !fixture.Component.Params.Output[0].VolatileData.AllData(false).Any(item => item is GH_Curve || item is GH_ObjectWrapper || item is GH_GeometryGroup),
             (closeDocument ? "document close" : "removal") + " while " + (wrappedGroup ? "wrapper/group" : "standalone holder") +
@@ -842,16 +842,15 @@ internal static class CaptureTransactionChecks
         return group;
     }
     private static void SetObserver(PanelHostFixture.Fixture f, Action<int, IGH_Goo?>? observer) =>
-        f.Component.GetType().GetProperty("CaptureObserverForTesting", Private)!.SetValue(f.Component, observer);
+        f.Component.GetType().GetProperty("CaptureObserverForTesting", NonPublicInstance)!.SetValue(f.Component, observer);
     private static void SetStructureObserver(PanelHostFixture.Fixture f, Action<GH_Structure<IGH_Goo>, GH_Structure<IGH_Goo>?>? observer) =>
-        f.Component.GetType().GetProperty("StructureObserverForTesting", Private)!.SetValue(f.Component, observer);
+        f.Component.GetType().GetProperty("StructureObserverForTesting", NonPublicInstance)!.SetValue(f.Component, observer);
     private static async Task Wait(Func<bool> condition)
     {
         var timer = Stopwatch.StartNew();
         while (!condition()) { if (timer.Elapsed.TotalSeconds > 20) throw new TimeoutException("Capture fixture timed out"); await Task.Delay(10); }
     }
-    private static object? Field(PanelHostFixture.Fixture f, string name) => f.Component.GetType().GetField(name, Private)!.GetValue(f.Component);
-    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
+    private static object? Field(PanelHostFixture.Fixture f, string name) => f.Component.GetType().GetField(name, NonPublicInstance)!.GetValue(f.Component);
 }
 
 // Supplies a second set of real GH trees to the real component solve while the

@@ -1,3 +1,4 @@
+using static SmokeAssertions;
 using System;
 using System.Diagnostics;
 using System.Linq;
@@ -241,5 +242,4 @@ internal static class GeometryNurbsCandidateChecks
             await Task.Delay(10);
         }
     }
-    private static void Check(bool condition, string message) => SmokeAssertions.Check(condition, message);
 }
