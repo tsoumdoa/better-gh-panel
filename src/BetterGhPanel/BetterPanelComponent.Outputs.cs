@@ -17,8 +17,6 @@ namespace BetterGhPanel
         private PanelRowSelection? _queryPreviewSelection;
         internal PanelRowSelection CommittedSelection => _committedSelection;
         internal PanelRowSelection RowSelection => _queryPreviewSelection ?? _committedSelection;
-        internal PanelOutputScope OutputScope { get; private set; }
-        internal PanelOutputValues OutputValues { get; private set; }
         internal static bool CanOutputValuesFor(bool createSet, PanelQueryOptions options) => createSet || options.DisplayFilterValue;
         internal bool CanOutputValues => CanOutputValuesFor(CreateSetTree, Session.Options);
         internal bool OutputsValues => CanOutputValues && OutputValues == PanelOutputValues.Values;
@@ -58,42 +56,6 @@ namespace BetterGhPanel
         private PanelQueryResult? _cachedOutputResult;
         private GH_Structure<IGH_Goo>? _filteredData, _filteredPair;
         private GH_Structure<GH_Boolean>? _filteredMask;
-
-        internal void SetOutputValues(PanelOutputValues values)
-        {
-            if (!Enum.IsDefined(typeof(PanelOutputValues), values) || OutputValues == values) return;
-            RecordUndoEvent("Panel+ output Items / Values", new PanelUndo<PanelOutputValues>(InstanceGuid, OutputValues, values, (component, value) => component.ApplyOutputValues(value)));
-            ApplyOutputValues(values);
-        }
-
-        private void ApplyOutputValues(PanelOutputValues values)
-        {
-            OutputValues = values;
-            _cachedOutputResult = null;
-            Session.UpdateQuery(Session.Options);
-            Attributes.ExpireLayout();
-            OnPingDocument()?.Modified();
-            ScheduleOutput();
-            Instances.ActiveCanvas?.Invalidate();
-        }
-
-        internal void SetOutputScope(PanelOutputScope scope)
-        {
-            if (!Enum.IsDefined(typeof(PanelOutputScope), scope) || OutputScope == scope) return;
-            // Scope changes must not reload the component and discard its selection.
-            RecordUndoEvent("Panel+ B + F follow", new PanelUndo<PanelOutputScope>(InstanceGuid, OutputScope, scope, (component, value) => component.ApplyOutputScope(value)));
-            ApplyOutputScope(scope);
-        }
-
-        private void ApplyOutputScope(PanelOutputScope scope)
-        {
-            OutputScope = scope;
-            UpdateOutputDescriptions();
-            Attributes.ExpireLayout();
-            OnPingDocument()?.Modified();
-            ScheduleOutput();
-            Instances.ActiveCanvas?.Invalidate();
-        }
 
         private void UpdateOutputDescriptions()
         {
