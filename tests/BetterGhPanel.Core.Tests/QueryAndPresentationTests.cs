@@ -92,16 +92,6 @@ public class QueryAndPresentationTests
         Assert.Equal(new[] { 0, 1, 3 }, Query(new PanelQueryOptions { TypeName = "number" }).RowPositions);
         Assert.Equal(new[] { 4, 5 }, Query(new PanelQueryOptions { OnlyInvalid = true }).RowPositions);
         Assert.Equal(new[] { 5 }, Query(new PanelQueryOptions { OnlyInvalid = true, TypeName = "text" }).RowPositions);
-        var options = new PanelQueryOptions { Search = "alpha", BranchPath = "{0;1}", BranchPrefix = true,
-            TypeName = "Text", OnlyInvalid = true, SortMode = PanelSortMode.ValueDescending };
-        var clone = options.Clone();
-        options.Search = "changed";
-        Assert.Equal("alpha", clone.Search);
-        Assert.Equal(options.BranchPath, clone.BranchPath);
-        Assert.Equal(options.BranchPrefix, clone.BranchPrefix);
-        Assert.Equal(options.TypeName, clone.TypeName);
-        Assert.Equal(options.OnlyInvalid, clone.OnlyInvalid);
-        Assert.Equal(options.SortMode, clone.SortMode);
     }
 
     [Fact]

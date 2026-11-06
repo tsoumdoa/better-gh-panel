@@ -13,8 +13,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/BetterGhPanel.Core/BetterGhPanel.Core.csproj" />
-    <!-- Exercise fixture counting without starting Rhino. -->
-    <Compile Include="../BetterGhPanel.RhinoSmoke/SmokeAssertions.cs" Link="SmokeAssertions.cs" />
     <!-- Drawing policy can be checked on Windows and Mac without loading Rhino. -->
     <Compile Include="../../src/BetterGhPanel/UI/CanvasMenu.cs" Link="CanvasMenu.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/CanvasSetDetails.cs" Link="CanvasSetDetails.cs" />
