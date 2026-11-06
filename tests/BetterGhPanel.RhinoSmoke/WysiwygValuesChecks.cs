@@ -123,7 +123,7 @@ internal static class WysiwygValuesChecks
         Capture("rounded-length-raw-tooltip", tooltip);
         fixture.ClearSelection();
         PanelTestAdapter.Resize(component, 560, 360); attributes.PerformLayout(); Render();
-        Check(!Field<bool>(attributes, "_singleLineFooter") && Field<RectangleF>(attributes, "_outValues").Right < Field<RectangleF>(attributes, "_selectAll").Left,
+        Check(!Field<bool>(attributes, "_singleLineFooter") && PanelTestAdapter.LayoutRect(attributes, "OutValues").Right < PanelTestAdapter.LayoutRect(attributes, "SelectAll").Left,
             "560px Values footer reserves separate status and Units rows");
         Capture("footer-560-values");
         fixture.SelectAt(0); Render();
@@ -269,7 +269,7 @@ internal static class WysiwygValuesChecks
         PanelTestAdapter.Resize(component, 300, 220);
         Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Half"));
         attributes.PerformLayout(); Render();
-        Check(Field<float>(attributes, "_warningsHeight") == 0 && Field<RectangleF>(attributes, "_list").Bottom <= Field<RectangleF>(attributes, "_footer").Top &&
+        Check(Field<float>(attributes, "_warningsHeight") == 0 && PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Bottom <= PanelTestAdapter.LayoutRect(attributes, "Footer").Top &&
             Field<System.Collections.Generic.List<(RectangleF Bounds, int Kind)>>(attributes, "_warningHits").Count == 0,
             "Compact Half hides warnings and keeps rows above footer with no stale warning hit targets");
         Capture("compact-half");

@@ -10,11 +10,12 @@ namespace BetterGhPanel
     {
         private void RenderListLengths(Graphics graphics, PanelQueryResult result, Font font, Font small, Font mono, StringFormat trim, bool paired)
         {
-            var list = paired ? _pairedList : _list;
-            var track = paired ? _pairedTrack : _track;
-            if (PanelOwner.PanelSplit && _scrollLocked) track = paired ? RectangleF.Empty : _pairedTrack;
-            ref int offset = ref (paired ? ref _pairedOffset : ref _offset);
-            ref int shown = ref (paired ? ref _pairedShown : ref _shown);
+            var pane = paired ? _f : _d;
+            var list = pane.List;
+            var track = pane.Track;
+            if (PanelOwner.PanelSplit && _scrollLocked) track = paired ? RectangleF.Empty : _f.Track;
+            ref int offset = ref pane.Offset;
+            ref int shown = ref pane.Shown;
             offset = Math.Max(0, Math.Min(Math.Max(0, Count - 1), offset));
             using var renderer = new CanvasRowRenderer(graphics, result.Snapshot.Branches.Count, false);
             var selected = _selection.BranchPaths(result);

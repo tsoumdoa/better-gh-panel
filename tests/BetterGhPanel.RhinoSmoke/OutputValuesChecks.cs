@@ -72,11 +72,11 @@ internal static class OutputValuesChecks
         {
             if (half) Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Half"));
             component.Attributes.PerformLayout();
-            RectangleF Bounds(string name) => (RectangleF)component.Attributes.GetType().GetField(name, Instance)!.GetValue(component.Attributes)!;
-            var items = Bounds("_outItems"); var values = Bounds("_outValues"); var units = Bounds("_units");
-            Check(!items.IsEmpty && values.Right + 4 <= Bounds("_selectAll").Left && items.Right == values.Left &&
-                units.Width == 76 && Bounds("_trim").Width == 22 && Bounds("_outLabel").Left >= Bounds("_panel").Left + 14 &&
-                Bounds("_trim").Left >= Bounds("_panel").Left + 14 && values.Right <= Bounds("_panel").Right - 28,
+            RectangleF Bounds(string name) => PanelTestAdapter.LayoutRect(component.Attributes, name);
+            var items = Bounds("OutItems"); var values = Bounds("OutValues"); var units = Bounds("Units");
+            Check(!items.IsEmpty && values.Right + 4 <= Bounds("SelectAll").Left && items.Right == values.Left &&
+                units.Width == 76 && Bounds("Trim").Width == 22 && Bounds("OutLabel").Left >= Bounds("Panel").Left + 14 &&
+                Bounds("Trim").Left >= Bounds("Panel").Left + 14 && values.Right <= Bounds("Panel").Right - 28,
                 "Items/Values fits minimum " + (half ? "Half" : "Full") + " layout with native grip and resize clearance");
         }
 
@@ -148,7 +148,7 @@ internal static class OutputValuesChecks
         canvas.Viewport.Target = System.Drawing.Point.Empty;
         canvas.Viewport.Zoom = 1;
         canvas.Viewport.ComputeProjection();
-        RectangleF Bounds(string name) => (RectangleF)attributes.GetType().GetField(name, Instance)!.GetValue(attributes)!;
+        RectangleF Bounds(string name) => PanelTestAdapter.LayoutRect(attributes, name);
         void Render()
         {
             attributes.PerformLayout();
@@ -169,19 +169,19 @@ internal static class OutputValuesChecks
             PanelTestAdapter.Resize(component, width, 220);
             Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Full"));
             await Query(PanelSearchMode.Text);
-            string[] controls = { "_trim", "_simplify", "_flatten", "_reverse", "_createSet", "_units", "_selectAll", "_statistics" };
+            string[] controls = { "Trim", "Simplify", "Flatten", "Reverse", "CreateSet", "Units", "SelectAll", "Statistics" };
             var before = controls.Select(Bounds).ToArray();
             await Query(PanelSearchMode.Length);
             Check(controls.Select(Bounds).SequenceEqual(before), "Showing Out keeps existing footer controls fixed at width " + width);
-            var values = Bounds("_outValues");
-            var selectAll = Bounds("_selectAll");
+            var values = Bounds("OutValues");
+            var selectAll = Bounds("SelectAll");
             Check(values.Right <= selectAll.Left - 4 &&
                 Math.Abs(values.Top + values.Height / 2 - selectAll.Top - selectAll.Height / 2) < 1,
                 "Readable segmented Out sits immediately left of Select all on the same row at width " + width);
-            var output = RectangleF.Union(Bounds("_outLabel"), RectangleF.Union(Bounds("_outItems"), values));
+            var output = RectangleF.Union(Bounds("OutLabel"), RectangleF.Union(Bounds("OutItems"), values));
             Check(controls.All(name => !output.IntersectsWith(Bounds(name))),
                 "Out does not overlap any footer control in X and Y at width " + width);
-            var point = new PointF(Bounds("_outValues").X + 10, Bounds("_outValues").Y + 8);
+            var point = new PointF(Bounds("OutValues").X + 10, Bounds("OutValues").Y + 8);
             var tooltip = (Grasshopper.GUI.GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(Grasshopper.GUI.GH_TooltipDisplayEventArgs),
                 BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, System.Drawing.Point.Round(point) }, null)!;
             attributes.SetupTooltip(point, tooltip);
@@ -196,12 +196,12 @@ internal static class OutputValuesChecks
             await Query(PanelSearchMode.ListLength);
             var pairing = Property<object>(component, "PairedData");
             var pairedRows = (System.Collections.IDictionary)pairing.GetType().GetField("BranchSummaries", Instance)!.GetValue(pairing)!;
-            Check(!Bounds("_dataCaption").IsEmpty && !Bounds("_scrollLock").IsEmpty && pairedRows.Count > 0 &&
-                Bounds("_list").Height >= 17 && Bounds("_list").Bottom <= Bounds("_footer").Top,
+            Check(!PanelTestAdapter.PaneField<RectangleF>(attributes, false, "Caption").IsEmpty && !Bounds("ScrollLock").IsEmpty && pairedRows.Count > 0 &&
+                PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Height >= 17 && PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Bottom <= Bounds("Footer").Top,
                 "Minimum split " + display + " retains captions, relinking, paired branch content and a full data row");
             foreach (bool expected in new[] { false, true })
             {
-                var link = Bounds("_scrollLock");
+                var link = Bounds("ScrollLock");
                 var location = canvas.Viewport.ProjectPoint(new PointF(link.X + link.Width / 2, link.Y + link.Height / 2));
                 var click = new Grasshopper.GUI.GH_CanvasMouseEvent(canvas.Viewport,
                     new System.Windows.Forms.MouseEventArgs(System.Windows.Forms.MouseButtons.Left, 1, (int)location.X, (int)location.Y, 0));

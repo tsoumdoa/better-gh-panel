@@ -157,7 +157,7 @@ namespace BetterGhPanel
                 if (!heading.Bounds.Contains(e.CanvasLocation)) continue;
                 _rowContextHandled = true;
                 _rowMenuPath = heading.Path;
-                _rowMenuPaired = _pairedList.Contains(e.CanvasLocation);
+                _rowMenuPaired = _f.List.Contains(e.CanvasLocation);
                 string copyPath = _rowMenuPaired ? string.Join(", ", PanelOwner.PairedPaths(heading.Path)) : heading.Path;
                 var choices = new System.Collections.Generic.List<CanvasRowAction>
                 {
@@ -168,7 +168,7 @@ namespace BetterGhPanel
                 choices.Add(new CanvasRowAction(PanelRowAction.Separator, "", ""));
                 choices.Add(new CanvasRowAction(PanelRowAction.ShowBranch, "Show only this branch", "Filter Paths to this branch."));
                 _rowMenuAllActions = choices.ToArray();
-                _rowMenuPaged = choices.Count * CanvasRowActions.RowHeight > _panel.Height - HeaderHeight - 6;
+                _rowMenuPaged = choices.Count * CanvasRowActions.RowHeight > _layout.Panel.Height - HeaderHeight - 6;
                 _rowMenuAnchor = e.CanvasLocation;
                 ShowRowMenu(result, 0);
                 canvas.Invalidate();
@@ -186,13 +186,13 @@ namespace BetterGhPanel
                 var options = PanelOwner.Session.Options;
                 bool filtered = options.Search.Length > 0 || options.TypeName != null || options.OnlyInvalid || options.BranchPath != null;
                 _rowMenuPath = null;
-                _rowMenuPaired = _copyPaired = _pairedList.Contains(e.CanvasLocation);
+                _rowMenuPaired = _copyPaired = _f.List.Contains(e.CanvasLocation);
                 _rowMenuAllActions = CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered,
                     PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX, _rowMenuPaired,
                     !_rowMenuPaired && result.DisplaySet != null && !result.DisplaySet.IsBranchSet && PanelOwner.OutputValues == PanelOutputValues.Items);
                 _rowMenuAnchor = e.CanvasLocation;
                 _rowMenuSourcePosition = hit.SourcePosition;
-                _rowMenuPaged = CanvasRowActions.NeedsPages(_panel.Height - HeaderHeight - 6);
+                _rowMenuPaged = CanvasRowActions.NeedsPages(_layout.Panel.Height - HeaderHeight - 6);
                 ShowRowMenu(result, 0);
                 canvas.Invalidate();
                 return GH_ObjectResponse.Handled;
@@ -210,11 +210,11 @@ namespace BetterGhPanel
                 page == 0 ? _rowMenuAllActions.Take(3).Concat(new[] { new CanvasRowAction(PanelRowAction.NextPage, "More actions…", "Show the remaining branch actions.") }).ToArray() :
                 _rowMenuAllActions.Skip(3).Concat(new[] { new CanvasRowAction(PanelRowAction.PreviousPage, "Previous actions…", "Return to the first branch actions.") }).ToArray();
             _rowMenuActions = Enumerable.Repeat(new CanvasRowAction(PanelRowAction.Unpainted, "", ""), _rowMenuPendingActions.Length).ToArray();
-            float width = Math.Min(300, _panel.Width - 28);
+            float width = Math.Min(300, _layout.Panel.Width - 28);
             float height = _rowMenuPendingActions.Sum(action => action.Action == PanelRowAction.Separator ? 5 : CanvasRowActions.RowHeight);
             _rowMenuBounds = new RectangleF(
-                Math.Max(_panel.Left + 14, Math.Min(_rowMenuAnchor.X, _panel.Right - width - 14)),
-                Math.Max(_panel.Top + HeaderHeight, Math.Min(_rowMenuAnchor.Y, _panel.Bottom - height - 6)), width, height);
+                Math.Max(_layout.Panel.Left + 14, Math.Min(_rowMenuAnchor.X, _layout.Panel.Right - width - 14)),
+                Math.Max(_layout.Panel.Top + HeaderHeight, Math.Min(_rowMenuAnchor.Y, _layout.Panel.Bottom - height - 6)), width, height);
         }
 
         private void ChooseRowAction(PanelRowAction action, PanelQueryResult result, GH_Canvas canvas)

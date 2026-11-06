@@ -14,48 +14,47 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
-        private RectangleF _pairedList, _pairedTrack, _pairedTrackHit, _split, _scrollLock, _dataCaption, _pairedCaption;
-        private int _pairedOffset, _pairedShown, _paintedPairedOffset;
-        private bool _scrollLocked = true, _scrollingPaired;
+        private bool _scrollLocked = true, _dragPaired;
         private PanelQueryResult? _captionResult;
         private PanelSnapshot? _captionPairedSnapshot;
         private PanelQueryResult? _captionSummaryResult;
         private int _pairedItemCount;
         private string _pairedTypeSummary = "";
 
-        private RectangleF ListBounds => _pairedList.IsEmpty ? _list : RectangleF.Union(_list, _pairedList);
-        private bool ListContains(PointF point) => _list.Contains(point) || _pairedList.Contains(point);
+        private RectangleF ListBounds => _f.List.IsEmpty ? _d.List : RectangleF.Union(_d.List, _f.List);
+        private bool ListContains(PointF point) => _d.List.Contains(point) || _f.List.Contains(point);
         private bool RowShownIn(RectangleF pane, int position) =>
             _rowHits.Any(hit => hit.SourcePosition == position && pane.Contains(hit.Bounds));
 
-        private void LayoutSplitPanes()
+        private RectangleF LayoutSplitPanes(RectangleF panel)
         {
-            _pairedList = _pairedTrack = _pairedTrackHit = _scrollLock = _dataCaption = _pairedCaption = RectangleF.Empty;
-            if (!PanelOwner.PanelSplit) return;
-            float middle = _panel.X + _panel.Width / 2;
-            _dataCaption = new RectangleF(_list.X, _list.Y - 2, middle - _list.X - 16, 14);
-            _pairedCaption = new RectangleF(middle + 14, _dataCaption.Y, _dataCaption.Width, 14);
-            _scrollLock = new RectangleF(middle - 10, _dataCaption.Y, 20, 14);
-            float height = Math.Max(RowHeight, _list.Height - 14);
-            _list = new RectangleF(_list.X, _list.Y + 14, middle - _list.X - 19, height);
-            _pairedList = new RectangleF(middle + 14, _list.Y, _list.Width, height);
-            _track = _scrollLocked ? RectangleF.Empty : new RectangleF(middle - 18, _list.Y, 4, height);
-            _trackHit = _scrollLocked ? RectangleF.Empty : new RectangleF(middle - 21, _list.Y, 8, height);
-            _pairedTrack = new RectangleF(_panel.Right - 18, _list.Y, 4, height);
-            _pairedTrackHit = new RectangleF(_panel.Right - 21, _list.Y, 8, height);
+            _f.List = _f.Track = _f.TrackHit = _d.Caption = _f.Caption = RectangleF.Empty;
+            if (!PanelOwner.PanelSplit) return RectangleF.Empty;
+            float middle = panel.X + panel.Width / 2;
+            _d.Caption = new RectangleF(_d.List.X, _d.List.Y - 2, middle - _d.List.X - 16, 14);
+            _f.Caption = new RectangleF(middle + 14, _d.Caption.Y, _d.Caption.Width, 14);
+            var scrollLock = new RectangleF(middle - 10, _d.Caption.Y, 20, 14);
+            float height = Math.Max(RowHeight, _d.List.Height - 14);
+            _d.List = new RectangleF(_d.List.X, _d.List.Y + 14, middle - _d.List.X - 19, height);
+            _f.List = new RectangleF(middle + 14, _d.List.Y, _d.List.Width, height);
+            _d.Track = _scrollLocked ? RectangleF.Empty : new RectangleF(middle - 18, _d.List.Y, 4, height);
+            _d.TrackHit = _scrollLocked ? RectangleF.Empty : new RectangleF(middle - 21, _d.List.Y, 8, height);
+            _f.Track = new RectangleF(panel.Right - 18, _d.List.Y, 4, height);
+            _f.TrackHit = new RectangleF(panel.Right - 21, _d.List.Y, 8, height);
+            return scrollLock;
         }
 
         private string OutputPortLabel(IGH_Param parameter) => parameter.NickName;
 
         private void DrawSplitActions(Graphics graphics, Font small, StringFormat trim)
         {
-            if (!_split.IsEmpty)
+            if (!_layout.Split.IsEmpty)
             {
                 // An open split stays an active chip, so a mismatch never greys out the way back.
                 bool available = PanelOwner.CanSplit || PanelOwner.PanelSplit;
-                Control(graphics, _split, available ? "D|F" : "", small, trim, PanelOwner.PanelSplit);
+                Control(graphics, _layout.Split, available ? "D|F" : "", small, trim, PanelOwner.PanelSplit);
                 if (!available)
-                    Text(graphics, "D|F", small, PanelTheme.Rgb(180, 185, 178), new RectangleF(_split.X + 3, _split.Y, _split.Width - 6, _split.Height), trim);
+                    Text(graphics, "D|F", small, PanelTheme.Rgb(180, 185, 178), new RectangleF(_layout.Split.X + 3, _layout.Split.Y, _layout.Split.Width - 6, _layout.Split.Height), trim);
             }
             if (!PanelOwner.PanelSplit) return;
             // Linking has nothing to act on while F does not match D.
@@ -63,7 +62,7 @@ namespace BetterGhPanel
             using (var pen = new Pen(_scrollLocked ? Accent : Muted, 1))
             {
                 var state = graphics.Save();
-                graphics.TranslateTransform(_scrollLock.X + 10, _scrollLock.Y + 7);
+                graphics.TranslateTransform(_layout.ScrollLock.X + 10, _layout.ScrollLock.Y + 7);
                 graphics.RotateTransform(-35);
                 foreach (float center in new[] { _scrollLocked ? -3f : -6f, _scrollLocked ? 3f : 6f })
                 {
@@ -79,9 +78,9 @@ namespace BetterGhPanel
             bool current = session.HasCurrentResult && !PanelOwner.Locked;
             string dataSummary = current ? System.FormattableString.Invariant($"{session.Result.RowPositions.Count:N0} · {TypeSummary(session.Result.Statistics.TypeCounts.Keys)}") : "…";
             using var bold = new Font(small, FontStyle.Bold);
-            Text(graphics, "D", bold, Accent, _dataCaption, trim);
+            Text(graphics, "D", bold, Accent, _d.Caption, trim);
             Text(graphics, "Data  " + dataSummary, small, Muted,
-                new RectangleF(_dataCaption.X + 16, _dataCaption.Y, _dataCaption.Width - 16, _dataCaption.Height), trim);
+                new RectangleF(_d.Caption.X + 16, _d.Caption.Y, _d.Caption.Width - 16, _d.Caption.Height), trim);
             string pairSummary = "…";
             if (current && PanelOwner.PairedSnapshot != null)
             {
@@ -104,17 +103,17 @@ namespace BetterGhPanel
                 }
                 pairSummary = PanelOwner.PairedSummaryCurrent ? System.FormattableString.Invariant($"{_pairedItemCount:N0} · {_pairedTypeSummary}") : "…";
             }
-            Text(graphics, "F", bold, Accent, _pairedCaption, trim);
+            Text(graphics, "F", bold, Accent, _f.Caption, trim);
             bool mismatch = PanelOwner.PairedError != null;
             var pairing = PanelOwner.PairedData;
             string caption = pairing != null && pairing.Caption != "Paired by branch" ? pairing.Caption : "Paired  " + pairSummary;
             Text(graphics, mismatch ? "Paired · " : caption, small, Muted,
-                new RectangleF(_pairedCaption.X + 16, _pairedCaption.Y, _pairedCaption.Width - 16, _pairedCaption.Height), trim);
+                new RectangleF(_f.Caption.X + 16, _f.Caption.Y, _f.Caption.Width - 16, _f.Caption.Height), trim);
             if (mismatch)
             {
                 float prefix = graphics.MeasureString("Paired · ", small, PointF.Empty, trim).Width;
                 Text(graphics, "mismatch", small, PanelTheme.Warning,
-                    new RectangleF(_pairedCaption.X + 16 + prefix, _pairedCaption.Y, _pairedCaption.Width - 16 - prefix, _pairedCaption.Height), trim);
+                    new RectangleF(_f.Caption.X + 16 + prefix, _f.Caption.Y, _f.Caption.Width - 16 - prefix, _f.Caption.Height), trim);
             }
         }
 
@@ -162,7 +161,7 @@ namespace BetterGhPanel
         private bool SplitTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             if (PanelOwner.PanelMinimized) return false;
-            if (_split.Contains(point))
+            if (_layout.Split.Contains(point))
             {
                 e.Title = "D | F split view";
                 e.Text = PanelOwner.PanelSplit ? "On" : "Off";
@@ -170,14 +169,14 @@ namespace BetterGhPanel
                     PanelOwner.PairedError ?? "F must have the same number of branches as D.";
                 return true;
             }
-            if (_scrollLock.Contains(point) && PanelOwner.CanSplit)
+            if (_layout.ScrollLock.Contains(point) && PanelOwner.CanSplit)
             {
                 e.Title = "Linked scrolling";
                 e.Text = _scrollLocked ? "Linked" : "Independent";
                 e.Description = "Click to " + (_scrollLocked ? "scroll each pane independently. Selecting a row reveals its partner." : "link scrolling and snap F to D.");
                 return true;
             }
-            if (_pairedList.Contains(point) && PanelOwner.PairedError != null)
+            if (_f.List.Contains(point) && PanelOwner.PairedError != null)
             {
                 e.Title = "F does not match D";
                 e.Text = PanelOwner.PairedError;
@@ -193,23 +192,23 @@ namespace BetterGhPanel
                 PanelOwner.Session.IsBusy ? "Recomputing…" : "Connect matching F data to inspect paired values.");
             using var format = new StringFormat();
             var state = graphics.Save();
-            graphics.SetClip(_pairedList, CombineMode.Intersect);
+            graphics.SetClip(_f.List, CombineMode.Intersect);
             bool mismatch = PanelOwner.PairedError != null;
             float inset = mismatch ? 20 : 6;
-            float width = _pairedList.Width - inset - 6;
+            float width = _f.List.Width - inset - 6;
             float height = graphics.MeasureString(message, small, (int)width, format).Height;
-            if (mismatch) DrawWarningTriangle(graphics, new PointF(_pairedList.X + 6, _pairedList.Y + 9));
+            if (mismatch) DrawWarningTriangle(graphics, new PointF(_f.List.X + 6, _f.List.Y + 9));
             Text(graphics, message, small, mismatch ? Ink : Muted,
-                new RectangleF(_pairedList.X + inset, _pairedList.Y + 2, width, height), format);
+                new RectangleF(_f.List.X + inset, _f.List.Y + 2, width, height), format);
             if (mismatch)
                 Text(graphics, "Pairing needs the same number of branches.", small, Muted,
-                    new RectangleF(_pairedList.X + 6, _pairedList.Y + height + 6, _pairedList.Width - 12, _pairedList.Height), format);
+                    new RectangleF(_f.List.X + 6, _f.List.Y + height + 6, _f.List.Width - 12, _f.List.Height), format);
             graphics.Restore(state);
         }
 
         private bool HandleSplitClick(GH_Canvas canvas, GH_CanvasMouseEvent e)
         {
-            if (_split.Contains(e.CanvasLocation))
+            if (_layout.Split.Contains(e.CanvasLocation))
             {
                 if (PanelOwner.CanSplit || PanelOwner.PanelSplit)
                 {
@@ -221,10 +220,10 @@ namespace BetterGhPanel
                 }
                 return true;
             }
-            if (!_scrollLock.Contains(e.CanvasLocation)) return false;
+            if (!_layout.ScrollLock.Contains(e.CanvasLocation)) return false;
             if (!PanelOwner.CanSplit) return true;
             _scrollLocked = !_scrollLocked;
-            if (_scrollLocked) _pairedOffset = _offset;
+            if (_scrollLocked) _f.Offset = _d.Offset;
             ExpireLayout();
             PerformLayout();
             InvalidatePaintedHits();
@@ -235,8 +234,8 @@ namespace BetterGhPanel
         private void RevealPartner(GH_Canvas canvas, int position, string? path, PointF point)
         {
             if (!PanelOwner.PanelSplit || _scrollLocked || !PanelOwner.CanSplit) return;
-            bool paired = !_pairedList.Contains(point);
-            var partner = paired ? _pairedList : _list;
+            bool paired = !_f.List.Contains(point);
+            var partner = paired ? _f.List : _d.List;
             if (path == null && _rowHits.Any(hit => hit.SourcePosition == position && partner.Contains(hit.Bounds))) return;
             if (path != null && _branchHits.Any(hit => hit.Path == path && partner.Contains(hit.Bounds))) return;
             var result = PanelOwner.Session.Result;

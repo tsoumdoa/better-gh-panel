@@ -13,8 +13,10 @@ namespace BetterGhPanel
         private float _warningsHeight;
         private readonly List<(RectangleF Bounds, int Kind)> _warningHits = new List<(RectangleF, int)>();
 
-        private float WarningStripHeight(float footerHeight) => PanelOwner.Session.HasCurrentResult &&
-            PanelOwner.Session.Result.Warnings.Any && _panel.Height - 56 - footerHeight - (PanelOwner.PanelSplit ? 14 : 0) >= 34 ? 17 : 0;
+        private float WarningStripHeight(float footerHeight) => WarningStripHeight(footerHeight, _layout.Panel);
+
+        private float WarningStripHeight(float footerHeight, RectangleF panel) => PanelOwner.Session.HasCurrentResult &&
+            PanelOwner.Session.Result.Warnings.Any && panel.Height - 56 - footerHeight - (PanelOwner.PanelSplit ? 14 : 0) >= 34 ? 17 : 0;
 
         private void RenderWarnings(Graphics graphics, PanelQueryResult result, Font small)
         {
@@ -26,8 +28,8 @@ namespace BetterGhPanel
             textFormat.LineAlignment = StringAlignment.Center;
             textFormat.Trimming = StringTrimming.EllipsisCharacter;
             float separatorWidth = graphics.MeasureString(" · ", small, int.MaxValue, textFormat).Width;
-            float x = _list.X + 2, y = _panel.Y + 48;
-            float right = PanelOwner.PanelSplit ? _panel.X + _panel.Width / 2 - 19 : _list.Right;
+            float x = _d.List.X + 2, y = _layout.Panel.Y + 48;
+            float right = PanelOwner.PanelSplit ? _layout.Panel.X + _layout.Panel.Width / 2 - 19 : _d.List.Right;
             bool hasSegment = false;
             void Segment(string text, int kind)
             {
@@ -82,37 +84,6 @@ namespace BetterGhPanel
                 return true;
             }
             return false;
-        }
-
-        private void DrawBranchExtras(Graphics graphics, PanelQueryResult result, RectangleF bounds, string path,
-            Font mono, Font small, StringFormat trim, string? countText = null, bool paired = false,
-            string? label = null, RectangleF labelBounds = default)
-        {
-            float countWidth = countText == null ? 96 : System.Math.Min(bounds.Width / 2, graphics.MeasureString(countText, small).Width + 6);
-            if (labelBounds.IsEmpty) labelBounds = new RectangleF(bounds.X + 6, bounds.Y, bounds.Width - countWidth - 36, bounds.Height);
-            float labelWidth = graphics.MeasureString(label ?? path, mono, int.MaxValue, trim).Width;
-            float x = labelBounds.X + labelWidth + 2;
-            var copy = _hoverBounds == bounds && x + 17 <= labelBounds.Right
-                ? new RectangleF(x, bounds.Y, 17, bounds.Height) : RectangleF.Empty;
-            if (!copy.IsEmpty && TargetPainted(graphics, copy))
-            {
-                using var pen = new Pen(Accent, 1);
-                using var back = new System.Drawing.Drawing2D.GraphicsPath();
-                using var front = new System.Drawing.Drawing2D.GraphicsPath();
-                void Square(System.Drawing.Drawing2D.GraphicsPath shape, float left, float top)
-                {
-                    shape.AddArc(left, top, 2, 2, 180, 90); shape.AddArc(left + 6, top, 2, 2, 270, 90);
-                    shape.AddArc(left + 6, top + 6, 2, 2, 0, 90); shape.AddArc(left, top + 6, 2, 2, 90, 90); shape.CloseFigure();
-                }
-                Square(back, x + 5, bounds.Y + 3); Square(front, x + 2, bounds.Y + 6);
-                graphics.DrawPath(pen, back);
-                using var brush = new SolidBrush(PanelTheme.Rgb(236, 241, 235));
-                graphics.FillPath(brush, front); graphics.DrawPath(pen, front);
-            }
-            else copy = RectangleF.Empty;
-            if (!paired && countText != null && result.Warnings.IsOutlier(result.Snapshot, path))
-                Text(graphics, countText, small, PanelTheme.Warning, new RectangleF(bounds.Right - countWidth - 6, bounds.Y, countWidth, bounds.Height), trim);
-            if (TargetPainted(graphics, bounds)) AddBranchHit(bounds, path, copy);
         }
     }
 }

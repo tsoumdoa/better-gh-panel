@@ -1,0 +1,218 @@
+using System;
+using System.Drawing;
+using BetterGhPanel.Core;
+
+namespace BetterGhPanel
+{
+    internal sealed partial class BetterPanelAttributes
+    {
+        private sealed class PanelLayout
+        {
+            internal RectangleF Panel { get; }
+            internal RectangleF Search { get; }
+            internal RectangleF Filter { get; }
+            internal RectangleF Type { get; }
+            internal RectangleF Sort { get; }
+            internal RectangleF Branch { get; }
+            internal RectangleF Jump { get; }
+            internal RectangleF Reset { get; }
+            internal RectangleF Resize { get; }
+            internal RectangleF Footer { get; }
+            internal RectangleF Trim { get; }
+            internal RectangleF Simplify { get; }
+            internal RectangleF Flatten { get; }
+            internal RectangleF Reverse { get; }
+            internal RectangleF CreateSet { get; }
+            internal RectangleF Units { get; }
+            internal RectangleF OutLabel { get; }
+            internal RectangleF OutItems { get; }
+            internal RectangleF OutValues { get; }
+            internal RectangleF Display { get; }
+            internal RectangleF Preview { get; }
+            internal RectangleF Move { get; }
+            internal RectangleF Statistics { get; }
+            internal RectangleF SelectAll { get; }
+            internal RectangleF Close { get; }
+            internal RectangleF Restore { get; }
+            internal RectangleF SearchClear { get; }
+            internal RectangleF BranchClear { get; }
+            internal RectangleF Split { get; }
+            internal RectangleF ScrollLock { get; }
+
+            internal PanelLayout(
+                RectangleF panel = default,
+                RectangleF search = default,
+                RectangleF filter = default,
+                RectangleF type = default,
+                RectangleF sort = default,
+                RectangleF branch = default,
+                RectangleF jump = default,
+                RectangleF reset = default,
+                RectangleF resize = default,
+                RectangleF footer = default,
+                RectangleF trim = default,
+                RectangleF simplify = default,
+                RectangleF flatten = default,
+                RectangleF reverse = default,
+                RectangleF createSet = default,
+                RectangleF units = default,
+                RectangleF outLabel = default,
+                RectangleF outItems = default,
+                RectangleF outValues = default,
+                RectangleF display = default,
+                RectangleF preview = default,
+                RectangleF move = default,
+                RectangleF statistics = default,
+                RectangleF selectAll = default,
+                RectangleF close = default,
+                RectangleF restore = default,
+                RectangleF searchClear = default,
+                RectangleF branchClear = default,
+                RectangleF split = default,
+                RectangleF scrollLock = default)
+            {
+                Panel = panel;
+                Search = search;
+                Filter = filter;
+                Type = type;
+                Sort = sort;
+                Branch = branch;
+                Jump = jump;
+                Reset = reset;
+                Resize = resize;
+                Footer = footer;
+                Trim = trim;
+                Simplify = simplify;
+                Flatten = flatten;
+                Reverse = reverse;
+                CreateSet = createSet;
+                Units = units;
+                OutLabel = outLabel;
+                OutItems = outItems;
+                OutValues = outValues;
+                Display = display;
+                Preview = preview;
+                Move = move;
+                Statistics = statistics;
+                SelectAll = selectAll;
+                Close = close;
+                Restore = restore;
+                SearchClear = searchClear;
+                BranchClear = branchClear;
+                Split = split;
+                ScrollLock = scrollLock;
+            }
+        }
+
+        private PanelLayout _layout = new PanelLayout();
+
+        // Computes the immutable fixed-control layout and, in the original
+        // calculation order, updates _d/_f pane rectangles, _warningsHeight and
+        // _singleLineFooter. This helper deliberately includes those layout side effects.
+        private PanelLayout ComputePanelLayout()
+        {
+            if (PanelOwner.PanelMinimized)
+            {
+                var capsule = new RectangleF(Pivot.X, Pivot.Y, CanvasPanelSize.CapsuleWidth, CanvasPanelSize.CapsuleHeight);
+                _d.List = _d.Track = _d.TrackHit = _d.Caption = RectangleF.Empty;
+                _f.List = _f.Track = _f.TrackHit = _f.Caption = RectangleF.Empty;
+                return new PanelLayout(panel: capsule,
+                    restore: new RectangleF(capsule.Right - 36, capsule.Y + (capsule.Height - 22) / 2, 22, 22));
+            }
+            RectangleF panel;
+            RectangleF search;
+            RectangleF filter;
+            RectangleF type;
+            RectangleF sort;
+            RectangleF branch;
+            RectangleF jump;
+            RectangleF reset;
+            RectangleF resize;
+            RectangleF footer;
+            RectangleF trim;
+            RectangleF simplify;
+            RectangleF flatten;
+            RectangleF reverse;
+            RectangleF createSet;
+            RectangleF units;
+            RectangleF outLabel;
+            RectangleF outItems;
+            RectangleF outValues;
+            RectangleF display;
+            RectangleF preview;
+            RectangleF move;
+            RectangleF statistics;
+            RectangleF selectAll;
+            RectangleF close;
+            RectangleF restore;
+            RectangleF searchClear;
+            RectangleF branchClear;
+            RectangleF split;
+            RectangleF scrollLock;
+            restore = RectangleF.Empty;
+            panel = new RectangleF(Pivot.X,
+                Pivot.Y + CanvasPanelSize.DisplayTopOffset(PanelOwner.CanvasHeight, PanelOwner.CanvasDisplay),
+                PanelOwner.DisplayWidth, PanelOwner.DisplayHeight);
+            float x = panel.X + 4;
+            // Narrow panels give up type and path width before the search field
+            // drops below a readable query such as "Length > 800".
+            float squeeze = Math.Max(0, Math.Min(34, 120 - (panel.Width - 212)));
+            float typeWidth = 76 - Math.Min(20, squeeze), branchWidth = 64 - Math.Max(0, squeeze - 20);
+            search = new RectangleF(x + 2, panel.Y + 25, panel.Width - 212 + squeeze, 21);
+            filter = new RectangleF(search.Right - 18, search.Y, 18, search.Height);
+            searchClear = new RectangleF(filter.Left - 16, search.Y, 16, search.Height);
+            type = new RectangleF(search.Right + 3, search.Y, typeWidth, 21);
+            sort = new RectangleF(type.Right + 3, search.Y, 43, 21);
+            branch = new RectangleF(sort.Right + 3, search.Y, branchWidth, 21);
+            branchClear = new RectangleF(branch.Right - 30, branch.Y, 16, branch.Height);
+            // Reset changes every setting, so it sits apart from Jump, past Preview.
+            close = new RectangleF(panel.Right - 34, panel.Y + 2, 20, 18);
+            display = new RectangleF(close.Left - 22, close.Y, 20, 18);
+            jump = new RectangleF(display.Left - 24, panel.Y + 2, 20, 18);
+            preview = new RectangleF(jump.Left - 108, jump.Y, 104, 18);
+            reset = new RectangleF(preview.Left - 26, jump.Y, 20, 18);
+            split = PanelOwner.PanelSplit || PanelOwner.PairedInputPresent() ? new RectangleF(reset.Left - 32, reset.Y, 28, 18) : RectangleF.Empty;
+            move = new RectangleF(panel.X + 14, panel.Y + 1, (split.IsEmpty ? reset.Left : split.Left) - panel.X - 18, 23);
+            // Reserve the corner for resizing rather than overlaying footer controls.
+            // Wide panels fit status, selection, statistics, tools and Units on one line.
+            _singleLineFooter &= panel.Width >= 500;
+            float footerHeight = _singleLineFooter ? 20 : 36;
+            footer = new RectangleF(x + 2, panel.Bottom - footerHeight - 2, panel.Width - 34, footerHeight);
+            // Keep the existing footer controls fixed when the output switch appears.
+            units = new RectangleF(footer.Right - 76, footer.Bottom - 20, 76, 20);
+            trim = new RectangleF(units.Left - 125, units.Y, 22, units.Height);
+            simplify = new RectangleF(trim.Right + 2, trim.Y, 22, 20);
+            flatten = new RectangleF(simplify.Right + 2, trim.Y, 22, 20);
+            reverse = new RectangleF(flatten.Right + 2, trim.Y, 22, 20);
+            createSet = new RectangleF(reverse.Right + 2, trim.Y, 22, 20);
+            if (_singleLineFooter)
+            {
+                statistics = new RectangleF(trim.Left - 54, units.Y + 2, 46, 16);
+                selectAll = new RectangleF(statistics.Left - 62, statistics.Y, 58, 16);
+            }
+            else
+            {
+                statistics = new RectangleF(footer.Right - 46, footer.Y, 46, 16);
+                selectAll = new RectangleF(statistics.Left - 62, footer.Y, 58, 16);
+            }
+            outLabel = outItems = outValues = RectangleF.Empty;
+            if (PanelOwner.CanOutputValues)
+            {
+                float outputLeft = selectAll.Left - 4 - OutputControlWidth;
+                float outputTop = selectAll.Y;
+                outLabel = new RectangleF(outputLeft, outputTop, 20, 16);
+                outItems = new RectangleF(outLabel.Right, outputTop, 34, 16);
+                outValues = new RectangleF(outItems.Right, outputTop, 38, 16);
+            }
+            _warningsHeight = WarningStripHeight(footerHeight, panel);
+            // Keep interactive content beyond native grip picking's 12-unit
+            // radius on both edges, including rows and the scroll track.
+            _d.List = new RectangleF(panel.X + 14, panel.Y + 52 + _warningsHeight, panel.Width - 33, Math.Max(RowHeight, panel.Height - 56 - footerHeight - _warningsHeight));
+            _d.Track = new RectangleF(panel.Right - 18, _d.List.Y, 4, _d.List.Height);
+            _d.TrackHit = new RectangleF(panel.Right - 21, _d.List.Y, 8, _d.List.Height);
+            scrollLock = LayoutSplitPanes(panel);
+            resize = new RectangleF(panel.Right - 24, panel.Bottom - 24, 24, 24);
+            return new PanelLayout(panel, search, filter, type, sort, branch, jump, reset, resize, footer, trim, simplify, flatten, reverse, createSet, units, outLabel, outItems, outValues, display, preview, move, statistics, selectAll, close, restore, searchClear, branchClear, split, scrollLock);
+        }
+    }
+}
