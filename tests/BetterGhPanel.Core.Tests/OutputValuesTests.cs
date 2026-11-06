@@ -4,7 +4,7 @@ using System.Linq;
 using BetterGhPanel.Core;
 using Xunit;
 
-public sealed class OutputValuesChecks
+public sealed class OutputValuesTests
 {
     [Fact]
     public void SetIndicesAndMembersSurviveViewSorting()

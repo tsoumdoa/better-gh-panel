@@ -1,21 +1,15 @@
-using System;
+using Xunit;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using BetterGhPanel.Core;
 
-internal static class BranchSortingChecks
+public class BranchSortingTests
 {
-    internal static void Run()
-    {
-        TreeOrderAndStableTies();
-        MixedTypesAndFilters();
-        GeometryPresentation();
-        MissingBranchMetadata();
-        UnevenBranchSizes();
-    }
 
-    private static void TreeOrderAndStableTies()
+
+    [Fact]
+    public void TreeOrderAndStableTies()
     {
         var snapshot = new PanelSnapshot(new[]
         {
@@ -30,10 +24,10 @@ internal static class BranchSortingChecks
         var descending = Query(snapshot, PanelSortMode.ValueDescending);
         Positions(ascending, 2, 5, 0, 3, 4, 1);
         Positions(descending, 0, 2, 5, 3, 1, 4);
-        Check(ascending.BranchPaths.Contains("{3}") && descending.BranchPaths.Contains("{3}") &&
+        Assert.True(ascending.BranchPaths.Contains("{3}") && descending.BranchPaths.Contains("{3}") &&
             ascending.Statistics.BranchCount == 4 && ascending.Statistics.BranchItemCounts["{3}"] == 0,
             "Sorting retains empty branches and their statistics");
-        Check(ReferenceEquals(ascending.Snapshot, snapshot) && snapshot.Rows[2].OriginalIndex == 3 &&
+        Assert.True(ReferenceEquals(ascending.Snapshot, snapshot) && snapshot.Rows[2].OriginalIndex == 3 &&
             snapshot.Rows[5].OriginalIndex == 1, "Sorting retains the original tree addresses and snapshot");
         Positions(Query(snapshot, PanelSortMode.SourceOrder), 0, 1, 2, 3, 4, 5);
         Positions(PanelQueryEngine.Execute(snapshot, new PanelQueryOptions
@@ -53,10 +47,11 @@ internal static class BranchSortingChecks
             SortMode = PanelSortMode.ValueDescending, SearchMode = PanelSearchMode.ListLength, Search = "= 0"
         });
         Positions(empty);
-        Check(empty.BranchPaths.SequenceEqual(new[] { "{3}" }), "Sorting empty-only results keeps matching branch metadata");
+        Assert.True(empty.BranchPaths.SequenceEqual(new[] { "{3}" }), "Sorting empty-only results keeps matching branch metadata");
     }
 
-    private static void MixedTypesAndFilters()
+    [Fact]
+    public void MixedTypesAndFilters()
     {
         var snapshot = new PanelSnapshot(new[]
         {
@@ -83,7 +78,8 @@ internal static class BranchSortingChecks
         }), 1, 6, 5);
     }
 
-    private static void GeometryPresentation()
+    [Fact]
+    public void GeometryPresentation()
     {
         PanelRow Geometry(string path, double? value) => new PanelRow(0, path, "Geometry", "Captured", null,
             geometryInfo: new PanelGeometryInfo(value.HasValue ? "Line" : "Pending", value, units: "mm", canMeasure: !value.HasValue));
@@ -107,14 +103,15 @@ internal static class BranchSortingChecks
                 Positions(result, direction == PanelSortMode.ValueAscending ? new[] { 3, 1, 2, 0 } : new[] { 1, 3, 0, 2 });
                 options.DecimalPlaces = 0;
                 result = PanelQueryEngine.Execute(snapshot, options, measuredGeometry: measured);
-                Check(result.RowPositions.Take(2).SequenceEqual(direction == PanelSortMode.ValueAscending ? new[] { 3, 1 } : new[] { 1, 3 }),
+                Assert.True(result.RowPositions.Take(2).SequenceEqual(direction == PanelSortMode.ValueAscending ? new[] { 3, 1 } : new[] { 1, 3 }),
                     "AwayFromZero presents 0.5 as 1 while 0.2 presents as 0");
             }
         }
         finally { CultureInfo.CurrentCulture = previous; }
     }
 
-    private static void MissingBranchMetadata()
+    [Fact]
+    public void MissingBranchMetadata()
     {
         var snapshot = new PanelSnapshot(new[]
         {
@@ -124,7 +121,8 @@ internal static class BranchSortingChecks
         Positions(Query(snapshot, PanelSortMode.ValueDescending), 2, 0, 3, 1, 4);
     }
 
-    private static void UnevenBranchSizes()
+    [Fact]
+    public void UnevenBranchSizes()
     {
         var branches = new[] { 0, 1, 2, 3, 7, 17, 257 }.Select((count, index) =>
             new PanelBranch("{" + index + "}", count)).Reverse().ToArray();
@@ -140,7 +138,7 @@ internal static class BranchSortingChecks
                     ? positions.OrderBy(index => rows[index].NumericValue)
                     : positions.OrderByDescending(index => rows[index].NumericValue);
             });
-            Check(Query(snapshot, direction).RowPositions.SequenceEqual(expected),
+            Assert.True(Query(snapshot, direction).RowPositions.SequenceEqual(expected),
                 "Uneven branch ranges sort independently without disturbing neighboring ranges or stable ties");
         }
     }
@@ -150,10 +148,7 @@ internal static class BranchSortingChecks
     private static PanelQueryResult Query(PanelSnapshot snapshot, PanelSortMode direction) =>
         PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SortMode = direction });
     private static void Positions(PanelQueryResult result, params int[] expected) =>
-        Check(result.RowPositions.SequenceEqual(expected), "Expected rows " + string.Join(",", expected) +
+        Assert.True(result.RowPositions.SequenceEqual(expected), "Expected rows " + string.Join(",", expected) +
             "; got " + string.Join(",", result.RowPositions));
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-    }
+
 }

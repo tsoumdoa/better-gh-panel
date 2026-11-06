@@ -1,3 +1,4 @@
+using Xunit;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -6,36 +7,35 @@ using System.Threading;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
 
-internal static class BudgetedQueryChecks
+public class BudgetedQueryTests
 {
-    internal static void Run()
-    {
-        NoRowOrBranchCutoff();
-        ResumeScanOnWorker();
-        YieldThroughSorting();
-        YieldAndCancelThroughBranchSorting();
-        YieldAndCancelThroughResultIndex();
-        CancellationAndDisposal();
-    }
 
-    private static void NoRowOrBranchCutoff()
+
+    [Fact]
+    public void NoRowOrBranchCutoff()
     {
         var snapshot = Numbers(4096);
         using var work = PanelQueryEngine.Start(snapshot, new PanelQueryOptions());
-        Check(!work.TryComplete(TimeSpan.Zero) && work.Result == null, "An exhausted budget yields without publishing partial data");
-        Check(work.TryComplete(() => false) && work.Result!.RowPositions.Count == 4096,
+        Assert.True(!work.TryComplete(TimeSpan.Zero) && work.Result == null, "An exhausted budget yields without publishing partial data");
+        Assert.True(work.TryComplete(() => false) && work.Result!.RowPositions.Count == 4096,
             "An available budget can finish a tree larger than the old row limit");
-        Check(work.TryComplete(TimeSpan.Zero) && ReferenceEquals(work.Result, work.Complete()), "Completed work reuses its result");
+        Assert.True(work.TryComplete(TimeSpan.Zero) && ReferenceEquals(work.Result, work.Complete()), "Completed work reuses its result");
 
         var emptyBranches = new PanelSnapshot(Array.Empty<PanelRow>(),
             Enumerable.Range(0, 4096).Select(i => new PanelBranch("{" + i + "}", 0)).ToArray());
         using var branches = PanelQueryEngine.Start(emptyBranches, new PanelQueryOptions());
         int checks = 0;
-        Check(!branches.TryComplete(() => ++checks > 10) && branches.Result == null, "The deadline is checked during empty-branch scanning");
-        Check(branches.Complete().BranchPaths.Count == 4096, "Branch work resumes without dropping or duplicating paths");
+        Assert.True(!branches.TryComplete(() => ++checks > 10) && branches.Result == null, "The deadline is checked during empty-branch scanning");
+        Assert.True(branches.Complete().BranchPaths.Count == 4096, "Branch work resumes without dropping or duplicating paths");
     }
 
-    private static void ResumeScanOnWorker()
+    [Fact]
+    public async Task ResumeScanOnWorker()
+    {
+        await Task.Factory.StartNew(ResumeScanOnWorkerCore, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+    }
+
+    private static void ResumeScanOnWorkerCore()
     {
         var snapshot = Numbers(80);
         var reads = new MeasurementReads(snapshot.Rows.Count);
@@ -43,21 +43,22 @@ internal static class BudgetedQueryChecks
         using var work = PanelQueryEngine.Start(snapshot, options, measuredGeometry: reads);
         options.Search = "> 1000"; // Deferred work must retain its captured options.
         int checks = 0;
-        Check(!work.TryComplete(() => ++checks > 17), "Query yields partway through its scan");
-        Check(reads.Reads.Sum() > 0 && reads.Reads.Sum() < snapshot.Rows.Count && work.Result == null,
+        Assert.True(!work.TryComplete(() => ++checks > 17), "Query yields partway through its scan");
+        Assert.True(reads.Reads.Sum() > 0 && reads.Reads.Sum() < snapshot.Rows.Count && work.Result == null,
             "Partial scan has done work but has no public result");
         int uiThread = Environment.CurrentManagedThreadId;
         var result = Task.Run(() =>
         {
-            Check(Environment.CurrentManagedThreadId != uiThread, "Continuation runs on a worker thread");
+            Assert.True(Environment.CurrentManagedThreadId != uiThread, "Continuation runs on a worker thread");
             return work.Complete();
         }).GetAwaiter().GetResult();
-        Check(reads.Reads.All(count => count == 1), "Handoff resumes the scan instead of evaluating earlier rows again");
-        Check(result.RowPositions.SequenceEqual(Enumerable.Range(0, 80)) && result.Statistics.NumericCount == 80,
+        Assert.True(reads.Reads.All(count => count == 1), "Handoff resumes the scan instead of evaluating earlier rows again");
+        Assert.True(result.RowPositions.SequenceEqual(Enumerable.Range(0, 80)) && result.Statistics.NumericCount == 80,
             "Worker continuation preserves options, source order and accumulated statistics");
     }
 
-    private static void YieldThroughSorting()
+    [Fact]
+    public void YieldThroughSorting()
     {
         var snapshot = Numbers(24);
         var reads = new MeasurementReads(snapshot.Rows.Count);
@@ -69,39 +70,41 @@ internal static class BudgetedQueryChecks
             int checks = 0;
             bool complete = work.TryComplete(() => ++checks > 1);
             if (complete) break;
-            Check(work.Result == null, "A yielded query does not expose partial results");
+            Assert.True(work.Result == null, "A yielded query does not expose partial results");
             if (reads.Reads.All(count => count == 1)) sortingSlices++;
             if (++slices > 1000) throw new InvalidOperationException("Query made no progress across slices");
         }
         var result = work.Result!;
         var expected = Enumerable.Range(0, 24).OrderByDescending(i => i % 7).ThenBy(i => i);
-        Check(sortingSlices > 24 && result.RowPositions.SequenceEqual(expected),
+        Assert.True(sortingSlices > 24 && result.RowPositions.SequenceEqual(expected),
             "Sort comparisons yield and resume with stable ordering, including equal values");
-        Check(result.RowPositions.Select((position, index) => result.TryGetViewIndex(position, out int viewIndex) && viewIndex == index).All(found => found),
+        Assert.True(result.RowPositions.Select((position, index) => result.TryGetViewIndex(position, out int viewIndex) && viewIndex == index).All(found => found),
             "The reverse index is complete and agrees with every row after cooperative handoff");
-        Check(reads.Reads.All(count => count == 1) && result.Statistics.ItemCount == 24 &&
+        Assert.True(reads.Reads.All(count => count == 1) && result.Statistics.ItemCount == 24 &&
             result.Statistics.BranchCount == snapshot.Branches.Count && result.Statistics.Minimum == 0 &&
             result.Statistics.Maximum == 6 && Math.Abs(result.Statistics.Mean!.Value - Enumerable.Range(0, 24).Average(i => i % 7)) < 1e-12,
             "Repeated yields preserve rows, empty branches and full statistics");
     }
 
-    private static void CancellationAndDisposal()
+    [Fact]
+    public void CancellationAndDisposal()
     {
         using var cancellation = new CancellationTokenSource();
         using var work = PanelQueryEngine.Start(Numbers(80), new PanelQueryOptions(), cancellation.Token);
         int checks = 0;
-        Check(!work.TryComplete(() => ++checks > 17), "Cancellation fixture has a suspended scan");
+        Assert.True(!work.TryComplete(() => ++checks > 17), "Cancellation fixture has a suspended scan");
         cancellation.Cancel();
         try { work.Complete(); throw new InvalidOperationException("Canceled work completed"); }
         catch (OperationCanceledException) { }
-        Check(work.Result == null, "Cancellation after handoff cannot publish a result");
+        Assert.True(work.Result == null, "Cancellation after handoff cannot publish a result");
         using var disposed = PanelQueryEngine.Start(Numbers(8), new PanelQueryOptions());
         disposed.Dispose();
         try { disposed.Complete(); throw new InvalidOperationException("Disposed work completed"); }
         catch (ObjectDisposedException) { }
     }
 
-    private static void YieldAndCancelThroughResultIndex()
+    [Fact]
+    public void YieldAndCancelThroughResultIndex()
     {
         var snapshot = Numbers(512);
         var reads = new MeasurementReads(snapshot.Rows.Count);
@@ -110,15 +113,16 @@ internal static class BudgetedQueryChecks
         int afterScan = 0;
         // Seven distinct values precede indexing. Sixty yield checks after the
         // scan therefore suspend inside the result-local position-index build.
-        Check(!work.TryComplete(() => reads.Reads.All(count => count == 1) && ++afterScan > 60) && work.Result == null,
+        Assert.True(!work.TryComplete(() => reads.Reads.All(count => count == 1) && ++afterScan > 60) && work.Result == null,
             "Position-index construction yields without publishing a partial result");
         cancellation.Cancel();
         try { work.Complete(); throw new InvalidOperationException("Canceled position index completed"); }
         catch (OperationCanceledException) { }
-        Check(work.Result == null, "Cancellation during indexing cannot publish incomplete lookup state");
+        Assert.True(work.Result == null, "Cancellation during indexing cannot publish incomplete lookup state");
     }
 
-    private static void YieldAndCancelThroughBranchSorting()
+    [Fact]
+    public void YieldAndCancelThroughBranchSorting()
     {
         var snapshot = new PanelSnapshot(Enumerable.Range(0, 96).Select(index =>
             new PanelRow(index, "{" + index % 4 + "}", "Number", (index % 7).ToString(), index % 7)).ToArray(),
@@ -131,8 +135,8 @@ internal static class BudgetedQueryChecks
             {
                 int checks = 0;
                 if (work.TryComplete(() => ++checks > 1)) break;
-                Check(work.Result == null, "Branch grouping and merge slices never publish partial results");
-                Check(++slices < 3000, "Branch sorting advances across tiny cooperative budgets");
+                Assert.True(work.Result == null, "Branch grouping and merge slices never publish partial results");
+                Assert.True(++slices < 3000, "Branch sorting advances across tiny cooperative budgets");
             }
             var expected = snapshot.Branches.SelectMany(branch =>
             {
@@ -141,7 +145,7 @@ internal static class BudgetedQueryChecks
                     ? positions.OrderBy(index => snapshot.Rows[index].NumericValue)
                     : positions.OrderByDescending(index => snapshot.Rows[index].NumericValue);
             });
-            Check(work.Result!.RowPositions.SequenceEqual(expected) && work.Result.Statistics.BranchCount == 5 &&
+            Assert.True(work.Result!.RowPositions.SequenceEqual(expected) && work.Result.Statistics.BranchCount == 5 &&
                 work.Result.Statistics.ItemCount == 96, "Yielded sorting preserves tree order, branch-local stability and empty branches");
         }
 
@@ -154,14 +158,14 @@ internal static class BudgetedQueryChecks
             using var work = PanelQueryEngine.Start(snapshot,
                 new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending }, cancellation.Token, reads);
             int checks = 0;
-            Check(!work.TryComplete(() => reads.Reads.All(count => count == 1) && ++checks > laterChecks),
+            Assert.True(!work.TryComplete(() => reads.Reads.All(count => count == 1) && ++checks > laterChecks),
                 "Cancellation fixture suspends after the complete item scan");
             cancellation.Cancel();
             try { work.Complete(); throw new InvalidOperationException("Canceled branch sort completed"); }
             catch (OperationCanceledException) { }
-            Check(work.Result == null, "Cancellation during branch sorting cannot publish a partial result");
+            Assert.True(work.Result == null, "Cancellation during branch sorting cannot publish a partial result");
         }
-        Check(PanelQueryEngine.Execute(snapshot, new PanelQueryOptions()).RowPositions.SequenceEqual(Enumerable.Range(0, 96)),
+        Assert.True(PanelQueryEngine.Execute(snapshot, new PanelQueryOptions()).RowPositions.SequenceEqual(Enumerable.Range(0, 96)),
             "Canceled branch sorting never changes source order");
     }
 
@@ -169,10 +173,7 @@ internal static class BudgetedQueryChecks
         Enumerable.Range(0, count).Select(i => new PanelRow(i, "{0}", "Number", (i % 7).ToString(), i % 7)).ToArray(),
         new[] { new PanelBranch("{0}", count), new PanelBranch("{1}", 0) });
 
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-    }
+
 
     private sealed class MeasurementReads : IReadOnlyDictionary<int, PanelGeometryInfo>
     {

@@ -6,7 +6,7 @@ using BetterGhPanel.Core;
 using BetterGhPanel.UI;
 using Xunit;
 
-public sealed class PropertyChecks
+public sealed class PropertyTests
 {
     private static PanelRow Row(int index, PanelSearchMode mode, PanelPropertyValue? value, PanelValidity validity = PanelValidity.VerifiedValid) =>
         new PanelRow(index, "{0}", "Example", "summary", null, validity,

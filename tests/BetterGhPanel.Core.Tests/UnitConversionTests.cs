@@ -1,18 +1,13 @@
+using Xunit;
 using System;
 using BetterGhPanel.Core;
 
-internal static class UnitConversionChecks
+public class UnitConversionTests
 {
-    internal static void Run()
-    {
-        PersistedModesAndPresentation();
-        ExactScalarArithmetic();
-        GeometryApplicability();
-        AdditionalGeometryLength();
-        UnknownModes();
-    }
 
-    private static void PersistedModesAndPresentation()
+
+    [Fact]
+    public void PersistedModesAndPresentation()
     {
         // This order is part of saved Grasshopper definitions and menu indexing.
         var modes = new[]
@@ -24,17 +19,18 @@ internal static class UnitConversionChecks
         };
         var labels = new[] { "No conversion", "mm → m", "m → mm", "mm² → m²", "m² → mm²", "rad → deg", "deg → rad", "mm³ → m³", "m³ → mm³" };
         var symbols = new[] { "", "m", "mm", "m²", "mm²", "°", "rad", "m³", "mm³" };
-        Check(PanelUnits.ConversionCount == modes.Length && Enum.GetValues(typeof(PanelUnitConversion)).Length == modes.Length,
+        Assert.True(PanelUnits.ConversionCount == modes.Length && Enum.GetValues(typeof(PanelUnitConversion)).Length == modes.Length,
             "Every persisted conversion is exposed by the unit menu");
         for (int index = 0; index < modes.Length; index++)
         {
-            Check((int)modes[index] == index, "Existing conversion IDs remain stable");
-            Check(PanelUnits.Label(modes[index]) == labels[index] && PanelUnits.Symbol(modes[index]) == symbols[index],
+            Assert.True((int)modes[index] == index, "Existing conversion IDs remain stable");
+            Assert.True(PanelUnits.Label(modes[index]) == labels[index] && PanelUnits.Symbol(modes[index]) == symbols[index],
                 "Menu labels and output suffixes retain their meaning for saved conversion " + index);
         }
     }
 
-    private static void ExactScalarArithmetic()
+    [Fact]
+    public void ExactScalarArithmetic()
     {
         // These fractions distinguish division from multiplication by a rounded
         // reciprocal. Wire values must retain their original floating-point bits.
@@ -54,7 +50,8 @@ internal static class UnitConversionChecks
         }
     }
 
-    private static void GeometryApplicability()
+    [Fact]
+    public void GeometryApplicability()
     {
         var toMeters = new[] { PanelUnitConversion.MillimetersToMeters,
             PanelUnitConversion.SquareMillimetersToSquareMeters, PanelUnitConversion.CubicMillimetersToCubicMeters };
@@ -74,43 +71,42 @@ internal static class UnitConversionChecks
             }
             SameBits(expected, PanelUnits.ConvertGeometry(value, power, units, mode));
         }
-        Check(PanelUnits.FormatGeometry(double.MaxValue, 3, "m", PanelUnitConversion.CubicMetersToCubicMillimeters, -1) == "unavailable",
+        Assert.True(PanelUnits.FormatGeometry(double.MaxValue, 3, "m", PanelUnitConversion.CubicMetersToCubicMillimeters, -1) == "unavailable",
             "Geometry conversion overflow remains unavailable instead of displaying infinity");
     }
 
-    private static void UnknownModes()
+    [Fact]
+    public void UnknownModes()
     {
         foreach (int id in new[] { -1, 9, int.MinValue, int.MaxValue })
         {
             var mode = (PanelUnitConversion)id;
-            Check(PanelUnits.Label(mode) == "No conversion" && PanelUnits.Symbol(mode) == string.Empty,
+            Assert.True(PanelUnits.Label(mode) == "No conversion" && PanelUnits.Symbol(mode) == string.Empty,
                 "Unknown modes retain no-conversion presentation");
             foreach (double value in new[] { -0.0, 0.1, double.NaN, double.PositiveInfinity })
                 SameBits(value, PanelUnits.Convert(value, mode));
             SameBits(1.25, PanelUnits.ConvertGeometry(1.25, 1, "mm", mode));
-            Check(PanelUnits.FormatGeometry(1.25, 2, "mm", mode, 2) == "1.25 mm²",
+            Assert.True(PanelUnits.FormatGeometry(1.25, 2, "mm", mode, 2) == "1.25 mm²",
                 "Unknown modes retain model geometry units");
         }
     }
 
-    private static void AdditionalGeometryLength()
+    [Fact]
+    public void AdditionalGeometryLength()
     {
         var circle = new PanelGeometryInfo("Cir", 2, units: "mm", metricName: "Radius", metricLabel: "R",
             details: "Shape: Circle").WithAdditionalLength(4 * Math.PI);
-        Check(circle.FormatCompact(PanelUnitConversion.None, -1) == "Cir · R 2 mm" &&
+        Assert.True(circle.FormatCompact(PanelUnitConversion.None, -1) == "Cir · R 2 mm" &&
             circle.FormatDetails(PanelUnitConversion.None, -1) == "Radius: 2 mm\nLength: 12.5664 mm\nShape: Circle",
             "analytic circumference adds details without replacing the compact radius");
-        Check(circle.FormatDetails(PanelUnitConversion.MillimetersToMeters, -1) ==
+        Assert.True(circle.FormatDetails(PanelUnitConversion.MillimetersToMeters, -1) ==
             "Radius: 0.002 m\nLength: 0.0125664 m\nShape: Circle",
             "both radius and circumference follow the geometry unit conversion");
     }
 
     private static void SameBits(double expected, double actual) =>
-        Check(BitConverter.DoubleToInt64Bits(expected) == BitConverter.DoubleToInt64Bits(actual),
+        Assert.True(BitConverter.DoubleToInt64Bits(expected) == BitConverter.DoubleToInt64Bits(actual),
             "Expected exact floating-point value " + expected + "; got " + actual);
 
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new Exception(message);
-    }
+
 }

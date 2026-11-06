@@ -4,7 +4,7 @@ using Xunit;
 
 namespace BetterGhPanel.Core.Tests;
 
-public sealed class PreviewRecoveryChecks
+public sealed class PreviewRecoveryTests
 {
     [Fact]
     public void DenseSelectionRetainsSuffixAcrossToggleAndRecoversInBoundedTurns()

@@ -5,7 +5,7 @@ using System.Numerics;
 using BetterGhPanel.Core;
 using Xunit;
 
-public sealed class DeterministicNumberChecks
+public sealed class DeterministicNumberTests
 {
     // Shared by both test targets: checks every wire bit and text character.
     // The arithmetic oracle below never formats or parses a double.

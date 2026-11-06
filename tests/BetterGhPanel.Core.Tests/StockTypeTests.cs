@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using BetterGhPanel.Core;
 using Xunit;
 
-public sealed class StockTypeChecks
+public sealed class StockTypeTests
 {
     [Fact]
     public void DotPropertiesShareFilteringSetsAndUnitAwareValuePresentation()

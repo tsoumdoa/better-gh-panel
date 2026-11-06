@@ -4,7 +4,7 @@ using System.Linq;
 using BetterGhPanel.Core;
 using Xunit;
 
-public sealed class PresentedNumberChecks
+public sealed class PresentedNumberTests
 {
     [Fact]
     public void AutomaticGeometryStatisticsMatchRows()

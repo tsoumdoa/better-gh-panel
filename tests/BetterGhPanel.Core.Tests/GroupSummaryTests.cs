@@ -5,7 +5,7 @@ using System.Threading;
 using BetterGhPanel.Core;
 using Xunit;
 
-public sealed class GroupSummaryChecks
+public sealed class GroupSummaryTests
 {
     [Fact]
     public void SegmentedValuesMatchFlatValuesAcrossBoundariesAndUnicode()

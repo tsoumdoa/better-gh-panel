@@ -1,10 +1,12 @@
+using Xunit;
 using System;
 using System.Linq;
 using BetterGhPanel.Core;
 
-internal static class PanelRowSelectionChecks
+public class PanelRowSelectionTests
 {
-    internal static void Run()
+    [Fact]
+    public void PreservesBehaviour()
     {
         var original = Query(Sample());
         var retained = new PanelRowSelection();
@@ -103,11 +105,12 @@ internal static class PanelRowSelectionChecks
         selection.SelectAll(source);
         Expect(selection, Query(Sample())); // new input invalidates bulk selection too
 
-        AcrossBranches();
-        OutputNotifications();
+
+
     }
 
-    private static void OutputNotifications()
+    [Fact]
+    public void OutputNotifications()
     {
         var selection = new PanelRowSelection();
         var snapshot = Sample();
@@ -141,7 +144,8 @@ internal static class PanelRowSelectionChecks
         if (notifications != beforeClear) throw new InvalidOperationException("Clearing an already-empty selection must not schedule an output loop.");
     }
 
-    private static void AcrossBranches()
+    [Fact]
+    public void AcrossBranches()
     {
         var snapshot = Sample();
         var source = Query(snapshot);

@@ -1,3 +1,4 @@
+using Xunit;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -6,26 +7,12 @@ using System.Linq;
 using System.Threading;
 using BetterGhPanel.Core;
 
-internal static class FilterQueryChecks
+public class FilterQueryTests
 {
-    internal static void Run()
-    {
-        NumericComparisons();
-        DisplayFilterValues();
-        InvalidNumbers();
-        BranchListLengths();
-        BranchPaths();
-        DisplayedTextAndPrecision();
-        FailedMeasurementPresentation();
-        DisplayedSorting();
-        GeometryMetricsAndUnits();
-        MeasurementCandidates();
-        SharedQueryScope();
-        RegularExpressions();
-        InvalidExpressions();
-    }
 
-    private static void DisplayFilterValues()
+
+    [Fact]
+    public void DisplayFilterValues()
     {
         var circle = new PanelRow(1, "{0}", "Circle", "circle", null,
             geometryInfo: new PanelGeometryInfo("Circle", 1000, units: "mm", metricName: "Radius"));
@@ -36,36 +23,37 @@ internal static class FilterQueryChecks
             new[] { new PanelBranch("{0}", 3), new PanelBranch("{1}", 0) }, PanelUnitConversion.MillimetersToMeters);
         var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Length, Search = "not a threshold", DisplayFilterValue = true };
         var result = PanelQueryEngine.Execute(snapshot, options);
-        Check(result.RowPositions.SequenceEqual(new[] { 0, 1, 2 }) && result.BranchPaths.SequenceEqual(new[] { "{0}", "{1}" }),
+        Assert.True(result.RowPositions.SequenceEqual(new[] { 0, 1, 2 }) && result.BranchPaths.SequenceEqual(new[] { "{0}", "{1}" }),
             "Display value bypasses comparison parsing, retains unsupported items and empty branches");
-        Check(options.Clone().DisplayFilterValue && !PanelQueryEngine.RequiresGeometryMeasurements(options) && PanelQueryEngine.GeometryCandidates(snapshot, options).Count == 0,
+        Assert.True(options.Clone().DisplayFilterValue && !PanelQueryEngine.RequiresGeometryMeasurements(options) && PanelQueryEngine.GeometryCandidates(snapshot, options).Count == 0,
             "Display state survives capture and leaves plain geometry display on visible-row measurement");
-        Check(PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, 3) == "6.283 m" &&
+        Assert.True(PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, 3) == "6.283 m" &&
             PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, 3, includeUnits: false) == "6.283",
             "Length display and numeric copy use converted circle circumference, not radius");
-        Check(PanelFilterValue.TryGeometryValue(circle, PanelSearchMode.Length, snapshot.UnitConversion, null, out double length) &&
+        Assert.True(PanelFilterValue.TryGeometryValue(circle, PanelSearchMode.Length, snapshot.UnitConversion, null, out double length) &&
             Math.Abs(length - 2 * Math.PI) < 1e-12, "Displayed geometry shares full-precision comparison values");
         string automatic = PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, PanelUnits.AutomaticDecimals);
-        Check(automatic == PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, PanelUnits.AutomaticDecimals, includeUnits: false) + " m",
+        Assert.True(automatic == PanelFilterValue.Format(snapshot, circle, PanelSearchMode.Length, PanelUnits.AutomaticDecimals, includeUnits: false) + " m",
             "Automatic metric formatting and copying retain the same digits");
-        Check(PanelFilterValue.Format(snapshot, scalar, PanelSearchMode.Value, 2) == "1.23 m" && scalar.NumericValue == 1.23456,
+        Assert.True(PanelFilterValue.Format(snapshot, scalar, PanelSearchMode.Value, 2) == "1.23 m" && scalar.NumericValue == 1.23456,
             "Scalar display formats an already converted value without converting twice or rounding stored data");
-        Check(PanelFilterValue.Format(snapshot, scalar, PanelSearchMode.Length, 2) == "n/a" &&
+        Assert.True(PanelFilterValue.Format(snapshot, scalar, PanelSearchMode.Length, 2) == "n/a" &&
             PanelFilterValue.Format(snapshot, pending, PanelSearchMode.Length, 2) == "measuring…" &&
             PanelFilterValue.Format(snapshot, pending, PanelSearchMode.Length, 2, pending.GeometryInfo!.WithUnavailableMeasurement()) == "unavailable",
             "Unsupported, pending and failed metric displays remain distinguishable");
         options.SearchMode = PanelSearchMode.ListLength;
         options.TypeName = "Circle";
-        Check(PanelQueryEngine.Execute(snapshot, options).RowPositions.SequenceEqual(new[] { 1 }) &&
+        Assert.True(PanelQueryEngine.Execute(snapshot, options).RowPositions.SequenceEqual(new[] { 1 }) &&
             PanelFilterValue.Format(snapshot, circle, options.SearchMode, 2) == "3",
             "Display mode respects type filters while list length counts the whole transformed branch");
         options.TypeName = null;
         options.BranchPath = "{1}";
-        Check(PanelQueryEngine.Execute(snapshot, options).BranchPaths.SequenceEqual(new[] { "{1}" }),
+        Assert.True(PanelQueryEngine.Execute(snapshot, options).BranchPaths.SequenceEqual(new[] { "{1}" }),
             "Empty branches remain inspectable through Paths in display mode");
     }
 
-    private static void SharedQueryScope()
+    [Fact]
+    public void SharedQueryScope()
     {
         var geometry = new PanelGeometryInfo("shape", units: "mm", metricName: "Length", canMeasure: true);
         var rows = new[]
@@ -97,7 +85,7 @@ internal static class FilterQueryChecks
         query.Search = "= 0";
         query.TypeName = null;
         Verify(Array.Empty<int>(), Array.Empty<int>());
-        Check(PanelQueryEngine.Execute(snapshot, query).BranchPaths.SequenceEqual(new[] { "{9}" }),
+        Assert.True(PanelQueryEngine.Execute(snapshot, query).BranchPaths.SequenceEqual(new[] { "{9}" }),
             "A branch-only predicate retains matching empty branches");
         query.Search = "";
         query.BranchPath = "7";
@@ -108,45 +96,47 @@ internal static class FilterQueryChecks
         void Verify(int[] expectedRows, int[] expectedMeasurements)
         {
             // Compare explicit memberships, independent of the final display ordering.
-            Check(PanelQueryEngine.Execute(snapshot, query).RowPositions.OrderBy(position => position).SequenceEqual(expectedRows),
+            Assert.True(PanelQueryEngine.Execute(snapshot, query).RowPositions.OrderBy(position => position).SequenceEqual(expectedRows),
                 "Final queries preserve branch, type, invalid-only and list-length scope");
-            Check(PanelQueryEngine.GeometryCandidates(snapshot, query).SequenceEqual(expectedMeasurements),
+            Assert.True(PanelQueryEngine.GeometryCandidates(snapshot, query).SequenceEqual(expectedMeasurements),
                 "Measurement preparation shares query scope and never measures invalid or excluded rows");
         }
     }
 
-    private static void FailedMeasurementPresentation()
+    [Fact]
+    public void FailedMeasurementPresentation()
     {
         var pending = new PanelGeometryInfo("Pending surface", power: 2, units: "mm",
             metricName: "Area", metricLabel: "A", canMeasure: true, details: "Surface details");
         var snapshot = Snapshot(Geometry(pending), Number(2));
         var failed = pending.WithUnavailableMeasurement();
-        Check(failed.MeasurementUnavailable && !failed.CanMeasure && failed.Value == null &&
+        Assert.True(failed.MeasurementUnavailable && !failed.CanMeasure && failed.Value == null &&
             failed.Description == pending.Description && failed.Details == pending.Details && failed.Power == pending.Power &&
             failed.Units == pending.Units && failed.MetricName == pending.MetricName && failed.MetricLabel == pending.MetricLabel,
             "Failed-measurement metadata retains captured presentation without a stale metric or pending state");
         var measurements = new Dictionary<int, PanelGeometryInfo> { [0] = failed };
         var query = new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "^Pending surface · measurement unavailable$" };
-        Check(PanelQueryEngine.Execute(snapshot, query, measuredGeometry: measurements).RowPositions.SequenceEqual(new[] { 0 }) &&
+        Assert.True(PanelQueryEngine.Execute(snapshot, query, measuredGeometry: measurements).RowPositions.SequenceEqual(new[] { 0 }) &&
             PanelValuePresentation.FormatDisplay(snapshot.Rows[0], PanelUnitConversion.None, -1, failed) ==
                 "Pending surface · measurement unavailable",
             "Regex and the canvas share persistent failed-measurement presentation");
         query.SearchMode = PanelSearchMode.Text;
         query.Search = "measurement unavailable";
-        Check(PanelQueryEngine.Execute(snapshot, query, measuredGeometry: measurements).RowPositions.SequenceEqual(new[] { 0 }),
+        Assert.True(PanelQueryEngine.Execute(snapshot, query, measuredGeometry: measurements).RowPositions.SequenceEqual(new[] { 0 }),
             "Persistent unavailable status is discoverable by substring search");
         query.SearchMode = PanelSearchMode.Area;
         query.Search = ">= 0";
-        Check(PanelQueryEngine.Execute(snapshot, query, measuredGeometry: measurements).RowPositions.Count == 0,
+        Assert.True(PanelQueryEngine.Execute(snapshot, query, measuredGeometry: measurements).RowPositions.Count == 0,
             "A failed measurement cannot satisfy a metric comparison");
-        Check(snapshot.HasMeasurableGeometry && !Snapshot(Number(2)).HasMeasurableGeometry &&
+        Assert.True(snapshot.HasMeasurableGeometry && !Snapshot(Number(2)).HasMeasurableGeometry &&
             !Snapshot(Geometry(new PanelGeometryInfo("Analytic", 2))).HasMeasurableGeometry &&
             !Snapshot(Geometry(pending, valid: false)).HasMeasurableGeometry &&
             !PanelSnapshot.Empty.HasMeasurableGeometry,
             "Snapshot metadata identifies deferred geometry without forcing scalar, analytic, or invalid-only queries onto workers");
     }
 
-    private static void DisplayedSorting()
+    [Fact]
+    public void DisplayedSorting()
     {
         var snapshot = new PanelSnapshot(new[]
         {
@@ -156,36 +146,37 @@ internal static class FilterQueryChecks
         }, new[] { new PanelBranch("{0}", 3) }, PanelUnitConversion.MillimetersToMeters);
         var measured = new Dictionary<int, PanelGeometryInfo> { [2] = new PanelGeometryInfo("Line", 100, units: "mm") };
         var query = new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending };
-        Check(PanelQueryEngine.RequiresGeometryMeasurements(query) &&
+        Assert.True(PanelQueryEngine.RequiresGeometryMeasurements(query) &&
             PanelQueryEngine.GeometryCandidates(snapshot, query).SequenceEqual(new[] { 2 }),
             "Sorting without a search measures offscreen geometry before display-text order is fixed");
-        Check(PanelQueryEngine.Execute(snapshot, query, measuredGeometry: measured).RowPositions.SequenceEqual(new[] { 2, 1, 0 }),
+        Assert.True(PanelQueryEngine.Execute(snapshot, query, measuredGeometry: measured).RowPositions.SequenceEqual(new[] { 2, 1, 0 }),
             "Nonnumeric rows sort by measured, converted displayed text instead of raw captured summaries");
         query.SortMode = PanelSortMode.ValueDescending;
-        Check(PanelQueryEngine.Execute(snapshot, query, measuredGeometry: measured).RowPositions.SequenceEqual(new[] { 0, 1, 2 }),
+        Assert.True(PanelQueryEngine.Execute(snapshot, query, measuredGeometry: measured).RowPositions.SequenceEqual(new[] { 0, 1, 2 }),
             "Descending display-text ordering uses the same converted geometry keys");
         query.SearchMode = PanelSearchMode.Value;
         query.Search = "> 0";
-        Check(PanelQueryEngine.GeometryCandidates(snapshot, query).Count == 0,
+        Assert.True(PanelQueryEngine.GeometryCandidates(snapshot, query).Count == 0,
             "Scalar comparisons reject nonnumeric geometry before any sorting measurement");
         var mixed = Snapshot(Number(4), Geometry(new PanelGeometryInfo("Expensive surface", power: 2,
             metricName: "Area", canMeasure: true)), Geometry(new PanelGeometryInfo("Expensive curve", canMeasure: true)));
-        Check(!PanelQueryEngine.RequiresGeometryMeasurements(query) && PanelQueryEngine.GeometryCandidates(mixed, query).Count == 0 &&
+        Assert.True(!PanelQueryEngine.RequiresGeometryMeasurements(query) && PanelQueryEngine.GeometryCandidates(mixed, query).Count == 0 &&
             PanelQueryEngine.Execute(mixed, query).RowPositions.SequenceEqual(new[] { 0 }),
             "Sorted scalar filters over mixed input do not measure geometry that cannot be returned");
         query.SearchMode = PanelSearchMode.Text;
-        Check(!PanelQueryEngine.RequiresGeometryMeasurements(query) && PanelQueryEngine.GeometryCandidates(mixed, query).Count == 0,
+        Assert.True(!PanelQueryEngine.RequiresGeometryMeasurements(query) && PanelQueryEngine.GeometryCandidates(mixed, query).Count == 0,
             "Sorted legacy scalar comparisons in Text mode also exclude geometry candidates");
         query.SearchMode = PanelSearchMode.Area;
-        Check(PanelQueryEngine.GeometryCandidates(mixed, query).SequenceEqual(new[] { 1 }),
+        Assert.True(PanelQueryEngine.GeometryCandidates(mixed, query).SequenceEqual(new[] { 1 }),
             "Sorting an Area-filtered result does not measure excluded Length geometry");
         query.SearchMode = PanelSearchMode.ListLength;
         query.Search = "= 0";
-        Check(PanelQueryEngine.GeometryCandidates(snapshot, query).Count == 0,
+        Assert.True(PanelQueryEngine.GeometryCandidates(snapshot, query).Count == 0,
             "Branch-count restrictions exclude impossible sorting candidates before measuring");
     }
 
-    private static void DisplayedTextAndPrecision()
+    [Fact]
+    public void DisplayedTextAndPrecision()
     {
         // Scalar values have already been converted by the runtime before snapshot capture.
         var numeric = new PanelSnapshot(new[] { Number(1.234), Number(2.345) },
@@ -195,28 +186,28 @@ internal static class FilterQueryChecks
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
             var query = new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = @"^1\.23 m$", DecimalPlaces = 2 };
-            Check(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 0 }),
+            Assert.True(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 0 }),
                 "Regex uses converted scalar units and the same decimals and culture as displayed text");
-            Check(PanelValuePresentation.FormatDisplay(numeric.Rows[0], numeric.UnitConversion, 2) == "1.23 m",
+            Assert.True(PanelValuePresentation.FormatDisplay(numeric.Rows[0], numeric.UnitConversion, 2) == "1.23 m",
                 "Shared scalar presentation formats converted snapshot values without converting twice");
             using var work = PanelQueryEngine.Start(numeric, query);
             query.DecimalPlaces = 0;
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("en-US");
-            Check(work.Complete().RowPositions.SequenceEqual(new[] { 0 }),
+            Assert.True(work.Complete().RowPositions.SequenceEqual(new[] { 0 }),
                 "Deferred queries retain captured formatting options and culture");
             query = new PanelQueryOptions { Search = "1.23 m", DecimalPlaces = 2 };
-            Check(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 0 }),
+            Assert.True(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 0 }),
                 "Text substring search uses the same fixed-decimal presentation as regex");
             query.SearchMode = PanelSearchMode.Value;
             query.Search = "> 1.23";
-            Check(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 1 }),
+            Assert.True(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 1 }),
                 "Numeric comparisons use the shown precision");
             query.Search = "= 1.23";
-            Check(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 0 }),
+            Assert.True(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 0 }),
                 "Numeric equality compares the presented number");
             query.SearchMode = PanelSearchMode.Text;
             query.Search = "> 1.23";
-            Check(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 1 }) &&
+            Assert.True(PanelQueryEngine.Execute(numeric, query).RowPositions.SequenceEqual(new[] { 1 }) &&
                 !PanelQueryEngine.RequiresGeometryMeasurements(query) && !PanelQueryEngine.UsesDisplayedText(query),
                 "Legacy numeric comparisons in Text mode use presented numbers and skip geometry work");
         }
@@ -233,32 +224,34 @@ internal static class FilterQueryChecks
             [1] = new PanelGeometryInfo("Measured curve", 1234.5, units: "mm")
         };
         var textQuery = new PanelQueryOptions { Search = "L 1.23 m", DecimalPlaces = 2 };
-        Check(PanelQueryEngine.Execute(geometries, textQuery, measuredGeometry: measurements).RowPositions.SequenceEqual(new[] { 0, 1 }),
+        Assert.True(PanelQueryEngine.Execute(geometries, textQuery, measuredGeometry: measurements).RowPositions.SequenceEqual(new[] { 0, 1 }),
             "Text search uses both analytic and measured geometry metrics in displayed units and precision");
         textQuery.SearchMode = PanelSearchMode.Regex;
         textQuery.Search = "^Measured curve · L 1\\.23 m$";
-        Check(PanelQueryEngine.Execute(geometries, textQuery, measuredGeometry: measurements).RowPositions.SequenceEqual(new[] { 1 }),
+        Assert.True(PanelQueryEngine.Execute(geometries, textQuery, measuredGeometry: measurements).RowPositions.SequenceEqual(new[] { 1 }),
             "Regex uses the measured compact description rather than the captured placeholder");
         textQuery.Search = "^Invalid · unavailable$";
-        Check(PanelQueryEngine.Execute(geometries, textQuery).RowPositions.SequenceEqual(new[] { 2 }),
+        Assert.True(PanelQueryEngine.Execute(geometries, textQuery).RowPositions.SequenceEqual(new[] { 2 }),
             "Regex sees the same invalid marker displayed on the canvas");
-        Check(PanelValuePresentation.FormatDisplay(geometries.Rows[0], geometries.UnitConversion, 2) == "Curve · L 1.23 m",
+        Assert.True(PanelValuePresentation.FormatDisplay(geometries.Rows[0], geometries.UnitConversion, 2) == "Curve · L 1.23 m",
             "Shared geometry presentation retains the unit-aware formatter");
     }
 
-    private static void InvalidNumbers()
+    [Fact]
+    public void InvalidNumbers()
     {
         var snapshot = Snapshot(Number(2), new PanelRow(1, "{0}", "Number", "invalid", -1.234321e308, isValid: false));
         Positions(snapshot, PanelSearchMode.Value, "< 0");
         Positions(snapshot, PanelSearchMode.Value, "!= 2");
         Positions(snapshot, PanelSearchMode.Text, "< 0");
         var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
-        Check(result.Statistics.NumericCount == 1 && result.Statistics.Minimum == 2 &&
+        Assert.True(result.Statistics.NumericCount == 1 && result.Statistics.Minimum == 2 &&
             result.Statistics.Maximum == 2 && result.Statistics.Mean == 2 && result.Statistics.InvalidCount == 1,
             "Invalid finite sentinels remain browsable but do not contaminate numeric filters or statistics");
     }
 
-    private static void BranchListLengths()
+    [Fact]
+    public void BranchListLengths()
     {
         var snapshot = new PanelSnapshot(new[]
         {
@@ -287,36 +280,37 @@ internal static class FilterQueryChecks
 
         var query = new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = "0" };
         var empty = PanelQueryEngine.Execute(snapshot, query);
-        Check(empty.BranchPaths.SequenceEqual(new[] { "{0;1;3}", "{9}" }) &&
+        Assert.True(empty.BranchPaths.SequenceEqual(new[] { "{0;1;3}", "{9}" }) &&
             empty.Statistics.BranchCount == 2 && empty.Statistics.ItemCount == 0 &&
             empty.Statistics.BranchItemCounts.Count == 2 && empty.Statistics.BranchItemCounts.Values.All(count => count == 0),
             "Zero-length filter retains only existing empty branches in result paths and statistics");
         query.BranchPath = "0;1";
         query.BranchPrefix = true;
-        Check(PanelQueryEngine.Execute(snapshot, query).BranchPaths.SequenceEqual(new[] { "{0;1;3}" }),
+        Assert.True(PanelQueryEngine.Execute(snapshot, query).BranchPaths.SequenceEqual(new[] { "{0;1;3}" }),
             "Zero-length branch filters compose with descendant selection");
         query.Search = ">= 1";
         query.TypeName = "Number";
         var numbers = PanelQueryEngine.Execute(snapshot, query);
-        Check(numbers.RowPositions.SequenceEqual(new[] { 0, 2, 3 }) && numbers.Statistics.BranchItemCounts["{0;1}"] == 2,
+        Assert.True(numbers.RowPositions.SequenceEqual(new[] { 0, 2, 3 }) && numbers.Statistics.BranchItemCounts["{0;1}"] == 2,
             "Branch lengths use pre-item-filter counts, while statistics describe retained items");
         query.Search = "= 3";
         query.OnlyInvalid = true;
-        Check(PanelQueryEngine.Execute(snapshot, query).RowPositions.SequenceEqual(new[] { 2 }),
+        Assert.True(PanelQueryEngine.Execute(snapshot, query).RowPositions.SequenceEqual(new[] { 2 }),
             "Branch length is independent of invalid-only and type restrictions");
         query.Search = "= 0";
-        Check(PanelQueryEngine.Execute(snapshot, query).BranchPaths.Count == 0,
+        Assert.True(PanelQueryEngine.Execute(snapshot, query).BranchPaths.Count == 0,
             "Item restrictions suppress empty branches because they contain no matching items");
         query = new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength };
-        Check(PanelQueryEngine.Execute(snapshot, query).BranchPaths.Count == 5 &&
+        Assert.True(PanelQueryEngine.Execute(snapshot, query).BranchPaths.Count == 5 &&
             PanelQueryEngine.Execute(snapshot, query).RowPositions.Count == 6,
             "Selecting list length without an expression preserves all branches and items");
-        Check(!PanelQueryEngine.RequiresGeometryMeasurements(query) &&
+        Assert.True(!PanelQueryEngine.RequiresGeometryMeasurements(query) &&
             PanelQueryEngine.GeometryCandidates(snapshot, query).Count == 0,
             "Branch length never requires geometry measurements");
     }
 
-    private static void BranchPaths()
+    [Fact]
+    public void BranchPaths()
     {
         var snapshot = Snapshot(
             new PanelRow(0, "{0;0;1}", "Number", "1", 1),
@@ -325,24 +319,25 @@ internal static class FilterQueryChecks
         foreach (string path in new[] { "{0;0;1}", "0;0;1", " 0 ; 0 ; 01 ", " { 0 ; 0 ; 1 } " })
         {
             var query = new PanelQueryOptions { BranchPath = path };
-            Check(PanelQueryEngine.NormalizeBranchPath(path) == "{0;0;1}" &&
+            Assert.True(PanelQueryEngine.NormalizeBranchPath(path) == "{0;0;1}" &&
                 PanelQueryEngine.Execute(snapshot, query).RowPositions.SequenceEqual(new[] { 0 }),
                 "Bare and braced branch paths select the same canonical branch");
             query.BranchPrefix = true;
-            Check(PanelQueryEngine.Execute(snapshot, query).RowPositions.SequenceEqual(new[] { 0, 1 }),
+            Assert.True(PanelQueryEngine.Execute(snapshot, query).RowPositions.SequenceEqual(new[] { 0, 1 }),
                 "Prefix matching selects descendants without selecting similar sibling paths");
         }
-        Check(PanelQueryEngine.NormalizeBranchPath(null) == null && PanelQueryEngine.NormalizeBranchPath(" \t ") == null,
+        Assert.True(PanelQueryEngine.NormalizeBranchPath(null) == null && PanelQueryEngine.NormalizeBranchPath(" \t ") == null,
             "Only absent or blank paths clear branch selection");
         foreach (string malformed in new[] { "{0;1", "0;1}", "{}", "0;;1", "0,1", "0;-1", "-1", "2147483648", "{{0;1}}", "hello" })
-            Throws<ArgumentException>(() => PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { BranchPath = malformed }));
+            Assert.ThrowsAny<ArgumentException>(() => PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { BranchPath = malformed }));
         var measured = Snapshot(Geometry(new PanelGeometryInfo("pending", power: 2, metricName: "Area", canMeasure: true), "{0;0;1}"));
-        Check(PanelQueryEngine.GeometryCandidates(measured,
+        Assert.True(PanelQueryEngine.GeometryCandidates(measured,
             new PanelQueryOptions { BranchPath = "0;0;1", SearchMode = PanelSearchMode.Area, Search = "> 0" }).SequenceEqual(new[] { 0 }),
             "Geometry candidate discovery uses the same normalized branch selection");
     }
 
-    private static void NumericComparisons()
+    [Fact]
+    public void NumericComparisons()
     {
         var snapshot = Snapshot(
             Number(1), Number(2), Number(3), Number(double.NaN), Number(double.PositiveInfinity),
@@ -367,12 +362,13 @@ internal static class FilterQueryChecks
         var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 2" };
         var clone = options.Clone();
         options.SearchMode = PanelSearchMode.Text;
-        Check(clone.SearchMode == PanelSearchMode.Area && clone.Search == "> 2", "Cloned query retains its filter mode and expression");
-        Check(PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SearchMode = PanelSearchMode.Value }).RowPositions.Count == 7,
+        Assert.True(clone.SearchMode == PanelSearchMode.Area && clone.Search == "> 2", "Cloned query retains its filter mode and expression");
+        Assert.True(PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SearchMode = PanelSearchMode.Value }).RowPositions.Count == 7,
             "Selecting a mode without an expression leaves the view unrestricted");
     }
 
-    private static void GeometryMetricsAndUnits()
+    [Fact]
+    public void GeometryMetricsAndUnits()
     {
         var snapshot = Snapshot(
             Geometry(new PanelGeometryInfo("line", 2000, units: "mm")),
@@ -407,14 +403,15 @@ internal static class FilterQueryChecks
         };
         var result = PanelQueryEngine.Execute(converted, new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 3" },
             measuredGeometry: measurements);
-        Check(result.RowPositions.SequenceEqual(new[] { 7 }) && ReferenceEquals(result.Snapshot, converted),
+        Assert.True(result.RowPositions.SequenceEqual(new[] { 7 }) && ReferenceEquals(result.Snapshot, converted),
             "Measured metrics are filtered at full precision without changing the snapshot identity");
-        Check(!converted.Rows[7].GeometryInfo!.Value.HasValue, "Filtering never mutates geometry presentation records");
-        Check(result.Statistics.NumericCount == 0 && result.Statistics.BranchCount == 1,
+        Assert.True(!converted.Rows[7].GeometryInfo!.Value.HasValue, "Filtering never mutates geometry presentation records");
+        Assert.True(result.Statistics.NumericCount == 0 && result.Statistics.BranchCount == 1,
             "Geometry predicates preserve numeric statistics and branch counting semantics");
     }
 
-    private static void MeasurementCandidates()
+    [Fact]
+    public void MeasurementCandidates()
     {
         PanelGeometryInfo Pending(string metric, int power) => new PanelGeometryInfo(metric, power: power, metricName: metric, canMeasure: true);
         var snapshot = Snapshot(
@@ -426,38 +423,39 @@ internal static class FilterQueryChecks
             Geometry(new PanelGeometryInfo("analytic", 2, 2, metricName: "Area"), "{0;1}"),
             Geometry(Pending("Area", 2), "{0;1}", false));
         var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 1", BranchPath = "{0;1}", BranchPrefix = true };
-        Check(PanelQueryEngine.RequiresGeometryMeasurements(options), "Geometry expressions request measurements");
-        Check(PanelQueryEngine.GeometryCandidates(snapshot, options).SequenceEqual(new[] { 0, 1 }),
+        Assert.True(PanelQueryEngine.RequiresGeometryMeasurements(options), "Geometry expressions request measurements");
+        Assert.True(PanelQueryEngine.GeometryCandidates(snapshot, options).SequenceEqual(new[] { 0, 1 }),
             "Candidates include compatible descendants and exclude sibling paths, analytic values, wrong metrics and invalid geometry");
         options.TypeName = "Missing";
-        Check(PanelQueryEngine.GeometryCandidates(snapshot, options).Count == 0, "Type restriction is applied before measuring");
+        Assert.True(PanelQueryEngine.GeometryCandidates(snapshot, options).Count == 0, "Type restriction is applied before measuring");
         options.TypeName = null;
         options.OnlyInvalid = true;
-        Check(PanelQueryEngine.GeometryCandidates(snapshot, options).Count == 0, "Invalid geometry is never measured");
+        Assert.True(PanelQueryEngine.GeometryCandidates(snapshot, options).Count == 0, "Invalid geometry is never measured");
         options.OnlyInvalid = false;
         options.SearchMode = PanelSearchMode.Text;
         options.Search = "Area";
-        Check(PanelQueryEngine.RequiresGeometryMeasurements(options) && PanelQueryEngine.UsesDisplayedText(options) &&
+        Assert.True(PanelQueryEngine.RequiresGeometryMeasurements(options) && PanelQueryEngine.UsesDisplayedText(options) &&
             PanelQueryEngine.GeometryCandidates(snapshot, options).SequenceEqual(new[] { 0, 1, 3, 4 }),
             "Text queries measure all compatible offscreen geometry kinds after cheap branch restrictions");
         options.Search = "> 1";
-        Check(!PanelQueryEngine.RequiresGeometryMeasurements(options) &&
+        Assert.True(!PanelQueryEngine.RequiresGeometryMeasurements(options) &&
             PanelQueryEngine.GeometryCandidates(snapshot, options).Count == 0,
             "Numeric expressions in Text mode never request geometry measurements");
         options.SearchMode = PanelSearchMode.Regex;
         options.Search = " ";
-        Check(PanelQueryEngine.RequiresGeometryMeasurements(options) &&
+        Assert.True(PanelQueryEngine.RequiresGeometryMeasurements(options) &&
             PanelQueryEngine.GeometryCandidates(snapshot, options).SequenceEqual(new[] { 0, 1, 3, 4 }),
             "Significant regex whitespace still uses displayed geometry and requests its measurements");
         options.SearchMode = PanelSearchMode.Text;
-        Check(!PanelQueryEngine.RequiresGeometryMeasurements(options) && PanelQueryEngine.GeometryCandidates(snapshot, options).Count == 0,
+        Assert.True(!PanelQueryEngine.RequiresGeometryMeasurements(options) && PanelQueryEngine.GeometryCandidates(snapshot, options).Count == 0,
             "Blank expressions never start offscreen measurements");
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        Throws<OperationCanceledException>(() => PanelQueryEngine.GeometryCandidates(snapshot, options, cancellation.Token));
+        Assert.ThrowsAny<OperationCanceledException>(() => PanelQueryEngine.GeometryCandidates(snapshot, options, cancellation.Token));
     }
 
-    private static void RegularExpressions()
+    [Fact]
+    public void RegularExpressions()
     {
         var snapshot = Snapshot(
             new PanelRow(0, "{0}", "Text", "Door-01", null),
@@ -478,35 +476,36 @@ internal static class FilterQueryChecks
         finally { CultureInfo.CurrentCulture = previous; }
         var restricted = PanelQueryEngine.Execute(snapshot,
             new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = @"^door-\d{2}$", BranchPath = "{1}", TypeName = "Text" });
-        Check(restricted.RowPositions.SequenceEqual(new[] { 1 }), "Regex composes with branch and type filters");
+        Assert.True(restricted.RowPositions.SequenceEqual(new[] { 1 }), "Regex composes with branch and type filters");
         var hostile = Snapshot(new PanelRow(0, "{0}", "Text", new string('a', 50000) + "!", null));
         var watch = Stopwatch.StartNew();
-        Throws<ArgumentException>(() => PanelQueryEngine.Execute(hostile,
+        Assert.ThrowsAny<ArgumentException>(() => PanelQueryEngine.Execute(hostile,
             new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "^(a+)+$" }));
-        Check(watch.Elapsed < TimeSpan.FromSeconds(5), "Pathological regex exits within a bounded match budget");
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), "Pathological regex exits within a bounded match budget");
         // Each short input is cheap; a whole tree must still have a finite budget.
         var repeated = new PanelRow(0, "{0}", "Text", new string('a', 14) + "!", null);
         var aggregate = new PanelSnapshot(Enumerable.Repeat(repeated, 100000).ToArray(), new[] { new PanelBranch("{0}", 100000) });
         watch.Restart();
-        Throws<ArgumentException>(() => PanelQueryEngine.Execute(aggregate,
+        Assert.ThrowsAny<ArgumentException>(() => PanelQueryEngine.Execute(aggregate,
             new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "^(a+)+$" }));
-        Check(watch.Elapsed < TimeSpan.FromSeconds(5), "Repeated short regex matches share an overall query budget");
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), "Repeated short regex matches share an overall query budget");
     }
 
-    private static void InvalidExpressions()
+    [Fact]
+    public void InvalidExpressions()
     {
         foreach (string expression in new[] { "> nonsense", ">=", "NaN", "Infinity", "1e999", "2,5", "! 3" })
         {
-            Throws<ArgumentException>(() => PanelQueryEngine.Execute(PanelSnapshot.Empty,
+            Assert.ThrowsAny<ArgumentException>(() => PanelQueryEngine.Execute(PanelSnapshot.Empty,
                 new PanelQueryOptions { SearchMode = PanelSearchMode.Value, Search = expression }));
-            Throws<ArgumentException>(() => PanelQueryEngine.Execute(PanelSnapshot.Empty,
+            Assert.ThrowsAny<ArgumentException>(() => PanelQueryEngine.Execute(PanelSnapshot.Empty,
                 new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = expression }));
         }
-        Throws<ArgumentException>(() => PanelQueryEngine.GeometryCandidates(PanelSnapshot.Empty,
+        Assert.ThrowsAny<ArgumentException>(() => PanelQueryEngine.GeometryCandidates(PanelSnapshot.Empty,
             new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> bad" }));
-        Throws<ArgumentException>(() => PanelQueryEngine.Execute(PanelSnapshot.Empty,
+        Assert.ThrowsAny<ArgumentException>(() => PanelQueryEngine.Execute(PanelSnapshot.Empty,
             new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "[" }));
-        Check(PanelQueryEngine.Execute(PanelSnapshot.Empty, new PanelQueryOptions { Search = "> nonsense" }).RowPositions.Count == 0,
+        Assert.True(PanelQueryEngine.Execute(PanelSnapshot.Empty, new PanelQueryOptions { Search = "> nonsense" }).RowPositions.Count == 0,
             "Legacy text mode still treats malformed comparisons as literal text");
     }
 
@@ -516,16 +515,7 @@ internal static class FilterQueryChecks
     private static PanelSnapshot Snapshot(params PanelRow[] rows) => new PanelSnapshot(rows,
         rows.GroupBy(row => row.Path).Select(group => new PanelBranch(group.Key, group.Count())).ToArray());
     private static void Positions(PanelSnapshot snapshot, PanelSearchMode mode, string expression, params int[] positions) =>
-        Check(PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SearchMode = mode, Search = expression }).RowPositions.SequenceEqual(positions),
+        Assert.True(PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SearchMode = mode, Search = expression }).RowPositions.SequenceEqual(positions),
             mode + " query '" + expression + "' matches expected rows");
-    private static void Check(bool condition, string message)
-    {
-        if (!condition) throw new InvalidOperationException(message);
-    }
-    private static void Throws<T>(Action action) where T : Exception
-    {
-        try { action(); }
-        catch (T) { return; }
-        throw new InvalidOperationException("Expected " + typeof(T).Name);
-    }
+
 }
