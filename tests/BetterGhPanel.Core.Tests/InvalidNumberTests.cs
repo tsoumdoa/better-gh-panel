@@ -29,14 +29,7 @@ public class InvalidNumberTests
     [Fact]
     public void InvalidFiniteNumbersRemainVisibleButAreExcludedFromStatistics()
     {
-        // RhinoMath.UnsetValue is finite, but a native GH_Number carrying it is invalid.
-        const double unsetValue = -1.23432101234321e308;
-        var snapshot = new PanelSnapshot(new[]
-        {
-            new PanelRow(0, "{0}", "Number", "-1.23432101234E+308", unsetValue, isValid: false),
-            new PanelRow(1, "{0}", "Number", "10", 10),
-            new PanelRow(2, "{0}", "Number", "42", 42, isValid: false)
-        }, new[] { new PanelBranch("{0}", 3) });
+        var snapshot = CreateUnsetValueSnapshot();
         var all = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
         Assert.Equal(new[] { 0, 1, 2 }, all.RowPositions);
         Assert.Equal(2, all.Statistics.InvalidCount);
@@ -53,14 +46,7 @@ public class InvalidNumberTests
     [InlineData(PanelSearchMode.Value)]
     public void NumericSearchExcludesInvalidFiniteValues(PanelSearchMode mode)
     {
-        // RhinoMath.UnsetValue is finite, but a native GH_Number carrying it is invalid.
-        const double unsetValue = -1.23432101234321e308;
-        var snapshot = new PanelSnapshot(new[]
-        {
-            new PanelRow(0, "{0}", "Number", "-1.23432101234E+308", unsetValue, isValid: false),
-            new PanelRow(1, "{0}", "Number", "10", 10),
-            new PanelRow(2, "{0}", "Number", "42", 42, isValid: false)
-        }, new[] { new PanelBranch("{0}", 3) });
+        var snapshot = CreateUnsetValueSnapshot();
         Assert.Equal(0, PanelQueryEngine.Execute(snapshot,
             new PanelQueryOptions { SearchMode = mode, Search = "< 0" }).RowPositions.Count);
         Assert.Equal(0, PanelQueryEngine.Execute(snapshot,
@@ -72,6 +58,25 @@ public class InvalidNumberTests
     [Fact]
     public void SortingRetainsInvalidFiniteRows()
     {
+        var snapshot = CreateUnsetValueSnapshot();
+        Assert.Equal(new[] { 1, 0, 2 }, PanelQueryEngine.Execute(snapshot,
+            new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending }).RowPositions);
+        Assert.Equal(new[] { 1, 2, 0 }, PanelQueryEngine.Execute(snapshot,
+            new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending }).RowPositions);
+    }
+
+    [Fact]
+    public void InvalidOnlyResultsHaveNoNumericStatistics()
+    {
+        var snapshot = CreateUnsetValueSnapshot();
+        var invalid = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { OnlyInvalid = true });
+        Assert.Equal(new[] { 0, 2 }, invalid.RowPositions);
+        Assert.Equal(0, invalid.Statistics.NumericCount);
+        Assert.Equal<double?>(null, invalid.Statistics.Mean);
+    }
+
+    private static PanelSnapshot CreateUnsetValueSnapshot()
+    {
         // RhinoMath.UnsetValue is finite, but a native GH_Number carrying it is invalid.
         const double unsetValue = -1.23432101234321e308;
         var snapshot = new PanelSnapshot(new[]
@@ -80,9 +85,6 @@ public class InvalidNumberTests
             new PanelRow(1, "{0}", "Number", "10", 10),
             new PanelRow(2, "{0}", "Number", "42", 42, isValid: false)
         }, new[] { new PanelBranch("{0}", 3) });
-        Assert.Equal(new[] { 1, 0, 2 }, PanelQueryEngine.Execute(snapshot,
-            new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending }).RowPositions);
-        Assert.Equal(new[] { 1, 2, 0 }, PanelQueryEngine.Execute(snapshot,
-            new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending }).RowPositions);
+        return snapshot;
     }
 }
