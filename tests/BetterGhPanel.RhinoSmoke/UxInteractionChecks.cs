@@ -131,6 +131,25 @@ internal static class UxInteractionChecks
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 29);
         fixture.Query(new PanelQueryOptions());
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+        Render();
+        var trim = PanelTestAdapter.Bounds(component, CanvasControl.Trim);
+        PanelTestAdapter.CanvasClick(canvas, new PointF(trim.Left + trim.Width / 2, trim.Top + trim.Height / 2));
+        var trimEdit = CanvasEditorAdapter.Active(assembly); trimEdit.Type("2"); trimEdit.Blur();
+        int trimPublications = 0;
+        var publicationHook = component.GetType().GetProperty("BeforeOutputValidationForTesting", Instance)!;
+        var previousHook = publicationHook.GetValue(component);
+        publicationHook.SetValue(component, (Action)(() => trimPublications++));
+        try
+        {
+            fixture.Solve();
+            await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 80);
+            Check((int)component.GetType().GetProperty("TrimDepth", Instance)!.GetValue(component)! == 2 && trimPublications == 1,
+                "Trim committed during upstream expiry publishes once without a nested solution");
+        }
+        finally { publicationHook.SetValue(component, previousHook); }
+        Call(component, "SetTreeOperations", 0, false, false, false, false);
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
+        Render();
         var rowEdit = Search();
         await Preview(rowEdit, "> 50", 29);
         Render();

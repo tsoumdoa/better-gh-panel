@@ -42,6 +42,7 @@ namespace BetterGhPanel
         private bool _retainGeometryMeasurements;
         private GH_Structure<IGH_Goo>? _queryTree;
         private bool _solving, _preserveQuery, _reuseQuery;
+        private bool _completingInClearData;
         private long _solveGeneration;
         private bool _issuingCaptureRetry;
         private int _captureRetries;
@@ -477,7 +478,10 @@ namespace BetterGhPanel
             if (settingsChanged) OnPingDocument()?.Modified();
             try
             {
-                if (outputChanged) ExpireSolution(true);
+                if (outputChanged)
+                {
+                    if (!_completingInClearData) ExpireSolution(true);
+                }
                 else ScheduleOutput();
             }
             finally { _discardViewRestore = false; }
@@ -518,7 +522,7 @@ namespace BetterGhPanel
             else Session.UpdateQuery(Session.Options);
             OnPingDocument()?.Modified();
             _discardViewRestore = true;
-            try { ExpireSolution(true); }
+            try { if (!_completingInClearData) ExpireSolution(true); }
             finally { _discardViewRestore = false; }
             Instances.ActiveCanvas?.Invalidate();
         }
@@ -612,7 +616,7 @@ namespace BetterGhPanel
             DecimalPlaces = decimals;
             OnPingDocument()?.Modified();
             _retainGeometryMeasurements = true;
-            try { ExpireSolution(true); }
+            try { if (!_completingInClearData) ExpireSolution(true); }
             finally { _retainGeometryMeasurements = false; }
             Instances.ActiveCanvas?.Invalidate();
         }
@@ -973,7 +977,13 @@ namespace BetterGhPanel
         {
             // An upstream click may have hidden an editor without yielding to its
             // deferred completion. Keep that edit before replacing its snapshot.
-            if (!_preserveQuery) CanvasTextInput.CompletePending();
+            if (!_preserveQuery)
+            {
+                bool completing = _completingInClearData;
+                _completingInClearData = true;
+                try { CanvasTextInput.CompletePending(); }
+                finally { _completingInClearData = completing; }
+            }
             ++_solveGeneration;
             if (!_issuingCaptureRetry) _captureRetries = 0;
             // Grasshopper expires the component before collecting its next input.
