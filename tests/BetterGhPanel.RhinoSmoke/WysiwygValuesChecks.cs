@@ -60,9 +60,12 @@ internal static class WysiwygValuesChecks
             fixture.Scope(scope);
             Check((string)Call(attributes, "OutputPortLabel", component.Params.Output[0])! == "D" &&
                 (string)Call(attributes, "OutputPortLabel", component.Params.Output[1])! == "S" &&
-                (string)Call(attributes, "OutputPortLabel", component.Params.Output[2])! == (scope == PanelOutputScope.Selected ? "B·S" : "B") &&
-                (string)Call(attributes, "OutputPortLabel", component.Params.Output[3])! == (scope == PanelOutputScope.Selected ? "F·S" : "F"),
-                "Values retain D/S labels and B/F retain selected-scope suffixes");
+                (string)Call(attributes, "OutputPortLabel", component.Params.Output[2])! == "B" &&
+                (string)Call(attributes, "OutputPortLabel", component.Params.Output[3])! == "F",
+                "All scopes retain D/S/B/F port labels");
+            string scopeLabel = scope == PanelOutputScope.Selected ? "Selection" : "Results";
+            Check(component.Params.Output[2].Description.Contains(scopeLabel) && component.Params.Output[3].Description.Contains(scopeLabel),
+                "B/F parameter descriptions track the current scope");
         }
         fixture.Scope(PanelOutputScope.Filtered);
         using var canvas = new GH_Canvas { Document = fixture.Document, Size = new Size(1600, 820) };

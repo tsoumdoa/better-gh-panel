@@ -58,8 +58,8 @@ namespace BetterGhPanel.UI
         };
         private static readonly CanvasPreviewChoice[] PreviewChoices =
         {
-            new CanvasPreviewChoice(PanelPreviewMode.Selected, "Selected"),
-            new CanvasPreviewChoice(PanelPreviewMode.FilteredResults, "Filtered results"),
+            new CanvasPreviewChoice(PanelPreviewMode.Selected, "Selection"),
+            new CanvasPreviewChoice(PanelPreviewMode.FilteredResults, "Results"),
             new CanvasPreviewChoice(PanelPreviewMode.Off, "Off"),
             new CanvasPreviewChoice(null, "Show item order")
         };

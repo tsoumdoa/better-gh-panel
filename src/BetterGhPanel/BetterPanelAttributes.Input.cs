@@ -329,32 +329,42 @@ namespace BetterGhPanel
 
         // Upstream recomputes keep the scroll position when the new tree has the
         // same paths and branch lengths; otherwise the view starts at the top.
-        // Selection deliberately still clears: an address may now hold different
-        // data, and S/B/F must never silently emit items the user did not pick.
+        // Selection is re-bound explicitly only after the same structure check.
+        private PanelQueryResult? _selectionRestore;
+        private PanelRowSelection? _savedSelection;
+
         internal void StashViewForRestore()
         {
+            EndQueryPreview(_previewOwner);
             var result = _lastResult;
             // A second expiry before the next result keeps the original stash.
             if (result == null) return;
+            _selectionRestore = result;
+            _savedSelection = PanelOwner.CreateSetTree ? null : PanelOwner.CommittedSelection.CopyForPreview();
             _viewRestore = _offset == 0 && _pairedOffset == 0 ? null : new ViewRestore(result.Snapshot, _offset, _pairedOffset, DisplayListLengths);
         }
 
         private void RestoreView(PanelQueryResult result)
         {
+            // A cancelled live edit can republish the stashed (old) snapshot; only the
+            // replacement input may consume an upstream-recompute stash.
+            if (_selectionRestore != null && ReferenceEquals(result.Snapshot, _selectionRestore.Snapshot)) return;
+            bool? sameStructure = null;
+            if (_selectionRestore != null)
+            {
+                sameStructure = PanelRowSelection.SameStructure(_selectionRestore.Snapshot, result.Snapshot);
+                if (sameStructure == true && _savedSelection != null && !PanelOwner.CreateSetTree)
+                    _selection.Rebind(_savedSelection, result);
+                _selectionRestore = null;
+                _savedSelection = null;
+            }
             var restore = _viewRestore;
             if (restore == null) return;
             _viewRestore = null;
-            if (restore.ListLengths != DisplayListLengths || !SameStructure(restore.Snapshot, result.Snapshot)) return;
+            if (restore.ListLengths != DisplayListLengths ||
+                !(sameStructure ?? PanelRowSelection.SameStructure(restore.Snapshot, result.Snapshot))) return;
             _offset = Math.Max(0, Math.Min(MaximumOffset, restore.Offset));
             _pairedOffset = _scrollLocked ? _offset : Math.Max(0, Math.Min(MaximumOffset, restore.PairedOffset));
-        }
-
-        private static bool SameStructure(PanelSnapshot before, PanelSnapshot after)
-        {
-            if (before.Rows.Count != after.Rows.Count || before.Branches.Count != after.Branches.Count) return false;
-            for (int i = 0; i < before.Branches.Count; i++)
-                if (before.Branches[i].Path != after.Branches[i].Path || before.Branches[i].ItemCount != after.Branches[i].ItemCount) return false;
-            return true;
         }
 
         private sealed class ViewRestore

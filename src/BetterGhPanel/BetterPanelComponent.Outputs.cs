@@ -16,10 +16,12 @@ namespace BetterGhPanel
     {
         private readonly PanelRowSelection _committedSelection = new PanelRowSelection();
         private PanelRowSelection? _queryPreviewSelection;
+        internal PanelRowSelection CommittedSelection => _committedSelection;
         internal PanelRowSelection RowSelection => _queryPreviewSelection ?? _committedSelection;
         internal PanelOutputScope OutputScope { get; private set; }
         internal PanelOutputValues OutputValues { get; private set; }
-        internal bool CanOutputValues => CreateSetTree || Session.Options.DisplayFilterValue;
+        internal static bool CanOutputValuesFor(bool createSet, PanelQueryOptions options) => createSet || options.DisplayFilterValue;
+        internal bool CanOutputValues => CanOutputValuesFor(CreateSetTree, Session.Options);
         internal bool OutputsValues => CanOutputValues && OutputValues == PanelOutputValues.Values;
         private GH_Structure<IGH_Goo>? _inputTree, _preConversionTree;
         private GH_Structure<IGH_Goo>? _liveInputTree, _livePairedTree, _pairedInputTree;
@@ -80,17 +82,26 @@ namespace BetterGhPanel
         {
             if (!Enum.IsDefined(typeof(PanelOutputScope), scope) || OutputScope == scope) return;
             // Scope changes must not reload the component and discard its selection.
-            RecordUndoEvent("Panel+ B + F source", new PanelUndo<PanelOutputScope>(InstanceGuid, OutputScope, scope, (component, value) => component.ApplyOutputScope(value)));
+            RecordUndoEvent("Panel+ B + F follow", new PanelUndo<PanelOutputScope>(InstanceGuid, OutputScope, scope, (component, value) => component.ApplyOutputScope(value)));
             ApplyOutputScope(scope);
         }
 
         private void ApplyOutputScope(PanelOutputScope scope)
         {
             OutputScope = scope;
+            UpdateOutputDescriptions();
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             ScheduleOutput();
             Instances.ActiveCanvas?.Invalidate();
+        }
+
+        private void UpdateOutputDescriptions()
+        {
+            if (Params.Output.Count < 4) return;
+            var scope = OutputScope == PanelOutputScope.Filtered ? "Results" : "Selection";
+            Params.Output[2].Description = MaskDescription + " B + F follow: " + scope + ".";
+            Params.Output[3].Description = PairedDescription + " B + F follow: " + scope + ".";
         }
 
         private void ClearOutputSources()

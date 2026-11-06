@@ -66,7 +66,7 @@ internal static class PanelTestAdapter
         return positions.Count == 0 ? -1 : positions[0];
     }
     internal static bool MenuOpen(GH_Component component) => Property<object>(Field<object>(component.Attributes, "_menu"), "Kind").ToString() != "None";
-    internal static void ResetView(GH_Component component) => component.GetType().GetMethod("ResetPanelView", PrivateInstance)!.Invoke(component, Array.Empty<object>());
+    internal static void ClearFilters(GH_Component component) => component.GetType().GetMethod("ClearFilters", PrivateInstance)!.Invoke(component, Array.Empty<object>());
     internal static void Units(GH_Component component, BetterGhPanel.Core.PanelUnitConversion conversion, int decimals) =>
         component.GetType().GetMethod("SetUnits", PrivateInstance)!.Invoke(component, new object?[] { conversion, decimals, null });
     internal static string CopyValue(GH_Component component, BetterGhPanel.Core.PanelSnapshot snapshot, int position) =>
@@ -111,8 +111,7 @@ internal static class PanelTestAdapter
     {
         var location = Point.Round(canvas.Viewport.ProjectPoint(point));
         var args = new System.Windows.Forms.MouseEventArgs(button, clicks, location.X, location.Y, 0);
-        // Raise the host's normal control event so Grasshopper performs its own
-        // hit dispatch before the panel's blank-canvas observer runs.
+        // Raise the host's normal control event for Grasshopper hit dispatch.
         foreach (string name in new[] { "OnMouseDown", "OnMouseUp" })
             typeof(System.Windows.Forms.Control).GetMethod(name, PrivateInstance)!.Invoke(canvas, new object[] { args });
     }
