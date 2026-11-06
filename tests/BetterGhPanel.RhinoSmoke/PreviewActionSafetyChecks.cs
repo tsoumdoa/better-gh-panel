@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -26,11 +28,11 @@ internal static partial class PreviewSafetyChecks
         {
             var cycle = new GH_GeometryGroup(); cycle.Objects.Add(cycle);
             object framed = Frame(assembly, new IGH_Goo?[] { new GH_Point(new Point3d(1, 2, 3)), cycle });
-            Check(Property<bool>(framed, "Success") && Property<int>(framed, "Skipped") == 1,
+            Check(ReflectProperty403875335<bool>(framed, "Success") && ReflectProperty403875335<int>(framed, "Skipped") == 1,
                 "frame reports a partial action when a safe point accompanies an unsafe cycle");
             var standalone = new StandalonePointPreview();
             Check(Bounds(assembly, standalone).Contains(new Point3d(7, 0, 0)) &&
-                Property<bool>(Frame(assembly, new IGH_Goo?[] { standalone }), "Success") && standalone.BoundsCalls > 0,
+                ReflectProperty403875335<bool>(Frame(assembly, new IGH_Goo?[] { standalone }), "Success") && standalone.BoundsCalls > 0,
                 "standalone custom point preview and frame retain their best-effort behavior");
             var unsafeGroup = new GH_GeometryGroup(); unsafeGroup.Objects.Add(standalone);
             standalone.BoundsCalls = 0;
@@ -40,10 +42,10 @@ internal static partial class PreviewSafetyChecks
             Check(!Bounds(assembly, wrappedStandalone).IsValid && standalone.BoundsCalls == 0,
                 "a wrapper cannot turn its custom child into standalone preview dispatch");
             framed = Frame(assembly, Enumerable.Range(0, 2200).Select(i => (IGH_Goo?)new GH_Point(new Point3d(i, 0, 0))));
-            Check(Property<bool>(framed, "Success") && Property<bool>(framed, "Exhausted"), "frame reports action-wide exhaustion even after success");
+            Check(ReflectProperty403875335<bool>(framed, "Success") && ReflectProperty403875335<bool>(framed, "Exhausted"), "frame reports action-wide exhaustion even after success");
             var toCopy = Enumerable.Range(0, 2200).Select(i => (IGH_Goo?)new GH_Point(new Point3d(i, 0, 0)));
             object limited = Copy(assembly, toCopy);
-            Check(Property<bool>(limited, "Success") && Property<bool>(limited, "Exhausted"), "copy reports action-wide exhaustion even after success");
+            Check(ReflectProperty403875335<bool>(limited, "Success") && ReflectProperty403875335<bool>(limited, "Exhausted"), "copy reports action-wide exhaustion even after success");
 
             using var withDictionary = new LineCurve(Point3d.Origin, new Point3d(3, 0, 0));
             var dictionaryHolder = new GH_Curve(withDictionary);
@@ -55,8 +57,8 @@ internal static partial class PreviewSafetyChecks
                 "value-only line preview preserves the source SDK dictionary");
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
             object metadataResult = Copy(assembly, new IGH_Goo?[] { new GH_Point(new Point3d(5, 0, 0)), dictionaryHolder });
-            Check(Property<bool>(metadataResult, "Success") && Property<int>(metadataResult, "Count") == 2 &&
-                Property<int>(metadataResult, "Skipped") == 0 && dictionaryHolder.Value.UserDictionary.GetString("panel-test") == "preserve",
+            Check(ReflectProperty403875335<bool>(metadataResult, "Success") && ReflectProperty403875335<int>(metadataResult, "Count") == 2 &&
+                ReflectProperty403875335<int>(metadataResult, "Skipped") == 0 && dictionaryHolder.Value.UserDictionary.GetString("panel-test") == "preserve",
                 "geometry copy admits a bounded SDK dictionary without changing the source");
             using var archive = ClipboardArchive();
             var copiedLine = archive.Objects.Select(item => item.Geometry).OfType<LineCurve>().Single();
@@ -74,15 +76,15 @@ internal static partial class PreviewSafetyChecks
         meshHolder.Value.VertexColors.CreateMonotoneMesh(Color.Aqua);
         var source = new IGH_Goo?[] { new GH_Curve(poly), meshHolder, new GH_Box(new Box(new BoundingBox(Point3d.Origin, new Point3d(2, 2, 2)))) };
         Set(highlight, source, new[] { 0, 1, 2 }, new[] { 0 });
-        var entries = (IEnumerable)Field<object>(highlight, "_entries");
+        var entries = (IEnumerable)ReflectField2106128985<object>(highlight, "_entries");
         var resources = new List<GeometryBase>();
         foreach (object pair in entries)
         {
             object entry = pair.GetType().GetProperty("Value")!.GetValue(pair)!;
-            foreach (object leaf in (IEnumerable)Field<object>(entry, "Leaves"))
+            foreach (object leaf in (IEnumerable)ReflectField2106128985<object>(entry, "Leaves"))
             {
-                if (Field<object?>(leaf, "_owned") is GeometryBase owned) resources.Add(owned);
-                if (Field<object?>(leaf, "_boxMesh") is GeometryBase boxMesh) resources.Add(boxMesh);
+                if (ReflectField2106128985<object?>(leaf, "_owned") is GeometryBase owned) resources.Add(owned);
+                if (ReflectField2106128985<object?>(leaf, "_boxMesh") is GeometryBase boxMesh) resources.Add(boxMesh);
             }
         }
         Check(resources.Count == 3 && resources.All(value => !value.Disposed), "bounded curve, mesh and box resources are owned during preview");
@@ -91,7 +93,7 @@ internal static partial class PreviewSafetyChecks
             copiedMesh.VertexColors[0].ToArgb() == meshHolder.Value.VertexColors[0].ToArgb(),
             "owned mesh preview preserves the source vertex colors");
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
-        Check(resources.All(value => value.Disposed) && Property<long>(highlight, "RetainedBytes") == 0 && !Box(highlight).IsValid,
+        Check(resources.All(value => value.Disposed) && ReflectProperty403875335<long>(highlight, "RetainedBytes") == 0 && !Box(highlight).IsValid,
             "clearing a generation disposes each native resource and its bounds");
     }
 

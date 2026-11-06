@@ -181,7 +181,7 @@ internal static class OutputValuesHostChecks
                 "Out does not overlap any footer control in X and Y at width " + width);
             var point = new PointF(Bounds("OutValues").X + 10, Bounds("OutValues").Y + 8);
             var tooltip = (Grasshopper.GUI.GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(Grasshopper.GUI.GH_TooltipDisplayEventArgs),
-                BindingFlags.FlagsInstanceNonPublicPublic | BindingFlags.NonPublic, null, new object[] { canvas, System.Drawing.Point.Round(point) }, null)!;
+                BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, System.Drawing.Point.Round(point) }, null)!;
             attributes.SetupTooltip(point, tooltip);
             Check(tooltip.Title == "Output: Items / Values", "Out tooltip survives upper-row statistics targeting at width " + width);
         }

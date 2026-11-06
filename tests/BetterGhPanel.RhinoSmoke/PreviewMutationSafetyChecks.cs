@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -50,7 +52,7 @@ internal static partial class PreviewSafetyChecks
         Set(highlight, source, new[] { 0 }, new[] { 0 });
         Check(Count(highlight) == 0 && Status(highlight).Contains("partial"), "self-wrapped objects are unavailable after refresh");
         var geometricSelf = new GH_GeometricGooWrapper();
-        typeof(GH_GeometricGooWrapper).GetField("m_goo", Instance)!.SetValue(geometricSelf, geometricSelf);
+        typeof(GH_GeometricGooWrapper).GetField("m_goo", FlagsInstanceNonPublicPublic)!.SetValue(geometricSelf, geometricSelf);
         source[0] = geometricSelf; Set(highlight, source, new[] { 0 }, new[] { 0 });
         Check(Count(highlight) == 0 && !Bounds(assembly, geometricSelf).IsValid, "geometric self-wrapper is bounded before any delegated call");
         var deep = new GH_GeometryGroup(); var current = deep;
@@ -100,36 +102,36 @@ internal static partial class PreviewSafetyChecks
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
             Method(highlight, "SetOrderResult").Invoke(highlight, new object?[] { labels ? result : null });
             Scope(highlight, values, result, Array.Empty<int>());
-            Check(Count(highlight) == 1024 && Status(highlight).Contains("partial") && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+            Check(Count(highlight) == 1024 && Status(highlight).Contains("partial") && ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
                 "filtered preview enforces bounded admission and reports partial results");
             for (int i = 1024; i < total; i++)
             {
                 Scope(highlight, values, result, new[] { i });
-                Check(Box(highlight).Contains(new Point3d(i, 0, 0)) && Property<int>(highlight, "LastVisitedRows") <= 1 &&
-                    Property<int>(highlight, "LastVisitedNodes") <= 1 && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+                Check(Box(highlight).Contains(new Point3d(i, 0, 0)) && ReflectProperty403875335<int>(highlight, "LastVisitedRows") <= 1 &&
+                    ReflectProperty403875335<int>(highlight, "LastVisitedNodes") <= 1 && ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
                     $"successive sparse selections evict and recover without walking filtered rows " +
-                    $"(position={i}, labels={labels}, bounds={Box(highlight)}, rows={Property<int>(highlight, "LastVisitedRows")}, " +
-                    $"nodes={Property<int>(highlight, "LastVisitedNodes")}, bytes={Property<long>(highlight, "RetainedBytes")}, status={Status(highlight)})");
+                    $"(position={i}, labels={labels}, bounds={Box(highlight)}, rows={ReflectProperty403875335<int>(highlight, "LastVisitedRows")}, " +
+                    $"nodes={ReflectProperty403875335<int>(highlight, "LastVisitedNodes")}, bytes={ReflectProperty403875335<long>(highlight, "RetainedBytes")}, status={Status(highlight)})");
             }
         }
         var huge = new GH_GeometryGroup { Name = "many" };
         for (int i = 0; i < 5000; i++) huge.Objects.Add(new GH_Point(new Point3d(i, 0, 0)));
         Set(highlight, new IGH_Goo?[] { huge }, new[] { 0 }, new[] { 0 });
-        Check(Count(highlight) == 0 && Property<int>(highlight, "LastVisitedNodes") <= 4096 && Status(highlight).Contains("partial"),
+        Check(Count(highlight) == 0 && ReflectProperty403875335<int>(highlight, "LastVisitedNodes") <= 4096 && Status(highlight).Contains("partial"),
             "a group exceeding the per-root budget is unavailable rather than partially dispatched");
         var shared = new GH_GeometryGroup();
         for (int i = 0; i < 100; i++) shared.Objects.Add(new GH_Point(new Point3d(i, 0, 0)));
         var repeated = Enumerable.Repeat<IGH_Goo?>(shared, 1000).ToArray();
         Set(highlight, repeated, Enumerable.Range(0, repeated.Length).ToArray(), Array.Empty<int>());
-        Check(Property<int>(highlight, "LastVisitedNodes") <= 20000 && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024 &&
+        Check(ReflectProperty403875335<int>(highlight, "LastVisitedNodes") <= 20000 && ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024 &&
             Status(highlight).Contains("partial"), "repeated groups share an aggregate visit and retained-byte limit");
         using var beyondNarrow = new PolylineCurve(Enumerable.Range(0, 2049).Select(i => new Point3d(i, i % 2, 0)));
         Set(highlight, new IGH_Goo?[] { new GH_Curve { Value = beyondNarrow } }, new[] { 0 }, new[] { 0 });
-        Check(Count(highlight) == 1 && Box(highlight).Max.X == 2048 && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+        Check(Count(highlight) == 1 && Box(highlight).Max.X == 2048 && ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
             "a 2049-point polyline outside the narrow reconstruction uses the bounded compatibility provider");
         using var oversized = new PolylineCurve(Enumerable.Range(0, 32769).Select(i => new Point3d(i, i % 2, 0)));
         Set(highlight, new IGH_Goo?[] { new GH_Curve { Value = oversized } }, new[] { 0 }, new[] { 0 });
-        Check(Count(highlight) == 0 && Property<long>(highlight, "RetainedBytes") == 0 && Status(highlight).Contains("partial"),
+        Check(Count(highlight) == 0 && ReflectProperty403875335<long>(highlight, "RetainedBytes") == 0 && Status(highlight).Contains("partial"),
             "geometry beyond the compatibility provider limit is rejected before constructing a preview copy");
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
     }
@@ -142,16 +144,16 @@ internal static partial class PreviewSafetyChecks
         for (int i = 0; i < 5; i++) { outer.Objects.Add(holder); nested.Objects.Add(holder); }
         object? stagedLeaf = null; GeometryBase? stagedGeometry = null;
         bool aliveDuringCallback = false, cappedDuringCallback = false, nestedRejected = false;
-        var observerField = highlight.GetType().GetField("_admissionObserver", Instance)!;
+        var observerField = highlight.GetType().GetField("_admissionObserver", FlagsInstanceNonPublicPublic)!;
         observerField.SetValue(highlight, (Action<int, object>)((index, leaf) =>
         {
             if (index != 0) return;
             observerField.SetValue(highlight, null);
-            stagedLeaf = leaf; stagedGeometry = Field<GeometryBase?>(leaf, "_owned");
-            long reserved = Property<long>(highlight, "RetainedBytes");
+            stagedLeaf = leaf; stagedGeometry = ReflectField2106128985<GeometryBase?>(leaf, "_owned");
+            long reserved = ReflectProperty403875335<long>(highlight, "RetainedBytes");
             Set(highlight, new IGH_Goo?[] { nested }, new[] { 0 }, new[] { 0 });
             aliveDuringCallback = stagedGeometry != null && !stagedGeometry.Disposed;
-            cappedDuringCallback = reserved > 0 && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024;
+            cappedDuringCallback = reserved > 0 && ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024;
             nestedRejected = Count(highlight) == 0 && Status(highlight).Contains("partial");
         }));
         try
@@ -159,14 +161,14 @@ internal static partial class PreviewSafetyChecks
             Set(highlight, new IGH_Goo?[] { outer }, new[] { 0 }, new[] { 0 });
             Check(aliveDuringCallback && cappedDuringCallback && nestedRejected,
                 "reentrant admission counts staged geometry and rejects a nested build over the live-memory cap");
-            Check(stagedLeaf != null && stagedGeometry != null && stagedGeometry.Disposed && Property<int>(stagedLeaf, "DisposeCount") == 1 &&
-                Property<long>(highlight, "RetainedBytes") == 0, "the abandoned staged leaf is disposed exactly once after reentry");
+            Check(stagedLeaf != null && stagedGeometry != null && stagedGeometry.Disposed && ReflectProperty403875335<int>(stagedLeaf, "DisposeCount") == 1 &&
+                ReflectProperty403875335<long>(highlight, "RetainedBytes") == 0, "the abandoned staged leaf is disposed exactly once after reentry");
             Set(highlight, new IGH_Goo?[] { nested }, new[] { 0 }, new[] { 0 });
             var recovered = OwnedGeometry(highlight).ToArray();
             Check(Count(highlight) == 1 && recovered.Length == 5 && recovered.All(item => !item.Disposed) &&
-                Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024, "a later build recovers after the staged reservation is released");
+                ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024, "a later build recovers after the staged reservation is released");
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
-            Check(recovered.All(item => item.Disposed) && Property<long>(highlight, "RetainedBytes") == 0,
+            Check(recovered.All(item => item.Disposed) && ReflectProperty403875335<long>(highlight, "RetainedBytes") == 0,
                 "clearing the recovered generation releases every owned geometry");
         }
         finally { observerField.SetValue(highlight, null); Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>()); }

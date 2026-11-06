@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -33,7 +35,7 @@ internal static partial class PreviewSafetyChecks
             document.Properties.KeepOpen = true; document.PreviewColourSelected = Color.FromArgb(255, 0, 230, 40);
             var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
             component.CreateAttributes(); document.AddObject(component, false);
-            var highlight = Field<object>(component, "_highlight");
+            var highlight = ReflectField2106128985<object>(component, "_highlight");
             var wrappedPoint = new GH_ObjectWrapper(new Point3d(0, 0, 0));
             Set(highlight, new IGH_Goo?[] { wrappedPoint }, new[] { 0 }, new[] { 0 });
             wrappedPoint.Value = wrappedPoint; // Drawing must use the admitted snapshot, not the now-cyclic source.
@@ -50,7 +52,7 @@ internal static partial class PreviewSafetyChecks
             var box = new GH_Box(new Box(new BoundingBox(new Point3d(-2, -2, -1), new Point3d(2, 2, 1))));
             var boxGroup = new GH_GeometryGroup(); boxGroup.Objects.Add(box);
             Set(highlight, new IGH_Goo?[] { box, boxGroup }, new[] { 0, 1 }, new[] { 0 });
-            long bytes = Property<long>(highlight, "RetainedBytes");
+            long bytes = ReflectProperty403875335<long>(highlight, "RetainedBytes");
             foreach (var mode in new[] { GH_PreviewMesh.LowQuality, GH_PreviewMesh.HighQuality, GH_PreviewMesh.Custom })
             {
                 if (mode == GH_PreviewMesh.Custom) document.PreviewCustomMeshParameters = new MeshingParameters(0.4);
@@ -58,7 +60,7 @@ internal static partial class PreviewSafetyChecks
                 component.ExpirePreview(false);
                 view.Redraw();
                 using var meshBitmap = CapturePreview(view, highlight, "native boxes " + mode, null);
-                Check(meshBitmap != null && Count(highlight) == 2 && Property<long>(highlight, "RetainedBytes") == bytes &&
+                Check(meshBitmap != null && Count(highlight) == 2 && ReflectProperty403875335<long>(highlight, "RetainedBytes") == bytes &&
                     Box(highlight).Contains(new Point3d(2, 2, 1)),
                     "mesh-setting changes retain bounded standalone and grouped box snapshots without regenerating caches");
             }
@@ -67,8 +69,8 @@ internal static partial class PreviewSafetyChecks
             var brepGroup = new GH_GeometryGroup(); brepGroup.Objects.Add(brep);
             Set(highlight, new IGH_Goo?[] { brep, brepGroup }, new[] { 0, 1 }, new[] { 0 });
             var leafType = assembly.GetType("BetterGhPanel.Runtime.PanelPreviewLeaf", true)!;
-            var live = leafType.GetProperty("LiveGeneratedMeshes", Static)!;
-            var builds = leafType.GetProperty("GeneratedMeshBuilds", Static)!;
+            var live = leafType.GetProperty("LiveGeneratedMeshes", FlagsNonPublicPublicStatic)!;
+            var builds = leafType.GetProperty("GeneratedMeshBuilds", FlagsNonPublicPublicStatic)!;
             var shaded = Rhino.Display.DisplayModeDescription.FindByName("Shaded");
             if (shaded != null) view.ActiveViewport.DisplayMode = shaded;
             document.PreviewMode = GH_PreviewMode.Shaded;
@@ -81,7 +83,7 @@ internal static partial class PreviewSafetyChecks
                 view.Redraw();
                 using var bitmap = CapturePreview(view, highlight, "native Breps " + mode, null);
                 Check(bitmap != null && Count(highlight) == 2 && (int)builds.GetValue(null)! > before &&
-                    (int)live.GetValue(null)! > 0 && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+                    (int)live.GetValue(null)! > 0 && ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
                     "standalone and grouped Breps regenerate bounded shaded meshes after a meshing setting change");
                 int cachedBuilds = (int)builds.GetValue(null)!;
                 int cachedMeshes = (int)live.GetValue(null)!;
@@ -107,7 +109,7 @@ internal static partial class PreviewSafetyChecks
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
             Check(Count(highlight) == 0 && !Box(highlight).IsValid, "clearing a preview immediately detaches its geometry and bounds");
             await WaitForPreviewRetirement(highlight);
-            Check((int)live.GetValue(null)! == 0 && Property<long>(highlight, "RetainedBytes") == 0,
+            Check((int)live.GetValue(null)! == 0 && ReflectProperty403875335<long>(highlight, "RetainedBytes") == 0,
                 "clearing a preview eventually disposes every generated Brep mesh and releases its accounting");
             component.DocumentContextChanged(document, GH_DocumentContext.Close);
         }

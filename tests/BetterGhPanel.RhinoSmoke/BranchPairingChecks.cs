@@ -521,7 +521,7 @@ internal static class BranchPairingChecks
                 var bounds = PaneRow(position, true);
                 var point = new PointF(bounds.X + 80, bounds.Y + 8);
                 var tooltip = (Grasshopper.GUI.GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(Grasshopper.GUI.GH_TooltipDisplayEventArgs),
-                    BindingFlags.FlagsInstanceNonPublicPublic | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(point) }, null)!;
+                    BindingFlags.Instance | BindingFlags.NonPublic, null, new object[] { canvas, Point.Round(point) }, null)!;
                 attributes.SetupTooltip(point, tooltip);
                 Check(tooltip.Title.Contains("[" + pairedRow.OriginalIndex + "]"), "F tooltip index agrees with its gutter");
             }

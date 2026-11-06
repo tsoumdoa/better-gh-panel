@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -58,15 +60,15 @@ internal static partial class PreviewSafetyChecks
                     !Status(highlight).Contains("partial") && Bounds(assembly, values[i]!).Contains(expected[i].Center),
                     "additional geometry " + i + " receives a coherent standalone preview and frame bounds");
                 object frame = Frame(assembly, new[] { values[i] });
-                Check(Property<bool>(frame, "Success") && Property<int>(frame, "Skipped") == 0,
+                Check(ReflectProperty403875335<bool>(frame, "Success") && ReflectProperty403875335<int>(frame, "Skipped") == 0,
                     "additional geometry " + i + " frames without a skip");
             }
             Set(highlight, new IGH_Goo?[] { group, wrappedGroup }, new[] { 0, 1 }, new[] { 0 });
             Check(Count(highlight) == 2 && Box(highlight).Contains(expected[0].Min) && Box(highlight).Contains(expected[1].Max),
                 "mixed and wrapped groups preview terminal cloud, extrusion and point leaves");
             object groupCopy = Copy(assembly, new IGH_Goo?[] { group });
-            Check(Property<bool>(groupCopy, "Success") && Property<int>(groupCopy, "Count") == 3 && Property<int>(groupCopy, "Skipped") == 0 &&
-                Property<bool>(groupCopy, "UnverifiedMetadata"), "a mixed group copies all leaves with the custom-metadata warning");
+            Check(ReflectProperty403875335<bool>(groupCopy, "Success") && ReflectProperty403875335<int>(groupCopy, "Count") == 3 && ReflectProperty403875335<int>(groupCopy, "Skipped") == 0 &&
+                ReflectProperty403875335<bool>(groupCopy, "UnverifiedMetadata"), "a mixed group copies all leaves with the custom-metadata warning");
             using (var archive = ClipboardArchive())
             {
                 var copied = ArchiveGeometries(archive);
@@ -94,10 +96,10 @@ internal static partial class PreviewSafetyChecks
                 "real Paste of a mixed group preserves all three leaves and cloud/extrusion metadata");
             foreach (var item in groupPasted) rhino.Objects.Delete(item.Id, true);
             object frameGroup = Frame(assembly, new IGH_Goo?[] { wrappedGroup });
-            Check(Property<bool>(frameGroup, "Success") && Property<int>(frameGroup, "Skipped") == 0,
+            Check(ReflectProperty403875335<bool>(frameGroup, "Success") && ReflectProperty403875335<int>(frameGroup, "Skipped") == 0,
                 "a wrapped mixed group frames without recursive wrapper dispatch");
             object copy = Copy(assembly, values);
-            Check(Property<bool>(copy, "Success") && Property<int>(copy, "Count") == 5 && Property<int>(copy, "Skipped") == 0,
+            Check(ReflectProperty403875335<bool>(copy, "Success") && ReflectProperty403875335<int>(copy, "Count") == 5 && ReflectProperty403875335<int>(copy, "Skipped") == 0,
                 "all five additional geometry values copy without skips");
             using (var archive = ClipboardArchive())
             {
@@ -160,26 +162,26 @@ internal static partial class PreviewSafetyChecks
             var beforeFrame = rhino.Views.ActiveView.ActiveViewport.CameraTarget;
             custom.OnBounds = () => polyline[1] = new Point3d(12, 25, 0);
             object staleFrame = Frame(assembly, new IGH_Goo?[] { polylineWrapper, custom });
-            Check(!Property<bool>(staleFrame, "Success") && rhino.Views.ActiveView.ActiveViewport.CameraTarget == beforeFrame,
+            Check(!ReflectProperty403875335<bool>(staleFrame, "Success") && rhino.Views.ActiveView.ActiveViewport.CameraTarget == beforeFrame,
                 "a later bounds callback changing an earlier wrapped polyline cancels the camera action");
             Forms.Clipboard.SetText("keep polyline freshness clipboard");
             CopyRoundTripUserData.DuplicateAt = 1; CopyRoundTripUserData.TriggeredGeneration = 0;
             CopyRoundTripUserData.OnDuplicateAction = () => polyline[1] = new Point3d(12, 30, 0);
             copy = Copy(assembly, new IGH_Goo?[] { polylineWrapper, cloudHolder });
-            Check(!Property<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 &&
+            Check(!ReflectProperty403875335<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 &&
                 Forms.Clipboard.GetText() == "keep polyline freshness clipboard",
                 "a later duplicate callback changing an earlier wrapped polyline cancels clipboard publication");
             CopyRoundTripUserData.TriggeredGeneration = 0;
             CopyRoundTripUserData.OnDuplicateAction = () => polylineWrapper.Value = new Polyline(polyline);
             copy = Copy(assembly, new IGH_Goo?[] { polylineWrapper, cloudHolder });
-            Check(!Property<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 &&
+            Check(!ReflectProperty403875335<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 &&
                 Forms.Clipboard.GetText() == "keep polyline freshness clipboard",
                 "retargeting a wrapped polyline to equal points during duplication cancels clipboard publication");
             polylineWrapper.Value = polyline;
             CopyRoundTripUserData.TriggeredGeneration = 0;
             CopyRoundTripUserData.OnDuplicateAction = () => group.Objects[1] = new GH_Extrusion { Value = extrusion };
             copy = Copy(assembly, new IGH_Goo?[] { group });
-            Check(!Property<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 &&
+            Check(!ReflectProperty403875335<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 &&
                 Forms.Clipboard.GetText() == "keep polyline freshness clipboard",
                 "replacing a mixed group's extrusion holder during cloud duplication cancels publication");
             group.Objects[1] = extrusionHolder;
@@ -188,14 +190,14 @@ internal static partial class PreviewSafetyChecks
             beforeFrame = rhino.Views.ActiveView.ActiveViewport.CameraTarget;
             custom.OnBounds = () => cloud[1].Hidden = true;
             staleFrame = Frame(assembly, new IGH_Goo?[] { cloudHolder, custom });
-            Check(!Property<bool>(staleFrame, "Success") && cloud[1].Hidden &&
+            Check(!ReflectProperty403875335<bool>(staleFrame, "Success") && cloud[1].Hidden &&
                 rhino.Views.ActiveView.ActiveViewport.CameraTarget == beforeFrame,
                 "a later bounds callback adding cloud hidden flags cancels frame before camera motion");
             cloud.ClearHiddenFlags();
             CopyRoundTripUserData.TriggeredGeneration = 0;
             CopyRoundTripUserData.OnDuplicateAction = () => cloud[1].Hidden = true;
             copy = Copy(assembly, new IGH_Goo?[] { cloudHolder });
-            Check(!Property<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 && cloud[1].Hidden &&
+            Check(!ReflectProperty403875335<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 && cloud[1].Hidden &&
                 Forms.Clipboard.GetText() == "keep polyline freshness clipboard",
                 "hidden flags added by a duplicate callback cancel copy before clipboard publication");
             cloud.ClearHiddenFlags();
@@ -209,16 +211,16 @@ internal static partial class PreviewSafetyChecks
             cloud.ClearHiddenFlags();
 
             long stagedBytes = 0;
-            var observerField = highlight.GetType().GetField("_admissionObserver", Instance)!;
+            var observerField = highlight.GetType().GetField("_admissionObserver", FlagsInstanceNonPublicPublic)!;
             observerField.SetValue(highlight, (Action<int, object>)((_, __) =>
             {
-                stagedBytes = Property<long>(highlight, "RetainedBytes");
+                stagedBytes = ReflectProperty403875335<long>(highlight, "RetainedBytes");
                 polyline[1] = new Point3d(12, 40, 0);
             }));
             Set(highlight, new IGH_Goo?[] { polylineWrapper }, new[] { 0 }, new[] { 0 });
             observerField.SetValue(highlight, null);
             Check(stagedBytes > 128 && Count(highlight) == 0 && Status(highlight).Contains("partial") &&
-                Property<long>(highlight, "RetainedBytes") == 0,
+                ReflectProperty403875335<long>(highlight, "RetainedBytes") == 0,
                 "wrapped polyline staging is accounted and a mid-build mutation rejects and releases the generation");
 
             using var hiddenCloud = new PointCloud();
@@ -236,16 +238,16 @@ internal static partial class PreviewSafetyChecks
             }
             var hiddenHolder = new GH_PointCloud { Value = hiddenCloud };
             var hiddenGroup = new GH_GeometryGroup(); hiddenGroup.Objects.Add(hiddenHolder);
-            Check(Property<bool>(Frame(assembly, new IGH_Goo?[] { hiddenGroup }), "Success"),
+            Check(ReflectProperty403875335<bool>(Frame(assembly, new IGH_Goo?[] { hiddenGroup }), "Success"),
                 "a cloud with hidden points remains frameable through a group");
             Forms.Clipboard.SetText("keep hidden cloud clipboard");
             copy = Copy(assembly, new IGH_Goo?[] { hiddenHolder });
-            Check(!Property<bool>(copy, "Success") && Property<int>(copy, "Skipped") == 1 &&
-                Property<string>(copy, "Error").Contains("hidden flags") && Forms.Clipboard.GetText() == "keep hidden cloud clipboard" &&
+            Check(!ReflectProperty403875335<bool>(copy, "Success") && ReflectProperty403875335<int>(copy, "Skipped") == 1 &&
+                ReflectProperty403875335<string>(copy, "Error").Contains("hidden flags") && Forms.Clipboard.GetText() == "keep hidden cloud clipboard" &&
                 hiddenCloud[1].Hidden, "a cloud with non-roundtrippable hidden flags is visibly skipped without changing the clipboard or source");
             copy = Copy(assembly, new IGH_Goo?[] { hiddenGroup, new GH_Point(Point3d.Origin) });
-            Check(Property<bool>(copy, "Success") && Property<int>(copy, "Count") == 1 && Property<int>(copy, "Skipped") == 1 &&
-                Property<string>(copy, "Detail").Contains("hidden flags") && hiddenCloud[1].Hidden,
+            Check(ReflectProperty403875335<bool>(copy, "Success") && ReflectProperty403875335<int>(copy, "Count") == 1 && ReflectProperty403875335<int>(copy, "Skipped") == 1 &&
+                ReflectProperty403875335<string>(copy, "Detail").Contains("hidden flags") && hiddenCloud[1].Hidden,
                 "a mixed action visibly reports a skipped hidden-cloud group while copying the supported point");
             using (var partialArchive = ClipboardArchive())
                 Check(ArchiveGeometries(partialArchive).Single() is Rhino.Geometry.Point,
@@ -256,14 +258,14 @@ internal static partial class PreviewSafetyChecks
             orderedCloud.Add(new Point3d(2, 0, 0), Color.Orange);
             orderedCloud.Add(new Point3d(3, 0, 0), Color.Aqua);
             Set(highlight, new IGH_Goo?[] { new GH_PointCloud { Value = orderedCloud } }, new[] { 0 }, new[] { 0 });
-            var pairs = ((IEnumerable)Field<object>(highlight, "_entries")).Cast<object>().ToArray();
+            var pairs = ((IEnumerable)ReflectField2106128985<object>(highlight, "_entries")).Cast<object>().ToArray();
             var entry = pairs.Single().GetType().GetProperty("Value")!.GetValue(pairs.Single())!;
-            var leaf = ((IEnumerable)Field<object>(entry, "Leaves")).Cast<object>().Single();
-            var snapshot = Field<object>(leaf, "_value");
-            var batches = ((IEnumerable)Property<object>(snapshot, "Batches")).Cast<object>().ToArray();
-            Check(batches.Select(batch => Property<int>(batch, "Argb")).SequenceEqual(new[] { Color.Aqua.ToArgb(), Color.Orange.ToArgb(), Color.Aqua.ToArgb() }) &&
-                batches.SelectMany(batch => Property<Point3d[]>(batch, "Points")).SequenceEqual(new[] { new Point3d(1, 0, 0), new Point3d(2, 0, 0), new Point3d(3, 0, 0) }) &&
-                !ReferenceEquals(Field<GeometryBase>(leaf, "_owned"), orderedCloud) && Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+            var leaf = ((IEnumerable)ReflectField2106128985<object>(entry, "Leaves")).Cast<object>().Single();
+            var snapshot = ReflectField2106128985<object>(leaf, "_value");
+            var batches = ((IEnumerable)ReflectProperty403875335<object>(snapshot, "Batches")).Cast<object>().ToArray();
+            Check(batches.Select(batch => ReflectProperty403875335<int>(batch, "Argb")).SequenceEqual(new[] { Color.Aqua.ToArgb(), Color.Orange.ToArgb(), Color.Aqua.ToArgb() }) &&
+                batches.SelectMany(batch => ReflectProperty403875335<Point3d[]>(batch, "Points")).SequenceEqual(new[] { new Point3d(1, 0, 0), new Point3d(2, 0, 0), new Point3d(3, 0, 0) }) &&
+                !ReferenceEquals(ReflectField2106128985<GeometryBase>(leaf, "_owned"), orderedCloud) && ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
                 "owned cloud batches preserve point/color order and stay inside the preview budget");
 
             using var mediumCloud = new PointCloud();
@@ -273,7 +275,7 @@ internal static partial class PreviewSafetyChecks
             Set(highlight, new IGH_Goo?[] { mediumHolder, mediumGroup }, new[] { 0, 1 }, new[] { 0, 1 });
             copy = Copy(assembly, new IGH_Goo?[] { mediumGroup });
             Check(Count(highlight) == 2 && Box(highlight).Contains(new Point3d(8192, 0, 0)) &&
-                Property<bool>(copy, "Success") && Property<int>(copy, "Count") == 1 && Property<int>(copy, "Skipped") == 0,
+                ReflectProperty403875335<bool>(copy, "Success") && ReflectProperty403875335<int>(copy, "Count") == 1 && ReflectProperty403875335<int>(copy, "Skipped") == 0,
                 "an 8,193-point cloud remains previewable and copyable both standalone and in a group");
             using (var mediumArchive = ClipboardArchive())
                 Check(ArchiveGeometries(mediumArchive).OfType<PointCloud>().Single().Count == 8193,
@@ -284,7 +286,7 @@ internal static partial class PreviewSafetyChecks
             PolylineSafetyUserData.Reset(true);
             Forms.Clipboard.SetText("keep cloud limit clipboard");
             copy = Copy(assembly, new IGH_Goo?[] { new GH_PointCloud { Value = largeCloud }, new GH_Point(Point3d.Origin) });
-            Check(Property<bool>(copy, "Success") && Property<int>(copy, "Skipped") == 1 && Property<bool>(copy, "Exhausted") &&
+            Check(ReflectProperty403875335<bool>(copy, "Success") && ReflectProperty403875335<int>(copy, "Skipped") == 1 && ReflectProperty403875335<bool>(copy, "Exhausted") &&
                 PolylineSafetyUserData.Callbacks == 0 && largeCloud.HasUserData,
                 "oversized point-cloud preflight reports a partial action before invoking its metadata callback");
             PolylineSafetyUserData.Reset(false);
@@ -295,7 +297,7 @@ internal static partial class PreviewSafetyChecks
         {
             CopyRoundTripUserData.OnDuplicateAction = null;
             PolylineSafetyUserData.Reset(false);
-            highlight.GetType().GetField("_admissionObserver", Instance)!.SetValue(highlight, null);
+            highlight.GetType().GetField("_admissionObserver", FlagsInstanceNonPublicPublic)!.SetValue(highlight, null);
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
             foreach (var item in rhino.Objects.Where(item => !originalIds.Contains(item.Id)).ToArray()) rhino.Objects.Delete(item.Id, true);
             rhino.Modified = modified;
@@ -334,10 +336,10 @@ internal static partial class PreviewSafetyChecks
         Set(highlight, new IGH_Goo?[] { loadedCloud, loadedExtrusion, group }, new[] { 0, 1, 2 }, new[] { 0, 1, 2 });
         Check(Count(highlight) == 3 && Box(highlight).Contains(cloud.GetBoundingBox(false).Center) &&
             Box(highlight).Contains(extrusion.GetBoundingBox(false).Center) &&
-            Property<bool>(Frame(assembly, new IGH_Goo?[] { group }), "Success"),
+            ReflectProperty403875335<bool>(Frame(assembly, new IGH_Goo?[] { group }), "Success"),
             "loaded references preview and frame both independently and inside a group");
         object copy = Copy(assembly, new IGH_Goo?[] { group });
-        Check(Property<bool>(copy, "Success") && Property<int>(copy, "Count") == 2 && Property<int>(copy, "Skipped") == 0,
+        Check(ReflectProperty403875335<bool>(copy, "Success") && ReflectProperty403875335<int>(copy, "Count") == 2 && ReflectProperty403875335<int>(copy, "Skipped") == 0,
             "a group of loaded references copies both terminal geometries");
         using (var archive = ClipboardArchive())
         {
@@ -352,7 +354,7 @@ internal static partial class PreviewSafetyChecks
         CopyRoundTripUserData.DuplicateAt = 1; CopyRoundTripUserData.TriggeredGeneration = 0;
         CopyRoundTripUserData.OnDuplicateAction = () => loadedCloud.ReferenceID = extrusionId;
         copy = Copy(assembly, new IGH_Goo?[] { loadedCloud });
-        Check(!Property<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 &&
+        Check(!ReflectProperty403875335<bool>(copy, "Success") && CopyRoundTripUserData.TriggeredGeneration > 0 &&
             Forms.Clipboard.GetText() == "keep retargeted cloud clipboard",
             "retargeting a loaded cloud reference during duplication cancels clipboard publication");
         CopyRoundTripUserData.OnDuplicateAction = null;

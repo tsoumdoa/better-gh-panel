@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -34,7 +36,7 @@ internal static partial class PreviewSafetyChecks
             document.PreviewMeshType = GH_PreviewMesh.LowQuality;
             var component = (GH_Component)Activator.CreateInstance(assembly.GetType("BetterGhPanel.BetterPanelComponent", true)!)!;
             component.CreateAttributes(); document.AddObject(component, false);
-            object highlight = Field<object>(component, "_highlight");
+            object highlight = ReflectField2106128985<object>(component, "_highlight");
             using var conduit = new PreviewConduit(component, document) { Enabled = true };
             using var polyline = new PolylineCurve(new[] { Point3d.Origin, new Point3d(2, 0, 0), new Point3d(2, 3, 0) });
             var group = new GH_GeometryGroup(); group.Objects.Add(new GH_Curve { Value = polyline });
@@ -59,7 +61,7 @@ internal static partial class PreviewSafetyChecks
             group = new GH_GeometryGroup(); group.Objects.Add(new GH_Brep { Value = brep });
             Set(highlight, new IGH_Goo?[] { group, custom }, new[] { 0, 1 }, new[] { 0, 1 });
             var ownedBrep = OwnedGeometry(highlight).OfType<Brep>().Single();
-            var live = assembly.GetType("BetterGhPanel.Runtime.PanelPreviewLeaf", true)!.GetProperty("LiveGeneratedMeshes", Static)!;
+            var live = assembly.GetType("BetterGhPanel.Runtime.PanelPreviewLeaf", true)!.GetProperty("LiveGeneratedMeshes", FlagsNonPublicPublicStatic)!;
             bool meshCalled = false, meshHeld = false;
             custom.OnMesh = () =>
             {
@@ -81,30 +83,30 @@ internal static partial class PreviewSafetyChecks
 
             var originalPoint = new GH_Point(new Point3d(5, 0, 0));
             var wrapper = new GH_GeometricGooWrapper(originalPoint);
-            var wrappedValue = typeof(GH_GeometricGooWrapper).GetField("m_goo", Instance)!;
+            var wrappedValue = typeof(GH_GeometricGooWrapper).GetField("m_goo", FlagsInstanceNonPublicPublic)!;
             var capturedGroup = new GH_GeometryGroup(); capturedGroup.Objects.Add(new GH_Curve { Value = polyline }); capturedGroup.Objects.Add(wrapper);
             GeometryBase? capturedOwned = null;
             bool replacedAndRestored = false;
             Action<int, object> observer = (index, leaf) =>
             {
                 if (index != 0) return;
-                capturedOwned = Field<GeometryBase?>(leaf, "_owned");
+                capturedOwned = ReflectField2106128985<GeometryBase?>(leaf, "_owned");
                 wrappedValue.SetValue(wrapper, new GH_Point(new Point3d(300, 0, 0)));
                 capturedGroup.Objects[1] = new GH_Point(new Point3d(400, 0, 0));
                 capturedGroup.Objects[1] = wrapper; wrappedValue.SetValue(wrapper, originalPoint);
                 replacedAndRestored = true;
             };
-            highlight.GetType().GetField("_admissionObserver", Instance)!.SetValue(highlight, observer);
+            highlight.GetType().GetField("_admissionObserver", FlagsInstanceNonPublicPublic)!.SetValue(highlight, observer);
             Set(highlight, new IGH_Goo?[] { capturedGroup }, new[] { 0 }, new[] { 0 });
-            highlight.GetType().GetField("_admissionObserver", Instance)!.SetValue(highlight, null);
+            highlight.GetType().GetField("_admissionObserver", FlagsInstanceNonPublicPublic)!.SetValue(highlight, null);
             Check(replacedAndRestored && capturedOwned != null && !capturedOwned.Disposed && Count(highlight) == 1 &&
                 Box(highlight).Contains(new Point3d(5, 0, 0)) && !Box(highlight).Contains(new Point3d(300, 0, 0)),
                 "preview construction uses captured leaves after a group replacement and wrapper retarget are restored");
-            var entries = (IEnumerable)Field<object>(highlight, "_entries");
+            var entries = (IEnumerable)ReflectField2106128985<object>(highlight, "_entries");
             var pair = entries.Cast<object>().Single();
             var entry = pair.GetType().GetProperty("Value")!.GetValue(pair)!;
-            var leaves = ((IEnumerable)Field<object>(entry, "Leaves")).Cast<object>().ToArray();
-            Check(Field<object>(leaves[1], "_value") is Point3d point && point == new Point3d(5, 0, 0),
+            var leaves = ((IEnumerable)ReflectField2106128985<object>(entry, "Leaves")).Cast<object>().ToArray();
+            Check(ReflectField2106128985<object>(leaves[1], "_value") is Point3d point && point == new Point3d(5, 0, 0),
                 "the drawable point and captured bounds come from the same graph generation");
             component.ExpirePreview(false);
             Method(document, "CreatePreviewCaches").Invoke(document, Array.Empty<object>());
@@ -127,36 +129,36 @@ internal static partial class PreviewSafetyChecks
 
     private static IEnumerable<GeometryBase> OwnedGeometry(object highlight)
     {
-        foreach (object pair in (IEnumerable)Field<object>(highlight, "_entries"))
+        foreach (object pair in (IEnumerable)ReflectField2106128985<object>(highlight, "_entries"))
         {
             object entry = pair.GetType().GetProperty("Value")!.GetValue(pair)!;
-            foreach (object leaf in (IEnumerable)Field<object>(entry, "Leaves"))
-                if (Field<object?>(leaf, "_owned") is GeometryBase owned) yield return owned;
+            foreach (object leaf in (IEnumerable)ReflectField2106128985<object>(entry, "Leaves"))
+                if (ReflectField2106128985<object?>(leaf, "_owned") is GeometryBase owned) yield return owned;
         }
     }
 
     private static IEnumerable<Mesh> OwnedBoxMeshes(object highlight)
     {
-        foreach (object pair in (IEnumerable)Field<object>(highlight, "_entries"))
+        foreach (object pair in (IEnumerable)ReflectField2106128985<object>(highlight, "_entries"))
         {
             object entry = pair.GetType().GetProperty("Value")!.GetValue(pair)!;
-            foreach (object leaf in (IEnumerable)Field<object>(entry, "Leaves"))
-                if (Field<object?>(leaf, "_boxMesh") is Mesh mesh) yield return mesh;
+            foreach (object leaf in (IEnumerable)ReflectField2106128985<object>(entry, "Leaves"))
+                if (ReflectField2106128985<object?>(leaf, "_boxMesh") is Mesh mesh) yield return mesh;
         }
     }
 
     private static async Task WaitForPreviewRetirement(object highlight)
     {
         var deadline = DateTime.UtcNow.AddSeconds(20);
-        while (Property<bool>(highlight, "RetirementPending"))
+        while (ReflectProperty403875335<bool>(highlight, "RetirementPending"))
         { if (DateTime.UtcNow >= deadline) throw new TimeoutException("Preview resources did not retire on Rhino idle."); await Task.Delay(25); }
     }
 
     private static Bitmap CapturePreview(Rhino.Display.RhinoView view, object highlight, string phase, PreviewConduit? conduit)
     {
-        string State() => $"{phase}: entries={Count(highlight)}, bounds={Box(highlight)}, bytes={Property<long>(highlight, "RetainedBytes")}, " +
-            $"wire={Property<int>(highlight, "DrawWireCalls")}, mesh={Property<int>(highlight, "DrawMeshCalls")}, " +
-            $"retirementPending={Property<bool>(highlight, "RetirementPending")}, idleReleases={Property<int>(highlight, "IdleReleases")}, " +
+        string State() => $"{phase}: entries={Count(highlight)}, bounds={Box(highlight)}, bytes={ReflectProperty403875335<long>(highlight, "RetainedBytes")}, " +
+            $"wire={ReflectProperty403875335<int>(highlight, "DrawWireCalls")}, mesh={ReflectProperty403875335<int>(highlight, "DrawMeshCalls")}, " +
+            $"retirementPending={ReflectProperty403875335<bool>(highlight, "RetirementPending")}, idleReleases={ReflectProperty403875335<int>(highlight, "IdleReleases")}, " +
             $"conduit={conduit?.Draws ?? 0}, mesh callbacks={conduit?.MeshesCompleted ?? 0}/{conduit?.MeshesStarted ?? 0}, " +
             $"wire callbacks={conduit?.WiresCompleted ?? 0}/{conduit?.WiresStarted ?? 0}, status={Status(highlight)}";
         Console.WriteLine("Before preview capture: " + State());

@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -58,18 +60,18 @@ internal static partial class PreviewSafetyChecks
             var shaded = Rhino.Display.DisplayModeDescription.FindByName("Shaded");
             if (shaded != null) view.ActiveViewport.DisplayMode = shaded;
             document.Properties.KeepOpen = true; document.PreviewMode = GH_PreviewMode.Shaded; document.AddObject(component, false);
-            object highlight = Field<object>(component, "_highlight");
+            object highlight = ReflectField2106128985<object>(component, "_highlight");
             Scope(highlight, source, result, new[] { 0, 2, 4, 6, 7, 9 });
             component.ExpirePreview(false);
             Method(document, "CreatePreviewCaches").Invoke(document, Array.Empty<object>());
             var bounds = Box(highlight); var hostBounds = document.PreviewBoundingBox;
-            Check(Count(highlight) == 10 && Property<int>(highlight, "Count") == 6 && hostBounds.Contains(bounds.Min) && hostBounds.Contains(bounds.Max),
+            Check(Count(highlight) == 10 && ReflectProperty403875335<int>(highlight, "Count") == 6 && hostBounds.Contains(bounds.Min) && hostBounds.Contains(bounds.Max),
                 "all additional standalone and group previews enter coherent component/document bounds");
             bool called = false;
             conduit.OnDraw = args => { called = true; component.DrawViewportMeshes(args); component.DrawViewportWires(args); };
             conduit.Enabled = true;
             using var bitmap = CapturePreview(view, highlight, "additional geometry", conduit);
-            Check(called && Property<int>(highlight, "DrawWireCalls") > 0 && Property<int>(highlight, "DrawMeshCalls") > 0,
+            Check(called && ReflectProperty403875335<int>(highlight, "DrawWireCalls") > 0 && ReflectProperty403875335<int>(highlight, "DrawMeshCalls") > 0,
                 "an actual native capture executes additional geometry wire and shaded callbacks");
             var regions = new[] {
                 new BoundingBox(new Point3d(-15.5,-1,0),new Point3d(-14,1,0)),
@@ -103,7 +105,7 @@ internal static partial class PreviewSafetyChecks
                 "selected colored clouds retain source colors and omit hidden-point pixels without changing the source");
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
             Method(highlight, "ReleaseOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
-            Check(Property<long>(highlight, "RetainedBytes") == 0, "explicit post-capture cleanup releases additional preview resources");
+            Check(ReflectProperty403875335<long>(highlight, "RetainedBytes") == 0, "explicit post-capture cleanup releases additional preview resources");
         }
         finally
         {

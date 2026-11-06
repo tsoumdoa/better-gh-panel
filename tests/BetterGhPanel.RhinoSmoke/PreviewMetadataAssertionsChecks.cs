@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -33,8 +35,8 @@ internal static partial class PreviewSafetyChecks
             Check(Count(highlight) == 1 && Box(highlight).Max.Y == 3 && source.HasUserData && PolylineSafetyUserData.Callbacks == 0,
                 "value-only polyline preview preserves source UserData without invoking it");
             object copied = Copy(assembly, new IGH_Goo?[] { new GH_Point(new Point3d(9, 0, 0)), holder });
-            Check(Property<bool>(copied, "Success") && Property<int>(copied, "Count") == 1 && Property<int>(copied, "Skipped") == 1 &&
-                source.HasUserData && PolylineSafetyUserData.Callbacks > 0 && Property<string>(copied, "Detail").Contains("callback failed"),
+            Check(ReflectProperty403875335<bool>(copied, "Success") && ReflectProperty403875335<int>(copied, "Count") == 1 && ReflectProperty403875335<int>(copied, "Skipped") == 1 &&
+                source.HasUserData && PolylineSafetyUserData.Callbacks > 0 && ReflectProperty403875335<string>(copied, "Detail").Contains("callback failed"),
                 "explicit copy reports a throwing custom callback and preserves the skipped source metadata");
             PolylineSafetyUserData.Reset(false);
 
@@ -50,7 +52,7 @@ internal static partial class PreviewSafetyChecks
             Check(Count(highlight) == 0 && PolylineSafetyUserData.Callbacks > 0 && Status(highlight).Contains("partial") && segment.HasUserData,
                 "compatibility preview visibly rejects a throwing nested callback and preserves its metadata");
             object polyCopy = Copy(assembly, new IGH_Goo?[] { polyHolder });
-            Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && !Property<bool>(polyCopy, "Success") &&
+            Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && !ReflectProperty403875335<bool>(polyCopy, "Success") &&
                 segment.HasUserData && !polyHolder.Value.HasUserData && PolylineSafetyUserData.Callbacks > 0,
                 "throwing nested custom data is visibly skipped for explicit copy without source metadata loss");
             PolylineSafetyUserData.Reset(false);
@@ -70,8 +72,8 @@ internal static partial class PreviewSafetyChecks
                 CaptureCountingUserData.Callbacks + CaptureBenignUserData.Callbacks + CaptureNonSerializableUserData.Callbacks == beforeFrame,
                 "unserializable nested metadata is visibly unavailable for preview and framing does not invoke callbacks");
             object result = Copy(assembly, new IGH_Goo?[] { brepHolder, group });
-            Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && frame.IsValid && !Property<bool>(result, "Success") &&
-                Property<int>(result, "Skipped") == 2 && brep.UserData.Count == 0 && brep.Curves3D[0].HasUserData &&
+            Check(Count(highlight) == 0 && Status(highlight).Contains("partial") && frame.IsValid && !ReflectProperty403875335<bool>(result, "Success") &&
+                ReflectProperty403875335<int>(result, "Skipped") == 2 && brep.UserData.Count == 0 && brep.Curves3D[0].HasUserData &&
                 brep.Surfaces[0].UserData.Count == 2 && CaptureNonSerializableUserData.Callbacks > 0,
                 "explicit copy reports non-serializable nested UserData and preserves the source; current bounds remain frameable");
 

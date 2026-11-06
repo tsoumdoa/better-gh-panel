@@ -1,3 +1,5 @@
+using static PanelTestAdapter;
+using static SmokeAssertions;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -40,7 +42,7 @@ internal static partial class PreviewSafetyChecks
             view.ActiveViewport.ZoomBoundingBox(new BoundingBox(new Point3d(-10, -9, -1), new Point3d(10, 9, 1)));
             document.Properties.KeepOpen = true;
             document.AddObject(component, false);
-            var highlight = Field<object>(component, "_highlight");
+            var highlight = ReflectField2106128985<object>(component, "_highlight");
             var nurbsGroup = new GH_GeometryGroup(); nurbsGroup.Objects.Add(new GH_Curve { Value = second });
             var polyGroup = new GH_GeometryGroup(); polyGroup.Objects.Add(new GH_Curve { Value = fourth });
             var source = new IGH_Goo?[] { new GH_Curve { Value = first }, nurbsGroup, new GH_Curve { Value = third }, polyGroup };
@@ -49,7 +51,7 @@ internal static partial class PreviewSafetyChecks
             var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
             Scope(highlight, source, result, new[] { 0, 2 });
             var oldBounds = Box(highlight);
-            bool initial = Count(highlight) == 4 && Property<int>(highlight, "Count") == 2;
+            bool initial = Count(highlight) == 4 && ReflectProperty403875335<int>(highlight, "Count") == 2;
             bool changed = false, oldCoherent = false, rebuilt = false;
             string? error = null;
             conduit.OnDraw = args =>
@@ -66,8 +68,8 @@ internal static partial class PreviewSafetyChecks
                     Method(component, "ClearHighlight").Invoke(component, Array.Empty<object>());
                     Scope(highlight, source, result, new[] { 0, 2 });
                     component.ExpirePreview(false);
-                    rebuilt = Count(highlight) == 4 && Property<int>(highlight, "Count") == 2 && Box(highlight).Min.Y > oldBounds.Min.Y &&
-                        Property<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024;
+                    rebuilt = Count(highlight) == 4 && ReflectProperty403875335<int>(highlight, "Count") == 2 && Box(highlight).Min.Y > oldBounds.Min.Y &&
+                        ReflectProperty403875335<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024;
                     component.DrawViewportWires(new ColoredPreviewArgs(args, rebuiltMaterial, Color.Cyan));
                 }
                 catch (Exception ex) { error = ex.ToString(); }
@@ -87,7 +89,7 @@ internal static partial class PreviewSafetyChecks
             }
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
             await WaitForPreviewRetirement(highlight);
-            Check(Property<long>(highlight, "RetainedBytes") == 0, "compatibility preview snapshots are released after drawing");
+            Check(ReflectProperty403875335<long>(highlight, "RetainedBytes") == 0, "compatibility preview snapshots are released after drawing");
         }
         finally
         {
