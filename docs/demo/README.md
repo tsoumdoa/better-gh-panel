@@ -44,4 +44,4 @@ The native README images are [`panel-split-view.png`](../images/panel-split-view
 
 Decimal formatting can change Text/Regex filter membership because those filters match displayed values; numeric wire values retain full precision.
 
-Feature behavior was checked against `docs/current-architecture.md`, the repository README, and `PanelTreeOperations.cs`. Mac runtime validation remains pending, as documented by the native plugin.
+Feature behavior was checked against `docs/architecture.md`, the repository README, and `PanelTreeOperations.cs`. Mac runtime validation remains pending, as documented by the native plugin.

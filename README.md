@@ -202,7 +202,7 @@ Runs the core tests, native coordinator and packaging checks, builds and stages 
 To build a Yak package, run `dotnet build BetterGhPanel.sln -c Release` then `node scripts/package.mjs`. During development, run affected native Rhino regressions with `tests/BetterGhPanel.RhinoSmoke/run.ps1 -Fixture ui-ux,row-selection` (choose names from `fixtures.json`). Run the full inventory for broad runtime changes and releases; launcher self-tests run separately. See the [validation instructions](docs/maintainability.md#validation) for commands and optional diagnostics. See also:
 
 - [Build, packaging and release validation](docs/packaging.md)
-- [Current architecture](docs/current-architecture.md) and [maintainability guide](docs/maintainability.md)
+- [Current architecture](docs/architecture.md) and [maintainability guide](docs/maintainability.md)
 - [Geometry measurement](docs/geometry-measurement-safety.md) and [preview](docs/geometry-preview-safety.md) safety
 
 The original interactive HTML design study is preserved in `prototype/` (`npm start`, then <http://localhost:5173>); it uses generated data and is a visual reference only.
