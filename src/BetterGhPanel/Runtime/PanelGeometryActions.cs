@@ -33,13 +33,13 @@ namespace BetterGhPanel.Runtime
         private const int MaxRowsPerAction = 2048;
         private const int MaxGeometryPerAction = 2048;
         private const long MaxPreparedBytes = 8L * 1024 * 1024;
-        private static long _clipboardGeneration, _frameGeneration;
+        private static long _frameGeneration;
         private static readonly PanelActionCommit ClipboardCommit = new PanelActionCommit();
         private static readonly Dictionary<Guid, PanelActionCommit> FrameCommits = new Dictionary<Guid, PanelActionCommit>();
-        internal static long ClipboardGeneration => Interlocked.Read(ref _clipboardGeneration);
+        internal static long ClipboardGeneration => Runtime.ClipboardGeneration.Current;
         internal static long FrameGeneration => Interlocked.Read(ref _frameGeneration);
-        internal static long BeginClipboard() => Interlocked.Increment(ref _clipboardGeneration);
-        internal static bool ClipboardCurrent(long generation) => ClipboardGeneration == generation;
+        internal static long BeginClipboard() => Runtime.ClipboardGeneration.Begin();
+        internal static bool ClipboardCurrent(long generation) => Runtime.ClipboardGeneration.IsCurrent(generation);
         internal static PanelCommitOutcome CommitClipboard(Func<bool> current, Action publish, Action<PanelCommitOutcome>? completed = null) =>
             ClipboardCommit.Run(current, publish, completed);
         internal static PanelCommitOutcome CommitFrame(Guid viewportId, Func<bool> current, Action publish, Action<PanelCommitOutcome>? completed = null)
