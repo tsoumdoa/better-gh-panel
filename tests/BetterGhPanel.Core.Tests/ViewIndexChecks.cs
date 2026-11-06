@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using BetterGhPanel.Core;
-using BetterGhPanel.UI;
 
 internal static class ViewIndexChecks
 {

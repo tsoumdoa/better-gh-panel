@@ -60,7 +60,7 @@ internal static partial class PreviewSafetyChecks
             VerifyLatePublicationContext(assembly, rhino);
             VerifyReferencedPointFreshness(assembly, highlight, rhino);
             await VerifyUnsupportedGeometry(assembly, highlight, rhino);
-            VerifyDenseSelectionGestures(assembly, highlight);
+            VerifyDenseSelectionGestures(highlight);
             await VerifyCrossComponentActions(assembly, rhino);
         }
         finally
@@ -949,7 +949,7 @@ internal static partial class PreviewSafetyChecks
         }
     }
 
-    private static void VerifyDenseSelectionGestures(Assembly assembly, object highlight)
+    private static void VerifyDenseSelectionGestures(object highlight)
     {
         const int count = 5000;
         var snapshot = new PanelSnapshot(Enumerable.Range(0, count)

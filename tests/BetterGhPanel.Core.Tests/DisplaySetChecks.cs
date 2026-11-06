@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using BetterGhPanel.Core;
-using BetterGhPanel.UI;
 
 internal static class DisplaySetChecks
 {

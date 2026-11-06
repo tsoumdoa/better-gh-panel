@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using BetterGhPanel.Core;
 
 namespace BetterGhPanel.Core
 {

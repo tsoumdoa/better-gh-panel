@@ -31,7 +31,7 @@ internal static partial class PreviewSafetyChecks
             rhino.Views.ActiveView = view;
             highlight = Activator.CreateInstance(loaded.GetType("BetterGhPanel.Runtime.PanelGeometryHighlight", true)!, true)!;
             VerifyInvalidNativeAdmission(loaded, highlight, rhino);
-            VerifySelectedRecovery(loaded, highlight);
+            VerifySelectedRecovery(highlight);
             foreach (bool copy in new[] { false, true })
             foreach (bool set in new[] { false, true }) await VerifySemanticAction(loaded, copy, set, rhino);
         }
@@ -168,7 +168,7 @@ internal static partial class PreviewSafetyChecks
         return valid;
     }
 
-    private static void VerifySelectedRecovery(Assembly assembly, object highlight)
+    private static void VerifySelectedRecovery(object highlight)
     {
         foreach (int count in new[] { 200, 1100 })
         {

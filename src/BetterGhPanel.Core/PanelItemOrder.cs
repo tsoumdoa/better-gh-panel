@@ -1,6 +1,5 @@
 using System;
 using System.Globalization;
-using BetterGhPanel.Core;
 
 namespace BetterGhPanel.Core
 {

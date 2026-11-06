@@ -2,7 +2,6 @@ using System;
 using System.Diagnostics;
 using System.Linq;
 using BetterGhPanel.Core;
-using BetterGhPanel.UI;
 
 internal static class PreviewMembershipChecks
 {

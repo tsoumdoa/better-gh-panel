@@ -45,8 +45,8 @@ namespace BetterGhPanel.Runtime
         private static readonly Type? ModelDataType = typeof(IGH_Goo).Assembly.GetType("Grasshopper.Rhinoceros.ModelData");
         private static readonly Type? ModelValueType = typeof(IGH_Goo).Assembly.GetType("Grasshopper.Rhinoceros.ModelValue");
         private static readonly Dictionary<Type, string> ModelTypeNames = new Dictionary<Type, string>();
-        
-        
+
+
         internal const int MaxNodesPerCapture = 100000;
 
         internal sealed class InspectionBudget
@@ -501,7 +501,6 @@ namespace BetterGhPanel.Runtime
         }
 
         private static string SafeName(Type type) => type.Name.Length == 0 ? "Unknown" : type.Name;
-
 
     }
 }

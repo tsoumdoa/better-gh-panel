@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 using BetterGhPanel.Core;
-using BetterGhPanel.UI;
 using Xunit;
 
 public sealed class DeterministicNumberChecks

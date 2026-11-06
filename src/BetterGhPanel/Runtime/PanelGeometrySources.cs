@@ -13,10 +13,10 @@ namespace BetterGhPanel.Runtime
     internal static class PanelGeometrySources
     {
         private static readonly object EndNode = new object(), NullSlot = new object();
-        
+
         internal const int MaxNodesPerOperation = 20000;
         internal const int MaxLeavesPerRoot = 1024;
-        
+
         internal const long MaxValueSnapshotWorkBytes = 8L * 1024 * 1024;
 
         internal sealed class OperationBudget
@@ -370,9 +370,6 @@ namespace BetterGhPanel.Runtime
             internal StandalonePreview(IGH_PreviewData value) { Value = value; }
             internal IGH_PreviewData Value { get; }
         }
-
-
-
 
     }
 }

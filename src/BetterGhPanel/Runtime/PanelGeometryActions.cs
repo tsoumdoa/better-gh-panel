@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
-using BetterGhPanel.UI;
 using Grasshopper.Kernel.Types;
 using Rhino;
 using Rhino.Display;

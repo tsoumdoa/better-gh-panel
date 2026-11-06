@@ -87,7 +87,7 @@ internal static class OutputValuesChecks
         Check(Paths(fixture, 3) == "{0},{1}", "Flattened set Items and F use {k}");
         await BranchSets(fixture);
         await TypedValues(fixture);
-        await FooterLayout(fixture, assembly);
+        await FooterLayout(fixture);
     }
 
     private static void SelectionWork(Assembly assembly)
@@ -138,7 +138,7 @@ internal static class OutputValuesChecks
         }
     }
 
-    private static async Task FooterLayout(PanelHostFixture.Fixture fixture, Assembly assembly)
+    private static async Task FooterLayout(PanelHostFixture.Fixture fixture)
     {
         var component = fixture.Component;
         var attributes = component.Attributes;

@@ -5,7 +5,6 @@ using System.Drawing.Drawing2D;
 using System.Linq;
 using System.Windows.Forms;
 using BetterGhPanel.Core;
-using BetterGhPanel.Runtime;
 using BetterGhPanel.UI;
 using Grasshopper.GUI;
 using Grasshopper.GUI.Canvas;

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using BetterGhPanel.Core;
-using BetterGhPanel.UI;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Types;
