@@ -157,7 +157,7 @@ namespace BetterGhPanel
                 if (!heading.Bounds.Contains(e.CanvasLocation)) continue;
                 _rowContextHandled = true;
                 _rowMenuPath = heading.Path;
-                _rowMenuPaired = _pairedList.Contains(e.CanvasLocation);
+                _rowMenuPaired = _f.List.Contains(e.CanvasLocation);
                 string copyPath = _rowMenuPaired ? string.Join(", ", PanelOwner.PairedPaths(heading.Path)) : heading.Path;
                 var choices = new System.Collections.Generic.List<CanvasRowAction>
                 {
@@ -186,7 +186,7 @@ namespace BetterGhPanel
                 var options = PanelOwner.Session.Options;
                 bool filtered = options.Search.Length > 0 || options.TypeName != null || options.OnlyInvalid || options.BranchPath != null;
                 _rowMenuPath = null;
-                _rowMenuPaired = _copyPaired = _pairedList.Contains(e.CanvasLocation);
+                _rowMenuPaired = _copyPaired = _f.List.Contains(e.CanvasLocation);
                 _rowMenuAllActions = CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered,
                     PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX, _rowMenuPaired,
                     !_rowMenuPaired && result.DisplaySet != null && !result.DisplaySet.IsBranchSet && PanelOwner.OutputValues == PanelOutputValues.Items);

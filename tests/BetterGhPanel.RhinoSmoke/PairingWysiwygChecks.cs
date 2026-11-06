@@ -69,15 +69,15 @@ internal static class PairingWysiwygChecks
             finally { GH_Skin.canvas_back = previous; }
         }
         object Heading(bool paired) => Field<IEnumerable>(attributes, "_branchHits").Cast<object>().First(hit =>
-            Property<string>(hit, "Path") == "{0;0}" && Field<RectangleF>(attributes, paired ? "_pairedList" : "_list").Contains(Property<RectangleF>(hit, "Bounds")));
+            Property<string>(hit, "Path") == "{0;0}" && PanelTestAdapter.PaneField<RectangleF>(attributes, paired, "List").Contains(Property<RectangleF>(hit, "Bounds")));
         PointF Center(RectangleF bounds) => new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
         Render();
         foreach (string mode in new[] { "Full", "Half" })
         {
             Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, mode));
             Render();
-            var caption = Field<RectangleF>(attributes, "_dataCaption");
-            var list = Field<RectangleF>(attributes, "_list");
+            var caption = PanelTestAdapter.PaneField<RectangleF>(attributes, false, "Caption");
+            var list = PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List");
             var panel = Field<RectangleF>(attributes, "_panel");
             Check(Field<float>(attributes, "_warningsHeight") == 17 && caption.Top >= panel.Top + 64 &&
                 list.Top >= caption.Bottom && list.Bottom <= Field<RectangleF>(attributes, "_footer").Top &&
@@ -122,7 +122,7 @@ internal static class PairingWysiwygChecks
             Check(Forms.Clipboard.GetText() == "{1;0}", "F selected paths use F tree paths");
             await Copy("CopyAddresses", false);
             Check(Forms.Clipboard.GetText() == "{0;0}(0)", "D address keeps its transformed D branch index");
-            var pane = Field<RectangleF>(attributes, "_pairedList");
+            var pane = PanelTestAdapter.PaneField<RectangleF>(attributes, true, "List");
             var rowHit = Field<IEnumerable>(attributes, "_rowHits").Cast<object>().First(hit =>
                 Property<int>(hit, "SourcePosition") == 0 && pane.Contains(Property<RectangleF>(hit, "Bounds")));
             PanelTestAdapter.CanvasClick(canvas, Center(Property<RectangleF>(rowHit, "Bounds")), Forms.MouseButtons.Right); Render();

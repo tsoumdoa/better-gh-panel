@@ -64,16 +64,17 @@ namespace BetterGhPanel
             }
             if (_rowMenuResult != null && _rowMenuBounds.Contains(point)) return true;
             // A list without overflow lets the wheel zoom the canvas as usual.
-            if (!ListContains(point) && !_trackHit.Contains(point) && !_pairedTrackHit.Contains(point) || MaximumOffset == 0)
+            if (!ListContains(point) && !_d.TrackHit.Contains(point) && !_f.TrackHit.Contains(point) || MaximumOffset == 0)
             {
                 _wheelRemainder = 0;
                 return false;
             }
-            _keyboardPaired = _pairedList.Contains(point) || _pairedTrackHit.Contains(point);
+            _keyboardPaired = _f.List.Contains(point) || _f.TrackHit.Contains(point);
             bool paired = !_scrollLocked && _keyboardPaired;
+            var pane = paired ? _f : _d;
             if (paired && !PanelOwner.CanSplit) return false;
             int rows = WheelRows(delta);
-            if (rows != 0) SetPaneOffset(canvas, (paired ? _pairedOffset : _offset) - rows, paired);
+            if (rows != 0) SetPaneOffset(canvas, pane.Offset - rows, paired);
             return true;
         }
 
@@ -102,6 +103,7 @@ namespace BetterGhPanel
             var result = PanelOwner.Session.Result;
             bool current = ResultIsCurrent(result);
             bool paired = PanelOwner.PanelSplit && !_scrollLocked && PanelOwner.CanSplit && _keyboardPaired;
+            var pane = paired ? _f : _d;
             switch (key)
             {
                 case Keys.Escape when none:
@@ -114,8 +116,8 @@ namespace BetterGhPanel
                     return true;
                 case Keys.PageUp when none:
                 case Keys.PageDown when none:
-                    SetPaneOffset(canvas, (paired ? _pairedOffset : _offset) + (key == Keys.PageUp ? -1 : 1) *
-                        Math.Max(1, (paired ? _pairedShown : _shown) - 1), paired);
+                    SetPaneOffset(canvas, pane.Offset + (key == Keys.PageUp ? -1 : 1) *
+                        Math.Max(1, pane.Shown - 1), paired);
                     return true;
                 case Keys.Home when none || control:
                     SetPaneOffset(canvas, 0, paired);
@@ -196,14 +198,15 @@ namespace BetterGhPanel
         private void MoveKeyboardCursor(GH_Canvas canvas, PanelQueryResult result, int step, bool extend)
         {
             bool paired = PanelOwner.PanelSplit && !_scrollLocked && PanelOwner.CanSplit && _keyboardPaired;
-            if (DisplayListLengths) { SetPaneOffset(canvas, (paired ? _pairedOffset : _offset) + step, paired); return; }
+            var pane = paired ? _f : _d;
+            if (DisplayListLengths) { SetPaneOffset(canvas, pane.Offset + step, paired); return; }
             int count = result.RowPositions.Count;
             if (count == 0) return;
             int index;
             if (_keyboardCursor >= 0 && result.TryGetViewIndex(_keyboardCursor, out int cursor)) index = cursor + step;
             else if (_selection.Anchor >= 0 && result.TryGetViewIndex(_selection.Anchor, out int anchor)) index = anchor + step;
-            else index = paired ? ViewItemAtOrAfter(result, _pairedOffset) :
-                _firstShownItem >= 0 ? _firstShownItem : ViewItemAtOrAfter(result, _offset);
+            else index = paired ? ViewItemAtOrAfter(result, _f.Offset) :
+                _firstShownItem >= 0 ? _firstShownItem : ViewItemAtOrAfter(result, _d.Offset);
             index = Math.Max(0, Math.Min(count - 1, index));
             int position = result.RowPositions[index];
             InvalidateCopyStatus();
@@ -213,13 +216,13 @@ namespace BetterGhPanel
             TrackSelectionCanvas(canvas);
             int offset = ViewOffset(result, index);
             // Read both panes' visibility before scrolling either: scrolling clears painted hits.
-            bool shownInData = RowShownIn(_list, position), shownInPaired = RowShownIn(_pairedList, position);
-            if (paired) { if (!shownInPaired) RevealPartner(canvas, position, null, _list.Location); canvas.Invalidate(); }
+            bool shownInData = RowShownIn(_d.List, position), shownInPaired = RowShownIn(_f.List, position);
+            if (paired) { if (!shownInPaired) RevealPartner(canvas, position, null, _d.List.Location); canvas.Invalidate(); }
             else if (_firstShownItem < 0 || index < _firstShownItem) SetOffset(canvas, offset);
-            else if (index > _lastShownItem) SetOffset(canvas, offset - Math.Max(0, _shown - 3));
+            else if (index > _lastShownItem) SetOffset(canvas, offset - Math.Max(0, _d.Shown - 3));
             else canvas.Invalidate();
             if (paired ? !shownInData : !shownInPaired)
-                RevealPartner(canvas, position, null, paired ? _pairedList.Location : _list.Location);
+                RevealPartner(canvas, position, null, paired ? _f.List.Location : _d.List.Location);
         }
 
         private void SelectAllRows(GH_Canvas canvas, PanelQueryResult result)
@@ -261,7 +264,7 @@ namespace BetterGhPanel
             control = true;
             if (PanelOwner.PanelMinimized) return _restore.Contains(point) ? _restore : RectangleF.Empty;
             control = false;
-            if (_menu.Kind != CanvasMenuKind.None || _rowMenuResult != null || _resizing || _scrolling) return RectangleF.Empty;
+            if (_menu.Kind != CanvasMenuKind.None || _rowMenuResult != null || _resizing || (_d.Scrolling || _f.Scrolling)) return RectangleF.Empty;
             foreach (var bounds in HoverControls())
                 if (!bounds.IsEmpty && bounds.Contains(point)) { control = true; return bounds; }
             if (!RowsAreCurrent(PanelOwner.Session.Result)) return RectangleF.Empty;
@@ -341,7 +344,7 @@ namespace BetterGhPanel
             if (result == null) return;
             _selectionRestore = result;
             _savedSelection = PanelOwner.CreateSetTree ? null : PanelOwner.CommittedSelection.CopyForPreview();
-            _viewRestore = _offset == 0 && _pairedOffset == 0 ? null : new ViewRestore(result.Snapshot, _offset, _pairedOffset, DisplayListLengths);
+            _viewRestore = _d.Offset == 0 && _f.Offset == 0 ? null : new ViewRestore(result.Snapshot, _d.Offset, _f.Offset, DisplayListLengths);
         }
 
         private void RestoreView(PanelQueryResult result)
@@ -363,8 +366,8 @@ namespace BetterGhPanel
             _viewRestore = null;
             if (restore.ListLengths != DisplayListLengths ||
                 !(sameStructure ?? PanelRowSelection.SameStructure(restore.Snapshot, result.Snapshot))) return;
-            _offset = Math.Max(0, Math.Min(MaximumOffset, restore.Offset));
-            _pairedOffset = _scrollLocked ? _offset : Math.Max(0, Math.Min(MaximumOffset, restore.PairedOffset));
+            _d.Offset = Math.Max(0, Math.Min(MaximumOffset, restore.Offset));
+            _f.Offset = _scrollLocked ? _d.Offset : Math.Max(0, Math.Min(MaximumOffset, restore.PairedOffset));
         }
 
         private sealed class ViewRestore

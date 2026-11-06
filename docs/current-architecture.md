@@ -91,3 +91,5 @@ The `stock-types` inactive-desktop fixture checks native type inspection, WYSIWY
 
 The component partials group saved settings and archive migration in `BetterPanelComponent.Settings.cs`, capture and publication in `BetterPanelComponent.Capture.cs`, and row actions in `BetterPanelComponent.RowActions.cs`. Construction, session wiring, ports, scheduling and document lifecycle remain in `BetterPanelComponent.cs`; output reconstruction remains in `BetterPanelComponent.Outputs.cs`. Text and geometry copy share `Runtime/ClipboardGeneration.cs`.
 The `BetterPanelAttributes.RowView.cs` partial owns the shared row-view index and branch-heading drawing, including branch copy affordances.
+
+`BetterPanelAttributes` keeps D and F viewport state in its private `_d` and `_f` `PaneView` instances (scroll offsets, visible counts, pane rectangles, captions, and drag flags).

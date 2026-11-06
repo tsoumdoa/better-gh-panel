@@ -56,7 +56,7 @@ internal static class PanelTestAdapter
         component.GetType().GetMethod("SetTreeOperations", PrivateInstance)!.Invoke(component, new object[] { depth, flatten, reverse, simplify, createSet });
     internal static BetterGhPanel.Core.PanelUnitConversion Conversion(GH_Component component) => Property<BetterGhPanel.Core.PanelUnitConversion>(component, "UnitConversion");
     internal static int Decimals(GH_Component component) => Property<int>(component, "DecimalPlaces");
-    internal static int Offset(GH_Component component) => Field<int>(component.Attributes, "_offset");
+    internal static int Offset(GH_Component component) => PanelTestAdapter.PaneField<int>(component.Attributes, false, "Offset");
     internal static int SelectedPosition(GH_Component component)
     {
         var selection = Field<object>(component.Attributes, "_selection");
@@ -75,7 +75,9 @@ internal static class PanelTestAdapter
     internal static void Resize(GH_Component component, float width, float height) =>
         component.GetType().GetMethod("SetCanvasSize", PrivateInstance)!.Invoke(component, new object[] { width, height });
     internal static RectangleF Bounds(GH_Component component, CanvasControl control) =>
-        Field<RectangleF>(component.Attributes, "_" + char.ToLowerInvariant(control.ToString()[0]) + control.ToString().Substring(1));
+        control == CanvasControl.List || control == CanvasControl.Track
+            ? PaneField<RectangleF>(component.Attributes, false, control.ToString())
+            : Field<RectangleF>(component.Attributes, "_" + char.ToLowerInvariant(control.ToString()[0]) + control.ToString().Substring(1));
     internal static RectangleF MenuBounds(GH_Component component) => Property<RectangleF>(Field<object>(component.Attributes, "_menu"), "Bounds");
     internal static string RowMenuLabel(GH_Component component, int index) =>
         Property<string>(Field<Array>(component.Attributes, "_rowMenuActions").GetValue(index)!, "Label");
@@ -154,6 +156,9 @@ internal static class PanelTestAdapter
             .Invoke(component, new object[] { snapshot, snapshot.Rows[position], position })!;
 
     private static T Property<T>(object owner, string name) => (T)owner.GetType().GetProperty(name, PrivateInstance)!.GetValue(owner)!;
+    internal static T PaneField<T>(object attributes, bool paired, string name) =>
+        Field<T>(Field<object>(attributes, paired ? "_f" : "_d"), name);
+
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, PrivateInstance)!.GetValue(owner)!;
 }
 

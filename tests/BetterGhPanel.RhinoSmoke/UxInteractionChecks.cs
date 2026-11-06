@@ -295,7 +295,7 @@ internal static class UxInteractionChecks
                 fixture.Solve();
                 await fixture.Ready(() => fixture.Sinks[3].VolatileData.DataCount == partnerCount);
                 attributes.PerformLayout(); Render();
-                var pane = Field<RectangleF>(attributes, "_pairedList");
+                var pane = PanelTestAdapter.PaneField<RectangleF>(attributes, true, "List");
                 PanelTestAdapter.CanvasClick(canvas, new PointF(pane.Left + 50, pane.Top + 23));
                 Forms.Clipboard.SetText("sentinel");
                 Check((bool)input.Invoke(attributes, new object[] { canvas, Forms.Keys.Control | Forms.Keys.C })!,
@@ -357,8 +357,8 @@ internal static class UxInteractionChecks
         fixture.Query(new PanelQueryOptions { Search = "> 9", SortMode = PanelSortMode.ValueDescending });
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 70);
         PanelTestAdapter.Resize(component, 400, 360); attributes.PerformLayout(); Render();
-        var dataList = Field<RectangleF>(attributes, "_list");
-        var pairedList = Field<RectangleF>(attributes, "_pairedList");
+        var dataList = PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List");
+        var pairedList = PanelTestAdapter.PaneField<RectangleF>(attributes, true, "List");
         var dataRow = PanelTestAdapter.RowBounds(component, 74);
         var pairedPoint = new PointF(dataRow.X + pairedList.X - dataList.X + 80, dataRow.Y + dataRow.Height / 2);
         PanelTestAdapter.CanvasClick(canvas, pairedPoint);
@@ -410,8 +410,8 @@ internal static class UxInteractionChecks
         Render(); PanelTestAdapter.CanvasClick(canvas, linkPoint); Render();
         var wheel = assembly.GetType("BetterGhPanel.UI.IPanelInputTarget", true)!.GetMethod("HandleWheel")!;
         wheel.Invoke(attributes, new object[] { canvas, pairedPoint, -240 });
-        int independentOffset = Field<int>(attributes, "_pairedOffset");
-        Check(independentOffset > 0 && PanelTestAdapter.Offset(component) == 0 && !Field<RectangleF>(attributes, "_trackHit").IsEmpty,
+        int independentOffset = PanelTestAdapter.PaneField<int>(attributes, true, "Offset");
+        Check(independentOffset > 0 && PanelTestAdapter.Offset(component) == 0 && !PanelTestAdapter.PaneField<RectangleF>(attributes, false, "TrackHit").IsEmpty,
             "Unlinked wheel scrolling moves only F and exposes D's independent track");
         Render();
         var splitSearch = Search();
@@ -419,12 +419,12 @@ internal static class UxInteractionChecks
         splitSearch.Cancel();
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 70);
         Render();
-        Check(Field<int>(attributes, "_pairedOffset") == independentOffset && PanelTestAdapter.Offset(component) == 0,
+        Check(PanelTestAdapter.PaneField<int>(attributes, true, "Offset") == independentOffset && PanelTestAdapter.Offset(component) == 0,
             "Esc restores the independent F offset after a filtered search preview");
         fixture.Solve();
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 70);
         Render();
-        Check(Field<int>(attributes, "_pairedOffset") == independentOffset && PanelTestAdapter.Offset(component) == 0,
+        Check(PanelTestAdapter.PaneField<int>(attributes, true, "Offset") == independentOffset && PanelTestAdapter.Offset(component) == 0,
             "Same-shape upstream recompute preserves both independent offsets");
         fixture.Query(new PanelQueryOptions());
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
@@ -438,20 +438,20 @@ internal static class UxInteractionChecks
             pairedList.Contains((RectangleF)hit.GetType().GetProperty("Bounds", Instance)!.GetValue(hit)!));
         int dataOffset = PanelTestAdapter.Offset(component);
         Key(Forms.Keys.Home); Render();
-        bool home = Field<int>(attributes, "_pairedOffset") == 0 && PanelTestAdapter.Offset(component) == dataOffset;
+        bool home = PanelTestAdapter.PaneField<int>(attributes, true, "Offset") == 0 && PanelTestAdapter.Offset(component) == dataOffset;
         Key(Forms.Keys.PageDown); Render();
-        int pageOffset = Field<int>(attributes, "_pairedOffset");
+        int pageOffset = PanelTestAdapter.PaneField<int>(attributes, true, "Offset");
         Key(Forms.Keys.PageUp); Render();
-        bool pages = pageOffset > 0 && Field<int>(attributes, "_pairedOffset") == 0 && PanelTestAdapter.Offset(component) == dataOffset;
+        bool pages = pageOffset > 0 && PanelTestAdapter.PaneField<int>(attributes, true, "Offset") == 0 && PanelTestAdapter.Offset(component) == dataOffset;
         Key(Forms.Keys.End); Render();
         Check(PanelTestAdapter.SelectedPosition(component) == 79 && f79Visible && home && pages &&
-            Field<int>(attributes, "_pairedOffset") > pageOffset && PanelTestAdapter.Offset(component) == dataOffset,
+            PanelTestAdapter.PaneField<int>(attributes, true, "Offset") > pageOffset && PanelTestAdapter.Offset(component) == dataOffset,
             "Independent F keyboard selection stays visible and Home/End/PgUp/PgDn scroll the last active pane");
         fixture.Query(new PanelQueryOptions { Search = "> 9", SortMode = PanelSortMode.ValueDescending });
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 70);
         Render(); PanelTestAdapter.CanvasClick(canvas, linkPoint); Render();
-        Check(Field<int>(attributes, "_pairedOffset") == PanelTestAdapter.Offset(component) && Field<bool>(attributes, "_scrollLocked") &&
-            Field<RectangleF>(attributes, "_trackHit").IsEmpty,
+        Check(PanelTestAdapter.PaneField<int>(attributes, true, "Offset") == PanelTestAdapter.Offset(component) && Field<bool>(attributes, "_scrollLocked") &&
+            PanelTestAdapter.PaneField<RectangleF>(attributes, false, "TrackHit").IsEmpty,
             "Relinking snaps F back to D and removes D's middle track target");
 
         component.Params.Input[1].RemoveAllSources(); fixture.Solve();

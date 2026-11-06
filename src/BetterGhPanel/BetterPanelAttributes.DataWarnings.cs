@@ -26,8 +26,8 @@ namespace BetterGhPanel
             textFormat.LineAlignment = StringAlignment.Center;
             textFormat.Trimming = StringTrimming.EllipsisCharacter;
             float separatorWidth = graphics.MeasureString(" · ", small, int.MaxValue, textFormat).Width;
-            float x = _list.X + 2, y = _panel.Y + 48;
-            float right = PanelOwner.PanelSplit ? _panel.X + _panel.Width / 2 - 19 : _list.Right;
+            float x = _d.List.X + 2, y = _panel.Y + 48;
+            float right = PanelOwner.PanelSplit ? _panel.X + _panel.Width / 2 - 19 : _d.List.Right;
             bool hasSegment = false;
             void Segment(string text, int kind)
             {

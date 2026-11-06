@@ -93,7 +93,7 @@ internal static class BranchPairingChecks
         }
         RectangleF PaneRow(int position, bool paired)
         {
-            var pane = Field<RectangleF>(attributes, paired ? "_pairedList" : "_list");
+            var pane = PanelTestAdapter.PaneField<RectangleF>(attributes, paired, "List");
             foreach (var hit in Field<IEnumerable>(attributes, "_rowHits"))
                 if (Property<int>(hit!, "SourcePosition") == position && pane.Contains(Property<RectangleF>(hit!, "Bounds")))
                     return Property<RectangleF>(hit!, "Bounds");
@@ -125,7 +125,7 @@ internal static class BranchPairingChecks
         Check(Call(component, "PairedRow", 3) == null && ((PanelRow)Call(component, "PairedRow", 14)!).StringValue == "F2-0",
             "Explicit D to optional F mapping skips missing cells without shifting following branches");
         int hits = PanelTestAdapter.Hits(component, "_rowHits");
-        Check(hits == 32 && Field<int>(attributes, "_shown") == 18, "F-only rows and D spacers have no selection hits");
+        Check(hits == 32 && PanelTestAdapter.PaneField<int>(attributes, false, "Shown") == 18, "F-only rows and D spacers have no selection hits");
         using (var bitmap = new Bitmap(canvas.Width, canvas.Height))
         using (var graphics = Graphics.FromImage(bitmap))
         {
@@ -151,18 +151,18 @@ internal static class BranchPairingChecks
         Call(attributes, "SetPaneOffset", canvas, 13, false); Render();
         var row13 = PaneRow(13, false);
         PanelTestAdapter.CanvasClick(canvas, new PointF(row13.X + 90, row13.Y + 8)); Render();
-        Check(PaneRow(13, true).Y >= Field<RectangleF>(attributes, "_pairedList").Y,
+        Check(PaneRow(13, true).Y >= PanelTestAdapter.PaneField<RectangleF>(attributes, true, "List").Y,
             "Selecting D in an unlinked uneven split reveals its F partner");
         var input = assembly.GetType("BetterGhPanel.UI.IPanelInputTarget", true)!;
         input.GetMethod("HandleKey")!.Invoke(attributes, new object[] { canvas, Forms.Keys.Down }); Render();
         Check(PanelTestAdapter.SelectedPosition(component) == 14 && !PaneRow(14, true).IsEmpty,
             "Keyboard navigation skips F extras and D spacers while revealing the next paired D row");
         int dataOffset = PanelTestAdapter.Offset(component);
-        input.GetMethod("HandleWheel")!.Invoke(attributes, new object[] { canvas, Field<RectangleF>(attributes, "_pairedList").Location, 240 }); Render();
-        Check(PanelTestAdapter.Offset(component) == dataOffset && Field<int>(attributes, "_pairedOffset") < dataOffset,
+        input.GetMethod("HandleWheel")!.Invoke(attributes, new object[] { canvas, PanelTestAdapter.PaneField<RectangleF>(attributes, true, "List").Location, 240 }); Render();
+        Check(PanelTestAdapter.Offset(component) == dataOffset && PanelTestAdapter.PaneField<int>(attributes, true, "Offset") < dataOffset,
             "Unlinked F wheel scrolling leaves D's augmented row offset unchanged");
         PanelTestAdapter.CanvasClick(canvas, new PointF(link.X + 8, link.Y + 7)); Render();
-        Check(Field<int>(attributes, "_pairedOffset") == PanelTestAdapter.Offset(component), "Relinking uneven panes snaps their augmented scroll offsets together");
+        Check(PanelTestAdapter.PaneField<int>(attributes, true, "Offset") == PanelTestAdapter.Offset(component), "Relinking uneven panes snaps their augmented scroll offsets together");
         Call(attributes, "SetPaneOffset", canvas, 0, false);
         PanelTestAdapter.Resize(component, 560, 650); Render();
         f.ClearSelection(); f.Select(3); f.Scope(PanelOutputScope.Selected);
@@ -465,7 +465,7 @@ internal static class BranchPairingChecks
             Render();
             Check((string)Call(attributes, "PairedBranchValue", representative)! == "f0-0 · f0-1 · f0-2 · f0-3 … +8 in this set",
                 "List-length sets use the same bounded F summary rule as item sets");
-            var branchPane = Field<RectangleF>(attributes, "_pairedList");
+            var branchPane = PanelTestAdapter.PaneField<RectangleF>(attributes, true, "List");
             var branchHit = Field<IEnumerable>(attributes, "_branchHits").Cast<object>().Single(hit =>
                 Property<string>(hit, "Path") == representative && branchPane.Contains(Property<RectangleF>(hit, "Bounds")));
             var branchBounds = Property<RectangleF>(branchHit, "Bounds");

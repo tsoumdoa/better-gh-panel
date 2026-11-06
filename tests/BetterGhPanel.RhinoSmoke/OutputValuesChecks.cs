@@ -196,8 +196,8 @@ internal static class OutputValuesChecks
             await Query(PanelSearchMode.ListLength);
             var pairing = Property<object>(component, "PairedData");
             var pairedRows = (System.Collections.IDictionary)pairing.GetType().GetField("BranchSummaries", Instance)!.GetValue(pairing)!;
-            Check(!Bounds("_dataCaption").IsEmpty && !Bounds("_scrollLock").IsEmpty && pairedRows.Count > 0 &&
-                Bounds("_list").Height >= 17 && Bounds("_list").Bottom <= Bounds("_footer").Top,
+            Check(!PanelTestAdapter.PaneField<RectangleF>(attributes, false, "Caption").IsEmpty && !Bounds("_scrollLock").IsEmpty && pairedRows.Count > 0 &&
+                PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Height >= 17 && PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Bottom <= Bounds("_footer").Top,
                 "Minimum split " + display + " retains captions, relinking, paired branch content and a full data row");
             foreach (bool expected in new[] { false, true })
             {
