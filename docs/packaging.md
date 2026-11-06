@@ -1,5 +1,7 @@
 # Build and Yak packaging
 
+Patch `0.2.6-beta` keeps row selection across same-structure upstream recomputes and blank-canvas clicks, resets a hidden Out Items | Values choice to Items, replaces three reset commands with **Clear filters** and **Reset all**, and names the two scopes **Results** and **Selection** (no ·S port suffix). Comparison modes open their editor directly, one × clears the search, inline editors apply changed valid text when focus leaves them, and Ctrl+C copies selected rows in every view. With Round up by factor, Decimal places also rounds up, working on each number's shortest decimal form; Stats match row text. The cleanup also removed dead code, consolidated undo actions, and made `npm run check` compile the native smoke host when Rhino 8 is installed. The native inventory is unchanged (24 fixtures).
+
 Patch `0.2.5-beta` supports Text Dots fully (display text, X/Y/Z, font properties, trusted validity, preview, highlight, frame and copy) and gives text entities, leaders, dimensions, centermarks, hatches, blocks, detail views, culture, location, path, matrix, complex, SubD, extrusion, point cloud, transform and mesh face values meaningful display, properties and validity. Numeric summaries follow Units and Decimal places, and dimensions copy what they show. Per-type support lives in one compile-checked catalog, `Runtime/StockGooSupport.cs`. It adds `stock-types` to the native inventory (24 fixtures).
 
 Patch `0.2.4-beta` makes displayed values authoritative: round up and explicit Decimal places reach every shown number, D/S Values and numeric Items output, comparisons and Stats, identically on net48 and net7. D | F pairs by branch count, so item counts may differ. Branch headings and rows copy their addresses, and a data-warnings strip flags nulls, invalid items and branch-length outliers. It adds `branch-pairing`, `wysiwyg-values` and `pairing-wysiwyg` to the native inventory (23 fixtures).
@@ -34,12 +36,12 @@ McNeel's separate public Yak registry still serves the original packages. Publis
 
 New builds use the Yak package name `panel-plus` and stage to `artifacts/panel-plus-<version>/`. The old published package retains its original name; installing the renamed package may require removing the old package first to avoid loading both copies.
 
-The current beta is [`0.2.5-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.5-beta), following `0.2.4-beta`, distributed through Yak and GitHub Releases. The `artifacts/panel-plus-0.2.5-beta/` stage contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `panel-plus-0.2.5-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; on Windows with Rhino 8 installed it also compiles and style-checks the native smoke host. It never installs or launches Rhino. GitHub Actions CI is disabled.
+The current beta is [`0.2.6-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.6-beta), following `0.2.5-beta`, distributed through Yak and GitHub Releases. The `artifacts/panel-plus-0.2.6-beta/` stage contains `manifest.yml`, `icon.png`, `LICENSE`, and the two runtime folders. Packaging validates required assets and rejects unexpected staging-root entries before modifying a previous stage. Yak builds a `panel-plus-0.2.6-beta-rh8_0-any.yak` archive there. No command in the packaging script signs in or publishes. `npm run check` runs the core, packaging, and unused-code checks and stages both runtimes locally on Windows or Mac; on Windows with Rhino 8 installed it also compiles and style-checks the native smoke host. It never installs or launches Rhino. GitHub Actions CI is disabled.
 
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
 ```text
-yak install --source artifacts/panel-plus-0.2.5-beta panel-plus 0.2.5-beta
+yak install --source artifacts/panel-plus-0.2.6-beta panel-plus 0.2.6-beta
 ```
 
 Replace `yak` with the full executable path if it is not on PATH. On Windows it is normally `C:\Program Files\Rhino 8\System\Yak.exe`; on Mac it is normally `/Applications/Rhino 8.app/Contents/Resources/bin/yak`. Restart Rhino and open Grasshopper afterward. Local install uses Yak's package directory and avoids copying a second `.gha` into the Grasshopper Libraries folder.
@@ -82,7 +84,7 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 Install the current public beta with:
 
 ```text
-yak install panel-plus 0.2.5-beta
+yak install panel-plus 0.2.6-beta
 ```
 
 The release notes below record the validation and host modes used at the time. For the current isolated fixture runner, see [validation](maintainability.md#validation).

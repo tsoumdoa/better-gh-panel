@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.2.5-beta
+yak install panel-plus 0.2.6-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -28,22 +28,13 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
-### Unreleased
+**[`0.2.6-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.6-beta)**
 
-**Behaviour changes**
-
-- With Round up by factor, Decimal places now also rounds up.
-- Stats show the same numbers as the rows in Automatic.
-- Picking a comparison mode (numbers, dates, text properties) opens the editor.
-- One × clears the search.
-- Clicking away applies a typed filter.
-- Ctrl+C copies selected rows in every view.
-
-- S survives recomputes with the same paths and branch lengths when Create set is off; filtered-out rows drop from the selection.
-- Clicking blank canvas or empty panel space keeps the selection.
-- Out Items | Values resets to Items when hidden; one Undo restores both settings.
-- Reset commands are now **Clear filters** and **Reset all**; the header ↻ is Reset all.
-- The **·S** port suffix is removed. B/F tooltips state Results or Selection.
+- **Your selection sticks.** S keeps the selected rows when an upstream change leaves the same paths and branch lengths (with Create set off), and clicking blank canvas or empty panel space no longer clears it.
+- **Search in fewer steps.** Picking a comparison mode opens the editor straight away, one × clears the search, and clicking away applies what you typed (Esc cancels). Ctrl+C copies selected rows in every view.
+- **Clearer controls.** Two resets, **Clear filters** and **Reset all** (header ↻), and one vocabulary: Preview and **B + F follow** choose **Results** or **Selection**.
+- **Rounding that never rounds down.** With Round up by factor, Decimal places also rounds up, and Stats show the same numbers as the rows.
+- **Behaviour changes:** Out Items | Values falls back to Items whenever the switch is hidden. The **·S** port suffix is gone. "Reset panel view" and "Reset tree tools" are replaced by Clear filters. Clicking away from any inline editor now applies a changed, valid value instead of discarding it. Inputs whose full-precision digits sit above a step (such as 0.1+0.2) still round up to the next step.
 
 **[`0.2.5-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.5-beta)**
 
