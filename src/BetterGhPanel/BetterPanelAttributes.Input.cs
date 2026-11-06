@@ -52,11 +52,11 @@ namespace BetterGhPanel
             ReferenceEquals(canvas.Document, Owner.OnPingDocument()) && !PanelOwner.PanelMinimized && !PanelOwner.Locked &&
             canvas.Viewport.Zoom >= 0.5f;
 
-        bool IPanelInputTarget.ContainsCanvasPoint(PointF point) => _panel.Contains(point) || _setDetails.Bounds.Contains(point);
+        bool IPanelInputTarget.ContainsCanvasPoint(PointF point) => _layout.Panel.Contains(point) || _setDetails.Bounds.Contains(point);
 
         bool IPanelInputTarget.HandleWheel(GH_Canvas canvas, PointF point, int delta)
         {
-            if (!_panel.Contains(point)) return false;
+            if (!_layout.Panel.Contains(point)) return false;
             if (_menu.Kind != CanvasMenuKind.None && _menu.Bounds.Contains(point))
             {
                 if (_menu.Scroll(-WheelRows(delta))) canvas.Invalidate();
@@ -245,24 +245,24 @@ namespace BetterGhPanel
         // Hover feedback: a translucent fill on the control or row under the pointer.
         private IEnumerable<RectangleF> HoverControls()
         {
-            yield return _close; yield return _display;
-            if (!_split.IsEmpty) yield return _split;
-            if (PanelOwner.PanelSplit) yield return _scrollLock;
+            yield return _layout.Close; yield return _layout.Display;
+            if (!_layout.Split.IsEmpty) yield return _layout.Split;
+            if (PanelOwner.PanelSplit) yield return _layout.ScrollLock;
             foreach (var warning in _warningHits) yield return warning.Bounds;
-            yield return _jump; yield return _reset; yield return _preview;
-            if (SearchClearVisible) yield return _searchClear;
-            yield return _filter; yield return _search;
-            if (BranchClearVisible) yield return _branchClear;
-            yield return _type; yield return _sort; yield return _branch;
-            yield return _selectAll; yield return _statistics;
-            yield return _trim; yield return _simplify; yield return _flatten; yield return _reverse; yield return _createSet; yield return _units;
-            if (PanelOwner.CanOutputValues) { yield return _outItems; yield return _outValues; }
+            yield return _layout.Jump; yield return _layout.Reset; yield return _layout.Preview;
+            if (SearchClearVisible) yield return _layout.SearchClear;
+            yield return _layout.Filter; yield return _layout.Search;
+            if (BranchClearVisible) yield return _layout.BranchClear;
+            yield return _layout.Type; yield return _layout.Sort; yield return _layout.Branch;
+            yield return _layout.SelectAll; yield return _layout.Statistics;
+            yield return _layout.Trim; yield return _layout.Simplify; yield return _layout.Flatten; yield return _layout.Reverse; yield return _layout.CreateSet; yield return _layout.Units;
+            if (PanelOwner.CanOutputValues) { yield return _layout.OutItems; yield return _layout.OutValues; }
         }
 
         private RectangleF HoverTargetAt(PointF point, out bool control)
         {
             control = true;
-            if (PanelOwner.PanelMinimized) return _restore.Contains(point) ? _restore : RectangleF.Empty;
+            if (PanelOwner.PanelMinimized) return _layout.Restore.Contains(point) ? _layout.Restore : RectangleF.Empty;
             control = false;
             if (_menu.Kind != CanvasMenuKind.None || _rowMenuResult != null || _resizing || (_d.Scrolling || _f.Scrolling)) return RectangleF.Empty;
             foreach (var bounds in HoverControls())

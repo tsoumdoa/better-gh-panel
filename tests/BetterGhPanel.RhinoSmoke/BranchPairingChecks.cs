@@ -146,7 +146,7 @@ internal static class BranchPairingChecks
         finally { if (clipboard == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(clipboard, true); }
         // Uneven rows share selection coordinates but F-only rows never enter navigation.
         PanelTestAdapter.Resize(component, 560, 260); Render();
-        var link = Field<RectangleF>(attributes, "_scrollLock");
+        var link = PanelTestAdapter.LayoutRect(attributes, "ScrollLock");
         PanelTestAdapter.CanvasClick(canvas, new PointF(link.X + 8, link.Y + 7)); Render();
         Call(attributes, "SetPaneOffset", canvas, 13, false); Render();
         var row13 = PaneRow(13, false);

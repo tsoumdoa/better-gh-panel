@@ -93,3 +93,5 @@ The component partials group saved settings and archive migration in `BetterPane
 The `BetterPanelAttributes.RowView.cs` partial owns the shared row-view index and branch-heading drawing, including branch copy affordances.
 
 `BetterPanelAttributes` keeps D and F viewport state in its private `_d` and `_f` `PaneView` instances (scroll offsets, visible counts, pane rectangles, captions, and drag flags).
+
+`BetterPanelAttributes.Layout.cs` computes the immutable `PanelLayout` of fixed controls and regions once per layout. Pane rectangles remain in `PaneView`; set-details geometry stays in `CanvasSetDetails` because render and input also update it.

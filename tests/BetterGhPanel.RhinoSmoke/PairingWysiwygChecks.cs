@@ -78,9 +78,9 @@ internal static class PairingWysiwygChecks
             Render();
             var caption = PanelTestAdapter.PaneField<RectangleF>(attributes, false, "Caption");
             var list = PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List");
-            var panel = Field<RectangleF>(attributes, "_panel");
+            var panel = PanelTestAdapter.LayoutRect(attributes, "Panel");
             Check(Field<float>(attributes, "_warningsHeight") == 17 && caption.Top >= panel.Top + 64 &&
-                list.Top >= caption.Bottom && list.Bottom <= Field<RectangleF>(attributes, "_footer").Top &&
+                list.Top >= caption.Bottom && list.Bottom <= PanelTestAdapter.LayoutRect(attributes, "Footer").Top &&
                 Field<IEnumerable>(attributes, "_warningHits").Cast<object>().Any(),
                 mode + " reserves warning strip, split captions, rows and footer without overlap");
             Capture("uneven-warnings-" + mode.ToLowerInvariant());

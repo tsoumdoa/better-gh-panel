@@ -405,7 +405,7 @@ internal static class UxInteractionChecks
         {
             if (clipboard == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(clipboard, true);
         }
-        var link = Field<RectangleF>(attributes, "_scrollLock");
+        var link = PanelTestAdapter.LayoutRect(attributes, "ScrollLock");
         var linkPoint = new PointF(link.X + link.Width / 2, link.Y + link.Height / 2);
         Render(); PanelTestAdapter.CanvasClick(canvas, linkPoint); Render();
         var wheel = assembly.GetType("BetterGhPanel.UI.IPanelInputTarget", true)!.GetMethod("HandleWheel")!;
@@ -457,11 +457,11 @@ internal static class UxInteractionChecks
         component.Params.Input[1].RemoveAllSources(); fixture.Solve();
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 70);
         attributes.PerformLayout(); Render();
-        var disconnectedSplit = Field<RectangleF>(attributes, "_split");
+        var disconnectedSplit = PanelTestAdapter.LayoutRect(attributes, "Split");
         PanelTestAdapter.CanvasClick(canvas, new PointF(disconnectedSplit.X + 14, disconnectedSplit.Y + 9));
         attributes.PerformLayout();
         Check(!disconnectedSplit.IsEmpty && !(bool)component.GetType().GetProperty("PanelSplit", Instance)!.GetValue(component)! &&
-            Field<RectangleF>(attributes, "_split").IsEmpty,
+            PanelTestAdapter.LayoutRect(attributes, "Split").IsEmpty,
             "Disconnecting F retains the active split toggle until it closes the split, then hides it");
         attributes.PerformLayout();
         fixture.Query(new PanelQueryOptions());

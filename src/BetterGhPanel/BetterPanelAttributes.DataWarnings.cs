@@ -13,8 +13,10 @@ namespace BetterGhPanel
         private float _warningsHeight;
         private readonly List<(RectangleF Bounds, int Kind)> _warningHits = new List<(RectangleF, int)>();
 
-        private float WarningStripHeight(float footerHeight) => PanelOwner.Session.HasCurrentResult &&
-            PanelOwner.Session.Result.Warnings.Any && _panel.Height - 56 - footerHeight - (PanelOwner.PanelSplit ? 14 : 0) >= 34 ? 17 : 0;
+        private float WarningStripHeight(float footerHeight) => WarningStripHeight(footerHeight, _layout.Panel);
+
+        private float WarningStripHeight(float footerHeight, RectangleF panel) => PanelOwner.Session.HasCurrentResult &&
+            PanelOwner.Session.Result.Warnings.Any && panel.Height - 56 - footerHeight - (PanelOwner.PanelSplit ? 14 : 0) >= 34 ? 17 : 0;
 
         private void RenderWarnings(Graphics graphics, PanelQueryResult result, Font small)
         {
@@ -26,8 +28,8 @@ namespace BetterGhPanel
             textFormat.LineAlignment = StringAlignment.Center;
             textFormat.Trimming = StringTrimming.EllipsisCharacter;
             float separatorWidth = graphics.MeasureString(" · ", small, int.MaxValue, textFormat).Width;
-            float x = _d.List.X + 2, y = _panel.Y + 48;
-            float right = PanelOwner.PanelSplit ? _panel.X + _panel.Width / 2 - 19 : _d.List.Right;
+            float x = _d.List.X + 2, y = _layout.Panel.Y + 48;
+            float right = PanelOwner.PanelSplit ? _layout.Panel.X + _layout.Panel.Width / 2 - 19 : _d.List.Right;
             bool hasSegment = false;
             void Segment(string text, int kind)
             {

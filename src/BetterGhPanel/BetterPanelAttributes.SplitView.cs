@@ -14,7 +14,6 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
-        private RectangleF _split, _scrollLock;
         private bool _scrollLocked = true, _dragPaired;
         private PanelQueryResult? _captionResult;
         private PanelSnapshot? _captionPairedSnapshot;
@@ -27,34 +26,35 @@ namespace BetterGhPanel
         private bool RowShownIn(RectangleF pane, int position) =>
             _rowHits.Any(hit => hit.SourcePosition == position && pane.Contains(hit.Bounds));
 
-        private void LayoutSplitPanes()
+        private RectangleF LayoutSplitPanes(RectangleF panel)
         {
-            _f.List = _f.Track = _f.TrackHit = _scrollLock = _d.Caption = _f.Caption = RectangleF.Empty;
-            if (!PanelOwner.PanelSplit) return;
-            float middle = _panel.X + _panel.Width / 2;
+            _f.List = _f.Track = _f.TrackHit = _d.Caption = _f.Caption = RectangleF.Empty;
+            if (!PanelOwner.PanelSplit) return RectangleF.Empty;
+            float middle = panel.X + panel.Width / 2;
             _d.Caption = new RectangleF(_d.List.X, _d.List.Y - 2, middle - _d.List.X - 16, 14);
             _f.Caption = new RectangleF(middle + 14, _d.Caption.Y, _d.Caption.Width, 14);
-            _scrollLock = new RectangleF(middle - 10, _d.Caption.Y, 20, 14);
+            var scrollLock = new RectangleF(middle - 10, _d.Caption.Y, 20, 14);
             float height = Math.Max(RowHeight, _d.List.Height - 14);
             _d.List = new RectangleF(_d.List.X, _d.List.Y + 14, middle - _d.List.X - 19, height);
             _f.List = new RectangleF(middle + 14, _d.List.Y, _d.List.Width, height);
             _d.Track = _scrollLocked ? RectangleF.Empty : new RectangleF(middle - 18, _d.List.Y, 4, height);
             _d.TrackHit = _scrollLocked ? RectangleF.Empty : new RectangleF(middle - 21, _d.List.Y, 8, height);
-            _f.Track = new RectangleF(_panel.Right - 18, _d.List.Y, 4, height);
-            _f.TrackHit = new RectangleF(_panel.Right - 21, _d.List.Y, 8, height);
+            _f.Track = new RectangleF(panel.Right - 18, _d.List.Y, 4, height);
+            _f.TrackHit = new RectangleF(panel.Right - 21, _d.List.Y, 8, height);
+            return scrollLock;
         }
 
         private string OutputPortLabel(IGH_Param parameter) => parameter.NickName;
 
         private void DrawSplitActions(Graphics graphics, Font small, StringFormat trim)
         {
-            if (!_split.IsEmpty)
+            if (!_layout.Split.IsEmpty)
             {
                 // An open split stays an active chip, so a mismatch never greys out the way back.
                 bool available = PanelOwner.CanSplit || PanelOwner.PanelSplit;
-                Control(graphics, _split, available ? "D|F" : "", small, trim, PanelOwner.PanelSplit);
+                Control(graphics, _layout.Split, available ? "D|F" : "", small, trim, PanelOwner.PanelSplit);
                 if (!available)
-                    Text(graphics, "D|F", small, PanelTheme.Rgb(180, 185, 178), new RectangleF(_split.X + 3, _split.Y, _split.Width - 6, _split.Height), trim);
+                    Text(graphics, "D|F", small, PanelTheme.Rgb(180, 185, 178), new RectangleF(_layout.Split.X + 3, _layout.Split.Y, _layout.Split.Width - 6, _layout.Split.Height), trim);
             }
             if (!PanelOwner.PanelSplit) return;
             // Linking has nothing to act on while F does not match D.
@@ -62,7 +62,7 @@ namespace BetterGhPanel
             using (var pen = new Pen(_scrollLocked ? Accent : Muted, 1))
             {
                 var state = graphics.Save();
-                graphics.TranslateTransform(_scrollLock.X + 10, _scrollLock.Y + 7);
+                graphics.TranslateTransform(_layout.ScrollLock.X + 10, _layout.ScrollLock.Y + 7);
                 graphics.RotateTransform(-35);
                 foreach (float center in new[] { _scrollLocked ? -3f : -6f, _scrollLocked ? 3f : 6f })
                 {
@@ -161,7 +161,7 @@ namespace BetterGhPanel
         private bool SplitTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             if (PanelOwner.PanelMinimized) return false;
-            if (_split.Contains(point))
+            if (_layout.Split.Contains(point))
             {
                 e.Title = "D | F split view";
                 e.Text = PanelOwner.PanelSplit ? "On" : "Off";
@@ -169,7 +169,7 @@ namespace BetterGhPanel
                     PanelOwner.PairedError ?? "F must have the same number of branches as D.";
                 return true;
             }
-            if (_scrollLock.Contains(point) && PanelOwner.CanSplit)
+            if (_layout.ScrollLock.Contains(point) && PanelOwner.CanSplit)
             {
                 e.Title = "Linked scrolling";
                 e.Text = _scrollLocked ? "Linked" : "Independent";
@@ -208,7 +208,7 @@ namespace BetterGhPanel
 
         private bool HandleSplitClick(GH_Canvas canvas, GH_CanvasMouseEvent e)
         {
-            if (_split.Contains(e.CanvasLocation))
+            if (_layout.Split.Contains(e.CanvasLocation))
             {
                 if (PanelOwner.CanSplit || PanelOwner.PanelSplit)
                 {
@@ -220,7 +220,7 @@ namespace BetterGhPanel
                 }
                 return true;
             }
-            if (!_scrollLock.Contains(e.CanvasLocation)) return false;
+            if (!_layout.ScrollLock.Contains(e.CanvasLocation)) return false;
             if (!PanelOwner.CanSplit) return true;
             _scrollLocked = !_scrollLocked;
             if (_scrollLocked) _f.Offset = _d.Offset;

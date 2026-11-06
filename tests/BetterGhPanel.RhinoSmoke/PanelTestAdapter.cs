@@ -77,7 +77,7 @@ internal static class PanelTestAdapter
     internal static RectangleF Bounds(GH_Component component, CanvasControl control) =>
         control == CanvasControl.List || control == CanvasControl.Track
             ? PaneField<RectangleF>(component.Attributes, false, control.ToString())
-            : Field<RectangleF>(component.Attributes, "_" + char.ToLowerInvariant(control.ToString()[0]) + control.ToString().Substring(1));
+            : LayoutRect(component.Attributes, control.ToString());
     internal static RectangleF MenuBounds(GH_Component component) => Property<RectangleF>(Field<object>(component.Attributes, "_menu"), "Bounds");
     internal static string RowMenuLabel(GH_Component component, int index) =>
         Property<string>(Field<Array>(component.Attributes, "_rowMenuActions").GetValue(index)!, "Label");
@@ -156,6 +156,9 @@ internal static class PanelTestAdapter
             .Invoke(component, new object[] { snapshot, snapshot.Rows[position], position })!;
 
     private static T Property<T>(object owner, string name) => (T)owner.GetType().GetProperty(name, PrivateInstance)!.GetValue(owner)!;
+    internal static RectangleF LayoutRect(object attributes, string name) =>
+        Property<RectangleF>(Field<object>(attributes, "_layout"), name);
+
     internal static T PaneField<T>(object attributes, bool paired, string name) =>
         Field<T>(Field<object>(attributes, paired ? "_f" : "_d"), name);
 
