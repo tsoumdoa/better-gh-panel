@@ -1,5 +1,4 @@
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 
 namespace BetterGhPanel.Core
@@ -14,9 +13,7 @@ namespace BetterGhPanel.Core
         internal const int MaxSurfacePoints = 4096;
         internal const int MaxInFlightBytes = 4 * 1024 * 1024;
         internal const int MaxPolylinePoints = 2048;
-        private static readonly object Gate = new object();
-        private static int _inFlightBytes;
-        private static TaskCompletionSource<bool> _released = NewReleaseSignal();
+        private static readonly CapacityGate Gate = new CapacityGate(MaxInFlightBytes);
 
         internal static bool Polyline(int dimension, int count, out int payload)
         {
@@ -59,39 +56,9 @@ namespace BetterGhPanel.Core
             released = null;
             if (payload <= 0 || payload > (MaxInFlightBytes - 65536) / 4) return null;
             int bytes = checked(payload * 4 + 65536);
-            lock (Gate)
-            {
-                if (_inFlightBytes > MaxInFlightBytes - bytes)
-                {
-                    released = _released.Task;
-                    return null;
-                }
-                var reservation = new Reservation(bytes);
-                _inFlightBytes += bytes;
-                return reservation;
-            }
-        }
-
-        private static TaskCompletionSource<bool> NewReleaseSignal() =>
-            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        private sealed class Reservation : IDisposable
-        {
-            private int _bytes;
-            internal Reservation(int bytes) { _bytes = bytes; }
-            public void Dispose()
-            {
-                int bytes = Interlocked.Exchange(ref _bytes, 0);
-                if (bytes == 0) return;
-                TaskCompletionSource<bool> signal;
-                lock (Gate)
-                {
-                    _inFlightBytes -= bytes;
-                    signal = _released;
-                    _released = NewReleaseSignal();
-                }
-                signal.TrySetResult(true);
-            }
+            var reservation = Gate.TryAcquire(bytes, out var signal);
+            if (reservation == null) released = signal;
+            return reservation;
         }
     }
 

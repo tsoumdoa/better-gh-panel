@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using Grasshopper.Kernel.Types;
 using Rhino.Geometry;
 
@@ -37,7 +36,7 @@ namespace BetterGhPanel.Runtime
             if (matrix == null) return new CapturedMatrixValue(false, false, 0, 0, Array.Empty<double>());
             if (matrix.GetType() != typeof(Matrix)) return null;
             int rows = matrix.RowCount, columns = matrix.ColumnCount;
-            if (rows < 0 || columns < 0 || (long)rows * columns > SafeGooInspection.MaxNodesPerRoot) return null;
+            if (rows < 0 || columns < 0 || (long)rows * columns > InspectionLimits.MaxNodesPerRoot) return null;
             bool valid = matrix.IsValid;
             var cells = new double[valid ? rows * columns : 0];
             for (int i = 0; i < cells.Length; i++) cells[i] = matrix[i / columns, i % columns];
@@ -230,7 +229,7 @@ namespace BetterGhPanel.Runtime
                 object? value = root;
                 HashSet<object>? seen = null;
                 int depth = 0;
-                while (value != null && depth < SafeGooInspection.MaxDepth - 1)
+                while (value != null && depth < InspectionLimits.MaxDepth - 1)
                 {
                     Type type = value.GetType();
                     if (type != typeof(GH_ObjectWrapper) && type != typeof(GH_GeometricGooWrapper)) break;
@@ -264,14 +263,14 @@ namespace BetterGhPanel.Runtime
             var result = new CaptureGraphWitness();
             var pending = new Stack<(object? value, int depth)>();
             var seen = new HashSet<object>(ReferenceComparer.Instance);
-            int rootRemaining = SafeGooInspection.MaxNodesPerRoot;
+            int rootRemaining = InspectionLimits.MaxNodesPerRoot;
             pending.Push((root, 0));
             try
             {
                 while (pending.Count != 0)
                 {
                     var (value, depth) = pending.Pop();
-                    if (rootRemaining <= 0 || captureRemaining <= 0 || depth >= SafeGooInspection.MaxDepth) return false;
+                    if (rootRemaining <= 0 || captureRemaining <= 0 || depth >= InspectionLimits.MaxDepth) return false;
                     rootRemaining--; captureRemaining--;
                     if (value == null || !seen.Add(value)) continue;
                     Type type = value.GetType();
@@ -515,7 +514,7 @@ namespace BetterGhPanel.Runtime
             else if (type == typeof(GH_StructurePath))
             {
                 var path = ((GH_StructurePath)value).Value;
-                if (path == null || path.GetType() != typeof(Grasshopper.Kernel.Data.GH_Path) || path.Length > SafeGooInspection.MaxNodesPerRoot)
+                if (path == null || path.GetType() != typeof(Grasshopper.Kernel.Data.GH_Path) || path.Length > InspectionLimits.MaxNodesPerRoot)
                 { copy = null; return false; }
                 copy = new GH_StructurePath(new Grasshopper.Kernel.Data.GH_Path((int[])path.Indices.Clone()));
             }
@@ -604,11 +603,6 @@ namespace BetterGhPanel.Runtime
         private static bool Same(Plane a, Plane b) => Same(a.Origin, b.Origin) && Same(a.XAxis, b.XAxis) && Same(a.YAxis, b.YAxis) && Same(a.ZAxis, b.ZAxis);
         private static bool Same(Box a, Box b) => Same(a.Plane, b.Plane) && Same(a.X, b.X) && Same(a.Y, b.Y) && Same(a.Z, b.Z);
 
-        private sealed class ReferenceComparer : IEqualityComparer<object>
-        {
-            internal static readonly ReferenceComparer Instance = new ReferenceComparer();
-            public new bool Equals(object? x, object? y) => ReferenceEquals(x, y);
-            public int GetHashCode(object value) => RuntimeHelpers.GetHashCode(value);
-        }
+
     }
 }

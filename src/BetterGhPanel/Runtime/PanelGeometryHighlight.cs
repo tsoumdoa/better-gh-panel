@@ -103,7 +103,7 @@ namespace BetterGhPanel.Runtime
             LastVisitedRows = LastVisitedNodes = 0;
             var update = UpdateMembership(selectedPositions, result, selection);
             if (!Current(generation, current)) return;
-            var budget = new PanelGeometrySources.Budget();
+            var budget = new PanelGeometrySources.OperationBudget();
             _recoveryGeneration = generation;
             _recoveryCurrent = current;
             // A newly selected row can evict an unselected preview. This allows
@@ -141,7 +141,7 @@ namespace BetterGhPanel.Runtime
             ScheduleRecovery();
         }
 
-        private bool PumpRecovery(PanelGeometrySources.Budget budget, long generation, Func<bool> current)
+        private bool PumpRecovery(PanelGeometrySources.OperationBudget budget, long generation, Func<bool> current)
         {
             bool progressed = false;
             bool more = _recovery.Pump(MaxUpdateRows, _membership.Contains,
@@ -183,7 +183,7 @@ namespace BetterGhPanel.Runtime
             generation = ++_generation;
             _recoveryGeneration = generation;
             if (!_filtered) { _partial = false; _partialReason = null; }
-            var budget = new PanelGeometrySources.Budget();
+            var budget = new PanelGeometrySources.OperationBudget();
             LastVisitedRows = LastVisitedNodes = 0;
             bool pending = _recovery.Pending;
             bool more = PumpRecovery(budget, generation, current);
@@ -202,7 +202,7 @@ namespace BetterGhPanel.Runtime
             _source = sourceItems; _legacyPositions = previewPositions; _filtered = true;
             LastVisitedRows = LastVisitedNodes = 0;
             UpdateMembership(selectedPositions, null, null);
-            var budget = new PanelGeometrySources.Budget();
+            var budget = new PanelGeometrySources.OperationBudget();
             for (int i = 0; i < previewPositions.Count; i++)
             {
                 if (i >= MaxBuildRows || budget.Remaining <= 0 || _entries.Count >= MaxEntries) { _partial = true; break; }
@@ -251,13 +251,13 @@ namespace BetterGhPanel.Runtime
             return false;
         }
 
-        private void TryAdmit(int position, int order, PanelGeometrySources.Budget budget, bool mayEvict, long generation, Func<bool> current)
+        private void TryAdmit(int position, int order, PanelGeometrySources.OperationBudget budget, bool mayEvict, long generation, Func<bool> current)
         {
             try { TryAdmitCore(position, order, budget, mayEvict, generation, current); }
             catch (Exception) { if (Current(generation, current)) RememberUnavailable(position); }
         }
 
-        private void TryAdmitCore(int position, int order, PanelGeometrySources.Budget budget, bool mayEvict, long generation, Func<bool> current)
+        private void TryAdmitCore(int position, int order, PanelGeometrySources.OperationBudget budget, bool mayEvict, long generation, Func<bool> current)
         {
             if (_source == null || position < 0 || position >= _source.Count || _byPosition.ContainsKey(position)) return;
             var source = _source;
@@ -373,7 +373,7 @@ namespace BetterGhPanel.Runtime
         // can reenter; then capture, construct and attach without a callback in
         // between. Wrappers, groups, observer-injected tests and native geometry
         // still use the full post-preparation graph reinspection above.
-        private bool TryAdmitPoint(IGH_Goo?[] source, int position, int order, PanelGeometrySources.Budget budget,
+        private bool TryAdmitPoint(IGH_Goo?[] source, int position, int order, PanelGeometrySources.OperationBudget budget,
             bool mayEvict, long generation, Func<bool> current)
         {
             const long estimate = 512;

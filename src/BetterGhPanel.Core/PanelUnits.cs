@@ -19,6 +19,9 @@ namespace BetterGhPanel.Core
 
     public static class PanelUnits
     {
+        internal static string FormatFactor(double factor, bool roundTrip = false) =>
+            factor.ToString(roundTrip ? "R" : "G6", System.Globalization.CultureInfo.InvariantCulture);
+
         public const int AutomaticDecimals = -1;
         public const int MaximumDecimals = 12;
         // Indexed by the persisted enum values. Each conversion's arithmetic,

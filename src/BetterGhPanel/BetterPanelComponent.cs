@@ -438,7 +438,7 @@ namespace BetterGhPanel
         internal bool SelectionHasGeometry(IReadOnlyList<int> positions)
         {
             var source = _sourceItems;
-            var budget = new PanelGeometrySources.Budget();
+            var budget = new PanelGeometrySources.OperationBudget();
             foreach (int position in ExpandSetMembers(positions))
             {
                 if (position < 0 || position >= source.Length) continue;
@@ -688,6 +688,22 @@ namespace BetterGhPanel
             return PanelActionPositions.TryGet(session.Result, _sourceItems.Length, RowSelection, positions, out ordered);
         }
 
+        private readonly struct ActionStamp
+        {
+            private readonly BetterPanelComponent _owner;
+            private readonly PanelSession _session;
+            private readonly PanelSnapshot _snapshot;
+            private readonly PanelQueryResult _result;
+            private readonly IGH_Goo?[] _source;
+            private readonly long? _selection;
+            internal ActionStamp(BetterPanelComponent owner, PanelSession session, PanelSnapshot snapshot,
+                PanelQueryResult result, IGH_Goo?[] source, long? selection = null)
+            { _owner = owner; _session = session; _snapshot = snapshot; _result = result; _source = source; _selection = selection; }
+            internal bool IsCurrent() => ReferenceEquals(_owner._session, _session) && _session.HasCurrentResult &&
+                ReferenceEquals(_session.Snapshot, _snapshot) && ReferenceEquals(_session.Result, _result) &&
+                ReferenceEquals(_owner._sourceItems, _source) && (!_selection.HasValue || _owner._selectionVersion == _selection.Value);
+        }
+
         internal string? FrameRows(PanelSnapshot snapshot, IReadOnlyList<int> positions)
             => FrameRowsWithCompletion(snapshot, positions, null);
 
@@ -698,10 +714,8 @@ namespace BetterGhPanel
             var session = _session!;
             var expectedResult = session.Result;
             var source = _sourceItems;
-            long selection = _selectionVersion;
-            bool Current() => !_previewSuspended && ReferenceEquals(_session, session) && session.HasCurrentResult &&
-                ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, expectedResult) &&
-                ReferenceEquals(_sourceItems, source) && _selectionVersion == selection;
+            var stamp = new ActionStamp(this, session, snapshot, expectedResult, source, _selectionVersion);
+            bool Current() => !_previewSuspended && stamp.IsCurrent();
             string? Format(PanelGeometryActionResult result) => !result.Success ? result.Error :
                 result.Skipped > 0 || result.Exhausted
                 ? "Selection framed" + (result.Skipped > 0 ? "; " + result.Skipped + " skipped" : "") +
@@ -734,10 +748,9 @@ namespace BetterGhPanel
             var source = _sourceItems;
             var expectedResult = session.Result;
             var mode = PreviewMode;
-            long selection = _selectionVersion;
+            var stamp = new ActionStamp(this, session, snapshot, expectedResult, source, _selectionVersion);
             bool Current() => !_previewSuspended && !Locked && PreviewMode == mode &&
-                ReferenceEquals(_session, session) && session.HasCurrentResult && ReferenceEquals(session.Snapshot, snapshot) &&
-                ReferenceEquals(session.Result, expectedResult) && ReferenceEquals(_sourceItems, source) && _selectionVersion == selection;
+                stamp.IsCurrent();
             _highlight.SetScopeChecked(source, expectedResult, mode == PanelPreviewMode.FilteredResults, ordered, Current, RowSelection);
             InvalidatePreviewCaches();
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
@@ -781,7 +794,7 @@ namespace BetterGhPanel
             var pairedSnapshot = paired ? PairedSnapshot : null;
             if (paired && (!CanSplit || pairedSnapshot == null)) return "Data changed; select rows again";
             string? pathText = path == null ? null : string.Join(Environment.NewLine, (paired ? PairedPaths(path) : new[] { path })
-                .Select(value => action == PanelRowAction.CopyPathBare ? value.Trim('{', '}') : value));
+                .Select(value => action == PanelRowAction.CopyPathBare ? PanelQueryEngine.UnbracedPath(value) : value));
             long clipboardGeneration = PanelGeometryActions.BeginClipboard();
             var session = _session!;
             var result = session.Result;
@@ -789,6 +802,7 @@ namespace BetterGhPanel
             var branches = branchSet || listLengthCopy ? result.BranchPaths.Where(branchPath => branchSelection!.Contains(branchPath)).ToArray() : Array.Empty<string>();
             if ((branchSet || listLengthCopy) && (branches.Length == 0 || !ReferenceEquals(snapshot, session.Snapshot))) return "Data changed; select branches again";
             var source = _sourceItems;
+            var stamp = new ActionStamp(this, session, snapshot, result, source);
             long selectionVersion = RowSelection.Version;
             var cancellation = new CancellationTokenSource();
             _copyCancellation = cancellation;
@@ -821,9 +835,7 @@ namespace BetterGhPanel
                 {
                     bool SelectionCurrent() => PanelGeometryActions.ClipboardCurrent(clipboardGeneration) &&
                         ReferenceEquals(_copyCancellation, cancellation) && !cancellation.IsCancellationRequested &&
-                        ReferenceEquals(_session, session) && session.HasCurrentResult &&
-                        ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, result) &&
-                        ReferenceEquals(_sourceItems, source) &&
+                        stamp.IsCurrent() &&
                         (!paired || CanSplit && ReferenceEquals(PairedSnapshot, pairedSnapshot)) &&
                         (path != null || action == PanelRowAction.CopyPaths || branchSet || listLengthCopy ? RowSelection.Version == selectionVersion && (path == null || result.ContainsBranchPath(path)) : PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion));
                     if (!measured || !SelectionCurrent()) Finish(PanelCommitOutcome.Stale);
@@ -914,10 +926,8 @@ namespace BetterGhPanel
             var session = _session!;
             var expectedResult = session.Result;
             var source = _sourceItems;
-            long selection = _selectionVersion;
-            bool Current() => ReferenceEquals(_session, session) && session.HasCurrentResult &&
-                ReferenceEquals(session.Snapshot, snapshot) && ReferenceEquals(session.Result, expectedResult) &&
-                ReferenceEquals(_sourceItems, source) && _selectionVersion == selection;
+            var stamp = new ActionStamp(this, session, snapshot, expectedResult, source, _selectionVersion);
+            bool Current() => stamp.IsCurrent();
             string Format(PanelGeometryActionResult result) => result.Success ? result.Count + " geometries copied" +
                 (result.Skipped > 0 ? "; " + result.Skipped + " skipped (" + (result.Detail ?? "unsupported geometry or unverified metadata") + ")" : "") +
                 (result.Exhausted ? "; preparation limit reached" : "") +

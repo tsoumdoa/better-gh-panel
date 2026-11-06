@@ -1,3 +1,4 @@
+using BetterGhPanel.Core;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -72,7 +73,7 @@ namespace BetterGhPanel.Runtime
             current = () => FrameGeneration == generation && sourceCurrent() && FrameGeneration == generation;
             int count = 0, skipped = 0, rows = 0;
             bool exhausted = false;
-            var budget = new PanelGeometrySources.Budget();
+            var budget = new PanelGeometrySources.OperationBudget();
             var sources = new List<ActionSource>();
             try
             {
@@ -164,13 +165,13 @@ namespace BetterGhPanel.Runtime
         {
             try
             {
-                var budget = new PanelGeometrySources.Budget();
+                var budget = new PanelGeometrySources.OperationBudget();
                 return Bounds(PanelGeometrySources.Inspect(item, budget, true), budget);
             }
             catch (Exception) { return BoundingBox.Empty; }
         }
 
-        private static BoundingBox Bounds(PanelGeometrySources.Inspection inspected, PanelGeometrySources.Budget budget, Func<bool>? current = null)
+        private static BoundingBox Bounds(PanelGeometrySources.Inspection inspected, PanelGeometrySources.OperationBudget budget, Func<bool>? current = null)
         {
             if (inspected.Unavailable) return BoundingBox.Empty;
             var bounds = BoundingBox.Empty;
@@ -256,7 +257,7 @@ namespace BetterGhPanel.Runtime
             int count = 0, skipped = 0, rows = 0;
             long bytes = 0;
             bool exhausted = false;
-            var budget = new PanelGeometrySources.Budget();
+            var budget = new PanelGeometrySources.OperationBudget();
             var metadata = new List<PanelNativeGeometry.Scan?>();
             var archiveIds = new List<Guid>();
             var sources = new List<ActionSource>();
@@ -395,7 +396,7 @@ namespace BetterGhPanel.Runtime
             System.Windows.Forms.Clipboard.SetDataObject(data, true);
         }
 
-        private static bool TryEstimateCopy(object value, PanelGeometrySources.Budget budget, ref int remaining,
+        private static bool TryEstimateCopy(object value, PanelGeometrySources.OperationBudget budget, ref int remaining,
             Func<bool> current, out long bytes, out PanelNativeGeometry.Scan? scan)
         {
             bytes = 8192;
@@ -423,7 +424,7 @@ namespace BetterGhPanel.Runtime
         }
 
         private static GeometryBase? CopyLeaf(object value, PanelNativeGeometry.Scan? scan,
-            PanelGeometrySources.Budget budget, ref int remaining, Func<bool> current, Func<bool> currentGraph)
+            PanelGeometrySources.OperationBudget budget, ref int remaining, Func<bool> current, Func<bool> currentGraph)
         {
             if (value is Point3d p) return new Point(p);
             if (value is Line l) return new LineCurve(l);
@@ -454,7 +455,7 @@ namespace BetterGhPanel.Runtime
         }
 
         private static bool VerifyArchiveMetadata(byte[] archive, IReadOnlyList<PanelNativeGeometry.Scan?> expected,
-            IReadOnlyList<Guid> objectIds, PanelGeometrySources.Budget budget, Func<bool> current, out string reason)
+            IReadOnlyList<Guid> objectIds, PanelGeometrySources.OperationBudget budget, Func<bool> current, out string reason)
         {
             reason = "archive could not be read";
             try
@@ -470,7 +471,7 @@ namespace BetterGhPanel.Runtime
                     if (item == null) { reason = "archive object " + (index + 1) + " is unavailable"; return false; }
                     var witness = expected[index];
                     if (witness?.HasMetadata != true) continue;
-                    int remaining = PanelGeometrySources.MaxNodesPerRoot;
+                    int remaining = InspectionLimits.MaxNodesPerRoot;
                     var geometry = item.Geometry;
                     if (geometry == null || !PanelNativeGeometry.TryScanForCopy(geometry, budget, ref remaining, current, out var actual) || actual == null)
                     { reason = "archive object " + (index + 1) + " metadata could not be inspected"; return false; }
@@ -509,7 +510,7 @@ namespace BetterGhPanel.Runtime
             internal PanelGeometrySources.Inspection Inspection { get; }
         }
 
-        private static bool StillCurrent(IEnumerable<ActionSource> sources, PanelGeometrySources.Budget budget, bool standalone,
+        private static bool StillCurrent(IEnumerable<ActionSource> sources, PanelGeometrySources.OperationBudget budget, bool standalone,
             Func<bool> current, out bool limit)
         {
             limit = false;
