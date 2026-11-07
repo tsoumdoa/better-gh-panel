@@ -114,6 +114,7 @@ namespace BetterGhPanel.UI
         private int _paintedOffset = -1, _paintedVisible = -1;
         private bool[] _paintedRows = Array.Empty<bool>();
         private bool _paintedPrevious, _paintedNext;
+        internal Guid HeaderSortColumn { get; set; }
         internal CanvasMenuKind Kind { get; private set; }
         internal RectangleF Bounds { get; private set; }
         internal int Offset { get; private set; }
@@ -329,7 +330,8 @@ namespace BetterGhPanel.UI
                 return choice.Conversion.HasValue ? choice.Conversion == conversion :
                     choice.Setting == CanvasNumberSetting.Automatic ? decimals < 0 : decimals >= 0;
             }
-            if (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) return SortModeAt(index) == options.SortMode;
+            if (Kind == CanvasMenuKind.HeaderSort) return SortModeAt(index) == (options.SortColumn == HeaderSortColumn ? options.SortMode : PanelSortMode.SourceOrder);
+            if (Kind == CanvasMenuKind.Sort) return SortModeAt(index) == options.SortMode;
             if (Kind == CanvasMenuKind.SearchMode) return SearchModeAt(index) == options.SearchMode;
             if (Kind == CanvasMenuKind.Comparison)
             {

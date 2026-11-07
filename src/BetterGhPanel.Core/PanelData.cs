@@ -408,6 +408,7 @@ namespace BetterGhPanel.Core
         public Guid SortColumn { get; set; }
         /// <summary>Immutable captured column keys, indexed by D snapshot position.</summary>
         public PanelColumnSortKeys? ColumnSortKeys { get; set; }
+        internal PanelTableSource? TableSource { get; set; }
 
         public PanelQueryOptions Clone() => new PanelQueryOptions
         {
@@ -424,7 +425,8 @@ namespace BetterGhPanel.Core
             OnlyInvalid = OnlyInvalid,
             SortMode = SortMode,
             SortColumn = SortColumn,
-            ColumnSortKeys = ColumnSortKeys
+            ColumnSortKeys = ColumnSortKeys,
+            TableSource = TableSource
         };
     }
 
@@ -504,6 +506,7 @@ namespace BetterGhPanel.Core
 
     public sealed class PanelQueryResult
     {
+        public PanelTableIndex? TableIndex { get; internal set; }
         private readonly PanelResultPositionIndex _viewIndices;
         private readonly HashSet<string> _branchPaths;
 

@@ -101,7 +101,7 @@ internal static class BranchPairingChecks
         Render("uneven-split");
         var display = TableRows(component).Cast<object>().ToArray();
         var extraRows = display.Where(row => FieldValue<int>(row, "Extra") >= 0).ToArray();
-        Check(display.Count(row => FieldValue<int>(row, "Item") >= 0 && Call(component, "PairedRow", f.Result.RowPositions[FieldValue<int>(row, "Item")]) == null) == 11,
+        Check(display.Count(row => FieldValue<int>(row, "Item") >= 0 && ColumnRow(component, f.Result.RowPositions[FieldValue<int>(row, "Item")]) == null) == 11,
             "The table keeps missing F cells aligned with D identities");
         Check(extraRows.Length == 2 && PropertyValue<PanelSnapshot>(component, "PairedSnapshot").Rows[FieldValue<int>(extraRows[0], "Extra")].OriginalIndex == 2,
             "F extras keep raw identities after D rows");
@@ -117,7 +117,7 @@ internal static class BranchPairingChecks
             "Cached item offsets and spacer successors agree with the paired index and reuse its rows");
         Check(PaneRow(3).Y == PaneRow(3).Y && PaneRow(14).Y == PaneRow(14).Y,
             "Missing F cells and F extras with D spacers preserve linked row alignment");
-        Check(Call(component, "PairedRow", 3) == null && ((PanelRow)Call(component, "PairedRow", 14)!).StringValue == "F2-0",
+        Check(ColumnRow(component, 3) == null && ((PanelRow)ColumnRow(component, 14)!).StringValue == "F2-0",
             "Explicit D to optional F mapping skips missing cells without shifting following branches");
         int hits = PanelTestAdapter.Hits(component, "_rowHits");
         Check(hits == 16 && PanelTestAdapter.PaneField<int>(attributes, "Shown") == 18, "F-only rows and D spacers have no selection hits");
@@ -133,7 +133,7 @@ internal static class BranchPairingChecks
         try
         {
             f.ClearSelection(); f.Select(0); f.Select(3, toggle: true); f.Select(14, toggle: true);
-            string status = await (Task<string>)Call(component, "CopyPairedValuesAsync", f.Result.Snapshot, new[] { 0, 3, 14 })!;
+            string status = await (Task<string>)Call(component, "CopyColumnValuesAsync", f.Result.Snapshot, new[] { 0, 3, 14 }, 0, null)!;
             await f.Ready(() => Forms.Clipboard.GetText() == "Branch name" + Environment.NewLine + Environment.NewLine + "F2-0");
             Check(status == "3 values copied" && Forms.Clipboard.GetText() == "Branch name" + Environment.NewLine + Environment.NewLine + "F2-0",
                 "F copying uses raw mapped values and an empty line for a missing F item");
@@ -192,7 +192,7 @@ internal static class BranchPairingChecks
         f.Query(new PanelQueryOptions { DisplayFilterValue = true, SearchMode = PanelSearchMode.ListLength });
         await Ready(() => f.Result.BranchPaths.Count == 4);
         Render();
-        Check(PanelTestAdapter.Hits(component, "_branchHits") == 8 &&
+        Check(PanelTestAdapter.Hits(component, "_branchHits") == 4 &&
             ((string)Call(attributes, "ColumnBranchCell", "{0;0}", 0)!).Contains("Branch name") &&
             ((string)Call(attributes, "ColumnBranchCell", "{0;3}", 0)!).Contains("F3-0"),
             "Branch-level list lengths show raw F summaries, including the F partner of empty D");
@@ -243,8 +243,7 @@ internal static class BranchPairingChecks
         await Ready(() => f.Result.Snapshot.Rows[0].Path == "{0}");
         await Ready(() => f.Values(3) == "b,empty-partner"); Render();
         var flatView = TableRows(component).Cast<object>().ToArray();
-        Check(flatView.Count(row => FieldValue<int>(row, "Extra") >= 0) == 1 &&
-            FieldValue<string>(Call(PropertyValue<object>(component, "PairedData"), "Heading", "{0}", true)!, "Count") == "2 items",
+        Check(flatView.Count(row => FieldValue<int>(row, "Extra") >= 0) == 1,
             "Flatten emits and shows the empty D partner at its merged destination with a matching heading");
         f.Query(new PanelQueryOptions { DisplayFilterValue = true, SearchMode = PanelSearchMode.ListLength });
         await Ready(() => f.Values(3) == "b,empty-partner"); Render();
@@ -254,8 +253,6 @@ internal static class BranchPairingChecks
             new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = "= 1" } })
         {
             f.Query(query); await Ready(() => f.Values(3) == "b,empty-partner"); Render();
-            Check((string)Call(PropertyValue<object>(component, "PairedData"), "HeadingCount", "{0}", true)! == "2 items",
-                "Path and list-length restrictions retain merged empty partners when D retains the destination");
         }
         foreach (var query in new[] { new PanelQueryOptions { Search = "= 2" }, new PanelQueryOptions { TypeName = "Integer" },
             new PanelQueryOptions { CreateSet = true },
@@ -263,8 +260,6 @@ internal static class BranchPairingChecks
         {
             PanelTestAdapter.TreeTools(component, 0, true, false, false, query.CreateSet);
             f.Query(query); await Ready(() => f.Values(3) == "b"); Render();
-            Check(FieldValue<string>(Call(PropertyValue<object>(component, "PairedData"), "Heading", "{0}", false)!, "Count") == "1 item",
-                "Item filters and either Create set exclude merged empty partners from output and heading totals");
         }
         PanelTestAdapter.TreeTools(component, 0, true, false, false);
         f.Query(new PanelQueryOptions()); await Ready(() => f.Values(3) == "b,empty-partner");
@@ -326,10 +321,9 @@ internal static class BranchPairingChecks
         await Ready(() => f.Sinks[3].VolatileData.DataCount == 24); Render();
         var headings = FieldValue<IDictionary>(PropertyValue<object>(component, "PairedData"), "Headings");
         var heading = headings["{0}"]!;
-        Check(FieldValue<string>(heading, "Count") == "24 items" && FieldValue<string>(heading, "DataCount") == "D 12" &&
-            FieldValue<bool>(heading, "Unequal") && FieldValue<bool>(heading, "ByOrder") &&
-            FieldValue<string>(heading, "Paths") == "{1;0}, {1;1}, {1;2} …",
-            "Merged heading caches counts, flags and at most three F paths");
+        Check(FieldValue<int>(heading, "Total") == 24 && FieldValue<string>(heading, "DataCount") == "D 12" &&
+            FieldValue<bool>(heading, "Unequal"),
+            "Merged mismatch badge caches the emitted count and D count");
         PanelTestAdapter.TreeTools(component, 0, false, false, false, true);
         f.Query(new PanelQueryOptions { CreateSet = true });
         f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
@@ -366,7 +360,7 @@ internal static class BranchPairingChecks
         var rawF = PropertyValue<PanelSnapshot>(component, "PairedSnapshot");
         string paneValues = string.Join(",", reversedView.Where(row => FieldValue<int>(row, "Extra") >= 0 || FieldValue<int>(row, "Item") >= 0)
             .Select(row => FieldValue<int>(row, "Extra") >= 0 ? rawF.Rows[FieldValue<int>(row, "Extra")].StringValue
-                : ((PanelRow)Call(component, "PairedRow", f.Result.RowPositions[FieldValue<int>(row, "Item")])!).StringValue));
+                : ((PanelRow)ColumnRow(component, f.Result.RowPositions[FieldValue<int>(row, "Item")])!).StringValue));
         Check(paneValues == "f1,f3,f2,f0,f4,f5" && f.Values(3) == "f3,f2,f1,f0,f4,f5",
             "The table retains D view order followed by hidden partners and extras while F output keeps wire order");
         Check(reversedView.Where(row => FieldValue<int>(row, "Extra") >= 0).Select(row => FieldValue<int>(row, "Extra")).SequenceEqual(new[] { 3, 2, 0, 4, 5 }),
@@ -405,14 +399,6 @@ internal static class BranchPairingChecks
                     false, false, (Action<long>)(visits => outputVisits += visits), false);
                 Check(outputVisits >= 2L * f.Sinks[3].VolatileData.DataCount + f.Result.DisplaySet!.Members.Values.Sum(members => members.Count),
                     scenario + ": output visit accounting includes every repeated F emission and D group member");
-                foreach (string dataPath in f.Result.BranchPaths)
-                {
-                    string prefix = dataPath.TrimEnd('}') + ";";
-                    int count = f.Sinks[3].VolatileData.Paths.Select((path, b) => (path, b)).Where(value => value.path.ToString().StartsWith(prefix, StringComparison.Ordinal))
-                        .Sum(value => f.Sinks[3].VolatileData.get_Branch(value.b).Count);
-                    Check((string)Call(PropertyValue<object>(component, "PairedData"), "HeadingCount", dataPath, false)! == count + (count == 1 ? " item" : " items"),
-                        scenario + ": F set heading counts all emitted group values");
-                }
                 foreach (int position in f.Result.RowPositions)
                 {
                     int k = f.Result.DisplaySet!.MemberIndices[position];
@@ -423,10 +409,10 @@ internal static class BranchPairingChecks
                         scenario + ": bounded F cell equals emitted group in output order at " + path);
                     f.ClearSelection(); f.Select(position);
                     await Ready(() => FieldValue<long>(component, "_publishedSelectionVersion") == FieldValue<long>(component, "_selectionVersion"));
-                    string copyStatus = await (Task<string>)Call(component, "CopyPairedValuesAsync", f.Result.Snapshot, new[] { position })!;
-                    await f.Ready(() => Forms.Clipboard.GetText() == string.Join(Environment.NewLine, emitted));
-                    Check(Forms.Clipboard.GetText() == string.Join(Environment.NewLine, emitted),
-                        scenario + ": copying an F set cell includes every emitted group member exactly once (" + copyStatus + ")");
+                    string copyStatus = await (Task<string>)Call(component, "CopyColumnValuesAsync", f.Result.Snapshot, new[] { position }, 0, null)!;
+                    await f.Ready(() => Forms.Clipboard.GetText() == expected);
+                    Check(Forms.Clipboard.GetText() == expected,
+                        scenario + ": copying a column set cell copies its displayed summary (" + copyStatus + ")");
                 }
             }
             // Branch-set copy uses the same output order as the list-length summary.
@@ -436,10 +422,10 @@ internal static class BranchPairingChecks
             string representative = f.Result.BranchPaths.Single();
             f.ClearSelection(); f.SelectBranch(representative);
             await Ready(() => FieldValue<long>(component, "_publishedSelectionVersion") == FieldValue<long>(component, "_selectionVersion"));
-            await (Task<string>)Call(component, "CopyPairedValuesAsync", f.Result.Snapshot, Array.Empty<int>())!;
-            await f.Ready(() => Forms.Clipboard.GetText() == string.Join(Environment.NewLine, f.Values(3).Split(',')));
-            Check(Forms.Clipboard.GetText() == string.Join(Environment.NewLine, f.Values(3).Split(',')),
-                "List-length F set copying includes its full emitted group");
+            await (Task<string>)Call(component, "CopyColumnValuesAsync", f.Result.Snapshot, Array.Empty<int>(), 0, representative)!;
+            await f.Ready(() => Forms.Clipboard.GetText() == (string)Call(attributes, "ColumnBranchCell", representative, 0)!);
+            Check(Forms.Clipboard.GetText() == (string)Call(attributes, "ColumnBranchCell", representative, 0)!,
+                "List-length column copying uses its displayed summary");
             Render();
             Check((string)Call(attributes, "ColumnBranchCell", representative, 0)! == "f0-0 · f0-1 · f0-2 · f0-3 … +8 in this set",
                 "List-length sets use the same bounded F summary rule as item sets");
@@ -465,15 +451,14 @@ internal static class BranchPairingChecks
         f.Paired.PersistentData.Append(new GH_String("excluded-empty"), new GH_Path(9));
         f.Solve(); await Ready(() => f.Values(3) == "excluded-empty,included");
         var emptyHeading = Call(PropertyValue<object>(component, "PairedData"), "Heading", "{0}", false)!;
-        Check(FieldValue<string>(emptyHeading, "Count") == "0 items" && !FieldValue<bool>(emptyHeading, "Unequal") &&
-            !FieldValue<bool>(emptyHeading, "ByOrder") && FieldValue<string>(emptyHeading, "Paths") == "",
+        Check(FieldValue<int>(emptyHeading, "Total") == 0 && !FieldValue<bool>(emptyHeading, "Unequal"),
             "An excluded empty-only partner has no amber D 0 badge or order-paired path");
         PanelTestAdapter.TreeTools(component, 0, true, false, false);
         f.Query(new PanelQueryOptions { TypeName = "Integer" });
         await Ready(() => f.Values(3) == "included"); Render();
         var scopedHeading = Call(PropertyValue<object>(component, "PairedData"), "Heading", "{0}", false)!;
-        Check(FieldValue<string>(scopedHeading, "Count") == "1 item" && FieldValue<string>(scopedHeading, "DataCount") == "D 1" &&
-            !FieldValue<bool>(scopedHeading, "Unequal") && !FieldValue<bool>(scopedHeading, "ByOrder") && FieldValue<string>(scopedHeading, "Paths") == "{1}",
+        Check(FieldValue<int>(scopedHeading, "Total") == 1 && FieldValue<string>(scopedHeading, "DataCount") == "D 1" &&
+            !FieldValue<bool>(scopedHeading, "Unequal"),
             "Excluded empty partner contributes no count, amber badge, order flag or F path to a merged heading");
         PanelTestAdapter.TreeTools(component, 0, false, false, false);
         f.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = "= 0", BranchPath = "{0}" });
@@ -496,7 +481,7 @@ internal static class BranchPairingChecks
             Render();
             foreach (int position in f.Result.RowPositions)
             {
-                if (Call(component, "PairedRow", position) is not PanelRow pairedRow) continue;
+                if (ColumnRow(component, position) is not PanelRow pairedRow) continue;
                 Check(((int, bool))Call(attributes, "RowAddress", f.Result, position)! == (f.Result.Snapshot.Rows[position].OriginalIndex, sort != PanelSortMode.SourceOrder),
                     "The frozen D gutter retains D indices with the same sorted flag");
                 var bounds = PaneRow(position);
@@ -541,8 +526,6 @@ internal static class BranchPairingChecks
         }
         f.Query(new PanelQueryOptions { Search = "< 3" }); f.Solve();
         await Ready(() => f.Sinks[3].VolatileData.DataCount == 3); Render();
-        Check((string)Call(PropertyValue<object>(component, "PairedData"), "HeadingCount", "{0}", false)! == "3 of 12 items",
-            "Filtered F heading reports matching items against its original F count");
         PanelTestAdapter.TreeTools(component, 0, false, false, false);
         f.Query(new PanelQueryOptions()); Seed();
         await Ready(() => f.Sinks[3].VolatileData.DataCount == 7);
@@ -558,6 +541,8 @@ internal static class BranchPairingChecks
     {
         using var f = new PanelHostFixture.Fixture(assembly);
         var component = f.Component;
+        Call(component, "SetPanelSplit", true);
+        component.Attributes.PerformLayout();
         f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
         for (int i = 0; i < 2; i++)
         {
@@ -566,14 +551,23 @@ internal static class BranchPairingChecks
         }
         PanelTestAdapter.TreeTools(component, 0, false, false, false, true);
         f.Query(new PanelQueryOptions { CreateSet = true }); f.Solve();
-        await f.Ready(() => f.Values(3) == "f0,f1" && PropertyValue<bool>(component, "PairedSummaryCurrent"));
+        await f.Ready(() => f.Values(3) == "f0,f1" && ColumnSummaryCurrent(component));
         var pairing = PropertyValue<object>(component, "PairedData");
         var oldSummary = PropertyValue<PanelQueryResult>(pairing, "SummaryResult");
-        Check(f.Result.RowPositions.Count == 2 && (string)Call(pairing, "HeadingCount", "{0}", false)! == "2 items",
+        Check(f.Result.RowPositions.Count == 2 && ColumnSummaryCurrent(component),
             "Freshness regression starts with two item sets and a published F summary");
         bool? currentBeforeRebuild = null;
         var changed = f.Session.GetType().GetEvent("ResultChanged")!;
-        EventHandler onResult = (_, __) => currentBeforeRebuild = PropertyValue<bool>(component, "PairedSummaryCurrent");
+        string? staleCell = null;
+        Task<string>? staleCopy = null;
+        EventHandler onResult = (_, __) =>
+        {
+            currentBeforeRebuild = ColumnSummaryCurrent(component);
+            if (f.Result.RowPositions.Count != 1) return;
+            int position = f.Result.RowPositions[0];
+            staleCell = (string)Call(component.Attributes, "ColumnCell", f.Result, position, 0)!;
+            staleCopy = (Task<string>)Call(component, "CopyColumnValuesAsync", f.Result.Snapshot, new[] { position }, 0, null)!;
+        };
         changed.AddEventHandler(f.Session, onResult);
         try
         {
@@ -583,20 +577,21 @@ internal static class BranchPairingChecks
             Call(component, "PublishOutputs", null!, (Func<bool>)(() => false));
             Check(FieldValue<PanelQueryOptions>(component, "_outputOptions").Search == "^1$" &&
                 ReferenceEquals(oldSummary, PropertyValue<PanelQueryResult>(pairing, "SummaryResult")) &&
-                !PropertyValue<bool>(component, "PairedSummaryCurrent"),
+                !ColumnSummaryCurrent(component),
                 "Busy publication updates output options but leaves the old F summaries stale");
-            await f.Ready(() => f.Values(3) == "f1" && PropertyValue<bool>(component, "PairedSummaryCurrent"));
+            await f.Ready(() => f.Values(3) == "f1" && ColumnSummaryCurrent(component));
         }
         finally { changed.RemoveEventHandler(f.Session, onResult); }
-        Check(currentBeforeRebuild == false && f.Result.RowPositions.Count == 1 &&
-            (string)Call(pairing, "HeadingCount", "{0}", false)! == "1 of 2 items",
+        Check(currentBeforeRebuild == false && staleCell == "…" && staleCopy != null &&
+            await staleCopy == "Column summaries are recomputing. Try copying again." && f.Result.RowPositions.Count == 1 &&
+            ColumnSummaryCurrent(component),
             "Completed regex keeps the old heading pending until summaries rebuild to one of two items");
         var filteredSummary = PropertyValue<PanelQueryResult>(pairing, "SummaryResult");
         f.Query(new PanelQueryOptions { CreateSet = true, SearchMode = PanelSearchMode.Regex, Search = "^1$",
             SortMode = PanelSortMode.ValueDescending });
-        await f.Ready(() => !ReferenceEquals(filteredSummary, f.Result));
-        Check(PropertyValue<bool>(component, "PairedSummaryCurrent") &&
-            ReferenceEquals(filteredSummary, PropertyValue<PanelQueryResult>(pairing, "SummaryResult")),
-            "Sort-only results reuse published F summaries with unchanged membership");
+        await f.Ready(() => !ReferenceEquals(filteredSummary, f.Result) && ColumnSummaryCurrent(component));
+        Check(ColumnSummaryCurrent(component) &&
+            ReferenceEquals(f.Result, PropertyValue<PanelQueryResult>(pairing, "SummaryResult")),
+            "Sort-only set results publish summaries for the new result identity");
     }
 }

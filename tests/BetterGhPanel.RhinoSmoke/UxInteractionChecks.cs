@@ -382,8 +382,8 @@ internal static class UxInteractionChecks
             var captured = fixture.Result.Snapshot;
             var pairedValue = (GH_String)fixture.Paired.VolatileData.AllData(false).ElementAt(74);
             pairedValue.Value = "F mutated 74";
-            string status = await (Task<string>)component.GetType().GetMethod("CopyPairedValuesAsync", AnyInstance)!
-                .Invoke(component, new object[] { captured, new[] { 74 } })!;
+            string status = await (Task<string>)component.GetType().GetMethod("CopyColumnValuesAsync", AnyInstance)!
+                .Invoke(component, new object[] { captured, new[] { 74 }, 0, null! })!;
             Check(status == "Copy cancelled" && Forms.Clipboard.GetText() == "F raw 74" &&
                 !(bool)Call(component, "CapturedSnapshotCurrent", captured)!,
                 "An in-place F mutation rejects stale F copy and full-value row actions through the shared freshness guard");

@@ -1,6 +1,4 @@
-using System.Collections.Generic;
 using System.Drawing;
-using System.Linq;
 using BetterGhPanel.Core;
 using BetterGhPanel.UI;
 
@@ -10,33 +8,8 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
-        private PanelQueryResult? _tableViewResult;
-        private PanelTableIndex? _tableView;
-        private bool HasPairView => TableVisible && !DisplayListLengths && PanelOwner.Session.Result.DisplaySet == null && PanelOwner.TableColumns.Any(column => column.Pair?.HasUnequal == true);
-        private PanelTableIndex TableIndex(PanelQueryResult result)
-        {
-            if (ReferenceEquals(_tableViewResult, result) && _tableView != null) return _tableView;
-            _tableViewResult = result;
-            var extras = new List<PanelTableExtra>();
-            var retained = new HashSet<int>(result.RowPositions);
-            for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
-            {
-                var map = PanelOwner.TableColumns[column].Pair;
-                if (map == null || !map.HasUnequal) continue;
-                var branchOrder = map.Pairs.Select((pair, index) => (pair.Data.Path, index)).ToDictionary(value => value.Path, value => value.index);
-                foreach (var cell in map.BranchItems(result.Snapshot, result.RowPositions, result.BranchPaths,
-                    Runtime.PanelPairedData.EmptyPartnersInScope(PanelOwner.Session.Options)))
-                {
-                    if (retained.Contains(map.DataPositionAt(cell.Item))) continue;
-                    var pair = map.PairAtPaired(cell.Item);
-                    int index = cell.Item - pair.PairedOffset;
-                    int withinBranch = PanelOwner.ReverseTree && index < pair.Data.ItemCount ? pair.Data.ItemCount - 1 - index : index;
-                    long order = ((long)branchOrder[pair.Data.Path] << 32) + (uint)withinBranch;
-                    extras.Add(new PanelTableExtra(cell.Path, pair.Data.Path + ":" + index, column, cell.Item, order));
-                }
-            }
-            return _tableView = new PanelTableIndex(result, PanelOwner.TableColumns.Count, extras);
-        }
+        private bool HasPairView => TableVisible && PanelOwner.Session.Result.TableIndex != null;
+        private PanelTableIndex TableIndex(PanelQueryResult result) => result.TableIndex!;
         private (int Index, bool Sorted) RowAddress(PanelQueryResult result, int sourcePosition)
         {
             int index = result.DisplaySet?.MemberIndices.TryGetValue(sourcePosition, out int k) == true ? k : result.Snapshot.Rows[sourcePosition].OriginalIndex;

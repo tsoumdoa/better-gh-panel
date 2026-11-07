@@ -13,6 +13,12 @@ namespace BetterGhPanel.Core
         internal const float CapsuleHeight = 96;
         internal static readonly string[] PresetNames = { "Small", "Medium", "Large" };
 
+        internal const float MinimumPortSpacing = 24;
+        internal static float FullHeightForInputs(float height, int inputs) => inputs <= 2 ? height :
+            Math.Max(height, 2 * (48 + MinimumPortSpacing * (inputs - 1)));
+        internal static float CapsuleHeightForInputs(int inputs) => inputs <= 2 ? CapsuleHeight :
+            Math.Max(CapsuleHeight, 24 + MinimumPortSpacing * (inputs - 1));
+
         internal static float Width(float value) => Clamp(value, DefaultWidth, 300);
         internal static float Height(float value) => Clamp(value, DefaultHeight, 220);
         internal static CanvasPanelDisplay NextDisplay(CanvasPanelDisplay display) =>

@@ -119,11 +119,15 @@ namespace BetterGhPanel
                 result = PanelTreeOperations.StructureStillMatchesWithVisits(_livePairedTree, _pairedInputTree, out count);
                 visits += count; return result;
             }
+            bool TableCurrent()
+            {
+                bool result = ColumnsCurrent(_tableColumns, out long count); visits += count; return result;
+            }
             bool current = (!ContextFenced || GeometryContextCurrent(context)) &&
                 HoldersCurrent(_sourceItems, _measurementSources) && GraphsCurrent(_captureGraphs) && ManagedCurrent(snapshot, _sourceItems) &&
                 (PairedSnapshot == null || HoldersCurrent(_pairedSourceItems, _pairedMeasurementSources) &&
                     GraphsCurrent(_pairedCaptureGraphs) && ManagedCurrent(PairedSnapshot, _pairedSourceItems)) &&
-                UnitsCurrent() && StructuresCurrent() &&
+                UnitsCurrent() && StructuresCurrent() && TableCurrent() &&
                 (!ContextFenced || (context.Equals(_geometryContext) && GeometryContextCurrent(context)));
             if (CaptureDiagnosticsForTesting) { CaptureValidationPassesForTesting++; CaptureValidationVisitsForTesting += visits; }
             if (!current && generation == _solveGeneration && ReferenceEquals(snapshot, _measurementSnapshot))
@@ -196,19 +200,20 @@ namespace BetterGhPanel
                     if (!Current()) return;
                     var snapshot = SnapshotCapture.CaptureForMeasurements(queryTree, out var sources, out var measurementSources, out var graphs,
                         conversion, units, retainedSources, CaptureObserverForTesting, null, queryScalars, inputSeed);
-                    var pairedSources = Array.Empty<IGH_Goo?>();
-                    var pairedMeasurements = Array.Empty<CapturedMeasurementSource?>();
-                    var pairedGraphs = Array.Empty<CaptureGraphWitness>();
-                    var pairedSnapshot = PanelSplit && pairedTree != null ? SnapshotCapture.CaptureForMeasurements(capturedPairedTree!,
-                        out pairedSources, out pairedMeasurements, out pairedGraphs, PanelUnitConversion.None, units, null, null, null, null, null) : null;
-                    var tableColumns = CaptureTableColumns(da, inputTree, retainedSources, pairedTree, capturedPairedTree, pairedSnapshot, pairedError, pairedPresent, units);
+                    var tableColumns = CaptureTableColumns(da, inputTree, retainedSources, pairedTree, capturedPairedTree, livePairedTree, pairedError, pairedPresent, units);
+                    var fColumn = tableColumns.Find(column => column.Input == Params.Input[1]);
+                    var pairedSnapshot = PanelSplit ? fColumn?.Snapshot : null;
+                    var pairedSources = pairedSnapshot != null ? fColumn!.Sources : Array.Empty<IGH_Goo?>();
+                    var pairedMeasurements = pairedSnapshot != null ? fColumn!.Measurements : Array.Empty<CapturedMeasurementSource?>();
+                    var pairedGraphs = pairedSnapshot != null ? fColumn!.Graphs : Array.Empty<CaptureGraphWitness>();
                     StructureObserverForTesting?.Invoke(liveInputTree, livePairedTree);
                     if (!Current()) return;
-                    bool hasGeometry = HasGeometry(snapshot) || pairedSnapshot != null && HasGeometry(pairedSnapshot);
+                    bool hasGeometry = HasGeometry(snapshot) || tableColumns.Exists(column => column.HasGeometry);
                     if (!SnapshotCapture.MeasurementSourcesCurrent(sources, measurementSources) || !SnapshotCapture.GraphSourcesCurrent(graphs) ||
                         !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor, DecimalPlaces, scalarInputs, queryScalars) ||
                         (pairedSnapshot != null && (!SnapshotCapture.MeasurementSourcesCurrent(pairedSources, pairedMeasurements) ||
                             !SnapshotCapture.GraphSourcesCurrent(pairedGraphs) || !SnapshotCapture.ManagedRowsCurrent(pairedSnapshot, pairedSources))) ||
+                        !ColumnsCurrent(tableColumns, out _) ||
                         !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) || pairedPresent != PairedInputPresent() ||
                         (pairedPresent && !PanelTreeOperations.StructureStillMatches(livePairedTree, capturedPairedTree)) ||
                         (hasGeometry && !GeometryContextCurrent(context)))

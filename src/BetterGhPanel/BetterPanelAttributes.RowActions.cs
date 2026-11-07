@@ -21,6 +21,7 @@ namespace BetterGhPanel
         private CanvasRowAction[] _rowMenuPendingActions = Array.Empty<CanvasRowAction>();
         private int _rowMenuSourcePosition = -1;
         private string? _rowMenuPath;
+        private string? _rowMenuColumnPath;
         private DateTime _copiedUntil;
         private DateTime _rowActionDismissedUntil;
         // The row and pane of the latest single click, which a double-click's second click repeats.
@@ -149,10 +150,26 @@ namespace BetterGhPanel
                 canvas.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
+            _rowMenuColumnPath = null;
             foreach (var heading in _branchHits)
             {
                 if (!heading.Bounds.Contains(e.CanvasLocation)) continue;
                 _rowContextHandled = true;
+                _activeTableColumn = CellColumnAt(e.CanvasLocation);
+                if (DisplayListLengths && EffectiveTableVisible && _activeTableColumn >= 0)
+                {
+                    InvalidateCopyStatus();
+                    _selection.SelectAll(result, heading.Path, includeEmptyBranches: true);
+                    TrackSelectionCanvas(canvas);
+                    _rowMenuPath = null;
+                    _rowMenuColumnPath = heading.Path;
+                    ShowRowMenu(canvas, result, new[] {
+                        new CanvasRowAction(PanelRowAction.CopyValues, "Copy value", "Copy this cell's summary."),
+                        new CanvasRowAction(PanelRowAction.ViewFullValue, "View full value", "View all values represented by this cell.")
+                    }, e.CanvasLocation);
+                    canvas.Invalidate();
+                    return GH_ObjectResponse.Handled;
+                }
                 _rowMenuPath = heading.Path;
                 string copyPath = heading.Path;
                 var choices = new System.Collections.Generic.List<CanvasRowAction>
@@ -216,6 +233,12 @@ namespace BetterGhPanel
             if (action == PanelRowAction.CopyPath || action == PanelRowAction.CopyPathBare || action == PanelRowAction.CopyPaths ||
                 action == PanelRowAction.CopyAddresses || action == PanelRowAction.CopyTable)
             { CopySelectedValues(result, canvas, action, action == PanelRowAction.CopyPath || action == PanelRowAction.CopyPathBare ? _rowMenuPath : null); return; }
+            if (_rowMenuColumnPath != null)
+            {
+                if (action == PanelRowAction.CopyValues) CopySelectedValues(result, canvas, columnBranch: _rowMenuColumnPath);
+                else if (action == PanelRowAction.ViewFullValue) ViewFullBranchCell(result, _rowMenuColumnPath);
+                return;
+            }
             if (positions.Count == 0) return;
             if (action == PanelRowAction.ViewFullValue) ViewFullValue(result, _rowMenuSourcePosition);
             else if (action == PanelRowAction.FrameSelection)
@@ -261,9 +284,10 @@ namespace BetterGhPanel
             var row = result.Snapshot.Rows[position];
             bool projected = result.DisplaySet?.Values.ContainsKey(position) == true;
             string? columnValue = null;
-            if (TableVisible && _activeTableColumn >= 0 && _activeTableColumn < PanelOwner.TableColumns.Count)
+            if (EffectiveTableVisible && _activeTableColumn >= 0 && _activeTableColumn < PanelOwner.TableColumns.Count)
             {
                 var column = PanelOwner.TableColumns[_activeTableColumn];
+                if (result.DisplaySet != null && !column.SummaryCurrent(result)) return;
                 if (column.Row(position) == null && result.DisplaySet == null) return;
                 columnValue = column.Cell(result, position, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor, raw: true);
             }
@@ -275,6 +299,17 @@ namespace BetterGhPanel
                 _actionStatus = "Could not open the full value.";
                 _copiedUntil = DateTime.UtcNow.AddSeconds(5);
             }
+        }
+
+        private void ViewFullBranchCell(PanelQueryResult result, string path)
+        {
+            if (!EffectiveTableVisible || _activeTableColumn < 0 || _activeTableColumn >= PanelOwner.TableColumns.Count ||
+                !result.ContainsBranchPath(path) || !PanelOwner.CapturedSnapshotCurrent(result.Snapshot)) return;
+            var column = PanelOwner.TableColumns[_activeTableColumn];
+            if (!column.SummaryCurrent(result)) return;
+            try { PanelFullValueWindow.Show(column.BranchCell(result, path, PanelOwner.UnitConversion,
+                PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor, raw: true)); }
+            catch (Exception) { _actionStatus = "Could not open the full value."; _copiedUntil = DateTime.UtcNow.AddSeconds(5); }
         }
 
         private void SelectAcrossBranches(PanelQueryResult result, int[] indices, GH_Canvas canvas)
@@ -298,9 +333,10 @@ namespace BetterGhPanel
             _actionStatus = string.Empty;
         }
 
-        private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas, PanelRowAction action = PanelRowAction.CopyValues, string? path = null)
+        private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas, PanelRowAction action = PanelRowAction.CopyValues, string? path = null, string? columnBranch = null)
         {
             var positions = _selection.OrderedPositions(result);
+            long selectionVersion = _selection.Version;
             if (positions.Count == 0 && path == null && action != PanelRowAction.CopyPaths &&
                 !((DisplayListLengths || result.DisplaySet?.IsBranchSet == true) && _selection.BranchPaths(result).Count > 0)) return;
             InvalidateCopyStatus();
@@ -310,12 +346,12 @@ namespace BetterGhPanel
             canvas.Invalidate();
             long before = ClipboardGeneration.Current;
             string status;
-            try { status = await (TableVisible && _activeTableColumn >= 0 && action == PanelRowAction.CopyValues ? PanelOwner.CopyColumnValuesAsync(result.Snapshot, positions, _activeTableColumn) : action != PanelRowAction.CopyValues ? PanelOwner.CopyAddressesAsync(result.Snapshot, positions, action, path) : PanelOwner.CopyValuesAsync(result.Snapshot, positions)); }
+            try { status = await (EffectiveTableVisible && _activeTableColumn >= 0 && action == PanelRowAction.CopyValues ? PanelOwner.CopyColumnValuesAsync(result.Snapshot, positions, _activeTableColumn, columnBranch) : action != PanelRowAction.CopyValues ? PanelOwner.CopyAddressesAsync(result.Snapshot, positions, action, path) : PanelOwner.CopyValuesAsync(result.Snapshot, positions)); }
             catch (Exception) { status = "Could not copy values. Try again."; }
             Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
             {
                 if (generation != _actionGeneration || canvas.IsDisposed || !ResultIsCurrent(result) ||
-                    !positions.SequenceEqual(_selection.OrderedPositions(result))) return;
+                    selectionVersion != _selection.Version || !positions.SequenceEqual(_selection.OrderedPositions(result))) return;
                 _copyPending = false;
                 if (ClipboardGeneration.Current > before + 1) { _actionStatus = string.Empty; canvas.Invalidate(); return; }
                 _actionStatus = status;

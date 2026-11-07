@@ -156,7 +156,7 @@ namespace BetterGhPanel
                     // With no rows selected, Ctrl+C keeps copying Grasshopper objects.
                     if (!current || _selection.Count == 0) return false;
                     // A visible table copies all its columns with their titles.
-                    CopySelectedValues(result, canvas, action: TableVisible ? PanelRowAction.CopyTable : PanelRowAction.CopyValues);
+                    CopySelectedValues(result, canvas, action: EffectiveTableVisible ? PanelRowAction.CopyTable : PanelRowAction.CopyValues);
                     return true;
                 case Keys.A when control:
                     if (current) SelectAllRows(canvas, result);

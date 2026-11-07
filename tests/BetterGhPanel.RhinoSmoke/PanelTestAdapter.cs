@@ -20,6 +20,12 @@ internal static class PanelTestAdapter
 
     internal static object? Call(object owner, string name, params object?[] args) => owner.GetType().GetMethod(name, AnyInstance)!.Invoke(owner, args);
 
+    internal static BetterGhPanel.Core.PanelRow? ColumnRow(GH_Component component, int position) =>
+        (BetterGhPanel.Core.PanelRow?)Call(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "Row", position);
+    internal static bool ColumnSummaryCurrent(GH_Component component) =>
+        PropertyValue<bool>(Session(component), "HasCurrentResult") && (bool)Call(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "SummaryCurrent",
+            PropertyValue<BetterGhPanel.Core.PanelQueryResult>(Session(component), "Result"))!;
+
     internal sealed class TableViewRow
     {
         internal int Item, Extra;

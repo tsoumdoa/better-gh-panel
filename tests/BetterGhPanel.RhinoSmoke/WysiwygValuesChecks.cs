@@ -157,7 +157,7 @@ internal static class WysiwygValuesChecks
             fixture.SelectAt(1, toggle: true);
             await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 2);
             var actionType = typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelRowAction", true)!;
-            async Task<string> Copy(string action) => await (Task<string>)Call(component, "CopyAddressesAsync", fixture.Result.Snapshot, new[] { 0, 1 }, Enum.Parse(actionType, action), null, false)!;
+            async Task<string> Copy(string action) => await (Task<string>)Call(component, "CopyAddressesAsync", fixture.Result.Snapshot, new[] { 0, 1 }, Enum.Parse(actionType, action), null)!;
             string addressStatus = await Copy("CopyAddresses");
             Check(addressStatus == "Addresses copied" && await ClipboardIs("{0;2;52}(0)" + Environment.NewLine + "{0;2;52}(1)"),
                 "Native addresses use the exact visible path and index");

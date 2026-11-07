@@ -31,7 +31,8 @@ namespace BetterGhPanel
         internal PanelPreviewMode PreviewMode { get; private set; }
         internal bool ShowItemOrder { get; private set; }
         internal string PreviewStatus => _highlight.Status;
-        internal float DisplayHeight => CanvasPanelSize.DisplayHeight(CanvasHeight, CanvasDisplay);
+        internal float EffectiveCanvasHeight => CanvasPanelSize.FullHeightForInputs(CanvasHeight, Params.Input.Count);
+        internal float DisplayHeight => CanvasDisplay == CanvasPanelDisplay.Half ? EffectiveCanvasHeight / 2 : EffectiveCanvasHeight;
         internal float DisplayWidth => CanvasWidth * (PanelSplit ? 2 : 1);
         internal int TrimDepth { get; private set; }
         internal bool FlattenTree { get; private set; }
@@ -125,8 +126,8 @@ namespace BetterGhPanel
             {
                 var beforeValues = OutputValues;
                 var afterValues = CanOutputValuesFor(CreateSetTree, after) ? beforeValues : PanelOutputValues.Items;
-                var beforeSettings = before.Clone(); beforeSettings.ColumnSortKeys = null;
-                var afterSettings = after.Clone(); afterSettings.ColumnSortKeys = null;
+                var beforeSettings = before.Clone(); beforeSettings.ColumnSortKeys = null; beforeSettings.TableSource = null;
+                var afterSettings = after.Clone(); afterSettings.ColumnSortKeys = null; afterSettings.TableSource = null;
                 RecordUndoEvent(name, new PanelUndo<Tuple<PanelQueryOptions, PanelOutputValues>>(InstanceGuid,
                     Tuple.Create(beforeSettings, beforeValues), Tuple.Create(afterSettings, afterValues),
                     (component, state) => { CanvasTextInput.CloseActive(component); (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor(); component.OutputValues = state.Item2; component.Session.UpdateQuery(component.WithCurrentColumnSort(state.Item1)); component.ScheduleOutput(); }));
@@ -303,32 +304,27 @@ namespace BetterGhPanel
             CanvasTextInput.CloseActive(this);
             (Attributes as BetterPanelAttributes)?.ClosePresentationControls();
             PanelSplit = split;
-            if (split && PairedSnapshot == null && _pairedInputTree != null)
-            {
-                PairedSnapshot = SnapshotCapture.CaptureForMeasurements(_pairedInputTree, out _pairedSourceItems,
-                    out _pairedMeasurementSources, out _pairedCaptureGraphs, PanelUnitConversion.None, _geometryUnits, null, null, null, null, null);
-                _pairedHasGeometry = HasGeometry(PairedSnapshot);
-                // F geometry was labelled with the units of the last solve. If the document
-                // units changed since, recompute now rather than show stale measurements.
-                // This is a fresh capture attempt, so it gets its own single retry.
-                if (_pairedHasGeometry && !GeometryContextCurrent(_geometryContext) && _session != null)
-                {
-                    _captureRetries = 0;
-                    InvalidateStaleCapture(_session, OnPingDocument(), _solveGeneration);
-                }
-            }
-            else if (!split)
-            {
-                // A closed split stops paying for F presentation and its freshness checks.
-                PairedSnapshot = null;
-                _pairedSourceItems = Array.Empty<IGH_Goo?>();
-                _pairedMeasurementSources = Array.Empty<CapturedMeasurementSource?>();
-                _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
-                (Attributes as BetterPanelAttributes)?.ClearPaneSummary();
-            }
             foreach (var column in _tableColumns)
-            { if (split) column.Capture(_geometryUnits); else if (Session.Options.SortColumn != column.Input.InstanceGuid) column.Snapshot = null; }
+            {
+                if (split || Session.Options.SortColumn == column.Input.InstanceGuid) column.Capture(_geometryUnits);
+                else column.ReleasePresentation();
+            }
+            var fColumn = _tableColumns.FirstOrDefault(column => column.Input == Params.Input[1]);
+            PairedSnapshot = split ? fColumn?.Snapshot : null;
+            _pairedSourceItems = PairedSnapshot != null ? fColumn!.Sources : Array.Empty<IGH_Goo?>();
+            _pairedMeasurementSources = PairedSnapshot != null ? fColumn!.Measurements : Array.Empty<CapturedMeasurementSource?>();
+            _pairedCaptureGraphs = PairedSnapshot != null ? fColumn!.Graphs : Array.Empty<CaptureGraphWitness>();
+            _pairedHasGeometry = PairedSnapshot != null && fColumn!.HasGeometry;
+            if (ContextFenced && !GeometryContextCurrent(_geometryContext) && _session != null)
+            {
+                _captureRetries = 0;
+                InvalidateStaleCapture(_session, OnPingDocument(), _solveGeneration);
+            }
+            Session.SetTableSource(CurrentTableSource(), true);
             Attributes.ExpireLayout();
+            if (split && (Session.Result.DisplaySet != null || Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength) &&
+                TableColumns.Any(column => !column.SummaryCurrent(Session.Result)))
+            { _cachedOutputResult = null; _outputOptions = null; ScheduleOutput(); }
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
         }
@@ -377,10 +373,11 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelInvalid", options.OnlyInvalid);
             writer.SetInt32("PanelSort", (int)options.SortMode);
             if (options.SortColumn != Guid.Empty) writer.SetGuid("PanelSortColumn", options.SortColumn);
-            if (ColumnWidths.Count > 0)
+            var savedWidths = ColumnWidths.Where(entry => Params.Input.Any(input => input.InstanceGuid == entry.Key)).ToArray();
+            if (savedWidths.Length > 0)
             {
                 var widths = writer.CreateChunk("PanelColumnWidths");
-                foreach (var entry in ColumnWidths.Where(entry => Params.Input.Any(input => input.InstanceGuid == entry.Key)))
+                foreach (var entry in savedWidths)
                     widths.SetSingle(entry.Key.ToString("D"), entry.Value);
             }
             // Retain the legacy key for older plug-in versions; dimensions take precedence.

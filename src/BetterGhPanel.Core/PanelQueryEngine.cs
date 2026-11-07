@@ -206,11 +206,13 @@ namespace BetterGhPanel.Core
                 foreach (int position in positions)
                 {
                     var preview = new List<string>(4);
-                    int count = 0;
+                    int count = 0, visits = 0;
                     foreach (var row in query.ColumnSortKeys!.GroupRows(snapshot, set.MembersAt(position)))
                     {
                         if (work.ShouldYield()) yield return null;
-                        CheckCancellation(count++, cancellationToken);
+                        CheckCancellation(visits++, cancellationToken);
+                        if (row == null) continue;
+                        count++;
                         if (preview.Count < 4) preview.Add(row.DisplayValue);
                     }
                     columnSortRows.Add(position, count == 0 ? null : new PanelRow(snapshot.Rows[position].OriginalIndex,
@@ -315,7 +317,13 @@ namespace BetterGhPanel.Core
                 viewIndices.Add(positions[index], index);
             }
             cancellationToken.ThrowIfCancellationRequested();
-            yield return new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings);
+            var result = new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings);
+            if (query.TableSource != null && displaySet == null && !(query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
+                foreach (var index in PanelTableIndex.Build(result, query.TableSource.Columns,
+                    query.TableSource.Extras(result, rowPositions, !HasItemFilter(query)), work, cancellationToken))
+                    if (index == null) yield return null;
+                    else result.TableIndex = index;
+            yield return result;
         }
 
         public static bool RequiresGeometryMeasurements(PanelQueryOptions options)

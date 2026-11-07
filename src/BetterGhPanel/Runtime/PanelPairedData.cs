@@ -14,12 +14,11 @@ namespace BetterGhPanel.Runtime
         internal bool HasUnequal { get; }
         internal readonly struct PairHeading
         {
-            internal readonly string Count, DataCount, Paths;
-            internal readonly bool Unequal, ByOrder;
+            internal readonly string DataCount;
+            internal readonly bool Unequal;
             internal readonly int Total;
-            internal PairHeading(int count, int dataCount, bool unequal, bool byOrder, string paths)
-            { Count = count + (count == 1 ? " item" : " items"); DataCount = "D " + dataCount;
-                Total = count; Unequal = unequal; ByOrder = byOrder; Paths = paths; }
+            internal PairHeading(int count, int dataCount, bool unequal)
+            { DataCount = "D " + dataCount; Total = count; Unequal = unequal; }
         }
         // Built during filtered output, never by expanding members while painting.
         internal sealed class Summary
@@ -80,9 +79,7 @@ namespace BetterGhPanel.Runtime
                 PairHeading BuildHeading(IEnumerable<PanelBranchPair> scope)
                 {
                     var pairs = scope.ToArray();
-                    string paths = string.Join(", ", pairs.Take(3).Select(pair => pair.Paired.Path.Length > 80 ? pair.Paired.Path.Substring(0, 77) + "…" : pair.Paired.Path));
-                    return new PairHeading(pairs.Sum(pair => pair.Paired.ItemCount), pairs.Sum(pair => pair.Data.ItemCount),
-                        pairs.Any(pair => pair.Unequal), pairs.Any(pair => pair.ByOrder), paths + (pairs.Length > 3 ? " …" : ""));
+                    return new PairHeading(pairs.Sum(pair => pair.Paired.ItemCount), pairs.Sum(pair => pair.Data.ItemCount), pairs.Any(pair => pair.Unequal));
                 }
                 Headings.Add(destination.Key, BuildHeading(destination.Value));
                 _headingsWithoutEmpty.Add(destination.Key, BuildHeading(destination.Value.Where(pair => pair.Data.ItemCount > 0)));
@@ -91,12 +88,6 @@ namespace BetterGhPanel.Runtime
         internal static PanelBranch[] Shape(GH_Structure<IGH_Goo> tree) =>
             Enumerable.Range(0, tree.PathCount).Select(b => new PanelBranch(tree.Paths[b].ToString(), tree.Branches[b].Count)).ToArray();
         internal PairHeading Heading(string path, bool includeEmpty) => (includeEmpty ? Headings : _headingsWithoutEmpty)[path];
-        internal string HeadingCount(string path, bool includeEmpty)
-        {
-            var heading = Heading(path, includeEmpty);
-            int count = BranchSummaries.TryGetValue(path, out var summary) ? summary.Count : 0;
-            return count < heading.Total ? $"{count:N0} of {heading.Total:N0} items" : count + (count == 1 ? " item" : " items");
-        }
         internal static bool EmptyPartnersInScope(PanelQueryOptions options) => !options.CreateSet && !PanelQueryEngine.HasItemFilter(options);
         internal PanelBranchPair BranchAt(int position) => Pairs[_sourcePairs[position]];
         internal PanelBranchPair PairAtPaired(int item) => Pairs[_pairedPairs[item]];
@@ -108,10 +99,20 @@ namespace BetterGhPanel.Runtime
         internal IEnumerable<(int Item, string Path)> BranchItems(PanelSnapshot snapshot, IReadOnlyList<int> members,
             IEnumerable<string> paths, bool includeEmpty)
         {
+            foreach (var step in BranchItemSteps(snapshot, members, paths, includeEmpty, false))
+                if (step.HasValue) yield return step.Value;
+        }
+        internal int OriginalBranchOrder(PanelBranchPair pair) => _dataOrder[pair.Data.Path];
+        // Query callers already hold members in snapshot order. Null steps preserve
+        // cancellation/budget checkpoints even for missing cells or repeated unequal members.
+        internal IEnumerable<(int Item, string Path)?> BranchItemSteps(PanelSnapshot snapshot, IReadOnlyList<int> members,
+            IEnumerable<string> paths, bool includeEmpty, bool snapshotOrder)
+        {
             var emitted = new HashSet<int>();
-            var extras = new Dictionary<int, string>();
-            foreach (int position in members.OrderBy(value => value))
+            var extras = new SortedDictionary<int, string>();
+            foreach (int position in snapshotOrder ? (IEnumerable<int>)members : members.OrderBy(value => value))
             {
+                yield return null;
                 int index = _sourcePairs[position];
                 var pair = Pairs[index];
                 string path = snapshot.Rows[position].Path;
@@ -128,12 +129,16 @@ namespace BetterGhPanel.Runtime
             if (includeEmpty)
                 foreach (string path in paths)
                 {
-                    // Nonempty destinations may also contain original empty branches after merging.
-                    foreach (var pair in BranchesAt(path).Where(pair => pair.Data.ItemCount == 0))
-                        if (!extras.ContainsKey(_dataOrder[pair.Data.Path])) extras.Add(_dataOrder[pair.Data.Path], path);
+                    yield return null;
+                    foreach (var pair in BranchesAt(path))
+                    {
+                        yield return null;
+                        if (pair.Data.ItemCount == 0 && !extras.ContainsKey(_dataOrder[pair.Data.Path])) extras.Add(_dataOrder[pair.Data.Path], path);
+                    }
                 }
-            foreach (var extra in extras.OrderBy(value => value.Key))
+            foreach (var extra in extras)
             {
+                yield return null;
                 var pair = Pairs[extra.Key];
                 for (int i = Math.Min(pair.Data.ItemCount, pair.Paired.ItemCount); i < pair.Paired.ItemCount; i++)
                     yield return (pair.PairedOffset + i, extra.Value);

@@ -31,7 +31,7 @@ namespace BetterGhPanel
         private MeasurementContextStamp _geometryContext;
         private bool _captureHasGeometry, _pairedHasGeometry;
         // F geometry is fenced on the document context only while its snapshot is shown.
-        private bool ContextFenced => _captureHasGeometry || PairedSnapshot != null && _pairedHasGeometry;
+        private bool ContextFenced => _captureHasGeometry || PairedSnapshot != null && _pairedHasGeometry || _tableColumns.Exists(column => column.HasGeometry);
         private CancellationTokenSource? _copyCancellation;
         private bool _retainGeometryMeasurements;
         private GH_Structure<IGH_Goo>? _queryTree;
@@ -208,7 +208,7 @@ namespace BetterGhPanel
             if (_solving || _restoringView || Locked || document == null || session == null || _queryTree == null) return;
             var options = session.Options;
             if (!_outputPending && _outputOptions != null && PanelQueryPolicy.SameOutputFilter(_outputOptions, options) &&
-                _publishedSelectionVersion == _selectionVersion && _publishedScope == OutputScope && _publishedValues == OutputValues) return;
+                TableSummariesCurrent && _publishedSelectionVersion == _selectionVersion && _publishedScope == OutputScope && _publishedValues == OutputValues) return;
             var snapshot = session.Snapshot;
             long request = ++_outputRequest;
             // Never solve recursively from a query callback. Publish through a
@@ -314,7 +314,7 @@ namespace BetterGhPanel
             RowSelection.Clear();
             CanvasTextInput.CloseActive();
             QueryPreviewActive = false;
-            if (_session != null) { _savedOptions = _session.Options; _savedOptions.ColumnSortKeys = null; }
+            if (_session != null) { _savedOptions = _session.Options; _savedOptions.ColumnSortKeys = null; _savedOptions.TableSource = null; }
             _session?.Dispose();
             _session = null;
             _sourceItems = Array.Empty<IGH_Goo?>();

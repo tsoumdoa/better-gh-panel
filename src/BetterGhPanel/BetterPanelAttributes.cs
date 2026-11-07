@@ -135,7 +135,6 @@ namespace BetterGhPanel
             LayoutSetDetails();
             _d.Offset = 0;
             _lastResult = null;
-            ClearPaneSummary();
             if (keepViewRestore) _selection.Clear();
             else ClearRowSelection();
             PanelOwner.ClearHighlight();
@@ -229,7 +228,6 @@ namespace BetterGhPanel
 
         internal void OnQueryStarted()
         {
-            ClearPaneSummary();
             InvalidatePaintedHits();
         }
 
@@ -330,8 +328,8 @@ namespace BetterGhPanel
                 }
                 // Canonical Full/Half grips all fit inside the Half rectangle.
                 // A capsule has enough height for four distinct output targets.
-                float top = PanelOwner.PanelMinimized ? _layout.Panel.Top + 12 : Pivot.Y + PanelOwner.CanvasHeight / 4 + 12;
-                float span = PanelOwner.PanelMinimized ? _layout.Panel.Height - 24 : PanelOwner.CanvasHeight / 2 - 48;
+                float top = PanelOwner.PanelMinimized ? _layout.Panel.Top + 12 : Pivot.Y + PanelOwner.EffectiveCanvasHeight / 4 + 12;
+                float span = PanelOwner.PanelMinimized ? _layout.Panel.Height - 24 : PanelOwner.EffectiveCanvasHeight / 2 - 48;
                 // Native wire picking searches within 12 canvas units in reverse
                 // parameter order. Keep neighbours beyond that radius even at
                 // the vertical edge of a grip's target; reserve the resize corner.
@@ -598,10 +596,7 @@ namespace BetterGhPanel
             // value, even when a separate branch heading would consume that row.
             bool sorted = PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder;
             bool grouped = list.Height >= BranchHeight + RowHeight;
-            bool displayMetric = (PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null);
-            bool numericMetric = displayMetric && (!PanelProperties.IsProperty(PanelOwner.Session.Options.SearchMode) ||
-                PanelProperties.Kind(PanelOwner.Session.Options.SearchMode) == PanelPropertyKind.Number);
-            bool showTypes = displayMetric || result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
+            bool showTypes = ShowDataTypes(result);
             using var rowRenderer = new CanvasRowRenderer(g, result.Snapshot.Rows.Count, sorted);
             if (PanelOwner.CreateSetTree) SizeSetColumn(g, rowRenderer, result);
             float setWidth = PanelOwner.CreateSetTree ? _setCountWidth : 0;
@@ -641,7 +636,6 @@ namespace BetterGhPanel
                     }
                     int sourcePosition = result.RowPositions[i];
                     var dataRow = result.Snapshot.Rows[sourcePosition];
-                    var row = dataRow;
                     if (grouped && dataRow.Path != previousPath)
                     {
                         if (y + BranchHeight + RowHeight > list.Bottom) break;
@@ -664,37 +658,7 @@ namespace BetterGhPanel
 
                     var address = RowAddress(result, sourcePosition);
                     if (address.Index >= 0) rowRenderer.DrawAddress(g, bounds, i + 1, address.Index, address.Sorted, selected);
-                    var sourceStatuses = CanvasStatistics.RowSourceStatuses(result, sourcePosition);
-                    // The selection bar owns the edge; validity marks always start beside it.
-                    if (selected) Fill(g, Accent, new RectangleF(bounds.X, bounds.Y, 2, bounds.Height));
-                    if (sourceStatuses.VerifiedInvalid > 0)
-                        Fill(g, PanelTheme.Rgb(180, 106, 67), new RectangleF(bounds.X + 2, bounds.Y + 3, 2, bounds.Height - 6));
-                    if (sourceStatuses.Unverified > 0)
-                        Fill(g, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (sourceStatuses.VerifiedInvalid > 0 ? 4 : 2), bounds.Y + 3, 2, bounds.Height - 6));
-                    if (!grouped)
-                        rowRenderer.DrawCell(g, dataRow.Path, mono, Accent,
-                            new RectangleF(bounds.X + rowRenderer.GutterWidth + 9, y, Math.Max(0, pathWidth - 12), RowHeight));
-                    // Analytic summaries name their type. Native metadata summaries
-                    // (for example dot text/location) use the catalog's separate label.
-                    bool showRowType = showTypes && (displayMetric || row.GeometryInfo == null || StockTypeLabels.SeparateLabel(row.TypeName));
-                    float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
-                    var projectedType = result.DisplaySet != null ? result.DisplaySet.Values[sourcePosition] : null;
-                    // A glyph as well as the colour bar, so validity never relies on colour alone.
-                    float marker = 0;
-                    if (sourceStatuses.VerifiedInvalid > 0 || sourceStatuses.Unverified > 0)
-                    {
-                        DrawStatusBadge(g, new PointF(bounds.X + valueStart + 8, y + RowHeight / 2),
-                            sourceStatuses.VerifiedInvalid > 0 ? "!" : "?", sourceStatuses.VerifiedInvalid > 0 ? PanelTheme.Warning : PanelTheme.Unverified, small);
-                        marker = 12;
-                    }
-                    rowRenderer.DrawValue(g, PanelValuePresentation.Visualize(PanelOwner.DisplayValue(result.Snapshot, row, sourcePosition)), font, Ink,
-                        new RectangleF(bounds.X + valueStart + 3 + marker, y, Math.Max(0, valueRight - bounds.X - valueStart - 3 - marker), RowHeight),
-                        projectedType != null ? projectedType.Number.HasValue : (numericMetric || !displayMetric && row.NumericValue.HasValue));
-                    if (showRowType)
-                        rowRenderer.DrawCell(g, projectedType != null
-                                ? projectedType.Number.HasValue ? "Num" : "Text" : CanvasMenu.ShortTypeName(row.TypeName), small, Muted,
-                            new RectangleF(bounds.Right - setWidth - TypeColumnWidth, y, TypeColumnWidth - CellGap, RowHeight), true);
-                    DrawSetCount(g, rowRenderer, bounds, sourcePosition, i + 1, small);
+                    DrawDataCell(g, rowRenderer, result, sourcePosition, i + 1, bounds, valueStart, setWidth, font, small, mono, grouped, pathWidth);
                     if (TargetPainted(g, bounds) && !_rowHits.Any(hit => hit.Bounds == bounds && hit.SourcePosition == sourcePosition))
                         _rowHits.Add(new RowHit(bounds, sourcePosition, i + 1));
                     if (bounds.IntersectsWith(visibleRegion)) measurements.Add(sourcePosition);
@@ -720,6 +684,53 @@ namespace BetterGhPanel
                 Fill(g, PanelTheme.Rgb(232, 236, 229), track);
                 Fill(g, PanelTheme.Rgb(153, 174, 156), Thumb());
             }
+        }
+
+        private bool ShowDataTypes(PanelQueryResult result) => PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null ||
+            result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
+
+        private void DrawDataCell(Graphics g, CanvasRowRenderer renderer, PanelQueryResult result, int position, int viewNumber,
+            RectangleF bounds, float valueStart, float setWidth, Font font, Font small, Font mono, bool grouped = true, float pathWidth = 0)
+        {
+            var row = result.Snapshot.Rows[position];
+            var dataRow = row;
+            bool selected = _selection.Contains(position);
+            float y = bounds.Y;
+            bool displayMetric = PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null;
+            bool numericMetric = displayMetric && (!PanelProperties.IsProperty(PanelOwner.Session.Options.SearchMode) ||
+                PanelProperties.Kind(PanelOwner.Session.Options.SearchMode) == PanelPropertyKind.Number);
+            bool showTypes = ShowDataTypes(result);
+            var sourceStatuses = CanvasStatistics.RowSourceStatuses(result, position);
+            // The selection bar owns the edge; validity marks always start beside it.
+            if (selected) Fill(g, Accent, new RectangleF(bounds.X, bounds.Y, 2, bounds.Height));
+            if (sourceStatuses.VerifiedInvalid > 0)
+                Fill(g, PanelTheme.Rgb(180, 106, 67), new RectangleF(bounds.X + 2, bounds.Y + 3, 2, bounds.Height - 6));
+            if (sourceStatuses.Unverified > 0)
+                Fill(g, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (sourceStatuses.VerifiedInvalid > 0 ? 4 : 2), bounds.Y + 3, 2, bounds.Height - 6));
+            if (!grouped)
+                renderer.DrawCell(g, dataRow.Path, mono, Accent,
+                    new RectangleF(bounds.X + renderer.GutterWidth + 9, y, Math.Max(0, pathWidth - 12), RowHeight));
+            // Analytic summaries name their type. Native metadata summaries
+            // (for example dot text/location) use the catalog's separate label.
+            bool showRowType = showTypes && (displayMetric || row.GeometryInfo == null || StockTypeLabels.SeparateLabel(row.TypeName));
+            float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
+            var projectedType = result.DisplaySet != null ? result.DisplaySet.Values[position] : null;
+            // A glyph as well as the colour bar, so validity never relies on colour alone.
+            float marker = 0;
+            if (sourceStatuses.VerifiedInvalid > 0 || sourceStatuses.Unverified > 0)
+            {
+                DrawStatusBadge(g, new PointF(bounds.X + valueStart + 8, y + RowHeight / 2),
+                    sourceStatuses.VerifiedInvalid > 0 ? "!" : "?", sourceStatuses.VerifiedInvalid > 0 ? PanelTheme.Warning : PanelTheme.Unverified, small);
+                marker = 12;
+            }
+            renderer.DrawValue(g, PanelValuePresentation.Visualize(PanelOwner.DisplayValue(result.Snapshot, row, position)), font, Ink,
+                new RectangleF(bounds.X + valueStart + 3 + marker, y, Math.Max(0, valueRight - bounds.X - valueStart - 3 - marker), RowHeight),
+                projectedType != null ? projectedType.Number.HasValue : (numericMetric || !displayMetric && row.NumericValue.HasValue));
+            if (showRowType)
+                renderer.DrawCell(g, projectedType != null
+                        ? projectedType.Number.HasValue ? "Num" : "Text" : CanvasMenu.ShortTypeName(row.TypeName), small, Muted,
+                    new RectangleF(bounds.Right - setWidth - TypeColumnWidth, y, TypeColumnWidth - CellGap, RowHeight), true);
+            DrawSetCount(g, renderer, bounds, position, viewNumber, small);
         }
 
         private static void DrawStatusBadge(Graphics g, PointF center, string glyph, Color color, Font font)
@@ -1191,13 +1202,14 @@ namespace BetterGhPanel
             foreach (var hit in _branchHits)
                 if (hit.Bounds.Contains(point))
                 {
-                    if (hit.CopyBounds.Contains(point))
+                    if (hit.CopyBounds.Contains(point) && CellColumnAt(point) < 0)
                     {
                         CopySelectedValues(currentResult, sender, PanelRowAction.CopyPath, hit.Path);
                         return GH_ObjectResponse.Handled;
                     }
                     InvalidateCopyStatus();
                     // Only an accepted row or heading selection chooses which pane Ctrl+C copies.
+                    _activeTableColumn = CellColumnAt(point);
                     _selection.SelectAll(currentResult, hit.Path, includeEmptyBranches: DisplayListLengths);
                     PanelOwner.HighlightRows(currentResult.Snapshot, _selection.OrderedPositions(currentResult));
                     TrackSelectionCanvas(sender);
@@ -1601,7 +1613,15 @@ namespace BetterGhPanel
             {
                 // The first click already selected the row or heading; only empty list space clears.
                 var result = PanelOwner.Session.Result;
-                if (!RowsAreCurrent(result) || _branchHits.Any(hit => hit.Bounds.Contains(e.CanvasLocation))) return GH_ObjectResponse.Handled;
+                if (!RowsAreCurrent(result)) return GH_ObjectResponse.Handled;
+                foreach (var heading in _branchHits)
+                    if (heading.Bounds.Contains(e.CanvasLocation))
+                    {
+                        _activeTableColumn = CellColumnAt(e.CanvasLocation);
+                        if (DisplayListLengths && _activeTableColumn >= 0) ViewFullBranchCell(result, heading.Path);
+                        sender.Invalidate();
+                        return GH_ObjectResponse.Handled;
+                    }
                 int row = _rowHits.FindIndex(hit => hit.Bounds.Contains(e.CanvasLocation));
                 if (row >= 0) { _activeTableColumn = CellColumnAt(e.CanvasLocation); ViewFullValue(result, _rowHits[row].SourcePosition); sender.Invalidate(); }
                 else if (_paintedListBackground) ClearRowSelection(sender);

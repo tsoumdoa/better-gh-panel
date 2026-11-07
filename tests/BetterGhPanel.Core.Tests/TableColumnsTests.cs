@@ -16,13 +16,17 @@ public class TableColumnsTests
     [Fact]
     public void AugmentedIndexAlignsExtrasAcrossColumnsAndKeepsEmptyBranches()
     {
-        var result = PanelQueryEngine.Execute(Data(), new PanelQueryOptions());
-        var index = new PanelTableIndex(result, 3, new[]
+        var options = new PanelQueryOptions { TableSource = new PanelTableSource(3, (_, __, ___) => new[]
         {
             new PanelTableExtra("{0}", "{0}:4", 0, 4, 4), new PanelTableExtra("{0}", "{0}:3", 0, 3, 3),
             new PanelTableExtra("{0}", "{0}:3", 1, 8, 3), new PanelTableExtra("{0}", "{0}:5", 2, 20, 5),
             new PanelTableExtra("{1}", "{1}:0", 2, 21)
-        });
+        }) };
+        using var work = PanelQueryEngine.Start(Data(), options);
+        int checkpoints = 0;
+        while (!work.TryComplete(() => ++checkpoints % 7 == 0)) Assert.Null(work.Result);
+        var index = work.Result!.TableIndex!;
+        Assert.True(PanelQueryPolicy.SameOutputFilter(new PanelQueryOptions(), options));
         Assert.Equal(9, index.Entries.Count);
         Assert.Equal(new[] { 3, 8, -1 }, index.Entries[3].Cells);
         Assert.Equal(new[] { 4, -1, -1 }, index.Entries[4].Cells);
@@ -54,8 +58,49 @@ public class TableColumnsTests
         Assert.True(PanelQueryPolicy.SameOutputFilter(source, query));
         Assert.False(PanelQueryPolicy.SameQuery(source, query));
         Assert.Equal(new[] { 0, 1, 2, 3 }, PanelQueryEngine.Execute(snapshot, source).RowPositions);
-        using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
-        Assert.Throws<OperationCanceledException>(() => PanelQueryEngine.Execute(snapshot, query, cancelled.Token));
+    }
+
+    [Fact]
+    public void CancellationInterruptsSetColumnKeyPreparationIncludingMissingCells()
+    {
+        var snapshot = new PanelSnapshot(Enumerable.Range(0, 4096).Select(index => new PanelRow(index, "{0}", "Number", "1", 1)).ToArray(),
+            new[] { new PanelBranch("{0}", 4096) });
+        using var cancellation = new CancellationTokenSource();
+        int prepared = 0;
+        IEnumerable<PanelRow?> Keys(IReadOnlyList<int> members)
+        {
+            foreach (int member in members)
+            {
+                if (++prepared == 37) cancellation.Cancel();
+                yield return null; // Real adapters also yield checkpoints for missing/repeated partners.
+            }
+        }
+        var options = new PanelQueryOptions { CreateSet = true, SortMode = PanelSortMode.ValueAscending,
+            ColumnSortKeys = new PanelColumnSortKeys(_ => null, (_, members) => Keys(members)) };
+        using var work = PanelQueryEngine.Start(snapshot, options, cancellation.Token);
+        Assert.Throws<OperationCanceledException>(() => work.Complete());
+        Assert.InRange(prepared, 37, 257);
+        Assert.Null(work.Result);
+    }
+
+    [Fact]
+    public void CancellationInterruptsAugmentedIndexCollectionBeforePublication()
+    {
+        using var cancellation = new CancellationTokenSource();
+        int visited = 0;
+        IEnumerable<PanelTableExtra?> Extras()
+        {
+            for (int index = 0; index < 4096; index++)
+            {
+                if (++visited == 37) cancellation.Cancel();
+                yield return new PanelTableExtra("{0}", index.ToString(), 0, index, index);
+            }
+        }
+        var options = new PanelQueryOptions { TableSource = new PanelTableSource(1, (_, __, ___) => Extras()) };
+        using var work = PanelQueryEngine.Start(Data(), options, cancellation.Token);
+        Assert.Throws<OperationCanceledException>(() => work.Complete());
+        Assert.Equal(37, visited);
+        Assert.Null(work.Result);
     }
 
     [Fact]

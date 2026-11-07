@@ -17,7 +17,7 @@ namespace BetterGhPanel
             ref int shown = ref pane.Shown;
             offset = Math.Max(0, Math.Min(Math.Max(0, Count - 1), offset));
             using var renderer = new CanvasRowRenderer(graphics, result.Snapshot.Branches.Count, false);
-            if (TableVisible) { PrepareTable(graphics, result, font, small, renderer.GutterWidth); DrawTableHeader(graphics, small, trim, renderer.GutterWidth); }
+            if (TableVisible) { PrepareTable(graphics, result, font, renderer.GutterWidth); DrawTableHeader(graphics, font, trim, renderer.GutterWidth); }
             var selected = _selection.BranchPaths(result);
             bool set = result.DisplaySet?.IsBranchSet == true;
             float y = list.Y;

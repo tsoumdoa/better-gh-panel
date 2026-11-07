@@ -113,7 +113,7 @@ namespace BetterGhPanel
         {
             if (PanelOwner.PanelMinimized)
             {
-                var capsule = new RectangleF(Pivot.X, Pivot.Y, CanvasPanelSize.CapsuleWidth, CanvasPanelSize.CapsuleHeight);
+                var capsule = new RectangleF(Pivot.X, Pivot.Y, CanvasPanelSize.CapsuleWidth, CanvasPanelSize.CapsuleHeightForInputs(PanelOwner.Params.Input.Count));
                 _d.List = _d.Track = _d.TrackHit = _tableHeader = _horizontalTrack = RectangleF.Empty;
                 return new PanelLayout(panel: capsule,
                     restore: new RectangleF(capsule.Right - 36, capsule.Y + (capsule.Height - 22) / 2, 22, 22));
@@ -148,7 +148,7 @@ namespace BetterGhPanel
             RectangleF split;
             restore = RectangleF.Empty;
             panel = new RectangleF(Pivot.X,
-                Pivot.Y + CanvasPanelSize.DisplayTopOffset(PanelOwner.CanvasHeight, PanelOwner.CanvasDisplay),
+                Pivot.Y + (PanelOwner.EffectiveCanvasHeight - PanelOwner.DisplayHeight) / 2,
                 PanelOwner.DisplayWidth, PanelOwner.DisplayHeight);
             float x = panel.X + 4;
             // Narrow panels give up type and path width before the search field

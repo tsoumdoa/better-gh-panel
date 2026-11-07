@@ -115,6 +115,32 @@ internal static class TableColumnsChecks
                 "{7;0}\t1\t4\tB\t10\t" + Environment.NewLine + "{7;0}\t3\t12\tD\t20\t" + Environment.NewLine + "{7;0}\t4\t7\tE\t\t" + Environment.NewLine;
             await fixture.Ready(() => !FieldValue<bool>(attributes, "_copyPending"));
             Check(Forms.Clipboard.GetText() == expected, "Ctrl+C publishes three selected rows, headers and empty missing cells as TSV");
+            var captured = fixture.Result.Snapshot;
+            var liveColumn = (GH_Structure<IGH_Goo>)component.Params.Input[2].VolatileData;
+            var number = (GH_Number)liveColumn.Branches[0][0];
+            double saved = number.Value;
+            number.Value += 100;
+            string stale = await (Task<string>)Call(component, "CopyColumnValuesAsync", captured, new[] { 1, 3, 4 }, 1, null)!;
+            Check(!(bool)Call(component, "CapturedSnapshotCurrent", captured)! && stale == "Copy cancelled" && Forms.Clipboard.GetText() == expected,
+                "In-place added-column changes invalidate sort/cell capture and cancel stale clipboard publication");
+            number.Value = saved;
+            fixture.Solve(); await fixture.Ready(() => !ReferenceEquals(captured, fixture.Result.Snapshot));
+            captured = fixture.Result.Snapshot;
+            liveColumn = (GH_Structure<IGH_Goo>)component.Params.Input[2].VolatileData;
+            liveColumn.Branches[0].Add(new GH_Number(99));
+            Check(!(bool)Call(component, "CapturedSnapshotCurrent", captured)!, "Added-column branch structure is part of the capture fence");
+            liveColumn.Branches[0].RemoveAt(liveColumn.Branches[0].Count - 1);
+            fixture.Solve(); await fixture.Ready(() => !ReferenceEquals(captured, fixture.Result.Snapshot));
+            captured = fixture.Result.Snapshot;
+            fixture.ClearSelection(); fixture.Select(1); fixture.Select(3, toggle: true); fixture.Select(4, toggle: true);
+            await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 3);
+            Call(component, "SetPanelMinimized", true); Render();
+            var action = typeof(PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelRowAction", true)!;
+            await (Task<string>)Call(component, "CopyAddressesAsync", captured, new[] { 1, 3, 4 }, Enum.Parse(action, "CopyTable"), null)!;
+            Check(Forms.Clipboard.GetText().StartsWith("Path\tIndex\tValue" + Environment.NewLine, StringComparison.Ordinal),
+                "Copy-as-table uses the compact layout's effective hidden columns");
+            Call(component, "SetPanelMinimized", false); Render();
+
         }
         finally { if (clipboard == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(clipboard, true); }
         // Resize via actual header events and verify auto-fit reset.

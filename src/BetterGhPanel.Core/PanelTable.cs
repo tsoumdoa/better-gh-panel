@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace BetterGhPanel.Core
 {
@@ -10,7 +11,7 @@ namespace BetterGhPanel.Core
     public sealed class PanelColumnSortKeys
     {
         private readonly Func<int, PanelRow?> _rowAt;
-        private readonly Func<PanelSnapshot, IReadOnlyList<int>, IEnumerable<PanelRow>>? _groupRows;
+        private readonly Func<PanelSnapshot, IReadOnlyList<int>, IEnumerable<PanelRow?>>? _groupRows;
         public PanelColumnSortKeys(IEnumerable<PanelRow?> rows)
         {
             var captured = rows.ToArray();
@@ -21,11 +22,11 @@ namespace BetterGhPanel.Core
         // Runtime providers close over immutable snapshots and pairing identities only.
         // They are evaluated by the cooperative query, never by header input handlers.
         internal PanelColumnSortKeys(Func<int, PanelRow?> rowAt,
-            Func<PanelSnapshot, IReadOnlyList<int>, IEnumerable<PanelRow>> groupRows)
+            Func<PanelSnapshot, IReadOnlyList<int>, IEnumerable<PanelRow?>> groupRows)
         { _rowAt = rowAt; _groupRows = groupRows; }
         internal PanelRow? RowAt(int position) => _rowAt(position);
-        internal IEnumerable<PanelRow> GroupRows(PanelSnapshot snapshot, IReadOnlyList<int> members) =>
-            _groupRows != null ? _groupRows(snapshot, members) : members.Select(_rowAt).Where(row => row != null).Select(row => row!);
+        internal IEnumerable<PanelRow?> GroupRows(PanelSnapshot snapshot, IReadOnlyList<int> members) =>
+            _groupRows != null ? _groupRows(snapshot, members) : members.Select(_rowAt);
         internal int Compare(int left, int right, bool descending)
         {
             var a = _rowAt(left);
@@ -75,34 +76,59 @@ namespace BetterGhPanel.Core
             public bool Extra => Item < 0 && Empty == null;
         }
         private readonly List<Entry> _entries = new List<Entry>();
-        private readonly int[] _offsets, _successors;
-        public PanelTableIndex(PanelQueryResult result, int columns, IEnumerable<PanelTableExtra> extras)
+        private int[] _offsets = Array.Empty<int>(), _successors = Array.Empty<int>();
+        private PanelTableIndex() { }
+        internal static IEnumerable<PanelTableIndex?> Build(PanelQueryResult result, int columns,
+            IEnumerable<PanelTableExtra?> extras, PanelQueryWork work, CancellationToken token)
         {
-            var byPath = extras.GroupBy(extra => extra.Path).ToDictionary(group => group.Key, group => group.ToArray(), StringComparer.Ordinal);
-            string? previous = null;
-            void AppendExtras()
+            var index = new PanelTableIndex();
+            foreach (var _ in index.BuildSteps(result, columns, extras, work, token)) yield return null;
+            yield return index;
+        }
+        private IEnumerable<bool> BuildSteps(PanelQueryResult result, int columns, IEnumerable<PanelTableExtra?> extras,
+            PanelQueryWork? work, CancellationToken token)
+        {
+            var byPath = new Dictionary<string, SortedDictionary<long, List<PanelTableExtra>>>(StringComparer.Ordinal);
+            foreach (var extra in extras)
             {
-                if (previous == null || !byPath.TryGetValue(previous, out var values)) return;
+                if (work?.ShouldYield() == true) yield return true;
+                token.ThrowIfCancellationRequested();
+                if (extra == null) continue;
+                if (!byPath.TryGetValue(extra.Path, out var orders)) byPath.Add(extra.Path, orders = new SortedDictionary<long, List<PanelTableExtra>>());
+                if (!orders.TryGetValue(extra.Order, out var cells)) orders.Add(extra.Order, cells = new List<PanelTableExtra>());
+                cells.Add(extra);
+            }
+            string? previous = null;
+            IEnumerable<bool> AppendExtras()
+            {
+                if (previous == null || !byPath.TryGetValue(previous, out var orders)) yield break;
                 var identities = new Dictionary<string, Entry>(StringComparer.Ordinal);
-                foreach (var value in values.OrderBy(value => value.Order))
-                {
-                    if (!identities.TryGetValue(value.Identity, out var entry))
-                    { entry = new Entry(-1, null, previous, columns); identities.Add(value.Identity, entry); _entries.Add(entry); }
-                    entry.SetCell(value.Column, value.Position);
-                }
+                foreach (var cells in orders.Values)
+                    foreach (var value in cells)
+                    {
+                        if (work?.ShouldYield() == true) yield return true;
+                        token.ThrowIfCancellationRequested();
+                        if (!identities.TryGetValue(value.Identity, out var entry))
+                        { entry = new Entry(-1, null, previous, columns); identities.Add(value.Identity, entry); _entries.Add(entry); }
+                        entry.SetCell(value.Column, value.Position);
+                    }
             }
             for (int offset = 0; offset < result.ViewIndex.Count; offset++)
             {
+                if (work?.ShouldYield() == true) yield return true;
+                token.ThrowIfCancellationRequested();
                 result.ViewIndex.TryGet(offset, out int item, out string? empty);
                 string path = empty ?? result.Snapshot.Rows[result.RowPositions[item]].Path;
-                if (previous != path) { AppendExtras(); previous = path; }
+                if (previous != path) { foreach (var step in AppendExtras()) yield return step; previous = path; }
                 _entries.Add(new Entry(item, empty, path, columns));
             }
-            AppendExtras();
+            foreach (var step in AppendExtras()) yield return step;
             _offsets = new int[result.RowPositions.Count]; _successors = new int[_entries.Count];
             int next = result.RowPositions.Count;
             for (int offset = _entries.Count - 1; offset >= 0; offset--)
             {
+                if (work?.ShouldYield() == true) yield return true;
+                token.ThrowIfCancellationRequested();
                 int item = _entries[offset].Item;
                 if (item >= 0) { _offsets[item] = offset; next = item; }
                 _successors[offset] = next;
@@ -113,11 +139,20 @@ namespace BetterGhPanel.Core
         public int ItemAtOrAfter(int offset) => Math.Max(0, offset) < _successors.Length ? _successors[Math.Max(0, offset)] : _offsets.Length;
     }
 
+    // Immutable adapter callbacks enumerate managed identities, including null budget checkpoints.
+    internal sealed class PanelTableSource
+    {
+        internal PanelTableSource(int columns, Func<PanelQueryResult, IReadOnlyList<int>, bool, IEnumerable<PanelTableExtra?>> extras)
+        { Columns = columns; Extras = extras; }
+        internal int Columns { get; }
+        internal Func<PanelQueryResult, IReadOnlyList<int>, bool, IEnumerable<PanelTableExtra?>> Extras { get; }
+    }
+
     internal static class PanelTableText
     {
-        internal static string Summary(IReadOnlyList<string> preview, int count) => count == 0 ? "<empty set>" :
+        internal static string Summary(IReadOnlyList<string> preview, int count, bool set = true) => count == 0 ? set ? "<empty set>" : "<empty branch>" :
             string.Join(" · ", preview.Select(PanelValuePresentation.Visualize).Select(value => value.Length <= 120 ? value : value.Substring(0, 119) + "…")) +
-            (count > preview.Count ? " … +" + (count - preview.Count) + " in this set" : "");
+            (count > preview.Count ? " … +" + (count - preview.Count) + (set ? " in this set" : " items") : "");
         internal static string Value(PanelRow row, PanelUnitConversion conversion, int decimals, double factor) =>
             !row.IsNull && row.IsValid && row.NumericValue.HasValue
                 ? PanelUnits.Format(PanelUnits.Transform(row.NumericValue.Value, conversion, factor, decimals), PanelUnitConversion.None, decimals)

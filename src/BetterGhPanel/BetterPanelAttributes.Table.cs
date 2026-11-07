@@ -25,14 +25,10 @@ namespace BetterGhPanel
         private int _activeTableColumn = -1;
         private Guid _headerSortColumn;
         private bool TableVisible => !_tableHeader.IsEmpty;
+        internal bool EffectiveTableVisible => TableVisible && !PanelOwner.PanelMinimized && (_paintedCanvas?.Viewport.Zoom ?? 1f) >= 0.5f;
         private RectangleF ListBounds => _d.List;
         private bool ListContains(PointF point) => _d.List.Contains(point);
         private string OutputPortLabel(IGH_Param parameter) => parameter.NickName;
-
-        internal static string PairedDisplayValue(PanelRow row) =>
-            PanelValuePresentation.FormatDisplay(row, PanelUnitConversion.None, PanelUnits.AutomaticDecimals);
-
-        internal void ClearPaneSummary() { _tableViewResult = null; _tableView = null; }
 
         private void LayoutTable()
         {
@@ -71,9 +67,8 @@ namespace BetterGhPanel
         private string ColumnTitle(int index)
         {
             string title = index == 0 ? PanelOwner.Params.Input[0].NickName : PanelOwner.TableColumns[index - 1].Input.NickName;
-            bool numeric = index == 0 ? PanelOwner.Session.Snapshot.Rows.Any() && PanelOwner.Session.Result.Statistics.NumericCount > 0 :
-                PanelOwner.TableColumns[index - 1].Snapshot?.TypeCounts.Keys.Any(type => type == "Number" || type == "Integer") == true;
-            string units = numeric ? PanelUnits.Symbol(PanelOwner.UnitConversion) : "";
+            bool numeric = index > 0 && PanelOwner.TableColumns[index - 1].Snapshot?.TypeCounts.Keys.Any(type => type == "Number" || type == "Integer") == true;
+            string units = index == 0 ? DataHeaderUnit() : numeric ? PanelUnits.Symbol(PanelOwner.UnitConversion) : "";
             if (units.Length > 0) title += " · " + units;
             var options = PanelOwner.Session.Options;
             if (options.SortMode != PanelSortMode.SourceOrder && (options.SortColumn == ColumnId(index) || index == 0 && options.SortColumn == Guid.Empty))
@@ -87,12 +82,40 @@ namespace BetterGhPanel
             return title;
         }
 
-        private void PrepareTable(Graphics g, PanelQueryResult result, Font font, Font small, float gutter)
+        private string DataHeaderUnit()
+        {
+            var session = PanelOwner.Session;
+            var result = session.Result;
+            var options = session.Options;
+            if (DisplayListLengths || PanelOwner.UnitConversion == PanelUnitConversion.None) return "";
+            int first = ViewItemAtOrAfter(result, _d.Offset);
+            int end = Math.Min(result.RowPositions.Count, first + Math.Max(1, (int)(_d.List.Height / RowHeight)));
+            for (int index = first; index < end; index++)
+            {
+                int position = result.RowPositions[index];
+                var row = result.Snapshot.Rows[position];
+                var geometry = session.GetGeometryDetails(result.Snapshot, position) ?? row.GeometryInfo;
+                if (options.DisplayFilterValue)
+                {
+                    var value = PanelFilterValue.OutputValue(result.Snapshot, row, options.SearchMode, geometry, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
+                    if (value?.Kind == PanelPropertyKind.Number)
+                    {
+                        string symbol = PanelFilterValue.UnitSymbol(result.Snapshot, row, options.SearchMode, geometry);
+                        if (symbol.Length > 0) return symbol;
+                    }
+                }
+                else if (row.IsValid && !row.IsNull && row.NumericValue.HasValue) return PanelUnits.Symbol(PanelOwner.UnitConversion);
+            }
+            return "";
+        }
+
+        private void PrepareTable(Graphics g, PanelQueryResult result, Font font, float gutter)
         {
             using var number = CanvasRowRenderer.MonospaceFont(11);
             float Measure(string value, bool numeric = false) => TightWidth(g, Short(value, 256).Replace('\r', ' ').Replace('\n', ' '), numeric ? number : font);
+            using var headerFont = new Font(font, FontStyle.Bold);
             var widths = new float[PanelOwner.TableColumns.Count + 1];
-            for (int index = 0; index < widths.Length; index++) widths[index] = Math.Max(48, TightWidth(g, ColumnTitle(index), small) + 16);
+            for (int index = 0; index < widths.Length; index++) widths[index] = Math.Max(48, TightWidth(g, ColumnTitle(index), headerFont) + 16);
             if (DisplayListLengths)
             {
                 int end = Math.Min(result.BranchPaths.Count, _d.Offset + (int)(_d.List.Height / RowHeight));
@@ -179,11 +202,11 @@ namespace BetterGhPanel
             g.Restore(state);
         }
 
-        private void DrawTableHeader(Graphics g, Font small, StringFormat trim, float gutter)
+        private void DrawTableHeader(Graphics g, Font font, StringFormat trim, float gutter)
         {
             Fill(g, PanelTheme.Rgb(242, 247, 241), _tableHeader);
-            Text(g, "#", small, Muted, new RectangleF(_tableHeader.X + 4, _tableHeader.Y, gutter - 8, RowHeight), trim);
-            using var bold = new Font(small, FontStyle.Bold);
+            Text(g, "#", font, Muted, new RectangleF(_tableHeader.X + 4, _tableHeader.Y, gutter - 8, RowHeight), trim);
+            using var bold = new Font(font, FontStyle.Bold);
             for (int index = 0; index < _columnRects.Count; index++)
             {
                 int columnIndex = index;
@@ -243,10 +266,17 @@ namespace BetterGhPanel
                 var pair = column.Pair.PairAtPaired(item);
                 bool only = item - pair.PairedOffset >= pair.Data.ItemCount;
                 bool first = offset == 0 || !TableIndex(result).Entries[offset - 1].Extra || TableIndex(result).Entries[offset - 1].Cells[index] < 0 ||
-                    !ReferenceEquals(pair, column.Pair.PairAtPaired(TableIndex(result).Entries[offset - 1].Cells[index]));
+                    !ReferenceEquals(pair, column.Pair.PairAtPaired(TableIndex(result).Entries[offset - 1].Cells[index])) ||
+                    (TableIndex(result).Entries[offset - 1].Cells[index] - pair.PairedOffset >= pair.Data.ItemCount) != only;
                 string value = column.Value(column.Snapshot.Rows[item], PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
-                if (first) value += only ? " · only in " + column.Input.NickName : " · paired with hidden D rows";
-                PaintColumn(g, index + 1, bounds.Y, RowHeight, cell => DrawTableCell(g, renderer, null, value, cell, font, small, muted: true));
+                string note = !first ? "" : only ? "only in " + column.Input.NickName : "paired with hidden D rows";
+                PaintColumn(g, index + 1, bounds.Y, RowHeight, cell =>
+                {
+                    float noteWidth = note.Length == 0 ? 0 : Math.Min(cell.Width * 0.6f, TightWidth(g, note, small) + 10);
+                    if (noteWidth > 0) renderer.DrawCell(g, note, small, Muted, new RectangleF(cell.X + 6, cell.Y, Math.Max(0, noteWidth - 8), cell.Height));
+                    DrawTableCell(g, renderer, column.Snapshot.Rows[item], value,
+                        new RectangleF(cell.X + noteWidth, cell.Y, cell.Width - noteWidth, cell.Height), font, small, muted: true);
+                });
             }
         }
 
@@ -271,8 +301,8 @@ namespace BetterGhPanel
             bool sorted = PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder;
             using var renderer = new CanvasRowRenderer(g, result.Snapshot.Rows.Count, sorted);
             if (PanelOwner.CreateSetTree) SizeSetColumn(g, renderer, result);
-            PrepareTable(g, result, font, small, renderer.GutterWidth);
-            DrawTableHeader(g, small, trim, renderer.GutterWidth);
+            PrepareTable(g, result, font, renderer.GutterWidth);
+            DrawTableHeader(g, font, trim, renderer.GutterWidth);
             float y = _d.List.Y;
             string? previous = null;
             var measurements = new List<int>();
@@ -308,16 +338,12 @@ namespace BetterGhPanel
                     var address = RowAddress(result, position);
                     renderer.DrawAddress(g, new RectangleF(bounds.X, y, _frozenWidth, RowHeight), item + 1, address.Index, address.Sorted, selected);
                     if (selected) Fill(g, Accent, new RectangleF(bounds.X, y, 2, RowHeight));
-                    PaintColumn(g, 0, y, RowHeight, cell =>
-                    {
-                        float setWidth = PanelOwner.CreateSetTree ? _setCountWidth : 0;
-                        DrawTableCell(g, renderer, result.DisplaySet == null ? row : null, PanelOwner.DisplayValue(result.Snapshot, row, position),
-                            new RectangleF(cell.X, cell.Y, Math.Max(0, cell.Width - setWidth), cell.Height), font, small);
-                        DrawSetCount(g, renderer, new RectangleF(bounds.X, y, _frozenWidth, RowHeight), position, item + 1, small);
-                    });
-                    var statuses = CanvasStatistics.RowSourceStatuses(result, position);
-                    if (statuses.VerifiedInvalid > 0) Fill(g, PanelTheme.Rgb(180, 106, 67), new RectangleF(bounds.X + 2, y + 3, 2, RowHeight - 6));
-                    if (statuses.Unverified > 0) Fill(g, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (statuses.VerifiedInvalid > 0 ? 4 : 2), y + 3, 2, RowHeight - 6));
+                    var frozen = new RectangleF(bounds.X, y, _frozenWidth, RowHeight);
+                    var dataClip = g.Save(); g.SetClip(frozen, CombineMode.Intersect);
+                    DrawDataCell(g, renderer, result, position, item + 1, frozen, renderer.GutterWidth,
+                        PanelOwner.CreateSetTree ? _setCountWidth : 0, font, small, mono);
+                    g.Restore(dataClip);
+                    using (var separator = new Pen(PanelTheme.Rgb(224, 229, 222))) g.DrawLine(separator, frozen.Right - 0.5f, y, frozen.Right - 0.5f, y + RowHeight);
                     DrawTableCells(g, renderer, result, position, offset, bounds, font, small);
                     if (TargetPainted(g, bounds) && !_rowHits.Any(hit => hit.Bounds == bounds && hit.SourcePosition == position)) _rowHits.Add(new RowHit(bounds, position, item + 1));
                     if (bounds.IntersectsWith(visibleRegion)) measurements.Add(position);
@@ -351,7 +377,7 @@ namespace BetterGhPanel
             }
             return -1;
         }
-        private string ColumnBranchCell(string path, int column) => PanelOwner.TableColumns[column].BranchCell(path, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
+        private string ColumnBranchCell(string path, int column) => PanelOwner.TableColumns[column].BranchCell(PanelOwner.Session.Result, path, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
 
         private int CellColumnAt(PointF point)
         {
@@ -384,6 +410,7 @@ namespace BetterGhPanel
             if (index < 0) return false;
             _headerSortColumn = index == 0 ? Guid.Empty : ColumnId(index);
             _headerMenuAnchor = RectangleF.Intersect(_columnRects[index], ColumnClip(index, _tableHeader.Y, RowHeight));
+            _menu.HeaderSortColumn = _headerSortColumn;
             OpenMenu(CanvasMenuKind.HeaderSort, canvas);
             _rowContextHandled = true;
             return true;
