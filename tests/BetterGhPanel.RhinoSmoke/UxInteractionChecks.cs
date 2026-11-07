@@ -306,6 +306,8 @@ internal static class UxInteractionChecks
             }
             Call(component, "SetPanelSplit", false);
 
+            // The session takes Create set from the component, not from the query.
+            PanelTestAdapter.TreeTools(component, 0, false, false, false, true);
             fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, DisplayFilterValue = true, CreateSet = true });
             await fixture.Ready(() => fixture.Result.DisplaySet?.IsBranchSet == true);
             fixture.ClearSelection(); fixture.SelectBranch("{0}");
@@ -313,7 +315,7 @@ internal static class UxInteractionChecks
             Check((bool)input.Invoke(attributes, new object[] { canvas, Forms.Keys.Control | Forms.Keys.C })!,
                 "Ctrl+C handles a selected list-length set");
             await fixture.Ready(() => Forms.Clipboard.GetText() == "80");
-
+            PanelTestAdapter.TreeTools(component, 0, false, false, false, false);
         }
         finally
         {
@@ -329,8 +331,15 @@ internal static class UxInteractionChecks
         Key(Forms.Keys.Down);
         Check(PanelTestAdapter.SelectedPosition(component) == 6, "Arrow navigation continues from the last mouse-selected row");
         Key(Forms.Keys.Escape);
+        Check(fixture.SelectedCount == 0 && FieldValue<int>(attributes, "_keyboardCursor") == -1 &&
+            PropertyValue<int>(FieldValue<object>(attributes, "_selection"), "Anchor") == -1,
+            "Escape clears the selection, keyboard cursor and range anchor");
+        // Arrow navigation starts at the first visible row after a clear. Moving
+        // to row 6 above can scroll this compact panel, so that row need not be 0.
+        int firstVisible = FieldValue<int>(attributes, "_firstShownItem");
         Key(Forms.Keys.Down);
-        Check(PanelTestAdapter.SelectedPosition(component) == 0, "Clearing the selection also clears the keyboard cursor");
+        Check(PanelTestAdapter.SelectedPosition(component) == fixture.Result.RowPositions[firstVisible],
+            "After Escape arrow navigation restarts at the first visible row");
 
         fixture.ClearSelection();
         Call(attributes, "SetOffset", canvas, 0);
@@ -547,5 +556,76 @@ internal static class UxInteractionChecks
             Check(available == (i < 4), "Geometry actions recognize supported wrappers and reject plain values at row " + i);
         }
         Call(component, "SetCanvasSize", 360f, 360f);
+        await SaveReviewPanels(fixture, canvas, assembly);
+    }
+
+    // Opt-in native renderer captures for maintainer review, alongside the
+    // behavioral fixture: PANEL_UX_SCREENSHOTS=<absolute output directory>.
+    private static async Task SaveReviewPanels(PanelHostFixture.Fixture fixture, GH_Canvas canvas, Assembly assembly)
+    {
+        string? directory = Environment.GetEnvironmentVariable("PANEL_UX_SCREENSHOTS");
+        if (string.IsNullOrWhiteSpace(directory)) return;
+        System.IO.Directory.CreateDirectory(directory);
+        var component = fixture.Component;
+        var attributes = component.Attributes;
+        void Save(string name)
+        {
+            attributes.PerformLayout();
+            var bounds = PanelTestAdapter.Bounds(component, CanvasControl.Panel);
+            using var image = new Bitmap((int)bounds.Width + 100, 680);
+            using var graphics = Graphics.FromImage(image);
+            graphics.Clear(Color.FromArgb(238, 238, 238));
+            graphics.TranslateTransform(50 - bounds.Left, 40 - bounds.Top);
+            PanelTestAdapter.Render(component, canvas, graphics);
+            image.Save(System.IO.Path.Combine(directory, name));
+        }
+        Call(component, "ResetAll");
+        component.Params.Input[1].RemoveAllSources();
+        component.Params.Input[1].AddSource(fixture.Paired);
+        fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
+        for (int i = 0; i < 3; i++)
+        {
+            var path = new GH_Path(7, 0, i);
+            fixture.Source.PersistentData.Append(new GH_Line(new Line(Point3d.Origin, new Point3d(2500 + i * 1000, 0, 0))), path);
+            fixture.Paired.PersistentData.Append(new GH_String("Partner " + (i + 1)), path);
+        }
+        fixture.Source.PersistentData.Append(new GH_String("Annotation"), new GH_Path(7, 1, 0));
+        fixture.Paired.PersistentData.Append(new GH_String("Partner text"), new GH_Path(7, 1, 0));
+        var otherTypes = new IGH_Goo[] { new GH_Integer(1), new GH_Number(1), new GH_Boolean(true),
+            new GH_Point(Point3d.Origin), new GH_Vector(Vector3d.XAxis), new GH_Colour(Color.CornflowerBlue),
+            new GH_Plane(Plane.WorldXY), new GH_Circle(new Circle(Plane.WorldXY, 1)) };
+        fixture.Source.PersistentData.AppendRange(otherTypes, new GH_Path(7, 1, 0));
+        fixture.Paired.PersistentData.AppendRange(otherTypes.Select((_, i) => (IGH_Goo)new GH_String("Other " + i)), new GH_Path(7, 1, 0));
+        fixture.Solve();
+        await fixture.Ready(() => fixture.Result.Snapshot.Rows.Count == 4 + otherTypes.Length);
+        string lineType = fixture.Result.Snapshot.Rows[0].TypeName;
+        PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, 2);
+        PanelTestAdapter.TreeTools(component, 2, false, false, false);
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Length, Search = ">= 2.00", TypeName = lineType, DecimalPlaces = 2 });
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 3);
+        Call(component, "SetCanvasSize", 360f, 360f);
+        Save("length-filters-units.png");
+        fixture.Select(1);
+        await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1);
+        Save("length-filters-units-selection.png");
+        var displayType = typeof(PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!;
+        Call(component, "SetCanvasDisplay", Enum.Parse(displayType, "Half"));
+        attributes.PerformLayout();
+        Call(attributes, "OpenMenu", Enum.Parse(assembly.GetType("BetterGhPanel.UI.CanvasMenuKind", true)!, "Type"), canvas);
+        Save("half-type-dropdown.png");
+        Call(FieldValue<object>(attributes, "_menu"), "Close");
+        Save("half-selection.png");
+        var row = PanelTestAdapter.RowBounds(component, 1);
+        var point = new PointF(row.Left + 80, row.Top + row.Height / 2);
+        component.Attributes.RespondToMouseDown(canvas, new Grasshopper.GUI.GH_CanvasMouseEvent(
+            System.Drawing.Point.Round(canvas.Viewport.ProjectPoint(point)), point, Forms.MouseButtons.Right));
+        Save("half-row-context-menu.png");
+        Call(attributes, "CloseRowMenu");
+        Call(component, "SetCanvasDisplay", Enum.Parse(displayType, "Full"));
+        Call(component, "SetPanelSplit", true);
+        attributes.PerformLayout();
+        Check(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Width == 720,
+            "Review capture shows both 360-wide D and F panes");
+        Save("data-paired-split.png");
     }
 }
