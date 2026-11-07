@@ -19,9 +19,9 @@ namespace BetterGhPanel
     internal sealed partial class BetterPanelAttributes : IPanelInputTarget
     {
         private const int WheelUnitsPerRow = 40; // 120 per notch → three rows.
-        private const string KeyboardHint = "Click into the panel to focus it (green ring). While focused: ↑/↓ move the selection (Shift extends), " +
+        private const string KeyboardHint = "Click into the panel to focus it (green ring); while focused: ↑/↓ move the selection (Shift extends), " +
             "PgUp/PgDn/Home/End scroll, Ctrl/Cmd+C copies selected values, Ctrl/Cmd+A selects all, Ctrl/Cmd+F or / searches, the wheel scrolls rows " +
-            "(hold any modifier to zoom), Esc releases. Everything else stays with Grasshopper.";
+            "(hold any modifier to zoom), Esc releases; everything else stays with Grasshopper.";
         private RectangleF _hoverBounds;
         private bool _hoverIsControl;
         private GH_Canvas? _hoverCanvas;

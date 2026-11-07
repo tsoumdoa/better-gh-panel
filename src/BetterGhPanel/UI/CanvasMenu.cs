@@ -46,9 +46,9 @@ namespace BetterGhPanel.UI
     // One owner for menu lifetime, snapshot validity, layout, and paging.
     internal sealed class CanvasMenu
     {
-        internal const string ItemOrderDescription = "Show zero-based item indices within each branch, after tree tools and before filtering or sorting. " +
-            "Each branch starts at 0; filters and selection preserve the original indices. Points use their locations; other geometry uses bounding-box centers. " +
-            "Labels follow the Preview scope and remain active in a minimized panel. Overlapping labels are hidden, with selected rows taking priority; zoom in or select fewer items to separate them.";
+        internal const string ItemOrderDescription = "Show zero-based indices per branch after tree tools; filters, sorting and selection preserve them. " +
+            "Labels use point locations or other geometry's bounding-box centers, follow Preview scope and stay active when minimized; " +
+            "overlaps hide labels with selection taking priority, so zoom in or select fewer items to separate them.";
         private static readonly CanvasChoice<PanelSortMode>[] SortChoices =
         {
             new CanvasChoice<PanelSortMode>(PanelSortMode.SourceOrder, "Source order"),
@@ -428,9 +428,9 @@ namespace BetterGhPanel.UI
             : PanelProperties.Kind(mode) switch
         {
             PanelPropertyKind.Boolean => "Pick True or False to filter. Rows without this property are excluded.",
-            PanelPropertyKind.Text => "Use = and != for exact, case-sensitive matches. Double quotes preserve leading/trailing spaces; doubled quotes represent a quote. Rows without this property are excluded from comparisons.",
-            PanelPropertyKind.DateTime => "Compare dates using >, >=, <, <=, = or !=. Enter yyyy-MM-dd or yyyy-MM-dd HH:mm:ss, with optional fractional seconds. Comparisons use the stored calendar time without timezone conversion.",
-            _ => "Compares the number as shown (after units and rounding). Use >, >=, <, <=, = or !=. Counts and dimensionless values ignore unit conversion. Lengths and angles use matching display conversions. Rows without this property are excluded from comparisons."
+            PanelPropertyKind.Text => "Use = or != for exact, case-sensitive matches; double quotes preserve leading/trailing spaces, doubled quotes represent a quote, and rows without this property are excluded from comparisons.",
+            PanelPropertyKind.DateTime => "Compare stored calendar times without timezone conversion using >, >=, <, <=, = or != and yyyy-MM-dd or yyyy-MM-dd HH:mm:ss, with optional fractional seconds.",
+            _ => "Compare the shown number after units and rounding using >, >=, <, <=, = or !=; counts and dimensionless values ignore unit conversion, lengths and angles use matching display conversions, and rows without this property are excluded from comparisons."
         };
 
         private static bool IsFiniteNumber(string value) =>

@@ -165,7 +165,7 @@ namespace BetterGhPanel
             {
                 e.Title = "D | F split view";
                 e.Text = PanelOwner.PanelSplit ? "On" : "Off";
-                e.Description = PanelOwner.CanSplit || PanelOwner.PanelSplit ? "Show paired values beside D. The saved width is doubled; selection is shared." :
+                e.Description = PanelOwner.CanSplit || PanelOwner.PanelSplit ? "Show paired F values beside D at double the saved width, with shared selection." :
                     PanelOwner.PairedError ?? "F must have the same number of branches as D.";
                 return true;
             }
@@ -173,14 +173,14 @@ namespace BetterGhPanel
             {
                 e.Title = "Linked scrolling";
                 e.Text = _scrollLocked ? "Linked" : "Independent";
-                e.Description = "Click to " + (_scrollLocked ? "scroll each pane independently. Selecting a row reveals its partner." : "link scrolling and snap F to D.");
+                e.Description = _scrollLocked ? "Scroll each pane independently; selecting a row reveals its partner." : "Link scrolling and snap F to D.";
                 return true;
             }
             if (_f.List.Contains(point) && PanelOwner.PairedError != null)
             {
                 e.Title = "F does not match D";
                 e.Text = PanelOwner.PairedError;
-                e.Description = "F must have the same number of branches as D. Exact paths pair first; remaining branches pair in tree order, before tree tools.";
+                e.Description = "F needs the same branch count as D; exact paths pair first, then remaining branches pair in tree order before tree tools.";
                 return true;
             }
             return false;
