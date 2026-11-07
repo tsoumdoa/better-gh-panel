@@ -323,7 +323,9 @@ internal static partial class PreviewSafetyChecks
         await Ready(() => !ReferenceEquals(snapshot, fixture.Result.Snapshot) &&
             fixture.Result.Snapshot.Rows.Count == input.Length &&
             fixture.Sinks[0].VolatileData.DataCount == expectedMembers.Length &&
-            fixture.Sinks[1].VolatileData.DataCount == 0 &&
+            // Same paths and lengths re-bind the selection (Create set off): the
+            // frame case keeps its still-visible preview row; the renamed group row is pruned.
+            fixture.Sinks[1].VolatileData.DataCount == (copy || set ? 0 : 1) &&
             fixture.Sinks[2].VolatileData.DataCount == input.Length &&
             fixture.Sinks[3].VolatileData.DataCount == expectedMembers.Length);
         DumpSemanticDelivery(fixture, producer, copy, set, "recapture completed");

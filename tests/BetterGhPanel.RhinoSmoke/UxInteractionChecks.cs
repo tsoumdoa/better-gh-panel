@@ -306,6 +306,8 @@ internal static class UxInteractionChecks
             }
             Call(component, "SetPanelSplit", false);
 
+            // The session takes Create set from the component, not from the query.
+            PanelTestAdapter.TreeTools(component, 0, false, false, false, true);
             fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, DisplayFilterValue = true, CreateSet = true });
             await fixture.Ready(() => fixture.Result.DisplaySet?.IsBranchSet == true);
             fixture.ClearSelection(); fixture.SelectBranch("{0}");
@@ -313,7 +315,7 @@ internal static class UxInteractionChecks
             Check((bool)input.Invoke(attributes, new object[] { canvas, Forms.Keys.Control | Forms.Keys.C })!,
                 "Ctrl+C handles a selected list-length set");
             await fixture.Ready(() => Forms.Clipboard.GetText() == "80");
-
+            PanelTestAdapter.TreeTools(component, 0, false, false, false, false);
         }
         finally
         {

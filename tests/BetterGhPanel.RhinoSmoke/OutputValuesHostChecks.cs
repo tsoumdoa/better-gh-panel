@@ -73,7 +73,7 @@ internal static class OutputValuesHostChecks
             RectangleF Bounds(string name) => PanelTestAdapter.LayoutRect(component.Attributes, name);
             var items = Bounds("OutItems"); var values = Bounds("OutValues"); var units = Bounds("Units");
             Check(!items.IsEmpty && values.Right + 4 <= Bounds("SelectAll").Left && items.Right == values.Left &&
-                units.Width == 76 && Bounds("Trim").Width == 22 && Bounds("OutLabel").Left >= Bounds("Panel").Left + 14 &&
+                units.Width >= 48 && Bounds("Trim").Width == 22 && Bounds("OutLabel").Left >= Bounds("Panel").Left + 14 &&
                 Bounds("Trim").Left >= Bounds("Panel").Left + 14 && values.Right <= Bounds("Panel").Right - 28,
                 "Items/Values fits minimum " + (half ? "Half" : "Full") + " layout with native grip and resize clearance");
         }

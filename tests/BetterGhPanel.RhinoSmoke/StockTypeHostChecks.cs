@@ -227,6 +227,8 @@ internal static class StockTypeHostChecks
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 1 && fixture.Sinks[0].VolatileData.AllData(false).SingleOrDefault() is GH_AngularDimension);
         Check(fixture.Result.RowPositions.SequenceEqual(new[] { 1 }), "angular dimension comparison uses converted degrees and retains its type");
         fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.DimensionAngle, TypeName = "Angular Dimension", DisplayFilterValue = true, DecimalPlaces = 2 });
+        // The comparison query above hid the Out switch, which falls back to Items.
+        Output(fixture, PanelOutputValues.Values);
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).OfType<GH_Number>().Select(n => n.Value).SequenceEqual(new[] { 90.0 }));
         Check(fixture.Result.Statistics.Mean == 90, "angular dimension comparison/Stats/Values share converted degrees");
         Output(fixture, PanelOutputValues.Items);
