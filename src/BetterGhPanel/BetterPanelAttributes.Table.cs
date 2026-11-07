@@ -24,6 +24,8 @@ namespace BetterGhPanel
         private float _horizontalGrab;
         private int _activeTableColumn = -1;
         private Guid _headerSortColumn;
+        private readonly Dictionary<Guid, float> _autoWidths = new Dictionary<Guid, float>();
+        private PanelQueryResult? _autoWidthResult;
         private bool TableVisible => !_tableHeader.IsEmpty;
         internal bool EffectiveTableVisible => TableVisible && !PanelOwner.PanelMinimized && (_paintedCanvas?.Viewport.Zoom ?? 1f) >= 0.5f;
         private RectangleF ListBounds => _d.List;
@@ -165,9 +167,13 @@ namespace BetterGhPanel
                         widths[index] = Math.Max(widths[index], Measure(ColumnCell(result, position, index - 1), PanelOwner.TableColumns[index - 1].Row(position)?.NumericValue.HasValue == true) + 60);
                 }
             }
+            // Auto-fit only grows while the result stays the same, so scrolling never makes columns jump.
+            if (!ReferenceEquals(_autoWidthResult, result)) { _autoWidths.Clear(); _autoWidthResult = result; }
             for (int index = 0; index < widths.Length; index++)
             {
                 var id = ColumnId(index);
+                if (_autoWidths.TryGetValue(id, out float seen)) widths[index] = Math.Max(widths[index], seen);
+                _autoWidths[id] = widths[index];
                 widths[index] = _resizingColumn == id ? _columnPreviewWidth : PanelOwner.ColumnWidths.TryGetValue(id, out float width) ? width : Math.Min(320, widths[index]);
             }
             _frozenWidth = gutter + Math.Min(widths[0], Math.Max(24, _d.List.Width * 0.45f - gutter));
@@ -392,7 +398,7 @@ namespace BetterGhPanel
             if (index < 0) return GH_ObjectResponse.Handled;
             if (HeaderColumnAt(e.CanvasLocation, true) >= 0)
             {
-                if (e.Clicks > 1) { PanelOwner.SetColumnWidth(ColumnId(index), null); canvas.Invalidate(); return GH_ObjectResponse.Handled; }
+                if (e.Clicks > 1) { PanelOwner.SetColumnWidth(ColumnId(index), null); _autoWidths.Remove(ColumnId(index)); canvas.Invalidate(); return GH_ObjectResponse.Handled; }
                 _resizingColumn = ColumnId(index); _columnDragStart = e.CanvasX;
                 _columnDragWidth = _columnPreviewWidth = _columnRects[index].Width;
                 return GH_ObjectResponse.Capture;
