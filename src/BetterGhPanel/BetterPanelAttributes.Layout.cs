@@ -14,7 +14,6 @@ namespace BetterGhPanel
             internal RectangleF Type { get; }
             internal RectangleF Sort { get; }
             internal RectangleF Branch { get; }
-            internal RectangleF Jump { get; }
             internal RectangleF Reset { get; }
             internal RectangleF Resize { get; }
             internal RectangleF Footer { get; }
@@ -46,7 +45,6 @@ namespace BetterGhPanel
                 RectangleF type = default,
                 RectangleF sort = default,
                 RectangleF branch = default,
-                RectangleF jump = default,
                 RectangleF reset = default,
                 RectangleF resize = default,
                 RectangleF footer = default,
@@ -77,7 +75,6 @@ namespace BetterGhPanel
                 Type = type;
                 Sort = sort;
                 Branch = branch;
-                Jump = jump;
                 Reset = reset;
                 Resize = resize;
                 Footer = footer;
@@ -105,6 +102,12 @@ namespace BetterGhPanel
         }
 
         private PanelLayout _layout = new PanelLayout();
+        // Measured at paint: the search mode chip and the Units label widths.
+        private float _searchChipWidth = 38, _unitsWidth = 48;
+
+        // Units may widen until the two-line footer status keeps room for a
+        // "D: 1 filter ×" chip (59 units; 300-wide panels keep the 48 minimum).
+        private float UnitsWidth(float panelWidth) => Math.Max(48, Math.Min(_unitsWidth, panelWidth - 252));
 
         // Computes the immutable fixed-control layout and, in the original
         // calculation order, updates _d/_f pane rectangles, _warningsHeight and
@@ -125,7 +128,6 @@ namespace BetterGhPanel
             RectangleF type;
             RectangleF sort;
             RectangleF branch;
-            RectangleF jump;
             RectangleF reset;
             RectangleF resize;
             RectangleF footer;
@@ -159,28 +161,33 @@ namespace BetterGhPanel
             float squeeze = Math.Max(0, Math.Min(34, 120 - (panel.Width - 212)));
             float typeWidth = 76 - Math.Min(20, squeeze), branchWidth = 64 - Math.Max(0, squeeze - 20);
             search = new RectangleF(x + 2, panel.Y + 25, panel.Width - 212 + squeeze, 21);
-            filter = new RectangleF(search.Right - 18, search.Y, 18, search.Height);
-            searchClear = new RectangleF(filter.Left - 16, search.Y, 16, search.Height);
+            // The mode chip leads the field beyond the wire-grip strip and leaves
+            // room for a short query; long property labels are ellipsized.
+            filter = new RectangleF(panel.X + 14, search.Y,
+                Math.Min(_searchChipWidth, Math.Max(56, Math.Min(120, search.Right - panel.X - 64))), search.Height);
+            searchClear = new RectangleF(search.Right - 18, search.Y, 16, search.Height);
             type = new RectangleF(search.Right + 3, search.Y, typeWidth, 21);
             sort = new RectangleF(type.Right + 3, search.Y, 43, 21);
             branch = new RectangleF(sort.Right + 3, search.Y, branchWidth, 21);
             branchClear = new RectangleF(branch.Right - 30, branch.Y, 16, branch.Height);
-            // Reset changes every setting, so it sits apart from Jump, past Preview.
             close = new RectangleF(panel.Right - 34, panel.Y + 2, 20, 18);
             display = new RectangleF(close.Left - 22, close.Y, 20, 18);
-            jump = new RectangleF(display.Left - 24, panel.Y + 2, 20, 18);
-            preview = new RectangleF(jump.Left - 108, jump.Y, 104, 18);
-            reset = new RectangleF(preview.Left - 26, jump.Y, 20, 18);
-            split = PanelOwner.PanelSplit || PanelOwner.PairedInputPresent() ? new RectangleF(reset.Left - 32, reset.Y, 28, 18) : RectangleF.Empty;
-            move = new RectangleF(panel.X + 14, panel.Y + 1, (split.IsEmpty ? reset.Left : split.Left) - panel.X - 18, 23);
+            preview = new RectangleF(display.Left - 108, close.Y, 104, 18);
+            split = PanelOwner.PanelSplit || PanelOwner.PairedInputPresent() ? new RectangleF(preview.Left - 32, preview.Y, 28, 18) : RectangleF.Empty;
+            move = new RectangleF(panel.X + 14, panel.Y + 1, (split.IsEmpty ? preview.Left : split.Left) - panel.X - 18, 23);
             // Reserve the corner for resizing rather than overlaying footer controls.
             // Wide panels fit status, selection, statistics, tools and Units on one line.
             _singleLineFooter &= panel.Width >= 500;
             float footerHeight = _singleLineFooter ? 20 : 36;
-            footer = new RectangleF(x + 2, panel.Bottom - footerHeight - 2, panel.Width - 34, footerHeight);
+            // The footer starts at the rows' inset so its clickable status stays clear of the grips.
+            footer = new RectangleF(panel.X + 14, panel.Bottom - footerHeight - 2, panel.Width - 42, footerHeight);
             // Keep the existing footer controls fixed when the output switch appears.
-            units = new RectangleF(footer.Right - 76, footer.Bottom - 20, 76, 20);
-            trim = new RectangleF(units.Left - 125, units.Y, 22, units.Height);
+            // Active Units widens leftward, shifting Reset and the tree tools with it.
+            float unitsWidth = UnitsWidth(panel.Width);
+            units = new RectangleF(footer.Right - unitsWidth, footer.Bottom - 20, unitsWidth, 20);
+            // Reset all sits beside Units, which it also resets, 8 units clear of the five tree tools.
+            reset = new RectangleF(units.Left - 23, units.Y, 20, units.Height);
+            trim = new RectangleF(reset.Left - 126, units.Y, 22, units.Height);
             simplify = new RectangleF(trim.Right + 2, trim.Y, 22, 20);
             flatten = new RectangleF(simplify.Right + 2, trim.Y, 22, 20);
             reverse = new RectangleF(flatten.Right + 2, trim.Y, 22, 20);
@@ -212,7 +219,7 @@ namespace BetterGhPanel
             _d.TrackHit = new RectangleF(panel.Right - 21, _d.List.Y, 8, _d.List.Height);
             scrollLock = LayoutSplitPanes(panel);
             resize = new RectangleF(panel.Right - 24, panel.Bottom - 24, 24, 24);
-            return new PanelLayout(panel, search, filter, type, sort, branch, jump, reset, resize, footer, trim, simplify, flatten, reverse, createSet, units, outLabel, outItems, outValues, display, preview, move, statistics, selectAll, close, restore, searchClear, branchClear, split, scrollLock);
+            return new PanelLayout(panel, search, filter, type, sort, branch, reset, resize, footer, trim, simplify, flatten, reverse, createSet, units, outLabel, outItems, outValues, display, preview, move, statistics, selectAll, close, restore, searchClear, branchClear, split, scrollLock);
         }
     }
 }

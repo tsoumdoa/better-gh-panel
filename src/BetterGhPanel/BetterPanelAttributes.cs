@@ -33,6 +33,19 @@ namespace BetterGhPanel
         private static Color Accent => PanelTheme.Accent;
         private const float OutputControlWidth = 92;
         private bool _singleLineFooter;
+        // Painted footer segments: the range opens Jump to row; the × of the
+        // Clear filters chip clears (the rest of the chip is tooltip only).
+        private RectangleF _jumpBounds, _clearFiltersBounds;
+        private const float ChipClearWidth = 14;
+        private RectangleF ClearFiltersHit => _clearFiltersBounds.IsEmpty ? RectangleF.Empty :
+            new RectangleF(_clearFiltersBounds.Right - ChipClearWidth, _clearFiltersBounds.Y, ChipClearWidth, _clearFiltersBounds.Height);
+        // Typographic measurement for inline chips, footer segments and the Data checks line.
+        private static readonly StringFormat Tight = new StringFormat(StringFormat.GenericTypographic)
+        {
+            FormatFlags = StringFormat.GenericTypographic.FormatFlags | StringFormatFlags.NoWrap | StringFormatFlags.MeasureTrailingSpaces,
+            LineAlignment = StringAlignment.Center,
+            Trimming = StringTrimming.EllipsisCharacter
+        };
         private bool SearchClearVisible
         {
             get
@@ -204,6 +217,7 @@ namespace BetterGhPanel
             _rowHits.Clear();
             _branchHits.Clear();
             _warningHits.Clear();
+            _jumpBounds = _clearFiltersBounds = RectangleF.Empty;
             _setHits.Clear();
             _paintedDetailTargets.Clear();
             _paintedListBackground = false;
@@ -371,11 +385,18 @@ namespace BetterGhPanel
                     session.RequestGeometryMeasurements(session.Snapshot, Array.Empty<int>());
                     return;
                 }
+                // Chip and Units widths follow their labels, so measure them before laying out.
+                float searchChipWidth = (float)Math.Ceiling(TightWidth(graphics, CanvasMenu.SearchModeChip(session.Options.SearchMode), small)) + 19;
+                float unitsWidth = (float)Math.Ceiling(graphics.MeasureString(UnitsLabel(), small, PointF.Empty, trim).Width) + 18;
+                bool resized = searchChipWidth != _searchChipWidth || unitsWidth != _unitsWidth;
+                _searchChipWidth = searchChipWidth;
+                _unitsWidth = unitsWidth;
                 // Minimum Half split needs a one-line footer to fit a value row below the pane captions.
+                // One line holds the summary and output part left of Select all, Stats, tools, Reset and Units.
                 bool singleLine = PanelOwner.PanelSplit && _layout.Panel.Height < 140 || _layout.Panel.Width >= 500 &&
-                    graphics.MeasureString(CanvasStatistics.Summary(result) + " · " + OutputLabel(result), small).Width <=
-                        _layout.Panel.Width - 357 - (PanelOwner.CanOutputValues ? OutputControlWidth + 4 : 0);
-                if (singleLine != _singleLineFooter || PanelOwner.CanOutputValues == _layout.OutLabel.IsEmpty ||
+                    TightWidth(graphics, CanvasStatistics.Summary(result) + " · ", small) + OutputPartWidth(graphics, result, small) <=
+                        _layout.Panel.Width - 313 - UnitsWidth(_layout.Panel.Width) - (PanelOwner.CanOutputValues ? OutputControlWidth + 4 : 0);
+                if (resized || singleLine != _singleLineFooter || PanelOwner.CanOutputValues == _layout.OutLabel.IsEmpty ||
                     _warningsHeight != WarningStripHeight(singleLine ? 20 : 36))
                 {
                     _singleLineFooter = singleLine;
@@ -400,18 +421,15 @@ namespace BetterGhPanel
                     var options = session.Options;
                     DropdownControl(graphics, _layout.Preview, "Preview: " + CanvasMenu.PreviewLabel(PanelOwner.PreviewMode), small, trim,
                         PanelOwner.PreviewMode != PanelPreviewMode.Off);
-                    bool searchClear = SearchClearVisible, branchClear = BranchClearVisible;
-                    DropdownControl(graphics, _layout.Search, CanvasMenu.SearchHint(options), small, trim,
-                        options.SearchMode != PanelSearchMode.Text || !string.IsNullOrEmpty(options.Search), searchClear ? _layout.SearchClear.Width : 0);
-                    if (searchClear) DrawClear(graphics, _layout.SearchClear);
+                    bool branchClear = BranchClearVisible;
+                    DrawSearchControl(graphics, options, small, trim);
                     string typeHint = session.HasCurrentResult ? CanvasMenu.TypeHint(result, options) : "Types";
                     DropdownControl(graphics, _layout.Type, typeHint, small, trim, options.TypeName != null || options.OnlyInvalid,
                         warning: PanelQueryPolicy.InputDiagnostic(session.Snapshot, options).Length > 0);
                     DropdownControl(graphics, _layout.Sort, options.SortMode == PanelSortMode.SourceOrder ? "Sort" : options.SortMode == PanelSortMode.ValueAscending ? "Asc" : "Desc", small, trim, options.SortMode != PanelSortMode.SourceOrder);
-                    DropdownControl(graphics, _layout.Branch, Short(options.BranchPath ?? "Paths", 80), mono, trim, options.BranchPath != null, branchClear ? _layout.BranchClear.Width : 0);
+                    // Only an active path is a path; the placeholder reads like Types and Sort.
+                    DropdownControl(graphics, _layout.Branch, Short(options.BranchPath ?? "Paths", 80), options.BranchPath != null ? mono : small, trim, options.BranchPath != null, branchClear ? _layout.BranchClear.Width : 0);
                     if (branchClear) DrawClear(graphics, _layout.BranchClear);
-                    DrawJumpAction(graphics);
-                    DrawResetAction(graphics);
                     RenderWarnings(graphics, result, small);
                     RenderRows(graphics, result, visibleRegion, font, small, mono, trim);
                     if (_scrollLocked) _f.Offset = _d.Offset;
@@ -692,6 +710,7 @@ namespace BetterGhPanel
                     if (paired && pairedRow == null && result.DisplaySet == null)
                     {
                         Fill(g, selected ? PanelTheme.Rgb(216, 232, 219) : PanelTheme.Background, bounds);
+                        if (selected) Fill(g, Accent, new RectangleF(bounds.X, bounds.Y, 2, bounds.Height));
                         if (missingLabel.Length > 0)
                         {
                             using var italic = new Font(small, FontStyle.Italic);
@@ -709,10 +728,12 @@ namespace BetterGhPanel
                     var sourceStatuses = paired ? new PanelSourceStatusCounts(0,
                         row.Validity == PanelValidity.VerifiedInvalid ? 1 : 0, row.Validity == PanelValidity.Unverified ? 1 : 0) :
                         CanvasStatistics.RowSourceStatuses(result, sourcePosition);
+                    // The selection bar owns the edge; validity marks always start beside it.
+                    if (selected) Fill(g, Accent, new RectangleF(bounds.X, bounds.Y, 2, bounds.Height));
                     if (sourceStatuses.VerifiedInvalid > 0)
-                        Fill(g, PanelTheme.Rgb(180, 106, 67), new RectangleF(bounds.X, bounds.Y + 3, 2, bounds.Height - 6));
+                        Fill(g, PanelTheme.Rgb(180, 106, 67), new RectangleF(bounds.X + 2, bounds.Y + 3, 2, bounds.Height - 6));
                     if (sourceStatuses.Unverified > 0)
-                        Fill(g, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (sourceStatuses.VerifiedInvalid > 0 ? 2 : 0), bounds.Y + 3, 2, bounds.Height - 6));
+                        Fill(g, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (sourceStatuses.VerifiedInvalid > 0 ? 4 : 2), bounds.Y + 3, 2, bounds.Height - 6));
                     if (!grouped)
                         rowRenderer.DrawCell(g, dataRow.Path, mono, Accent,
                             new RectangleF(bounds.X + rowRenderer.GutterWidth + 9, y, Math.Max(0, pathWidth - 12), RowHeight));
@@ -784,15 +805,31 @@ namespace BetterGhPanel
                 (options.BranchPath != null ? 1 : 0);
         }
 
+        // What D sends, in one "D …" vocabulary shared by both footer modes.
         private string OutputLabel(PanelQueryResult result)
         {
             int filters = ActiveFilterCount();
-            if (filters > 0) return filters == 1 ? "1 filter on" : filters + " filters on";
+            if (filters > 0) return filters == 1 ? "D: 1 filter" : "D: " + filters + " filters";
             if (result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count)
-                return "filtered";
+                return "D: filtered";
             return PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.RoundUpFactor > 0 || PanelOwner.DecimalPlaces >= 0
-                ? "tools on" : PanelOwner.OutputsValues ? "values out" : "output = input";
+                ? "D: tools" : PanelOwner.OutputsValues ? "D: values" : "D = input";
         }
+
+        // The footer's output part. When only sort, the search mode or Show values
+        // is set, it names that state instead, so the chip says what × clears.
+        private string OutputPartLabel(PanelQueryResult result)
+        {
+            var options = PanelOwner.Session.Options;
+            if (ActiveFilterCount() > 0 || !BetterPanelComponent.HasFilters(options)) return OutputLabel(result);
+            bool mode = options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue;
+            bool sorted = options.SortMode != PanelSortMode.SourceOrder;
+            return mode ? CanvasMenu.SearchModeChip(options.SearchMode) + (sorted ? " · sorted" : "") : sorted ? "Sorted" : "Filters";
+        }
+
+        // With filters to clear, the output part is a chip: 3 units of padding, the label, then the ×.
+        private float OutputPartWidth(Graphics g, PanelQueryResult result, Font small) =>
+            TightWidth(g, OutputPartLabel(result), small) + (BetterPanelComponent.HasFilters(PanelOwner.Session.Options) ? 3 + ChipClearWidth : 0);
 
         private void RenderFooter(Graphics g, PanelQueryResult result, Font small, StringFormat trim)
         {
@@ -805,21 +842,79 @@ namespace BetterGhPanel
             int selectableCount = DisplayListLengths ? result.BranchPaths.Count : result.RowPositions.Count;
             Control(g, _layout.SelectAll, "Select all", small, trim, current && selectableCount > 0 && selected == selectableCount);
             Control(g, _layout.Statistics, "Stats", small, trim, current && _menu.Kind == CanvasMenuKind.Statistics);
-            string status = FooterStatus(result, _singleLineFooter);
-            float statusRight = _singleLineFooter ? (!_layout.OutLabel.IsEmpty ? _layout.OutLabel.Left - 4 : _layout.SelectAll.Left - 6) : _layout.Trim.Left - 6;
+            float statusRight = _singleLineFooter ? (!_layout.OutLabel.IsEmpty ? _layout.OutLabel.Left - 4 : _layout.SelectAll.Left - 6) : _layout.Trim.Left - 2;
             if (!_layout.OutLabel.IsEmpty) DrawOutputControl(g, small, trim);
-            if (statusRight - _layout.Footer.X >= g.MeasureString("000…", small).Width)
-                Text(g, status, small, Muted, new RectangleF(_layout.Footer.X, _layout.Units.Y, statusRight - _layout.Footer.X, _layout.Units.Height), trim);
-            TreeToolIcons.Draw(g, _layout.Trim, TreeToolIcon.Trim, PanelOwner.TrimDepth > 0);
+            var status = new RectangleF(_layout.Footer.X, _layout.Units.Y, statusRight - _layout.Footer.X, _layout.Units.Height);
+            string? notice = FooterNotice(result);
+            bool roomy = status.Width >= g.MeasureString("000…", small).Width;
+            RectangleF jump = RectangleF.Empty, chip = RectangleF.Empty;
+            if (roomy && notice == null && current) DrawStatusSegments(g, result, small, status, out jump, out chip);
+            else if (roomy) Text(g, notice ?? FooterRange(result, _singleLineFooter) + " · " + OutputLabel(result), small, Muted, status, trim);
+            // A partial repaint that misses the footer keeps unchanged targets, as rows do;
+            // a notice, a moved or resized segment, or InvalidatePaintedHits drops them.
+            _jumpBounds = KeepPaintedTarget(g, _jumpBounds, jump);
+            _clearFiltersBounds = KeepPaintedTarget(g, _clearFiltersBounds, chip);
+            // Depths above 9 read "9+"; the tooltip and editor keep the full value.
+            TreeToolIcons.Draw(g, _layout.Trim, TreeToolIcon.Trim, PanelOwner.TrimDepth > 0,
+                PanelOwner.TrimDepth <= 0 ? null : PanelOwner.TrimDepth > 9 ? "9+" : PanelOwner.TrimDepth.ToString(System.Globalization.CultureInfo.InvariantCulture), small);
             TreeToolIcons.Draw(g, _layout.Simplify, TreeToolIcon.Simplify, PanelOwner.SimplifyTree);
             TreeToolIcons.Draw(g, _layout.Flatten, TreeToolIcon.Flatten, PanelOwner.FlattenTree);
             TreeToolIcons.Draw(g, _layout.Reverse, TreeToolIcon.Reverse, PanelOwner.ReverseTree);
             TreeToolIcons.Draw(g, _layout.CreateSet, TreeToolIcon.CreateSet, PanelOwner.CreateSetTree);
-            string unitLabel = PanelOwner.UnitConversion == PanelUnitConversion.None ? "Units" : PanelUnits.Label(PanelOwner.UnitConversion).Replace(" → ", "→");
-            string precision = (PanelOwner.RoundUpFactor > 0 ? "↑" + PanelUnits.FormatFactor(PanelOwner.RoundUpFactor, "G4") : "") +
-                (PanelOwner.DecimalPlaces < 0 ? "" : (PanelOwner.RoundUpFactor > 0 ? " · " : "") + PanelOwner.DecimalPlaces + "dp");
-            DropdownControl(g, _layout.Units, precision.Length == 0 ? unitLabel : unitLabel == "Units" ? precision : unitLabel + " · " + precision, small, trim,
+            DrawResetAction(g);
+            DropdownControl(g, _layout.Units, UnitsLabel(), small, trim,
                 PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor > 0);
+        }
+
+        private RectangleF KeepPaintedTarget(Graphics g, RectangleF previous, RectangleF target) =>
+            TargetPainted(g, target) || _preservePaintedTargets && previous == target ? target : RectangleF.Empty;
+
+        // The range (or, on one line, the summary) opens Jump to row and the
+        // output part follows it. A Clear filters chip outranks the range: when
+        // both do not fit, the chip stays and the range (Ctrl/Cmd+G, footer tooltip) drops.
+        private void DrawStatusSegments(Graphics g, PanelQueryResult result, Font small, RectangleF status, out RectangleF jump, out RectangleF chip)
+        {
+            jump = chip = RectangleF.Empty;
+            string range = FooterRange(result, _singleLineFooter), output = OutputPartLabel(result);
+            bool clearable = BetterPanelComponent.HasFilters(PanelOwner.Session.Options);
+            float rangeWidth = TightWidth(g, range, small), separator = TightWidth(g, " · ", small), width = OutputPartWidth(g, result, small);
+            bool both = rangeWidth + separator + width <= status.Width;
+            float x = status.X, y = status.Y + 2;
+            if (both || !clearable)
+            {
+                jump = new RectangleF(x, y, Math.Min(rangeWidth, status.Width), 16);
+                using (var link = new Font(small, jump == _hoverBounds ? FontStyle.Underline : FontStyle.Regular))
+                    Text(g, range, link, Muted, jump, Tight);
+                if (!both) return;
+                Text(g, " · ", small, Muted, new RectangleF(jump.Right, y, separator, 16), Tight);
+                x = jump.Right + separator;
+            }
+            // Alone, a chip wider than the status ellipsizes its label and keeps the ×.
+            var part = new RectangleF(x, y, Math.Min(width, status.Right - x), 16);
+            if (!clearable)
+            {
+                Text(g, output, small, Muted, part, Tight);
+                return;
+            }
+            DrawSetBadge(g, new RectangleF(part.X, part.Y + 0.5f, part.Width, part.Height - 1), repeated: true, expanded: false);
+            Text(g, output, small, Accent, new RectangleF(part.X + 3, y, part.Width - 3 - ChipClearWidth, 16), Tight);
+            DrawClear(g, new RectangleF(part.Right - ChipClearWidth, y, ChipClearWidth - 1, 16));
+            chip = part;
+        }
+
+        // Factor and decimals, as the Units chip and its tooltip show them.
+        private IEnumerable<string> PrecisionParts()
+        {
+            if (PanelOwner.RoundUpFactor > 0) yield return "↑" + PanelUnits.FormatFactor(PanelOwner.RoundUpFactor, "G4");
+            if (PanelOwner.DecimalPlaces >= 0) yield return PanelOwner.DecimalPlaces + "dp";
+        }
+
+        // Active Units reads compactly so the chip stays narrow: target unit, factor, decimals.
+        private string UnitsLabel()
+        {
+            var parts = PrecisionParts().ToList();
+            if (PanelOwner.UnitConversion != PanelUnitConversion.None) parts.Insert(0, "→" + PanelUnits.Symbol(PanelOwner.UnitConversion));
+            return parts.Count == 0 ? "Units" : string.Join(" ", parts);
         }
 
         private void DrawOutputControl(Graphics g, Font small, StringFormat trim)
@@ -850,20 +945,22 @@ namespace BetterGhPanel
 
         }
 
-        private string FooterStatus(PanelQueryResult result, bool singleLine)
+        // Disabled, errors, recomputing, notices and selection replace the range and output part.
+        private string? FooterNotice(PanelQueryResult result)
         {
             var session = PanelOwner.Session;
             int selected = PanelOwner.Locked || !session.HasCurrentResult ? 0 : DisplayListLengths ? _selection.BranchPaths(result).Count : _selection.Count;
-            string output = OutputLabel(result);
             return PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
                 _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
                 !string.IsNullOrEmpty(PanelOwner.PreviewStatus) ? PanelOwner.PreviewStatus :
-                selected > 0 ? System.FormattableString.Invariant($"{selected:N0} selected") + (DisplayListLengths ? " branches" : " · right-click to copy") :
-                singleLine ? CanvasStatistics.Summary(result) + " · " + output :
-                DisplayListLengths ? System.FormattableString.Invariant($"{(Count == 0 ? 0 : _d.Offset + 1):N0}–{Math.Min(Count, _d.Offset + _d.Shown):N0}/{Count:N0} branches · {output}") :
-                _firstShownItem < 0 ? System.FormattableString.Invariant($"{result.RowPositions.Count:N0} items · {output}") :
-                System.FormattableString.Invariant($"{_firstShownItem + 1:N0}–{_lastShownItem + 1:N0}/{result.RowPositions.Count:N0} · {output}");
+                selected > 0 ? System.FormattableString.Invariant($"{selected:N0} selected") + (DisplayListLengths ? " branches" : " · right-click to copy") : null;
         }
+
+        private string FooterRange(PanelQueryResult result, bool singleLine) =>
+            singleLine ? CanvasStatistics.Summary(result) :
+            DisplayListLengths ? System.FormattableString.Invariant($"{(Count == 0 ? 0 : _d.Offset + 1):N0}–{Math.Min(Count, _d.Offset + _d.Shown):N0}/{Count:N0} branches") :
+            _firstShownItem < 0 ? System.FormattableString.Invariant($"{result.RowPositions.Count:N0} items") :
+            System.FormattableString.Invariant($"{_firstShownItem + 1:N0}–{_lastShownItem + 1:N0}/{result.RowPositions.Count:N0}");
 
         private RectangleF Thumb(bool paired)
         {
@@ -1689,9 +1786,39 @@ namespace BetterGhPanel
                 inset += 12;
             }
             Text(g, value, font, active ? Accent : Muted, new RectangleF(bounds.X + inset, bounds.Y, bounds.Width - 13 - inset - reserve, bounds.Height), trim);
+            DrawChevron(g, bounds, active ? Accent : Muted);
+        }
+
+        private static void DrawChevron(Graphics g, RectangleF bounds, Color color)
+        {
             float x = bounds.Right - 10, y = bounds.Y + bounds.Height / 2 - 1;
-            using (var pen = new Pen(active ? Accent : Muted, 1))
+            using (var pen = new Pen(color, 1))
                 g.DrawLines(pen, new[] { new PointF(x, y), new PointF(x + 3, y + 3), new PointF(x + 6, y) });
+        }
+
+        private static float TightWidth(Graphics g, string text, Font font) =>
+            g.MeasureString(text, font, int.MaxValue, Tight).Width;
+
+        // A leading mode dropdown (label, chevron and divider, like the header
+        // dropdowns) opens the mode menu; the rest of the field shows the query
+        // or a placeholder and opens the editor. Only a typed query fills the field.
+        private void DrawSearchControl(Graphics g, PanelQueryOptions options, Font small, StringFormat trim)
+        {
+            var search = _layout.Search;
+            var chip = _layout.Filter;
+            bool mode = options.SearchMode != PanelSearchMode.Text, placeholder = string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue;
+            Control(g, search, "", small, trim, !placeholder);
+            var modeColor = mode ? Accent : Muted;
+            Text(g, CanvasMenu.SearchModeChip(options.SearchMode), small, modeColor,
+                new RectangleF(chip.X + 2, chip.Y, chip.Width - 17, chip.Height), Tight);
+            DrawChevron(g, new RectangleF(chip.X, chip.Y, chip.Width - 2, chip.Height), modeColor);
+            using (var divider = new Pen(PanelTheme.Rgb(224, 229, 222)))
+                g.DrawLine(divider, chip.Right - 0.5f, chip.Y + 4, chip.Right - 0.5f, chip.Bottom - 5);
+            bool searchClear = SearchClearVisible;
+            float right = searchClear ? _layout.SearchClear.Left : search.Right - 4;
+            Text(g, CanvasMenu.SearchHint(options), small, placeholder ? Muted : Accent,
+                new RectangleF(chip.Right + 3, search.Y, Math.Max(0, right - chip.Right - 3), search.Height), trim);
+            if (searchClear) DrawClear(g, _layout.SearchClear);
         }
 
         private static void DrawWarningTriangle(Graphics g, PointF origin)
@@ -1733,22 +1860,10 @@ namespace BetterGhPanel
             }
         }
 
-        // An arrow pointing into list rows: go to a row number.
-        private void DrawJumpAction(Graphics g)
-        {
-            float x = _layout.Jump.X + 4, y = _layout.Jump.Y + 4;
-            using (var pen = new Pen(Muted, 1.2f))
-            {
-                for (int line = 0; line < 3; line++) g.DrawLine(pen, x + 7, y + 1 + line * 4.5f, x + 12, y + 1 + line * 4.5f);
-                g.DrawLine(pen, x, y + 5.5f, x + 5, y + 5.5f);
-                g.DrawLines(pen, new[] { new PointF(x + 3, y + 3.5f), new PointF(x + 5, y + 5.5f), new PointF(x + 3, y + 7.5f) });
-            }
-        }
-
         // Counter-clockwise, as for reset/undo. A clockwise arrow reads as "refresh".
         private void DrawResetAction(Graphics g)
         {
-            float x = _layout.Reset.X + 5, y = _layout.Reset.Y + 4;
+            float x = _layout.Reset.X + 5, y = _layout.Reset.Y + 5;
             using (var pen = new Pen(Muted, 1.2f))
             {
                 g.DrawArc(pen, x, y, 10, 10, 155, -295);

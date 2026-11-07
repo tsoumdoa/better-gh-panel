@@ -20,7 +20,7 @@ namespace BetterGhPanel
     {
         private const int WheelUnitsPerRow = 40; // 120 per notch → three rows.
         private const string KeyboardHint = "Click into the panel to focus it (green ring). While focused: ↑/↓ move the selection (Shift extends). " +
-            "PgUp/PgDn/Home/End scroll. Ctrl/Cmd+C copies selected values. Ctrl/Cmd+A selects all. Ctrl/Cmd+F or / searches. " +
+            "PgUp/PgDn/Home/End scroll. Ctrl/Cmd+C copies selected values. Ctrl/Cmd+A selects all. Ctrl/Cmd+F or / searches. Ctrl/Cmd+G jumps to a row. " +
             "The wheel scrolls rows (hold any modifier to zoom). Esc clears the selection, then releases focus. Everything else stays with Grasshopper.";
         private RectangleF _hoverBounds;
         private bool _hoverIsControl;
@@ -139,6 +139,10 @@ namespace BetterGhPanel
                 case Keys.A when control:
                     if (current) SelectAllRows(canvas, result);
                     return true;
+                case Keys.G when control:
+                    // Nothing to jump in: leave Ctrl/Cmd+G to Grasshopper's Group.
+                    if (current) ShowJumpEditor(canvas);
+                    return current;
                 case Keys.F when control:
                 case Keys.OemQuestion when none:
                 case Keys.Divide when none:

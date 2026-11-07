@@ -70,13 +70,7 @@ namespace BetterGhPanel
 
         private static void DrawSetBadge(Graphics g, RectangleF bounds, bool repeated, bool expanded)
         {
-            const float corner = 6;
-            using var shape = new GraphicsPath();
-            shape.AddArc(bounds.X, bounds.Y, corner, corner, 180, 90);
-            shape.AddArc(bounds.Right - corner, bounds.Y, corner, corner, 270, 90);
-            shape.AddArc(bounds.Right - corner, bounds.Bottom - corner, corner, corner, 0, 90);
-            shape.AddArc(bounds.X, bounds.Bottom - corner, corner, corner, 90, 90);
-            shape.CloseFigure();
+            using var shape = TreeToolIcons.PillPath(bounds, 6);
             using var fill = new SolidBrush(expanded ? PanelTheme.Rgb(220, 233, 210) :
                 repeated ? PanelTheme.Rgb(237, 243, 232) : PanelTheme.Rgb(250, 251, 249));
             using var border = new Pen(expanded ? PanelTheme.Rgb(158, 182, 141) :

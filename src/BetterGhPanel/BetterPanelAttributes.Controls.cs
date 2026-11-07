@@ -65,11 +65,10 @@ namespace BetterGhPanel
             new ControlEntry("Resize", layout => layout.Resize, ClickResize, TooltipResize, click: ControlStep.BeforeTrack, tooltip: ControlStep.Main, cursor: Cursors.SizeNWSE),
             new ControlEntry("Move", layout => layout.Move, ClickMove, TooltipMove, click: ControlStep.Main, tooltip: ControlStep.BeforeRowActions, cursor: Cursors.SizeAll),
             new ControlEntry("Warnings", layout => RectangleF.Empty, ClickWarnings, TooltipWarnings, click: ControlStep.AfterStaleList, hover: ControlStep.Main, tooltip: ControlStep.Main, hit: point => _warningHits.Any(hit => hit.Bounds.Contains(point)), hoverRects: () => _warningHits.Select(hit => hit.Bounds)),
-            new ControlEntry("Jump", layout => layout.Jump, ClickJump, TooltipJump, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Reset", layout => layout.Reset, ClickReset, TooltipReset, click: ControlStep.BeforeDetails, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Preview", layout => layout.Preview, ClickPreview, TooltipPreview, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("SearchClear", layout => layout.SearchClear, ClickSearchClear, TooltipSearchClear, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, visible: path => SearchClearVisible),
-            new ControlEntry("Filter", layout => layout.Filter, ClickFilter, null, click: ControlStep.Main, hover: ControlStep.Main),
+            new ControlEntry("Filter", layout => layout.Filter, ClickFilter, TooltipFilter, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Search", layout => layout.Search, ClickSearch, TooltipSearch, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("BranchClear", layout => layout.BranchClear, ClickBranchClear, TooltipBranchClear, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, visible: path => BranchClearVisible),
             new ControlEntry("Type", layout => layout.Type, ClickType, TooltipQuery, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
@@ -86,6 +85,10 @@ namespace BetterGhPanel
             new ControlEntry("OutLabel", layout => layout.OutLabel, null, TooltipOutput, tooltip: ControlStep.Main),
             new ControlEntry("OutItems", layout => layout.OutItems, ClickOutput, TooltipOutput, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, visible: path => path == ControlPath.Tooltip || PanelOwner.CanOutputValues),
             new ControlEntry("OutValues", layout => layout.OutValues, ClickOutput, TooltipOutput, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, visible: path => path == ControlPath.Tooltip || PanelOwner.CanOutputValues),
+            new ControlEntry("Jump", _ => _jumpBounds, ClickJump, TooltipJump, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            // Only the chip's × clears; its label explains what the × clears.
+            new ControlEntry("ClearFilters", _ => ClearFiltersHit, ClickClearFilters, TooltipClearFilters, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main,
+                tooltipHit: point => _clearFiltersBounds.Contains(point)),
             new ControlEntry("Footer", layout => layout.Footer, null, TooltipFooter, tooltip: ControlStep.Main),
             new ControlEntry("Restore", layout => layout.Restore, ClickRestore, TooltipRestore, click: ControlStep.Capsule, hover: ControlStep.Capsule, tooltip: ControlStep.Capsule)
         };
@@ -149,6 +152,10 @@ namespace BetterGhPanel
         private GH_ObjectResponse? ClickReset(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             bool recordedUndo = PanelOwner.ResetAll();
+            // Resetting Units narrows its chip and shifts Reset and the tree tools
+            // under the pointer; the double-click's second press must not land on them.
+            SuppressTrailingDoubleClick();
+            CanvasDoubleClickGuard.Start(sender, e);
             ShowNotice(sender, recordedUndo ? "Reset all · Undo restores the previous settings" : "Reset all");
             return GH_ObjectResponse.Handled;
         }
@@ -247,12 +254,29 @@ namespace BetterGhPanel
             OpenMenu(CanvasMenuKind.Branch, sender); return GH_ObjectResponse.Handled;
         }
 
+        private GH_ObjectResponse? ClickClearFilters(GH_Canvas sender, GH_CanvasMouseEvent e)
+        {
+            PanelOwner.ClearFilters();
+            // The chip disappears and the footer reflows; swallow the second press.
+            SuppressTrailingDoubleClick();
+            CanvasDoubleClickGuard.Start(sender, e);
+            ShowNotice(sender, "Filters cleared · Undo restores them");
+            return GH_ObjectResponse.Handled;
+        }
+
         private GH_ObjectResponse? ClickJump(GH_Canvas sender, GH_CanvasMouseEvent e)
+        {
+            ShowJumpEditor(sender); return GH_ObjectResponse.Handled;
+        }
+
+        // Opens on the footer range it replaces; Ctrl/Cmd+G uses the footer's start when no range is painted.
+        private void ShowJumpEditor(GH_Canvas sender)
         {
             var jumpResult = PanelOwner.Session.Result;
             bool branchView = DisplayListLengths;
             int firstItem = branchView ? _d.Offset : ViewItemAtOrAfter(jumpResult, _d.Offset);
-            CanvasTextInput.Show(sender, PanelOwner, _layout.Jump, (Math.Min(firstItem, Math.Max(0, (branchView ? jumpResult.BranchPaths.Count : jumpResult.RowPositions.Count) - 1)) + 1).ToString(), text =>
+            var anchor = _jumpBounds.IsEmpty ? new RectangleF(_layout.Footer.X, _layout.Units.Y, 60, _layout.Units.Height) : _jumpBounds;
+            CanvasTextInput.Show(sender, PanelOwner, anchor, (Math.Min(firstItem, Math.Max(0, (branchView ? jumpResult.BranchPaths.Count : jumpResult.RowPositions.Count) - 1)) + 1).ToString(), text =>
             {
                 if (!ResultIsCurrent(jumpResult) || DisplayListLengths != branchView) return;
                 int itemCount = branchView ? jumpResult.BranchPaths.Count : jumpResult.RowPositions.Count;
@@ -272,7 +296,6 @@ namespace BetterGhPanel
                 if (changed) InvalidatePaintedHits();
                 sender.Invalidate();
             }, valid: text => int.TryParse(text.Trim(), out _));
-            return GH_ObjectResponse.Handled;
         }
 
         private void TooltipClose(PointF point, GH_TooltipDisplayEventArgs e)
@@ -347,7 +370,10 @@ namespace BetterGhPanel
         private void TooltipUnits(PointF point, GH_TooltipDisplayEventArgs e)
         {
             e.Title = "Units and decimals";
-            e.Text = "Changes numeric output";
+            var parts = PrecisionParts().ToList();
+            if (PanelOwner.UnitConversion != PanelUnitConversion.None) parts.Insert(0, PanelUnits.Label(PanelOwner.UnitConversion));
+            string setting = string.Join(" · ", parts);
+            e.Text = setting.Length > 0 ? setting + " · changes numeric output" : "Changes numeric output";
             e.Description = "Convert mm ↔ m, mm² ↔ m², mm³ ↔ m³ or rad ↔ deg. Set explicit decimals (0–12), shared with numeric output. Or round output up to a factor (factor 5: 12.1 → 15).";
         }
 
@@ -399,7 +425,7 @@ namespace BetterGhPanel
         {
             var options = PanelOwner.Session.Options;
             e.Title = CanvasMenu.SearchModeLabel(options.SearchMode);
-            e.Text = options.DisplayFilterValue ? "Showing values · click to filter" : string.IsNullOrEmpty(options.Search) ? "Click to search · arrow chooses the mode" : options.Search;
+            e.Text = options.DisplayFilterValue ? "Showing values · click to filter" : string.IsNullOrEmpty(options.Search) ? "Click to search · the mode chip chooses what to match" : options.Search;
             e.Description = options.SearchMode == PanelSearchMode.Text
                 ? "Search displayed values, paths and types. > 800 or <= 25 compares numbers."
                 : options.SearchMode == PanelSearchMode.Regex
@@ -418,7 +444,23 @@ namespace BetterGhPanel
         {
             e.Title = "Jump to a row";
             e.Text = DisplayListLengths ? "Branch row in the list-length view" : "Row in the current view";
-            e.Description = DisplayListLengths ? "Enter a branch row number, starting at 1." : "Enter a row number, starting at 1 for the first row of the current view.";
+            e.Description = (DisplayListLengths ? "Enter a branch row number, starting at 1." : "Enter a row number, starting at 1 for the first row of the current view.") +
+                " Shortcut while focused: Ctrl/Cmd+G.";
+        }
+
+        private void TooltipClearFilters(PointF point, GH_TooltipDisplayEventArgs e)
+        {
+            e.Title = "Clear filters";
+            e.Text = "Undo restores them";
+            e.Description = "Clears search, mode, type, path, invalid-only, sorting, selection and scroll. Tree tools, units and decimals stay. " +
+                "Out Values falls back to Items when clearing the mode leaves no values to send (Create set keeps them).";
+        }
+
+        private void TooltipFilter(PointF point, GH_TooltipDisplayEventArgs e)
+        {
+            e.Title = "Search mode";
+            e.Text = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode);
+            e.Description = "Choose what the search matches: displayed text, a regular expression, numbers, geometry metrics, list length or an input property.";
         }
 
         private void TooltipResize(PointF point, GH_TooltipDisplayEventArgs e)
@@ -451,7 +493,9 @@ namespace BetterGhPanel
             }
             e.Title = "Row selection and copy";
             e.Text = _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus : System.FormattableString.Invariant($"{_selection.Count:N0} selected");
-            if (PanelOwner.Session.HasCurrentResult) e.Text += " · " + CanvasStatistics.Summary(PanelOwner.Session.Result);
+            // The footer may drop its range for the Clear filters chip; the tooltip keeps it.
+            if (PanelOwner.Session.HasCurrentResult)
+                e.Text += " · " + CanvasStatistics.Summary(PanelOwner.Session.Result) + " · showing " + FooterRange(PanelOwner.Session.Result, singleLine: false);
             e.Description = "Click to select; Ctrl/Cmd toggles, Shift extends, Alt/Option picks the same index in every branch. Right-click a row to copy, frame or view the full value, or a branch heading for branch actions. Double-click clears selection.\n\n" + KeyboardHint;
         }
 
