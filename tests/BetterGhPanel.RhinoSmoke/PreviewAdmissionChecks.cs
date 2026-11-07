@@ -339,8 +339,12 @@ internal static partial class PreviewSafetyChecks
         Check(fixture.Result.RowPositions.SequenceEqual(expectedPositions) && !fixture.Result.RowPositions.Contains(position) &&
             (!set || fixture.Result.SetOccurrencesAt(0)?.Count == 2),
             "recapture removes the renamed filtered group or switches the equal-summary set to the earlier representative");
-        Check(fixture.SelectedCount == 0 && fixture.Sinks[1].VolatileData.DataCount == 0,
-            "recapture clears stale selected S membership");
+        var selectedAfterRecapture = fixture.Sinks[1].VolatileData.AllData(false).ToArray();
+        Check(copy || set
+                ? fixture.SelectedCount == 0 && selectedAfterRecapture.Length == 0
+                : fixture.SelectedCount == 1 && selectedAfterRecapture.Length == 1 &&
+                    ReferenceEquals(selectedAfterRecapture[0], delivered[input.Length - 1]),
+            "recapture prunes stale S membership and re-binds only the still-visible preview point with Create set off");
         bool DataCurrent()
         {
             var data = (GH_Structure<IGH_Goo>)fixture.Sinks[0].VolatileData;
