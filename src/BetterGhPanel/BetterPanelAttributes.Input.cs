@@ -53,7 +53,10 @@ namespace BetterGhPanel
             ReferenceEquals(canvas.Document, Owner.OnPingDocument()) && !PanelOwner.PanelMinimized && !PanelOwner.Locked &&
             canvas.Viewport.Zoom >= 0.5f;
 
-        bool IPanelInputTarget.ContainsCanvasPoint(PointF point) => _menuClickForwarded || _layout.Panel.Contains(point) || _setDetails.Bounds.Contains(point) || MenuContains(point);
+        // A forwarded menu click keeps focus only while its router is still visible,
+        // so a stale flag cannot claim an unrelated later click.
+        bool IPanelInputTarget.ContainsCanvasPoint(PointF point) => _menuClickForwarded && _menuRouter?.Visible == true ||
+            _layout.Panel.Contains(point) || _setDetails.Bounds.Contains(point) || MenuContains(point);
 
         // Open menus may extend beyond the panel rectangle.
         private bool MenuContains(PointF point) => _menu.Kind != CanvasMenuKind.None && _menu.Bounds.Contains(point) ||

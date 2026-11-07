@@ -74,6 +74,9 @@ namespace BetterGhPanel
             private Rectangle _guard;
             private DateTime _guardUntil;
             private bool _guardKeepsFocus;
+            // The closing click must still reach empty canvas (deselect, box select),
+            // so the guard rectangle only starts containing points after its mouse-up.
+            private bool _guardArmed;
             private bool _captured;
             private bool _stopped;
 
@@ -87,6 +90,7 @@ namespace BetterGhPanel
                 _timer.Tick += Tick;
                 canvas.Disposed += Stopped;
                 canvas.DocumentChanged += DocumentChanged;
+                canvas.MouseUp += ArmGuard;
                 canvas.Widgets.Add(this);
                 _timer.Start();
             }
@@ -101,18 +105,24 @@ namespace BetterGhPanel
             public override string Description => string.Empty;
             public override Bitmap Icon_24x24 => null!;
             public override void Render(GH_Canvas canvas) { }
-            // A visible widget that contains the point also suppresses the right-click context menu.
+            // A visible widget that contains the point also suppresses the right-click
+            // context menu and empty-canvas selection. Before the first paint of a menu
+            // only its own rectangle counts, so a double-click there cannot fall through.
             public override bool Contains(Point control, PointF canvas) =>
-                Routing && ReferenceEquals(_panel._paintedCanvas, Owner) || Guarding && _guard.Contains(control);
+                Routing && (ReferenceEquals(_panel._paintedCanvas, Owner) || _panel.MenuContains(canvas)) ||
+                Guarding && _guardArmed && _guard.Contains(control);
             public override bool IsTooltipRegion(PointF canvas) => Routing && _panel.MenuContains(canvas);
             public override void SetupTooltip(PointF canvasPoint, GH_TooltipDisplayEventArgs e) => _panel.SetupTooltip(canvasPoint, e);
-            // The host asks here instead of passing the panel the mouse-up of the
-            // right click that opened a row menu, which therefore ends here.
+            // The host asks here when the mouse-up of the right click that opened a
+            // row menu lands off the panel or on an object that ignores it; the
+            // panel then never sees that mouse-up, so its flag ends here.
             public override void AppendToMenu(ToolStripDropDownMenu menu) => _panel._rowContextHandled = false;
 
             // Never modify the widget list in a handler: the host is enumerating it.
+            // A stopped router that is still the host's active widget releases itself.
             public override GH_ObjectResponse RespondToMouseDown(GH_Canvas sender, GH_CanvasMouseEvent e)
             {
+                if (_stopped) return GH_ObjectResponse.Release;
                 _panel._menuClickForwarded = false;
                 if (_state == State.Guarding)
                 {
@@ -144,7 +154,8 @@ namespace BetterGhPanel
 
             public override GH_ObjectResponse RespondToMouseUp(GH_Canvas sender, GH_CanvasMouseEvent e)
             {
-                if (!_captured) return GH_ObjectResponse.Ignore;
+                if (_stopped) return GH_ObjectResponse.Release;
+                if (!_captured || e.Button != MouseButtons.Right) return GH_ObjectResponse.Ignore;
                 _captured = false;
                 // The router, not the panel, received this mouse-up.
                 _panel._rowContextHandled = false;
@@ -154,6 +165,7 @@ namespace BetterGhPanel
 
             public override GH_ObjectResponse RespondToMouseMove(GH_Canvas sender, GH_CanvasMouseEvent e)
             {
+                if (_stopped) return GH_ObjectResponse.Release;
                 _panel._menuClickForwarded = false;
                 if (_captured) return GH_ObjectResponse.Capture;
                 if (!Routing) return GH_ObjectResponse.Ignore;
@@ -170,6 +182,7 @@ namespace BetterGhPanel
             }
 
             public override GH_ObjectResponse RespondToMouseDoubleClick(GH_Canvas sender, GH_CanvasMouseEvent e) =>
+                _stopped ? GH_ObjectResponse.Release :
                 Matches(e) || Routing && _panel.MenuContains(e.CanvasLocation) ? GH_ObjectResponse.Handled : GH_ObjectResponse.Ignore;
 
             // As CanvasDoubleClickGuard.Matches: only the second click of a double-click
@@ -183,8 +196,15 @@ namespace BetterGhPanel
                 var size = SystemInformation.DoubleClickSize;
                 _guard = new Rectangle(e.ControlX - size.Width / 2, e.ControlY - size.Height / 2, size.Width + 1, size.Height + 1);
                 _guardUntil = DateTime.UtcNow.AddMilliseconds(SystemInformation.DoubleClickTime);
+                _guardArmed = false;
                 _state = State.Guarding;
-                Restart(Math.Max(1, SystemInformation.DoubleClickTime));
+                // The tick lands after the guard expires, so the widget leaves promptly.
+                Restart(SystemInformation.DoubleClickTime + 20);
+            }
+
+            private void ArmGuard(object? sender, MouseEventArgs e)
+            {
+                if (_state == State.Guarding) _guardArmed = true;
             }
 
             private void Finish()
@@ -225,7 +245,10 @@ namespace BetterGhPanel
                 _timer.Dispose();
                 Owner.Disposed -= Stopped;
                 Owner.DocumentChanged -= DocumentChanged;
+                Owner.MouseUp -= ArmGuard;
                 Owner.Widgets.Remove(this);
+                // A lost right-button capture would otherwise leave the host dispatching to a removed widget.
+                if (ReferenceEquals(Owner.ActiveWidget, this)) Owner.ActiveWidget = null;
                 if (!ReferenceEquals(_panel._menuRouter, this)) return;
                 _panel._menuRouter = null;
                 _panel._menuClickForwarded = false;
