@@ -6,7 +6,7 @@ using BetterGhPanel.Core;
 
 namespace BetterGhPanel.UI
 {
-    internal enum CanvasMenuKind { None, Type, Sort, Branch, Units, SearchMode, Comparison, Preview, Statistics }
+    internal enum CanvasMenuKind { None, Type, Sort, HeaderSort, Branch, Units, SearchMode, Comparison, Preview, Statistics }
     internal enum CanvasComparison { GreaterThan, AtLeast, LessThan, AtMost, Equal, NotEqual }
     internal enum CanvasNumberSetting { Automatic, Custom, RoundingOff, RoundingFactor }
 
@@ -123,7 +123,7 @@ namespace BetterGhPanel.UI
         private int[]? _branchMatches;
         internal string BranchFilter => _branchFilter;
         internal int Count => Kind == CanvasMenuKind.Type ? _types.Length + 2 :
-            Kind == CanvasMenuKind.Sort ? SortChoices.Length : Kind == CanvasMenuKind.Branch ? (_branchMatches?.Length ?? _snapshot.Branches.Count) + 2 :
+            (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) ? SortChoices.Length : Kind == CanvasMenuKind.Branch ? (_branchMatches?.Length ?? _snapshot.Branches.Count) + 2 :
             Kind == CanvasMenuKind.Units ? UnitChoices.Length :
             Kind == CanvasMenuKind.SearchMode ? _searchChoices.Length : Kind == CanvasMenuKind.Comparison ? _comparisonChoices.Length :
             Kind == CanvasMenuKind.Preview ? PreviewChoices.Length :
@@ -254,9 +254,9 @@ namespace BetterGhPanel.UI
             RectangleF viewport = default)
         {
             if (Kind == CanvasMenuKind.None) return;
-            var anchor = Kind == CanvasMenuKind.Statistics ? statistics : Kind == CanvasMenuKind.Preview ? preview : Kind == CanvasMenuKind.Type ? type : Kind == CanvasMenuKind.Sort ? sort : Kind == CanvasMenuKind.Units ? units :
+            var anchor = Kind == CanvasMenuKind.Statistics ? statistics : Kind == CanvasMenuKind.Preview ? preview : Kind == CanvasMenuKind.Type ? type : (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) ? sort : Kind == CanvasMenuKind.Units ? units :
                 Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? search : branch;
-            float width = Math.Min(panel.Width - 28, Kind == CanvasMenuKind.Statistics ? 360 : Kind == CanvasMenuKind.Sort ? 138 :
+            float width = Math.Min(panel.Width - 28, Kind == CanvasMenuKind.Statistics ? 360 : (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) ? 138 :
                 Kind == CanvasMenuKind.Units || Kind == CanvasMenuKind.Preview ? 156 : Kind == CanvasMenuKind.Type || Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? 180 : 235);
             // Menus may extend beyond the panel. Units and Stats prefer to open
             // upward, others downward; a menu that overflows the viewport flips
@@ -329,7 +329,7 @@ namespace BetterGhPanel.UI
                 return choice.Conversion.HasValue ? choice.Conversion == conversion :
                     choice.Setting == CanvasNumberSetting.Automatic ? decimals < 0 : decimals >= 0;
             }
-            if (Kind == CanvasMenuKind.Sort) return SortModeAt(index) == options.SortMode;
+            if (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) return SortModeAt(index) == options.SortMode;
             if (Kind == CanvasMenuKind.SearchMode) return SearchModeAt(index) == options.SearchMode;
             if (Kind == CanvasMenuKind.Comparison)
             {
@@ -399,7 +399,7 @@ namespace BetterGhPanel.UI
             InvalidatePaint();
             return true;
         }
-        internal PanelSortMode SortModeAt(int index) => SortChoices[index].Value;
+        internal PanelSortMode SortModeAt(int index) => Kind == CanvasMenuKind.HeaderSort ? new[] { PanelSortMode.ValueAscending, PanelSortMode.ValueDescending, PanelSortMode.SourceOrder }[index] : SortChoices[index].Value;
         internal PanelSearchMode SearchModeAt(int index) => _searchChoices[index].Value;
         internal CanvasPreviewChoice PreviewChoiceAt(int index) => PreviewChoices[index];
         internal CanvasUnitChoice UnitChoiceAt(int index) => UnitChoices[index];
@@ -480,7 +480,7 @@ namespace BetterGhPanel.UI
                 string name = TypeNameAt(index), hint = ShortTypeName(name);
                 return hint == name ? name : hint + " · " + name;
             }
-            if (Kind == CanvasMenuKind.Sort) return SortChoices[index].Label;
+            if (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) return Kind == CanvasMenuKind.HeaderSort ? new[] { "Sort ascending", "Sort descending", "Clear sort" }[index] : SortChoices[index].Label;
             if (Kind == CanvasMenuKind.SearchMode) return _searchChoices[index].Label;
             if (Kind == CanvasMenuKind.Comparison) return ComparisonChoiceAt(index).Label;
             if (index == 0) return "All branches";

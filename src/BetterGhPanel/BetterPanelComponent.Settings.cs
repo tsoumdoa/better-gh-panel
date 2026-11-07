@@ -125,9 +125,11 @@ namespace BetterGhPanel
             {
                 var beforeValues = OutputValues;
                 var afterValues = CanOutputValuesFor(CreateSetTree, after) ? beforeValues : PanelOutputValues.Items;
+                var beforeSettings = before.Clone(); beforeSettings.ColumnSortKeys = null;
+                var afterSettings = after.Clone(); afterSettings.ColumnSortKeys = null;
                 RecordUndoEvent(name, new PanelUndo<Tuple<PanelQueryOptions, PanelOutputValues>>(InstanceGuid,
-                    Tuple.Create(before.Clone(), beforeValues), Tuple.Create(after.Clone(), afterValues),
-                    (component, state) => { CanvasTextInput.CloseActive(component); (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor(); component.OutputValues = state.Item2; component.Session.UpdateQuery(state.Item1); component.ScheduleOutput(); }));
+                    Tuple.Create(beforeSettings, beforeValues), Tuple.Create(afterSettings, afterValues),
+                    (component, state) => { CanvasTextInput.CloseActive(component); (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor(); component.OutputValues = state.Item2; component.Session.UpdateQuery(component.WithCurrentColumnSort(state.Item1)); component.ScheduleOutput(); }));
             }
         }
 
@@ -241,10 +243,58 @@ namespace BetterGhPanel
             ApplyPanelMinimized(minimized);
         }
 
+        internal readonly System.Collections.Generic.Dictionary<Guid, float> ColumnWidths = new System.Collections.Generic.Dictionary<Guid, float>();
+        internal void AddColumn()
+        {
+            RecordUndoEvent("Panel+ Add column");
+            Params.RegisterInputParam(CreateParameter(GH_ParameterSide.Input, Params.Input.Count));
+            ColumnsChanged();
+        }
+        internal void RemoveColumn(IGH_Param input)
+        {
+            if (Params.Input.IndexOf(input) < 2) return;
+            RecordUndoEvent("Panel+ Remove column");
+            Params.UnregisterInputParameter(input, true);
+            ColumnsChanged();
+        }
+        private void ColumnsChanged()
+        {
+            Params.OnParametersChanged();
+            VariableParameterMaintenance();
+            Attributes.ExpireLayout();
+            ExpireSolution(true);
+        }
+        internal void SetColumnWidth(Guid id, float? width)
+        {
+            var before = ColumnWidths.TryGetValue(id, out float value) ? (float?)value : null;
+            if (before == width) return;
+            RecordUndoEvent("Panel+ column width", new PanelUndo<float?>(InstanceGuid, before, width,
+                (component, next) => component.ApplyColumnWidth(id, next)));
+            ApplyColumnWidth(id, width);
+        }
+        private void ApplyColumnWidth(Guid id, float? width)
+        {
+            if (width.HasValue) ColumnWidths[id] = Math.Max(48, Math.Min(320, width.Value));
+            else ColumnWidths.Remove(id);
+            OnPingDocument()?.Modified();
+            Instances.ActiveCanvas?.Invalidate();
+        }
+        internal void SetColumnSort(Guid id, PanelSortMode mode)
+        {
+            var before = Session.Options;
+            if (id == Params.Input[0].InstanceGuid || mode == PanelSortMode.SourceOrder) id = Guid.Empty;
+            if (before.SortColumn == id && before.SortMode == mode) return;
+            var options = before.Clone();
+            options.SortColumn = id; options.SortMode = mode;
+            options = WithCurrentColumnSort(options);
+            RecordQueryUndo("Panel+ table sort", before, options);
+            Session.UpdateQuery(options);
+        }
+
         internal void SetPanelSplit(bool split)
         {
             if (PanelSplit == split || split && !CanSplit) return;
-            RecordUndoEvent("Panel+ D|F view", new PanelUndo<bool>(InstanceGuid, PanelSplit, split, (component, value) => component.ApplyPanelSplit(value)));
+            RecordUndoEvent("Panel+ Table view", new PanelUndo<bool>(InstanceGuid, PanelSplit, split, (component, value) => component.ApplyPanelSplit(value)));
             ApplyPanelSplit(split);
         }
 
@@ -276,6 +326,8 @@ namespace BetterGhPanel
                 _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
                 (Attributes as BetterPanelAttributes)?.ClearPaneSummary();
             }
+            foreach (var column in _tableColumns)
+            { if (split) column.Capture(_geometryUnits); else if (Session.Options.SortColumn != column.Input.InstanceGuid) column.Snapshot = null; }
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
@@ -324,6 +376,13 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelPrefix", options.BranchPrefix);
             writer.SetBoolean("PanelInvalid", options.OnlyInvalid);
             writer.SetInt32("PanelSort", (int)options.SortMode);
+            if (options.SortColumn != Guid.Empty) writer.SetGuid("PanelSortColumn", options.SortColumn);
+            if (ColumnWidths.Count > 0)
+            {
+                var widths = writer.CreateChunk("PanelColumnWidths");
+                foreach (var entry in ColumnWidths.Where(entry => Params.Input.Any(input => input.InstanceGuid == entry.Key)))
+                    widths.SetSingle(entry.Key.ToString("D"), entry.Value);
+            }
             // Retain the legacy key for older plug-in versions; dimensions take precedence.
             writer.SetInt32("PanelSize", PreviewSize < 0 ? 1 : PreviewSize);
             writer.SetSingle("PanelWidth", CanvasWidth);
@@ -344,7 +403,14 @@ namespace BetterGhPanel
             writer.SetInt32("PanelOutputScope", (int)OutputScope);
             writer.SetInt32("PanelOutputValues", (int)OutputValues);
             writer.SetInt32("PanelOutputSchema", 1);
-            return base.Write(writer);
+            bool success = base.Write(writer);
+            // 0.2.8 and earlier have a fixed parameter server. Keep its base-port
+            // chunks alongside GH's variable archive so it can ignore added columns.
+            for (int i = 0; i < Math.Min(2, Params.Input.Count); i++)
+                success &= Params.Input[i].Write(writer.CreateChunk("param_input", i));
+            for (int i = 0; i < Math.Min(4, Params.Output.Count); i++)
+                success &= Params.Output[i].Write(writer.CreateChunk("param_output", i));
+            return success;
         }
 
         public override bool Read(GH_IReader reader)
@@ -375,10 +441,13 @@ namespace BetterGhPanel
             reader.TryGetBoolean("PanelPrefix", ref prefix);
             reader.TryGetBoolean("PanelInvalid", ref invalid);
             reader.TryGetInt32("PanelSort", ref sort);
+            Guid sortColumn = Guid.Empty;
+            reader.TryGetGuid("PanelSortColumn", ref sortColumn);
             bool hasLegacySize = reader.TryGetInt32("PanelSize", ref size);
             _savedOptions = new PanelQueryOptions
             {
                 Search = search,
+                SortColumn = sortColumn,
                 TypeName = string.IsNullOrEmpty(type) ? null : type,
                 DisplayFilterValue = displayFilterValue && searchMode >= (int)PanelSearchMode.Value && Enum.IsDefined(typeof(PanelSearchMode), searchMode),
                 SearchMode = Enum.IsDefined(typeof(PanelSearchMode), searchMode) ? (PanelSearchMode)searchMode : PanelSearchMode.Text,
@@ -441,15 +510,60 @@ namespace BetterGhPanel
             _savedOptions.DecimalPlaces = DecimalPlaces;
             _savedOptions.RoundUpFactor = RoundUpFactor;
             if (!CanOutputValuesFor(CreateSetTree, _savedOptions)) OutputValues = PanelOutputValues.Items;
+            var parameters = UpgradeLegacyOutputParameters(reader);
+            if (!parameters.ChunkExists("ParameterData") && !parameters.ChunkExists("ParamTypeData"))
+            {
+                // Fixed-port files predate IGH_VariableParameterComponent. Adapt their
+                // chunks to GH's variable archive without losing parameter/wire GUIDs.
+                for (int i = 0; i < 2; i++)
+                    if (!parameters.ChunkExists("param_input", i))
+                    { reader.AddMessage("Input parameter chunk is missing. Archive is corrupt.", GH_Message_Type.error); return false; }
+                for (int i = 0; i < 4; i++)
+                    if (!parameters.ChunkExists("param_output", i))
+                    { reader.AddMessage("Output parameter chunk is missing. Archive is corrupt.", GH_Message_Type.error); return false; }
+                parameters = UpgradeFixedParameterArchive(parameters);
+            }
+            var success = base.Read(parameters);
+            VariableParameterMaintenance();
+            ColumnWidths.Clear();
+            var widths = reader.FindChunk("PanelColumnWidths");
+            foreach (var input in Params.Input)
+            {
+                float value = 0;
+                if (widths != null && widths.TryGetSingle(input.InstanceGuid.ToString("D"), ref value) && !float.IsNaN(value) && !float.IsInfinity(value))
+                    ColumnWidths[input.InstanceGuid] = Math.Max(48, Math.Min(320, value));
+            }
+            if (!Params.Input.Any(input => input.InstanceGuid == _savedOptions.SortColumn)) _savedOptions.SortColumn = Guid.Empty;
             _restoringView = true;
             try { _session?.UpdateQuery(_savedOptions); }
             finally { _restoringView = false; }
-            var success = base.Read(UpgradeLegacyOutputParameters(reader));
             UpdateOutputDescriptions();
             (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
             Attributes?.ExpireLayout();
             return success;
         }
+        private static GH_IReader UpgradeFixedParameterArchive(GH_IReader reader)
+        {
+            if (reader is not GH_Chunk original) return reader;
+            var upgraded = GH_Chunk.InstantiateRoot(original.Archive ?? new GH_Archive());
+            upgraded.CopyValuesFromChunk(original);
+            var parameters = upgraded.CreateChunk("ParameterData");
+            parameters.SetInt32("InputCount", 2);
+            parameters.SetInt32("OutputCount", 4);
+            var defaults = new BetterPanelComponent();
+            for (int i = 0; i < 2; i++)
+            {
+                parameters.SetGuid("InputId", i, defaults.Params.Input[i].ComponentGuid);
+                ((GH_Chunk)parameters.CreateChunk("InputParam", i)).CopyValuesFromChunk((GH_Chunk)reader.FindChunk("param_input", i));
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                parameters.SetGuid("OutputId", i, defaults.Params.Output[i].ComponentGuid);
+                ((GH_Chunk)parameters.CreateChunk("OutputParam", i)).CopyValuesFromChunk((GH_Chunk)reader.FindChunk("param_output", i));
+            }
+            return upgraded;
+        }
+
         private static GH_IReader UpgradeLegacyOutputParameters(GH_IReader reader)
         {
             // Recognize only the known one-input/one-output schema. Missing

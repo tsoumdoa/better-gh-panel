@@ -123,6 +123,7 @@ namespace BetterGhPanel.Core
         { _snapshot = snapshot; _query = query; }
         internal bool IsBranchSet => _query.DisplayFilterValue && _query.SearchMode == PanelSearchMode.ListLength;
         internal IReadOnlyDictionary<int, PanelDisplayedValue> Values => _values;
+        internal IReadOnlyList<int> MembersAt(int position) => _members[position];
 
         internal bool IncludeBranch(string path)
         {

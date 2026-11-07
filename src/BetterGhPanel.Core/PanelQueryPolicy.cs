@@ -5,7 +5,8 @@ namespace BetterGhPanel.Core
     internal static class PanelQueryPolicy
     {
         internal static bool SameQuery(PanelQueryOptions left, PanelQueryOptions right) =>
-            SameFilterSettings(left, right) && left.SortMode == right.SortMode &&
+            SameFilterSettings(left, right) && left.SortMode == right.SortMode && left.SortColumn == right.SortColumn &&
+            ReferenceEquals(left.ColumnSortKeys, right.ColumnSortKeys) &&
             left.DecimalPlaces == right.DecimalPlaces;
 
         internal static bool SameOutputFilter(PanelQueryOptions left, PanelQueryOptions right) =>

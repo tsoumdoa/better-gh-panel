@@ -20,13 +20,11 @@ namespace BetterGhPanel
         private CanvasRowAction[] _rowMenuActions = Array.Empty<CanvasRowAction>();
         private CanvasRowAction[] _rowMenuPendingActions = Array.Empty<CanvasRowAction>();
         private int _rowMenuSourcePosition = -1;
-        private bool _rowMenuPaired;
         private string? _rowMenuPath;
         private DateTime _copiedUntil;
         private DateTime _rowActionDismissedUntil;
         // The row and pane of the latest single click, which a double-click's second click repeats.
         private int _clickedPosition = -1;
-        private bool _clickedPaired;
         private string _actionStatus = string.Empty;
         private bool _copyPending;
         private long _actionGeneration;
@@ -156,8 +154,7 @@ namespace BetterGhPanel
                 if (!heading.Bounds.Contains(e.CanvasLocation)) continue;
                 _rowContextHandled = true;
                 _rowMenuPath = heading.Path;
-                _rowMenuPaired = _f.List.Contains(e.CanvasLocation);
-                string copyPath = _rowMenuPaired ? string.Join(", ", PanelOwner.PairedPaths(heading.Path)) : heading.Path;
+                string copyPath = heading.Path;
                 var choices = new System.Collections.Generic.List<CanvasRowAction>
                 {
                     new CanvasRowAction(PanelRowAction.CopyPath, "Copy path  " + copyPath, "Copy the branch path."),
@@ -174,7 +171,6 @@ namespace BetterGhPanel
             {
                 if (!hit.Bounds.Contains(e.CanvasLocation)) continue;
                 _rowContextHandled = true;
-                RevealPartner(canvas, hit.SourcePosition, null, e.CanvasLocation);
                 InvalidateCopyStatus();
                 _selection.SelectAt(result, hit.SourcePosition, hit.ViewNumber - 1, preserveSelected: true);
                 PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
@@ -182,11 +178,10 @@ namespace BetterGhPanel
                 var options = PanelOwner.Session.Options;
                 bool filtered = options.Search.Length > 0 || options.TypeName != null || options.OnlyInvalid || options.BranchPath != null;
                 _rowMenuPath = null;
-                _rowMenuPaired = _copyPaired = _f.List.Contains(e.CanvasLocation);
                 _rowMenuSourcePosition = hit.SourcePosition;
                 ShowRowMenu(canvas, result, CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered,
-                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX, _rowMenuPaired,
-                    !_rowMenuPaired && result.DisplaySet != null && !result.DisplaySet.IsBranchSet && PanelOwner.OutputValues == PanelOutputValues.Items),
+                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX, false,
+                    result.DisplaySet != null && !result.DisplaySet.IsBranchSet && PanelOwner.OutputValues == PanelOutputValues.Items),
                     e.CanvasLocation);
                 canvas.Invalidate();
                 return GH_ObjectResponse.Handled;
@@ -220,9 +215,9 @@ namespace BetterGhPanel
             }
             if (action == PanelRowAction.CopyPath || action == PanelRowAction.CopyPathBare || action == PanelRowAction.CopyPaths ||
                 action == PanelRowAction.CopyAddresses || action == PanelRowAction.CopyTable)
-            { CopySelectedValues(result, canvas, _rowMenuPaired, action, action == PanelRowAction.CopyPath || action == PanelRowAction.CopyPathBare ? _rowMenuPath : null); return; }
+            { CopySelectedValues(result, canvas, action, action == PanelRowAction.CopyPath || action == PanelRowAction.CopyPathBare ? _rowMenuPath : null); return; }
             if (positions.Count == 0) return;
-            if (action == PanelRowAction.ViewFullValue) ViewFullValue(result, _rowMenuSourcePosition, _rowMenuPaired);
+            if (action == PanelRowAction.ViewFullValue) ViewFullValue(result, _rowMenuSourcePosition);
             else if (action == PanelRowAction.FrameSelection)
             {
                 InvalidateCopyStatus();
@@ -237,7 +232,7 @@ namespace BetterGhPanel
                 if (PanelGeometryActions.FrameGeneration <= before + 1)
                 { _actionStatus = status ?? "Selection framed"; _copiedUntil = DateTime.UtcNow.AddSeconds(5); }
             }
-            else if (action == PanelRowAction.CopyValues) CopySelectedValues(result, canvas, _rowMenuPaired);
+            else if (action == PanelRowAction.CopyValues) CopySelectedValues(result, canvas);
             else if (action == PanelRowAction.CopyGeometry)
             {
                 InvalidateCopyStatus();
@@ -258,18 +253,23 @@ namespace BetterGhPanel
         private const string FullValueHint = "\nDouble-click to view the full value.";
 
         // Shared by the row menu and row double-click; the row must be selected.
-        // An F row without an F item has no value to show.
-        private void ViewFullValue(PanelQueryResult result, int position, bool paired)
+        // A column cell without an item has no value to show.
+        private void ViewFullValue(PanelQueryResult result, int position)
         {
             if (!PanelOwner.CapturedSnapshotCurrent(result.Snapshot)) return;
             if (position < 0 || position >= result.Snapshot.Rows.Count || !_selection.Contains(position)) return;
             var row = result.Snapshot.Rows[position];
             bool projected = result.DisplaySet?.Values.ContainsKey(position) == true;
-            string value = paired && PanelOwner.PairedSnapshot != null ? PanelOwner.PairedValue(position) :
-                !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
+            string? columnValue = null;
+            if (TableVisible && _activeTableColumn >= 0 && _activeTableColumn < PanelOwner.TableColumns.Count)
+            {
+                var column = PanelOwner.TableColumns[_activeTableColumn];
+                if (column.Row(position) == null && result.DisplaySet == null) return;
+                columnValue = column.Cell(result, position, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor, raw: true);
+            }
+            string value = !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
                 ? row.StringValue : PanelOwner.DisplayValue(result.Snapshot, row, position);
-            if (paired && !PanelOwner.HasPairedValue(position)) return;
-            try { PanelFullValueWindow.Show(value); }
+            try { PanelFullValueWindow.Show(columnValue ?? value); }
             catch (Exception)
             {
                 _actionStatus = "Could not open the full value.";
@@ -298,7 +298,7 @@ namespace BetterGhPanel
             _actionStatus = string.Empty;
         }
 
-        private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas, bool paired = false, PanelRowAction action = PanelRowAction.CopyValues, string? path = null)
+        private async void CopySelectedValues(PanelQueryResult result, GH_Canvas canvas, PanelRowAction action = PanelRowAction.CopyValues, string? path = null)
         {
             var positions = _selection.OrderedPositions(result);
             if (positions.Count == 0 && path == null && action != PanelRowAction.CopyPaths &&
@@ -310,7 +310,7 @@ namespace BetterGhPanel
             canvas.Invalidate();
             long before = ClipboardGeneration.Current;
             string status;
-            try { status = await (action != PanelRowAction.CopyValues ? PanelOwner.CopyAddressesAsync(result.Snapshot, positions, action, path, paired) : paired ? PanelOwner.CopyPairedValuesAsync(result.Snapshot, positions) : PanelOwner.CopyValuesAsync(result.Snapshot, positions)); }
+            try { status = await (TableVisible && _activeTableColumn >= 0 && action == PanelRowAction.CopyValues ? PanelOwner.CopyColumnValuesAsync(result.Snapshot, positions, _activeTableColumn) : action != PanelRowAction.CopyValues ? PanelOwner.CopyAddressesAsync(result.Snapshot, positions, action, path) : PanelOwner.CopyValuesAsync(result.Snapshot, positions)); }
             catch (Exception) { status = "Could not copy values. Try again."; }
             Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
             {

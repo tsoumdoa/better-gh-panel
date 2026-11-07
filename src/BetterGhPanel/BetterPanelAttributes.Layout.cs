@@ -36,7 +36,6 @@ namespace BetterGhPanel
             internal RectangleF SearchClear { get; }
             internal RectangleF BranchClear { get; }
             internal RectangleF Split { get; }
-            internal RectangleF ScrollLock { get; }
 
             internal PanelLayout(
                 RectangleF panel = default,
@@ -66,8 +65,7 @@ namespace BetterGhPanel
                 RectangleF restore = default,
                 RectangleF searchClear = default,
                 RectangleF branchClear = default,
-                RectangleF split = default,
-                RectangleF scrollLock = default)
+                RectangleF split = default)
             {
                 Panel = panel;
                 Search = search;
@@ -97,7 +95,6 @@ namespace BetterGhPanel
                 SearchClear = searchClear;
                 BranchClear = branchClear;
                 Split = split;
-                ScrollLock = scrollLock;
             }
         }
 
@@ -110,15 +107,14 @@ namespace BetterGhPanel
         private float UnitsWidth(float panelWidth) => Math.Max(48, Math.Min(_unitsWidth, panelWidth - 252));
 
         // Computes the immutable fixed-control layout and, in the original
-        // calculation order, updates _d/_f pane rectangles, _warningsHeight and
+        // calculation order, updates the list rectangle, _warningsHeight and
         // _singleLineFooter. This helper deliberately includes those layout side effects.
         private PanelLayout ComputePanelLayout()
         {
             if (PanelOwner.PanelMinimized)
             {
                 var capsule = new RectangleF(Pivot.X, Pivot.Y, CanvasPanelSize.CapsuleWidth, CanvasPanelSize.CapsuleHeight);
-                _d.List = _d.Track = _d.TrackHit = _d.Caption = RectangleF.Empty;
-                _f.List = _f.Track = _f.TrackHit = _f.Caption = RectangleF.Empty;
+                _d.List = _d.Track = _d.TrackHit = _tableHeader = _horizontalTrack = RectangleF.Empty;
                 return new PanelLayout(panel: capsule,
                     restore: new RectangleF(capsule.Right - 36, capsule.Y + (capsule.Height - 22) / 2, 22, 22));
             }
@@ -150,7 +146,6 @@ namespace BetterGhPanel
             RectangleF searchClear;
             RectangleF branchClear;
             RectangleF split;
-            RectangleF scrollLock;
             restore = RectangleF.Empty;
             panel = new RectangleF(Pivot.X,
                 Pivot.Y + CanvasPanelSize.DisplayTopOffset(PanelOwner.CanvasHeight, PanelOwner.CanvasDisplay),
@@ -174,7 +169,7 @@ namespace BetterGhPanel
             display = new RectangleF(close.Left - 22, close.Y, 20, 18);
             // Wide enough for "Preview: Selection" at the default font without trimming.
             preview = new RectangleF(display.Left - 122, close.Y, 118, 18);
-            split = PanelOwner.PanelSplit || PanelOwner.PairedInputPresent() ? new RectangleF(preview.Left - 32, preview.Y, 28, 18) : RectangleF.Empty;
+            split = PanelOwner.PanelSplit || PanelOwner.TableInputPresent ? new RectangleF(preview.Left - 42, preview.Y, 38, 18) : RectangleF.Empty;
             move = new RectangleF(panel.X + 14, panel.Y + 1, (split.IsEmpty ? preview.Left : split.Left) - panel.X - 18, 23);
             // Reserve the corner for resizing rather than overlaying footer controls.
             // Wide panels fit status, selection, statistics, tools and Units on one line.
@@ -218,9 +213,9 @@ namespace BetterGhPanel
             _d.List = new RectangleF(panel.X + 14, panel.Y + 52 + _warningsHeight, panel.Width - 33, Math.Max(RowHeight, panel.Height - 56 - footerHeight - _warningsHeight));
             _d.Track = new RectangleF(panel.Right - 18, _d.List.Y, 4, _d.List.Height);
             _d.TrackHit = new RectangleF(panel.Right - 21, _d.List.Y, 8, _d.List.Height);
-            scrollLock = LayoutSplitPanes(panel);
+            LayoutTable();
             resize = new RectangleF(panel.Right - 24, panel.Bottom - 24, 24, 24);
-            return new PanelLayout(panel, search, filter, type, sort, branch, reset, resize, footer, trim, simplify, flatten, reverse, createSet, units, outLabel, outItems, outValues, display, preview, move, statistics, selectAll, close, restore, searchClear, branchClear, split, scrollLock);
+            return new PanelLayout(panel, search, filter, type, sort, branch, reset, resize, footer, trim, simplify, flatten, reverse, createSet, units, outLabel, outItems, outValues, display, preview, move, statistics, selectAll, close, restore, searchClear, branchClear, split);
         }
     }
 }

@@ -266,7 +266,7 @@ internal static class WysiwygValuesChecks
         PanelTestAdapter.Resize(component, 300, 220);
         Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Half"));
         attributes.PerformLayout(); Render();
-        Check(FieldValue<float>(attributes, "_warningsHeight") == 0 && PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Bottom <= PanelTestAdapter.LayoutRect(attributes, "Footer").Top &&
+        Check(FieldValue<float>(attributes, "_warningsHeight") == 0 && PanelTestAdapter.PaneField<RectangleF>(attributes, "List").Bottom <= PanelTestAdapter.LayoutRect(attributes, "Footer").Top &&
             FieldValue<System.Collections.Generic.List<(RectangleF Bounds, int Kind)>>(attributes, "_warningHits").Count == 0,
             "Compact Half hides warnings and keeps rows above footer with no stale warning hit targets");
         Capture("compact-half");

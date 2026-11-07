@@ -60,6 +60,7 @@ internal static class Program
         ["property-inspection"] = PropertyInspectionChecks.Run,
         ["stock-types"] = StockTypeHostChecks.Run,
         ["ui-ux"] = UxInteractionChecks.Run,
+        ["table-columns"] = TableColumnsChecks.Run,
         ["wysiwyg-values"] = WysiwygValuesChecks.Run,
         ["branch-pairing"] = BranchPairingChecks.Run,
         ["pairing-wysiwyg"] = PairingWysiwygChecks.Run,

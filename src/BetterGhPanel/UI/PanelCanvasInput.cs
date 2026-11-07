@@ -156,7 +156,7 @@ namespace BetterGhPanel.UI
         private static bool RouteWheel(GH_Canvas canvas, MouseEventArgs e)
         {
             // Modifier + wheel always reaches Grasshopper, so zooming stays one key away.
-            if (Control.ModifierKeys != Keys.None || !TryGetFocused(out var target)) return false;
+            if (Control.ModifierKeys != Keys.None && Control.ModifierKeys != Keys.Shift || !TryGetFocused(out var target)) return false;
             if (!target.OwnsCanvas(canvas)) { ReleaseCurrent(); return false; }
             if (canvas.ActiveInteraction != null) return false;
             return target.HandleWheel(canvas, canvas.Viewport.UnprojectPoint(e.Location), e.Delta);

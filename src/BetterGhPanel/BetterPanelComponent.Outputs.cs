@@ -51,7 +51,7 @@ namespace BetterGhPanel
                 .Select(item => BetterPanelAttributes.PairedDisplayValue(PairedSnapshot!.Rows[item.Item])));
         internal PanelSnapshot? PairedSnapshot { get; private set; }
         internal string? PairedError => _pairedError;
-        internal bool CanSplit => _pairedInputPresent && PairedData != null && _pairedError == null && Session.HasCurrentResult;
+        internal bool CanSplit => TableColumns.Any(column => column.Present && column.Pair != null) && Session.HasCurrentResult;
         private PanelQueryOptions? _pairedSummaryOptions;
         internal bool PairedSummaryCurrent => Session.HasCurrentResult && PairedData?.SummaryResult is PanelQueryResult summary &&
             ReferenceEquals(summary.Snapshot, Session.Snapshot) && _pairedSummaryOptions != null &&
@@ -82,7 +82,9 @@ namespace BetterGhPanel
             _pairedError = null;
             PairedSnapshot = null;
             PairedData = null;
+            _tableColumns.Clear();
             _pairedSummaryOptions = null;
+            if (_outputOptions != null) _outputOptions.ColumnSortKeys = null;
             _pairedSourceItems = Array.Empty<IGH_Goo?>();
             _pairedMeasurementSources = Array.Empty<CapturedMeasurementSource?>();
             _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
@@ -95,6 +97,7 @@ namespace BetterGhPanel
         {
             var session = Session;
             _outputOptions = session.Options;
+            _outputOptions.ColumnSortKeys = null;
             _outputPending = session.IsBusy;
             // Construct from the committed managed result. PublicationCurrent runs
             // the full capture fence below, including every measurement source and
@@ -115,6 +118,9 @@ namespace BetterGhPanel
                 // Busy publications advance _outputOptions without rebuilding summaries.
                 // Retain their own filter identity, allowing unchanged sort-only reuse.
                 _pairedSummaryOptions = session.Options;
+                _pairedSummaryOptions.ColumnSortKeys = null;
+                foreach (var column in TableColumns.Where(column => !ReferenceEquals(column.Pair, PairedData) && column.Pair != null))
+                    column.Pair!.BuildSummaries(query, FlattenTree, PanelPairedData.EmptyPartnersInScope(session.Options));
                 _filteredMask = null;
             }
             // Selection-only solutions reuse unchanged query outputs. A large

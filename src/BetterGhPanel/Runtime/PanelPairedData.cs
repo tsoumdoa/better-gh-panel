@@ -11,7 +11,6 @@ namespace BetterGhPanel.Runtime
     internal sealed class PanelPairedData
     {
         internal IReadOnlyList<PanelBranchPair> Pairs { get; }
-        internal string Caption { get; }
         internal bool HasUnequal { get; }
         internal readonly struct PairHeading
         {
@@ -47,11 +46,7 @@ namespace BetterGhPanel.Runtime
             IReadOnlyList<PanelSourceAddress> sources, int trim, bool simplify, bool flatten, bool reverse)
         {
             Pairs = PanelPairing.Match(Shape(data), Shape(paired));
-            int differingCount = Pairs.Count(pair => pair.Unequal);
-            HasUnequal = differingCount > 0;
-            int byOrder = Pairs.Count(pair => pair.ByOrder);
-            Caption = string.Join(" · ", new[] { "Paired by branch", byOrder > 0 ? byOrder + " by order" : null,
-                differingCount > 0 ? differingCount + " of " + Pairs.Count + " differ in length" : null }.Where(part => part != null));
+            HasUnequal = Pairs.Any(pair => pair.Unequal);
             _dataOrder = Pairs.Select((pair, index) => (pair, index)).ToDictionary(value => value.pair.Data.Path, value => value.index, StringComparer.Ordinal);
             _sources = sources; _reverse = reverse;
             _sourcePairs = sources.Select(source => _dataOrder[source.Path]).ToArray();
@@ -147,6 +142,13 @@ namespace BetterGhPanel.Runtime
 
         internal GH_Structure<IGH_Goo> Output(PanelQueryResult query, IReadOnlyList<int> positions,
             IReadOnlyList<string> branchPaths, bool flatten, bool includeEmpty, Action<long>? countVisits = null, bool selected = false)
+            => OutputCore(query, positions, branchPaths, flatten, includeEmpty, countVisits, selected, true);
+
+        internal void BuildSummaries(PanelQueryResult query, bool flatten, bool includeEmpty) =>
+            OutputCore(query, query.RowPositions, query.BranchPaths, flatten, includeEmpty, null, false, false);
+
+        private GH_Structure<IGH_Goo> OutputCore(PanelQueryResult query, IReadOnlyList<int> positions,
+            IReadOnlyList<string> branchPaths, bool flatten, bool includeEmpty, Action<long>? countVisits, bool selected, bool materialize)
         {
             var result = new GH_Structure<IGH_Goo>();
             long visits = 0;
@@ -186,7 +188,7 @@ namespace BetterGhPanel.Runtime
                 foreach (string path in retainedPaths)
                 {
                     visits++;
-                    result.EnsurePath(destination(path));
+                    if (materialize) result.EnsurePath(destination(path));
                 }
                 string? previousPath = null;
                 IList<IGH_Goo>? branch = null;
@@ -196,9 +198,9 @@ namespace BetterGhPanel.Runtime
                 foreach (var item in BranchItems(query.Snapshot, members, emptyPaths, includeEmpty))
                 {
                     visits++;
-                    if (item.Path != previousPath)
+                    if (materialize && item.Path != previousPath)
                     { branch = result.EnsurePath(destination(item.Path)); previousPath = item.Path; }
-                    branch!.Add(_rawItems[item.Item]);
+                    if (materialize) branch!.Add(_rawItems[item.Item]);
                     if (!selected)
                     {
                         // Item sets have one destination; branch sets retain tree path order.

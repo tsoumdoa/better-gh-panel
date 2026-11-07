@@ -27,7 +27,6 @@ namespace BetterGhPanel
         private GH_Canvas? _hoverCanvas;
         private int _wheelRemainder;
         private int _keyboardCursor = -1;
-        private bool _keyboardPaired, _copyPaired;
         private ViewRestore? _viewRestore;
 
         private bool KeyboardFocused => PanelCanvasInput.IsFocused(this);
@@ -64,6 +63,13 @@ namespace BetterGhPanel
 
         bool IPanelInputTarget.HandleWheel(GH_Canvas canvas, PointF point, int delta)
         {
+            if (System.Windows.Forms.Control.ModifierKeys != Keys.None)
+            {
+                if (TableVisible && System.Windows.Forms.Control.ModifierKeys == Keys.Shift && _horizontalMaximum > 0 &&
+                    (ListContains(point) || _horizontalTrack.Contains(point)))
+                { ScrollHorizontal(canvas, _horizontalOffset - delta / 3f); return true; }
+                return false;
+            }
             if (_menu.Kind != CanvasMenuKind.None && _menu.Bounds.Contains(point))
             {
                 if (_menu.Scroll(-WheelRows(delta))) canvas.Invalidate();
@@ -86,17 +92,13 @@ namespace BetterGhPanel
             }
             if (!_layout.Panel.Contains(point)) return false;
             // A list without overflow lets the wheel zoom the canvas as usual.
-            if (!ListContains(point) && !_d.TrackHit.Contains(point) && !_f.TrackHit.Contains(point) || MaximumOffset == 0)
+            if (!ListContains(point) && !_d.TrackHit.Contains(point) || MaximumOffset == 0)
             {
                 _wheelRemainder = 0;
                 return false;
             }
-            _keyboardPaired = _f.List.Contains(point) || _f.TrackHit.Contains(point);
-            bool paired = !_scrollLocked && _keyboardPaired;
-            var pane = paired ? _f : _d;
-            if (paired && !PanelOwner.CanSplit) return false;
             int rows = WheelRows(delta);
-            if (rows != 0) SetPaneOffset(canvas, pane.Offset - rows, paired);
+            if (rows != 0) SetPaneOffset(canvas, _d.Offset - rows);
             return true;
         }
 
@@ -124,8 +126,7 @@ namespace BetterGhPanel
             if (_menu.Kind != CanvasMenuKind.None) return HandleMenuKey(canvas, key, none);
             var result = PanelOwner.Session.Result;
             bool current = ResultIsCurrent(result);
-            bool paired = PanelOwner.PanelSplit && !_scrollLocked && PanelOwner.CanSplit && _keyboardPaired;
-            var pane = paired ? _f : _d;
+            var pane = _d;
             switch (key)
             {
                 case Keys.Escape when none:
@@ -139,23 +140,23 @@ namespace BetterGhPanel
                 case Keys.PageUp when none:
                 case Keys.PageDown when none:
                     SetPaneOffset(canvas, pane.Offset + (key == Keys.PageUp ? -1 : 1) *
-                        Math.Max(1, pane.Shown - 1), paired);
+                        Math.Max(1, pane.Shown - 1));
                     return true;
                 case Keys.Home when none || control:
-                    SetPaneOffset(canvas, 0, paired);
+                    SetPaneOffset(canvas, 0);
                     return true;
                 case Keys.End when none || control:
-                    SetPaneOffset(canvas, MaximumOffset, paired);
+                    SetPaneOffset(canvas, MaximumOffset);
                     return true;
                 case Keys.C when modifiers == (Keys.Control | Keys.Shift):
                     if (!current || _selection.Count == 0) return false;
-                    CopySelectedValues(result, canvas, PanelOwner.PanelSplit && PanelOwner.CanSplit && _copyPaired, PanelRowAction.CopyPaths);
+                    CopySelectedValues(result, canvas, PanelRowAction.CopyPaths);
                     return true;
                 case Keys.C when control:
                     // With no rows selected, Ctrl+C keeps copying Grasshopper objects.
                     if (!current || _selection.Count == 0) return false;
-                    // Copy from the pane whose row was last clicked, whether or not scrolling is linked.
-                    CopySelectedValues(result, canvas, PanelOwner.PanelSplit && PanelOwner.CanSplit && _copyPaired);
+                    // A visible table copies all its columns with their titles.
+                    CopySelectedValues(result, canvas, action: TableVisible ? PanelRowAction.CopyTable : PanelRowAction.CopyValues);
                     return true;
                 case Keys.A when control:
                     if (current) SelectAllRows(canvas, result);
@@ -223,16 +224,14 @@ namespace BetterGhPanel
 
         private void MoveKeyboardCursor(GH_Canvas canvas, PanelQueryResult result, int step, bool extend)
         {
-            bool paired = PanelOwner.PanelSplit && !_scrollLocked && PanelOwner.CanSplit && _keyboardPaired;
-            var pane = paired ? _f : _d;
-            if (DisplayListLengths) { SetPaneOffset(canvas, pane.Offset + step, paired); return; }
+            var pane = _d;
+            if (DisplayListLengths) { SetPaneOffset(canvas, pane.Offset + step); return; }
             int count = result.RowPositions.Count;
             if (count == 0) return;
             int index;
             if (_keyboardCursor >= 0 && result.TryGetViewIndex(_keyboardCursor, out int cursor)) index = cursor + step;
             else if (_selection.Anchor >= 0 && result.TryGetViewIndex(_selection.Anchor, out int anchor)) index = anchor + step;
-            else index = paired ? ViewItemAtOrAfter(result, _f.Offset) :
-                _firstShownItem >= 0 ? _firstShownItem : ViewItemAtOrAfter(result, _d.Offset);
+            else index = _firstShownItem >= 0 ? _firstShownItem : ViewItemAtOrAfter(result, _d.Offset);
             index = Math.Max(0, Math.Min(count - 1, index));
             int position = result.RowPositions[index];
             InvalidateCopyStatus();
@@ -241,14 +240,9 @@ namespace BetterGhPanel
             PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
             TrackSelectionCanvas(canvas);
             int offset = ViewOffset(result, index);
-            // Read both panes' visibility before scrolling either: scrolling clears painted hits.
-            bool shownInData = RowShownIn(_d.List, position), shownInPaired = RowShownIn(_f.List, position);
-            if (paired) { if (!shownInPaired) RevealPartner(canvas, position, null, _d.List.Location); canvas.Invalidate(); }
-            else if (_firstShownItem < 0 || index < _firstShownItem) SetOffset(canvas, offset);
+            if (_firstShownItem < 0 || index < _firstShownItem) SetOffset(canvas, offset);
             else if (index > _lastShownItem) SetOffset(canvas, offset - Math.Max(0, _d.Shown - 3));
             else canvas.Invalidate();
-            if (paired ? !shownInData : !shownInPaired)
-                RevealPartner(canvas, position, null, paired ? _f.List.Location : _d.List.Location);
         }
 
         private void SelectAllRows(GH_Canvas canvas, PanelQueryResult result)
@@ -274,7 +268,6 @@ namespace BetterGhPanel
             foreach (var entry in ControlHits.Where(entry => entry.HoverStep == ControlStep.Header))
                 if (entry.Visible(ControlPath.Hover)) yield return entry.Rect(_layout);
             if (!_layout.Split.IsEmpty) yield return _layout.Split;
-            if (PanelOwner.PanelSplit) yield return _layout.ScrollLock;
             foreach (var entry in ControlHits.Where(entry => entry.HoverStep == ControlStep.Main))
             {
                 if (!entry.Visible(ControlPath.Hover)) continue;
@@ -369,7 +362,7 @@ namespace BetterGhPanel
             if (result == null) return;
             _selectionRestore = result;
             _savedSelection = PanelOwner.CreateSetTree ? null : PanelOwner.CommittedSelection.CopyForPreview();
-            _viewRestore = _d.Offset == 0 && _f.Offset == 0 ? null : new ViewRestore(result.Snapshot, _d.Offset, _f.Offset, DisplayListLengths);
+            _viewRestore = _d.Offset == 0 ? null : new ViewRestore(result.Snapshot, _d.Offset, DisplayListLengths);
         }
 
         private void RestoreView(PanelQueryResult result)
@@ -392,18 +385,16 @@ namespace BetterGhPanel
             if (restore.ListLengths != DisplayListLengths ||
                 !(sameStructure ?? PanelRowSelection.SameStructure(restore.Snapshot, result.Snapshot))) return;
             _d.Offset = Math.Max(0, Math.Min(MaximumOffset, restore.Offset));
-            _f.Offset = _scrollLocked ? _d.Offset : Math.Max(0, Math.Min(MaximumOffset, restore.PairedOffset));
         }
 
         private sealed class ViewRestore
         {
-            internal ViewRestore(PanelSnapshot snapshot, int offset, int pairedOffset, bool listLengths)
+            internal ViewRestore(PanelSnapshot snapshot, int offset, bool listLengths)
             {
-                Snapshot = snapshot; Offset = offset; PairedOffset = pairedOffset; ListLengths = listLengths;
+                Snapshot = snapshot; Offset = offset; ListLengths = listLengths;
             }
             internal PanelSnapshot Snapshot { get; }
             internal int Offset { get; }
-            internal int PairedOffset { get; }
             internal bool ListLengths { get; }
         }
     }

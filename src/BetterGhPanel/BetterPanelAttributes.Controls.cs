@@ -60,6 +60,8 @@ namespace BetterGhPanel
         // Resize precedes Move for cursor picking, independently of hover fill.
         private ControlEntry[] CreateControlHits() => new[]
         {
+            new ControlEntry("TableHeader", _ => _tableHeader, ClickTableHeader, TooltipTableHeader, click: ControlStep.BeforeDetails, hover: ControlStep.Main, tooltip: ControlStep.Main,
+                visible: _ => TableVisible && PanelOwner.Session.HasCurrentResult),
             new ControlEntry("Close", layout => layout.Close, ClickClose, TooltipClose, click: ControlStep.Header, hover: ControlStep.Header, tooltip: ControlStep.BeforeStatisticsMenu),
             new ControlEntry("Display", layout => layout.Display, ClickDisplay, TooltipDisplay, click: ControlStep.Header, hover: ControlStep.Header, tooltip: ControlStep.Main),
             new ControlEntry("Resize", layout => layout.Resize, ClickResize, TooltipResize, click: ControlStep.BeforeTrack, tooltip: ControlStep.Main, cursor: Cursors.SizeNWSE),

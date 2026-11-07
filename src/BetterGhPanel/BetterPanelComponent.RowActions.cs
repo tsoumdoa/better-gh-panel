@@ -173,16 +173,21 @@ namespace BetterGhPanel
         internal Task<string> CopyAddressesAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, PanelRowAction action, string? path = null, bool paired = false)
             => CopyValuesCoreAsync(snapshot, positions, paired, action, path);
 
+        internal Task<string> CopyColumnValuesAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, int column) =>
+            CopyValuesCoreAsync(snapshot, positions, false, column: column);
+
         private async Task<string> CopyValuesCoreAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, bool paired,
-            PanelRowAction action = PanelRowAction.CopyValues, string? path = null)
+            PanelRowAction action = PanelRowAction.CopyValues, string? path = null, int column = -1)
         {
             CancelPendingCopy();
-            bool listLengthCopy = path == null && action == PanelRowAction.CopyValues && Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength;
-            bool branchSet = path == null && action == PanelRowAction.CopyValues && Session.Result.DisplaySet?.IsBranchSet == true;
+            bool listLengthCopy = path == null && (action == PanelRowAction.CopyValues || PanelSplit && action == PanelRowAction.CopyTable) && Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength;
+            bool branchSet = path == null && (action == PanelRowAction.CopyValues || PanelSplit && action == PanelRowAction.CopyTable) && Session.Result.DisplaySet?.IsBranchSet == true;
             IReadOnlyList<int> ordered;
             if (path != null || action == PanelRowAction.CopyPaths && RowSelection.Count > 0) ordered = positions;
             else if (branchSet || listLengthCopy) ordered = Array.Empty<int>();
             else if (!TryGetActionPositions(snapshot, positions, out ordered)) return "Data changed; select rows again";
+            if (PanelSplit && action == PanelRowAction.CopyTable) paired = false;
+            var tableColumn = column >= 0 && column < TableColumns.Count ? TableColumns[column] : null;
             var pairedSnapshot = paired ? PairedSnapshot : null;
             if (paired && (!CanSplit || pairedSnapshot == null)) return "Data changed; select rows again";
             string? pathText = path == null ? null : string.Join(Environment.NewLine, (paired ? PairedPaths(path) : new[] { path })
@@ -202,7 +207,7 @@ namespace BetterGhPanel
                 ? ordered.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
                     session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray() : ordered;
             bool addressOnly = action != PanelRowAction.CopyValues && action != PanelRowAction.CopyTable;
-            bool measured = addressOnly || paired || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, cancellation.Token);
+            bool measured = addressOnly || paired || tableColumn != null || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, cancellation.Token);
             int copiedCount = branches.Length;
             var completion = new TaskCompletionSource<string>();
             // Rhino does not guarantee a SynchronizationContext for every canvas
@@ -227,7 +232,7 @@ namespace BetterGhPanel
                 {
                     bool SelectionCurrent() => ClipboardGeneration.IsCurrent(clipboardGeneration) &&
                         ReferenceEquals(_copyCancellation, cancellation) && !cancellation.IsCancellationRequested &&
-                        stamp.IsCurrent() &&
+                        stamp.IsCurrent() && (tableColumn == null || TableColumns.Contains(tableColumn)) &&
                         (!paired || CanSplit && ReferenceEquals(PairedSnapshot, pairedSnapshot)) &&
                         (path != null || action == PanelRowAction.CopyPaths || branchSet || listLengthCopy ? RowSelection.Version == selectionVersion && (path == null || result.ContainsBranchPath(path)) : PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion));
                     if (!measured || !SelectionCurrent()) Finish(PanelCommitOutcome.Stale);
@@ -239,7 +244,10 @@ namespace BetterGhPanel
                             return PanelItemOrder.Address(result, position, OutputValues == PanelOutputValues.Items, FlattenTree);
                         }
                         string text;
-                        if (path != null) text = pathText!;
+                        if (PanelSplit && action == PanelRowAction.CopyTable) text = TableTsv(result, ordered);
+                        else if (tableColumn != null && action == PanelRowAction.CopyValues)
+                            text = string.Join(Environment.NewLine, ordered.Select(position => tableColumn.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor)));
+                        else if (path != null) text = pathText!;
                         else if (action == PanelRowAction.CopyPaths)
                         {
                             var paths = new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal);

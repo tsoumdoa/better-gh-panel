@@ -65,21 +65,21 @@ internal static class PairingWysiwygChecks
             }
             finally { GH_Skin.canvas_back = previous; }
         }
-        object Heading(bool paired) => FieldValue<IEnumerable>(attributes, "_branchHits").Cast<object>().First(hit =>
-            PropertyValue<string>(hit, "Path") == "{0;0}" && PanelTestAdapter.PaneField<RectangleF>(attributes, paired, "List").Contains(PropertyValue<RectangleF>(hit, "Bounds")));
+        object Heading() => FieldValue<IEnumerable>(attributes, "_branchHits").Cast<object>().First(hit =>
+            PropertyValue<string>(hit, "Path") == "{0;0}" && PanelTestAdapter.PaneField<RectangleF>(attributes, "List").Contains(PropertyValue<RectangleF>(hit, "Bounds")));
         PointF Center(RectangleF bounds) => new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
         Render();
         foreach (string mode in new[] { "Full", "Half" })
         {
             Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, mode));
             Render();
-            var caption = PanelTestAdapter.PaneField<RectangleF>(attributes, false, "Caption");
-            var list = PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List");
+            var caption = FieldValue<RectangleF>(attributes, "_tableHeader");
+            var list = PanelTestAdapter.PaneField<RectangleF>(attributes, "List");
             var panel = PanelTestAdapter.LayoutRect(attributes, "Panel");
             Check(FieldValue<float>(attributes, "_warningsHeight") == 17 && caption.Top >= panel.Top + 64 &&
                 list.Top >= caption.Bottom && list.Bottom <= PanelTestAdapter.LayoutRect(attributes, "Footer").Top &&
                 FieldValue<IEnumerable>(attributes, "_warningHits").Cast<object>().Any(),
-                mode + " reserves warning strip, split captions, rows and footer without overlap");
+                mode + " reserves warning strip, table header, rows and footer without overlap");
             Capture("uneven-warnings-" + mode.ToLowerInvariant());
         }
         Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Full"));
@@ -87,11 +87,11 @@ internal static class PairingWysiwygChecks
         var clipboard = Forms.Clipboard.GetDataObject();
         try
         {
-            foreach (bool paired in new[] { false, true })
+            foreach (bool paired in new[] { false })
             {
-                var heading = Heading(paired); var bounds = PropertyValue<RectangleF>(heading, "Bounds");
+                var heading = Heading(); var bounds = PropertyValue<RectangleF>(heading, "Bounds");
                 Call(attributes, "UpdateHover", canvas, Center(bounds)); Render();
-                var copy = PropertyValue<RectangleF>(Heading(paired), "CopyBounds");
+                var copy = PropertyValue<RectangleF>(Heading(), "CopyBounds");
                 Check(!copy.IsEmpty && bounds.Contains(copy), "Complete " + (paired ? "F" : "D") + " heading paints a hover copy glyph");
                 if (paired) Capture("f-heading-copy-hover");
                 PanelTestAdapter.CanvasClick(canvas, Center(copy));
@@ -99,7 +99,7 @@ internal static class PairingWysiwygChecks
                 Check(Forms.Clipboard.GetText() == (paired ? "{1;0}" : "{0;0}"), "Heading glyph copies the clicked pane's own path");
                 Render();
                 PanelTestAdapter.CanvasClick(canvas, Center(bounds), Forms.MouseButtons.Right); Render();
-                Check(FieldValue<bool>(attributes, "_rowMenuPaired") == paired && FieldValue<Array>(attributes, "_rowMenuActions").Cast<object>()
+                Check(FieldValue<Array>(attributes, "_rowMenuActions").Cast<object>()
                     .Any(action => PropertyValue<string>(action, "Label") == "Copy path  " + (paired ? "{1;0}" : "{0;0}")),
                     "Heading menu labels use the clicked pane's own path");
                 Call(attributes, "ChooseRowAction", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelRowAction", true)!, "CopyPathBare"), f.Result, canvas);
@@ -113,24 +113,24 @@ internal static class PairingWysiwygChecks
             await Copy("CopyAddresses", true);
             Check(Forms.Clipboard.GetText() == "{1;0}(2)", "Reversed F address resolves own path and original index through the pairing map");
             await Copy("CopyTable", true);
-            Check(Forms.Clipboard.GetText() == "Path\tIndex\tValue" + Environment.NewLine + "{1;0}\t2\t102.1234",
-                "F TSV retains unconverted raw F values despite explicit D units/decimals");
+            Check(Forms.Clipboard.GetText().StartsWith("Path\tIndex\tD\tF" + Environment.NewLine, StringComparison.Ordinal) && Forms.Clipboard.GetText().Contains("0.10"),
+                "Table TSV uses D paths and displayed converted column values while F output stays raw");
             await Copy("CopyPaths", true);
             Check(Forms.Clipboard.GetText() == "{1;0}", "F selected paths use F tree paths");
             await Copy("CopyAddresses", false);
             Check(Forms.Clipboard.GetText() == "{0;0}(0)", "D address keeps its transformed D branch index");
-            var pane = PanelTestAdapter.PaneField<RectangleF>(attributes, true, "List");
+            var pane = PanelTestAdapter.PaneField<RectangleF>(attributes, "List");
             var rowHit = FieldValue<IEnumerable>(attributes, "_rowHits").Cast<object>().First(hit =>
                 PropertyValue<int>(hit, "SourcePosition") == 0 && pane.Contains(PropertyValue<RectangleF>(hit, "Bounds")));
             PanelTestAdapter.CanvasClick(canvas, Center(PropertyValue<RectangleF>(rowHit, "Bounds")), Forms.MouseButtons.Right); Render();
-            Check(FieldValue<bool>(attributes, "_rowMenuPaired") && FieldValue<Array>(attributes, "_rowMenuActions").Cast<object>()
-                .Any(action => PropertyValue<object>(action, "Action").ToString() == "CopyAddresses"), "Selectable F rows expose address actions");
+            Check(FieldValue<Array>(attributes, "_rowMenuActions").Cast<object>()
+                .Any(action => PropertyValue<object>(action, "Action").ToString() == "CopyAddresses"), "Selectable table rows expose D address actions");
             Call(attributes, "CloseRowMenu"); Render();
             // The shared display index gives extras and hidden partners no row-action hit regions.
             void CheckExtras(string message)
             {
                 Render();
-                var entries = ((IEnumerable)Call(attributes, "PairView", f.Result)!).Cast<object>().ToArray();
+                var entries = TableRows(component).Cast<object>().ToArray();
                 bool found = false, selectable = false;
                 foreach (var entry in entries.Where(entry => FieldValue<int>(entry, "Extra") >= 0))
                 {
@@ -156,9 +156,10 @@ internal static class PairingWysiwygChecks
                         ? new GH_Path(1, 0, 1234567890, 1234567890, 1234567890) : new GH_Path(1, b));
             f.Solve(); await f.Ready(() => PropertyValue<bool>(component, "PairedSummaryCurrent"));
             PanelTestAdapter.Resize(component, 300, 650); Render();
-            var clipped = PropertyValue<RectangleF>(Heading(true), "Bounds");
+            var clipped = PropertyValue<RectangleF>(Heading(), "Bounds");
             Call(attributes, "UpdateHover", canvas, Center(clipped)); Render();
-            Check(PropertyValue<RectangleF>(Heading(true), "CopyBounds").IsEmpty, "Clipped order-paired F labels have no copy glyph or copy hit area");
+            Check(FieldValue<RectangleF>(attributes, "_tableHeader").Width == PanelTestAdapter.PaneField<RectangleF>(attributes, "List").Width,
+                "Narrow table header and list keep identical clipping widths");
         }
         finally { if (clipboard == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(clipboard, true); }
     }

@@ -404,6 +404,10 @@ namespace BetterGhPanel.Core
         public bool OnlyInvalid { get; set; }
         /// <summary>Value modes sort within each branch while preserving the snapshot's branch order.</summary>
         public PanelSortMode SortMode { get; set; } = PanelSortMode.SourceOrder;
+        /// <summary>Input identity of the presentation sort; empty means D.</summary>
+        public Guid SortColumn { get; set; }
+        /// <summary>Immutable captured column keys, indexed by D snapshot position.</summary>
+        public PanelColumnSortKeys? ColumnSortKeys { get; set; }
 
         public PanelQueryOptions Clone() => new PanelQueryOptions
         {
@@ -418,7 +422,9 @@ namespace BetterGhPanel.Core
             BranchPath = BranchPath,
             BranchPrefix = BranchPrefix,
             OnlyInvalid = OnlyInvalid,
-            SortMode = SortMode
+            SortMode = SortMode,
+            SortColumn = SortColumn,
+            ColumnSortKeys = ColumnSortKeys
         };
     }
 

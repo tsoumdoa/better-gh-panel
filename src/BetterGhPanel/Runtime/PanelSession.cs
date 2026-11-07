@@ -52,6 +52,7 @@ namespace BetterGhPanel.Runtime
                 PrepareGeometry, NotifyMeasurement,
                 (snapshot, position) => _geometrySourceCurrent?.Invoke(snapshot, position) ?? true,
                 position => _geometryRetentionResolver != null ? _geometryRetentionResolver(position) : PrepareGeometry(position));
+            _options.ColumnSortKeys = null;
             Snapshot = PanelSnapshot.Empty;
             Result = EmptyResult;
         }
@@ -65,6 +66,15 @@ namespace BetterGhPanel.Runtime
         public string? Error { get; private set; }
         public event EventHandler? QueryChanged;
         public event EventHandler? ResultChanged;
+
+        // Capture stages these immutable providers immediately before attaching their
+        // D snapshot. Never query the previous snapshot with a replacement pairing map.
+        internal void PrepareColumnSort(Guid column, PanelColumnSortKeys? keys)
+        {
+            _options = _options.Clone();
+            _options.SortColumn = column;
+            _options.ColumnSortKeys = keys;
+        }
 
         public void AttachSnapshot(PanelSnapshot snapshot)
             => AttachSnapshotCore(snapshot, null);
@@ -89,6 +99,7 @@ namespace BetterGhPanel.Runtime
             ++_request;
             _queryCancellation?.Cancel();
             _geometry.Suspend(retainMeasurements);
+            _options.ColumnSortKeys = null;
             Snapshot = PanelSnapshot.Empty;
             Result = EmptyResult;
             _awaitingSnapshot = true;
@@ -356,6 +367,7 @@ namespace BetterGhPanel.Runtime
             _geometryPreparationResolver = null;
             _geometryRetentionResolver = null;
             _captureCurrent = null;
+            _options.ColumnSortKeys = null;
             Snapshot = PanelSnapshot.Empty;
             Result = EmptyResult;
         }

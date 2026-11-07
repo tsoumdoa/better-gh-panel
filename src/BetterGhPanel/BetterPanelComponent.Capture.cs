@@ -201,6 +201,7 @@ namespace BetterGhPanel
                     var pairedGraphs = Array.Empty<CaptureGraphWitness>();
                     var pairedSnapshot = PanelSplit && pairedTree != null ? SnapshotCapture.CaptureForMeasurements(capturedPairedTree!,
                         out pairedSources, out pairedMeasurements, out pairedGraphs, PanelUnitConversion.None, units, null, null, null, null, null) : null;
+                    var tableColumns = CaptureTableColumns(da, inputTree, retainedSources, pairedTree, capturedPairedTree, pairedSnapshot, pairedError, pairedPresent, units);
                     StructureObserverForTesting?.Invoke(liveInputTree, livePairedTree);
                     if (!Current()) return;
                     bool hasGeometry = HasGeometry(snapshot) || pairedSnapshot != null && HasGeometry(pairedSnapshot);
@@ -224,6 +225,7 @@ namespace BetterGhPanel
                     _pairedError = pairedError;
                     PairedData = pairedTree;
                     PairedSnapshot = pairedSnapshot;
+                    _tableColumns.Clear(); _tableColumns.AddRange(tableColumns);
                     _pairedSourceItems = pairedSources; _pairedMeasurementSources = pairedMeasurements; _pairedCaptureGraphs = pairedGraphs;
                     bool retainContext = _geometryContext.Equals(context);
                     _geometryUnitSystem = unitSystem; _geometryTolerance = tolerance; _geometryUnits = units;
@@ -232,6 +234,7 @@ namespace BetterGhPanel
                     _sourceItems = sources; _measurementSources = measurementSources; _captureGraphs = graphs;
                     _measurementSnapshot = snapshot;
                     _staleMeasurementSnapshot = null;
+                    RefreshColumnSort();
                     if (_retainGeometryMeasurements)
                         session.AttachConvertedSnapshot(snapshot, _ => retainContext);
                     else session.AttachSnapshot(snapshot);

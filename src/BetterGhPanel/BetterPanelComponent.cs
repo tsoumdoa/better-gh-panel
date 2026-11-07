@@ -12,7 +12,7 @@ using Grasshopper.Kernel.Types;
 
 namespace BetterGhPanel
 {
-    public sealed partial class BetterPanelComponent : GH_Component
+    public sealed partial class BetterPanelComponent : GH_Component, IGH_VariableParameterComponent
     {
         private PanelSession? _session;
         private readonly PanelGeometryHighlight _highlight = new PanelGeometryHighlight();
@@ -166,6 +166,29 @@ namespace BetterGhPanel
             p[1].Optional = true;
         }
 
+        public bool CanInsertParameter(GH_ParameterSide side, int index) => false;
+        public bool CanRemoveParameter(GH_ParameterSide side, int index) => false;
+        public IGH_Param CreateParameter(GH_ParameterSide side, int index)
+        {
+            if (side != GH_ParameterSide.Input || index < 2) return null!;
+            int number = 1;
+            foreach (var input in Params.Input)
+                if (input.Name.StartsWith("Column ", StringComparison.Ordinal) && int.TryParse(input.Name.Substring(7), out int existing) && existing >= number && existing < int.MaxValue)
+                    number = existing + 1;
+            return new Grasshopper.Kernel.Parameters.Param_GenericObject
+            {
+                Name = "Column " + number, NickName = "C" + number,
+                Description = "Optional data shown as a table column beside D, paired the same way as F. Shown only; never sent to outputs.",
+                Access = GH_ParamAccess.tree, Optional = true, MutableNickName = true
+            };
+        }
+        public bool DestroyParameter(GH_ParameterSide side, int index) => side == GH_ParameterSide.Input && index >= 2;
+        public void VariableParameterMaintenance()
+        {
+            for (int i = 2; i < Params.Input.Count; i++)
+            { Params.Input[i].Access = GH_ParamAccess.tree; Params.Input[i].Optional = true; Params.Input[i].MutableNickName = true; }
+        }
+
         private const string MaskDescription = "True/False mask, in the original D input tree, of the items B + F follow. Preserves original paths and item counts. Every member of a kept or selected set is True. This mask conveys membership, not transformed ordering.";
 
         private const string PairedDescription = "F sends the F items paired with what D sends, at D's paths; an unequal branch sends its whole F branch. Values and types are unchanged.";
@@ -291,7 +314,7 @@ namespace BetterGhPanel
             RowSelection.Clear();
             CanvasTextInput.CloseActive();
             QueryPreviewActive = false;
-            if (_session != null) _savedOptions = _session.Options;
+            if (_session != null) { _savedOptions = _session.Options; _savedOptions.ColumnSortKeys = null; }
             _session?.Dispose();
             _session = null;
             _sourceItems = Array.Empty<IGH_Goo?>();
@@ -325,6 +348,11 @@ namespace BetterGhPanel
                 }, true, PreviewSize == size);
             }
             Menu_AppendItem(sizeMenu.DropDown, "Custom", (_, __) => { }, false, PreviewSize < 0);
+            Menu_AppendSeparator(menu);
+            Menu_AppendItem(menu, "Add column", (_, __) => AddColumn());
+            var remove = Menu_AppendItem(menu, "Remove column", null, Params.Input.Count > 2);
+            foreach (var input in Params.Input.GetRange(2, Params.Input.Count - 2))
+                Menu_AppendItem(remove.DropDown, input.NickName, (_, __) => RemoveColumn(input));
         }
 
     }
