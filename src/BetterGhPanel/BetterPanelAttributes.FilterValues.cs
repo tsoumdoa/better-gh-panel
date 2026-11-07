@@ -37,15 +37,13 @@ namespace BetterGhPanel
                 var bounds = new RectangleF(list.X, y, list.Width, RowHeight);
                 bool isSelected = selected.Contains(path);
                 Fill(graphics, isSelected ? PanelTheme.Rgb(216, 232, 219) : (shown & 1) == 0 ? PanelTheme.Background : PanelTheme.Rgb(247, 249, 246), bounds);
-                float marks = 0;
+                // The selection bar owns the edge; validity marks always start beside it.
+                if (isSelected) Fill(graphics, Accent, new RectangleF(bounds.X, bounds.Y, 2, bounds.Height));
                 if (set && result.DisplaySet!.BranchSourceStatuses.TryGetValue(path, out var statuses))
                 {
-                    if (statuses.VerifiedInvalid > 0) Fill(graphics, PanelTheme.Rgb(180, 106, 67), new RectangleF(bounds.X, bounds.Y + 3, 2, bounds.Height - 6));
-                    if (statuses.Unverified > 0) Fill(graphics, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (statuses.VerifiedInvalid > 0 ? 2 : 0), bounds.Y + 3, 2, bounds.Height - 6));
-                    marks = (statuses.VerifiedInvalid > 0 ? 2 : 0) + (statuses.Unverified > 0 ? 2 : 0);
+                    if (statuses.VerifiedInvalid > 0) Fill(graphics, PanelTheme.Rgb(180, 106, 67), new RectangleF(bounds.X + 2, bounds.Y + 3, 2, bounds.Height - 6));
+                    if (statuses.Unverified > 0) Fill(graphics, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (statuses.VerifiedInvalid > 0 ? 4 : 2), bounds.Y + 3, 2, bounds.Height - 6));
                 }
-                // Selection gets its own bar, right of any validity marks.
-                if (isSelected) Fill(graphics, Accent, new RectangleF(bounds.X + marks, bounds.Y, 2, bounds.Height));
                 float badgeWidth = set ? 40 : 0;
                 string label = set ? result.DisplaySet!.BranchIndices[path] + " · " + path : path;
                 var labelBounds = new RectangleF(bounds.X + 6, y, Math.Max(0, paired ? 78 : bounds.Width - 120 - badgeWidth), RowHeight);

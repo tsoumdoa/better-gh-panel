@@ -33,12 +33,16 @@ namespace BetterGhPanel
         private static Color Accent => PanelTheme.Accent;
         private const float OutputControlWidth = 92;
         private bool _singleLineFooter;
-        // Painted footer segments: the range opens Jump to row; the output chip clears filters.
+        // Painted footer segments: the range opens Jump to row; the × of the
+        // Clear filters chip clears (the rest of the chip is tooltip only).
         private RectangleF _jumpBounds, _clearFiltersBounds;
-        // Typographic measurement for inline chips and segments, as in the Data checks line.
+        private const float ChipClearWidth = 14;
+        private RectangleF ClearFiltersHit => _clearFiltersBounds.IsEmpty ? RectangleF.Empty :
+            new RectangleF(_clearFiltersBounds.Right - ChipClearWidth, _clearFiltersBounds.Y, ChipClearWidth, _clearFiltersBounds.Height);
+        // Typographic measurement for inline chips, footer segments and the Data checks line.
         private static readonly StringFormat Tight = new StringFormat(StringFormat.GenericTypographic)
         {
-            FormatFlags = StringFormatFlags.NoWrap | StringFormatFlags.MeasureTrailingSpaces,
+            FormatFlags = StringFormat.GenericTypographic.FormatFlags | StringFormatFlags.NoWrap | StringFormatFlags.MeasureTrailingSpaces,
             LineAlignment = StringAlignment.Center,
             Trimming = StringTrimming.EllipsisCharacter
         };
@@ -382,7 +386,7 @@ namespace BetterGhPanel
                     return;
                 }
                 // Chip and Units widths follow their labels, so measure them before laying out.
-                float searchChipWidth = TightWidth(graphics, CanvasMenu.SearchModeChip(session.Options.SearchMode), small) + 19;
+                float searchChipWidth = (float)Math.Ceiling(TightWidth(graphics, CanvasMenu.SearchModeChip(session.Options.SearchMode), small)) + 19;
                 float unitsWidth = (float)Math.Ceiling(graphics.MeasureString(UnitsLabel(), small, PointF.Empty, trim).Width) + 18;
                 bool resized = searchChipWidth != _searchChipWidth || unitsWidth != _unitsWidth;
                 _searchChipWidth = searchChipWidth;
@@ -391,7 +395,7 @@ namespace BetterGhPanel
                 // One line holds the summary and output part left of Select all, Stats, tools, Reset and Units.
                 bool singleLine = PanelOwner.PanelSplit && _layout.Panel.Height < 140 || _layout.Panel.Width >= 500 &&
                     TightWidth(graphics, CanvasStatistics.Summary(result) + " · ", small) + OutputPartWidth(graphics, result, small) <=
-                        _layout.Panel.Width - 308 - UnitsWidth(_layout.Panel.Width) - (PanelOwner.CanOutputValues ? OutputControlWidth + 4 : 0);
+                        _layout.Panel.Width - 313 - UnitsWidth(_layout.Panel.Width) - (PanelOwner.CanOutputValues ? OutputControlWidth + 4 : 0);
                 if (resized || singleLine != _singleLineFooter || PanelOwner.CanOutputValues == _layout.OutLabel.IsEmpty ||
                     _warningsHeight != WarningStripHeight(singleLine ? 20 : 36))
                 {
@@ -724,13 +728,12 @@ namespace BetterGhPanel
                     var sourceStatuses = paired ? new PanelSourceStatusCounts(0,
                         row.Validity == PanelValidity.VerifiedInvalid ? 1 : 0, row.Validity == PanelValidity.Unverified ? 1 : 0) :
                         CanvasStatistics.RowSourceStatuses(result, sourcePosition);
+                    // The selection bar owns the edge; validity marks always start beside it.
+                    if (selected) Fill(g, Accent, new RectangleF(bounds.X, bounds.Y, 2, bounds.Height));
                     if (sourceStatuses.VerifiedInvalid > 0)
-                        Fill(g, PanelTheme.Rgb(180, 106, 67), new RectangleF(bounds.X, bounds.Y + 3, 2, bounds.Height - 6));
+                        Fill(g, PanelTheme.Rgb(180, 106, 67), new RectangleF(bounds.X + 2, bounds.Y + 3, 2, bounds.Height - 6));
                     if (sourceStatuses.Unverified > 0)
-                        Fill(g, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (sourceStatuses.VerifiedInvalid > 0 ? 2 : 0), bounds.Y + 3, 2, bounds.Height - 6));
-                    // Selection gets its own bar, right of any validity marks.
-                    if (selected)
-                        Fill(g, Accent, new RectangleF(bounds.X + (sourceStatuses.VerifiedInvalid > 0 ? 2 : 0) + (sourceStatuses.Unverified > 0 ? 2 : 0), bounds.Y, 2, bounds.Height));
+                        Fill(g, PanelTheme.Rgb(103, 112, 166), new RectangleF(bounds.X + (sourceStatuses.VerifiedInvalid > 0 ? 4 : 2), bounds.Y + 3, 2, bounds.Height - 6));
                     if (!grouped)
                         rowRenderer.DrawCell(g, dataRow.Path, mono, Accent,
                             new RectangleF(bounds.X + rowRenderer.GutterWidth + 9, y, Math.Max(0, pathWidth - 12), RowHeight));
@@ -813,13 +816,23 @@ namespace BetterGhPanel
                 ? "D: tools" : PanelOwner.OutputsValues ? "D: values" : "D = input";
         }
 
-        // With filters to clear, the output part is a chip with a trailing ×.
+        // The footer's output part. When only sort, the search mode or Show values
+        // is set, it names that state instead, so the chip says what × clears.
+        private string OutputPartLabel(PanelQueryResult result)
+        {
+            var options = PanelOwner.Session.Options;
+            if (ActiveFilterCount() > 0 || !BetterPanelComponent.HasFilters(options)) return OutputLabel(result);
+            bool mode = options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue;
+            bool sorted = options.SortMode != PanelSortMode.SourceOrder;
+            return mode ? CanvasMenu.SearchModeChip(options.SearchMode) + (sorted ? " · sorted" : "") : sorted ? "Sorted" : "Filters";
+        }
+
+        // With filters to clear, the output part is a chip: 3 units of padding, the label, then the ×.
         private float OutputPartWidth(Graphics g, PanelQueryResult result, Font small) =>
-            TightWidth(g, OutputLabel(result), small) + (BetterPanelComponent.HasFilters(PanelOwner.Session.Options) ? 18 : 0);
+            TightWidth(g, OutputPartLabel(result), small) + (BetterPanelComponent.HasFilters(PanelOwner.Session.Options) ? 3 + ChipClearWidth : 0);
 
         private void RenderFooter(Graphics g, PanelQueryResult result, Font small, StringFormat trim)
         {
-            _jumpBounds = _clearFiltersBounds = RectangleF.Empty;
             var session = PanelOwner.Session;
             bool current = !PanelOwner.Locked && session.HasCurrentResult;
             if (current && !_singleLineFooter)
@@ -829,15 +842,21 @@ namespace BetterGhPanel
             int selectableCount = DisplayListLengths ? result.BranchPaths.Count : result.RowPositions.Count;
             Control(g, _layout.SelectAll, "Select all", small, trim, current && selectableCount > 0 && selected == selectableCount);
             Control(g, _layout.Statistics, "Stats", small, trim, current && _menu.Kind == CanvasMenuKind.Statistics);
-            float statusRight = _singleLineFooter ? (!_layout.OutLabel.IsEmpty ? _layout.OutLabel.Left - 4 : _layout.SelectAll.Left - 6) : _layout.Trim.Left - 3;
+            float statusRight = _singleLineFooter ? (!_layout.OutLabel.IsEmpty ? _layout.OutLabel.Left - 4 : _layout.SelectAll.Left - 6) : _layout.Trim.Left - 2;
             if (!_layout.OutLabel.IsEmpty) DrawOutputControl(g, small, trim);
             var status = new RectangleF(_layout.Footer.X, _layout.Units.Y, statusRight - _layout.Footer.X, _layout.Units.Height);
             string? notice = FooterNotice(result);
             bool roomy = status.Width >= g.MeasureString("000…", small).Width;
-            if (roomy && notice == null && current) DrawStatusSegments(g, result, small, status);
-            else if (roomy) Text(g, notice ?? FooterStatus(result, _singleLineFooter), small, Muted, status, trim);
+            RectangleF jump = RectangleF.Empty, chip = RectangleF.Empty;
+            if (roomy && notice == null && current) DrawStatusSegments(g, result, small, status, out jump, out chip);
+            else if (roomy) Text(g, notice ?? FooterRange(result, _singleLineFooter) + " · " + OutputLabel(result), small, Muted, status, trim);
+            // A partial repaint that misses the footer keeps unchanged targets, as rows do;
+            // a notice, a moved or resized segment, or InvalidatePaintedHits drops them.
+            _jumpBounds = KeepPaintedTarget(g, _jumpBounds, jump);
+            _clearFiltersBounds = KeepPaintedTarget(g, _clearFiltersBounds, chip);
+            // Depths above 9 read "9+"; the tooltip and editor keep the full value.
             TreeToolIcons.Draw(g, _layout.Trim, TreeToolIcon.Trim, PanelOwner.TrimDepth > 0,
-                PanelOwner.TrimDepth > 0 ? PanelOwner.TrimDepth.ToString(System.Globalization.CultureInfo.InvariantCulture) : null, small);
+                PanelOwner.TrimDepth <= 0 ? null : PanelOwner.TrimDepth > 9 ? "9+" : PanelOwner.TrimDepth.ToString(System.Globalization.CultureInfo.InvariantCulture), small);
             TreeToolIcons.Draw(g, _layout.Simplify, TreeToolIcon.Simplify, PanelOwner.SimplifyTree);
             TreeToolIcons.Draw(g, _layout.Flatten, TreeToolIcon.Flatten, PanelOwner.FlattenTree);
             TreeToolIcons.Draw(g, _layout.Reverse, TreeToolIcon.Reverse, PanelOwner.ReverseTree);
@@ -847,41 +866,54 @@ namespace BetterGhPanel
                 PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor > 0);
         }
 
-        // The range (or, on one line, the summary) opens Jump to row; the output
-        // part follows only when it fits whole, as a Clear filters chip when
-        // there is something to clear.
-        private void DrawStatusSegments(Graphics g, PanelQueryResult result, Font small, RectangleF status)
+        private RectangleF KeepPaintedTarget(Graphics g, RectangleF previous, RectangleF target) =>
+            TargetPainted(g, target) || _preservePaintedTargets && previous == target ? target : RectangleF.Empty;
+
+        // The range (or, on one line, the summary) opens Jump to row and the
+        // output part follows it. A Clear filters chip outranks the range: when
+        // both do not fit, the chip stays and the range (Ctrl/Cmd+G, footer tooltip) drops.
+        private void DrawStatusSegments(Graphics g, PanelQueryResult result, Font small, RectangleF status, out RectangleF jump, out RectangleF chip)
         {
-            string range = FooterRange(result, _singleLineFooter);
-            var jump = new RectangleF(status.X, status.Y + 2, Math.Min(TightWidth(g, range, small), status.Width), 16);
-            if (jump.Width <= 0) return;
-            using (var link = new Font(small, jump == _hoverBounds ? FontStyle.Underline : FontStyle.Regular))
-                Text(g, range, link, Muted, jump, Tight);
-            if (TargetPainted(g, jump)) _jumpBounds = jump;
-            float separator = TightWidth(g, " · ", small), width = OutputPartWidth(g, result, small);
-            if (jump.Right + separator + width > status.Right) return;
-            Text(g, " · ", small, Muted, new RectangleF(jump.Right, jump.Y, separator, jump.Height), Tight);
-            var part = new RectangleF(jump.Right + separator, jump.Y, width, jump.Height);
-            string output = OutputLabel(result);
-            if (!BetterPanelComponent.HasFilters(PanelOwner.Session.Options))
+            jump = chip = RectangleF.Empty;
+            string range = FooterRange(result, _singleLineFooter), output = OutputPartLabel(result);
+            bool clearable = BetterPanelComponent.HasFilters(PanelOwner.Session.Options);
+            float rangeWidth = TightWidth(g, range, small), separator = TightWidth(g, " · ", small), width = OutputPartWidth(g, result, small);
+            bool both = rangeWidth + separator + width <= status.Width;
+            float x = status.X, y = status.Y + 2;
+            if (both || !clearable)
+            {
+                jump = new RectangleF(x, y, Math.Min(rangeWidth, status.Width), 16);
+                using (var link = new Font(small, jump == _hoverBounds ? FontStyle.Underline : FontStyle.Regular))
+                    Text(g, range, link, Muted, jump, Tight);
+                if (!both) return;
+                Text(g, " · ", small, Muted, new RectangleF(jump.Right, y, separator, 16), Tight);
+                x = jump.Right + separator;
+            }
+            // Alone, a chip wider than the status ellipsizes its label and keeps the ×.
+            var part = new RectangleF(x, y, Math.Min(width, status.Right - x), 16);
+            if (!clearable)
             {
                 Text(g, output, small, Muted, part, Tight);
                 return;
             }
             DrawSetBadge(g, new RectangleF(part.X, part.Y + 0.5f, part.Width, part.Height - 1), repeated: true, expanded: false);
-            Text(g, output, small, Accent, new RectangleF(part.X + 4, part.Y, part.Width - 18, part.Height), Tight);
-            DrawClear(g, new RectangleF(part.Right - 13, part.Y, 12, part.Height));
-            if (TargetPainted(g, part)) _clearFiltersBounds = part;
+            Text(g, output, small, Accent, new RectangleF(part.X + 3, y, part.Width - 3 - ChipClearWidth, 16), Tight);
+            DrawClear(g, new RectangleF(part.Right - ChipClearWidth, y, ChipClearWidth - 1, 16));
+            chip = part;
+        }
+
+        // Factor and decimals, as the Units chip and its tooltip show them.
+        private IEnumerable<string> PrecisionParts()
+        {
+            if (PanelOwner.RoundUpFactor > 0) yield return "↑" + PanelUnits.FormatFactor(PanelOwner.RoundUpFactor, "G4");
+            if (PanelOwner.DecimalPlaces >= 0) yield return PanelOwner.DecimalPlaces + "dp";
         }
 
         // Active Units reads compactly so the chip stays narrow: target unit, factor, decimals.
         private string UnitsLabel()
         {
-            var parts = new List<string>();
-            string conversion = PanelUnits.Label(PanelOwner.UnitConversion);
-            if (PanelOwner.UnitConversion != PanelUnitConversion.None) parts.Add("→" + conversion.Substring(conversion.IndexOf('→') + 2));
-            if (PanelOwner.RoundUpFactor > 0) parts.Add("↑" + PanelUnits.FormatFactor(PanelOwner.RoundUpFactor, "G4"));
-            if (PanelOwner.DecimalPlaces >= 0) parts.Add(PanelOwner.DecimalPlaces + "dp");
+            var parts = PrecisionParts().ToList();
+            if (PanelOwner.UnitConversion != PanelUnitConversion.None) parts.Insert(0, "→" + PanelUnits.Symbol(PanelOwner.UnitConversion));
             return parts.Count == 0 ? "Units" : string.Join(" ", parts);
         }
 
@@ -929,9 +961,6 @@ namespace BetterGhPanel
             DisplayListLengths ? System.FormattableString.Invariant($"{(Count == 0 ? 0 : _d.Offset + 1):N0}–{Math.Min(Count, _d.Offset + _d.Shown):N0}/{Count:N0} branches") :
             _firstShownItem < 0 ? System.FormattableString.Invariant($"{result.RowPositions.Count:N0} items") :
             System.FormattableString.Invariant($"{_firstShownItem + 1:N0}–{_lastShownItem + 1:N0}/{result.RowPositions.Count:N0}");
-
-        private string FooterStatus(PanelQueryResult result, bool singleLine) =>
-            FooterNotice(result) ?? FooterRange(result, singleLine) + " · " + OutputLabel(result);
 
         private RectangleF Thumb(bool paired)
         {
@@ -1770,23 +1799,25 @@ namespace BetterGhPanel
         private static float TightWidth(Graphics g, string text, Font font) =>
             g.MeasureString(text, font, int.MaxValue, Tight).Width;
 
-        // A leading chip names the search mode and opens its menu; the rest of
-        // the field shows the query or a placeholder and opens the editor.
+        // A leading mode dropdown (label, chevron and divider, like the header
+        // dropdowns) opens the mode menu; the rest of the field shows the query
+        // or a placeholder and opens the editor. Only a typed query fills the field.
         private void DrawSearchControl(Graphics g, PanelQueryOptions options, Font small, StringFormat trim)
         {
             var search = _layout.Search;
             var chip = _layout.Filter;
-            bool mode = options.SearchMode != PanelSearchMode.Text, active = mode || !string.IsNullOrEmpty(options.Search);
-            Control(g, search, "", small, trim, active);
-            var badge = new RectangleF(chip.X, chip.Y + 3, chip.Width, chip.Height - 6);
-            DrawSetBadge(g, badge, repeated: mode, expanded: false);
-            Text(g, CanvasMenu.SearchModeChip(options.SearchMode), small, mode ? Accent : Muted,
-                new RectangleF(badge.X + 5, chip.Y, badge.Width - 19, chip.Height), Tight);
-            DrawChevron(g, new RectangleF(badge.X, chip.Y, badge.Width - 1, chip.Height), mode ? Accent : Muted);
+            bool mode = options.SearchMode != PanelSearchMode.Text, placeholder = string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue;
+            Control(g, search, "", small, trim, !placeholder);
+            var modeColor = mode ? Accent : Muted;
+            Text(g, CanvasMenu.SearchModeChip(options.SearchMode), small, modeColor,
+                new RectangleF(chip.X + 2, chip.Y, chip.Width - 17, chip.Height), Tight);
+            DrawChevron(g, new RectangleF(chip.X, chip.Y, chip.Width - 2, chip.Height), modeColor);
+            using (var divider = new Pen(PanelTheme.Rgb(224, 229, 222)))
+                g.DrawLine(divider, chip.Right - 0.5f, chip.Y + 4, chip.Right - 0.5f, chip.Bottom - 5);
             bool searchClear = SearchClearVisible;
             float right = searchClear ? _layout.SearchClear.Left : search.Right - 4;
-            Text(g, CanvasMenu.SearchHint(options), small, active ? Accent : Muted,
-                new RectangleF(chip.Right + 2, search.Y, Math.Max(0, right - chip.Right - 2), search.Height), trim);
+            Text(g, CanvasMenu.SearchHint(options), small, placeholder ? Muted : Accent,
+                new RectangleF(chip.Right + 3, search.Y, Math.Max(0, right - chip.Right - 3), search.Height), trim);
             if (searchClear) DrawClear(g, _layout.SearchClear);
         }
 

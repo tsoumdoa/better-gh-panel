@@ -105,8 +105,9 @@ namespace BetterGhPanel
         // Measured at paint: the search mode chip and the Units label widths.
         private float _searchChipWidth = 38, _unitsWidth = 48;
 
-        // Units may widen until the footer status keeps room for its row range.
-        private float UnitsWidth(float panelWidth) => Math.Max(48, Math.Min(_unitsWidth, panelWidth - 234));
+        // Units may widen until the two-line footer status keeps room for a
+        // "D: 1 filter ×" chip (59 units; 300-wide panels keep the 48 minimum).
+        private float UnitsWidth(float panelWidth) => Math.Max(48, Math.Min(_unitsWidth, panelWidth - 252));
 
         // Computes the immutable fixed-control layout and, in the original
         // calculation order, updates _d/_f pane rectangles, _warningsHeight and
@@ -184,9 +185,9 @@ namespace BetterGhPanel
             // Active Units widens leftward, shifting Reset and the tree tools with it.
             float unitsWidth = UnitsWidth(panel.Width);
             units = new RectangleF(footer.Right - unitsWidth, footer.Bottom - 20, unitsWidth, 20);
-            // Reset all sits between the tree tools and Units, which it also resets.
+            // Reset all sits beside Units, which it also resets, 8 units clear of the five tree tools.
             reset = new RectangleF(units.Left - 23, units.Y, 20, units.Height);
-            trim = new RectangleF(reset.Left - 121, units.Y, 22, units.Height);
+            trim = new RectangleF(reset.Left - 126, units.Y, 22, units.Height);
             simplify = new RectangleF(trim.Right + 2, trim.Y, 22, 20);
             flatten = new RectangleF(simplify.Right + 2, trim.Y, 22, 20);
             reverse = new RectangleF(flatten.Right + 2, trim.Y, 22, 20);

@@ -86,7 +86,9 @@ namespace BetterGhPanel
             new ControlEntry("OutItems", layout => layout.OutItems, ClickOutput, TooltipOutput, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, visible: path => path == ControlPath.Tooltip || PanelOwner.CanOutputValues),
             new ControlEntry("OutValues", layout => layout.OutValues, ClickOutput, TooltipOutput, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, visible: path => path == ControlPath.Tooltip || PanelOwner.CanOutputValues),
             new ControlEntry("Jump", _ => _jumpBounds, ClickJump, TooltipJump, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
-            new ControlEntry("ClearFilters", _ => _clearFiltersBounds, ClickClearFilters, TooltipClearFilters, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            // Only the chip's × clears; its label explains what the × clears.
+            new ControlEntry("ClearFilters", _ => ClearFiltersHit, ClickClearFilters, TooltipClearFilters, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main,
+                tooltipHit: point => _clearFiltersBounds.Contains(point)),
             new ControlEntry("Footer", layout => layout.Footer, null, TooltipFooter, tooltip: ControlStep.Main),
             new ControlEntry("Restore", layout => layout.Restore, ClickRestore, TooltipRestore, click: ControlStep.Capsule, hover: ControlStep.Capsule, tooltip: ControlStep.Capsule)
         };
@@ -150,6 +152,10 @@ namespace BetterGhPanel
         private GH_ObjectResponse? ClickReset(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             bool recordedUndo = PanelOwner.ResetAll();
+            // Resetting Units narrows its chip and shifts Reset and the tree tools
+            // under the pointer; the double-click's second press must not land on them.
+            SuppressTrailingDoubleClick();
+            CanvasDoubleClickGuard.Start(sender, e);
             ShowNotice(sender, recordedUndo ? "Reset all · Undo restores the previous settings" : "Reset all");
             return GH_ObjectResponse.Handled;
         }
@@ -251,6 +257,9 @@ namespace BetterGhPanel
         private GH_ObjectResponse? ClickClearFilters(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             PanelOwner.ClearFilters();
+            // The chip disappears and the footer reflows; swallow the second press.
+            SuppressTrailingDoubleClick();
+            CanvasDoubleClickGuard.Start(sender, e);
             ShowNotice(sender, "Filters cleared · Undo restores them");
             return GH_ObjectResponse.Handled;
         }
@@ -361,10 +370,9 @@ namespace BetterGhPanel
         private void TooltipUnits(PointF point, GH_TooltipDisplayEventArgs e)
         {
             e.Title = "Units and decimals";
-            string precision = (PanelOwner.RoundUpFactor > 0 ? "↑" + PanelUnits.FormatFactor(PanelOwner.RoundUpFactor, "G4") : "") +
-                (PanelOwner.DecimalPlaces < 0 ? "" : (PanelOwner.RoundUpFactor > 0 ? " · " : "") + PanelOwner.DecimalPlaces + "dp");
-            string conversion = PanelOwner.UnitConversion == PanelUnitConversion.None ? "" : PanelUnits.Label(PanelOwner.UnitConversion);
-            string setting = conversion.Length > 0 && precision.Length > 0 ? conversion + " · " + precision : conversion + precision;
+            var parts = PrecisionParts().ToList();
+            if (PanelOwner.UnitConversion != PanelUnitConversion.None) parts.Insert(0, PanelUnits.Label(PanelOwner.UnitConversion));
+            string setting = string.Join(" · ", parts);
             e.Text = setting.Length > 0 ? setting + " · changes numeric output" : "Changes numeric output";
             e.Description = "Convert mm ↔ m, mm² ↔ m², mm³ ↔ m³ or rad ↔ deg. Set explicit decimals (0–12), shared with numeric output. Or round output up to a factor (factor 5: 12.1 → 15).";
         }
@@ -444,7 +452,8 @@ namespace BetterGhPanel
         {
             e.Title = "Clear filters";
             e.Text = "Undo restores them";
-            e.Description = "Clears search, mode, type, path, invalid-only, sorting, selection and scroll. Tree tools, units and decimals stay.";
+            e.Description = "Clears search, mode, type, path, invalid-only, sorting, selection and scroll. Tree tools, units and decimals stay. " +
+                "Out Values falls back to Items when clearing the mode leaves no values to send (Create set keeps them).";
         }
 
         private void TooltipFilter(PointF point, GH_TooltipDisplayEventArgs e)
@@ -484,7 +493,9 @@ namespace BetterGhPanel
             }
             e.Title = "Row selection and copy";
             e.Text = _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus : System.FormattableString.Invariant($"{_selection.Count:N0} selected");
-            if (PanelOwner.Session.HasCurrentResult) e.Text += " · " + CanvasStatistics.Summary(PanelOwner.Session.Result);
+            // The footer may drop its range for the Clear filters chip; the tooltip keeps it.
+            if (PanelOwner.Session.HasCurrentResult)
+                e.Text += " · " + CanvasStatistics.Summary(PanelOwner.Session.Result) + " · showing " + FooterRange(PanelOwner.Session.Result, singleLine: false);
             e.Description = "Click to select; Ctrl/Cmd toggles, Shift extends, Alt/Option picks the same index in every branch. Right-click a row to copy, frame or view the full value, or a branch heading for branch actions. Double-click clears selection.\n\n" + KeyboardHint;
         }
 

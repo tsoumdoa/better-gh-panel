@@ -92,24 +92,31 @@ namespace BetterGhPanel.UI
         {
             using var format = new StringFormat(StringFormat.GenericTypographic) { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
             float width = Math.Max(9, g.MeasureString(text, font, PointF.Empty, format).Width + 4);
-            var pill = new RectangleF(bounds.Right - width - 1, bounds.Bottom - 12, width, 11);
-            const float corner = 5;
+            // Raised clear of the active underline at Bottom - 1.
+            var pill = new RectangleF(bounds.Right - width - 1, bounds.Bottom - 14, width, 11);
             var state = g.Save();
             try
             {
                 g.SmoothingMode = SmoothingMode.AntiAlias;
-                using var shape = new GraphicsPath();
-                shape.AddArc(pill.X, pill.Y, corner, corner, 180, 90);
-                shape.AddArc(pill.Right - corner, pill.Y, corner, corner, 270, 90);
-                shape.AddArc(pill.Right - corner, pill.Bottom - corner, corner, corner, 0, 90);
-                shape.AddArc(pill.X, pill.Bottom - corner, corner, corner, 90, 90);
-                shape.CloseFigure();
+                using var shape = PillPath(pill, 5);
                 using (var fill = new SolidBrush(PanelTheme.Background)) g.FillPath(fill, shape);
                 using (var border = new Pen(PanelTheme.Rgb(158, 182, 141))) g.DrawPath(border, shape);
                 using var brush = new SolidBrush(Accent);
                 g.DrawString(text, font, brush, new RectangleF(pill.X, pill.Y + 0.5f, pill.Width, pill.Height), format);
             }
             finally { g.Restore(state); }
+        }
+
+        // A rectangle with rounded corners, shared by the Trim and set-count badges.
+        internal static GraphicsPath PillPath(RectangleF bounds, float corner)
+        {
+            var shape = new GraphicsPath();
+            shape.AddArc(bounds.X, bounds.Y, corner, corner, 180, 90);
+            shape.AddArc(bounds.Right - corner, bounds.Y, corner, corner, 270, 90);
+            shape.AddArc(bounds.Right - corner, bounds.Bottom - corner, corner, corner, 0, 90);
+            shape.AddArc(bounds.X, bounds.Bottom - corner, corner, corner, 90, 90);
+            shape.CloseFigure();
+            return shape;
         }
     }
 }

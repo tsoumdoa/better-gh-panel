@@ -140,8 +140,9 @@ namespace BetterGhPanel
                     if (current) SelectAllRows(canvas, result);
                     return true;
                 case Keys.G when control:
+                    // Nothing to jump in: leave Ctrl/Cmd+G to Grasshopper's Group.
                     if (current) ShowJumpEditor(canvas);
-                    return true;
+                    return current;
                 case Keys.F when control:
                 case Keys.OemQuestion when none:
                 case Keys.Divide when none:

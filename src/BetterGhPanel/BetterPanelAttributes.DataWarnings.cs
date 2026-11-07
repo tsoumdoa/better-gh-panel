@@ -23,11 +23,7 @@ namespace BetterGhPanel
             _warningHits.Clear();
             if (_warningsHeight == 0 || !ResultIsCurrent(result)) return;
             var warnings = result.Warnings;
-            using var textFormat = (StringFormat)StringFormat.GenericTypographic.Clone();
-            textFormat.FormatFlags |= StringFormatFlags.NoWrap | StringFormatFlags.MeasureTrailingSpaces;
-            textFormat.LineAlignment = StringAlignment.Center;
-            textFormat.Trimming = StringTrimming.EllipsisCharacter;
-            float separatorWidth = graphics.MeasureString(" · ", small, int.MaxValue, textFormat).Width;
+            float separatorWidth = graphics.MeasureString(" · ", small, int.MaxValue, Tight).Width;
             float x = _d.List.X + 2, y = _layout.Panel.Y + 48;
             float right = PanelOwner.PanelSplit ? _layout.Panel.X + _layout.Panel.Width / 2 - 19 : _d.List.Right;
             bool hasSegment = false;
@@ -35,20 +31,20 @@ namespace BetterGhPanel
             {
                 if (hasSegment)
                 {
-                    Text(graphics, " · ", small, Muted, new RectangleF(x, y, separatorWidth, 16), textFormat);
+                    Text(graphics, " · ", small, Muted, new RectangleF(x, y, separatorWidth, 16), Tight);
                     x += separatorWidth;
                 }
-                float width = System.Math.Min(graphics.MeasureString(text, small, int.MaxValue, textFormat).Width, right - x);
+                float width = System.Math.Min(graphics.MeasureString(text, small, int.MaxValue, Tight).Width, right - x);
                 if (width <= 0) return;
                 hasSegment = true;
                 var bounds = new RectangleF(x, y, width, 16);
                 using var link = new Font(small, bounds == _hoverBounds ? FontStyle.Underline : FontStyle.Regular);
-                Text(graphics, text, link, PanelTheme.Warning, bounds, textFormat);
+                Text(graphics, text, link, PanelTheme.Warning, bounds, Tight);
                 if (TargetPainted(graphics, bounds)) _warningHits.Add((bounds, kind));
                 x += width;
             }
-            float prefixWidth = graphics.MeasureString("Check: ", small, int.MaxValue, textFormat).Width;
-            Text(graphics, "Check:", small, Muted, new RectangleF(x, y, prefixWidth, 16), textFormat);
+            float prefixWidth = graphics.MeasureString("Check: ", small, int.MaxValue, Tight).Width;
+            Text(graphics, "Check:", small, Muted, new RectangleF(x, y, prefixWidth, 16), Tight);
             x += prefixWidth;
             if (warnings.NullCount > 0) Segment(warnings.NullCount.ToString(CultureInfo.InvariantCulture) + (warnings.NullCount == 1 ? " null" : " nulls"), 0);
             if (warnings.InvalidCount > 0) Segment(warnings.InvalidCount.ToString(CultureInfo.InvariantCulture) + " invalid", 1);
