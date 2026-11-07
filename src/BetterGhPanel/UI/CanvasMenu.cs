@@ -403,14 +403,12 @@ namespace BetterGhPanel.UI
             mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z || PanelProperties.IsProperty(mode);
         internal static bool HasValueChoices(PanelSearchMode mode) =>
             mode == PanelSearchMode.Validity || PanelProperties.Kind(mode) == PanelPropertyKind.Boolean;
-        internal static string SearchHint(PanelQueryOptions options)
-        {
-            string prefix = options.SearchMode == PanelSearchMode.Regex ? ".* " :
-                options.SearchMode == PanelSearchMode.Text ? "" :
-                options.SearchMode == PanelSearchMode.ListLength ? "List " : options.SearchMode + " ";
-            return prefix + (options.DisplayFilterValue || string.IsNullOrEmpty(options.Search) ?
-                options.SearchMode == PanelSearchMode.Text ? "Search…" : options.SearchMode == PanelSearchMode.Regex ? "Pattern…" : "filter…" : options.Search);
-        }
+        // The search field's leading chip names the mode; the hint is only the query or a placeholder.
+        internal static string SearchModeChip(PanelSearchMode mode) =>
+            mode == PanelSearchMode.ListLength ? "List" : PanelProperties.IsProperty(mode) ? PanelProperties.Label(mode) : mode.ToString();
+        internal static string SearchHint(PanelQueryOptions options) =>
+            options.DisplayFilterValue || string.IsNullOrEmpty(options.Search) ?
+                options.SearchMode == PanelSearchMode.Text ? "Search…" : options.SearchMode == PanelSearchMode.Regex ? "Pattern…" : "filter…" : options.Search;
 
         internal static string ComparisonOperator(CanvasComparison comparison) => comparison switch
         {

@@ -125,7 +125,7 @@ public class FilterCanvasTests
                 int display = Enumerable.Range(0, menu.Count).Single(index => menu.ComparisonChoiceAt(index).IsDisplayValue);
                 Assert.True(menu.IsSelected(display, options, PanelUnitConversion.None, -1) &&
                     !menu.IsSelected(5, options, PanelUnitConversion.None, -1) &&
-                    CanvasMenu.SearchHint(options) == "List filter…", "Show values has its own checkmark and invites filtering");
+                    CanvasMenu.SearchModeChip(options.SearchMode) == "List" && CanvasMenu.SearchHint(options) == "filter…", "Show values has its own checkmark and invites filtering");
                 options.DisplayFilterValue = false;
                 options.Search = "5";
                 Assert.True(menu.IsSelected(4, options, PanelUnitConversion.None, -1),
@@ -135,9 +135,10 @@ public class FilterCanvasTests
                     "A literal numeric text search is not marked as an equality comparison");
             }
         }
-        Assert.True(CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 12" }) == "Area > 12" &&
-            CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "Wall" }) == ".* Wall" &&
-            CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = ">= 2" }) == "List >= 2",
+        Assert.True(CanvasMenu.SearchModeChip(PanelSearchMode.Area) == "Area" && CanvasMenu.SearchModeChip(PanelSearchMode.Regex) == "Regex" &&
+            CanvasMenu.SearchModeChip(PanelSearchMode.ListLength) == "List" && CanvasMenu.SearchModeChip(PanelSearchMode.VertexCount) == "Vertex count" &&
+            CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 12" }) == "> 12" &&
+            CanvasMenu.SearchHint(new PanelQueryOptions { SearchMode = PanelSearchMode.VertexCount }) == "filter…",
             "Active filter mode is visible in the compact search control");
     }
 

@@ -43,7 +43,7 @@ namespace BetterGhPanel
         internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
         internal double RoundUpFactor { get; private set; }
 
-        private static bool HasFilters(PanelQueryOptions options) =>
+        internal static bool HasFilters(PanelQueryOptions options) =>
             !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue ||
             options.TypeName != null || options.BranchPath != null || options.BranchPrefix || options.OnlyInvalid ||
             options.SortMode != PanelSortMode.SourceOrder;

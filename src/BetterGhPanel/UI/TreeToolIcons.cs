@@ -14,7 +14,8 @@ namespace BetterGhPanel.UI
         private static Color Muted => PanelTheme.Muted;
         private static Color Accent => PanelTheme.Accent;
 
-        internal static void Draw(Graphics g, RectangleF bounds, TreeToolIcon icon, bool active)
+        // An optional badge (Trim depth) sits at the lower right; the glyph moves left to clear it.
+        internal static void Draw(Graphics g, RectangleF bounds, TreeToolIcon icon, bool active, string? badge = null, Font? badgeFont = null)
         {
             float size = Math.Min(16, Math.Min(bounds.Width, bounds.Height) - 4);
             if (size <= 0) return;
@@ -26,7 +27,8 @@ namespace BetterGhPanel.UI
             var state = g.Save();
             try
             {
-                g.TranslateTransform(bounds.X + (bounds.Width - size) / 2, bounds.Y + (bounds.Height - size) / 2);
+                bool badged = badge != null && badgeFont != null;
+                g.TranslateTransform(bounds.X + (bounds.Width - size) / 2 - (badged ? 3 : 0), bounds.Y + (bounds.Height - size) / 2);
                 g.ScaleTransform(size / 16, size / 16);
                 g.SmoothingMode = SmoothingMode.AntiAlias;
                 using (var pen = new Pen(active ? Accent : Muted, 1.2f)
@@ -82,6 +84,32 @@ namespace BetterGhPanel.UI
             {
                 g.Restore(state);
             }
+            if (badge != null && badgeFont != null) DrawBadge(g, bounds, badge, badgeFont);
+        }
+
+        // A smaller version of the set-count badge: a rounded, outlined pill.
+        private static void DrawBadge(Graphics g, RectangleF bounds, string text, Font font)
+        {
+            using var format = new StringFormat(StringFormat.GenericTypographic) { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            float width = Math.Max(9, g.MeasureString(text, font, PointF.Empty, format).Width + 4);
+            var pill = new RectangleF(bounds.Right - width - 1, bounds.Bottom - 12, width, 11);
+            const float corner = 5;
+            var state = g.Save();
+            try
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                using var shape = new GraphicsPath();
+                shape.AddArc(pill.X, pill.Y, corner, corner, 180, 90);
+                shape.AddArc(pill.Right - corner, pill.Y, corner, corner, 270, 90);
+                shape.AddArc(pill.Right - corner, pill.Bottom - corner, corner, corner, 0, 90);
+                shape.AddArc(pill.X, pill.Bottom - corner, corner, corner, 90, 90);
+                shape.CloseFigure();
+                using (var fill = new SolidBrush(PanelTheme.Background)) g.FillPath(fill, shape);
+                using (var border = new Pen(PanelTheme.Rgb(158, 182, 141))) g.DrawPath(border, shape);
+                using var brush = new SolidBrush(Accent);
+                g.DrawString(text, font, brush, new RectangleF(pill.X, pill.Y + 0.5f, pill.Width, pill.Height), format);
+            }
+            finally { g.Restore(state); }
         }
     }
 }

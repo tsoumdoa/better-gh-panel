@@ -51,7 +51,7 @@ See [CHANGELOG](CHANGELOG.md) for earlier releases.
 
 ### Search, filter and sort
 
-Type in the search field: rows update as you type, **Enter** or clicking away applies the query and **Esc** restores the previous one. The search dropdown picks what to match:
+Type in the search field: rows update as you type, **Enter** or clicking away applies the query and **Esc** restores the previous one. The mode chip at the start of the field (**Text ▾**, **Length ▾**, **List ▾**, …) picks what to match:
 
 | Mode | Example |
 | --- | --- |
@@ -94,12 +94,12 @@ Unsupported properties show `n/a`. Text comparisons are exact; quote text to kee
 
 ### Reshape the tree
 
-The footer's tree tools run in a fixed order — **Simplify → Trim → Flatten → Reverse** — then unit conversion, filters and **Create set**:
+The footer's tree tools run in a fixed order — **Simplify → Trim → Flatten → Reverse** — then unit conversion, filters and **Create set**. An active Trim shows its depth as a small badge on its icon.
 
 - **Create set** groups equal displayed values per branch (or across the tree with Flatten). Rows use set index **k**. **Out Items** sends all members in **{path;k}** branches (**{k}** when flattened); **Out Values** sends each unique value once at displayed precision. List-length sets group original branches as **{k;path}**. An occurrence badge such as **9×** lists every original path and index.
-- **Units** converts numbers and geometry metrics (mm ↔ m, mm² ↔ m², mm³ ↔ m³, rad ↔ deg), sets **Decimal places**, and can **Round up by factor**. Unit conversion, Round up by factor, then explicit Decimal places define one presented number shared by the rows, Values output, clipboard, comparisons and Stats. Numeric Items also leave at this precision; geometry is never modified. Factors apply to plain numbers, geometry metrics, X/Y/Z and dimensional properties, including angles. Counts, indices, dates, colour channels, axis components and matrix entries ignore the factor; integer properties stay integers. With Round up by factor, Panel+ rounds each number's full-precision decimal form up to the factor, then Decimal places also rounds up. Inputs whose full-precision digits sit above a step (e.g. 0.1+0.2 = 0.30000000000000004) round up to the next step. Without a factor, decimal rounding remains half away from zero. Rounding uses the faithful 15-digit decimal form when possible, so 2.675 at 2 decimal places becomes 2.68, as in Excel. Hover a rounded row to see its raw value and rounding.
-- **Clear filters** clears search, mode, type, path, invalid-only, sorting, selection and scroll. One Undo restores the filters.
-- **Reset all** (header ↻) also resets tree tools, units, rounding, decimals, Out Items | Values and B + F follow. It keeps Preview mode, item order, D|F split and size. One Undo restores the settings.
+- **Units** converts numbers and geometry metrics (mm ↔ m, mm² ↔ m², mm³ ↔ m³, rad ↔ deg), sets **Decimal places**, and can **Round up by factor**. Unit conversion, Round up by factor, then explicit Decimal places define one presented number shared by the rows, Values output, clipboard, comparisons and Stats. Numeric Items also leave at this precision; geometry is never modified. Factors apply to plain numbers, geometry metrics, X/Y/Z and dimensional properties, including angles. Counts, indices, dates, colour channels, axis components and matrix entries ignore the factor; integer properties stay integers. With Round up by factor, Panel+ rounds each number's full-precision decimal form up to the factor, then Decimal places also rounds up. Inputs whose full-precision digits sit above a step (e.g. 0.1+0.2 = 0.30000000000000004) round up to the next step. Without a factor, decimal rounding remains half away from zero. Rounding uses the faithful 15-digit decimal form when possible, so 2.675 at 2 decimal places becomes 2.68, as in Excel. Hover a rounded row to see its raw value and rounding. When active, the Units chip reads compactly, for example **→m² ↑0.25 3dp** (target unit, factor, decimals), and widens to fit; its tooltip spells out the full setting.
+- **Clear filters** clears search, mode, type, path, invalid-only, sorting, selection and scroll. Use the **×** on the footer's **D: 1 filter** chip or the component's right-click menu. One Undo restores the filters.
+- **Reset all** (footer ↺, between the tree tools and Units) also resets tree tools, units, rounding, decimals, Out Items | Values and B + F follow. It keeps Preview mode, item order, D|F split and size. One Undo restores the settings.
 
 ### Select, preview and copy
 
@@ -154,7 +154,8 @@ Right-click the component → **B + F follow** to make B and F follow the **Resu
 
 ### Layout
 
-- Drag the dotted header grip to move the panel and the bottom-right corner to resize it. The header chevron toggles **Full ↔ Half** height; **–** minimizes it to a capsule that still shows counts. Wires stay connected throughout.
+- Drag the dotted header grip to move the panel and the bottom-right corner to resize it. The header holds **D|F**, **Preview**, the chevron that toggles **Full ↔ Half** height, and **–**, which minimizes the panel to a capsule that still shows counts. Wires stay connected throughout.
+- The footer shows the visible range (**1–15/40**; on wide panels, the item and branch summary) and what D sends: **D = input**, **D: 1 filter**, **D: filtered**, **D: tools** or **D: values**. Click the range, or press **Ctrl/Cmd + G**, to jump to a row. With filters to clear, the D part is a chip whose **×** clears them. Selected rows carry a green bar at their left edge.
 - On a dark Grasshopper canvas Panel+ uses a matching dark palette. Below 50% zoom it shows a large item/branch summary.
 
 ### Keyboard and mouse
@@ -169,6 +170,7 @@ Clicking inside the panel focuses it and keeps your selection; the first Esc cle
 | **Ctrl/Cmd + Shift + C** | Copy unique paths of selected rows, in tree order |
 | **Ctrl/Cmd + A** | Select all rows |
 | **Ctrl/Cmd + F** or **/** | Search |
+| **Ctrl/Cmd + G** | Jump to a row |
 | **Esc** | Clear the selection, then release focus |
 | Mouse wheel | Scroll the rows or menu under the pointer; hold any modifier to zoom the canvas instead |
 
