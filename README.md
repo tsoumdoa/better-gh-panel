@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.2.7-beta
+yak install panel-plus 0.2.8-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -28,11 +28,14 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
-**[`0.2.7-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.7-beta)**
+**[`0.2.8-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.2.8-beta)**
 
-- **Maintenance release.** Shared model helpers, component responsibilities and canvas controls are organized for easier maintenance, with no intended change to controls, saved settings or data outputs.
-- **Clearer regression coverage.** Core checks run as individual xUnit tests, and native preview checks are grouped by fixture with shared reflection helpers.
-- **Easier contributor navigation.** Subsystem architecture, build instructions, release history and validation records now have dedicated documents.
+- **Controls that say what they do.** The search field starts with a mode chip (Text, Length, Vertex count, …) that opens the mode menu; the footer range ("1–15/40") opens Jump to row (also Ctrl/Cmd+G); the footer reads "D = input", "D: 2 filters", "D: tools" or "D: values", with a × beside it that clears the filters; the Trim icon shows its depth; Reset all (↺) sits in the footer beside the tools and Units it resets.
+- **Menus that fit.** Dropdowns, Stats, Units and the row menu extend beyond the panel, flip away from the edge of the view, and draw above neighbouring components. Dropdowns page the choices beyond twelve rows; the row menu never pages and scrolls under the wheel when it is taller than the view.
+- **Double-click a row to view its full value.** Esc or a double-click on empty list space clears the selection.
+- **Clearer feedback.** Selected rows get an accent bar, the active Units chip is readable ("→m ↑0.25 2dp"), the Paths placeholder matches the other dropdowns, tooltips are shorter, every undo step is named "Panel+ …", and disabled text follows the dark canvas theme.
+- **Behaviour changes:** double-clicking a row no longer clears the selection; Jump to row and Reset all moved from the header to the footer; the right-click menu is no longer paged.
+- **Validated natively again.** All 24 Rhino fixtures run and pass; expectations left stale by the waived 0.2.6 and 0.2.7 validations were refreshed, and the harness can save review screenshots on request.
 
 See [CHANGELOG](CHANGELOG.md) for earlier releases.
 
