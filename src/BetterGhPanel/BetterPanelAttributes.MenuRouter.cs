@@ -14,14 +14,22 @@ namespace BetterGhPanel
     {
         private MenuRouter? _menuRouter;
 
+        // Set while the router forwards a menu click. PanelCanvasInput checks focus
+        // after the whole dispatch, when a chosen item has already closed its menu.
+        private bool _menuClickForwarded;
+
         private bool MenusOpen => _menu.Kind != CanvasMenuKind.None || _rowMenuResult != null;
 
         // Grasshopper gives a click to the topmost object whose Bounds contain it,
         // so a later component would take clicks on a menu beyond the panel.
-        // Widgets see input before any object; one routes it while a menu is open.
+        // Widgets see input after the active interaction and active object and
+        // before FindAttribute; one routes it while a menu is open.
         private void RouteMenuInput(GH_Canvas canvas)
         {
-            if (MenusOpen && _menuRouter?.Routes(canvas) != true) _menuRouter = new MenuRouter(this, canvas);
+            if (!MenusOpen || _menuRouter?.Routes(canvas) == true) return;
+            _menuClickForwarded = false;
+            if (_menuRouter != null && !ReferenceEquals(_menuRouter.Owner, canvas)) _menuRouter.Stop();
+            _menuRouter = new MenuRouter(this, canvas);
         }
 
         // Menus answer their own tooltips: Preview's item order, Stats rows and
@@ -53,63 +61,102 @@ namespace BetterGhPanel
         }
 
         // Modal while a menu is open: input on the menu goes to the panel, and any
-        // other click closes the menu and continues to its normal target.
+        // other click closes the menu and continues to its normal target. After a
+        // left click closes the menu, the router absorbs only that click's trailing
+        // double-click, as CanvasDoubleClickGuard does.
         private sealed class MenuRouter : GH_Widget
         {
+            private enum State { Routing, Guarding, Stopping }
+
             private readonly BetterPanelAttributes _panel;
             private readonly Timer _timer;
-            private GH_CanvasMouseEvent? _trailing;
-            private bool _routing = true;
+            private State _state = State.Routing;
+            private Rectangle _guard;
+            private DateTime _guardUntil;
+            private bool _guardKeepsFocus;
+            private bool _captured;
+            private bool _stopped;
 
             internal MenuRouter(BetterPanelAttributes panel, GH_Canvas canvas)
             {
                 _panel = panel;
                 Owner = canvas;
-                // The host enumerates widgets while it dispatches input. Removal and
-                // the trailing-click guard wait for a tick, as CanvasDoubleClickGuard does.
+                // The host enumerates widgets while it dispatches input, so removal
+                // waits for a timer tick.
                 _timer = new Timer { Interval = 100 };
                 _timer.Tick += Tick;
-                canvas.Disposed += Stop;
+                canvas.Disposed += Stopped;
                 canvas.DocumentChanged += DocumentChanged;
                 canvas.Widgets.Add(this);
                 _timer.Start();
             }
 
-            internal bool Routes(GH_Canvas canvas) => _routing && ReferenceEquals(Owner, canvas);
+            internal bool Routes(GH_Canvas canvas) => _state == State.Routing && ReferenceEquals(Owner, canvas);
 
-            public override bool Visible { get => _routing && _panel.MenusOpen; set => _routing = value; }
+            private bool Routing => _state == State.Routing && _panel.MenusOpen;
+            private bool Guarding => _state == State.Guarding && DateTime.UtcNow < _guardUntil;
+
+            public override bool Visible { get => Routing || Guarding; set { if (!value) _state = State.Stopping; } }
             public override string Name => "Panel+ menu";
             public override string Description => string.Empty;
             public override Bitmap Icon_24x24 => null!;
             public override void Render(GH_Canvas canvas) { }
-            public override bool Contains(Point control, PointF canvas) => Visible;
-            public override bool IsTooltipRegion(PointF canvas) => Visible && _panel.MenuContains(canvas);
+            // A visible widget that contains the point also suppresses the right-click context menu.
+            public override bool Contains(Point control, PointF canvas) =>
+                Routing && ReferenceEquals(_panel._paintedCanvas, Owner) || Guarding && _guard.Contains(control);
+            public override bool IsTooltipRegion(PointF canvas) => Routing && _panel.MenuContains(canvas);
             public override void SetupTooltip(PointF canvasPoint, GH_TooltipDisplayEventArgs e) => _panel.SetupTooltip(canvasPoint, e);
+            // The host asks here instead of passing the panel the mouse-up of the
+            // right click that opened a row menu, which therefore ends here.
+            public override void AppendToMenu(ToolStripDropDownMenu menu) => _panel._rowContextHandled = false;
 
+            // Never modify the widget list in a handler: the host is enumerating it.
             public override GH_ObjectResponse RespondToMouseDown(GH_Canvas sender, GH_CanvasMouseEvent e)
             {
-                bool onMenu = _panel.MenuContains(e.CanvasLocation);
-                if (onMenu) _panel.RespondToMouseDown(sender, e);
+                _panel._menuClickForwarded = false;
+                if (_state == State.Guarding)
+                {
+                    if (Matches(e)) { _panel._menuClickForwarded = _guardKeepsFocus; return GH_ObjectResponse.Handled; }
+                    Finish();
+                    return GH_ObjectResponse.Ignore;
+                }
+                if (!Routing) return GH_ObjectResponse.Ignore;
+                if (_panel.MenuContains(e.CanvasLocation))
+                {
+                    _panel._menuClickForwarded = true;
+                    _panel.RespondToMouseDown(sender, e);
+                    // Keep the right button's mouse-up from the object or canvas beneath,
+                    // which would show its own context menu.
+                    if (e.Button == MouseButtons.Right) { _captured = true; return GH_ObjectResponse.Capture; }
+                    if (!_panel.MenusOpen) Guard(e, keepFocus: true);
+                    return GH_ObjectResponse.Handled;
+                }
                 // Clicks on the panel itself keep its own menu handling.
-                else if (ReferenceEquals(sender.Document?.FindAttribute(e.CanvasLocation, false), _panel)) return GH_ObjectResponse.Ignore;
-                else
-                {
-                    _panel._menu.Close();
-                    _panel.CloseRowMenu();
-                    _panel.InvalidatePaintedHits();
-                    sender.Invalidate();
-                }
-                if (!_panel.MenusOpen)
-                {
-                    _routing = false;
-                    _trailing = e;
-                    _timer.Interval = 1;
-                }
-                return onMenu ? GH_ObjectResponse.Handled : GH_ObjectResponse.Ignore;
+                if (ReferenceEquals(sender.Document?.FindAttribute(e.CanvasLocation, false), _panel)) return GH_ObjectResponse.Ignore;
+                _panel._menu.Close();
+                _panel.CloseRowMenu();
+                _panel.InvalidatePaintedHits();
+                sender.Invalidate();
+                // A right click continues to the real context menu, so nothing may contain it.
+                if (e.Button == MouseButtons.Left) Guard(e, keepFocus: false); else Finish();
+                return GH_ObjectResponse.Ignore;
+            }
+
+            public override GH_ObjectResponse RespondToMouseUp(GH_Canvas sender, GH_CanvasMouseEvent e)
+            {
+                if (!_captured) return GH_ObjectResponse.Ignore;
+                _captured = false;
+                // The router, not the panel, received this mouse-up.
+                _panel._rowContextHandled = false;
+                if (!_panel.MenusOpen) Finish();
+                return GH_ObjectResponse.Release;
             }
 
             public override GH_ObjectResponse RespondToMouseMove(GH_Canvas sender, GH_CanvasMouseEvent e)
             {
+                _panel._menuClickForwarded = false;
+                if (_captured) return GH_ObjectResponse.Capture;
+                if (!Routing) return GH_ObjectResponse.Ignore;
                 if (_panel.MenuContains(e.CanvasLocation))
                 {
                     _panel.RespondToMouseMove(sender, e);
@@ -123,31 +170,65 @@ namespace BetterGhPanel
             }
 
             public override GH_ObjectResponse RespondToMouseDoubleClick(GH_Canvas sender, GH_CanvasMouseEvent e) =>
-                _panel.MenuContains(e.CanvasLocation) ? GH_ObjectResponse.Handled : GH_ObjectResponse.Ignore;
+                Matches(e) || Routing && _panel.MenuContains(e.CanvasLocation) ? GH_ObjectResponse.Handled : GH_ObjectResponse.Ignore;
+
+            // As CanvasDoubleClickGuard.Matches: only the second click of a double-click
+            // inside the system double-click rectangle around the closing click.
+            private bool Matches(GH_CanvasMouseEvent e) => e.Button == MouseButtons.Left && e.Clicks > 1 &&
+                Guarding && _guard.Contains(e.ControlLocation);
+
+            private void Guard(GH_CanvasMouseEvent e, bool keepFocus)
+            {
+                _guardKeepsFocus = keepFocus;
+                var size = SystemInformation.DoubleClickSize;
+                _guard = new Rectangle(e.ControlX - size.Width / 2, e.ControlY - size.Height / 2, size.Width + 1, size.Height + 1);
+                _guardUntil = DateTime.UtcNow.AddMilliseconds(SystemInformation.DoubleClickTime);
+                _state = State.Guarding;
+                Restart(Math.Max(1, SystemInformation.DoubleClickTime));
+            }
+
+            private void Finish()
+            {
+                _state = State.Stopping;
+                Restart(1);
+            }
+
+            private void Restart(int interval)
+            {
+                _timer.Stop();
+                _timer.Interval = interval;
+                _timer.Start();
+            }
 
             private void Tick(object? sender, EventArgs e)
             {
-                if (Visible) return;
-                var trailing = _trailing;
-                Stop(sender, e);
-                if (trailing != null && !Owner.IsDisposed) CanvasDoubleClickGuard.Start(Owner, trailing);
+                // A capture whose mouse-up never arrived (lost capture) no longer holds the router.
+                if (_captured && (System.Windows.Forms.Control.MouseButtons & MouseButtons.Right) == 0) _captured = false;
+                if (!_captured && !Routing && !Guarding) Stop();
             }
 
             private void DocumentChanged(GH_Canvas canvas, GH_CanvasDocumentChangedEventArgs e)
             {
                 _panel._menu.Close();
                 _panel.CloseRowMenu();
-                Stop(null, EventArgs.Empty);
+                Stop();
             }
 
-            private void Stop(object? sender, EventArgs e)
+            private void Stopped(object? sender, EventArgs e) => Stop();
+
+            internal void Stop()
             {
-                _routing = false;
+                if (_stopped) return;
+                _stopped = true;
+                _state = State.Stopping;
                 _timer.Stop();
                 _timer.Dispose();
-                Owner.Disposed -= Stop;
+                Owner.Disposed -= Stopped;
                 Owner.DocumentChanged -= DocumentChanged;
                 Owner.Widgets.Remove(this);
+                if (!ReferenceEquals(_panel._menuRouter, this)) return;
+                _panel._menuRouter = null;
+                _panel._menuClickForwarded = false;
             }
         }
     }

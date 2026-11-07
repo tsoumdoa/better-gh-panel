@@ -136,6 +136,12 @@ internal static class RowSelectionChecks
         foreach (var viewer in viewers) viewer.Close();
         Check(viewers.Length == 1 && fixture.SelectedCount == 1 && PanelTestAdapter.SelectedPosition(component) == 4,
             "A real double-click on a row leaves its selection unchanged and opens one full-value window");
+        Render();
+        var otherRow = canvas.Viewport.ProjectPoint(PointOn(3));
+        attributes.RespondToMouseDown(canvas, new GH_CanvasMouseEvent(canvas.Viewport,
+            new Forms.MouseEventArgs(Forms.MouseButtons.Left, 2, (int)otherRow.X, (int)otherRow.Y, 0)));
+        Check(fixture.SelectedCount == 1 && PanelTestAdapter.SelectedPosition(component) == 3,
+            "A double-click's second click on another row is a fresh click");
         fixture.ClearSelection();
 
         attributes.GetType().GetMethod("SetOffset", NonPublicInstance)!.Invoke(attributes, new object[] { canvas, 5 });

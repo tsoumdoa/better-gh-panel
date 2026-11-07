@@ -49,6 +49,10 @@ namespace BetterGhPanel.Core
         internal static float MenuTop(float anchorY, float height, float viewportTop, float viewportBottom) =>
             anchorY + height <= viewportBottom - 4 ? anchorY : Math.Max(viewportTop + 4, anchorY - height);
 
+        // A menu taller than the viewport scrolls between its top and bottom edges.
+        internal static float ScrollMenu(float top, float shift, float height, float viewportTop, float viewportBottom) =>
+            height + 8 <= viewportBottom - viewportTop ? top : Math.Min(viewportTop + 4, Math.Max(viewportBottom - height - 4, top + shift));
+
         internal static string IndexLabel(int[] indices) => indices.Length == 1 ? "Index " + indices[0] :
             indices.Length <= 3 ? "Indices " + string.Join(", ", indices) : indices.Length.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " indices";
     }

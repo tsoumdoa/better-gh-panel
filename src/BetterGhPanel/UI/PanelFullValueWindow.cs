@@ -19,6 +19,7 @@ namespace BetterGhPanel.UI
             {
                 _text.Text = value;
                 _window.BringToFront();
+                _window.Focus();
                 return;
             }
             var area = Screen.FromPoint(Mouse.Position).WorkingArea;

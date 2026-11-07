@@ -36,6 +36,14 @@ namespace BetterGhPanel
                     Array.Empty<string>(), false).Select(item => BetterPanelAttributes.PairedDisplayValue(PairedSnapshot.Rows[item.Item])));
             return PairedRow(position) is PanelRow row ? BetterPanelAttributes.PairedDisplayValue(row) : "";
         }
+        // PairedValue's items exist. An empty F string is still a value; a missing F item is not.
+        internal bool HasPairedValue(int position)
+        {
+            var query = Session.Result;
+            if (query.DisplaySet?.IsBranchSet == false && PairedSnapshot != null && PairedData != null)
+                return PairedData.BranchItems(query.Snapshot, query.DisplaySet.Members[position], Array.Empty<string>(), false).Any();
+            return PairedRow(position) != null;
+        }
         private string PairedBranchValues(PanelQueryResult query, IReadOnlyList<string> paths) =>
             string.Join(Environment.NewLine, paths.SelectMany(path => PairedData!.BranchItems(query.Snapshot,
                 query.DisplaySet!.BranchMembers[path], query.DisplaySet.BranchOccurrences[path], false)

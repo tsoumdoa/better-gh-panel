@@ -43,6 +43,15 @@ public class FilterCanvasTests
     }
 
     [Fact]
+    public void RowMenuTallerThanTheViewportScrollsBetweenItsEdges()
+    {
+        Assert.Equal(54f, CanvasRowActions.ScrollMenu(54, -20, 140, 50, 300));
+        Assert.Equal(34f, CanvasRowActions.ScrollMenu(54, -20, 140, 50, 150));
+        Assert.Equal(6f, CanvasRowActions.ScrollMenu(34, -40, 140, 50, 150));
+        Assert.Equal(54f, CanvasRowActions.ScrollMenu(34, 40, 140, 50, 150));
+    }
+
+    [Fact]
     public void VerifyTextPreview()
     {
         const string unicode = "first\r\n第二行 🧪\nend𐐷";

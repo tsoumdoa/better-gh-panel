@@ -1164,7 +1164,7 @@ namespace BetterGhPanel
             var point = e.CanvasLocation;
             // A fresh gesture may start elsewhere before the prior menu's
             // double-click interval expires. Only its trailing click is blocked.
-            if (e.Clicks == 1) _rowActionDismissedUntil = default;
+            if (e.Clicks == 1) { _rowActionDismissedUntil = default; _clickedPosition = -1; }
             if (e.Clicks > 1 && DateTime.UtcNow < _rowActionDismissedUntil) return GH_ObjectResponse.Handled;
             TrackKeyboardPane();
             if (_rowMenuResult != null)
@@ -1274,9 +1274,13 @@ namespace BetterGhPanel
             foreach (var hit in _rowHits)
                 if (hit.Bounds.Contains(point) && hit.SourcePosition >= 0 && hit.SourcePosition < currentResult.Snapshot.Rows.Count)
                 {
-                    // The first click already selected; the second must not toggle, extend or re-apply it.
-                    if (e.Clicks > 1) { sender.Invalidate(); return GH_ObjectResponse.Handled; }
-                    _copyPaired = _f.List.Contains(point);
+                    // The first click already selected this row; the second must not toggle, extend
+                    // or re-apply it. A second click on another row or pane is a fresh click.
+                    bool paired = _f.List.Contains(point);
+                    if (e.Clicks > 1 && hit.SourcePosition == _clickedPosition && paired == _clickedPaired) { sender.Invalidate(); return GH_ObjectResponse.Handled; }
+                    _clickedPosition = hit.SourcePosition;
+                    _clickedPaired = paired;
+                    _copyPaired = paired;
                     RevealPartner(sender, hit.SourcePosition, null, point);
                     var modifiers = RowModifiers();
                     if (modifiers.AcrossBranches)
@@ -1711,7 +1715,7 @@ namespace BetterGhPanel
                         e.Title = "F · " + (pairedRow?.Path ?? PanelOwner.PairedData!.BranchAt(hit.SourcePosition).Paired.Path) + (pairedRow == null ? "" : " [" + pairedRow.OriginalIndex + "]");
                         e.Text = PanelOwner.Session.Result.DisplaySet != null ? "F set values" : pairedRow?.TypeName ?? "No F item";
                         e.Description = PanelTextPreview.ForTooltip(PanelOwner.Session.Result.DisplaySet != null ? PairedSetValue(hit.SourcePosition) : pairedRow == null ? "" : PairedDisplayValue(pairedRow));
-                        if (PanelOwner.PairedValue(hit.SourcePosition).Length > 0) e.Description += FullValueHint;
+                        if (PanelOwner.HasPairedValue(hit.SourcePosition)) e.Description += FullValueHint;
                         return;
                     }
                     e.Title = (PanelOwner.ShowItemOrder || PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder

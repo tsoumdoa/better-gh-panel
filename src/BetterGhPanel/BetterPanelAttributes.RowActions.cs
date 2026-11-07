@@ -24,6 +24,9 @@ namespace BetterGhPanel
         private string? _rowMenuPath;
         private DateTime _copiedUntil;
         private DateTime _rowActionDismissedUntil;
+        // The row and pane of the latest single click, which a double-click's second click repeats.
+        private int _clickedPosition = -1;
+        private bool _clickedPaired;
         private string _actionStatus = string.Empty;
         private bool _copyPending;
         private long _actionGeneration;
@@ -265,7 +268,7 @@ namespace BetterGhPanel
             string value = paired && PanelOwner.PairedSnapshot != null ? PanelOwner.PairedValue(position) :
                 !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
                 ? row.StringValue : PanelOwner.DisplayValue(result.Snapshot, row, position);
-            if (paired && value.Length == 0) return;
+            if (paired && !PanelOwner.HasPairedValue(position)) return;
             try { PanelFullValueWindow.Show(value); }
             catch (Exception)
             {
