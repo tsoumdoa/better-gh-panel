@@ -19,15 +19,14 @@ namespace BetterGhPanel
         private int _rowMenuHovered = -1;
         private CanvasRowAction[] _rowMenuActions = Array.Empty<CanvasRowAction>();
         private CanvasRowAction[] _rowMenuPendingActions = Array.Empty<CanvasRowAction>();
-        private CanvasRowAction[] _rowMenuAllActions = Array.Empty<CanvasRowAction>();
-        private PointF _rowMenuAnchor;
         private int _rowMenuSourcePosition = -1;
         private bool _rowMenuPaired;
         private string? _rowMenuPath;
-        private bool _rowMenuPaged;
-        private int _rowMenuPage;
         private DateTime _copiedUntil;
         private DateTime _rowActionDismissedUntil;
+        // The row and pane of the latest single click, which a double-click's second click repeats.
+        private int _clickedPosition = -1;
+        private bool _clickedPaired;
         private string _actionStatus = string.Empty;
         private bool _copyPending;
         private long _actionGeneration;
@@ -167,10 +166,7 @@ namespace BetterGhPanel
                 if (_selection.Count > 0) choices.Add(new CanvasRowAction(PanelRowAction.CopyPaths, "Copy paths of selected rows", "Unique paths in tree order, one per line."));
                 choices.Add(new CanvasRowAction(PanelRowAction.Separator, "", ""));
                 choices.Add(new CanvasRowAction(PanelRowAction.ShowBranch, "Show only this branch", "Filter Paths to this branch."));
-                _rowMenuAllActions = choices.ToArray();
-                _rowMenuPaged = choices.Count * CanvasRowActions.RowHeight > _layout.Panel.Height - HeaderHeight - 6;
-                _rowMenuAnchor = e.CanvasLocation;
-                ShowRowMenu(result, 0);
+                ShowRowMenu(canvas, result, choices.ToArray(), e.CanvasLocation);
                 canvas.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
@@ -187,34 +183,30 @@ namespace BetterGhPanel
                 bool filtered = options.Search.Length > 0 || options.TypeName != null || options.OnlyInvalid || options.BranchPath != null;
                 _rowMenuPath = null;
                 _rowMenuPaired = _copyPaired = _f.List.Contains(e.CanvasLocation);
-                _rowMenuAllActions = CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered,
-                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX, _rowMenuPaired,
-                    !_rowMenuPaired && result.DisplaySet != null && !result.DisplaySet.IsBranchSet && PanelOwner.OutputValues == PanelOutputValues.Items);
-                _rowMenuAnchor = e.CanvasLocation;
                 _rowMenuSourcePosition = hit.SourcePosition;
-                _rowMenuPaged = CanvasRowActions.NeedsPages(_layout.Panel.Height - HeaderHeight - 6);
-                ShowRowMenu(result, 0);
+                ShowRowMenu(canvas, result, CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered,
+                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX, _rowMenuPaired,
+                    !_rowMenuPaired && result.DisplaySet != null && !result.DisplaySet.IsBranchSet && PanelOwner.OutputValues == PanelOutputValues.Items),
+                    e.CanvasLocation);
                 canvas.Invalidate();
                 return GH_ObjectResponse.Handled;
             }
             return base.RespondToMouseDown(canvas, e);
         }
 
-        private void ShowRowMenu(PanelQueryResult result, int page)
+        private void ShowRowMenu(GH_Canvas canvas, PanelQueryResult result, CanvasRowAction[] actions, PointF anchor)
         {
-            _rowMenuPage = page;
             _rowMenuResult = result;
             _rowMenuPainted = false;
             _rowMenuHovered = -1;
-            _rowMenuPendingActions = !_rowMenuPaged ? _rowMenuAllActions : _rowMenuPath == null ? CanvasRowActions.Page(_rowMenuAllActions, page) :
-                page == 0 ? _rowMenuAllActions.Take(3).Concat(new[] { new CanvasRowAction(PanelRowAction.NextPage, "More actions…", "Show the remaining branch actions.") }).ToArray() :
-                _rowMenuAllActions.Skip(3).Concat(new[] { new CanvasRowAction(PanelRowAction.PreviousPage, "Previous actions…", "Return to the first branch actions.") }).ToArray();
-            _rowMenuActions = Enumerable.Repeat(new CanvasRowAction(PanelRowAction.Unpainted, "", ""), _rowMenuPendingActions.Length).ToArray();
+            _rowMenuPendingActions = actions;
+            _rowMenuActions = Enumerable.Repeat(new CanvasRowAction(PanelRowAction.Unpainted, "", ""), actions.Length).ToArray();
             float width = Math.Min(300, _layout.Panel.Width - 28);
-            float height = _rowMenuPendingActions.Sum(action => action.Action == PanelRowAction.Separator ? 5 : CanvasRowActions.RowHeight);
-            _rowMenuBounds = new RectangleF(
-                Math.Max(_layout.Panel.Left + 14, Math.Min(_rowMenuAnchor.X, _layout.Panel.Right - width - 14)),
-                Math.Max(_layout.Panel.Top + HeaderHeight, Math.Min(_rowMenuAnchor.Y, _layout.Panel.Bottom - height - 6)), width, height);
+            float height = actions.Sum(action => action.Action == PanelRowAction.Separator ? 5 : CanvasRowActions.RowHeight);
+            var viewport = canvas.Viewport.VisibleRegion;
+            _rowMenuBounds = new RectangleF(Math.Max(_layout.Panel.Left + 14, Math.Min(anchor.X, _layout.Panel.Right - width - 14)),
+                CanvasRowActions.MenuTop(anchor.Y, height, viewport.Top, viewport.Bottom), width, height);
+            RouteMenuInput(canvas);
         }
 
         private void ChooseRowAction(PanelRowAction action, PanelQueryResult result, GH_Canvas canvas)
@@ -229,28 +221,8 @@ namespace BetterGhPanel
             if (action == PanelRowAction.CopyPath || action == PanelRowAction.CopyPathBare || action == PanelRowAction.CopyPaths ||
                 action == PanelRowAction.CopyAddresses || action == PanelRowAction.CopyTable)
             { CopySelectedValues(result, canvas, _rowMenuPaired, action, action == PanelRowAction.CopyPath || action == PanelRowAction.CopyPathBare ? _rowMenuPath : null); return; }
-            if (action == PanelRowAction.NextPage || action == PanelRowAction.PreviousPage)
-            {
-                if (_rowMenuPaged) ShowRowMenu(result, action == PanelRowAction.NextPage ? _rowMenuPage + 1 : _rowMenuPage - 1);
-            }
-            else if (positions.Count == 0) return;
-            else if (action == PanelRowAction.ViewFullValue)
-            {
-                if (!PanelOwner.CapturedSnapshotCurrent(result.Snapshot)) return;
-                int position = _rowMenuSourcePosition;
-                if (position < 0 || position >= result.Snapshot.Rows.Count || !_selection.Contains(position)) return;
-                var row = result.Snapshot.Rows[position];
-                bool projected = result.DisplaySet?.Values.ContainsKey(position) == true;
-                string value = _rowMenuPaired && PanelOwner.PairedSnapshot != null ? PanelOwner.PairedValue(position) :
-                    !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
-                    ? row.StringValue : PanelOwner.DisplayValue(result.Snapshot, row, position);
-                try { PanelFullValueWindow.Show(value); }
-                catch (Exception)
-                {
-                    _actionStatus = "Could not open the full value.";
-                    _copiedUntil = DateTime.UtcNow.AddSeconds(5);
-                }
-            }
+            if (positions.Count == 0) return;
+            if (action == PanelRowAction.ViewFullValue) ViewFullValue(result, _rowMenuSourcePosition, _rowMenuPaired);
             else if (action == PanelRowAction.FrameSelection)
             {
                 InvalidateCopyStatus();
@@ -281,6 +253,28 @@ namespace BetterGhPanel
                 { _actionStatus = status; _copiedUntil = DateTime.UtcNow.AddSeconds(5); }
             }
             else if (action == PanelRowAction.SelectIndices) SelectAcrossBranches(result, _selection.Indices(result), canvas);
+        }
+
+        private const string FullValueHint = "\nDouble-click to view the full value.";
+
+        // Shared by the row menu and row double-click; the row must be selected.
+        // An F row without an F item has no value to show.
+        private void ViewFullValue(PanelQueryResult result, int position, bool paired)
+        {
+            if (!PanelOwner.CapturedSnapshotCurrent(result.Snapshot)) return;
+            if (position < 0 || position >= result.Snapshot.Rows.Count || !_selection.Contains(position)) return;
+            var row = result.Snapshot.Rows[position];
+            bool projected = result.DisplaySet?.Values.ContainsKey(position) == true;
+            string value = paired && PanelOwner.PairedSnapshot != null ? PanelOwner.PairedValue(position) :
+                !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
+                ? row.StringValue : PanelOwner.DisplayValue(result.Snapshot, row, position);
+            if (paired && !PanelOwner.HasPairedValue(position)) return;
+            try { PanelFullValueWindow.Show(value); }
+            catch (Exception)
+            {
+                _actionStatus = "Could not open the full value.";
+                _copiedUntil = DateTime.UtcNow.AddSeconds(5);
+            }
         }
 
         private void SelectAcrossBranches(PanelQueryResult result, int[] indices, GH_Canvas canvas)
@@ -330,9 +324,9 @@ namespace BetterGhPanel
             }));
         }
 
-        private bool RowActionTooltip(PointF point, GH_TooltipDisplayEventArgs e)
+        private void RowActionTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
-            if (_rowMenuResult == null || !_rowMenuPainted || !_rowMenuBounds.Contains(point)) return false;
+            if (_rowMenuResult == null || !_rowMenuPainted || !_rowMenuBounds.Contains(point)) return;
             int index = RowMenuIndex(point);
             if (RowsAreCurrent(_rowMenuResult) && index >= 0 && index < _rowMenuActions.Length &&
                 _rowMenuActions[index].Action != PanelRowAction.Unpainted)
@@ -342,7 +336,6 @@ namespace BetterGhPanel
                 e.Text = action.Action == PanelRowAction.ViewFullValue ? "The row you right-clicked" : System.FormattableString.Invariant($"{_selection.Count:N0} selected");
                 e.Description = PanelTextPreview.ForTooltip(action.Enabled ? action.Description : "Unavailable: " + action.DisabledReason);
             }
-            return true;
         }
     }
 }

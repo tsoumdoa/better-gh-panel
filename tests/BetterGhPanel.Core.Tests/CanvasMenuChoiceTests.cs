@@ -48,7 +48,7 @@ public class CanvasMenuChoiceTests
     }
 
     [Fact]
-    public void SearchCapabilitiesAndPaging()
+    public void SearchMenuKeepsSupportedAndSavedModesSelectable()
     {
         var snapshot = new PanelSnapshot(Array.Empty<PanelRow>(), Array.Empty<PanelBranch>());
         var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Area, Search = "> 7", DisplayFilterValue = false };
@@ -64,24 +64,15 @@ public class CanvasMenuChoiceTests
             "Keeping an unavailable saved mode does not change its expression or display setting");
         menu.Layout(new RectangleF(0, 0, 300, 110), default, default, default, search: new RectangleF(12, 24, 100, 20));
         var clicked = new List<PanelSearchMode>();
-        int previousOffset = -1;
-        while (menu.Offset != previousOffset)
+        menu.MarkPainted();
+        Assert.True(menu.Visible == menu.Count, "A short search menu shows every choice below a compact panel without paging");
+        for (int row = 0; row < menu.Visible; row++)
         {
-            previousOffset = menu.Offset;
-            menu.MarkPainted();
-            for (int row = 0; row < menu.Visible && menu.Offset + row < menu.Count; row++)
-            {
-                Assert.True(menu.TrySelect(new PointF(menu.Bounds.Left + 10, menu.Bounds.Top + row * 20 + 10), out int index),
-                    "A visible search choice is selectable");
-                clicked.Add(menu.SearchModeAt(index));
-            }
-            Assert.True(!menu.TrySelect(new PointF(menu.Bounds.Right - 5, menu.Bounds.Bottom - 5), out _),
-                "Paging does not select a search choice");
+            Assert.True(menu.TrySelect(new PointF(menu.Bounds.Left + 10, menu.Bounds.Top + row * 20 + 10), out int index),
+                "A visible search choice is selectable");
+            clicked.Add(menu.SearchModeAt(index));
         }
-        Assert.True(clicked.Distinct().SequenceEqual(expected), "Paged clicks resolve the actual modes, including choices following omitted modes");
-        Assert.True(menu.Offset > 0, "Compact search menu reaches a later page");
-        menu.TrySelect(new PointF(menu.Bounds.Left + 5, menu.Bounds.Bottom - 5), out _);
-        Assert.True(menu.Offset < previousOffset, "Previous page returns toward the first search choices");
+        Assert.True(clicked.SequenceEqual(expected), "Clicks resolve the actual modes, including choices following omitted modes");
         Assert.True(menu.IsCurrent(snapshot) && !menu.IsCurrent(new PanelSnapshot(Array.Empty<PanelRow>(), Array.Empty<PanelBranch>())),
             "A menu cannot act on a replacement snapshot");
         menu.Close();

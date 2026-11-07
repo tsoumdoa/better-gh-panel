@@ -496,7 +496,7 @@ namespace BetterGhPanel
             // The footer may drop its range for the Clear filters chip; the tooltip keeps it.
             if (PanelOwner.Session.HasCurrentResult)
                 e.Text += " · " + CanvasStatistics.Summary(PanelOwner.Session.Result) + " · showing " + FooterRange(PanelOwner.Session.Result, singleLine: false);
-            e.Description = "Click to select; Ctrl/Cmd toggles, Shift extends, Alt/Option picks the same index in every branch. Right-click a row to copy, frame or view the full value, or a branch heading for branch actions. Double-click clears selection.\n\n" + KeyboardHint;
+            e.Description = "Click to select; Ctrl/Cmd toggles, Shift extends, Alt/Option picks the same index in every branch. Right-click a row to copy, frame or view the full value, or a branch heading for branch actions. Double-click a row to view its full value, or empty list space to clear the selection.\n\n" + KeyboardHint;
         }
 
         private GH_ObjectResponse? ClickRestore(GH_Canvas sender, GH_CanvasMouseEvent e)

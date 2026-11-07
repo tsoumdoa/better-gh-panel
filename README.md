@@ -47,7 +47,7 @@ See [CHANGELOG](CHANGELOG.md) for earlier releases.
 - **Invalid and unverified values are marked** with a label, a **!** or **?** badge and the reason in the tooltip.
 - **Data checks.** A quiet, clickable **Check:** line flags null, invalid and unverified items and strong branch-length outliers before search filters; every warning segment is amber. Healthy trees use no extra space.
 - **Counts and Stats.** The footer shows matched/total items and branches. **Stats** lists min/max/average plus every unique value with its frequency, using the presented numbers.
-- **Long values** open in a read-only, scrollable **View full value** window from the row's right-click menu.
+- **Long values** open in a read-only, scrollable **View full value** window when you double-click a row, or from its right-click menu.
 
 ### Search, filter and sort
 
@@ -160,7 +160,7 @@ Right-click the component → **B + F follow** to make B and F follow the **Resu
 
 ### Keyboard and mouse
 
-Clicking inside the panel focuses it and keeps your selection; the first Esc clears the selection and the next releases focus. A green ring shows focus; without focus, keys and wheel go to Grasshopper as usual. Double-click, Clear filters, Reset all and changes to the input's structure also clear the selection.
+Clicking inside the panel focuses it and keeps your selection; the first Esc clears the selection and the next releases focus. A green ring shows focus; without focus, keys and wheel go to Grasshopper as usual. Double-clicking a row opens its full value in one reusable window; double-clicking empty list space, Clear filters, Reset all and changes to the input's structure clear the selection. Menus may extend past the panel and draw above other components; near the edge of the view they open on the other side of their button. Clicking elsewhere on the canvas closes a menu and the click still reaches what you clicked, except that the second click of a double-click is absorbed.
 
 | Key | Action |
 | --- | --- |

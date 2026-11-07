@@ -46,6 +46,7 @@ namespace BetterGhPanel.UI
     // One owner for menu lifetime, snapshot validity, layout, and paging.
     internal sealed class CanvasMenu
     {
+        private const int MaximumRows = 12;
         internal const string ItemOrderDescription = "Shows each item's zero-based index; indices restart at 0 in every branch after tree tools, and filters, sorting and selection keep them. " +
             "Points label their location; other geometry labels its bounding-box centre. Labels follow the Preview scope and stay active when minimized. " +
             "Overlapping labels are hidden, selected ones first kept; zoom in or select fewer items to separate them.";
@@ -248,27 +249,42 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.None) Close();
         }
 
-        internal void Layout(RectangleF panel, RectangleF type, RectangleF sort, RectangleF branch, RectangleF units = default, RectangleF search = default, RectangleF preview = default, RectangleF statistics = default)
+        // An empty viewport places the menu without flipping (policy tests).
+        internal void Layout(RectangleF panel, RectangleF type, RectangleF sort, RectangleF branch, RectangleF units = default, RectangleF search = default, RectangleF preview = default, RectangleF statistics = default,
+            RectangleF viewport = default)
         {
             if (Kind == CanvasMenuKind.None) return;
             var anchor = Kind == CanvasMenuKind.Statistics ? statistics : Kind == CanvasMenuKind.Preview ? preview : Kind == CanvasMenuKind.Type ? type : Kind == CanvasMenuKind.Sort ? sort : Kind == CanvasMenuKind.Units ? units :
                 Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? search : branch;
             float width = Math.Min(panel.Width - 28, Kind == CanvasMenuKind.Statistics ? 360 : Kind == CanvasMenuKind.Sort ? 138 :
                 Kind == CanvasMenuKind.Units || Kind == CanvasMenuKind.Preview ? 156 : Kind == CanvasMenuKind.Type || Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? 180 : 235);
-            if (Kind == CanvasMenuKind.Units || Kind == CanvasMenuKind.Statistics)
+            // Menus may extend beyond the panel. Units and Stats prefer to open
+            // upward, others downward; a menu that overflows the viewport flips
+            // when the other side has more room, and pages the rows that do not fit.
+            bool rightAligned = Kind == CanvasMenuKind.Units || Kind == CanvasMenuKind.Statistics;
+            float below = viewport.IsEmpty ? float.MaxValue : viewport.Bottom - 4 - (anchor.Bottom + 2);
+            float above = viewport.IsEmpty ? float.MaxValue : anchor.Top - 3 - (viewport.Top + 4);
+            float preferred = rightAligned ? above : below, other = rightAligned ? below : above;
+            bool upward = rightAligned != (MenuHeight(Math.Min(Count, MaximumRows)) > preferred && other > preferred);
+            float height = MenuHeight(RowsFitting(upward ? above : below));
+            float y = upward ? anchor.Top - height - 3 : anchor.Bottom + 2;
+            if (rightAligned)
             {
-                int rows = Math.Max(2, Math.Min(Count, (int)((anchor.Top - panel.Top - 31) / 20)));
-                int height = rows * 20;
                 float right = Kind == CanvasMenuKind.Statistics ? panel.Right - 14 : Math.Min(anchor.Right, panel.Right - 14);
                 right = Math.Max(panel.Left + 14 + width, right);
-                Bounds = new RectangleF(right - width, anchor.Top - height - 3, width, height);
-                Offset = Math.Max(0, Math.Min(Math.Max(0, Count - Visible), Offset));
-                return;
+                Bounds = new RectangleF(right - width, y, width, height);
             }
-            int visible = Math.Max(2, Math.Min(8, (int)((panel.Bottom - 9 - anchor.Bottom - 19) / 20)));
-            Bounds = new RectangleF(Math.Max(panel.Left + 14, Math.Min(anchor.X, panel.Right - width - 14)), anchor.Bottom + 2, width,
-                Math.Min(visible, Count) * 20 + (Count > visible ? 20 : 0));
+            else Bounds = new RectangleF(Math.Max(panel.Left + 14, Math.Min(anchor.X, panel.Right - width - 14)), y, width, height);
             Offset = Math.Max(0, Math.Min(Math.Max(0, Count - Visible), Offset));
+        }
+
+        // Longer menus add a paging row, which Visible fills when only one choice remains.
+        private float MenuHeight(int rows) => rows * 20 + (Count > rows ? 20 : 0);
+
+        private int RowsFitting(float room)
+        {
+            int rows = Math.Min(Count, MaximumRows);
+            return MenuHeight(rows) <= room ? rows : Math.Max(1, Math.Min(rows, (int)(room / 20) - 1));
         }
 
         internal bool TrySelect(PointF point, out int index)
