@@ -196,7 +196,10 @@ namespace BetterGhPanel
                 var size = SystemInformation.DoubleClickSize;
                 _guard = new Rectangle(e.ControlX - size.Width / 2, e.ControlY - size.Height / 2, size.Width + 1, size.Height + 1);
                 _guardUntil = DateTime.UtcNow.AddMilliseconds(SystemInformation.DoubleClickTime);
-                _guardArmed = false;
+                // A choosing click was consumed, so its guard arms at once (its
+                // double-click precedes its mouse-up). A closing click must first
+                // continue through Grasshopper, so its guard arms after mouse-up.
+                _guardArmed = keepFocus;
                 _state = State.Guarding;
                 // The tick lands after the guard expires, so the widget leaves promptly.
                 Restart(SystemInformation.DoubleClickTime + 20);
