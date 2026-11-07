@@ -172,7 +172,8 @@ namespace BetterGhPanel
             branchClear = new RectangleF(branch.Right - 30, branch.Y, 16, branch.Height);
             close = new RectangleF(panel.Right - 34, panel.Y + 2, 20, 18);
             display = new RectangleF(close.Left - 22, close.Y, 20, 18);
-            preview = new RectangleF(display.Left - 108, close.Y, 104, 18);
+            // Wide enough for "Preview: Selection" at the default font without trimming.
+            preview = new RectangleF(display.Left - 122, close.Y, 118, 18);
             split = PanelOwner.PanelSplit || PanelOwner.PairedInputPresent() ? new RectangleF(preview.Left - 32, preview.Y, 28, 18) : RectangleF.Empty;
             move = new RectangleF(panel.X + 14, panel.Y + 1, (split.IsEmpty ? preview.Left : split.Left) - panel.X - 18, 23);
             // Reserve the corner for resizing rather than overlaying footer controls.
