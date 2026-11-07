@@ -75,7 +75,7 @@ namespace BetterGhPanel
                 else if (hit.Kind == 1) { options.SearchMode = PanelSearchMode.Validity; options.Search = "= Invalid"; }
                 else if (hit.Kind == 2) { options.SearchMode = PanelSearchMode.Validity; options.Search = "= Unverified"; options.DisplayFilterValue = false; }
                 else { options.SearchMode = PanelSearchMode.ListLength; options.Search = "!= " + PanelOwner.Session.Result.Warnings.MajorityLength!.Value.ToString(CultureInfo.InvariantCulture); options.DisplayFilterValue = false; }
-                PanelOwner.RecordQueryUndo("Panel+ Data checks", before, options);
+                PanelOwner.RecordQueryUndo("Panel+ data checks", before, options);
                 ClearRowSelection(canvas);
                 PanelOwner.Session.UpdateQuery(options);
                 PanelOwner.OnPingDocument()?.Modified();

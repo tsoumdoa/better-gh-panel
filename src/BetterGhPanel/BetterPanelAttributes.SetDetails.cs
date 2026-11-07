@@ -121,8 +121,8 @@ namespace BetterGhPanel
             {
                 Text(g, System.FormattableString.Invariant($"{_setDetails.Offset + 1:N0}–{_setDetails.Offset + _setDetails.Visible:N0} of {occurrences.Count:N0}"), small, Muted,
                     new RectangleF(bounds.X + 8, bounds.Bottom - 21, bounds.Width - 128, 18), trim);
-                Text(g, "‹ Previous", small, _setDetails.CanPrevious ? Accent : Color.LightGray, _setDetails.Previous, trim);
-                Text(g, "Next ›", small, _setDetails.CanNext ? Accent : Color.LightGray, _setDetails.Next, trim);
+                Text(g, "‹ Previous", small, _setDetails.CanPrevious ? Accent : PanelTheme.Disabled, _setDetails.Previous, trim);
+                Text(g, "Next ›", small, _setDetails.CanNext ? Accent : PanelTheme.Disabled, _setDetails.Next, trim);
                 MarkDetailTarget(g, _setDetails.Previous);
                 MarkDetailTarget(g, _setDetails.Next);
             }

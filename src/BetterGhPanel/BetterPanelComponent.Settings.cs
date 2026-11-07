@@ -52,7 +52,7 @@ namespace BetterGhPanel
         {
             CanvasTextInput.CloseActive(this);
             CanvasTextInput.CompletePending();
-            if (HasFilters(Session.Options)) RecordUndoEvent("Clear filters");
+            if (HasFilters(Session.Options)) RecordUndoEvent("Panel+ clear filters");
             ClearFiltersCore();
         }
 
@@ -72,7 +72,7 @@ namespace BetterGhPanel
         internal void SetPreviewMode(PanelPreviewMode mode)
         {
             if (!Enum.IsDefined(typeof(PanelPreviewMode), mode) || PreviewMode == mode) return;
-            RecordUndoEvent("Panel preview mode");
+            RecordUndoEvent("Panel+ preview mode");
             PreviewMode = mode;
             (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
             OnPingDocument()?.Modified();
@@ -157,7 +157,7 @@ namespace BetterGhPanel
             bool settingsChanged = outputChanged || OutputScope != PanelOutputScope.Filtered || OutputValues != PanelOutputValues.Items || DecimalPlaces != PanelUnits.AutomaticDecimals ||
                 !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.TypeName != null || options.BranchPath != null ||
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
-            if (settingsChanged) RecordUndoEvent("Reset all");
+            if (settingsChanged) RecordUndoEvent("Panel+ reset all");
             TrimDepth = 0;
             FlattenTree = ReverseTree = SimplifyTree = CreateSetTree = false;
             UnitConversion = PanelUnitConversion.None;
@@ -223,7 +223,7 @@ namespace BetterGhPanel
         {
             if (!Enum.IsDefined(typeof(CanvasPanelDisplay), display) || CanvasDisplay == display) return;
             (Attributes as BetterPanelAttributes)?.InvalidatePaintedHits();
-            RecordUndoEvent("Panel+ display size");
+            RecordUndoEvent("Panel+ full/half");
             CanvasTextInput.CloseActive();
             CanvasDisplay = display;
             Attributes.ExpireLayout();
@@ -236,7 +236,7 @@ namespace BetterGhPanel
             if (PanelMinimized == minimized) return;
             // A generic component undo reloads the data and clears transient row
             // state. This action changes presentation only, including on undo.
-            RecordUndoEvent(minimized ? "Minimize Panel+" : "Restore Panel+",
+            RecordUndoEvent(minimized ? "Panel+ minimize" : "Panel+ restore",
                 new PanelUndo<bool>(InstanceGuid, PanelMinimized, minimized, (component, value) => component.ApplyPanelMinimized(value)));
             ApplyPanelMinimized(minimized);
         }
@@ -244,7 +244,7 @@ namespace BetterGhPanel
         internal void SetPanelSplit(bool split)
         {
             if (PanelSplit == split || split && !CanSplit) return;
-            RecordUndoEvent("Panel+ D | F view", new PanelUndo<bool>(InstanceGuid, PanelSplit, split, (component, value) => component.ApplyPanelSplit(value)));
+            RecordUndoEvent("Panel+ D|F view", new PanelUndo<bool>(InstanceGuid, PanelSplit, split, (component, value) => component.ApplyPanelSplit(value)));
             ApplyPanelSplit(split);
         }
 
@@ -476,7 +476,7 @@ namespace BetterGhPanel
         internal void SetOutputValues(PanelOutputValues values)
         {
             if (!Enum.IsDefined(typeof(PanelOutputValues), values) || OutputValues == values) return;
-            RecordUndoEvent("Panel+ output Items / Values", new PanelUndo<PanelOutputValues>(InstanceGuid, OutputValues, values, (component, value) => component.ApplyOutputValues(value)));
+            RecordUndoEvent("Panel+ output items/values", new PanelUndo<PanelOutputValues>(InstanceGuid, OutputValues, values, (component, value) => component.ApplyOutputValues(value)));
             ApplyOutputValues(values);
         }
 

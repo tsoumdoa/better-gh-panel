@@ -268,7 +268,7 @@ namespace BetterGhPanel
             try { options.BranchPath = PanelQueryEngine.NormalizeBranchPath(options.BranchPath); }
             catch (ArgumentException) { }
             if (PanelQueryPolicy.SameQuery(session.Options, options)) return;
-            PanelOwner.RecordUndoEvent("Panel branch filter");
+            PanelOwner.RecordUndoEvent("Panel+ branch filter");
             ClearRowSelection();
             var previousResult = session.Result;
             session.UpdateQuery(options);
@@ -1289,7 +1289,7 @@ namespace BetterGhPanel
                 return;
             }
             if (PanelQueryPolicy.SameQuery(oldOptions, options)) { canvas.Invalidate(); return; }
-            PanelOwner.RecordUndoEvent(kind == CanvasMenuKind.Sort ? "Panel sort" : "Panel type filter");
+            PanelOwner.RecordUndoEvent(kind == CanvasMenuKind.Sort ? "Panel+ sort" : "Panel+ type filter");
             PanelOwner.Session.UpdateQuery(options);
             PanelOwner.OnPingDocument()?.Modified();
             canvas.Invalidate();
@@ -1303,7 +1303,7 @@ namespace BetterGhPanel
             options.Search = search;
             options.DisplayFilterValue = showValues;
             if (PanelQueryPolicy.SameQuery(before, options)) { canvas.Invalidate(); return; }
-            PanelOwner.RecordQueryUndo(showValues ? "Show Panel+ values" : "Panel+ filter", before, options);
+            PanelOwner.RecordQueryUndo("Panel+ search", before, options);
             _d.Offset = _f.Offset = 0;
             PanelOwner.Session.UpdateQuery(options);
             canvas.Invalidate();
@@ -1322,7 +1322,7 @@ namespace BetterGhPanel
         }
 
         private void EditSearch(GH_Canvas canvas, PanelSearchMode mode, string current) =>
-            ShowLiveQueryEditor(canvas, current, "Panel search", text =>
+            ShowLiveQueryEditor(canvas, current, "Panel+ search", text =>
             {
                 var options = PanelOwner.Session.Options;
                 options.DisplayFilterValue = CanvasMenu.IsComparisonMode(mode) && string.IsNullOrWhiteSpace(text);
@@ -1335,7 +1335,7 @@ namespace BetterGhPanel
         {
             CancelQueryEditor();
             var options = PanelOwner.Session.Options;
-            PanelOwner.RecordUndoEvent("Clear Panel+ search");
+            PanelOwner.RecordUndoEvent("Panel+ clear search");
             options.SearchMode = PanelSearchMode.Text;
             options.DisplayFilterValue = false;
             options.Search = string.Empty;
@@ -1596,15 +1596,15 @@ namespace BetterGhPanel
                     {
                         e.Title = "Select branch " + hit.Path;
                         e.Text = CanvasStatistics.BranchCount(PanelOwner.Session.Result, hit.Path);
-                        e.Description = hit.CopyBounds.Contains(point) ? "Copy " + (_f.List.Contains(point) ? string.Join(", ", PanelOwner.PairedPaths(hit.Path)) : hit.Path) : "Select this branch's results. Double-click to clear. Right-click for branch actions.";
+                        e.Description = hit.CopyBounds.Contains(point) ? "Copy " + (_f.List.Contains(point) ? string.Join(", ", PanelOwner.PairedPaths(hit.Path)) : hit.Path) : "Select this branch's results.";
                         if (!_f.List.Contains(point) && PanelOwner.Session.Result.Warnings.IsOutlier(PanelOwner.Session.Result.Snapshot, hit.Path))
-                            e.Description += "\nMost branches have " + PanelOwner.Session.Result.Warnings.MajorityLength + " items";
+                            e.Description += "\nMost branches have " + PanelOwner.Session.Result.Warnings.MajorityLength + " items.";
                         if (PanelOwner.Session.Result.DisplaySet?.BranchOccurrences.TryGetValue(hit.Path, out var occurrences) == true)
                         {
                             e.Text = "List length: " + PanelOwner.Session.Snapshot.BranchItemCounts[hit.Path] + " · " + occurrences.Count + " branches";
                             e.Description = "Matching branches with this displayed count: " + string.Join(", ", occurrences) +
                                 ".\nSource items after filters: " + CanvasStatistics.SourceStatuses(PanelOwner.Session.Result.DisplaySet.BranchSourceStatuses[hit.Path]) +
-                                ". Out Items groups all matching branches; Out Values sends the count. B, F and geometry actions include every member. Click to select this count; double-click to clear selection.";
+                                ". Out Items groups all matching branches. Out Values sends the count. B, F and geometry actions include every member.";
                         }
                         return;
                     }
@@ -1618,7 +1618,7 @@ namespace BetterGhPanel
                         var pairedRow = PanelOwner.PairedRow(hit.SourcePosition);
                         e.Title = "F · " + (pairedRow?.Path ?? PanelOwner.PairedData!.BranchAt(hit.SourcePosition).Paired.Path) + (pairedRow == null ? "" : " [" + pairedRow.OriginalIndex + "]");
                         e.Text = PanelOwner.Session.Result.DisplaySet != null ? "F set values" : pairedRow?.TypeName ?? "No F item";
-                        e.Description = PanelTextPreview.ForTooltip(PanelOwner.Session.Result.DisplaySet != null ? PairedSetValue(hit.SourcePosition) : pairedRow == null ? "" : PairedDisplayValue(pairedRow)) + "\nClick to select the shared D / F row · double-click to clear";
+                        e.Description = PanelTextPreview.ForTooltip(PanelOwner.Session.Result.DisplaySet != null ? PairedSetValue(hit.SourcePosition) : pairedRow == null ? "" : PairedDisplayValue(pairedRow));
                         return;
                     }
                     e.Title = (PanelOwner.ShowItemOrder || PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder
@@ -1655,7 +1655,8 @@ namespace BetterGhPanel
                         if (PanelOwner.OutputValues == PanelOutputValues.Items)
                             details += "\nD output branch: " + PanelItemOrder.Address(PanelOwner.Session.Result, hit.SourcePosition, true, PanelOwner.FlattenTree);
                     }
-                    e.Description = PanelTextPreview.ForTooltip(details) + "\n\nClick to select · Ctrl/Cmd toggles · Shift extends · Alt/Option same index · right-click for more";
+                    e.Description = PanelTextPreview.ForTooltip(details);
+                    if (e.Description != details) e.Description += "\nRight-click → View full value.";
                     break;
                 }
             }

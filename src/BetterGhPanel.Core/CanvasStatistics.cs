@@ -8,14 +8,12 @@ namespace BetterGhPanel.Core
     internal static class CanvasStatistics
     {
         internal const int OverviewRows = 9;
-        internal const string Scope = "Statistics describe the current results, after tree tools, unit conversion and presentation rounding. " +
-            "With Create set, statistics describe the displayed output values; source counts after filters are listed separately. " +
-            "Orange row marks mean invalid; blue means unverified. Set row marks describe their source occurrences. " +
-            "Totals describe the tree before filters and sets. Item counts include all data types.";
-        internal const string UniqueScope = "Unique values include valid finite Number/Integer values and Text values. " +
-            "Numbers group by presented text. Text preserves case and whitespace; text and numbers stay separate. " +
-            "Null, invalid, nonfinite and other data types are excluded. Values appear in first source occurrence order. " +
-            "Numeric equality and frequency use presented numbers, including explicit decimal places. Hover a value for its first raw value and merge count.";
+        internal const string Scope = "Counts the current results after tree tools, units and rounding, or the displayed output values with Create set. " +
+            "Item counts include every type. Totals are taken before filters and sets. " +
+            "Orange marks invalid and blue unverified; for sets they describe source occurrences.";
+        internal const string UniqueScope = "Lists valid finite numbers and text in first-seen order, grouped by shown text including explicit decimals. " +
+            "Text keeps case and spaces and never merges with numbers. Null, invalid, nonfinite and other types are skipped. " +
+            "Hover a value for its first raw value and merge count.";
 
         internal static string Summary(PanelQueryResult result) =>
             Count(result.Statistics.ItemCount, Total(result)) + (result.DisplaySet?.IsBranchSet == true ? " values · " : " items · ") +

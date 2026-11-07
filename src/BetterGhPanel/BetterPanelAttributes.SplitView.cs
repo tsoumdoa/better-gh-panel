@@ -54,7 +54,7 @@ namespace BetterGhPanel
                 bool available = PanelOwner.CanSplit || PanelOwner.PanelSplit;
                 Control(graphics, _layout.Split, available ? "D|F" : "", small, trim, PanelOwner.PanelSplit);
                 if (!available)
-                    Text(graphics, "D|F", small, PanelTheme.Rgb(180, 185, 178), new RectangleF(_layout.Split.X + 3, _layout.Split.Y, _layout.Split.Width - 6, _layout.Split.Height), trim);
+                    Text(graphics, "D|F", small, PanelTheme.Disabled, new RectangleF(_layout.Split.X + 3, _layout.Split.Y, _layout.Split.Width - 6, _layout.Split.Height), trim);
             }
             if (!PanelOwner.PanelSplit) return;
             // Linking has nothing to act on while F does not match D.
@@ -165,7 +165,7 @@ namespace BetterGhPanel
             {
                 e.Title = "D | F split view";
                 e.Text = PanelOwner.PanelSplit ? "On" : "Off";
-                e.Description = PanelOwner.CanSplit || PanelOwner.PanelSplit ? "Show paired values beside D. The saved width is doubled; selection is shared." :
+                e.Description = PanelOwner.CanSplit || PanelOwner.PanelSplit ? "Show paired F values beside D at double the saved width, with shared selection." :
                     PanelOwner.PairedError ?? "F must have the same number of branches as D.";
                 return true;
             }
@@ -180,7 +180,7 @@ namespace BetterGhPanel
             {
                 e.Title = "F does not match D";
                 e.Text = PanelOwner.PairedError;
-                e.Description = "F must have the same number of branches as D. Exact paths pair first; remaining branches pair in tree order, before tree tools.";
+                e.Description = "F needs the same branch count as D. Exact paths pair first. Remaining branches pair in tree order before tree tools.";
                 return true;
             }
             return false;
