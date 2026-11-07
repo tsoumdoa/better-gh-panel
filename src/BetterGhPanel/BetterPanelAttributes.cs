@@ -343,6 +343,7 @@ namespace BetterGhPanel
         protected override void Render(GH_Canvas canvas, Graphics graphics, GH_CanvasChannel channel)
         {
             if (channel == GH_CanvasChannel.Wires) { base.Render(canvas, graphics, channel); return; }
+            if (channel == GH_CanvasChannel.Overlay) { RenderMenus(canvas, graphics); return; }
             if (channel != GH_CanvasChannel.Objects) return;
             _setControlsVisible = canvas.Viewport.Zoom >= 0.5f;
             LayoutSetDetails();
@@ -360,7 +361,9 @@ namespace BetterGhPanel
             _renderVisibleRegion = visibleRegion;
             session.AnimateBusyState(!PanelOwner.Locked && Bounds.IntersectsWith(visibleRegion) && canvas.Viewport.Zoom >= 0.5f);
             // Grasshopper also renders components outside the canvas viewport.
-            if (!Bounds.IntersectsWith(visibleRegion))
+            // A menu extending beyond an offscreen panel may still be visible.
+            if (!Bounds.IntersectsWith(visibleRegion) && !(_menu.Kind != CanvasMenuKind.None && _menu.Bounds.IntersectsWith(visibleRegion)) &&
+                !(_rowMenuResult != null && _rowMenuBounds.IntersectsWith(visibleRegion)))
             {
                 _rowHits.Clear(); _branchHits.Clear(); _d.Shown = 0; _menu.Close(); CloseRowMenu();
                 session.RequestGeometryMeasurements(session.Snapshot, Array.Empty<int>());
@@ -437,8 +440,6 @@ namespace BetterGhPanel
                     RenderFooter(graphics, result, small, trim);
                     RenderSetDetails(graphics, result, small, mono, trim);
                     RenderHover(graphics);
-                    if (_menu.Kind != CanvasMenuKind.None) RenderMenu(graphics, small, mono, trim);
-                    if (_rowMenuResult != null) RenderRowMenu(graphics, small, trim);
                     using (var gripPen = new Pen(PanelTheme.Rgb(165, 173, 166), 1))
                     {
                         for (int inset = 8; inset <= 18; inset += 5)
@@ -985,7 +986,24 @@ namespace BetterGhPanel
             canvas.Invalidate();
         }
 
-        private void LayoutMenu() => _menu.Layout(_layout.Panel, _layout.Type, _layout.Sort, _layout.Branch, _layout.Units, _layout.Search, _layout.Preview, _layout.Statistics);
+        // Every layout uses the region of the latest paint, so a menu cannot flip between frames.
+        private void LayoutMenu() => _menu.Layout(_layout.Panel, _layout.Type, _layout.Sort, _layout.Branch, _layout.Units, _layout.Search, _layout.Preview, _layout.Statistics,
+            _renderVisibleRegion);
+
+        // Menus paint in the overlay pass, after every object, so later components and the
+        // panel's own border, focus ring and grip never cut across them. They follow this
+        // frame's object pass, which set the painted-target state they extend.
+        private void RenderMenus(GH_Canvas canvas, Graphics graphics)
+        {
+            if (_menu.Kind == CanvasMenuKind.None && _rowMenuResult == null || !ReferenceEquals(_paintedCanvas, canvas)) return;
+            using (var small = new Font("Arial", 10f, FontStyle.Regular, GraphicsUnit.Pixel))
+            using (var mono = CanvasRowRenderer.MonospaceFont(10))
+            using (var trim = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap, LineAlignment = StringAlignment.Center })
+            {
+                if (_menu.Kind != CanvasMenuKind.None) RenderMenu(graphics, small, mono, trim);
+                if (_rowMenuResult != null) RenderRowMenu(graphics, small, trim);
+            }
+        }
 
         private void RenderMenu(Graphics g, Font small, Font mono, StringFormat trim)
         {
@@ -1037,6 +1055,7 @@ namespace BetterGhPanel
             _menu.Toggle(kind, session.Snapshot, session.Options, session.Result, modes, _editingSearchMode);
             InvalidatePaintedHits();
             LayoutMenu();
+            RouteMenuInput(canvas);
             canvas.Invalidate();
         }
 
@@ -1093,7 +1112,7 @@ namespace BetterGhPanel
 
         public override GH_ObjectResponse RespondToMouseDown(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
-            if (e.Button == MouseButtons.Left && _layout.Panel.Contains(e.CanvasLocation))
+            if (e.Button == MouseButtons.Left && (_layout.Panel.Contains(e.CanvasLocation) || MenuContains(e.CanvasLocation)))
             {
                 if (_layout.Reset.Contains(e.CanvasLocation)) CanvasTextInput.CloseActive(PanelOwner);
                 CanvasTextInput.CompletePending();
@@ -1113,10 +1132,10 @@ namespace BetterGhPanel
             // ordinary component gestures, so Ctrl+C there copies the component.
             // The 12-unit edge strips belong to wire grips, which stay wire gestures.
             if ((e.Button == MouseButtons.Left || e.Button == MouseButtons.Right) &&
-                (_layout.Panel.Contains(e.CanvasLocation) || _setDetails.Bounds.Contains(e.CanvasLocation)))
+                (_layout.Panel.Contains(e.CanvasLocation) || _setDetails.Bounds.Contains(e.CanvasLocation) || MenuContains(e.CanvasLocation)))
             {
-                if (_layout.Move.Contains(e.CanvasLocation)) ReleaseKeyboardFocus();
-                else if (_setDetails.Bounds.Contains(e.CanvasLocation) ||
+                if (_layout.Move.Contains(e.CanvasLocation) && !MenuContains(e.CanvasLocation)) ReleaseKeyboardFocus();
+                else if (_setDetails.Bounds.Contains(e.CanvasLocation) || MenuContains(e.CanvasLocation) ||
                     e.CanvasLocation.X > _layout.Panel.Left + 12 && e.CanvasLocation.X < _layout.Panel.Right - 12) FocusPanel(sender);
             }
             if (_menu.Kind == CanvasMenuKind.None && _rowMenuResult == null && !RowsAreCurrent(PanelOwner.Session.Result) &&
@@ -1255,6 +1274,8 @@ namespace BetterGhPanel
             foreach (var hit in _rowHits)
                 if (hit.Bounds.Contains(point) && hit.SourcePosition >= 0 && hit.SourcePosition < currentResult.Snapshot.Rows.Count)
                 {
+                    // The first click already selected; the second must not toggle, extend or re-apply it.
+                    if (e.Clicks > 1) { sender.Invalidate(); return GH_ObjectResponse.Handled; }
                     _copyPaired = _f.List.Contains(point);
                     RevealPartner(sender, hit.SourcePosition, null, point);
                     var modifiers = RowModifiers();
@@ -1624,9 +1645,12 @@ namespace BetterGhPanel
                 return GH_ObjectResponse.Handled;
             if (ListContains(e.CanvasLocation))
             {
-                if (RowsAreCurrent(PanelOwner.Session.Result) && (_paintedListBackground ||
-                    _rowHits.Any(hit => hit.Bounds.Contains(e.CanvasLocation)) || _branchHits.Any(hit => hit.Bounds.Contains(e.CanvasLocation))))
-                    ClearRowSelection(sender);
+                // The first click already selected the row or heading; only empty list space clears.
+                var result = PanelOwner.Session.Result;
+                if (!RowsAreCurrent(result) || _branchHits.Any(hit => hit.Bounds.Contains(e.CanvasLocation))) return GH_ObjectResponse.Handled;
+                int row = _rowHits.FindIndex(hit => hit.Bounds.Contains(e.CanvasLocation));
+                if (row >= 0) { ViewFullValue(result, _rowHits[row].SourcePosition, _f.List.Contains(e.CanvasLocation)); sender.Invalidate(); }
+                else if (_paintedListBackground) ClearRowSelection(sender);
                 return GH_ObjectResponse.Handled;
             }
             if (_layout.Filter.Contains(e.CanvasLocation)) return GH_ObjectResponse.Handled;
@@ -1636,28 +1660,16 @@ namespace BetterGhPanel
 
         public override void SetupTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
+            if (e.Control is GH_Canvas canvas && _paintedCanvas != null && !ReferenceEquals(_paintedCanvas, canvas)) InvalidatePaintedHits();
+            // The menu router asks here for points on an open menu. Menu rows
+            // never fall back to the panel's tooltip.
+            if (MenuContains(point)) { MenuTooltip(point, e); return; }
             base.SetupTooltip(point, e);
             if (_menu.Kind == CanvasMenuKind.None && _rowMenuResult == null && SplitTooltip(point, e)) return;
-            if (e.Control is GH_Canvas canvas && _paintedCanvas != null && !ReferenceEquals(_paintedCanvas, canvas)) InvalidatePaintedHits();
-            if (_menu.Kind != CanvasMenuKind.None && _menu.Bounds.Contains(point) &&
-                (!PaintedViewIsCurrent() || !_menu.IsPaintedAt(point))) return;
             if (!PanelOwner.PanelMinimized && _menu.Kind == CanvasMenuKind.None && _rowMenuResult == null && !RowsAreCurrent(PanelOwner.Session.Result) &&
                 (ListContains(point) || _setDetails.Bounds.Contains(point) || _staleList.Contains(point) || _staleDetails.Contains(point) || _staleRowMenu.Contains(point))) return;
-            if (_rowMenuResult != null && _rowMenuBounds.Contains(point) &&
-                (!RowsAreCurrent(_rowMenuResult) || !RowMenuTargetPainted(point))) return;
             if (!PanelOwner.PanelMinimized && _menu.Kind == CanvasMenuKind.None && _rowMenuResult == null && SetDetailsTooltip(point, e)) return;
             if (_menu.Kind == CanvasMenuKind.None && _rowMenuResult == null && _setDetails.Bounds.Contains(point)) return;
-            if (_menu.Kind == CanvasMenuKind.Preview && _menu.Bounds.Contains(point))
-            {
-                int row = (int)((point.Y - _menu.Bounds.Y) / 20);
-                if (row >= 0 && row < _menu.Visible && _menu.Offset + row < _menu.Count && _menu.PreviewChoiceAt(_menu.Offset + row).IsItemOrder)
-                {
-                    e.Title = "Show item order";
-                    e.Text = PanelOwner.ShowItemOrder ? "On" : "Off";
-                    e.Description = CanvasMenu.ItemOrderDescription;
-                    return;
-                }
-            }
             if (PanelOwner.PanelMinimized)
             {
                 if (ControlTooltip(point, e, ControlStep.Capsule)) return;
@@ -1666,25 +1678,8 @@ namespace BetterGhPanel
                 e.Description = "Click the window icon to reopen the " + PanelOwner.CanvasDisplay + " panel exactly as you left it.";
                 return;
             }
-            // Keep Close before statistics menus, and Move before row actions.
             if (ControlTooltip(point, e, ControlStep.BeforeStatisticsMenu)) return;
-            if (_menu.Kind == CanvasMenuKind.Statistics && _menu.Bounds.Contains(point))
-            {
-                if (!StatisticsAreCurrent()) { InvalidateStatistics(); return; }
-                int row = (int)((point.Y - _menu.Bounds.Y) / 20);
-                int index = _menu.Offset + row;
-                e.Title = "Tree statistics";
-                if (row < _menu.Visible && index < _menu.Count)
-                {
-                    e.Text = _menu.StatisticsDetails(index, PanelOwner.DecimalPlaces);
-                    e.Description = index == 6 || index == 7 || index >= CanvasStatistics.OverviewRows ? CanvasStatistics.UniqueScope :
-                        index == 8 ? "Source counts after filters are measured before Create set removes duplicate occurrences. Valid, invalid and unverified are distinct." : CanvasStatistics.Scope;
-                }
-                else e.Description = "Use Previous and Next to inspect all values.";
-                return;
-            }
             if (ControlTooltip(point, e, ControlStep.BeforeRowActions)) return;
-            if (RowActionTooltip(point, e)) return;
             if (ControlTooltip(point, e, ControlStep.Main)) return;
             if (RowsAreCurrent(PanelOwner.Session.Result))
             {
@@ -1716,6 +1711,7 @@ namespace BetterGhPanel
                         e.Title = "F · " + (pairedRow?.Path ?? PanelOwner.PairedData!.BranchAt(hit.SourcePosition).Paired.Path) + (pairedRow == null ? "" : " [" + pairedRow.OriginalIndex + "]");
                         e.Text = PanelOwner.Session.Result.DisplaySet != null ? "F set values" : pairedRow?.TypeName ?? "No F item";
                         e.Description = PanelTextPreview.ForTooltip(PanelOwner.Session.Result.DisplaySet != null ? PairedSetValue(hit.SourcePosition) : pairedRow == null ? "" : PairedDisplayValue(pairedRow));
+                        if (PanelOwner.PairedValue(hit.SourcePosition).Length > 0) e.Description += FullValueHint;
                         return;
                     }
                     e.Title = (PanelOwner.ShowItemOrder || PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder
@@ -1752,8 +1748,7 @@ namespace BetterGhPanel
                         if (PanelOwner.OutputValues == PanelOutputValues.Items)
                             details += "\nD output branch: " + PanelItemOrder.Address(PanelOwner.Session.Result, hit.SourcePosition, true, PanelOwner.FlattenTree);
                     }
-                    e.Description = PanelTextPreview.ForTooltip(details);
-                    if (e.Description != details) e.Description += "\nRight-click → View full value.";
+                    e.Description = PanelTextPreview.ForTooltip(details) + FullValueHint;
                     break;
                 }
             }

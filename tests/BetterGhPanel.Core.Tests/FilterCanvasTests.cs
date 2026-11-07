@@ -32,19 +32,14 @@ public class FilterCanvasTests
         foreach (var choice in single)
             Assert.True(choice.Description.Length > 0 && choice.Description == multiple.Single(other => other.Action == choice.Action).Description,
                 "Row action explanations stay with the action across selection changes");
+    }
 
-        Assert.True(CanvasRowActions.NeedsPages(82) && !CanvasRowActions.NeedsPages(140),
-            "The compact panel pages seven actions while taller panels show them together");
-        var reordered = Enumerable.Reverse(single).ToArray();
-        var first = CanvasRowActions.Page(reordered, 0);
-        var second = CanvasRowActions.Page(reordered, 1);
-        var third = CanvasRowActions.Page(reordered, 2);
-        Assert.True(third.Select(choice => choice.Action).SequenceEqual(new[] { PanelRowAction.CopyGeometry, PanelRowAction.SelectIndices, PanelRowAction.PreviousPage }), "The last page retains geometry and index actions");
-        Assert.True(first.Select(choice => choice.Action).SequenceEqual(new[] { PanelRowAction.FrameSelection, PanelRowAction.CopyValues,
-                PanelRowAction.ViewFullValue, PanelRowAction.NextPage }) &&
-            second.Select(choice => choice.Action).SequenceEqual(new[] { PanelRowAction.CopyAddresses, PanelRowAction.CopyTable, PanelRowAction.PreviousPage, PanelRowAction.NextPage }), "Compact pages preserve all named actions by identity after reordering");
-        Assert.True(first.Length * CanvasRowActions.RowHeight <= 82 && second.Length * CanvasRowActions.RowHeight <= 82,
-            "Every compact page fits below the minimum Half panel's header");
+    [Fact]
+    public void RowMenuOpensAboveTheClickNearTheViewportBottom()
+    {
+        Assert.Equal(100f, CanvasRowActions.MenuTop(100, 140, 0, 400));
+        Assert.Equal(160f, CanvasRowActions.MenuTop(300, 140, 0, 400));
+        Assert.Equal(54f, CanvasRowActions.MenuTop(100, 140, 50, 200));
     }
 
     [Fact]
@@ -103,7 +98,8 @@ public class FilterCanvasTests
             var options = new PanelQueryOptions { SearchMode = PanelSearchMode.ListLength, Search = "!= 10" };
             menu.Toggle(kind, PanelSnapshot.Empty, options);
             menu.Layout(panel, search, search, search, search, search);
-            Assert.True(panel.Contains(menu.Bounds), "Compact filter menus stay inside the panel");
+            Assert.True(menu.Bounds.Top == search.Bottom + 2 && menu.Bounds.Left >= panel.Left && menu.Bounds.Right <= panel.Right &&
+                menu.Visible == Math.Min(menu.Count, 12), "Compact filter menus show up to 12 rows below their anchor, beyond the panel bottom");
             var reachable = new System.Collections.Generic.HashSet<int>();
             for (int page = 0; page < menu.Count; page++)
             {

@@ -112,9 +112,13 @@ internal static class PanelTestAdapter
             .GetMethod("Output", NonPublicInstance)!.Invoke(pair, new object?[] { query, query.RowPositions, query.BranchPaths, false, false, null, false })!;
     }
 
-    internal static void Render(GH_Component component, GH_Canvas canvas, Graphics graphics) =>
-        component.Attributes.GetType().GetMethod("Render", NonPublicInstance)!
-            .Invoke(component.Attributes, new object[] { canvas, graphics, GH_CanvasChannel.Objects });
+    // Menus paint in the overlay pass that follows the object pass.
+    internal static void Render(GH_Component component, GH_Canvas canvas, Graphics graphics)
+    {
+        var render = component.Attributes.GetType().GetMethod("Render", NonPublicInstance)!;
+        foreach (var channel in new[] { GH_CanvasChannel.Objects, GH_CanvasChannel.Overlay })
+            render.Invoke(component.Attributes, new object[] { canvas, graphics, channel });
+    }
 
     internal static void CanvasClick(GH_Canvas canvas, PointF point,
         System.Windows.Forms.MouseButtons button = System.Windows.Forms.MouseButtons.Left, int clicks = 1)

@@ -124,8 +124,8 @@ public class StatisticsTests
             var anchor = new RectangleF(panel.Right - 74, panel.Bottom - 38, 46, 16);
             menu.Toggle(CanvasMenuKind.Statistics, result.Snapshot, new PanelQueryOptions(), result);
             menu.Layout(panel, default, default, default, statistics: anchor);
-            Assert.True(panel.Contains(menu.Bounds) && menu.Bounds.Bottom < anchor.Top,
-                "The stats menu opens upward inside minimum Full and Half panels");
+            Assert.True(menu.Bounds.Left >= panel.Left && menu.Bounds.Right <= panel.Right && menu.Bounds.Bottom < anchor.Top &&
+                menu.Visible == Math.Min(menu.Count, 12), "The stats menu opens upward with up to 12 rows, even beyond a Half panel's top");
             var reached = new HashSet<int>();
             for (int page = 0; page < menu.Count; page++)
             {

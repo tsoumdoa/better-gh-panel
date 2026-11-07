@@ -1,4 +1,4 @@
-using System.Linq;
+using System;
 
 namespace BetterGhPanel.Core
 {
@@ -44,20 +44,10 @@ namespace BetterGhPanel.Core
                 "Select the same zero-based item indices in every branch, including offscreen rows. Shortcut: Alt/Option-click.")
         };
 
-        // The minimum Half panel fits four 20-pixel rows. Keep the viewer on
-        // the first page and retain every existing action on the second page.
-        internal static bool NeedsPages(float availableHeight) => availableHeight < 7 * RowHeight;
-
-        internal static CanvasRowAction[] Page(CanvasRowAction[] actions, int page) => page == 0
-            ? new[] { Find(actions, PanelRowAction.FrameSelection), Find(actions, PanelRowAction.CopyValues), Find(actions, PanelRowAction.ViewFullValue),
-                new CanvasRowAction(PanelRowAction.NextPage, "More actions…", "Show the remaining row actions.") }
-            : page == 1 ? new[] { Find(actions, PanelRowAction.CopyAddresses), Find(actions, PanelRowAction.CopyTable),
-                new CanvasRowAction(PanelRowAction.PreviousPage, "Previous actions…", "Return to the previous actions."),
-                new CanvasRowAction(PanelRowAction.NextPage, "More actions…", "Show the remaining row actions.") }
-            : new[] { Find(actions, PanelRowAction.CopyGeometry), Find(actions, PanelRowAction.SelectIndices),
-                new CanvasRowAction(PanelRowAction.PreviousPage, "Previous actions…", "Return to the previous actions.") };
-
-        private static CanvasRowAction Find(CanvasRowAction[] actions, PanelRowAction action) => actions.Single(item => item.Action == action);
+        // The row menu opens below the click and may extend beyond the panel. Near
+        // the bottom of the viewport it opens above the click, so every action stays reachable.
+        internal static float MenuTop(float anchorY, float height, float viewportTop, float viewportBottom) =>
+            anchorY + height <= viewportBottom - 4 ? anchorY : Math.Max(viewportTop + 4, anchorY - height);
 
         internal static string IndexLabel(int[] indices) => indices.Length == 1 ? "Index " + indices[0] :
             indices.Length <= 3 ? "Indices " + string.Join(", ", indices) : indices.Length.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " indices";

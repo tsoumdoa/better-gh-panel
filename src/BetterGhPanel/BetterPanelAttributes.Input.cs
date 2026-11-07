@@ -53,17 +53,21 @@ namespace BetterGhPanel
             ReferenceEquals(canvas.Document, Owner.OnPingDocument()) && !PanelOwner.PanelMinimized && !PanelOwner.Locked &&
             canvas.Viewport.Zoom >= 0.5f;
 
-        bool IPanelInputTarget.ContainsCanvasPoint(PointF point) => _layout.Panel.Contains(point) || _setDetails.Bounds.Contains(point);
+        bool IPanelInputTarget.ContainsCanvasPoint(PointF point) => _layout.Panel.Contains(point) || _setDetails.Bounds.Contains(point) || MenuContains(point);
+
+        // Open menus may extend beyond the panel rectangle.
+        private bool MenuContains(PointF point) => _menu.Kind != CanvasMenuKind.None && _menu.Bounds.Contains(point) ||
+            _rowMenuResult != null && _rowMenuBounds.Contains(point);
 
         bool IPanelInputTarget.HandleWheel(GH_Canvas canvas, PointF point, int delta)
         {
-            if (!_layout.Panel.Contains(point)) return false;
             if (_menu.Kind != CanvasMenuKind.None && _menu.Bounds.Contains(point))
             {
                 if (_menu.Scroll(-WheelRows(delta))) canvas.Invalidate();
                 return true;
             }
             if (_rowMenuResult != null && _rowMenuBounds.Contains(point)) return true;
+            if (!_layout.Panel.Contains(point)) return false;
             // A list without overflow lets the wheel zoom the canvas as usual.
             if (!ListContains(point) && !_d.TrackHit.Contains(point) && !_f.TrackHit.Contains(point) || MaximumOffset == 0)
             {

@@ -123,11 +123,20 @@ internal static class RowSelectionChecks
         PanelTestAdapter.CanvasClick(canvas, point);
         Check(PanelTestAdapter.SelectedPosition(component) == 4,
             "A fresh single click is accepted during an earlier gesture's double-click suppression interval");
+        Eto.Forms.Window[] Viewers() => Eto.Forms.Application.Instance.Windows.Where(window => window.Title == "Panel+ · Full value").ToArray();
+        foreach (var existing in Viewers()) existing.Close();
         var doubleClick = new GH_CanvasMouseEvent(canvas.Viewport,
             new Forms.MouseEventArgs(Forms.MouseButtons.Left, 2,
                 (int)canvas.Viewport.ProjectPoint(point).X, (int)canvas.Viewport.ProjectPoint(point).Y, 0));
+        // A real double-click sends its second mouse down before the double-click event.
+        attributes.RespondToMouseDown(canvas, doubleClick);
         attributes.RespondToMouseDoubleClick(canvas, doubleClick);
-        Check(fixture.SelectedCount == 0, "A real double-click retains the existing explicit deselection behavior");
+        attributes.RespondToMouseDoubleClick(canvas, doubleClick);
+        var viewers = Viewers();
+        foreach (var viewer in viewers) viewer.Close();
+        Check(viewers.Length == 1 && fixture.SelectedCount == 1 && PanelTestAdapter.SelectedPosition(component) == 4,
+            "A real double-click on a row leaves its selection unchanged and opens one full-value window");
+        fixture.ClearSelection();
 
         attributes.GetType().GetMethod("SetOffset", NonPublicInstance)!.Invoke(attributes, new object[] { canvas, 5 });
         PanelTestAdapter.CanvasClick(canvas, point);
