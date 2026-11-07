@@ -23,6 +23,7 @@ namespace BetterGhPanel.UI
         internal static Color Background => Map(Color.White);
         internal static Color Ink => Rgb(49, 55, 53);
         internal static Color Muted => Rgb(120, 127, 123);
+        internal static Color Disabled => Rgb(180, 185, 178);
         internal static Color Accent => Rgb(77, 115, 94);
         internal static Color Warning => Rgb(180, 106, 67);
         internal static Color PairingWarning => Dark ? Color.FromArgb(235, 183, 84) : Color.FromArgb(139, 88, 12);

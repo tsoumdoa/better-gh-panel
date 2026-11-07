@@ -8,8 +8,8 @@ namespace BetterGhPanel.UI
     internal sealed class CanvasSetDetails
     {
         internal const int PageSize = 4;
-        internal const string Scope = "Locations use zero-based indices in the original input tree before Simplify, Trim, Flatten and Reverse; " +
-            "counts use displayed values after filters, units and decimal formatting; expanding and paging preserve selection and output.";
+        internal const string Scope = "Locations are zero-based indices in the original input tree, before Simplify, Trim, Flatten and Reverse. " +
+            "Counts use displayed values after filters, units and decimals.";
         private PanelSnapshot? _snapshot;
         private PanelQueryResult? _checkedResult;
         internal int SourcePosition { get; private set; } = -1;

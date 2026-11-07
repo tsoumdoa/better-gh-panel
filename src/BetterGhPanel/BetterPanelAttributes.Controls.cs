@@ -332,34 +332,34 @@ namespace BetterGhPanel
         {
             e.Title = "Geometry preview";
             e.Text = CanvasMenu.PreviewLabel(PanelOwner.PreviewMode);
-            e.Description = "Selection draws selected rows only; Results draws all results and highlights selection; Off disables Panel+ preview; item order labels: " +
+            e.Description = "Selection: draws selected rows only.\nResults: draws every result and highlights the selection.\nOff: no Panel+ preview.\nItem order labels: " +
                 (PanelOwner.ShowItemOrder ? "on" : "off") + ".";
-            if (!string.IsNullOrEmpty(PanelOwner.PreviewStatus)) e.Description += "\n\n" + PanelOwner.PreviewStatus.TrimEnd('.') +
-                "; oversized geometry, unsupported nested types, custom UserData or mesh limits can prevent part of the preview.";
+            if (!string.IsNullOrEmpty(PanelOwner.PreviewStatus)) e.Description += "\n\n" + PanelOwner.PreviewStatus +
+                "\nOversized geometry, unsupported nested types, custom UserData or mesh limits can prevent part of the preview.";
         }
 
         private void TooltipOutput(PointF point, GH_TooltipDisplayEventArgs e)
         {
             e.Title = "Output: Items / Values";
-            e.Description = _layout.OutValues.Contains(point) ? (PanelOwner.CreateSetTree ? "Sends the displayed set values." : PanelOwner.DecimalPlaces >= 0 ? "Sends the values exactly as shown." : PanelOwner.RoundUpFactor != 0 ? "Sends the rounded values at full precision; rows may be abbreviated." : "Sends full-precision values; rows may be abbreviated.") : "Items sends items with shown numeric rounding (full precision in Automatic); sets group all members by set index. Values sends the displayed property; unavailable values are null.";
+            e.Description = _layout.OutValues.Contains(point) ? (PanelOwner.CreateSetTree ? "Sends the displayed set values." : PanelOwner.DecimalPlaces >= 0 ? "Sends the values exactly as shown." : PanelOwner.RoundUpFactor != 0 ? "Sends the rounded values at full precision. Rows may be abbreviated." : "Sends full-precision values. Rows may be abbreviated.") : "Items sends items with shown numeric rounding (full precision in Automatic). Sets group all members by set index. Values sends the displayed property. Unavailable values are null.";
         }
 
         private void TooltipUnits(PointF point, GH_TooltipDisplayEventArgs e)
         {
             e.Title = "Units and decimals";
             e.Text = "Changes numeric output";
-            e.Description = "Convert mm ↔ m, mm² ↔ m², mm³ ↔ m³ or rad ↔ deg; set explicit decimals (0–12), shared with numeric output; or round output up to a factor (factor 5: 12.1 → 15).";
+            e.Description = "Convert mm ↔ m, mm² ↔ m², mm³ ↔ m³ or rad ↔ deg. Set explicit decimals (0–12), shared with numeric output. Or round output up to a factor (factor 5: 12.1 → 15).";
         }
 
         private void TooltipTree(PointF point, GH_TooltipDisplayEventArgs e)
         {
             e.Title = _layout.Trim.Contains(point) ? "Trim tree" : _layout.Simplify.Contains(point) ? "Simplify tree" : _layout.Flatten.Contains(point) ? "Flatten tree" : _layout.Reverse.Contains(point) ? "Reverse tree" : "Create set";
             e.Text = (_layout.Trim.Contains(point) ? "Depth: " + PanelOwner.TrimDepth + " · " : "") + "Changes output · Tree tools → Units → Filters → Create set";
-            e.Description = _layout.Trim.Contains(point) ? "Remove this many trailing path levels; matching branches merge. 0 turns Trim off." :
+            e.Description = _layout.Trim.Contains(point) ? "Remove this many trailing path levels. Matching branches merge. 0 turns Trim off." :
                 _layout.Simplify.Contains(point) ? "Toggle removal of path indices shared by all branches." :
                 _layout.Flatten.Contains(point) ? "Toggle merging all branches into {0}." :
                 _layout.Reverse.Contains(point) ? "Toggle reversing items within each output branch." :
-                "Group equal displayed values per branch; add Flatten for one set. Out Items sends every member in its set branch; Out Values sends each distinct value once.";
+                "Group equal displayed values per branch. Add Flatten for one set. Out Items sends every member in its set branch. Out Values sends each distinct value once.";
         }
 
         private void TooltipQuery(PointF point, GH_TooltipDisplayEventArgs e)
@@ -369,7 +369,7 @@ namespace BetterGhPanel
             e.Text = _layout.Type.Contains(point) ? PanelOwner.Session.HasCurrentResult ? CanvasMenu.TypeHint(PanelOwner.Session.Result, options) : "Types" :
                 _layout.Sort.Contains(point) ? options.SortMode.ToString() : options.BranchPath ?? "All branches";
             e.Description = _layout.Sort.Contains(point)
-                ? "Asc/Desc sorts items within each branch. Sorting changes the view only; output keeps its tree order."
+                ? "Asc/Desc sorts items within each branch. Sorting changes the view only. Output keeps its tree order."
                 : "Filters change both the view and the output wire.";
             if (_layout.Type.Contains(point) && PanelOwner.Session.HasCurrentResult)
                 e.Description = (PanelOwner.Session.Result.RowPositions.Count > 0 ? "Visible types: " : "Source types: ") +
@@ -386,13 +386,13 @@ namespace BetterGhPanel
         private void TooltipReset(PointF point, GH_TooltipDisplayEventArgs e)
         {
             e.Title = "Reset all";
-            e.Description = "Clears filters, sorting and selection, turns off tree tools and units, and sets Out to Items and B + F to Results. Keeps Preview, item order, D|F and size; Undo restores the settings.";
+            e.Description = "Clears filters, sorting and selection. Turns off tree tools and units. Sets Out to Items and B + F to Results. Keeps Preview, item order, D|F and size.";
         }
 
         private void TooltipWarnings(PointF point, GH_TooltipDisplayEventArgs e)
         {
             e.Title = "Data checks";
-            e.Description = "Counts the input before filters. Replaces the current filters; Undo restores them.";
+            e.Description = "Counts the input before filters. Replaces the current filters. Undo restores them.";
         }
 
         private void TooltipSearch(PointF point, GH_TooltipDisplayEventArgs e)
@@ -401,16 +401,16 @@ namespace BetterGhPanel
             e.Title = CanvasMenu.SearchModeLabel(options.SearchMode);
             e.Text = options.DisplayFilterValue ? "Showing values · click to filter" : string.IsNullOrEmpty(options.Search) ? "Click to search · arrow chooses the mode" : options.Search;
             e.Description = options.SearchMode == PanelSearchMode.Text
-                ? "Search displayed values, paths and types; > 800 or <= 25 compares numbers."
+                ? "Search displayed values, paths and types. > 800 or <= 25 compares numbers."
                 : options.SearchMode == PanelSearchMode.Regex
                 ? "Case-insensitive regular expression on displayed text, such as ^Wall or beam-[0-9]+."
                 : options.SearchMode == PanelSearchMode.ListLength
                 ? "Compare each branch's item count with >, >=, <, <=, = or != (a bare number means =)."
                 : PanelProperties.IsProperty(options.SearchMode) ? CanvasMenu.PropertyHelp(options.SearchMode)
-                : "Compare the shown number with >, >=, <, <=, = or != (a bare number means =); rows without this value are excluded.";
+                : "Compare the shown number with >, >=, <, <=, = or != (a bare number means =). Rows without this value are excluded.";
             if (options.DisplayFilterValue)
-                e.Description = "Shows each item's value; n/a means none. Click the search field to filter by it.";
-            else if (!CanvasMenu.HasValueChoices(options.SearchMode)) e.Description += " Rows update as you type; Enter applies, Esc cancels.";
+                e.Description = "Shows each item's value. n/a means none. Click the search field to filter by it.";
+            else if (!CanvasMenu.HasValueChoices(options.SearchMode)) e.Description += " Rows update as you type. Enter applies, Esc cancels.";
             if (PanelOwner.Session.Error != null) e.Description = PanelOwner.Session.Error + "\n\n" + e.Description;
         }
 
@@ -452,7 +452,7 @@ namespace BetterGhPanel
             e.Title = "Row selection and copy";
             e.Text = _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus : System.FormattableString.Invariant($"{_selection.Count:N0} selected");
             if (PanelOwner.Session.HasCurrentResult) e.Text += " · " + CanvasStatistics.Summary(PanelOwner.Session.Result);
-            e.Description = FooterStatus(PanelOwner.Session.Result, _singleLineFooter) + "\n\nClick to select; Ctrl/Cmd toggles, Shift extends, Alt/Option picks the same index in every branch; double-click clears selection; right-click to copy, frame or use branch actions.\n\n" + KeyboardHint;
+            e.Description = "Click to select; Ctrl/Cmd toggles, Shift extends, Alt/Option picks the same index in every branch. Right-click a row to copy, frame or view the full value, or a branch heading for branch actions. Double-click clears selection.\n\n" + KeyboardHint;
         }
 
         private GH_ObjectResponse? ClickRestore(GH_Canvas sender, GH_CanvasMouseEvent e)

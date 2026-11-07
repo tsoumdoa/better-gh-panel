@@ -1303,7 +1303,7 @@ namespace BetterGhPanel
             options.Search = search;
             options.DisplayFilterValue = showValues;
             if (PanelQueryPolicy.SameQuery(before, options)) { canvas.Invalidate(); return; }
-            PanelOwner.RecordQueryUndo(showValues ? "Panel+ show values" : "Panel+ filter", before, options);
+            PanelOwner.RecordQueryUndo("Panel+ search", before, options);
             _d.Offset = _f.Offset = 0;
             PanelOwner.Session.UpdateQuery(options);
             canvas.Invalidate();
@@ -1603,8 +1603,8 @@ namespace BetterGhPanel
                         {
                             e.Text = "List length: " + PanelOwner.Session.Snapshot.BranchItemCounts[hit.Path] + " · " + occurrences.Count + " branches";
                             e.Description = "Matching branches with this displayed count: " + string.Join(", ", occurrences) +
-                                "; source items after filters: " + CanvasStatistics.SourceStatuses(PanelOwner.Session.Result.DisplaySet.BranchSourceStatuses[hit.Path]) +
-                                ". Out Items groups all matching branches; Out Values sends the count; B, F and geometry actions include every member.";
+                                ".\nSource items after filters: " + CanvasStatistics.SourceStatuses(PanelOwner.Session.Result.DisplaySet.BranchSourceStatuses[hit.Path]) +
+                                ". Out Items groups all matching branches. Out Values sends the count. B, F and geometry actions include every member.";
                         }
                         return;
                     }
@@ -1656,6 +1656,7 @@ namespace BetterGhPanel
                             details += "\nD output branch: " + PanelItemOrder.Address(PanelOwner.Session.Result, hit.SourcePosition, true, PanelOwner.FlattenTree);
                     }
                     e.Description = PanelTextPreview.ForTooltip(details);
+                    if (e.Description != details) e.Description += "\nRight-click → View full value.";
                     break;
                 }
             }

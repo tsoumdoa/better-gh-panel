@@ -320,7 +320,7 @@ namespace BetterGhPanel
                 var size = i;
                 Menu_AppendItem(sizeMenu.DropDown, names[i], (_, __) =>
                 {
-                    RecordUndoEvent("Panel+ panel size");
+                    RecordUndoEvent("Panel+ size preset");
                     SetCanvasSize(CanvasPanelSize.PresetWidth(size), CanvasPanelSize.PresetHeight(size));
                 }, true, PreviewSize == size);
             }

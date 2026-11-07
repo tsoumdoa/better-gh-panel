@@ -80,7 +80,7 @@ namespace BetterGhPanel
                     Text(g, label.Substring(pathStart + 2), mono, Muted, new RectangleF(bounds.X + 80, bounds.Y, bounds.Width - 88, bounds.Height), right);
                     label = label.Substring(0, pathStart);
                 }
-                Text(g, label, font, actions[i].Enabled ? Ink : PanelTheme.Rgb(176, 182, 178),
+                Text(g, label, font, actions[i].Enabled ? Ink : PanelTheme.Disabled,
                     new RectangleF(bounds.X + 8, bounds.Y, pathStart >= 0 ? 72 : bounds.Width - 16, bounds.Height), trim);
                 // Partial invalidations must not activate a row that has not
                 // actually been painted at its new position.

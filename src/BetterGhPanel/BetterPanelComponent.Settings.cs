@@ -223,7 +223,7 @@ namespace BetterGhPanel
         {
             if (!Enum.IsDefined(typeof(CanvasPanelDisplay), display) || CanvasDisplay == display) return;
             (Attributes as BetterPanelAttributes)?.InvalidatePaintedHits();
-            RecordUndoEvent("Panel+ display size");
+            RecordUndoEvent("Panel+ full/half");
             CanvasTextInput.CloseActive();
             CanvasDisplay = display;
             Attributes.ExpireLayout();
@@ -495,7 +495,7 @@ namespace BetterGhPanel
         {
             if (!Enum.IsDefined(typeof(PanelOutputScope), scope) || OutputScope == scope) return;
             // Scope changes must not reload the component and discard its selection.
-            RecordUndoEvent("Panel+ B+F follow", new PanelUndo<PanelOutputScope>(InstanceGuid, OutputScope, scope, (component, value) => component.ApplyOutputScope(value)));
+            RecordUndoEvent("Panel+ B + F follow", new PanelUndo<PanelOutputScope>(InstanceGuid, OutputScope, scope, (component, value) => component.ApplyOutputScope(value)));
             ApplyOutputScope(scope);
         }
 
