@@ -1,5 +1,19 @@
 # Release validation records
 
+## 0.3.0-beta
+
+Table columns PRs [#63](https://github.com/tsoumdoa/better-gh-panel/pull/63) and [#64](https://github.com/tsoumdoa/better-gh-panel/pull/64) and the release preparation [#65](https://github.com/tsoumdoa/better-gh-panel/pull/65) were squash-merged into main. This is a minor version with the beta flag because D|F becomes the Table and files saved with added columns need this version.
+
+`npm run check` passed on the release commit: 353 managed tests on each of net48 and net8.0, 17 coordinator tests, one packaging test, both runtime builds, source encoding/style checks and the native smoke host compile. Three desktop-launcher tests passed. Managed capture checks against the final extracted archive passed with 225 PASS records without starting Rhino. The extracted assemblies contain no local checkout paths.
+
+**Automated native fixtures did not execute.** Against the plugin extracted from the final archive, run `run-GfJab8` stopped when `capture-safety` timed out in hidden-host startup after 180 seconds: 0 of 25 fixtures passed, 24 were not run and no assertions executed. An interactive Rhino was open during that run. Earlier runs on the same machine with Rhino closed stopped the same way, on the feature branch (`run-CphnjB`) and on main at `c493c59` (`run-Wj7Hzw`), so the hang is not attributed to this release. The new `table-columns` fixture has compiled but never run. The maintainer directed the release knowing the fixtures could not run.
+
+**Live desktop test.** An agent drove Rhino 8 and Grasshopper on Windows (.NET 7) on candidate `ceaf28f`, with real curves, surfaces and closed Breps. Passed: adding and removing columns, Undo/Redo of Remove column, the Table chip, header sorting and its menu, column resize and auto-fit, the horizontal scrollbar with D frozen, mismatch states, real geometry measurements with units, mixed-kind cells, Create set and List length with columns, save and reopen including H and its wire, copy-paste duplicates, clipboard TSV and the H title slots. It found one bug: Table off/on re-fitted a manual width. That was fixed in `aea7178`, which passed the build and Core tests but was not re-run live.
+
+Not exercised: Ctrl/Shift-click, Shift+wheel and Alt-drag (the desktop tool cannot hold modifiers), opening a saved D|F file, explicit decimal places, copy or column replacement while measuring, curved NURBS, exhaustive output parity in a live host, paste into Excel, Mac and the Windows .NET Framework host.
+
+Artifact source commit: `2a76f6d1de77b45522bdb5787f6bd7b42b7b6ba5`. Archive: `panel-plus-0.3.0-beta-rh8_0-any.yak`. SHA-256: `ccdf87c2b4f92933c37c2059e140bcf27a6b1ccbc73e387b0c0ab46a9307cdf5`. GitHub prerelease and public Yak publication succeeded. Yak search lists `0.3.0-beta`, and a fresh GitHub asset download matches the archive SHA-256.
+
 ## 0.2.8-beta
 
 UI polish PRs [#58](https://github.com/tsoumdoa/better-gh-panel/pull/58), [#60](https://github.com/tsoumdoa/better-gh-panel/pull/60) and [#59](https://github.com/tsoumdoa/better-gh-panel/pull/59), the native fixture refresh [#61](https://github.com/tsoumdoa/better-gh-panel/pull/61) and the release preparation [#62](https://github.com/tsoumdoa/better-gh-panel/pull/62) were squash-merged into main as `071df2d`, `6e0633f`, `0cab34d`, `3cd08f8` and `d080f04`. Each UI PR had independent GPT-6.1 Sol and Claude Opus review rounds (two adversarial rounds for #59, whose menu routing was verified against the decompiled Grasshopper 8.36 dispatch) plus maintainer review; #59 and #62 also had native screenshot review of the new chrome. The green CodeRabbit statuses represented skipped reviews, not approvals.
