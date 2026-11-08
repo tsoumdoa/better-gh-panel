@@ -1692,6 +1692,14 @@ namespace BetterGhPanel
                                 ".\nSource items after filters: " + CanvasStatistics.SourceStatuses(PanelOwner.Session.Result.DisplaySet.BranchSourceStatuses[hit.Path]) +
                                 ". Out Items groups all matching branches. Out Values sends the count. B, F and geometry actions include every member.";
                         }
+                        int summaryColumn = DisplayListLengths ? CellColumnAt(point) : -1;
+                        if (summaryColumn >= 0 && summaryColumn < PanelOwner.TableColumns.Count)
+                        {
+                            var column = PanelOwner.TableColumns[summaryColumn];
+                            if (column.HasGeometry)
+                                e.Description += "\n" + PanelTextPreview.ForTooltip(string.Join("\n\n", column.BranchItems(PanelOwner.Session.Result, hit.Path)
+                                    .Select(item => column.ItemTooltip(item, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor))));
+                        }
                         return;
                     }
                 foreach (var hit in _rowHits)
@@ -1708,15 +1716,12 @@ namespace BetterGhPanel
                         e.Text = cell == null ? "Missing value" :
                             (cell.Validity == PanelValidity.VerifiedInvalid ? "Invalid " : cell.Validity == PanelValidity.Unverified ? "Unverified " : "") + cell.TypeName;
                         string cellDetails = ColumnCell(PanelOwner.Session.Result, hit.SourcePosition, columnIndex);
-                        if (cell != null && PanelOwner.Session.Result.DisplaySet == null && column.Pair?.ItemAt(hit.SourcePosition) is int item)
+                        if (column.Snapshot != null)
                         {
-                            var cellGeometry = column.Details(item);
-                            if (cell.Validity != PanelValidity.VerifiedValid)
-                                cellDetails += "\n" + (string.IsNullOrWhiteSpace(cell.InvalidReason)
-                                    ? cell.Validity == PanelValidity.VerifiedInvalid ? "Geometry or value is invalid." : "Validity could not be verified." : cell.InvalidReason);
-                            else if (cellGeometry != null)
-                                cellDetails = cellGeometry.FormatDetails(PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor) +
-                                    (column.Measuring(item) ? "\nCalculating measurement…" : cellGeometry.MeasurementUnavailable ? "\nMeasurement unavailable." : "");
+                            var memberDetails = column.CellItems(PanelOwner.Session.Result, hit.SourcePosition)
+                                .Select(item => column.ItemTooltip(item, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor));
+                            if (cell != null && (!cell.IsValid || cell.GeometryInfo != null) || column.HasGeometry && PanelOwner.Session.Result.DisplaySet != null)
+                                cellDetails = string.Join("\n\n", memberDetails);
                         }
                         e.Description = PanelTextPreview.ForTooltip(cellDetails) + (cell == null ? "" : FullValueHint);
                         return;

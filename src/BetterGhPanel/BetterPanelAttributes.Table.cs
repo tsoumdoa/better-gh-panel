@@ -101,7 +101,9 @@ namespace BetterGhPanel
             bool numeric = index > 0 && PanelOwner.TableColumns[index - 1].Snapshot?.TypeCounts.Keys.Any(type => type == "Number" || type == "Integer") == true;
             string units = index == 0 ? DataHeaderUnit() : PanelOwner.TableColumns[index - 1].HasGeometry
                 ? PanelOwner.TableColumns[index - 1].HeaderUnit(PanelOwner.UnitConversion) : numeric ? PanelUnits.Symbol(PanelOwner.UnitConversion) : "";
-            if (units.Length > 0) title += " · " + units;
+            if (index > 0 && PanelOwner.TableColumns[index - 1].HomogeneousMetric)
+                title += PanelOwner.TableColumns[index - 1].HeaderSuffix(PanelOwner.UnitConversion);
+            else if (units.Length > 0) title += " \u00b7 " + units;
             var options = PanelOwner.Session.Options;
             if (options.SortMode != PanelSortMode.SourceOrder && (options.SortColumn == ColumnId(index) || index == 0 && options.SortColumn == Guid.Empty))
                 title += options.SortMode == PanelSortMode.ValueAscending ? " ▲" : " ▼";
@@ -201,7 +203,7 @@ namespace BetterGhPanel
                                 int cell = TableIndex(result).Entries[extra].Cells[column];
                                 var source = PanelOwner.TableColumns[column];
                                 if (cell >= 0 && source.Snapshot != null)
-                                    widths[column + 1] = Math.Max(widths[column + 1], Measure(source.ItemValue(cell, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor), source.Snapshot.Rows[cell].NumericValue.HasValue) + (source.ShowCellTypes ? 60 : 12));
+                                    widths[column + 1] = Math.Max(widths[column + 1], Measure(source.ItemValue(cell, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor), source.CellIsNumeric(source.Snapshot.Rows[cell])) + source.CellPadding(source.Snapshot.Rows[cell]));
                             }
                         }
                         continue;
@@ -217,7 +219,12 @@ namespace BetterGhPanel
                         (statuses.VerifiedInvalid > 0 || statuses.Unverified > 0 ? 12 : 0);
                     widths[0] = Math.Max(widths[0], Measure(PanelOwner.DisplayValue(result.Snapshot, dataRow, position), numeric) + reserved);
                     for (int index = 1; index < widths.Length; index++)
-                        widths[index] = Math.Max(widths[index], Measure(PanelOwner.TableColumns[index - 1].Cell(result, position, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor), result.DisplaySet == null && PanelOwner.TableColumns[index - 1].Row(position)?.NumericValue.HasValue == true) + (result.DisplaySet == null && PanelOwner.TableColumns[index - 1].ShowCellTypes ? 60 : 12));
+                    {
+                        var column = PanelOwner.TableColumns[index - 1];
+                        var cell = result.DisplaySet == null ? column.Row(position) : null;
+                        widths[index] = Math.Max(widths[index], Measure(column.Cell(result, position, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor),
+                            column.CellIsNumeric(cell)) + column.CellPadding(cell));
+                    }
                 }
             }
             // Auto-fit only grows while the result stays the same, so scrolling never makes columns jump.
@@ -296,16 +303,16 @@ namespace BetterGhPanel
             g.DrawLine(line, _tableHeader.X, _tableHeader.Bottom - 1, _tableHeader.Right, _tableHeader.Bottom - 1);
         }
 
-        private void DrawTableCell(Graphics g, CanvasRowRenderer renderer, PanelRow? row, string value, RectangleF bounds, Font font, Font small, bool muted = false, bool showType = false, string note = "")
+        private void DrawTableCell(Graphics g, CanvasRowRenderer renderer, PanelRow? row, string value, RectangleF bounds, Font font, Font small, bool muted = false, bool showType = false, string note = "", bool numeric = false)
         {
             if (note.Length > 0)
             {
                 float noteWidth = Math.Min(bounds.Width * 0.65f, TightWidth(g, note, small) + 12);
-                DrawTableCell(g, renderer, row, value, new RectangleF(bounds.X, bounds.Y, bounds.Width - noteWidth, bounds.Height), font, small, muted, showType);
+                DrawTableCell(g, renderer, row, value, new RectangleF(bounds.X, bounds.Y, bounds.Width - noteWidth, bounds.Height), font, small, muted, showType, numeric: numeric);
                 renderer.DrawCell(g, note, small, Muted, new RectangleF(bounds.Right - noteWidth, bounds.Y, noteWidth - 6, bounds.Height));
                 return;
             }
-            showType = showType && row != null && (row.GeometryInfo == null || StockTypeLabels.SeparateLabel(row.TypeName));
+            showType = showType && row != null;
             float marker = 0;
             if (row?.Validity == PanelValidity.VerifiedInvalid || row?.Validity == PanelValidity.Unverified)
             {
@@ -316,7 +323,7 @@ namespace BetterGhPanel
             }
             float typeWidth = showType ? Math.Min(44, Math.Max(0, bounds.Width - 12)) : 0;
             renderer.DrawValue(g, PanelValuePresentation.Visualize(value), font, muted ? Muted : Ink,
-                new RectangleF(bounds.X + 6 + marker, bounds.Y, Math.Max(0, bounds.Width - typeWidth - 12 - marker), bounds.Height), row?.NumericValue.HasValue == true);
+                new RectangleF(bounds.X + 6 + marker, bounds.Y, Math.Max(0, bounds.Width - typeWidth - 12 - marker), bounds.Height), numeric || row?.NumericValue.HasValue == true);
             if (typeWidth > 0) renderer.DrawCell(g, CanvasMenu.ShortTypeName(row!.TypeName), small, Muted,
                 new RectangleF(bounds.Right - typeWidth - 4, bounds.Y, typeWidth - 4, bounds.Height), true);
         }
@@ -343,7 +350,7 @@ namespace BetterGhPanel
                             new RectangleF(cell.X + 6, cell.Y, Math.Max(0, cell.Width - 12 - typeWidth), RowHeight), column.Numeric);
                     }
                     else if (column.Present && column.Pair != null && column.Snapshot != null) DrawTableCell(g, renderer, result.DisplaySet == null ? row : null, ColumnCell(result, position, columnIndex), cell, font, small,
-                        showType: column.ShowCellTypes);
+                        showType: result.DisplaySet == null && column.CellShowsType(row), numeric: result.DisplaySet == null && column.CellIsNumeric(row));
                 });
             }
         }
@@ -380,7 +387,7 @@ namespace BetterGhPanel
                 {
                     if (item < 0 || column.Snapshot == null || column.Pair == null) return;
                     string value = column.ItemValue(item, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
-                    DrawTableCell(g, renderer, column.Snapshot.Rows[item], value, cell, font, small, muted: true, showType: column.ShowCellTypes);
+                    DrawTableCell(g, renderer, column.Snapshot.Rows[item], value, cell, font, small, muted: true, showType: column.CellShowsType(column.Snapshot.Rows[item]), numeric: column.CellIsNumeric(column.Snapshot.Rows[item]));
                 });
             }
             string note = ExtraNote(result, offset);

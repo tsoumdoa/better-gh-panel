@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- **Geometry in table columns.** F and added columns now show the same geometry hints and background measurements as D. Visible D rows take priority, then visible columns from left to right; hidden tables only prepare an active geometry sort column. Geometry sorting compares the shown primary metric, unavailable metrics stay last, and copy waits for measurements. Visible set/list-length summaries measure their bounded previews; matching uniform geometry columns show converted header units. Outputs and D-only preview/search/filter behavior are unchanged.
+- **Compact geometry columns.** A single metric kind shows number-only cells with a metric/unit header (for example, Edges · L · m); mixed kinds show short type, symbol, number and unit. Type and shape hints move to tooltips. Set/list-length summaries and copy use the compact text, while pending values and validity badges remain visible. Auto-fit follows the compact font and content.
+
+- **Geometry in table columns.** F and added columns now share D's background measurements, with type/shape hints in tooltips. Visible D rows take priority, then visible columns from left to right; hidden tables only prepare an active geometry sort column. Geometry sorting compares the shown primary metric, unavailable metrics stay last, and copy waits for measurements. Visible set/list-length summaries measure their bounded previews; matching uniform geometry columns show converted header units. Outputs and D-only preview/search/filter behavior are unchanged.
 
 - **Table columns.** Add or remove optional named inputs from the component menu and inspect them beside frozen D cells. One table replaces the D|F panes, with horizontal scrolling, saved column widths, per-column sorting, missing/extra cell indicators and TSV copy with headers.
 - Number cells in all columns share the display units, factor and decimal precision. D/S/B/F wire outputs and F's original pairing/output rules are unchanged.

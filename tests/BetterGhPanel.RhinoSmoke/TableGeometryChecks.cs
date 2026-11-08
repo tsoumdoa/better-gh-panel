@@ -73,8 +73,17 @@ internal static class TableGeometryChecks
         var conversion = PropertyValue<PanelUnitConversion>(component, "UnitConversion");
         int decimals = PropertyValue<int>(component, "DecimalPlaces"); double factor = PropertyValue<double>(component, "RoundUpFactor");
         for (int index = 0; index < 4; index++)
-            Check((string)Call(column, "ItemValue", index, conversion, decimals, factor)! ==
-                (string)Call(component, "DisplayValue", data, data.Rows[index], index)!, "Column measured text matches plain D for " + shapes[index].TypeName);
+        {
+            var metric = (PanelGeometryInfo)Call(fixture.Session, "GetGeometryDetails", data, index)!;
+            string label = index < 2 ? "Crv" : index == 2 ? "Srf" : "Brep";
+            string expected = label + " " + metric.MetricLabel + " " + PanelUnits.FormatGeometry(metric.Value!.Value,
+                metric.Power, metric.Units, conversion, decimals, roundUpFactor: factor);
+            Check((string)Call(column, "ItemValue", index, conversion, decimals, factor)! == expected,
+                "Mixed column shows its compact primary metric for " + shapes[index].TypeName);
+            string tooltip = (string)Call(column, "ItemTooltip", index, conversion, decimals, factor)!;
+            Check(tooltip.Contains(metric.Description) && tooltip.Contains(metric.FormatDetails(conversion, decimals, factor)),
+                "Column tooltip retains D geometry hints and measurement details");
+        }
         string Fingerprint(int output)
         {
             var chunk = new GH_LooseChunk("Output"); ((GH_Structure<IGH_Goo>)fixture.Sinks[output].VolatileData).Write(chunk);

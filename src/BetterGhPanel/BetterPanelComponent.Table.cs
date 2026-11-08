@@ -141,7 +141,7 @@ namespace BetterGhPanel
                 column.RequireMeasurements(ColumnCopyItems(column, result, positions,
                     Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength
                         ? RowSelection.BranchPaths(result).ToArray() : Array.Empty<string>()));
-            var titles = new[] { Params.Input[0].NickName }.Concat(TableColumns.Select(column => column.Input.NickName));
+            var titles = new[] { Params.Input[0].NickName }.Concat(TableColumns.Select(column => column.Input.NickName + column.HeaderSuffix(UnitConversion)));
             if (Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength)
             {
                 var selected = new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal);

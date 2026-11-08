@@ -7,6 +7,51 @@ using Xunit;
 
 public class TableColumnsTests
 {
+    [Fact]
+    public void CompactGeometryCellsShareMetricRoundingAndOmitHints()
+    {
+        var geometry = new PanelGeometryInfo("Crv · closed · degree 1", 4201, units: "mm");
+        var row = new PanelRow(0, "{0}", "Curve", "curve", null, geometryInfo: geometry);
+        string Cell(bool homogeneous, bool measuring = false, PanelGeometryInfo? measured = null) =>
+            PanelTableText.GeometryCell(row, measured ?? geometry, homogeneous, measuring, PanelUnitConversion.MillimetersToMeters, 2, 0.1);
+        Assert.Equal("4.30", Cell(true));
+        Assert.Equal("Crv L 4.30 m", Cell(false));
+        Assert.Equal("measuring…", Cell(true, true));
+        Assert.Equal("measuring…", Cell(false, true));
+        Assert.Equal("unavailable", Cell(true, measured: geometry.WithUnavailableMeasurement()));
+        Assert.Equal("Crv L unavailable", Cell(false, measured: geometry.WithUnavailableMeasurement()));
+        Assert.Equal("4.30 · — · 5.60 … +2", PanelTableText.Summary(new[] { Cell(true), "—", "5.60" }, 5, compact: true));
+        var area = new PanelGeometryInfo("planar", 12000000, 2, "mm", "Area", "A");
+        var surface = new PanelRow(0, "{0}", "Surface", "", null, geometryInfo: area);
+        Assert.Equal("Srf A 12.00 m²", PanelTableText.GeometryCell(surface, area, false, false,
+            PanelUnitConversion.SquareMillimetersToSquareMeters, 2, 0));
+        var volume = new PanelGeometryInfo("closed", 8000000000, 3, "mm", "Volume", "V");
+        Assert.Equal("Brep V 8.00 m³", PanelTableText.GeometryCell(new PanelRow(0, "{0}", "Brep", "", null, geometryInfo: volume),
+            volume, false, false, PanelUnitConversion.CubicMillimetersToCubicMeters, 2, 0));
+    }
+
+    [Fact]
+    public void NonGeometryAndInvalidMembersDoNotChangeTheCommonMetric()
+    {
+        var length = new PanelGeometryInfo("Crv · closed", 4200, units: "mm");
+        var area = new PanelGeometryInfo("Srf · planar", 12, 2, "mm", "Area", "A");
+        var curve = new PanelRow(0, "{0}", "Curve", "", null, geometryInfo: length);
+        var text = new PanelRow(1, "{0}", "Text", "note", null);
+        var missing = new PanelRow(2, "{0}", "Null", "<null>", null, isNull: true);
+        var invalid = new PanelRow(3, "{0}", "Surface", "bad", null, isValid: false, geometryInfo: area);
+        PanelSnapshot Snapshot(params PanelRow[] rows) => new PanelSnapshot(rows, new[] { new PanelBranch("{0}", rows.Length) });
+        Assert.Same(length, PanelTableText.CommonGeometryMetric(Snapshot(curve, text, missing, invalid)));
+        Assert.Null(PanelTableText.CommonGeometryMetric(Snapshot(text, missing)));
+        Assert.Null(PanelTableText.CommonGeometryMetric(Snapshot(curve, new PanelRow(4, "{0}", "Surface", "", null, geometryInfo: area))));
+        Assert.Equal("note", PanelTableText.GeometryCell(text, null, true, false, PanelUnitConversion.None, 2, 0));
+        Assert.Equal(PanelTableText.Value(missing, PanelUnitConversion.None, 2, 0),
+            PanelTableText.GeometryCell(missing, null, true, false, PanelUnitConversion.None, 2, 0));
+        Assert.Equal("invalid", PanelTableText.GeometryCell(invalid, area, true, false, PanelUnitConversion.None, 2, 0));
+        var unknownGeometry = new PanelGeometryInfo("unsupported shape details");
+        var unverified = new PanelRow(4, "{0}", "Curve", "", null, PanelValidity.Unverified, geometryInfo: unknownGeometry);
+        Assert.Equal("unverified", PanelTableText.GeometryCell(unverified, unknownGeometry, true, false, PanelUnitConversion.None, 2, 0));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -46,6 +91,9 @@ public class TableColumnsTests
         Assert.Equal("", Unit(Snapshot(length, area), PanelUnitConversion.MillimetersToMeters));
         Assert.Equal("", Unit(Snapshot(area), PanelUnitConversion.MillimetersToMeters));
         Assert.Equal("", Unit(Snapshot(length), PanelUnitConversion.None));
+        Assert.Equal(" · L · m", PanelTableText.GeometryHeaderSuffix(length, PanelUnitConversion.MillimetersToMeters));
+        Assert.Equal(" · L", PanelTableText.GeometryHeaderSuffix(length, PanelUnitConversion.None));
+        Assert.Equal("", PanelTableText.GeometryHeaderSuffix(null, PanelUnitConversion.MillimetersToMeters));
         Assert.Equal("", Unit(Snapshot(new PanelGeometryInfo("points", 4, 0, "", "Count", "")), PanelUnitConversion.MillimetersToMeters));
     }
 
