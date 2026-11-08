@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Geometry in table columns.** Add optional columns beside frozen D, with independent pairing, saved widths, sorting and TSV copy. Geometry cells show background measurements with type/shape details in tooltips. Single-metric columns use number-only cells and metric/unit headers, retaining model units unless a matching conversion applies; mixed kinds use aligned type/symbol/value/unit text. Copy waits for measurements, summaries use the same suffixes as other columns, and hidden tables measure only the active sort column. D/S/B/F outputs and D-only preview/search/filter behavior stay unchanged.
+- **Geometry in table columns.** Add optional columns beside frozen D, with independent pairing, saved widths, sorting and TSV copy. Geometry cells show background measurements with type/shape details in tooltips. Single-metric columns use number-only cells and metric/unit headers, retaining model units unless a matching conversion applies; mixed kinds use aligned type/symbol/value/unit text. Copy waits for measurements, summaries use the same suffixes as other columns, and hidden tables measure only the active sort column. D/S/B/F outputs and D-only preview/search/filter behavior stay unchanged. Opening a file with added columns in an older Panel+ version drops those added inputs.
 - **Column titles input.** Toggle **Column titles input** in the component menu for optional H, always last. H item 0 titles D, item 1 titles F even when F is absent, and items 2+ title added columns. Empty titles keep port nicknames. Headers, tooltips, column notes, sort labels and TSV share the titles; ports keep their names. H and its wire support save/reload and Undo, and title changes use a normal solve.
 
 ## 0.2.8-beta
