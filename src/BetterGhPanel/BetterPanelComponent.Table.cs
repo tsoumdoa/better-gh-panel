@@ -15,7 +15,7 @@ namespace BetterGhPanel
         private readonly List<PanelTableColumn> _tableColumns = new List<PanelTableColumn>();
         internal int InputBranchCount => _inputTree?.PathCount ?? 0;
         internal IReadOnlyList<PanelTableColumn> TableColumns => _tableColumns;
-        internal bool TableInputPresent => Params.Input.Skip(1).Any(InputPresent);
+        internal bool TableInputPresent => Params.Input.Skip(1).Where(IsTableDataInput).Any(InputPresent);
         private static bool InputPresent(IGH_Param input) => input.SourceCount != 0 ||
             input is not Param_GenericObject generic || generic.PersistentData.PathCount != 0;
 
@@ -32,6 +32,7 @@ namespace BetterGhPanel
             }
             for (int index = 2; index < Params.Input.Count; index++)
             {
+                if (IsHeaderInput(Params.Input[index])) continue;
                 bool present = InputPresent(Params.Input[index]);
                 PanelPairedData? map = null;
                 GH_Structure<IGH_Goo>? tree = null, liveTree = null;
@@ -141,7 +142,7 @@ namespace BetterGhPanel
                 column.RequireMeasurements(ColumnCopyItems(column, result, positions,
                     Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength
                         ? RowSelection.BranchPaths(result).ToArray() : Array.Empty<string>()));
-            var titles = new[] { Params.Input[0].NickName }.Concat(TableColumns.Select(column => column.Input.NickName + column.HeaderSuffix(UnitConversion)));
+            var titles = new[] { TableHeaderTitle(0) }.Concat(TableColumns.Select((column, index) => TableHeaderTitle(index + 1) + column.HeaderSuffix(UnitConversion)));
             if (Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength)
             {
                 var selected = new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal);

@@ -253,6 +253,9 @@ namespace BetterGhPanel.Core
 
     internal static class PanelTableText
     {
+        internal static string HeaderTitle(IReadOnlyList<string?> titles, int index, string fallback) =>
+            index >= 0 && index < titles.Count && !string.IsNullOrWhiteSpace(titles[index]) ? titles[index]! : fallback;
+
         internal const float MinimumColumnWidth = 48, MaximumColumnWidth = 320;
         internal static string LengthBadge(int total, int dataTotal) => total > dataTotal
             ? "+" + (total - dataTotal) + " extra" : total + " of " + dataTotal;

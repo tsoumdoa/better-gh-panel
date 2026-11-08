@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Optional header input.** Add/remove Headers (H) from the component menu. H stays last and supplies presentation-only titles for D, shown F and added columns in tree order; empty titles keep input nicknames. Headers and TSV retain their units, metrics and states. H-only updates preserve the snapshot/query, and H’s identity and wire survive save/reload and Undo.
+
 - Geometry measurement admission now serializes preparation through worker completion across D and table columns. Pending requests are bounded and removed on cancellation/retirement, D keeps priority, and columns do not retain measurement witnesses. Deferred geometry headers now use captured model units. The compiled native copy-wait fixture gates a deferred surface worker.
 
 - **Compact geometry columns.** A single metric kind shows number-only cells with a metric/unit header (for example, Edges · L · m); mixed kinds show short type, symbol, number and unit. Type and shape hints move to tooltips. Set/list-length summaries and copy use the compact text, while pending values and validity badges remain visible. Auto-fit follows the compact font and content.

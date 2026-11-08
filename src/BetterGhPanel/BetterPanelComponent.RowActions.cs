@@ -258,13 +258,17 @@ namespace BetterGhPanel
                         else if (action == PanelRowAction.CopyAddresses)
                             text = string.Join(Environment.NewLine, ordered.Select(position => PanelItemOrder.Address(result, position, OutputValues == PanelOutputValues.Items, FlattenTree)));
                         else if (action == PanelRowAction.CopyTable)
-                            text = "Path\tIndex\tValue" + Environment.NewLine + string.Join(Environment.NewLine, ordered.Select(position =>
+                        {
+                            string title = HeaderInput == null ? "Value" : TableHeaderTitle(0);
+                            if (title.IndexOfAny(new[] { '\t', '\r', '\n', '"' }) >= 0) title = "\"" + title.Replace("\"", "\"\"") + "\"";
+                            text = "Path\tIndex\t" + title + Environment.NewLine + string.Join(Environment.NewLine, ordered.Select(position =>
                             {
                                 PanelItemOrder.TryGetNumber(result, position, out int index);
                                 string value = DisplayValue(snapshot, snapshot.Rows[position], position);
                                 if (value.IndexOfAny(new[] { '\t', '\r', '\n', '"' }) >= 0) value = "\"" + value.Replace("\"", "\"\"") + "\"";
                                 return snapshot.Rows[position].Path + "\t" + index.ToString(CultureInfo.InvariantCulture) + "\t" + value;
                             }));
+                        }
                         else if (branchSet || listLengthCopy)
                             text = string.Join(Environment.NewLine, branches.Select(branch => snapshot.BranchItemCounts[branch].ToString(CultureInfo.InvariantCulture)));
                         else text = string.Join(Environment.NewLine, ordered.Select(position => CopyValue(snapshot, position)));

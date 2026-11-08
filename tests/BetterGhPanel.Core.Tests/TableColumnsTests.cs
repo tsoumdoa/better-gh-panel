@@ -7,6 +7,21 @@ using Xunit;
 
 public class TableColumnsTests
 {
+    [Fact]
+    public void HeaderTitlesMapByShownColumnOrderAndKeepNamesForEmptyItems()
+    {
+        string?[] titles = { "Panel", "Code", "Area (m²)", "", null, " \t\r\n", "  Title  ", "ignored extra" };
+        string[] names = { "D", "F", "C1", "C2", "C3", "C4", "C5" };
+        Assert.Equal(new[] { "Panel", "Code", "Area (m²)", "C2", "C3", "C4", "  Title  " },
+            names.Select((name, index) => PanelTableText.HeaderTitle(titles, index, name)));
+        Assert.Equal("C6", PanelTableText.HeaderTitle(titles, 8, "C6"));
+        Assert.Equal("D", PanelTableText.HeaderTitle(Array.Empty<string?>(), 0, "D"));
+        Assert.Equal("D", PanelTableText.HeaderTitle(titles, -1, "D"));
+        Assert.StartsWith("Path\tIndex\tPanel\tCode\tArea (m²)\tC2" + Environment.NewLine,
+            PanelTableTsv.Build(names.Take(4).Select((name, index) => PanelTableText.HeaderTitle(titles, index, name)),
+                Array.Empty<(string, int, IReadOnlyList<string>)>()));
+    }
+
     [Theory]
     [InlineData(PanelUnitConversion.MillimetersToMeters, 1, 4200, "L 4.20 m")]
     [InlineData(PanelUnitConversion.MillimetersToMeters, 2, 1800, "A 1800.00 mm²")]

@@ -165,6 +165,7 @@ namespace BetterGhPanel
             {
                 if (Locked || !da.GetDataTree(0, out GH_Structure<IGH_Goo> tree)) tree = new GH_Structure<IGH_Goo>();
                 if (Locked || generation != _solveGeneration || !ReferenceEquals(document, OnPingDocument())) return;
+                RefreshHeaderTitles();
                 var session = Session;
                 bool Current() => generation == _solveGeneration && !Locked && ReferenceEquals(document, OnPingDocument()) &&
                     ReferenceEquals(session, _session) && !session.IsDisposed;
@@ -228,6 +229,7 @@ namespace BetterGhPanel
                     _geometryContext = context; _captureHasGeometry = HasGeometry(snapshot);
                     _sourceItems = sources; _measurementSources = measurementSources; _captureGraphs = graphs;
                     _measurementSnapshot = snapshot;
+                    RememberHeaderDataInputs();
                     _staleMeasurementSnapshot = null;
                     RefreshColumnSort();
                     if (_retainGeometryMeasurements)

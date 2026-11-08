@@ -22,6 +22,7 @@ internal static class TableColumnsChecks
     {
         await Verify(value);
         await TableGeometryChecks.Verify(value);
+        await TableHeaderChecks.Verify(value);
     });
     private static async Task Verify(Assembly assembly)
     {
