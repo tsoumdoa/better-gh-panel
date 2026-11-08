@@ -27,6 +27,20 @@ internal static class TableGeometryChecks
         using var shortCurve = new LineCurve(Point3d.Origin, new Point3d(1, 0, 0));
         using var surface = new PlaneSurface(Plane.WorldXY, new Interval(0, 3), new Interval(0, 3));
         using var brep = new BoundingBox(Point3d.Origin, new Point3d(2, 2, 2)).ToBrep();
+        using var nurbs = longCurve.ToNurbsCurve();
+        using var mesh = new Mesh();
+        mesh.Vertices.Add(0, 0, 0); mesh.Vertices.Add(1, 0, 0); mesh.Vertices.Add(0, 1, 0); mesh.Faces.AddFace(0, 1, 2);
+        var metadata = new GH_Structure<IGH_Goo>();
+        metadata.AppendRange(new IGH_Goo[] { new GH_Curve(longCurve), new GH_Curve(nurbs), new GH_Surface(surface), new GH_Brep(brep), new GH_Mesh(mesh) }, new GH_Path(0));
+        var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("Capture", AnyStatic)!;
+        var captured = (PanelSnapshot)capture.Invoke(null, new object?[] { metadata, null, PanelUnitConversion.None, "mm" })!;
+        Check(captured.Rows.All(row => row.GeometryInfo?.Units == "mm"), "Deferred geometry metadata carries captured model units");
+        var tableText = typeof(PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelTableText", true)!;
+        var curveSnapshot = new PanelSnapshot(captured.Rows.Take(2).ToArray(), new[] { new PanelBranch("{0}", 2) });
+        var common = tableText.GetMethod("CommonGeometryMetric", AnyStatic)!.Invoke(null, new object[] { curveSnapshot });
+        Check(common != null && (string)tableText.GetMethod("GeometryHeaderSuffix", AnyStatic)!.Invoke(null,
+            new object[] { common, PanelUnitConversion.MillimetersToMeters })! == " \u00b7 L \u00b7 m",
+            "Analytic and deferred curves share a homogeneous metric/unit header");
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         var path = new GH_Path(0);
         IGH_Goo[] shapes = { new GH_Curve(longCurve), new GH_Curve(shortCurve), new GH_Surface(surface), new GH_Brep(brep), new GH_String("no metric") };
@@ -58,23 +72,44 @@ internal static class TableGeometryChecks
             using var bitmap = new Bitmap(canvas.Width, canvas.Height); using var graphics = Graphics.FromImage(bitmap);
             graphics.Clear(GH_Skin.canvas_back); canvas.Viewport.ApplyProjection(graphics); PanelTestAdapter.Render(component, canvas, graphics);
         }
-        fixture.Select(0); Render();
+        Check(snapshot.Rows[2].GeometryInfo?.CanMeasure == true && snapshot.Rows[2].GeometryInfo?.Value == null,
+            "Copy-wait target is a deferred surface, not an analytic line");
+        var gate = fixture.Session.GetType().GetProperty("GeometryWorkerSubmissionForTesting", AnyInstance)!;
+        Action? heldWorker = null;
+        gate.SetValue(fixture.Session, (Func<Action, bool>)(worker =>
+        {
+            Check(heldWorker == null, "Session admission permits only one gated worker");
+            heldWorker = worker;
+            return true;
+        }));
+        fixture.Select(2); Render();
         var previousClipboard = System.Windows.Forms.Clipboard.GetDataObject();
         try
         {
-            var copy = (Task<string>)Call(component, "CopyColumnValuesAsync", data, new[] { 0 }, 1, null)!;
-            Check(!copy.IsCompleted, "Column copy waits for a deferred production measurement");
+            var copy = (Task<string>)Call(component, "CopyColumnValuesAsync", data, new[] { 2 }, 1, null)!;
+            await fixture.Ready(() => heldWorker != null);
+            Check(!copy.IsCompleted && !(bool)Call(queue, "Has", snapshot, 2)!,
+                "Column copy remains pending while production worker completion is deterministically gated");
+            gate.SetValue(fixture.Session, null);
+            var worker = heldWorker!; heldWorker = null;
+            _ = Task.Run(worker);
             Check((await copy).Contains("copied") && !System.Windows.Forms.Clipboard.GetText().Contains("measuring"),
                 "Column copy publishes measured text and never the pending placeholder");
         }
-        finally { if (previousClipboard != null) System.Windows.Forms.Clipboard.SetDataObject(previousClipboard, true); }
+        finally
+        {
+            gate.SetValue(fixture.Session, null);
+            Call(component, "CancelPendingCopy");
+            if (heldWorker != null) _ = Task.Run(heldWorker);
+            if (previousClipboard != null) System.Windows.Forms.Clipboard.SetDataObject(previousClipboard, true);
+        }
         Check(await (Task<bool>)Call(queue, "MeasureAsync", snapshot, Enumerable.Range(0, shapes.Length).ToArray(), CancellationToken.None)!,
             "Column geometry completes through the same queue type as D");
         var conversion = PropertyValue<PanelUnitConversion>(component, "UnitConversion");
         int decimals = PropertyValue<int>(component, "DecimalPlaces"); double factor = PropertyValue<double>(component, "RoundUpFactor");
         for (int index = 0; index < 4; index++)
         {
-            var metric = (PanelGeometryInfo)Call(fixture.Session, "GetGeometryDetails", data, index)!;
+            var metric = (PanelGeometryInfo?)Call(fixture.Session, "GetGeometryDetails", data, index) ?? data.Rows[index].GeometryInfo!;
             string label = index < 2 ? "Crv" : index == 2 ? "Srf" : "Brep";
             string expected = label + " " + metric.MetricLabel + " " + PanelUnits.FormatGeometry(metric.Value!.Value,
                 metric.Power, metric.Units, conversion, decimals, roundUpFactor: factor);

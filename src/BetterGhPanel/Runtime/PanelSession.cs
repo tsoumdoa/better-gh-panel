@@ -27,6 +27,7 @@ namespace BetterGhPanel.Runtime
         private Func<PanelSnapshot, int, bool>? _geometrySourceCurrent;
         private Func<PanelSnapshot, bool>? _captureCurrent;
         private readonly GeometryMeasurementQueue<PanelSnapshot, PanelGeometryInfo> _geometry;
+        private readonly GeometryMeasurementScheduler _geometryScheduler;
         private bool _awaitingSnapshot, _inputSuspended, _measurementNotifyScheduled;
         private System.Windows.Forms.Timer? _busyAnimation;
         private long _request;
@@ -35,6 +36,7 @@ namespace BetterGhPanel.Runtime
         public PanelSession(Action invalidate)
         {
             _invalidate = invalidate;
+            _geometryScheduler = new GeometryMeasurementScheduler(action => RhinoApp.InvokeOnUiThread(action));
             _geometry = CreateGeometryQueue(PrepareGeometry,
                 (snapshot, position) => _geometrySourceCurrent?.Invoke(snapshot, position) ?? true,
                 position => _geometryRetentionResolver != null ? _geometryRetentionResolver(position) : PrepareGeometry(position));
@@ -46,7 +48,7 @@ namespace BetterGhPanel.Runtime
 
         private GeometryMeasurementQueue<PanelSnapshot, PanelGeometryInfo> CreateGeometryQueue(
             Func<int, PreparedMeasurement<PanelGeometryInfo>?> prepare, Func<PanelSnapshot, int, bool> current,
-            Func<int, PreparedMeasurement<PanelGeometryInfo>?>? retention = null) =>
+            Func<int, PreparedMeasurement<PanelGeometryInfo>?>? retention = null, int priority = 0, bool retainWitnesses = true) =>
             new GeometryMeasurementQueue<PanelSnapshot, PanelGeometryInfo>(
                 action => RhinoApp.InvokeOnUiThread(action),
                 action => { _ = Task.Run(() => RhinoApp.InvokeOnUiThread(action)); },
@@ -59,7 +61,7 @@ namespace BetterGhPanel.Runtime
                 (snapshot, position) => position >= 0 && position < snapshot.Rows.Count &&
                     snapshot.Rows[position].IsValid && snapshot.Rows[position].GeometryInfo?.CanMeasure == true,
                 (snapshot, position) => position >= 0 && position < snapshot.Rows.Count && snapshot.Rows[position].GeometryInfo?.Value == null,
-                prepare, NotifyMeasurement, current, retention);
+                prepare, NotifyMeasurement, current, retention, _geometryScheduler, priority, retainWitnesses);
 
         public PanelSnapshot Snapshot { get; private set; }
         public PanelQueryResult Result { get; private set; }
@@ -189,6 +191,11 @@ namespace BetterGhPanel.Runtime
         internal void RequestGeometryMeasurements(PanelSnapshot snapshot, IEnumerable<int> visiblePositions)
         {
             CancelVisibleColumnMeasurements();
+            // The ordinary D renderer also signals hidden/offscreen/compact tables.
+            // Explicit copy demand must not keep an inactive column measuring.
+            foreach (var column in _columns.ToArray())
+                if (_options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != _options.SortColumn)
+                    column.Geometry?.CancelRequests();
             _geometry.RequestVisible(snapshot, visiblePositions);
         }
         internal Task<bool> MeasureGeometryAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken cancellationToken) =>
@@ -405,6 +412,8 @@ namespace BetterGhPanel.Runtime
             _busyAnimation = null;
             ClearColumnGeometry();
             _geometry.Dispose();
+            _geometryScheduler.Dispose();
+            GeometryWorkerSubmissionForTesting = null;
             ++_request;
             _queryCancellation?.Cancel();
             _queryCancellation?.Dispose();

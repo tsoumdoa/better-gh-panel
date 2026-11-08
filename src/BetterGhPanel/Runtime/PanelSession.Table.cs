@@ -4,38 +4,25 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
-using Rhino;
 
 namespace BetterGhPanel.Runtime
 {
     public sealed partial class PanelSession
     {
         private readonly List<PanelTableColumn> _columns = new List<PanelTableColumn>();
-        private readonly Queue<Action> _geometryWorkers = new Queue<Action>();
-        private bool _geometryWorkerRunning;
         private CancellationTokenSource? _visibleColumns;
         private PanelSnapshot? _visibleSnapshot;
         private int[][]? _visibleDemand;
         private long _columnGeneration;
 
-        // All queues in a session share one worker slot. Each queue still owns its
-        // prepared resource, capacity admission, cancellation and completion fences.
+        // Test seam for the native fixture: delay submission without replacing
+        // production capture, preparation, admission or completion/source fences.
+        internal Func<Action, bool>? GeometryWorkerSubmissionForTesting { get; set; }
         private bool SubmitGeometryWorker(Action action)
         {
-            _geometryWorkers.Enqueue(action);
-            StartGeometryWorker();
+            if (GeometryWorkerSubmissionForTesting is { } submit) return submit(action);
+            _ = Task.Run(action);
             return true;
-        }
-        private void StartGeometryWorker()
-        {
-            if (_geometryWorkerRunning || _geometryWorkers.Count == 0) return;
-            _geometryWorkerRunning = true;
-            var action = _geometryWorkers.Dequeue();
-            _ = Task.Run(() =>
-            {
-                try { action(); }
-                finally { RhinoApp.InvokeOnUiThread((Action)(() => { _geometryWorkerRunning = false; StartGeometryWorker(); })); }
-            });
         }
 
         internal void ConfigureColumnGeometry(IReadOnlyList<PanelTableColumn> columns,
@@ -53,8 +40,9 @@ namespace BetterGhPanel.Runtime
                     if (_disposed || generation != _columnGeneration) return;
                 }
             _columns.Clear(); _columns.AddRange(next);
-            foreach (var column in next)
+            for (int index = 0; index < next.Length; index++)
             {
+                var column = next[index];
                 if (column.Snapshot != null && column.Geometry?.IsAttachedTo(column.Snapshot) == true) continue;
                 var retired = column.Geometry; column.Geometry = null; retired?.Dispose();
                 if (_disposed || generation != _columnGeneration) return;
@@ -65,7 +53,7 @@ namespace BetterGhPanel.Runtime
                     if (prepared != null) return prepared;
                     var summary = column.Snapshot?.Rows[position].GeometryInfo;
                     return summary == null ? null : new PreparedMeasurement<PanelGeometryInfo>(() => summary.WithUnavailableMeasurement(), null, null);
-                }, (snapshot, position) => current(column, snapshot, position));
+                }, (snapshot, position) => current(column, snapshot, position), priority: index + 1, retainWitnesses: false);
                 column.Geometry.Attach(column.Snapshot, false);
             }
         }
@@ -82,8 +70,11 @@ namespace BetterGhPanel.Runtime
 
         internal void CancelVisibleColumnMeasurements()
         {
-            _visibleColumns?.Cancel(); _visibleColumns?.Dispose(); _visibleColumns = null;
+            var cancellation = _visibleColumns; _visibleColumns = null;
             _visibleSnapshot = null; _visibleDemand = null;
+            if (cancellation == null) return;
+            cancellation.Cancel(); cancellation.Dispose();
+            foreach (var column in _columns.ToArray()) column.Geometry?.PruneDemand();
         }
 
         internal void RequestTableMeasurements(PanelSnapshot snapshot, IReadOnlyList<int> data, IReadOnlyList<int[]> columns)

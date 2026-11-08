@@ -44,11 +44,11 @@ namespace BetterGhPanel.Runtime
             }
             if (type == typeof(GH_Curve) && geometry is LineCurve line) return LineInfo(line.Line, units);
             if (type == typeof(GH_Curve) && geometry is ArcCurve arc) return ArcInfo(arc.Arc, units);
-            if (type == typeof(GH_Curve) && geometry is Curve curve) return CurveInfo(curve);
-            if (type == typeof(GH_Surface) && geometry is Brep surface) return SurfaceInfo(surface);
-            if (type == typeof(GH_Brep) && geometry is Brep brep) return BrepInfo(brep);
+            if (type == typeof(GH_Curve) && geometry is Curve curve) return CurveInfo(curve, units);
+            if (type == typeof(GH_Surface) && geometry is Brep surface) return SurfaceInfo(surface, units);
+            if (type == typeof(GH_Brep) && geometry is Brep brep) return BrepInfo(brep, units);
             if (type == typeof(GH_Mesh) && geometry is Mesh mesh)
-                return MeshInfo(mesh);
+                return MeshInfo(mesh, units);
             if (type == typeof(GH_SubD) && geometry is SubD) return new PanelGeometryInfo("SubD · " + Count(((SubD)geometry).Faces.Count, "face"));
             if (type == typeof(GH_Extrusion) && geometry is Extrusion) return new PanelGeometryInfo("Extr · " + Count(((Extrusion)geometry).ProfileCount, "profile"));
             if (type == typeof(GH_PointCloud) && geometry is PointCloud) return new PanelGeometryInfo(Count(((PointCloud)geometry).Count, "point"));
@@ -238,7 +238,7 @@ namespace BetterGhPanel.Runtime
             switch (geometry)
             {
                 case Curve value:
-                    var curve = CurveInfo(value);
+                    var curve = CurveInfo(value, units);
                     bool linear = value.IsLinear();
                     string shape = linear ? "linear" : value.IsPlanar() ? "planar" : "nonplanar";
                     string shapeDetails = value is ArcCurve arc ? (arc.Arc.IsCircle ? "Circle" : "Arc") :
@@ -249,7 +249,7 @@ namespace BetterGhPanel.Runtime
                     return Metric(curve, length, 1, units, "Length", "L", shape,
                         "Shape: " + shapeDetails + "\nPlanarity: " + (linear || shape == "planar" ? "Planar" : "Nonplanar"));
                 case Brep brep:
-                    var summary = surface ? SurfaceInfo(brep) : BrepInfo(brep);
+                    var summary = surface ? SurfaceInfo(brep, units) : BrepInfo(brep, units);
                     string? surfaceShape = brep.Faces.Count == 1 ? (brep.Faces[0].IsPlanar() ? "planar" : "nonplanar") : null;
                     string? surfaceDetails = surfaceShape == null ? null : "Planarity: " + (surfaceShape == "planar" ? "Planar" : "Nonplanar");
                     if (surface || !brep.IsSolid) return Area(summary, brep, units, surfaceShape, surfaceDetails);
@@ -257,7 +257,7 @@ namespace BetterGhPanel.Runtime
                     using (var area = AreaMassProperties.Compute(brep, true, false, false, false))
                         return SolidMetric(summary, mass?.Volume, area?.Area, units, surfaceShape, surfaceDetails);
                 case Mesh mesh:
-                    var meshSummary = MeshInfo(mesh);
+                    var meshSummary = MeshInfo(mesh, units);
                     using (var area = AreaMassProperties.Compute(mesh, true, false, false, false))
                     {
                         if (!mesh.IsClosed)
@@ -276,45 +276,45 @@ namespace BetterGhPanel.Runtime
                 return mass == null ? null : Metric(summary, mass.Area, 2, units, "Area", "A", shape, details);
         }
 
-        private static PanelGeometryInfo CurveInfo(Curve curve)
+        private static PanelGeometryInfo CurveInfo(Curve curve, string units)
         {
             string description = curve is PolylineCurve polyline
                 ? "Polyline · " + Count(polyline.PointCount - 1, "segment")
                 : "Crv · degree " + curve.Degree;
             string details = "Degree: " + curve.Degree + "\nTopology: " + (curve.IsClosed ? "Closed" : "Open");
             if (curve is PolylineCurve points) details += "\nSegments: " + (points.PointCount - 1);
-            return new PanelGeometryInfo(description + " · " + Closed(curve.IsClosed), canMeasure: true, details: details);
+            return new PanelGeometryInfo(description + " · " + Closed(curve.IsClosed), canMeasure: true, units: units, details: details);
         }
 
-        private static PanelGeometryInfo SurfaceInfo(Brep brep)
+        private static PanelGeometryInfo SurfaceInfo(Brep brep, string units)
         {
             if (brep.Faces.Count != 1)
-                return new PanelGeometryInfo("Srf · " + Count(brep.Faces.Count, "face"), power: 2, metricName: "Area", metricLabel: "A", canMeasure: true,
+                return new PanelGeometryInfo("Srf · " + Count(brep.Faces.Count, "face"), power: 2, units: units, metricName: "Area", metricLabel: "A", canMeasure: true,
                     details: "Faces: " + brep.Faces.Count);
             bool untrimmed = brep.IsSurface;
             var face = brep.Faces[0];
-            return new PanelGeometryInfo("Srf · " + (untrimmed ? "untrimmed" : "trimmed"), power: 2, metricName: "Area", metricLabel: "A", canMeasure: true,
+            return new PanelGeometryInfo("Srf · " + (untrimmed ? "untrimmed" : "trimmed"), power: 2, units: units, metricName: "Area", metricLabel: "A", canMeasure: true,
                 details: "Trimming: " + (untrimmed ? "Untrimmed" : "Trimmed") +
                     "\nDegree (U/V): " + face.Degree(0) + "/" + face.Degree(1));
         }
 
-        private static PanelGeometryInfo BrepInfo(Brep brep)
+        private static PanelGeometryInfo BrepInfo(Brep brep, string units)
         {
             bool solid = brep.IsSolid;
             return new PanelGeometryInfo(
-                "Brep · " + Closed(solid) + " · " + Count(brep.Faces.Count, "face"), power: solid ? 3 : 2,
+                "Brep · " + Closed(solid) + " · " + Count(brep.Faces.Count, "face"), power: solid ? 3 : 2, units: units,
                 metricName: solid ? "Volume" : "Area", metricLabel: solid ? "V" : "A", canMeasure: true,
                 hasArea: solid,
                 details: "Topology: " + (solid ? "Closed solid" : "Open") + "\nFaces: " + brep.Faces.Count +
                     "\nEdges: " + brep.Edges.Count + "\nVertices: " + brep.Vertices.Count);
         }
 
-        private static PanelGeometryInfo MeshInfo(Mesh mesh)
+        private static PanelGeometryInfo MeshInfo(Mesh mesh, string units)
         {
             bool closed = mesh.IsClosed;
             int vertices = mesh.Vertices.Count, faces = mesh.Faces.Count;
             return new PanelGeometryInfo("Mesh · " + Closed(closed) + " · " + vertices + " vertices · " + Count(faces, "face"),
-                power: closed ? 3 : 2, metricName: closed ? "Volume" : "Area", metricLabel: closed ? "V" : "A",
+                power: closed ? 3 : 2, units: units, metricName: closed ? "Volume" : "Area", metricLabel: closed ? "V" : "A",
                 canMeasure: true, hasArea: closed,
                 details: "Topology: " + (closed ? "Closed" : "Open") + "\nVertices: " + vertices + "\nFaces: " + faces);
         }

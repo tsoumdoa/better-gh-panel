@@ -110,6 +110,9 @@ namespace BetterGhPanel.Core
         private readonly Action<int, Action> _delayOnUi;
         private readonly Func<Action, bool> _submitWorker;
         private readonly Action _verifyUi;
+        private readonly GeometryMeasurementScheduler? _scheduler;
+        private readonly int _priority;
+        private readonly bool _retainWitnesses;
         private readonly Func<TSnapshot, int, bool> _validPosition;
         private readonly Func<TSnapshot, int, bool> _canMeasure;
         private readonly Func<TSnapshot, int, bool> _needsMeasurement;
@@ -167,8 +170,10 @@ namespace BetterGhPanel.Core
             Action<int, Action> delayOnUi, Func<Action, bool> submitWorker, Action verifyUi,
             Func<TSnapshot, int, bool> validPosition, Func<TSnapshot, int, bool> canMeasure, Func<TSnapshot, int, bool> needsMeasurement,
             Func<int, PreparedMeasurement<TResult>?> prepare, Action changed, Func<TSnapshot, int, bool>? sourceCurrent = null,
-            Func<int, PreparedMeasurement<TResult>?>? prepareForRetention = null)
+            Func<int, PreparedMeasurement<TResult>?>? prepareForRetention = null,
+            GeometryMeasurementScheduler? scheduler = null, int priority = 0, bool retainWitnesses = true)
         {
+            _scheduler = scheduler; _priority = priority; _retainWitnesses = retainWitnesses;
             _postUi = postUi; _postCancellation = postCancellation; _delayOnUi = delayOnUi;
             _submitWorker = submitWorker; _verifyUi = verifyUi; _validPosition = validPosition; _canMeasure = canMeasure;
             _needsMeasurement = needsMeasurement; _prepare = prepare; _changed = changed;
@@ -181,6 +186,7 @@ namespace BetterGhPanel.Core
             _verifyUi();
             if (_disposed) return;
             if (ReferenceEquals(_snapshot, snapshot)) return;
+            _scheduler?.Cancel(this);
             StopCapacityWait();
             CancelBatches();
             _visible.Clear();
@@ -194,16 +200,24 @@ namespace BetterGhPanel.Core
                 bool match = false;
                 try
                 {
-                    if (retain && entry.Witness != null && _canMeasure(snapshot, position) && (allowed?.Invoke(position) ?? true))
+                    if (_retainWitnesses && retain && entry.Witness != null)
                     {
-                        _preparingDepth++;
-                        PreparedMeasurement<TResult>? current = null;
+                        var admission = _scheduler?.TryAcquire(this, snapshot);
                         try
                         {
-                            current = _prepareForRetention(position);
-                            match = current?.Witness != null && entry.Witness.Equals(current.Witness);
+                            if ((_scheduler == null || admission != null) && _canMeasure(snapshot, position) && (allowed?.Invoke(position) ?? true))
+                            {
+                                _preparingDepth++;
+                                PreparedMeasurement<TResult>? current = null;
+                                try
+                                {
+                                    current = _prepareForRetention(position);
+                                    match = current?.Witness != null && entry.Witness.Equals(current.Witness);
+                                }
+                                finally { try { current?.Dispose(); } finally { _preparingDepth--; } }
+                            }
                         }
-                        finally { try { current?.Dispose(); } finally { _preparingDepth--; } }
+                        finally { admission?.Dispose(); }
                     }
                 }
                 catch (Exception) { match = false; }
@@ -218,6 +232,7 @@ namespace BetterGhPanel.Core
         {
             _verifyUi();
             if (_disposed) return;
+            _scheduler?.Cancel(this);
             StopCapacityWait();
             CancelBatches();
             _visible.Clear();
@@ -354,110 +369,151 @@ namespace BetterGhPanel.Core
         private void PumpLater(bool continuing = false)
         {
             FinishBatches();
-            if (_disposed || NextPosition() < 0) { StopCapacityWait(); return; }
+            if (_disposed || NextPosition() < 0) { _scheduler?.Cancel(this); StopCapacityWait(); return; }
             if (_running != null || _preparingDepth != 0 || _scheduled || _capacityWait != null) return;
+            if (continuing && _scheduler != null) { RequestAdmission(); return; }
             _scheduled = true;
             int delay = !continuing && _batches.Count == 0 ? 40 : 0;
             try
             {
-                _delayOnUi(delay, () => { _verifyUi(); _scheduled = false; Pump(); });
+                _delayOnUi(delay, () => { _verifyUi(); _scheduled = false; RequestAdmission(); });
             }
             catch (Exception) { _scheduled = false; FailPending(); }
         }
 
-        private void Pump()
+        private void RequestAdmission()
         {
-            FinishBatches();
-            if (_disposed || _running != null || _preparingDepth != 0 || _snapshot == null) return;
             var snapshot = _snapshot;
-            int position = NextPosition();
-            if (position < 0) return;
-            var entry = new Entry(position);
-            _entries[position] = entry;
-            // Preparation can call installed plug-in code while duplicating. Hold
-            // the worker slot even if that code reenters the host message loop.
-            _running = entry;
+            if (_scheduler == null) { Pump(); return; }
+            if (snapshot == null || _disposed) { _scheduler.Cancel(this); return; }
+            _scheduler.RequestWork(this, snapshot, _priority,
+                () => !_disposed && ReferenceEquals(snapshot, _snapshot) && _running == null &&
+                    _preparingDepth == 0 && _capacityWait == null && NextPosition() >= 0,
+                admission => Pump(admission));
+        }
+
+        // Cancellation callbacks run on the UI and can prune demand immediately,
+        // without waiting for the posted registration callback or a running worker.
+        internal void PruneDemand()
+        {
+            _verifyUi();
+            AbandonUndemanded();
+            PumpLater(true);
+        }
+
+        internal void CancelRequests()
+        {
+            _verifyUi();
+            CancelBatches(); _visible.Clear();
+            AbandonUndemanded();
+            _scheduler?.Cancel(this);
+            StopCapacityWait();
+        }
+
+        private void Pump(GeometryMeasurementScheduler.Lease? admission = null)
+        {
+            bool submitted = false;
             try
             {
-                _preparingDepth++;
-                try { entry.Work = _prepare(position); }
-                finally { _preparingDepth--; }
-            }
-            catch (MeasurementCapacityException capacity)
-            {
-                if (ReferenceEquals(_running, entry)) _running = null;
-                RemoveEntry(position, entry);
-                if (ReferenceEquals(_snapshot, snapshot) && IsDemanded(entry)) WaitForCapacity(capacity.Released);
-                else PumpLater(true);
-                return;
-            }
-            catch (Exception) { entry.Work = null; }
-            bool current = ReferenceEquals(_snapshot, snapshot) && TryGetEntry(position, out var existing) &&
-                ReferenceEquals(existing, entry) && IsDemanded(entry) && SourceCurrent(snapshot, position);
-            if (!current || !ReferenceEquals(_snapshot, snapshot) || !TryGetEntry(position, out existing) ||
-                !ReferenceEquals(existing, entry) || !IsDemanded(entry))
-            {
-                entry.Work?.TryAbandon();
-                if (ReferenceEquals(_running, entry)) _running = null;
-                RemoveEntry(position, entry);
-                PumpLater(true);
-                return;
-            }
-            if (entry.Work == null)
-            {
-                _running = null;
-                entry.Complete = true;
-                _visible.Remove(position);
-                _changed();
-                PumpLater(true);
-                return;
-            }
-            var witness = entry.Work.Witness;
-            if (witness != null && _witnessCount < MaxRetainedWitnesses && witness.ByteCount <= MaxRetainedWitnessBytes - _witnessBytes &&
-                MeasurementRetentionBudget.TryAcquire(witness.ByteCount))
-            { entry.Witness = witness; _witnessBytes += witness.ByteCount; _witnessCount++; }
-            _changed();
-            if (!IsCurrentEntry(snapshot, position, entry) || !IsDemanded(entry))
-            {
-                entry.Work.TryAbandon();
-                if (ReferenceEquals(_running, entry)) _running = null;
-                RemoveEntry(position, entry);
-                PumpLater(true);
-                return;
-            }
-            try
-            {
-                if (!_submitWorker(() =>
+                FinishBatches();
+                if (_disposed || _running != null || _preparingDepth != 0 || _snapshot == null ||
+                    admission != null && (admission.Canceled || !ReferenceEquals(admission.Owner, this) || !ReferenceEquals(admission.Snapshot, _snapshot))) return;
+                var snapshot = _snapshot;
+                int position = NextPosition();
+                if (position < 0) return;
+                var entry = new Entry(position) { Admission = admission };
+                _entries[position] = entry;
+                // Preparation can call installed plug-in code while duplicating. Hold
+                // the worker slot even if that code reenters the host message loop.
+                _running = entry;
+                try
                 {
-                    TResult? value = null;
-                    bool claimed = false;
-                    try { claimed = entry.Work.TryRun(out value); }
-                    catch (Exception) { claimed = true; }
-                    _postUi(() => WorkerFinished(entry, claimed, value));
-                })) throw new InvalidOperationException("Worker rejected measurement");
+                    _preparingDepth++;
+                    try { entry.Work = _prepare(position); }
+                    finally { _preparingDepth--; }
+                }
+                catch (MeasurementCapacityException capacity)
+                {
+                    if (ReferenceEquals(_running, entry)) _running = null;
+                    RemoveEntry(position, entry);
+                    if (ReferenceEquals(_snapshot, snapshot) && IsDemanded(entry)) WaitForCapacity(capacity.Released);
+                    else PumpLater(true);
+                    return;
+                }
+                catch (Exception) { entry.Work = null; }
+                bool current = ReferenceEquals(_snapshot, snapshot) && TryGetEntry(position, out var existing) &&
+                    ReferenceEquals(existing, entry) && IsDemanded(entry) && SourceCurrent(snapshot, position);
+                if (!current || !ReferenceEquals(_snapshot, snapshot) || !TryGetEntry(position, out existing) ||
+                    !ReferenceEquals(existing, entry) || !IsDemanded(entry))
+                {
+                    entry.Work?.TryAbandon();
+                    if (ReferenceEquals(_running, entry)) _running = null;
+                    RemoveEntry(position, entry);
+                    PumpLater(true);
+                    return;
+                }
+                if (entry.Work == null)
+                {
+                    _running = null;
+                    entry.Complete = true;
+                    _visible.Remove(position);
+                    _changed();
+                    PumpLater(true);
+                    return;
+                }
+                var witness = entry.Work.Witness;
+                if (_retainWitnesses && witness != null && _witnessCount < MaxRetainedWitnesses && witness.ByteCount <= MaxRetainedWitnessBytes - _witnessBytes &&
+                    MeasurementRetentionBudget.TryAcquire(witness.ByteCount))
+                { entry.Witness = witness; _witnessBytes += witness.ByteCount; _witnessCount++; }
+                _changed();
+                if (!IsCurrentEntry(snapshot, position, entry) || !IsDemanded(entry))
+                {
+                    entry.Work.TryAbandon();
+                    if (ReferenceEquals(_running, entry)) _running = null;
+                    RemoveEntry(position, entry);
+                    PumpLater(true);
+                    return;
+                }
+                try
+                {
+                    submitted = true;
+                    if (!_submitWorker(() =>
+                    {
+                        TResult? value = null;
+                        bool claimed = false;
+                        try { claimed = entry.Work.TryRun(out value); }
+                        catch (Exception) { claimed = true; }
+                        _postUi(() => WorkerFinished(entry, claimed, value));
+                    })) throw new InvalidOperationException("Worker rejected measurement");
+                }
+                catch (Exception)
+                {
+                    entry.Work.TryAbandon();
+                    WorkerFinished(entry, true, null);
+                }
             }
-            catch (Exception)
-            {
-                entry.Work.TryAbandon();
-                WorkerFinished(entry, true, null);
-            }
+            finally { if (!submitted) admission?.Dispose(); }
         }
 
         private void WorkerFinished(Entry entry, bool claimed, TResult? value)
         {
             _verifyUi();
-            if (!ReferenceEquals(_running, entry)) return;
-            _running = null;
-            entry.Work = null; // release unretained proof bytes as soon as the worker ends
-            if (!_disposed && _snapshot != null && TryGetEntry(entry.Position, out var current) && ReferenceEquals(current, entry))
+            try
             {
-                var snapshot = _snapshot;
-                if (!SourceCurrent(snapshot, entry.Position)) RemoveEntry(entry.Position, entry);
-                else if (!ReferenceEquals(snapshot, _snapshot) || !TryGetEntry(entry.Position, out current) || !ReferenceEquals(current, entry)) { }
-                else if (claimed) { entry.Value = value; entry.Complete = true; _visible.Remove(entry.Position); _changed(); }
-                else RemoveEntry(entry.Position, entry);
+                if (!ReferenceEquals(_running, entry)) return;
+                _running = null;
+                entry.Work = null; // release unretained proof bytes as soon as the worker ends
+                if (!_disposed && _snapshot != null && TryGetEntry(entry.Position, out var current) && ReferenceEquals(current, entry))
+                {
+                    var snapshot = _snapshot;
+                    if (!SourceCurrent(snapshot, entry.Position)) RemoveEntry(entry.Position, entry);
+                    else if (!ReferenceEquals(snapshot, _snapshot) || !TryGetEntry(entry.Position, out current) || !ReferenceEquals(current, entry)) { }
+                    else if (claimed) { entry.Value = value; entry.Complete = true; _visible.Remove(entry.Position); _changed(); }
+                    else RemoveEntry(entry.Position, entry);
+                }
+                PumpLater(true);
             }
-            PumpLater(true);
+            finally { entry.Admission?.Dispose(); entry.Admission = null; }
         }
 
         private void WaitForCapacity(Task released)
@@ -545,6 +601,7 @@ namespace BetterGhPanel.Core
             _verifyUi();
             if (_disposed) return;
             _disposed = true;
+            _scheduler?.Cancel(this);
             StopCapacityWait();
             CancelBatches(); _visible.Clear(); ClearEntries(); _snapshot = null;
         }
@@ -557,6 +614,7 @@ namespace BetterGhPanel.Core
             internal MeasurementWitness? Witness;
             internal TResult? Value;
             internal bool Complete;
+            internal GeometryMeasurementScheduler.Lease? Admission;
         }
         private sealed class Batch
         {

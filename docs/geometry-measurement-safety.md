@@ -49,6 +49,10 @@ in-place edits. A managed type check and
 holder is detectable, but an unannounced in-place mutation in the same snapshot
 is not. Corruption-testing mode is gated. Unknown holders and managed subclasses
 remain unverified, and existing bounded group classification remains separate.
+Deferred curve, surface, Brep and mesh summaries receive the captured model
+units before column metric/header classification. Analytic and deferred values
+of the same metric kind therefore share G1's metric/unit header; conversion
+still requires matching source units and dimension.
 The active Rhino document's runtime identity, model unit system, unit label and
 absolute tolerance also belong to the measurement context. They are rechecked at
 dispatch, after preparation, completion and before publication or same-snapshot
@@ -123,8 +127,13 @@ accepts dimension 2 or 3, order at most 12 and at most 1,024 control points.
 Both use the process-wide 4 MiB reservation for their own estimated payloads;
 these estimates are not a bound on Rhino's allocator or measurement algorithm.
 The separate witness retention budgets remain 128 entries and 2 MiB per session,
-and 8 MiB across sessions. A new or unit-only snapshot retains a result only when
-its complete witness matches; compatibility copies have no witness and are
+and 8 MiB across sessions. Only D retains witnesses: column queues disable
+witness retention entirely because their results are never retained across
+snapshot replacement. Their temporary preparation proofs are released with the
+owned operation, and completed column results remain local to that snapshot.
+Columns therefore cannot multiply the session witness allowance or reserve its
+process-wide retention capacity. A new or unit-only snapshot retains a result
+only when its complete witness matches; compatibility copies have no witness and are
 remeasured. A publication-only solve of the same snapshot keeps its result.
 
 Compatibility preparation acquires one of two process-wide permits before the
@@ -132,9 +141,22 @@ duplicate call. Other panels wait asynchronously, with cancellation and shared
 demands honored. An unclaimed copy releases its permit after abandonment; a
 claimed worker keeps it until completion, including after cancellation. These
 permits limit concurrently owned compatibility work, not per-call native cost or
-peak allocation. Each panel still schedules one worker at a time; preparation is
-guarded against reentrant callbacks. Workers own and dispose their copies and do
-not read live holders. A failed or abandoned copy cannot publish a stale result.
+peak allocation. A Core session scheduler admits one operation before
+preparation and holds its lease through UI completion of the accepted worker callback, including an
+abandoned unclaimed worker. Duplication, reconstruction, disposal and synchronous
+retention proofs share that slot across D and all column queues. A retention
+proof that cannot acquire it is discarded and remeasured later. Reentrant
+callbacks cannot prepare a different queue while it is held.
+
+Pending admission is one replaceable request per queue, keyed by owner and
+snapshot; it contains no prepared geometry. The scheduler selects D first,
+then columns in input order. Cancellation, snapshot replacement, column removal,
+Table-off (except an active sort column), and session disposal remove unclaimed
+requests. A posted scheduler pulse captures the scheduler rather than a retired
+queue; there is no FIFO of accepted-but-abandoned column worker callbacks.
+One already accepted active callback can remain until completion; its owned
+resource/source/publication fences still apply. Workers own and dispose their
+copies and do not read live holders. A failed or abandoned copy cannot publish a stale result.
 
 `standalone-compatibility` is an added real-GH solve fixture covering NURBS,
 polycurves, oversized curves and length filtering, surfaces, open/trimmed Breps,
