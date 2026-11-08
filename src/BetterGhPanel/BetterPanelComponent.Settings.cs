@@ -44,9 +44,11 @@ namespace BetterGhPanel
             internal TableViewState(bool split, float scale, bool fit = false) { Split = split; Scale = scale; Fit = fit; }
         }
         private TableViewState? _fittingTableState;
+        private bool _tableWidthFitted;
         internal void FitTableWidth(float desired)
         {
             TableWidthScale = Math.Max(1, Math.Min(2, desired / CanvasWidth));
+            _tableWidthFitted = true;
             if (_fittingTableState != null) { _fittingTableState.Scale = TableWidthScale; _fittingTableState.Fit = false; }
             _fittingTableState = null;
             Attributes.ExpireLayout();
@@ -373,7 +375,7 @@ namespace BetterGhPanel
         {
             if (PanelSplit == split || split && !CanSplit) return;
             var before = new TableViewState(PanelSplit, TableWidthScale);
-            var after = new TableViewState(split, 2, split);
+            var after = new TableViewState(split, TableWidthScale, split && !_tableWidthFitted && TableWidthScale == 2); // fit once; later toggles keep the chosen width
             RecordUndoEvent("Panel+ Table view", new PanelUndo<TableViewState>(InstanceGuid, before, after,
                 (component, state) => component.RestoreTableView(state)));
             RestoreTableView(after);
