@@ -2,17 +2,8 @@
 
 ## Unreleased
 
-- **Optional header input.** Add/remove Headers (H) from the component menu. H stays last and supplies presentation-only titles for D, shown F and added columns in tree order; empty titles keep input nicknames. Headers and TSV retain their units, metrics and states. H-only updates preserve the snapshot/query, and H’s identity and wire survive save/reload and Undo.
-
-- Geometry measurement admission now serializes preparation through worker completion across D and table columns. Pending requests are bounded and removed on cancellation/retirement, D keeps priority, and columns do not retain measurement witnesses. Deferred geometry headers now use captured model units. The compiled native copy-wait fixture gates a deferred surface worker.
-
-- **Compact geometry columns.** A single metric kind shows number-only cells with a metric/unit header (for example, Edges · L · m); mixed kinds show short type, symbol, number and unit. Type and shape hints move to tooltips. Set/list-length summaries and copy use the compact text, while pending values and validity badges remain visible. Auto-fit follows the compact font and content.
-
-- **Geometry in table columns.** F and added columns now share D's background measurements, with type/shape hints in tooltips. Visible D rows take priority, then visible columns from left to right; hidden tables only prepare an active geometry sort column. Geometry sorting compares the shown primary metric, unavailable metrics stay last, and copy waits for measurements. Visible set/list-length summaries measure their bounded previews; matching uniform geometry columns show converted header units. Outputs and D-only preview/search/filter behavior are unchanged.
-
-- **Table columns.** Add or remove optional named inputs from the component menu and inspect them beside frozen D cells. One table replaces the D|F panes, with horizontal scrolling, saved column widths, per-column sorting, missing/extra cell indicators and TSV copy with headers.
-- Number cells in all columns share the display units, factor and decimal precision. D/S/B/F wire outputs and F's original pairing/output rules are unchanged.
-- Existing `PanelSplit` files open with Table enabled. Grasshopper saves the variable input identities and wires; opening a file with added columns in an older Panel+ version drops those added inputs. The original one-input/one-output archive migration remains supported.
+- **Geometry in table columns.** Add optional columns beside frozen D, with independent pairing, saved widths, sorting and TSV copy. Geometry cells show background measurements with type/shape details in tooltips. Single-metric columns use number-only cells and metric/unit headers, retaining model units unless a matching conversion applies; mixed kinds use aligned type/symbol/value/unit text. Copy waits for measurements, summaries use the same suffixes as other columns, and hidden tables measure only the active sort column. D/S/B/F outputs and D-only preview/search/filter behavior stay unchanged.
+- **Column titles input.** Toggle **Column titles input** in the component menu for optional H, always last. H item 0 titles D, item 1 titles F even when F is absent, and items 2+ title added columns. Empty titles keep port nicknames. Headers, tooltips, column notes, sort labels and TSV share the titles; ports keep their names. H and its wire support save/reload and Undo, and title changes use a normal solve.
 
 ## 0.2.8-beta
 
