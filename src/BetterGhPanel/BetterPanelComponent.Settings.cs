@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using BetterGhPanel.Core;
 using BetterGhPanel.Runtime;
 using BetterGhPanel.UI;
@@ -31,8 +32,38 @@ namespace BetterGhPanel
         internal PanelPreviewMode PreviewMode { get; private set; }
         internal bool ShowItemOrder { get; private set; }
         internal string PreviewStatus => _highlight.Status;
-        internal float DisplayHeight => CanvasPanelSize.DisplayHeight(CanvasHeight, CanvasDisplay);
-        internal float DisplayWidth => CanvasWidth * (PanelSplit ? 2 : 1);
+        internal float EffectiveCanvasHeight => CanvasPanelSize.FullHeightForInputs(CanvasHeight, Params.Input.Count);
+        internal float DisplayHeight => CanvasDisplay == CanvasPanelDisplay.Half ? EffectiveCanvasHeight / 2 : EffectiveCanvasHeight;
+        internal float TableWidthScale { get; private set; } = 2;
+        internal float DisplayWidth => CanvasWidth * (PanelSplit ? TableWidthScale : 1);
+        private sealed class TableViewState
+        {
+            internal readonly bool Split;
+            internal float Scale;
+            internal bool Fit;
+            internal TableViewState(bool split, float scale, bool fit = false) { Split = split; Scale = scale; Fit = fit; }
+        }
+        private TableViewState? _fittingTableState;
+        internal void FitTableWidth(float desired)
+        {
+            TableWidthScale = Math.Max(1, Math.Min(2, desired / CanvasWidth));
+            if (_fittingTableState != null) { _fittingTableState.Scale = TableWidthScale; _fittingTableState.Fit = false; }
+            _fittingTableState = null;
+            Attributes.ExpireLayout();
+            OnPingDocument()?.Modified();
+        }
+        private void RestoreTableView(TableViewState state)
+        {
+            _fittingTableState = null;
+            (Attributes as BetterPanelAttributes)?.CancelTableFit();
+            TableWidthScale = state.Scale;
+            ApplyPanelSplit(state.Split);
+            if (state.Split && state.Fit)
+            {
+                _fittingTableState = state;
+                (Attributes as BetterPanelAttributes)?.RequestTableFit();
+            }
+        }
         internal int TrimDepth { get; private set; }
         internal bool FlattenTree { get; private set; }
         internal bool ReverseTree { get; private set; }
@@ -125,9 +156,11 @@ namespace BetterGhPanel
             {
                 var beforeValues = OutputValues;
                 var afterValues = CanOutputValuesFor(CreateSetTree, after) ? beforeValues : PanelOutputValues.Items;
+                var beforeSettings = before.Clone(); beforeSettings.ColumnSortKeys = null; beforeSettings.TableSource = null;
+                var afterSettings = after.Clone(); afterSettings.ColumnSortKeys = null; afterSettings.TableSource = null;
                 RecordUndoEvent(name, new PanelUndo<Tuple<PanelQueryOptions, PanelOutputValues>>(InstanceGuid,
-                    Tuple.Create(before.Clone(), beforeValues), Tuple.Create(after.Clone(), afterValues),
-                    (component, state) => { CanvasTextInput.CloseActive(component); (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor(); component.OutputValues = state.Item2; component.Session.UpdateQuery(state.Item1); component.ScheduleOutput(); }));
+                    Tuple.Create(beforeSettings, beforeValues), Tuple.Create(afterSettings, afterValues),
+                    (component, state) => { CanvasTextInput.CloseActive(component); (component.Attributes as BetterPanelAttributes)?.CancelQueryEditor(); component.OutputValues = state.Item2; component.Session.UpdateQuery(component.WithCurrentColumnSort(state.Item1)); component.ScheduleOutput(); }));
             }
         }
 
@@ -184,6 +217,9 @@ namespace BetterGhPanel
         internal void SetCanvasSize(float width, float height)
         {
             (Attributes as BetterPanelAttributes)?.InvalidatePaintedHits();
+            (Attributes as BetterPanelAttributes)?.CancelTableFit();
+            if (_fittingTableState != null) _fittingTableState.Fit = false;
+            _fittingTableState = null;
             CanvasWidth = CanvasPanelSize.Width(width);
             CanvasHeight = CanvasPanelSize.Height(height);
             Attributes.ExpireLayout();
@@ -241,11 +277,97 @@ namespace BetterGhPanel
             ApplyPanelMinimized(minimized);
         }
 
+        internal readonly System.Collections.Generic.Dictionary<Guid, float> ColumnWidths = new System.Collections.Generic.Dictionary<Guid, float>();
+        internal void AddColumn()
+        {
+            RecordUndoEvent("Panel+ Add column");
+            Params.RegisterInputParam(CreateParameter(GH_ParameterSide.Input, Params.Input.Count));
+            ColumnsChanged();
+        }
+        internal void RemoveColumn(IGH_Param input)
+        {
+            if (Params.Input.IndexOf(input) < 2) return;
+            RecordUndoEvent("Panel+ Remove column");
+            bool sorted = Session.Options.SortColumn == input.InstanceGuid;
+            ColumnWidths.Remove(input.InstanceGuid); _columnInputIndices.Clear();
+            if (sorted)
+            {
+                _sortInputIndex = -1;
+                var options = Session.Options; options.SortColumn = Guid.Empty; options.SortMode = PanelSortMode.SourceOrder; options.ColumnSortKeys = null;
+                Session.PrepareColumnSort(Guid.Empty, null); Session.UpdateQuery(options);
+            }
+            else if (_sortInputIndex > Params.Input.IndexOf(input)) _sortInputIndex--;
+            Params.UnregisterInputParameter(input, true);
+            ColumnsChanged();
+        }
+        private void ColumnsChanged()
+        {
+            Params.OnParametersChanged();
+            VariableParameterMaintenance();
+            Attributes.ExpireLayout();
+            ExpireSolution(true);
+        }
+        private readonly Dictionary<Guid, int> _columnInputIndices = new Dictionary<Guid, int>();
+        private int _sortInputIndex = -1;
+        internal float ColumnWidthLimit(Guid id) => id == Params.Input[0].InstanceGuid
+            ? (Attributes as BetterPanelAttributes)?.DColumnWidthLimit ?? Math.Max(PanelTableText.MinimumColumnWidth, DisplayWidth - 33 - PanelTableText.MinimumColumnWidth - 24)
+            : PanelTableText.MaximumColumnWidth;
+        internal void ResolveColumnWidths()
+        {
+            foreach (var entry in ColumnWidths.ToArray())
+                if (!Params.Input.Any(input => input.InstanceGuid == entry.Key) && _columnInputIndices.TryGetValue(entry.Key, out int index) &&
+                    index >= 0 && index < Params.Input.Count)
+                { ColumnWidths.Remove(entry.Key); var id = Params.Input[index].InstanceGuid; ColumnWidths[id] = entry.Value; _columnInputIndices[id] = index; }
+        }
+        private void ResolveSortInput(PanelQueryOptions options)
+        {
+            if (options.SortColumn == Guid.Empty) return;
+            options.SortColumn = PanelTableInputIdentity.Resolve(options.SortColumn, Params.Input.Select(input => input.InstanceGuid).ToArray(), _sortInputIndex >= 1 ? _sortInputIndex : -1);
+            if (options.SortColumn == Guid.Empty) { options.SortMode = PanelSortMode.SourceOrder; options.ColumnSortKeys = null; }
+        }
+
+        private float RequestedColumnWidth(Guid id, float width) => Math.Max(PanelTableText.MinimumColumnWidth,
+            id == Params.Input[0].InstanceGuid ? width : Math.Min(PanelTableText.MaximumColumnWidth, width));
+
+        internal void SetColumnWidth(Guid id, float? width)
+        {
+            var before = ColumnWidths.TryGetValue(id, out float value) ? (float?)value : null;
+            if (before == width) return;
+            RecordUndoEvent("Panel+ Column width", new PanelUndo<float?>(InstanceGuid, before, width,
+                (component, next) => component.ApplyColumnWidth(id, next)));
+            ApplyColumnWidth(id, width);
+        }
+        private void ApplyColumnWidth(Guid id, float? width)
+        {
+            (Attributes as BetterPanelAttributes)?.ClearHover();
+            (Attributes as BetterPanelAttributes)?.InvalidatePaintedHits();
+            if (width.HasValue) { ColumnWidths[id] = RequestedColumnWidth(id, width.Value);
+                _columnInputIndices[id] = Params.Input.FindIndex(input => input.InstanceGuid == id); }
+            else ColumnWidths.Remove(id);
+            OnPingDocument()?.Modified();
+            Instances.ActiveCanvas?.Invalidate();
+        }
+        internal void SetColumnSort(Guid id, PanelSortMode mode)
+        {
+            var before = Session.Options;
+            if (id == Params.Input[0].InstanceGuid || mode == PanelSortMode.SourceOrder) id = Guid.Empty;
+            if (before.SortColumn == id && before.SortMode == mode) return;
+            var options = before.Clone();
+            options.SortColumn = id; options.SortMode = mode;
+            _sortInputIndex = id == Guid.Empty ? -1 : Params.Input.FindIndex(input => input.InstanceGuid == id);
+            options = WithCurrentColumnSort(options);
+            RecordQueryUndo("Panel+ Sort", before, options);
+            Session.UpdateQuery(options);
+        }
+
         internal void SetPanelSplit(bool split)
         {
             if (PanelSplit == split || split && !CanSplit) return;
-            RecordUndoEvent("Panel+ D|F view", new PanelUndo<bool>(InstanceGuid, PanelSplit, split, (component, value) => component.ApplyPanelSplit(value)));
-            ApplyPanelSplit(split);
+            var before = new TableViewState(PanelSplit, TableWidthScale);
+            var after = new TableViewState(split, 2, split);
+            RecordUndoEvent("Panel+ Table view", new PanelUndo<TableViewState>(InstanceGuid, before, after,
+                (component, state) => component.RestoreTableView(state)));
+            RestoreTableView(after);
         }
 
         private void ApplyPanelSplit(bool split)
@@ -253,29 +375,21 @@ namespace BetterGhPanel
             CanvasTextInput.CloseActive(this);
             (Attributes as BetterPanelAttributes)?.ClosePresentationControls();
             PanelSplit = split;
-            if (split && PairedSnapshot == null && _pairedInputTree != null)
+            if (!split)
             {
-                PairedSnapshot = SnapshotCapture.CaptureForMeasurements(_pairedInputTree, out _pairedSourceItems,
-                    out _pairedMeasurementSources, out _pairedCaptureGraphs, PanelUnitConversion.None, _geometryUnits, null, null, null, null, null);
-                _pairedHasGeometry = HasGeometry(PairedSnapshot);
-                // F geometry was labelled with the units of the last solve. If the document
-                // units changed since, recompute now rather than show stale measurements.
-                // This is a fresh capture attempt, so it gets its own single retry.
-                if (_pairedHasGeometry && !GeometryContextCurrent(_geometryContext) && _session != null)
-                {
-                    _captureRetries = 0;
-                    InvalidateStaleCapture(_session, OnPingDocument(), _solveGeneration);
-                }
+                (Attributes as BetterPanelAttributes)?.ClearTableWidths();
             }
-            else if (!split)
+            foreach (var column in _tableColumns)
             {
-                // A closed split stops paying for F presentation and its freshness checks.
-                PairedSnapshot = null;
-                _pairedSourceItems = Array.Empty<IGH_Goo?>();
-                _pairedMeasurementSources = Array.Empty<CapturedMeasurementSource?>();
-                _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
-                (Attributes as BetterPanelAttributes)?.ClearPaneSummary();
+                if (split || Session.Options.SortColumn == column.Input.InstanceGuid) column.Capture(_geometryUnits);
+                else column.ReleasePresentation();
             }
+            if (ContextFenced && !GeometryContextCurrent(_geometryContext) && _session != null)
+            {
+                _captureRetries = 0;
+                InvalidateStaleCapture(_session, OnPingDocument(), _solveGeneration);
+            }
+            RefreshTableSource();
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
@@ -289,6 +403,7 @@ namespace BetterGhPanel
             CanvasTextInput.CloseActive(this);
             (Attributes as BetterPanelAttributes)?.ClosePresentationControls();
             PanelMinimized = minimized;
+            if (PanelSplit) RefreshTableSource();
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
@@ -323,10 +438,28 @@ namespace BetterGhPanel
             writer.SetString("PanelBranch", options.BranchPath ?? "");
             writer.SetBoolean("PanelPrefix", options.BranchPrefix);
             writer.SetBoolean("PanelInvalid", options.OnlyInvalid);
+            ResolveColumnWidths(); ResolveSortInput(options);
             writer.SetInt32("PanelSort", (int)options.SortMode);
+            if (options.SortColumn != Guid.Empty)
+            {
+                writer.SetGuid("PanelSortColumn", options.SortColumn);
+                writer.SetInt32("PanelSortInputIndex", Params.Input.FindIndex(input => input.InstanceGuid == options.SortColumn));
+            }
+            var savedWidths = ColumnWidths.Where(entry => Params.Input.Any(input => input.InstanceGuid == entry.Key)).ToArray();
+            if (savedWidths.Length > 0)
+            {
+                var widths = writer.CreateChunk("PanelColumnWidths");
+                foreach (var entry in savedWidths)
+                {
+                    float width = RequestedColumnWidth(entry.Key, entry.Value);
+                    widths.SetSingle(entry.Key.ToString("D"), width);
+                    widths.SetSingle("InputIndex" + Params.Input.FindIndex(input => input.InstanceGuid == entry.Key), width);
+                }
+            }
             // Retain the legacy key for older plug-in versions; dimensions take precedence.
             writer.SetInt32("PanelSize", PreviewSize < 0 ? 1 : PreviewSize);
             writer.SetSingle("PanelWidth", CanvasWidth);
+            if (TableWidthScale != 2) writer.SetSingle("PanelTableWidthScale", TableWidthScale);
             writer.SetSingle("PanelHeight", CanvasHeight);
             writer.SetInt32("PanelDisplay", (int)CanvasDisplay);
             writer.SetBoolean("PanelMinimized", PanelMinimized);
@@ -344,7 +477,14 @@ namespace BetterGhPanel
             writer.SetInt32("PanelOutputScope", (int)OutputScope);
             writer.SetInt32("PanelOutputValues", (int)OutputValues);
             writer.SetInt32("PanelOutputSchema", 1);
-            return base.Write(writer);
+            bool success = base.Write(writer);
+            // 0.2.8 and earlier have a fixed parameter server. Keep its base-port
+            // chunks alongside GH's variable archive so it can ignore added columns.
+            for (int i = 0; i < Math.Min(2, Params.Input.Count); i++)
+                success &= Params.Input[i].Write(writer.CreateChunk("param_input", i));
+            for (int i = 0; i < Math.Min(4, Params.Output.Count); i++)
+                success &= Params.Output[i].Write(writer.CreateChunk("param_output", i));
+            return success;
         }
 
         public override bool Read(GH_IReader reader)
@@ -375,10 +515,15 @@ namespace BetterGhPanel
             reader.TryGetBoolean("PanelPrefix", ref prefix);
             reader.TryGetBoolean("PanelInvalid", ref invalid);
             reader.TryGetInt32("PanelSort", ref sort);
+            Guid sortColumn = Guid.Empty;
+            reader.TryGetGuid("PanelSortColumn", ref sortColumn);
+            _sortInputIndex = -1;
+            reader.TryGetInt32("PanelSortInputIndex", ref _sortInputIndex);
             bool hasLegacySize = reader.TryGetInt32("PanelSize", ref size);
             _savedOptions = new PanelQueryOptions
             {
                 Search = search,
+                SortColumn = sortColumn,
                 TypeName = string.IsNullOrEmpty(type) ? null : type,
                 DisplayFilterValue = displayFilterValue && searchMode >= (int)PanelSearchMode.Value && Enum.IsDefined(typeof(PanelSearchMode), searchMode),
                 SearchMode = Enum.IsDefined(typeof(PanelSearchMode), searchMode) ? (PanelSearchMode)searchMode : PanelSearchMode.Text,
@@ -394,6 +539,11 @@ namespace BetterGhPanel
             reader.TryGetSingle("PanelHeight", ref height);
             CanvasWidth = CanvasPanelSize.Width(width);
             CanvasHeight = CanvasPanelSize.Height(height);
+            float tableScale = 2;
+            reader.TryGetSingle("PanelTableWidthScale", ref tableScale);
+            TableWidthScale = float.IsNaN(tableScale) || float.IsInfinity(tableScale) ? 2 : Math.Max(1, Math.Min(2, tableScale));
+            _fittingTableState = null;
+            (Attributes as BetterPanelAttributes)?.CancelTableFit();
             int display = 0;
             reader.TryGetInt32("PanelDisplay", ref display);
             CanvasDisplay = Enum.IsDefined(typeof(CanvasPanelDisplay), display)
@@ -441,15 +591,65 @@ namespace BetterGhPanel
             _savedOptions.DecimalPlaces = DecimalPlaces;
             _savedOptions.RoundUpFactor = RoundUpFactor;
             if (!CanOutputValuesFor(CreateSetTree, _savedOptions)) OutputValues = PanelOutputValues.Items;
+            var parameters = UpgradeLegacyOutputParameters(reader);
+            if (!parameters.ChunkExists("ParameterData") && !parameters.ChunkExists("ParamTypeData"))
+            {
+                // Fixed-port files predate IGH_VariableParameterComponent. Adapt their
+                // chunks to GH's variable archive without losing parameter/wire GUIDs.
+                for (int i = 0; i < 2; i++)
+                    if (!parameters.ChunkExists("param_input", i))
+                    { reader.AddMessage("Input parameter chunk is missing. Archive is corrupt.", GH_Message_Type.error); return false; }
+                for (int i = 0; i < 4; i++)
+                    if (!parameters.ChunkExists("param_output", i))
+                    { reader.AddMessage("Output parameter chunk is missing. Archive is corrupt.", GH_Message_Type.error); return false; }
+                parameters = UpgradeFixedParameterArchive(parameters);
+            }
+            var success = base.Read(parameters);
+            VariableParameterMaintenance();
+            ColumnWidths.Clear(); _columnInputIndices.Clear();
+            var widths = reader.FindChunk("PanelColumnWidths");
+            for (int index = 0; index < Params.Input.Count; index++)
+            {
+                var input = Params.Input[index];
+                float value = 0;
+                if (widths != null && (widths.TryGetSingle(input.InstanceGuid.ToString("D"), ref value) || widths.TryGetSingle("InputIndex" + index, ref value)) &&
+                    !float.IsNaN(value) && !float.IsInfinity(value))
+                {
+                    ColumnWidths[input.InstanceGuid] = RequestedColumnWidth(input.InstanceGuid, value);
+                    _columnInputIndices[input.InstanceGuid] = index;
+                }
+            }
+            ResolveSortInput(_savedOptions);
             _restoringView = true;
             try { _session?.UpdateQuery(_savedOptions); }
             finally { _restoringView = false; }
-            var success = base.Read(UpgradeLegacyOutputParameters(reader));
             UpdateOutputDescriptions();
             (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
             Attributes?.ExpireLayout();
             return success;
         }
+        private static GH_IReader UpgradeFixedParameterArchive(GH_IReader reader)
+        {
+            if (reader is not GH_Chunk original) return reader;
+            var upgraded = GH_Chunk.InstantiateRoot(original.Archive ?? new GH_Archive());
+            upgraded.CopyValuesFromChunk(original);
+            var parameters = upgraded.CreateChunk("ParameterData");
+            parameters.SetInt32("InputCount", 2);
+            parameters.SetInt32("OutputCount", 4);
+            var defaults = new BetterPanelComponent();
+            for (int i = 0; i < 2; i++)
+            {
+                parameters.SetGuid("InputId", i, defaults.Params.Input[i].ComponentGuid);
+                ((GH_Chunk)parameters.CreateChunk("InputParam", i)).CopyValuesFromChunk((GH_Chunk)reader.FindChunk("param_input", i));
+            }
+            for (int i = 0; i < 4; i++)
+            {
+                parameters.SetGuid("OutputId", i, defaults.Params.Output[i].ComponentGuid);
+                ((GH_Chunk)parameters.CreateChunk("OutputParam", i)).CopyValuesFromChunk((GH_Chunk)reader.FindChunk("param_output", i));
+            }
+            return upgraded;
+        }
+
         private static GH_IReader UpgradeLegacyOutputParameters(GH_IReader reader)
         {
             // Recognize only the known one-input/one-output schema. Missing

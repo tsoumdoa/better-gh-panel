@@ -11,29 +11,15 @@ namespace BetterGhPanel.Runtime
     internal sealed class PanelPairedData
     {
         internal IReadOnlyList<PanelBranchPair> Pairs { get; }
-        internal string Caption { get; }
         internal bool HasUnequal { get; }
         internal readonly struct PairHeading
         {
-            internal readonly string Count, DataCount, Paths;
-            internal readonly bool Unequal, ByOrder;
-            internal readonly int Total;
-            internal PairHeading(int count, int dataCount, bool unequal, bool byOrder, string paths)
-            { Count = count + (count == 1 ? " item" : " items"); DataCount = "D " + dataCount;
-                Total = count; Unequal = unequal; ByOrder = byOrder; Paths = paths; }
+            internal readonly string DataCount;
+            internal readonly bool Unequal;
+            internal readonly int Total, DataTotal;
+            internal PairHeading(int count, int dataCount, bool unequal)
+            { DataCount = "D " + dataCount; DataTotal = dataCount; Total = count; Unequal = unequal; }
         }
-        // Built during filtered output, never by expanding members while painting.
-        internal sealed class Summary
-        {
-            internal int Count;
-            internal readonly List<int> Preview = new List<int>(4);
-            internal void Add(int item) { Count++; if (Preview.Count < 4) Preview.Add(item); }
-            internal void Add(Summary other)
-            { Count += other.Count; Preview.AddRange(other.Preview.Take(4 - Preview.Count)); }
-        }
-        internal readonly Dictionary<int, Summary> SetSummaries = new Dictionary<int, Summary>();
-        internal readonly Dictionary<string, Summary> BranchSummaries = new Dictionary<string, Summary>(StringComparer.Ordinal);
-        internal PanelQueryResult? SummaryResult { get; private set; }
         internal readonly Dictionary<string, PairHeading> Headings =
             new Dictionary<string, PairHeading>(StringComparer.Ordinal);
         private readonly int[] _sourcePairs, _pairedPairs, _dataPositions;
@@ -47,11 +33,7 @@ namespace BetterGhPanel.Runtime
             IReadOnlyList<PanelSourceAddress> sources, int trim, bool simplify, bool flatten, bool reverse)
         {
             Pairs = PanelPairing.Match(Shape(data), Shape(paired));
-            int differingCount = Pairs.Count(pair => pair.Unequal);
-            HasUnequal = differingCount > 0;
-            int byOrder = Pairs.Count(pair => pair.ByOrder);
-            Caption = string.Join(" · ", new[] { "Paired by branch", byOrder > 0 ? byOrder + " by order" : null,
-                differingCount > 0 ? differingCount + " of " + Pairs.Count + " differ in length" : null }.Where(part => part != null));
+            HasUnequal = Pairs.Any(pair => pair.Unequal);
             _dataOrder = Pairs.Select((pair, index) => (pair, index)).ToDictionary(value => value.pair.Data.Path, value => value.index, StringComparer.Ordinal);
             _sources = sources; _reverse = reverse;
             _sourcePairs = sources.Select(source => _dataOrder[source.Path]).ToArray();
@@ -85,9 +67,7 @@ namespace BetterGhPanel.Runtime
                 PairHeading BuildHeading(IEnumerable<PanelBranchPair> scope)
                 {
                     var pairs = scope.ToArray();
-                    string paths = string.Join(", ", pairs.Take(3).Select(pair => pair.Paired.Path.Length > 80 ? pair.Paired.Path.Substring(0, 77) + "…" : pair.Paired.Path));
-                    return new PairHeading(pairs.Sum(pair => pair.Paired.ItemCount), pairs.Sum(pair => pair.Data.ItemCount),
-                        pairs.Any(pair => pair.Unequal), pairs.Any(pair => pair.ByOrder), paths + (pairs.Length > 3 ? " …" : ""));
+                    return new PairHeading(pairs.Sum(pair => pair.Paired.ItemCount), pairs.Sum(pair => pair.Data.ItemCount), pairs.Any(pair => pair.Unequal));
                 }
                 Headings.Add(destination.Key, BuildHeading(destination.Value));
                 _headingsWithoutEmpty.Add(destination.Key, BuildHeading(destination.Value.Where(pair => pair.Data.ItemCount > 0)));
@@ -96,12 +76,6 @@ namespace BetterGhPanel.Runtime
         internal static PanelBranch[] Shape(GH_Structure<IGH_Goo> tree) =>
             Enumerable.Range(0, tree.PathCount).Select(b => new PanelBranch(tree.Paths[b].ToString(), tree.Branches[b].Count)).ToArray();
         internal PairHeading Heading(string path, bool includeEmpty) => (includeEmpty ? Headings : _headingsWithoutEmpty)[path];
-        internal string HeadingCount(string path, bool includeEmpty)
-        {
-            var heading = Heading(path, includeEmpty);
-            int count = BranchSummaries.TryGetValue(path, out var summary) ? summary.Count : 0;
-            return count < heading.Total ? $"{count:N0} of {heading.Total:N0} items" : count + (count == 1 ? " item" : " items");
-        }
         internal static bool EmptyPartnersInScope(PanelQueryOptions options) => !options.CreateSet && !PanelQueryEngine.HasItemFilter(options);
         internal PanelBranchPair BranchAt(int position) => Pairs[_sourcePairs[position]];
         internal PanelBranchPair PairAtPaired(int item) => Pairs[_pairedPairs[item]];
@@ -113,10 +87,20 @@ namespace BetterGhPanel.Runtime
         internal IEnumerable<(int Item, string Path)> BranchItems(PanelSnapshot snapshot, IReadOnlyList<int> members,
             IEnumerable<string> paths, bool includeEmpty)
         {
+            foreach (var step in BranchItemSteps(snapshot, members, paths, includeEmpty, false))
+                if (step.HasValue) yield return step.Value;
+        }
+        internal int OriginalBranchOrder(PanelBranchPair pair) => _dataOrder[pair.Data.Path];
+        // Query callers already hold members in snapshot order. Null steps preserve
+        // cancellation/budget checkpoints even for missing cells or repeated unequal members.
+        internal IEnumerable<(int Item, string Path)?> BranchItemSteps(PanelSnapshot snapshot, IReadOnlyList<int> members,
+            IEnumerable<string> paths, bool includeEmpty, bool snapshotOrder)
+        {
             var emitted = new HashSet<int>();
-            var extras = new Dictionary<int, string>();
-            foreach (int position in members.OrderBy(value => value))
+            var extras = new SortedDictionary<int, string>();
+            foreach (int position in snapshotOrder ? (IEnumerable<int>)members : members.OrderBy(value => value))
             {
+                yield return null;
                 int index = _sourcePairs[position];
                 var pair = Pairs[index];
                 string path = snapshot.Rows[position].Path;
@@ -133,12 +117,16 @@ namespace BetterGhPanel.Runtime
             if (includeEmpty)
                 foreach (string path in paths)
                 {
-                    // Nonempty destinations may also contain original empty branches after merging.
-                    foreach (var pair in BranchesAt(path).Where(pair => pair.Data.ItemCount == 0))
-                        if (!extras.ContainsKey(_dataOrder[pair.Data.Path])) extras.Add(_dataOrder[pair.Data.Path], path);
+                    yield return null;
+                    foreach (var pair in BranchesAt(path))
+                    {
+                        yield return null;
+                        if (pair.Data.ItemCount == 0 && !extras.ContainsKey(_dataOrder[pair.Data.Path])) extras.Add(_dataOrder[pair.Data.Path], path);
+                    }
                 }
-            foreach (var extra in extras.OrderBy(value => value.Key))
+            foreach (var extra in extras)
             {
+                yield return null;
                 var pair = Pairs[extra.Key];
                 for (int i = Math.Min(pair.Data.ItemCount, pair.Paired.ItemCount); i < pair.Paired.ItemCount; i++)
                     yield return (pair.PairedOffset + i, extra.Value);
@@ -151,37 +139,26 @@ namespace BetterGhPanel.Runtime
             var result = new GH_Structure<IGH_Goo>();
             long visits = 0;
             var set = query.DisplaySet;
-            if (!selected) { SetSummaries.Clear(); BranchSummaries.Clear(); }
             if (set == null) AddGroup(positions, branchPaths, path => Parse(path));
             else if (set.IsBranchSet)
                 foreach (string representative in branchPaths)
                 {
                     int k = set.BranchIndices[representative];
-                    var summary = AddGroup(set.BranchMembers[representative], set.BranchOccurrences[representative],
+                    AddGroup(set.BranchMembers[representative], set.BranchOccurrences[representative],
                         path => new GH_Path(new[] { k }.Concat(Parse(path).Indices).ToArray()));
-                    if (!selected) BranchSummaries[representative] = summary;
                 }
             else foreach (int representative in positions.OrderBy(value => value))
             {
                 int k = set.MemberIndices[representative];
                 var destination = flatten ? new GH_Path(k) : Parse(query.Snapshot.Rows[representative].Path).AppendElement(k);
-                var summary = AddGroup(set.Members[representative], Array.Empty<string>(), _ => destination);
-                if (!selected)
-                {
-                    SetSummaries[representative] = summary;
-                    string path = query.Snapshot.Rows[representative].Path;
-                    if (!BranchSummaries.TryGetValue(path, out var branchSummary)) BranchSummaries.Add(path, branchSummary = new Summary());
-                    branchSummary.Add(summary);
-                }
+                AddGroup(set.Members[representative], Array.Empty<string>(), _ => destination);
             }
             countVisits?.Invoke(visits + result.DataCount);
-            if (!selected) SummaryResult = query;
             return result;
 
-            Summary AddGroup(IReadOnlyList<int> members, IEnumerable<string> paths, Func<string, GH_Path> destination)
+            void AddGroup(IReadOnlyList<int> members, IEnumerable<string> paths, Func<string, GH_Path> destination)
             {
                 visits += members.Count;
-                var summaries = new Dictionary<string, Summary>(StringComparer.Ordinal);
                 var retainedPaths = paths.ToArray();
                 foreach (string path in retainedPaths)
                 {
@@ -199,22 +176,7 @@ namespace BetterGhPanel.Runtime
                     if (item.Path != previousPath)
                     { branch = result.EnsurePath(destination(item.Path)); previousPath = item.Path; }
                     branch!.Add(_rawItems[item.Item]);
-                    if (!selected)
-                    {
-                        // Item sets have one destination; branch sets retain tree path order.
-                        string key = set?.IsBranchSet == false ? "" : item.Path;
-                        if (!summaries.TryGetValue(key, out var summary)) summaries.Add(key, summary = new Summary());
-                        summary.Add(item.Item);
-                    }
                 }
-                var combined = new Summary();
-                if (set?.IsBranchSet == true)
-                    foreach (string path in retainedPaths)
-                    { if (summaries.TryGetValue(path, out var summary)) combined.Add(summary); }
-                else foreach (var summary in summaries) combined.Add(summary.Value);
-                if (!selected && set == null)
-                    foreach (var summary in summaries) BranchSummaries[summary.Key] = summary.Value;
-                return combined;
             }
         }
 

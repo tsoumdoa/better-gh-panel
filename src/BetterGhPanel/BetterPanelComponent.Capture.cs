@@ -114,16 +114,15 @@ namespace BetterGhPanel
             {
                 bool result = PanelTreeOperations.StructureStillMatchesWithVisits(_liveInputTree, _inputTree, out int count);
                 visits += count;
-                if (!result || PairedInputPresent() != _pairedInputPresent) return false;
-                if (!_pairedInputPresent) return true;
-                result = PanelTreeOperations.StructureStillMatchesWithVisits(_livePairedTree, _pairedInputTree, out count);
-                visits += count; return result;
+                return result;
+            }
+            bool TableCurrent()
+            {
+                bool result = ColumnsCurrent(_tableColumns, out long count); visits += count; return result;
             }
             bool current = (!ContextFenced || GeometryContextCurrent(context)) &&
                 HoldersCurrent(_sourceItems, _measurementSources) && GraphsCurrent(_captureGraphs) && ManagedCurrent(snapshot, _sourceItems) &&
-                (PairedSnapshot == null || HoldersCurrent(_pairedSourceItems, _pairedMeasurementSources) &&
-                    GraphsCurrent(_pairedCaptureGraphs) && ManagedCurrent(PairedSnapshot, _pairedSourceItems)) &&
-                UnitsCurrent() && StructuresCurrent() &&
+                UnitsCurrent() && StructuresCurrent() && TableCurrent() &&
                 (!ContextFenced || (context.Equals(_geometryContext) && GeometryContextCurrent(context)));
             if (CaptureDiagnosticsForTesting) { CaptureValidationPassesForTesting++; CaptureValidationVisitsForTesting += visits; }
             if (!current && generation == _solveGeneration && ReferenceEquals(snapshot, _measurementSnapshot))
@@ -196,20 +195,14 @@ namespace BetterGhPanel
                     if (!Current()) return;
                     var snapshot = SnapshotCapture.CaptureForMeasurements(queryTree, out var sources, out var measurementSources, out var graphs,
                         conversion, units, retainedSources, CaptureObserverForTesting, null, queryScalars, inputSeed);
-                    var pairedSources = Array.Empty<IGH_Goo?>();
-                    var pairedMeasurements = Array.Empty<CapturedMeasurementSource?>();
-                    var pairedGraphs = Array.Empty<CaptureGraphWitness>();
-                    var pairedSnapshot = PanelSplit && pairedTree != null ? SnapshotCapture.CaptureForMeasurements(capturedPairedTree!,
-                        out pairedSources, out pairedMeasurements, out pairedGraphs, PanelUnitConversion.None, units, null, null, null, null, null) : null;
+                    var tableColumns = CaptureTableColumns(da, inputTree, retainedSources, pairedTree, capturedPairedTree, livePairedTree, pairedError, pairedPresent, units);
                     StructureObserverForTesting?.Invoke(liveInputTree, livePairedTree);
                     if (!Current()) return;
-                    bool hasGeometry = HasGeometry(snapshot) || pairedSnapshot != null && HasGeometry(pairedSnapshot);
+                    bool hasGeometry = HasGeometry(snapshot) || tableColumns.Exists(column => column.HasGeometry);
                     if (!SnapshotCapture.MeasurementSourcesCurrent(sources, measurementSources) || !SnapshotCapture.GraphSourcesCurrent(graphs) ||
                         !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor, DecimalPlaces, scalarInputs, queryScalars) ||
-                        (pairedSnapshot != null && (!SnapshotCapture.MeasurementSourcesCurrent(pairedSources, pairedMeasurements) ||
-                            !SnapshotCapture.GraphSourcesCurrent(pairedGraphs) || !SnapshotCapture.ManagedRowsCurrent(pairedSnapshot, pairedSources))) ||
-                        !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) || pairedPresent != PairedInputPresent() ||
-                        (pairedPresent && !PanelTreeOperations.StructureStillMatches(livePairedTree, capturedPairedTree)) ||
+                        !ColumnsCurrent(tableColumns, out _) ||
+                        !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) ||
                         (hasGeometry && !GeometryContextCurrent(context)))
                     {
                         if (Current()) InvalidateStaleCapture(session, document, generation);
@@ -220,18 +213,17 @@ namespace BetterGhPanel
                     // locals together only while this solve still owns the component.
                     _scalarInputs = scalarInputs; _presentedScalars = queryScalars;
                     _inputTree = inputTree; _preConversionTree = preConversionTree; _queryTree = queryTree; _retainedSources = retainedSources;
-                    _liveInputTree = liveInputTree; _livePairedTree = livePairedTree; _pairedInputTree = capturedPairedTree; _pairedInputPresent = pairedPresent;
+                    _liveInputTree = liveInputTree;
                     _pairedError = pairedError;
                     PairedData = pairedTree;
-                    PairedSnapshot = pairedSnapshot;
-                    _pairedSourceItems = pairedSources; _pairedMeasurementSources = pairedMeasurements; _pairedCaptureGraphs = pairedGraphs;
+                    _tableColumns.Clear(); _tableColumns.AddRange(tableColumns);
                     bool retainContext = _geometryContext.Equals(context);
                     _geometryUnitSystem = unitSystem; _geometryTolerance = tolerance; _geometryUnits = units;
                     _geometryContext = context; _captureHasGeometry = HasGeometry(snapshot);
-                    _pairedHasGeometry = pairedSnapshot != null && HasGeometry(pairedSnapshot);
                     _sourceItems = sources; _measurementSources = measurementSources; _captureGraphs = graphs;
                     _measurementSnapshot = snapshot;
                     _staleMeasurementSnapshot = null;
+                    RefreshColumnSort();
                     if (_retainGeometryMeasurements)
                         session.AttachConvertedSnapshot(snapshot, _ => retainContext);
                     else session.AttachSnapshot(snapshot);

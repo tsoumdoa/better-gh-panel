@@ -16,7 +16,7 @@ namespace BetterGhPanel
         private float WarningStripHeight(float footerHeight) => WarningStripHeight(footerHeight, _layout.Panel);
 
         private float WarningStripHeight(float footerHeight, RectangleF panel) => PanelOwner.Session.HasCurrentResult &&
-            PanelOwner.Session.Result.Warnings.Any && panel.Height - 56 - footerHeight - (PanelOwner.PanelSplit ? 14 : 0) >= 34 ? 17 : 0;
+            PanelOwner.Session.Result.Warnings.Any && panel.Height - 56 - footerHeight - (PanelOwner.PanelSplit ? 25 : 0) >= 34 ? 17 : 0;
 
         private void RenderWarnings(Graphics graphics, PanelQueryResult result, Font small)
         {
@@ -24,8 +24,8 @@ namespace BetterGhPanel
             if (_warningsHeight == 0 || !ResultIsCurrent(result)) return;
             var warnings = result.Warnings;
             float separatorWidth = graphics.MeasureString(" · ", small, int.MaxValue, Tight).Width;
-            float x = _d.List.X + 2, y = _layout.Panel.Y + 48;
-            float right = PanelOwner.PanelSplit ? _layout.Panel.X + _layout.Panel.Width / 2 - 19 : _d.List.Right;
+            float x = _list.X + 2, y = _layout.Panel.Y + 48;
+            float right = _list.Right;
             bool hasSegment = false;
             void Segment(string text, int kind)
             {

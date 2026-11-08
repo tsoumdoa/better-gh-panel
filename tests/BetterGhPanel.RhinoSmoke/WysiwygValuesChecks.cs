@@ -55,10 +55,10 @@ internal static class WysiwygValuesChecks
         foreach (var scope in new[] { PanelOutputScope.Filtered, PanelOutputScope.Selected })
         {
             fixture.Scope(scope);
-            Check((string)Call(attributes, "OutputPortLabel", component.Params.Output[0])! == "D" &&
-                (string)Call(attributes, "OutputPortLabel", component.Params.Output[1])! == "S" &&
-                (string)Call(attributes, "OutputPortLabel", component.Params.Output[2])! == "B" &&
-                (string)Call(attributes, "OutputPortLabel", component.Params.Output[3])! == "F",
+            Check(component.Params.Output[0].NickName == "D" &&
+                component.Params.Output[1].NickName == "S" &&
+                component.Params.Output[2].NickName == "B" &&
+                component.Params.Output[3].NickName == "F",
                 "All scopes retain D/S/B/F port labels");
             string scopeLabel = scope == PanelOutputScope.Selected ? "Selection" : "Results";
             Check(component.Params.Output[2].Description.Contains(scopeLabel) && component.Params.Output[3].Description.Contains(scopeLabel),
@@ -157,7 +157,7 @@ internal static class WysiwygValuesChecks
             fixture.SelectAt(1, toggle: true);
             await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 2);
             var actionType = typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelRowAction", true)!;
-            async Task<string> Copy(string action) => await (Task<string>)Call(component, "CopyAddressesAsync", fixture.Result.Snapshot, new[] { 0, 1 }, Enum.Parse(actionType, action), null, false)!;
+            async Task<string> Copy(string action) => await (Task<string>)Call(component, "CopyAddressesAsync", fixture.Result.Snapshot, new[] { 0, 1 }, Enum.Parse(actionType, action), null)!;
             string addressStatus = await Copy("CopyAddresses");
             Check(addressStatus == "Addresses copied" && await ClipboardIs("{0;2;52}(0)" + Environment.NewLine + "{0;2;52}(1)"),
                 "Native addresses use the exact visible path and index");
@@ -266,7 +266,7 @@ internal static class WysiwygValuesChecks
         PanelTestAdapter.Resize(component, 300, 220);
         Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Half"));
         attributes.PerformLayout(); Render();
-        Check(FieldValue<float>(attributes, "_warningsHeight") == 0 && PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Bottom <= PanelTestAdapter.LayoutRect(attributes, "Footer").Top &&
+        Check(FieldValue<float>(attributes, "_warningsHeight") == 0 && PanelTestAdapter.ViewField<RectangleF>(attributes, "List").Bottom <= PanelTestAdapter.LayoutRect(attributes, "Footer").Top &&
             FieldValue<System.Collections.Generic.List<(RectangleF Bounds, int Kind)>>(attributes, "_warningHits").Count == 0,
             "Compact Half hides warnings and keeps rows above footer with no stale warning hit targets");
         Capture("compact-half");

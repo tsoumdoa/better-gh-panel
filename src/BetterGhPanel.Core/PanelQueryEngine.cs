@@ -54,11 +54,13 @@ namespace BetterGhPanel.Core
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
             var outputValues = query.OutputValues && query.DisplayFilterValue && set == null ? new Dictionary<int, PanelPropertyValue?>() : null;
-            var propertySortValues = set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplayFilterValue && PanelProperties.IsProperty(query.SearchMode)
+            var propertySortValues = query.ColumnSortKeys == null && set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplayFilterValue && PanelProperties.IsProperty(query.SearchMode)
                 ? new Dictionary<int, PanelDisplayedValue>() : null;
             // Sets and property views already supply complete displayed sort keys.
-            var sortText = query.SortMode != PanelSortMode.SourceOrder && set == null && propertySortValues == null
+            var sortText = query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder && set == null && propertySortValues == null
                 ? new Dictionary<int, PanelText>() : null;
+            var columnSortRows = query.ColumnSortKeys != null && query.SortMode != PanelSortMode.SourceOrder
+                ? new Dictionary<int, PanelRow?>() : null;
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var branchCounts = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -125,6 +127,7 @@ namespace BetterGhPanel.Core
                 if (set != null && !set.IncludeRow(i, measured)) continue;
 
                 rowPositions.Add(i);
+                if (columnSortRows != null && set == null) columnSortRows.Add(i, query.ColumnSortKeys!.RowAt(i));
                 var metric = set == null && query.DisplayFilterValue
                     ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor) : null;
                 outputValues?.Add(i, metric);
@@ -199,9 +202,27 @@ namespace BetterGhPanel.Core
             if (work.ShouldYield()) yield return null;
             cancellationToken.ThrowIfCancellationRequested();
             var positions = rowPositions.ToArray();
+            if (columnSortRows != null && set != null && !set.IsBranchSet)
+                foreach (int position in positions)
+                {
+                    var preview = new List<string>(4);
+                    int count = 0, visits = 0;
+                    bool hasPartner = false;
+                    foreach (var row in query.ColumnSortKeys!.GroupRows(snapshot, set.MembersAt(position)))
+                    {
+                        if (work.ShouldYield()) yield return null;
+                        CheckCancellation(visits++, cancellationToken);
+                        hasPartner |= row != null;
+                        count++;
+                        if (preview.Count < 4) preview.Add(row?.DisplayValue ?? "—");
+                    }
+                    columnSortRows.Add(position, !hasPartner ? null : new PanelRow(snapshot.Rows[position].OriginalIndex,
+                        snapshot.Rows[position].Path, "Text", PanelTableText.Summary(preview, count), null));
+                }
+            var columnKeys = columnSortRows == null ? null : new PanelColumnSortKeys(columnSortRows);
             if (query.SortMode != PanelSortMode.SourceOrder && set?.IsBranchSet != true)
                 foreach (var step in SortBranches(positions, snapshot, branchCounts, sortText!,
-                    query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work, set?.Values ?? propertySortValues))
+                    query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work, set?.Values ?? propertySortValues, columnKeys))
                     yield return step;
             // Build the scroll index as part of the cooperative query, not in a
             // paint or gesture. The first row of the next retained non-empty
@@ -297,7 +318,16 @@ namespace BetterGhPanel.Core
                 viewIndices.Add(positions[index], index);
             }
             cancellationToken.ThrowIfCancellationRequested();
-            yield return new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings);
+            var result = new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings);
+            if (query.TableSource?.Extras != null && displaySet == null && !(query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
+                foreach (var index in PanelTableIndex.Build(result, query.TableSource.Columns,
+                    query.TableSource.Extras(result, rowPositions, !HasItemFilter(query)), work, cancellationToken))
+                    if (index == null) yield return null;
+                    else result.TableIndex = index;
+            if (query.TableSource != null && (displaySet != null || query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
+                foreach (var step in PanelTableSummaries.Build(result, rowPositions, query.TableSource, !HasItemFilter(query), work, cancellationToken))
+                    if (step) yield return null;
+            yield return result;
         }
 
         public static bool RequiresGeometryMeasurements(PanelQueryOptions options)
@@ -309,7 +339,7 @@ namespace BetterGhPanel.Core
             if (hasSearch && (options.SearchMode == PanelSearchMode.Length ||
                 options.SearchMode == PanelSearchMode.Area || options.SearchMode == PanelSearchMode.Volume || PanelProperties.IsProperty(options.SearchMode))) return true;
             // Active scalar comparisons cannot return geometry or need geometry sort keys.
-            return options.SortMode != PanelSortMode.SourceOrder &&
+            return options.ColumnSortKeys == null && options.SortMode != PanelSortMode.SourceOrder &&
                 (!hasSearch || options.SearchMode != PanelSearchMode.Value && options.SearchMode != PanelSearchMode.Text);
         }
 
@@ -333,7 +363,7 @@ namespace BetterGhPanel.Core
             cancellationToken.ThrowIfCancellationRequested();
             var query = options.Clone();
             var filter = new PanelSearchFilter(query);
-            var sorting = query.SortMode != PanelSortMode.SourceOrder;
+            var sorting = query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder;
             bool setGeometry = PresentationNeedsGeometry(query);
             if (!sorting && !setGeometry && (!filter.HasFilter || !filter.IsGeometry && !filter.UsesDisplayText)) return Array.Empty<int>();
             var scope = new PanelQueryScope(snapshot, query, filter);
@@ -409,7 +439,7 @@ namespace BetterGhPanel.Core
         // Only values in the same branch compete; path text never determines branch order.
         private static IEnumerable<PanelQueryResult?> SortBranches(int[] ids, PanelSnapshot snapshot,
             IReadOnlyDictionary<string, int> branchCounts, IReadOnlyDictionary<int, PanelText> sortText,
-            bool descending, CancellationToken token, PanelQueryWork work, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues = null)
+            bool descending, CancellationToken token, PanelQueryWork work, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues = null, PanelColumnSortKeys? columnKeys = null)
         {
             if (ids.Length < 2) yield break;
             var byPath = new Dictionary<string, BranchSortRange>(StringComparer.Ordinal);
@@ -457,7 +487,7 @@ namespace BetterGhPanel.Core
                 // The original positions are no longer needed, so reuse that array
                 // as merge workspace instead of allocating once for every branch.
                 foreach (var step in StableSort(grouped, ids, range.Start, range.Count,
-                    snapshot.Rows, sortText, descending, token, work, displayedValues)) yield return step;
+                    snapshot.Rows, sortText, descending, token, work, displayedValues, columnKeys)) yield return step;
             }
             for (var index = 0; index < ids.Length; index++)
             {
@@ -472,7 +502,7 @@ namespace BetterGhPanel.Core
         private static IEnumerable<PanelQueryResult?> StableSort(int[] ids, int[] buffer, int offset, int count,
             IReadOnlyList<PanelRow> rows,
             IReadOnlyDictionary<int, PanelText> sortText, bool descending,
-            CancellationToken token, PanelQueryWork work, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues)
+            CancellationToken token, PanelQueryWork work, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues, PanelColumnSortKeys? columnKeys)
         {
             if (count < 2) yield break;
             var limit = offset + count;
@@ -492,7 +522,7 @@ namespace BetterGhPanel.Core
                         if (work.ShouldYield()) yield return null;
                         CheckCancellation(output, token);
                         destination[output] = left < middle && (right >= end ||
-                            Compare(source[left], source[right], rows, sortText, descending, displayedValues) <= 0)
+                            Compare(source[left], source[right], rows, sortText, descending, displayedValues, columnKeys) <= 0)
                             ? source[left++] : source[right++];
                     }
                     start = end;
@@ -515,8 +545,9 @@ namespace BetterGhPanel.Core
         }
 
         private static int Compare(int leftId, int rightId, IReadOnlyList<PanelRow> rows,
-            IReadOnlyDictionary<int, PanelText> sortText, bool descending, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues)
+            IReadOnlyDictionary<int, PanelText> sortText, bool descending, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues, PanelColumnSortKeys? columnKeys)
         {
+            if (columnKeys != null) return columnKeys.Compare(leftId, rightId, descending);
             if (displayedValues != null)
             {
                 var leftValue = displayedValues[leftId];

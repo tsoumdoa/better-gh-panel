@@ -20,6 +20,29 @@ internal static class PanelTestAdapter
 
     internal static object? Call(object owner, string name, params object?[] args) => owner.GetType().GetMethod(name, AnyInstance)!.Invoke(owner, args);
 
+    internal static BetterGhPanel.Core.PanelRow? ColumnRow(GH_Component component, int position) =>
+        (BetterGhPanel.Core.PanelRow?)Call(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "Row", position);
+    internal static BetterGhPanel.Core.PanelSnapshot ColumnSnapshot(GH_Component component) =>
+        PropertyValue<BetterGhPanel.Core.PanelSnapshot>(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "Snapshot");
+    internal static bool ColumnSummaryCurrent(GH_Component component) =>
+        PropertyValue<bool>(Session(component), "HasCurrentResult") && (bool)Call(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "SummaryCurrent",
+            PropertyValue<BetterGhPanel.Core.PanelQueryResult>(Session(component), "Result"))!;
+
+    internal sealed class TableViewRow
+    {
+        internal int Item, Extra;
+        internal string Path = "";
+    }
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<BetterGhPanel.Core.PanelTableIndex, TableViewRow[]> TableViews = new();
+    internal static TableViewRow[] TableRows(GH_Component component)
+    {
+        var attributes = component.Attributes;
+        if (!PropertyValue<bool>(attributes, "HasPairView")) return Array.Empty<TableViewRow>();
+        var index = (BetterGhPanel.Core.PanelTableIndex)Call(attributes, "TableIndex", PropertyValue<BetterGhPanel.Core.PanelQueryResult>(Session(component), "Result"))!;
+        return TableViews.GetValue(index, view => System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(view.Entries,
+            entry => new TableViewRow { Item = entry.Item, Extra = entry.Extra ? entry.Cells[0] : -1, Path = entry.Path })));
+    }
+
     internal static object Session(GH_Component component) => Property<object>(component, "Session");
     internal static bool HasSession(GH_Component component) => Field<object?>(component, "_session") != null;
     internal static bool GeometryRunning(object session) => Field<object?>(Field<object>(session, "_geometry"), "_running") != null;
@@ -64,7 +87,7 @@ internal static class PanelTestAdapter
         component.GetType().GetMethod("SetTreeOperations", NonPublicInstance)!.Invoke(component, new object[] { depth, flatten, reverse, simplify, createSet });
     internal static BetterGhPanel.Core.PanelUnitConversion Conversion(GH_Component component) => Property<BetterGhPanel.Core.PanelUnitConversion>(component, "UnitConversion");
     internal static int Decimals(GH_Component component) => Property<int>(component, "DecimalPlaces");
-    internal static int Offset(GH_Component component) => PanelTestAdapter.PaneField<int>(component.Attributes, false, "Offset");
+    internal static int Offset(GH_Component component) => PanelTestAdapter.ViewField<int>(component.Attributes, "Offset");
     internal static int SelectedPosition(GH_Component component)
     {
         var selection = Field<object>(component.Attributes, "_selection");
@@ -84,7 +107,7 @@ internal static class PanelTestAdapter
         component.GetType().GetMethod("SetCanvasSize", NonPublicInstance)!.Invoke(component, new object[] { width, height });
     internal static RectangleF Bounds(GH_Component component, CanvasControl control) =>
         control == CanvasControl.List || control == CanvasControl.Track
-            ? PaneField<RectangleF>(component.Attributes, false, control.ToString())
+            ? ViewField<RectangleF>(component.Attributes, control.ToString())
             : LayoutRect(component.Attributes, control.ToString());
     internal static RectangleF MenuBounds(GH_Component component) => Property<RectangleF>(Field<object>(component.Attributes, "_menu"), "Bounds");
     internal static string RowMenuLabel(GH_Component component, int index) =>
@@ -171,8 +194,8 @@ internal static class PanelTestAdapter
     internal static RectangleF LayoutRect(object attributes, string name) =>
         Property<RectangleF>(Field<object>(attributes, "_layout"), name);
 
-    internal static T PaneField<T>(object attributes, bool paired, string name) =>
-        Field<T>(Field<object>(attributes, paired ? "_f" : "_d"), name);
+    internal static T ViewField<T>(object attributes, string name) =>
+        Field<T>(attributes, "_" + char.ToLowerInvariant(name[0]) + name.Substring(1));
 
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, NonPublicInstance)!.GetValue(owner)!;
 }

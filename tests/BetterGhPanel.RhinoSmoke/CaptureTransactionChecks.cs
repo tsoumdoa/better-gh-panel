@@ -510,7 +510,8 @@ internal static class CaptureTransactionChecks
         var operations = assembly.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!;
         var matches = operations.GetMethod("StructureStillMatches", NonPublicStatic)!;
         bool dCurrent = (bool)matches.Invoke(null, new[] { Field(fixture, "_liveInputTree"), Field(fixture, "_inputTree") })!;
-        bool fCurrent = (bool)matches.Invoke(null, new[] { Field(fixture, "_livePairedTree"), Field(fixture, "_pairedInputTree") })!;
+        var columns = (System.Collections.IList)PropertyValue<object>(fixture.Component, "TableColumns");
+        bool fCurrent = columns.Count == 0 || (bool)matches.Invoke(null, new[] { FieldValue<object>(columns[0]!, "LiveTree"), FieldValue<object>(columns[0]!, "Tree") })!;
         Check(changed && dCurrent && fCurrent && fixture.Component.Params.Output[0].VolatileData.DataCount == 2,
             "capture discards and recovers after " + (mode == 0 ? "an added empty D path" : mode == 1 ? "a D member replacement" : "an F shape change"));
     }

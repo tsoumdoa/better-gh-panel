@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Table columns.** Add or remove optional named inputs from the component menu and inspect them beside frozen D cells. One table replaces the D|F panes, with horizontal scrolling, saved column widths, per-column sorting, missing/extra cell indicators and TSV copy with headers.
+- Number cells in all columns share the display units, factor and decimal precision. D/S/B/F wire outputs and F's original pairing/output rules are unchanged.
+- Existing `PanelSplit` files open with Table enabled. Grasshopper saves the variable input identities and wires; opening a file with added columns in an older Panel+ version drops those added inputs. The original one-input/one-output archive migration remains supported.
+
 ## 0.2.8-beta
 
 - **Controls that say what they do.** The search field starts with a mode chip (Text, Length, Vertex count, …) that opens the mode menu; the footer range ("1–15/40") opens Jump to row (also Ctrl/Cmd+G); the footer reads "D = input", "D: 2 filters", "D: tools" or "D: values", with a × beside it that clears the filters; the Trim icon shows its depth; Reset all (↺) sits in the footer beside the tools and Units it resets.

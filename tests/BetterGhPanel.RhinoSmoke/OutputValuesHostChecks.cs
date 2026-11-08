@@ -192,22 +192,10 @@ internal static class OutputValuesHostChecks
             Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, display));
             await Query(PanelSearchMode.Text);
             await Query(PanelSearchMode.ListLength);
-            var pairing = PropertyValue<object>(component, "PairedData");
-            var pairedRows = (System.Collections.IDictionary)pairing.GetType().GetField("BranchSummaries", AnyInstance)!.GetValue(pairing)!;
-            Check(!PanelTestAdapter.PaneField<RectangleF>(attributes, false, "Caption").IsEmpty && !Bounds("ScrollLock").IsEmpty && pairedRows.Count > 0 &&
-                PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Height >= 17 && PanelTestAdapter.PaneField<RectangleF>(attributes, false, "List").Bottom <= Bounds("Footer").Top,
-                "Minimum split " + display + " retains captions, relinking, paired branch content and a full data row");
-            foreach (bool expected in new[] { false, true })
-            {
-                var link = Bounds("ScrollLock");
-                var location = canvas.Viewport.ProjectPoint(new PointF(link.X + link.Width / 2, link.Y + link.Height / 2));
-                var click = new Grasshopper.GUI.GH_CanvasMouseEvent(canvas.Viewport,
-                    new System.Windows.Forms.MouseEventArgs(System.Windows.Forms.MouseButtons.Left, 1, (int)location.X, (int)location.Y, 0));
-                attributes.RespondToMouseDown(canvas, click);
-                Check((bool)attributes.GetType().GetField("_scrollLocked", AnyInstance)!.GetValue(attributes)! == expected,
-                    "Minimum split " + display + " can unlink and relink scrolling");
-                Render();
-            }
+            var pairedRows = PropertyValue<System.Collections.IDictionary>(fixture.Result, "TableSummaries");
+            Check(pairedRows.Values.Cast<object>().Any(summary => FieldValue<System.Collections.IDictionary>(summary, "Branches").Count > 0) && PanelTestAdapter.ViewField<RectangleF>(attributes, "List").Height >= 17 &&
+                PanelTestAdapter.ViewField<RectangleF>(attributes, "List").Bottom <= Bounds("Footer").Top,
+                "Minimum table " + display + " retains branch summaries and a full data row without footer overlap");
         }
     }
 

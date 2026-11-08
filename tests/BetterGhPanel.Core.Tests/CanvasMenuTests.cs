@@ -8,6 +8,20 @@ using static PanelQueryTestData;
 public class CanvasMenuTests
 {
     [Fact]
+    public void HeaderSortCheckmarkBelongsToTheClickedColumn()
+    {
+        var sorted = Guid.NewGuid();
+        var options = new PanelQueryOptions { SortColumn = sorted, SortMode = PanelSortMode.ValueDescending };
+        var menu = new CanvasMenu { HeaderSortColumn = Guid.NewGuid() };
+        menu.Toggle(CanvasMenuKind.HeaderSort, PanelSnapshot.Empty, options);
+        Assert.True(menu.IsSelected(2, options, PanelUnitConversion.None, -1));
+        Assert.False(menu.IsSelected(1, options, PanelUnitConversion.None, -1));
+        menu.HeaderSortColumn = sorted;
+        Assert.True(menu.IsSelected(1, options, PanelUnitConversion.None, -1));
+        Assert.False(menu.IsSelected(2, options, PanelUnitConversion.None, -1));
+    }
+
+    [Fact]
     public void BranchMenusBelongToTheirCapturedSnapshot()
     {
         var branches = Enumerable.Range(0, 100).Select(i => new PanelBranch("{" + i + "}", 0)).ToArray();

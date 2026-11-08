@@ -52,6 +52,8 @@ namespace BetterGhPanel.Runtime
                 PrepareGeometry, NotifyMeasurement,
                 (snapshot, position) => _geometrySourceCurrent?.Invoke(snapshot, position) ?? true,
                 position => _geometryRetentionResolver != null ? _geometryRetentionResolver(position) : PrepareGeometry(position));
+            _options.ColumnSortKeys = null;
+            _options.TableSource = null; _tableSource = null;
             Snapshot = PanelSnapshot.Empty;
             Result = EmptyResult;
         }
@@ -65,6 +67,23 @@ namespace BetterGhPanel.Runtime
         public string? Error { get; private set; }
         public event EventHandler? QueryChanged;
         public event EventHandler? ResultChanged;
+
+        // Capture stages these immutable providers immediately before attaching their
+        // D snapshot. Never query the previous snapshot with a replacement pairing map.
+        internal void PrepareColumnSort(Guid column, PanelColumnSortKeys? keys)
+        {
+            _options = _options.Clone();
+            _options.SortColumn = column;
+            _options.ColumnSortKeys = keys;
+        }
+
+        private PanelTableSource? _tableSource;
+        internal void SetTableSource(PanelTableSource? source, bool requery)
+        {
+            _tableSource = source;
+            if (requery) UpdateQuery(_options);
+            else _options.TableSource = source;
+        }
 
         public void AttachSnapshot(PanelSnapshot snapshot)
             => AttachSnapshotCore(snapshot, null);
@@ -89,6 +108,8 @@ namespace BetterGhPanel.Runtime
             ++_request;
             _queryCancellation?.Cancel();
             _geometry.Suspend(retainMeasurements);
+            _options.ColumnSortKeys = null;
+            _options.TableSource = null; _tableSource = null;
             Snapshot = PanelSnapshot.Empty;
             Result = EmptyResult;
             _awaitingSnapshot = true;
@@ -186,6 +207,7 @@ namespace BetterGhPanel.Runtime
         {
             if (_disposed) return;
             var next = (options ?? new PanelQueryOptions()).Clone();
+            next.TableSource = _tableSource;
             if (next.SearchMode < PanelSearchMode.Value) next.DisplayFilterValue = false;
             if (next.DisplayFilterValue) next.Search = string.Empty;
             // A component owns its formatting setting. Direct query updates and
@@ -356,6 +378,8 @@ namespace BetterGhPanel.Runtime
             _geometryPreparationResolver = null;
             _geometryRetentionResolver = null;
             _captureCurrent = null;
+            _options.ColumnSortKeys = null;
+            _options.TableSource = null; _tableSource = null;
             Snapshot = PanelSnapshot.Empty;
             Result = EmptyResult;
         }

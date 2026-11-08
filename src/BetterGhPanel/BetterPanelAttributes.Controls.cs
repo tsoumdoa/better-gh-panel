@@ -60,6 +60,8 @@ namespace BetterGhPanel
         // Resize precedes Move for cursor picking, independently of hover fill.
         private ControlEntry[] CreateControlHits() => new[]
         {
+            new ControlEntry("TableHeader", _ => _tableHeader, ClickTableHeader, TooltipTableHeader, click: ControlStep.BeforeDetails, hover: ControlStep.Main, tooltip: ControlStep.Main,
+                visible: _ => TableVisible && PanelOwner.Session.HasCurrentResult, hoverRects: HeaderHoverRects),
             new ControlEntry("Close", layout => layout.Close, ClickClose, TooltipClose, click: ControlStep.Header, hover: ControlStep.Header, tooltip: ControlStep.BeforeStatisticsMenu),
             new ControlEntry("Display", layout => layout.Display, ClickDisplay, TooltipDisplay, click: ControlStep.Header, hover: ControlStep.Header, tooltip: ControlStep.Main),
             new ControlEntry("Resize", layout => layout.Resize, ClickResize, TooltipResize, click: ControlStep.BeforeTrack, tooltip: ControlStep.Main, cursor: Cursors.SizeNWSE),
@@ -163,6 +165,7 @@ namespace BetterGhPanel
         private GH_ObjectResponse? ClickResize(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             var point = e.CanvasLocation;
+            CancelTableFit();
             PanelOwner.RecordUndoEvent("Panel+ resize");
             _resizing = true; _dragStart = point; _startWidth = _layout.Panel.Width; _startHeight = _layout.Panel.Height;
             return GH_ObjectResponse.Capture;
@@ -274,7 +277,7 @@ namespace BetterGhPanel
         {
             var jumpResult = PanelOwner.Session.Result;
             bool branchView = DisplayListLengths;
-            int firstItem = branchView ? _d.Offset : ViewItemAtOrAfter(jumpResult, _d.Offset);
+            int firstItem = branchView ? _offset : ViewItemAtOrAfter(jumpResult, _offset);
             var anchor = _jumpBounds.IsEmpty ? new RectangleF(_layout.Footer.X, _layout.Units.Y, 60, _layout.Units.Height) : _jumpBounds;
             CanvasTextInput.Show(sender, PanelOwner, anchor, (Math.Min(firstItem, Math.Max(0, (branchView ? jumpResult.BranchPaths.Count : jumpResult.RowPositions.Count) - 1)) + 1).ToString(), text =>
             {
@@ -289,8 +292,8 @@ namespace BetterGhPanel
                 // page capacity, so previous-page size must not hide the final item.
                 int index = Math.Max(0, Math.Min(Math.Max(0, itemCount - 1), row <= 1 ? 0 : row - 1));
                 int offset = itemCount == 0 ? 0 : branchView ? index : ViewOffset(jumpResult, index);
-                bool changed = _d.Offset != offset;
-                _d.Offset = offset;
+                bool changed = _offset != offset;
+                _offset = offset;
                 if (itemCount > 0 && (row < 1 || row > itemCount))
                     ShowNotice(sender, System.FormattableString.Invariant($"Row {row:N0} is out of range · showing row {index + 1:N0} of {itemCount:N0}"));
                 if (changed) InvalidatePaintedHits();
@@ -393,9 +396,9 @@ namespace BetterGhPanel
             var options = PanelOwner.Session.Options;
             e.Title = _layout.Type.Contains(point) ? "Filter by type" : _layout.Sort.Contains(point) ? "Sort this view" : "Filter by branch";
             e.Text = _layout.Type.Contains(point) ? PanelOwner.Session.HasCurrentResult ? CanvasMenu.TypeHint(PanelOwner.Session.Result, options) : "Types" :
-                _layout.Sort.Contains(point) ? options.SortMode.ToString() : options.BranchPath ?? "All branches";
+                _layout.Sort.Contains(point) ? (SortedColumnName(options) ?? "D") + " · " + options.SortMode : options.BranchPath ?? "All branches";
             e.Description = _layout.Sort.Contains(point)
-                ? "Asc/Desc sorts items within each branch. Sorting changes the view only. Output keeps its tree order."
+                ? "Sorting " + (SortedColumnName(options) ?? "D") + " changes the view within each branch only. Choosing Asc/Desc here sorts by D; output keeps its tree order."
                 : "Filters change both the view and the output wire.";
             if (_layout.Type.Contains(point) && PanelOwner.Session.HasCurrentResult)
                 e.Description = (PanelOwner.Session.Result.RowPositions.Count > 0 ? "Visible types: " : "Source types: ") +

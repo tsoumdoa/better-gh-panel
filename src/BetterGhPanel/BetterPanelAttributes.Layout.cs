@@ -36,7 +36,6 @@ namespace BetterGhPanel
             internal RectangleF SearchClear { get; }
             internal RectangleF BranchClear { get; }
             internal RectangleF Split { get; }
-            internal RectangleF ScrollLock { get; }
 
             internal PanelLayout(
                 RectangleF panel = default,
@@ -66,8 +65,7 @@ namespace BetterGhPanel
                 RectangleF restore = default,
                 RectangleF searchClear = default,
                 RectangleF branchClear = default,
-                RectangleF split = default,
-                RectangleF scrollLock = default)
+                RectangleF split = default)
             {
                 Panel = panel;
                 Search = search;
@@ -97,28 +95,26 @@ namespace BetterGhPanel
                 SearchClear = searchClear;
                 BranchClear = branchClear;
                 Split = split;
-                ScrollLock = scrollLock;
             }
         }
 
         private PanelLayout _layout = new PanelLayout();
         // Measured at paint: the search mode chip and the Units label widths.
-        private float _searchChipWidth = 38, _unitsWidth = 48;
+        private float _searchChipWidth = 38, _unitsWidth = 48, _sortChipWidth = 43;
 
         // Units may widen until the two-line footer status keeps room for a
         // "D: 1 filter ×" chip (59 units; 300-wide panels keep the 48 minimum).
         private float UnitsWidth(float panelWidth) => Math.Max(48, Math.Min(_unitsWidth, panelWidth - 252));
 
         // Computes the immutable fixed-control layout and, in the original
-        // calculation order, updates _d/_f pane rectangles, _warningsHeight and
+        // calculation order, updates the list rectangle, _warningsHeight and
         // _singleLineFooter. This helper deliberately includes those layout side effects.
         private PanelLayout ComputePanelLayout()
         {
             if (PanelOwner.PanelMinimized)
             {
-                var capsule = new RectangleF(Pivot.X, Pivot.Y, CanvasPanelSize.CapsuleWidth, CanvasPanelSize.CapsuleHeight);
-                _d.List = _d.Track = _d.TrackHit = _d.Caption = RectangleF.Empty;
-                _f.List = _f.Track = _f.TrackHit = _f.Caption = RectangleF.Empty;
+                var capsule = new RectangleF(Pivot.X, Pivot.Y, CanvasPanelSize.CapsuleWidth, CanvasPanelSize.CapsuleHeightForInputs(PanelOwner.Params.Input.Count));
+                _list = _track = _trackHit = _tableHeader = _horizontalTrack = RectangleF.Empty;
                 return new PanelLayout(panel: capsule,
                     restore: new RectangleF(capsule.Right - 36, capsule.Y + (capsule.Height - 22) / 2, 22, 22));
             }
@@ -150,31 +146,30 @@ namespace BetterGhPanel
             RectangleF searchClear;
             RectangleF branchClear;
             RectangleF split;
-            RectangleF scrollLock;
             restore = RectangleF.Empty;
             panel = new RectangleF(Pivot.X,
-                Pivot.Y + CanvasPanelSize.DisplayTopOffset(PanelOwner.CanvasHeight, PanelOwner.CanvasDisplay),
+                Pivot.Y + (PanelOwner.EffectiveCanvasHeight - PanelOwner.DisplayHeight) / 2,
                 PanelOwner.DisplayWidth, PanelOwner.DisplayHeight);
             float x = panel.X + 4;
             // Narrow panels give up type and path width before the search field
             // drops below a readable query such as "Length > 800".
             float squeeze = Math.Max(0, Math.Min(34, 120 - (panel.Width - 212)));
             float typeWidth = 76 - Math.Min(20, squeeze), branchWidth = 64 - Math.Max(0, squeeze - 20);
-            search = new RectangleF(x + 2, panel.Y + 25, panel.Width - 212 + squeeze, 21);
+            search = new RectangleF(x + 2, panel.Y + 25, panel.Width - 212 + squeeze - (_sortChipWidth - 43), 21);
             // The mode chip leads the field beyond the wire-grip strip and leaves
             // room for a short query; long property labels are ellipsized.
             filter = new RectangleF(panel.X + 14, search.Y,
                 Math.Min(_searchChipWidth, Math.Max(56, Math.Min(120, search.Right - panel.X - 64))), search.Height);
             searchClear = new RectangleF(search.Right - 18, search.Y, 16, search.Height);
             type = new RectangleF(search.Right + 3, search.Y, typeWidth, 21);
-            sort = new RectangleF(type.Right + 3, search.Y, 43, 21);
+            sort = new RectangleF(type.Right + 3, search.Y, _sortChipWidth, 21);
             branch = new RectangleF(sort.Right + 3, search.Y, branchWidth, 21);
             branchClear = new RectangleF(branch.Right - 30, branch.Y, 16, branch.Height);
             close = new RectangleF(panel.Right - 34, panel.Y + 2, 20, 18);
             display = new RectangleF(close.Left - 22, close.Y, 20, 18);
             // Wide enough for "Preview: Selection" at the default font without trimming.
             preview = new RectangleF(display.Left - 122, close.Y, 118, 18);
-            split = PanelOwner.PanelSplit || PanelOwner.PairedInputPresent() ? new RectangleF(preview.Left - 32, preview.Y, 28, 18) : RectangleF.Empty;
+            split = PanelOwner.PanelSplit || PanelOwner.TableInputPresent ? new RectangleF(preview.Left - 42, preview.Y, 38, 18) : RectangleF.Empty;
             move = new RectangleF(panel.X + 14, panel.Y + 1, (split.IsEmpty ? preview.Left : split.Left) - panel.X - 18, 23);
             // Reserve the corner for resizing rather than overlaying footer controls.
             // Wide panels fit status, selection, statistics, tools and Units on one line.
@@ -215,12 +210,12 @@ namespace BetterGhPanel
             _warningsHeight = WarningStripHeight(footerHeight, panel);
             // Keep interactive content beyond native grip picking's 12-unit
             // radius on both edges, including rows and the scroll track.
-            _d.List = new RectangleF(panel.X + 14, panel.Y + 52 + _warningsHeight, panel.Width - 33, Math.Max(RowHeight, panel.Height - 56 - footerHeight - _warningsHeight));
-            _d.Track = new RectangleF(panel.Right - 18, _d.List.Y, 4, _d.List.Height);
-            _d.TrackHit = new RectangleF(panel.Right - 21, _d.List.Y, 8, _d.List.Height);
-            scrollLock = LayoutSplitPanes(panel);
+            _list = new RectangleF(panel.X + 14, panel.Y + 52 + _warningsHeight, panel.Width - 33, Math.Max(RowHeight, panel.Height - 56 - footerHeight - _warningsHeight));
+            _track = new RectangleF(panel.Right - 18, _list.Y, 4, _list.Height);
+            _trackHit = new RectangleF(panel.Right - 21, _list.Y, 8, _list.Height);
+            LayoutTable();
             resize = new RectangleF(panel.Right - 24, panel.Bottom - 24, 24, 24);
-            return new PanelLayout(panel, search, filter, type, sort, branch, reset, resize, footer, trim, simplify, flatten, reverse, createSet, units, outLabel, outItems, outValues, display, preview, move, statistics, selectAll, close, restore, searchClear, branchClear, split, scrollLock);
+            return new PanelLayout(panel, search, filter, type, sort, branch, reset, resize, footer, trim, simplify, flatten, reverse, createSet, units, outLabel, outItems, outValues, display, preview, move, statistics, selectAll, close, restore, searchClear, branchClear, split);
         }
     }
 }
