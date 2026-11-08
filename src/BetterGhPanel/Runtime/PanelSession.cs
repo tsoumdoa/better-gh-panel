@@ -309,9 +309,9 @@ namespace BetterGhPanel.Runtime
                     {
                         // Validate before native work, as D's candidate preparation does.
                         _ = new PanelQueryScope(snapshot, options, new PanelSearchFilter(options));
-                        var positions = new int[sortSnapshot.Rows.Count];
-                        for (int i = 0; i < positions.Length; i++) { token.ThrowIfCancellationRequested(); positions[i] = i; }
-                        if (!await sortQueue.MeasureAsync(sortSnapshot, positions, token).ConfigureAwait(false)) return;
+                        if (!await sortQueue.MeasureAllAsync(sortSnapshot, sortSnapshot.Rows.Count, token).ConfigureAwait(false)) return;
+                        var sortMeasurements = await sortQueue.CaptureCompletedAsync(sortSnapshot, sortSnapshot.Rows.Count, token).ConfigureAwait(false);
+                        if (sortMeasurements == null) return;
                         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                         RhinoApp.InvokeOnUiThread((Action)(() =>
                         {
@@ -319,7 +319,7 @@ namespace BetterGhPanel.Runtime
                             {
                                 if (!CanPublish(snapshot, request, token) || !ReferenceEquals(sortColumn.Snapshot, sortSnapshot) ||
                                     !sortQueue.SourcesCurrent(sortSnapshot)) { completion.TrySetResult(false); return; }
-                                options.ColumnSortKeys = sortColumn.SortKeys(sortColumn.SortConversion, options.DecimalPlaces, options.RoundUpFactor, true);
+                                options.ColumnSortKeys = sortColumn.SortKeys(snapshot.UnitConversion, options.DecimalPlaces, options.RoundUpFactor, sortMeasurements);
                                 completion.TrySetResult(CanPublish(snapshot, request, token));
                             }
                             catch (Exception ex) { completion.TrySetException(ex); }

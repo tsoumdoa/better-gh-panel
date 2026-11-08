@@ -51,7 +51,6 @@ namespace BetterGhPanel
             _pairedError = null;
             PairedData = null;
             _tableColumns.Clear();
-            _headerDataInputs = Array.Empty<IGH_Param>(); _headerCaptureSettings = null;
             if (_outputOptions != null) { _outputOptions.ColumnSortKeys = null; _outputOptions.TableSource = null; }
             _cachedOutputResult = null;
             _filteredData = _filteredPair = null;

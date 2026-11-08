@@ -134,6 +134,14 @@ internal static class TableGeometryChecks
         await fixture.Ready(() => fixture.Result.RowPositions.SequenceEqual(new[] { 2, 3, 0, 1, 4 }));
         Check(PropertyValue<PanelSnapshot?>(columns[0], "Snapshot") == null && PropertyValue<PanelSnapshot?>(column, "Snapshot") != null,
             "Hidden Table retains only its active sort column");
+        Call(component, "SetColumnSort", component.Params.Input[1].InstanceGuid, PanelSortMode.ValueAscending);
+        await fixture.Ready(() => fixture.Result.RowPositions[0] == 1);
+        Check(PropertyValue<PanelSnapshot?>(column, "Snapshot") == null && FieldValue<object?>(column, "Geometry") == null &&
+            PropertyValue<PanelSnapshot?>(columns[0], "Snapshot") != null, "Switching hidden sort from C1 to F retires C1's store and queue");
+        Call(component, "SetColumnSort", Guid.Empty, PanelSortMode.SourceOrder);
+        await fixture.Ready(() => PropertyValue<PanelQueryOptions>(fixture.Session, "Options").SortMode == PanelSortMode.SourceOrder);
+        Check(columns.All(value => PropertyValue<PanelSnapshot?>(value, "Snapshot") == null && FieldValue<object?>(value, "Geometry") == null),
+            "Turning hidden sort off retires every column store and queue");
         // Queue work, then replace the input before its scheduled preparation can run.
         Call(component, "SetColumnSort", Guid.Empty, PanelSortMode.SourceOrder);
         Call(component, "SetPanelSplit", true);

@@ -229,7 +229,6 @@ namespace BetterGhPanel
                     _geometryContext = context; _captureHasGeometry = HasGeometry(snapshot);
                     _sourceItems = sources; _measurementSources = measurementSources; _captureGraphs = graphs;
                     _measurementSnapshot = snapshot;
-                    RememberHeaderDataInputs();
                     _staleMeasurementSnapshot = null;
                     RefreshColumnSort();
                     if (_retainGeometryMeasurements)

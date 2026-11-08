@@ -12,13 +12,11 @@ namespace BetterGhPanel
 {
     public sealed partial class BetterPanelComponent
     {
-        private const string HeaderDescription = "Optional column titles: D first, then F and each added column. Empty items keep the input's name.";
+        private const string HeaderDescription = "Optional column titles: item 0 = D, item 1 = F, then each added column. Empty items keep the input's nickname.";
         private Guid _headerInputId;
         private IGH_Param? _removingHeaderInput;
         private int _headerInputIndex = -1;
         private string?[] _headerTitles = Array.Empty<string?>();
-        private IGH_Param[] _headerDataInputs = Array.Empty<IGH_Param>();
-        private (int, bool, bool, bool, bool, PanelUnitConversion, int, double)? _headerCaptureSettings;
 
         internal IGH_Param? HeaderInput
         {
@@ -39,25 +37,25 @@ namespace BetterGhPanel
         internal void AddHeaderInput()
         {
             if (HeaderInput != null) return;
-            RecordUndoEvent("Panel+ Add header input");
-            var input = new Param_GenericObject { Name = "Headers", NickName = "H", Description = HeaderDescription,
+            RecordUndoEvent("Panel+ Add column titles input");
+            var input = new Param_GenericObject { Name = "Column titles", NickName = "H", Description = HeaderDescription,
                 Access = GH_ParamAccess.tree, Optional = true, MutableNickName = true };
             Params.RegisterInputParam(input);
             _headerInputId = input.InstanceGuid; _headerInputIndex = Params.Input.IndexOf(input);
             HeaderInputsChanged();
+            ExpireSolution(true);
         }
         internal void RemoveHeaderInput()
         {
             var input = HeaderInput;
             if (input == null) return;
-            RecordUndoEvent("Panel+ Remove header input");
+            RecordUndoEvent("Panel+ Remove column titles input");
             _removingHeaderInput = input;
             try { Params.UnregisterInputParameter(input, true); }
             finally { _removingHeaderInput = null; }
             _headerInputId = Guid.Empty; _headerInputIndex = -1;
             HeaderInputsChanged();
-            if (Phase == GH_SolutionPhase.Blank && _reuseQuery && _queryTree != null)
-                OnPingDocument()?.ScheduleSolution(1, _ => { });
+            ExpireSolution(true);
         }
         private void HeaderInputsChanged()
         {
@@ -73,6 +71,7 @@ namespace BetterGhPanel
         {
             var header = HeaderInput;
             if (header == null) return;
+            header.Name = "Column titles";
             header.Description = HeaderDescription;
             if (Params.Input.IndexOf(header) != Params.Input.Count - 1)
                 Params.SortInput(Params.Input.Select((input, index) => ReferenceEquals(input, header) ? Params.Input.Count : index).ToArray());
@@ -82,7 +81,17 @@ namespace BetterGhPanel
         internal string TableHeaderTitle(int index)
         {
             var input = index == 0 ? Params.Input[0] : TableColumns[index - 1].Input;
-            return PanelTableText.HeaderTitle(_headerTitles, index, input.NickName);
+            return HeaderTitleForInput(input, input.NickName);
+        }
+
+        private int HeaderSlot(IGH_Param input) => Params.Input.TakeWhile(value => !ReferenceEquals(value, input)).Count(IsTableDataInput);
+        internal string HeaderTitleForInput(IGH_Param input, string? fallback = null) =>
+            PanelTableText.HeaderTitle(_headerTitles, HeaderSlot(input), fallback ?? input.NickName);
+        internal bool HasHeaderTitle(int index)
+        {
+            var input = index == 0 ? Params.Input[0] : TableColumns[index - 1].Input;
+            int slot = HeaderSlot(input);
+            return slot < _headerTitles.Length && !string.IsNullOrWhiteSpace(_headerTitles[slot]);
         }
 
         // Only text and exact stock scalar fields are read. H never inspects live
@@ -99,7 +108,7 @@ namespace BetterGhPanel
         }
         internal void RefreshHeaderTitles()
         {
-            int count = 1 + Params.Input.Skip(2).Count(IsTableDataInput) + (PairedInputPresent() ? 1 : 0);
+            int count = 2 + Params.Input.Skip(2).Count(IsTableDataInput);
             var values = HeaderInput?.VolatileData.AllData(false).Take(count).Select(HeaderText).ToArray() ?? Array.Empty<string?>();
             if (_headerTitles.SequenceEqual(values)) return;
             _headerTitles = values;
@@ -108,35 +117,6 @@ namespace BetterGhPanel
             attributes?.ClearTableWidths();
             attributes?.InvalidatePaintedHits();
             Instances.ActiveCanvas?.Invalidate();
-        }
-
-        private (int, bool, bool, bool, bool, PanelUnitConversion, int, double) HeaderCaptureSettings =>
-            (TrimDepth, SimplifyTree, FlattenTree, ReverseTree, CreateSetTree, UnitConversion, DecimalPlaces, RoundUpFactor);
-        private void RememberHeaderDataInputs()
-        {
-            _headerDataInputs = Params.Input.Where(IsTableDataInput).ToArray();
-            _headerCaptureSettings = HeaderCaptureSettings;
-        }
-        private bool IsHeaderOnlyExpiration()
-        {
-            var header = HeaderInput;
-            if (header == null || header.Phase != GH_SolutionPhase.Blank || Phase != GH_SolutionPhase.Computed ||
-                _solving || _preserveQuery || _discardViewRestore || Locked || _queryTree == null || _session == null || _session.IsDisposed ||
-                !_headerCaptureSettings.HasValue || !_headerCaptureSettings.Value.Equals(HeaderCaptureSettings)) return false;
-            var inputs = Params.Input.Where(IsTableDataInput).ToArray();
-            return inputs.Length == _headerDataInputs.Length && inputs.Select((input, index) =>
-                ReferenceEquals(input, _headerDataInputs[index]) &&
-                (input.Phase == GH_SolutionPhase.Computed || input.Phase == GH_SolutionPhase.Collected)).All(current => current);
-        }
-        public override void ExpireSolution(bool recompute)
-        {
-            if (!IsHeaderOnlyExpiration() || recompute && OnPingDocument()?.SolutionState == GH_ProcessStep.Process)
-            { base.ExpireSolution(recompute); return; }
-            // Collect H through a normal GH solution, reusing the established
-            // snapshot/query and its complete publication fence, like selection.
-            _preserveQuery = true; _reuseQuery = true;
-            try { base.ExpireSolution(recompute); }
-            finally { _preserveQuery = false; }
         }
 
         private void WriteHeaderInput(GH_IWriter writer)

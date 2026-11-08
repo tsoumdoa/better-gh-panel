@@ -1697,8 +1697,12 @@ namespace BetterGhPanel
                         {
                             var column = PanelOwner.TableColumns[summaryColumn];
                             if (column.HasGeometry)
-                                e.Description += "\n" + PanelTextPreview.ForTooltip(string.Join("\n\n", column.BranchItems(PanelOwner.Session.Result, hit.Path)
+                            {
+                                e.Title = PanelOwner.TableHeaderTitle(summaryColumn + 1);
+                                e.Text = ColumnBranchCell(hit.Path, summaryColumn);
+                                e.Description = PanelTextPreview.ForTooltip(string.Join("\n\n", column.BranchItems(PanelOwner.Session.Result, hit.Path)
                                     .Select(item => column.ItemTooltip(item, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor))));
+                            }
                         }
                         return;
                     }
@@ -1712,7 +1716,7 @@ namespace BetterGhPanel
                     {
                         var column = PanelOwner.TableColumns[columnIndex];
                         var cell = column.Row(hit.SourcePosition);
-                        e.Title = column.Input.NickName + (cell == null ? "" : " · " + cell.Path + " [" + cell.OriginalIndex + "]");
+                        e.Title = PanelOwner.TableHeaderTitle(columnIndex + 1) + (cell == null ? "" : " · " + cell.Path + " [" + cell.OriginalIndex + "]");
                         e.Text = cell == null ? "Missing value" :
                             (cell.Validity == PanelValidity.VerifiedInvalid ? "Invalid " : cell.Validity == PanelValidity.Unverified ? "Unverified " : "") + cell.TypeName;
                         string cellDetails = ColumnCell(PanelOwner.Session.Result, hit.SourcePosition, columnIndex);

@@ -55,14 +55,34 @@ public class TableColumnsTests
         Assert.Equal("measuring…", Cell(false, true));
         Assert.Equal("unavailable", Cell(true, measured: geometry.WithUnavailableMeasurement()));
         Assert.Equal("Crv L unavailable", Cell(false, measured: geometry.WithUnavailableMeasurement()));
-        Assert.Equal("4.30 · — · 5.60 … +2", PanelTableText.Summary(new[] { Cell(true), "—", "5.60" }, 5, compact: true));
-        var area = new PanelGeometryInfo("planar", 12000000, 2, "mm", "Area", "A");
-        var surface = new PanelRow(0, "{0}", "Surface", "", null, geometryInfo: area);
-        Assert.Equal("Srf A 12.00 m²", PanelTableText.GeometryCell(surface, area, false, false,
-            PanelUnitConversion.SquareMillimetersToSquareMeters, 2, 0));
-        var volume = new PanelGeometryInfo("closed", 8000000000, 3, "mm", "Volume", "V");
-        Assert.Equal("Brep V 8.00 m³", PanelTableText.GeometryCell(new PanelRow(0, "{0}", "Brep", "", null, geometryInfo: volume),
-            volume, false, false, PanelUnitConversion.CubicMillimetersToCubicMeters, 2, 0));
+        Assert.Equal("4.30 · — · 5.60 … +2 in this set", PanelTableText.Summary(new[] { Cell(true), "—", "5.60" }, 5));
+
+    }
+
+    [Fact]
+    public void AuxiliaryFailureDoesNotHideTheFinitePrimaryMetricOrItsSortKey()
+    {
+        var geometry = new PanelGeometryInfo("Brep", 8, 3, "mm", "Volume", "V", measurementUnavailable: true, hasArea: true);
+        var row = new PanelRow(0, "{0}", "Brep", "", null, geometryInfo: geometry);
+        Assert.Equal("8.00", PanelTableText.GeometryCell(row, geometry, true, false, PanelUnitConversion.None, 2, 0));
+        Assert.Equal("Brep V 8.00 mm³", PanelTableText.GeometryCell(row, geometry, false, false, PanelUnitConversion.None, 2, 0));
+        Assert.Equal(8, PanelTableText.MetricSortRow(row, geometry, PanelUnitConversion.None, 2, 0).NumericValue);
+        Assert.True(geometry.MeasurementUnavailable);
+    }
+
+    [Fact]
+    public void GeometrySummarySortKeysRetainNonMetricTextWhileOrdinaryRowsKeepMetricKeys()
+    {
+        var geometry = new PanelGeometryInfo("curve", 1, units: "mm");
+        var text = new PanelRow(0, "{0}", "Text", "z", null);
+        Assert.True(PanelTableText.MetricSortRow(text, null, PanelUnitConversion.None, 2, 0).IsNull);
+        var z = PanelTableText.SummarySortRow(text, null, true, PanelUnitConversion.None, 2, 0);
+        var a = PanelTableText.SummarySortRow(new PanelRow(1, "{0}", "Text", "a", null), null, true, PanelUnitConversion.None, 2, 0);
+        var metric = PanelTableText.SummarySortRow(new PanelRow(2, "{0}", "Curve", "", null, geometryInfo: geometry), geometry, true, PanelUnitConversion.None, 2, 0);
+        Assert.Equal("z · 1.00", PanelTableText.Summary(new[] { z.DisplayValue, metric.DisplayValue }, 2));
+        Assert.Equal("a · 1.00", PanelTableText.Summary(new[] { a.DisplayValue, metric.DisplayValue }, 2));
+        Assert.True(new PanelColumnSortKeys(new[] { z, a }).Compare(0, 1, false) > 0);
+        Assert.Equal("1.00 … +2 items", PanelTableText.Summary(new[] { metric.DisplayValue }, 3, false));
     }
 
     [Fact]
@@ -114,7 +134,7 @@ public class TableColumnsTests
     }
 
     [Fact]
-    public void GeometryHeaderUnitsRequireAUniformApplicableMetricAndNeverConvertCounts()
+    public void GeometryHeaderUnitsAlwaysKeepTheModelUnitUnlessConversionAppliesAndNeverLabelCounts()
     {
         PanelSnapshot Snapshot(params PanelGeometryInfo[] metrics) => new PanelSnapshot(metrics.Select((metric, index) =>
             new PanelRow(index, "{0}", "Geometry", "", null, geometryInfo: metric)).ToArray(), new[] { new PanelBranch("{0}", metrics.Length) });
@@ -124,10 +144,10 @@ public class TableColumnsTests
             PanelTableText.GeometryHeaderUnit(PanelTableText.CommonGeometryMetric(snapshot), conversion);
         Assert.Equal("m", Unit(Snapshot(length, length), PanelUnitConversion.MillimetersToMeters));
         Assert.Equal("", Unit(Snapshot(length, area), PanelUnitConversion.MillimetersToMeters));
-        Assert.Equal("", Unit(Snapshot(area), PanelUnitConversion.MillimetersToMeters));
-        Assert.Equal("", Unit(Snapshot(length), PanelUnitConversion.None));
+        Assert.Equal("mm²", Unit(Snapshot(area), PanelUnitConversion.MillimetersToMeters));
+        Assert.Equal("mm", Unit(Snapshot(length), PanelUnitConversion.None));
         Assert.Equal(" · L · m", PanelTableText.GeometryHeaderSuffix(length, PanelUnitConversion.MillimetersToMeters));
-        Assert.Equal(" · L", PanelTableText.GeometryHeaderSuffix(length, PanelUnitConversion.None));
+        Assert.Equal(" · L · mm", PanelTableText.GeometryHeaderSuffix(length, PanelUnitConversion.None));
         Assert.Equal("", PanelTableText.GeometryHeaderSuffix(null, PanelUnitConversion.MillimetersToMeters));
         Assert.Equal("", Unit(Snapshot(new PanelGeometryInfo("points", 4, 0, "", "Count", "")), PanelUnitConversion.MillimetersToMeters));
     }

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Collections;
+using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -286,33 +288,23 @@ namespace BetterGhPanel.Core
             PumpLater();
         }
 
+        internal const int DemandChunkSize = 256;
+
+        // Position lists are immutable request inputs; the queue retains them only
+        // until registration ends. Whole-column callers use the allocation-free range.
+        internal Task<bool> MeasureAllAsync(TSnapshot snapshot, int count, CancellationToken token) =>
+            MeasureAsync(snapshot, new SequentialPositions(count), token);
+
         internal Task<bool> MeasureAsync(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token)
         {
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var requested = new int[positions.Count];
-            for (int i = 0; i < positions.Count; i++) requested[i] = positions[i];
             _postUi(() =>
             {
                 _verifyUi();
                 if (_disposed || !ReferenceEquals(snapshot, _snapshot) || token.IsCancellationRequested)
                 { completion.TrySetResult(false); return; }
-                var pending = new List<int>();
-                var seen = new HashSet<int>();
-                foreach (int position in requested)
-                {
-                    // A negative position is always invalid; the supplied predicate
-                    // rejects positions beyond the snapshot before indexing it.
-                    if (!_validPosition(snapshot, position))
-                    { completion.TrySetResult(false); return; }
-                    if (_needsMeasurement(snapshot, position) && !SourceCurrent(snapshot, position))
-                    { completion.TrySetResult(false); return; }
-                    if (_needsMeasurement(snapshot, position) && CanStart(snapshot, position) && seen.Add(position)) pending.Add(position);
-                }
-                if (pending.Count == 0) { completion.TrySetResult(!token.IsCancellationRequested); return; }
-                var batch = new Batch(snapshot, pending, token, completion);
+                var batch = new Batch(snapshot, positions, token, completion);
                 _batches.Add(batch);
-                // Register may invoke synchronously. The cancellation callback only
-                // posts and never waits for UI dispatch or registration disposal.
                 var registration = token.Register(() => _postCancellation(() =>
                 {
                     _verifyUi();
@@ -322,9 +314,69 @@ namespace BetterGhPanel.Core
                 }));
                 batch.Registration = registration;
                 if (!_batches.Contains(batch)) registration.Dispose();
-                PumpLater();
+                RegisterDemand(batch);
             });
             return completion.Task;
+        }
+
+        private void RegisterDemand(Batch batch)
+        {
+            _verifyUi();
+            bool Current() => !_disposed && !batch.Token.IsCancellationRequested &&
+                ReferenceEquals(batch.Snapshot, _snapshot) && _batches.Contains(batch);
+            if (!Current()) { CompleteBatch(batch, false); return; }
+            int end = Math.Min(batch.Requested!.Count, batch.Next + DemandChunkSize);
+            for (; batch.Next < end; batch.Next++)
+            {
+                if (!Current()) { CompleteBatch(batch, false); return; }
+                int position = batch.Requested[batch.Next];
+                if (!_validPosition(batch.Snapshot, position)) { CompleteBatch(batch, false); return; }
+                if (!_needsMeasurement(batch.Snapshot, position)) continue;
+                if (!SourceCurrent(batch.Snapshot, position) || !Current()) { CompleteBatch(batch, false); return; }
+                // The source was just fenced; avoid CanStart/Has repeating the same
+                // proof for every registered position. Admission checks it again.
+                if (_canMeasure(batch.Snapshot, position) &&
+                    (!TryGetEntry(position, out var entry) || !entry.Complete) && batch.Pending.Add(position))
+                    batch.Positions.Enqueue(position);
+            }
+            if (!Current()) { CompleteBatch(batch, false); return; }
+            if (batch.Next == batch.Requested!.Count) { batch.Requested = null; batch.Registered = true; }
+            else _delayOnUi(1, () => RegisterDemand(batch)); // must yield even when postUi invokes inline
+            PumpLater();
+        }
+
+        internal Task<IReadOnlyDictionary<int, TResult?>?> CaptureCompletedAsync(TSnapshot snapshot, int count, CancellationToken token)
+        {
+            var completion = new TaskCompletionSource<IReadOnlyDictionary<int, TResult?>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var values = new Dictionary<int, TResult?>();
+            int next = 0;
+            void Step()
+            {
+                _verifyUi();
+                bool Current() => !_disposed && !token.IsCancellationRequested && ReferenceEquals(snapshot, _snapshot);
+                if (!Current()) { completion.TrySetResult(null); return; }
+                int end = Math.Min(count, next + DemandChunkSize);
+                for (; next < end; next++)
+                {
+                    if (!Current()) { completion.TrySetResult(null); return; }
+                    if (!TryGetEntry(next, out var entry) || !entry.Complete) continue;
+                    if (!IsCurrentEntry(snapshot, next, entry) || !Current()) { completion.TrySetResult(null); return; }
+                    values.Add(next, entry.Value);
+                }
+                if (next < count) _delayOnUi(1, Step);
+                else completion.TrySetResult(new ReadOnlyDictionary<int, TResult?>(values));
+            }
+            _postUi(Step);
+            return completion.Task;
+        }
+
+        private sealed class SequentialPositions : IReadOnlyList<int>
+        {
+            internal SequentialPositions(int count) { Count = count; }
+            public int Count { get; }
+            public int this[int index] => index;
+            public IEnumerator<int> GetEnumerator() { for (int i = 0; i < Count; i++) yield return i; }
+            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
         }
 
         private bool CanStart(TSnapshot snapshot, int position) =>
@@ -349,7 +401,7 @@ namespace BetterGhPanel.Core
                 {
                     while (batch.Positions.Count > 0 && Has(batch.Snapshot, batch.Positions.Peek()))
                         batch.Pending.Remove(batch.Positions.Dequeue());
-                    if (batch.Positions.Count == 0) CompleteBatch(batch, true);
+                    if (batch.Positions.Count == 0) { if (batch.Registered) CompleteBatch(batch, true); }
                     else if (!SourceCurrent(batch.Snapshot, batch.Positions.Peek())) CompleteBatch(batch, false);
                 }
             }
@@ -359,6 +411,7 @@ namespace BetterGhPanel.Core
         {
             if (!_batches.Remove(batch)) return;
             batch.Registration.Dispose();
+            batch.Requested = null; batch.Positions.Clear(); batch.Pending.Clear();
             batch.Completion.TrySetResult(success && !_disposed && !batch.Token.IsCancellationRequested && ReferenceEquals(batch.Snapshot, _snapshot));
         }
         private void CancelBatches()
@@ -618,11 +671,14 @@ namespace BetterGhPanel.Core
         }
         private sealed class Batch
         {
-            internal Batch(TSnapshot snapshot, List<int> positions, CancellationToken token, TaskCompletionSource<bool> completion)
-            { Snapshot = snapshot; Positions = new Queue<int>(positions); Pending = new HashSet<int>(positions); Token = token; Completion = completion; }
+            internal Batch(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token, TaskCompletionSource<bool> completion)
+            { Snapshot = snapshot; Requested = positions; Token = token; Completion = completion; }
+            internal IReadOnlyList<int>? Requested;
+            internal int Next;
+            internal bool Registered;
             internal readonly TSnapshot Snapshot;
-            internal readonly Queue<int> Positions;
-            internal readonly HashSet<int> Pending;
+            internal readonly Queue<int> Positions = new Queue<int>();
+            internal readonly HashSet<int> Pending = new HashSet<int>();
             internal readonly CancellationToken Token;
             internal readonly TaskCompletionSource<bool> Completion;
             internal CancellationTokenRegistration Registration;

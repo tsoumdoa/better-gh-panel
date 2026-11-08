@@ -74,12 +74,16 @@ namespace BetterGhPanel
         {
             var options = saved.Clone();
             ResolveSortInput(options);
-            var column = _tableColumns.FirstOrDefault(value => value.Input.InstanceGuid == options.SortColumn);
+            var column = options.SortMode == PanelSortMode.SourceOrder ? null :
+                _tableColumns.FirstOrDefault(value => value.Input.InstanceGuid == options.SortColumn);
             if (column == null)
             {
                 if (options.SortColumn != Guid.Empty) { options.SortColumn = Guid.Empty; options.SortMode = PanelSortMode.SourceOrder; }
             }
-            else { column.Capture(_geometryUnits); ConfigureColumnGeometry(); }
+            foreach (var item in _tableColumns)
+                if (!PanelSplit && (options.SortMode == PanelSortMode.SourceOrder || !ReferenceEquals(item, column))) item.ReleasePresentation();
+            column?.Capture(_geometryUnits);
+            ConfigureColumnGeometry();
             options.ColumnSortKeys = column?.SortKeys(UnitConversion, DecimalPlaces, RoundUpFactor);
             return options;
         }

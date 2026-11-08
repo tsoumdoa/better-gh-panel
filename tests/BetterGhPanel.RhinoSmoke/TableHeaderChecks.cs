@@ -36,8 +36,17 @@ internal static class TableHeaderChecks
         component.Params.Input[1].RemoveAllSources();
         Call(component, "AddHeaderInput"); Call(component, "AddHeaderInput");
         var header = PropertyValue<IGH_Param>(component, "HeaderInput");
-        Check(component.Params.Input.Count == 3 && header.Name == "Headers" && header.NickName == "H" &&
+        Check(component.Params.Input.Count == 3 && header.Name == "Column titles" && header.NickName == "H" &&
             !PropertyValue<bool>(component, "TableInputPresent"), "H is unique and alone never enables the table");
+        using (var menu = new System.Windows.Forms.ToolStripDropDown())
+        {
+            Call(component, "AppendAdditionalComponentMenuItems", menu);
+            var items = menu.Items.OfType<System.Windows.Forms.ToolStripMenuItem>().ToArray();
+            Check(items.Single(item => item.Text == "Column titles input").Checked &&
+                items.All(item => item.Text != "Add header input" && item.Text != "Remove header input"),
+                "One checkable Column titles input command replaces the old Add/Remove menu items");
+            Check(!items.Single(item => item.Text == "Remove column").Enabled, "H alone is absent from the Remove column menu");
+        }
         component.Params.Input[1].AddSource(fixture.Paired);
         var titles = new Param_GenericObject(); titles.CreateAttributes(); fixture.Document.AddObject(titles, false);
         void SetTitles(params string?[] values)
@@ -64,15 +73,21 @@ internal static class TableHeaderChecks
             component.Params.Input.Select(input => input.NickName).SequenceEqual(new[] { "D", "F", "C1", "C2", "H" }),
             "TSV uses H titles without renaming ports");
         var result = fixture.Result; var snapshot = result.Snapshot;
-        long request = FieldValue<long>(fixture.Session, "_request");
         string[] outputs = Enumerable.Range(0, 4).Select(fixture.Values).ToArray();
         SetTitles("Updated", null, " \t", "Tail", "ignored");
         fixture.Document.NewSolution(false, GH_SolutionMode.Silent);
         await fixture.Ready(() => (string)Call(component, "TableHeaderTitle", 0)! == "Updated"); Render();
-        Check(ReferenceEquals(snapshot, fixture.Result.Snapshot) && ReferenceEquals(result, fixture.Result) && request == FieldValue<long>(fixture.Session, "_request") &&
-            outputs.SequenceEqual(Enumerable.Range(0, 4).Select(fixture.Values)), "H-only updates preserve the snapshot, query result, query request and outputs");
+        Check(!ReferenceEquals(snapshot, fixture.Result.Snapshot) &&
+            outputs.SequenceEqual(Enumerable.Range(0, 4).Select(fixture.Values)), "H changes use a normal solve and preserve wire values");
         Check(Enumerable.Range(0, 4).Select(i => (string)Call(component, "TableHeaderTitle", i)!).SequenceEqual(new[] { "Updated", "F", "C1", "Tail" }),
             "Null and whitespace titles fall back without shifting later items; extra titles are ignored");
+        component.Params.Input[1].RemoveAllSources(); fixture.Solve();
+        await fixture.Ready(() => ((System.Collections.IList)PropertyValue<object>(component, "TableColumns")).Count == 2);
+        Check((string)Call(component, "TableHeaderTitle", 1)! == "C1" && (string)Call(component, "TableHeaderTitle", 2)! == "Tail",
+            "Unwired F keeps H slot 1 reserved; added-column titles never shift");
+        component.Params.Input[1].AddSource(fixture.Paired); fixture.Solve();
+        await fixture.Ready(() => ((System.Collections.IList)PropertyValue<object>(component, "TableColumns")).Count == 3);
+        snapshot = fixture.Result.Snapshot;
         fixture.Source.ExpireSolution(false); fixture.Document.NewSolution(false, GH_SolutionMode.Silent);
         await fixture.Ready(() => !ReferenceEquals(snapshot, fixture.Result.Snapshot));
         Check(!ReferenceEquals(snapshot, fixture.Result.Snapshot), "A data-source expiration still replaces the snapshot when H exists");
@@ -84,7 +99,7 @@ internal static class TableHeaderChecks
         await fixture.Ready(() => PropertyValue<PanelQueryOptions>(fixture.Session, "Options").SortColumn == component.Params.Input[2].InstanceGuid);
         var chunk = new GH_LooseChunk("Panel"); Check(component.Write(chunk), "Header component serializes");
         var restored = (GH_Component)Activator.CreateInstance(component.GetType())!; restored.CreateAttributes();
-        Check(restored.Read(chunk), "Header component reloads");
+        Check(restored.Read(chunk) && PropertyValue<IGH_Param>(restored, "HeaderInput").Name == "Column titles", "Header component reloads with its current input name");
         foreach (var input in restored.Params.Input) input.RelinkProxySources(fixture.Document);
         Check(PropertyValue<IGH_Param>(restored, "HeaderInput").InstanceGuid == header.InstanceGuid &&
             restored.Params.Input.Last().Sources.Single().InstanceGuid == titles.InstanceGuid &&

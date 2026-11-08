@@ -131,6 +131,15 @@ namespace BetterGhPanel
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
+                        if (!PanelSplit)
+                        {
+                            foreach (var column in _tableColumns)
+                                if (_session.Options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != _session.Options.SortColumn)
+                                    column.ReleasePresentation();
+                            if (_session.Options.SortMode == PanelSortMode.SourceOrder || _session.Options.SortColumn == Guid.Empty)
+                                _session.PrepareColumnSort(Guid.Empty, null);
+                            ConfigureColumnGeometry();
+                        }
                         if (!_restoringView && !QueryPreviewActive && !CanOutputValues) OutputValues = PanelOutputValues.Items;
                         (Attributes as BetterPanelAttributes)?.OnQueryStarted();
                         (Attributes as BetterPanelAttributes)?.InvalidateStatistics();
@@ -351,9 +360,8 @@ namespace BetterGhPanel
             Menu_AppendItem(menu, "Add column", (_, __) => AddColumn());
             var remove = Menu_AppendItem(menu, "Remove column", null, Params.Input.GetRange(2, Params.Input.Count - 2).Exists(IsTableDataInput));
             foreach (var input in Params.Input.GetRange(2, Params.Input.Count - 2).FindAll(IsTableDataInput))
-                Menu_AppendItem(remove.DropDown, input.NickName, (_, __) => RemoveColumn(input));
-            Menu_AppendItem(menu, "Add header input", (_, __) => AddHeaderInput(), HeaderInput == null);
-            Menu_AppendItem(menu, "Remove header input", (_, __) => RemoveHeaderInput(), HeaderInput != null);
+                Menu_AppendItem(remove.DropDown, HeaderTitleForInput(input), (_, __) => RemoveColumn(input));
+            Menu_AppendItem(menu, "Column titles input", (_, __) => { if (HeaderInput == null) AddHeaderInput(); else RemoveHeaderInput(); }, true, HeaderInput != null);
         }
 
     }

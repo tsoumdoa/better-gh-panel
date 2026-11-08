@@ -10,6 +10,50 @@ using System.Threading.Tasks;
 [Collection("NurbsCandidateLimits")]
 public class GeometryQueueTests
 {
+    [Theory]
+    [InlineData(1)]
+    [InlineData(300)]
+    public void MillionPositionDemandStopsAtCancellationInsideBoundedRegistration(int cancelAt)
+    {
+        var ui = new Queue<Action>(); var delays = new Queue<Action>();
+        var snapshot = new object(); int checks = 0;
+        using var cancellation = new CancellationTokenSource();
+        using var queue = new GeometryMeasurementQueue<object, object>(ui.Enqueue, ui.Enqueue,
+            (_, action) => delays.Enqueue(action), _ => throw new InvalidOperationException("No geometry should prepare"), () => { },
+            (_, position) => position >= 0 && position < 1000000, (_, __) => false, (_, __) => true,
+            _ => null, () => { }, (_, __) => { if (++checks == cancelAt) cancellation.Cancel(); return true; });
+        queue.Attach(snapshot, false);
+        var work = queue.MeasureAllAsync(snapshot, 1000000, cancellation.Token);
+        ui.Dequeue()();
+        Assert.InRange(checks, 1, GeometryMeasurementQueue<object, object>.DemandChunkSize);
+        while (!work.IsCompleted) { Assert.NotEmpty(delays); delays.Dequeue()(); }
+        while (ui.Count > 0) ui.Dequeue()();
+        Assert.False(work.Result); Assert.Equal(cancelAt, checks);
+        Assert.InRange(delays.Count, 0, 1); Assert.Equal(0, queue.EntryCountForTesting);
+    }
+
+    [Fact]
+    public void MeasurementMapFreezeYieldsAndCancelsBeforeScanningAMillionPositions()
+    {
+        using var fixture = new Fixture();
+        var measured = fixture.Measure(CancellationToken.None, 0, 1, 2);
+        fixture.Ui();
+        while (!measured.IsCompleted) { if (fixture.Delays.Count > 0) fixture.Delay(); if (!fixture.Workers.IsEmpty) fixture.Worker(); fixture.Ui(); }
+        Assert.True(measured.Result);
+        using var cancellation = new CancellationTokenSource();
+        fixture.Queue.DiagnosticsForTesting = true; fixture.Queue.ResetDiagnosticsForTesting();
+        var frozen = fixture.Queue.CaptureCompletedAsync(fixture.Current, 1000000, cancellation.Token);
+        fixture.Ui();
+        Assert.False(frozen.IsCompleted); Assert.Single(fixture.Delays);
+        cancellation.Cancel(); fixture.Delay(); fixture.Ui();
+        Assert.Null(frozen.Result);
+        Assert.InRange(fixture.Queue.SourceChecksForTesting, 1, 3);
+        var complete = fixture.Queue.CaptureCompletedAsync(fixture.Current, 3, CancellationToken.None); fixture.Ui();
+        Assert.Equal(3, complete.Result!.Count);
+        fixture.Attach(new Snapshot(new Source(99)), false);
+        Assert.Equal(3, complete.Result.Count); // the projection owns immutable values, not the mutable cache
+    }
+
     [Fact]
     public void SessionAdmissionGuardsCrossQueueReentryAndPrioritizesDThenColumns()
     {
@@ -194,7 +238,7 @@ public class GeometryQueueTests
         fixture.SourceCurrent = (_, __) => { sourceChecks++; return true; };
         var batch = fixture.Measure(CancellationToken.None, positions);
         fixture.Ui();
-        while (!batch.IsCompleted) { fixture.Delay(); fixture.Worker(); fixture.Ui(); }
+        while (!batch.IsCompleted) { if (fixture.Delays.Count > 0) fixture.Delay(); if (!fixture.Workers.IsEmpty) fixture.Worker(); fixture.Ui(); }
         Assert.True(batch.Result && fixture.Computations == count && fixture.Queue.EntryCountForTesting == count,
             "scan-count control populates every entry through the production worker queue");
         var queue = fixture.Queue;
@@ -885,7 +929,7 @@ public class GeometryQueueTests
         fixture.Attach(new Snapshot(sources), false);
         var batch = fixture.Measure(CancellationToken.None, positions);
         fixture.Ui();
-        while (!batch.IsCompleted) { fixture.Delay(); fixture.Worker(); fixture.Ui(); }
+        while (!batch.IsCompleted) { if (fixture.Delays.Count > 0) fixture.Delay(); if (!fixture.Workers.IsEmpty) fixture.Worker(); fixture.Ui(); }
         Assert.True(batch.Result, "large batch completes");
         int preparedBefore = fixture.PreparedPositions.Count;
         fixture.Attach(new Snapshot(sources), true);

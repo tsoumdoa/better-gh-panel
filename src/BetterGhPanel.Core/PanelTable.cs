@@ -264,9 +264,9 @@ namespace BetterGhPanel.Core
         internal static bool ShowCellTypes(PanelSnapshot? snapshot) => snapshot != null &&
             (snapshot.TypeCounts.Count > 1 || snapshot.TypeCounts.Keys.Any(type =>
                 type != "Text" && type != "String" && type != "Number" && type != "Integer" && type != "Boolean"));
-        internal static string Summary(IReadOnlyList<string> preview, int count, bool set = true, bool compact = false) => count == 0 ? set ? "<empty set>" : "<empty branch>" :
+        internal static string Summary(IReadOnlyList<string> preview, int count, bool set = true) => count == 0 ? set ? "<empty set>" : "<empty branch>" :
             string.Join(" · ", preview.Select(PanelValuePresentation.Visualize).Select(value => value.Length <= 120 ? value : value.Substring(0, 119) + "…")) +
-            (count > preview.Count ? " … +" + (count - preview.Count) + (compact ? "" : set ? " in this set" : " items") : "");
+            (count > preview.Count ? " … +" + (count - preview.Count) + (set ? " in this set" : " items") : "");
         internal static string Value(PanelRow row, PanelUnitConversion conversion, int decimals, double factor) =>
             !row.IsNull && row.IsValid && row.NumericValue.HasValue
                 ? PanelUnits.Format(PanelUnits.Transform(row.NumericValue.Value, conversion, factor, decimals), PanelUnitConversion.None, decimals)
@@ -282,7 +282,7 @@ namespace BetterGhPanel.Core
             PanelUnitConversion conversion, int decimals, double factor, bool homogeneous = false)
         {
             double? value = null;
-            if (row.IsValid && !row.IsNull && geometry?.Value is double metric && !geometry.MeasurementUnavailable &&
+            if (row.IsValid && !row.IsNull && geometry?.Value is double metric &&
                 metric >= 0 && !double.IsNaN(metric) && !double.IsInfinity(metric))
             {
                 double presented = PanelUnits.Transform(PanelUnits.ConvertGeometry(metric, geometry.Power, geometry.Units, conversion),
@@ -292,6 +292,10 @@ namespace BetterGhPanel.Core
             return new PanelRow(row.OriginalIndex, row.Path, row.TypeName,
                 GeometryCell(row, geometry, homogeneous, false, conversion, decimals, factor), value, isNull: !value.HasValue);
         }
+
+        internal static PanelRow SummarySortRow(PanelRow row, PanelGeometryInfo? geometry, bool homogeneous,
+            PanelUnitConversion conversion, int decimals, double factor) => new PanelRow(row.OriginalIndex, row.Path,
+                row.TypeName, GeometryCell(row, geometry, homogeneous, false, conversion, decimals, factor), null);
 
         internal static bool HasGeometryMetric(PanelGeometryInfo? geometry) => geometry != null &&
             (geometry.CanMeasure || geometry.Value.HasValue || geometry.MeasurementUnavailable);
@@ -303,7 +307,7 @@ namespace BetterGhPanel.Core
             if (!row.IsValid) return row.Validity == PanelValidity.VerifiedInvalid ? "invalid" : "unverified";
             if (!HasGeometryMetric(geometry)) return Value(row, conversion, decimals, factor);
             if (measuring) return "measuring…";
-            string number = geometry!.Value.HasValue && !geometry.MeasurementUnavailable
+            string number = geometry!.Value is double primary && primary >= 0 && !double.IsNaN(primary) && !double.IsInfinity(primary)
                 ? PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units, conversion, decimals,
                     includeUnits: !homogeneous, roundUpFactor: factor) : "unavailable";
             return homogeneous ? number : StockTypeLabels.ShortName(row.TypeName) +
@@ -324,7 +328,12 @@ namespace BetterGhPanel.Core
             return first;
         }
         internal static string GeometryHeaderUnit(PanelGeometryInfo? metric, PanelUnitConversion conversion) =>
-            metric != null && metric.Power > 0 ? PanelUnits.GeometryUnitSymbol(metric.Power, metric.Units, conversion) : "";
+            metric != null && metric.Power > 0 ? GeometryUnit(metric, conversion) : "";
+        private static string GeometryUnit(PanelGeometryInfo metric, PanelUnitConversion conversion)
+        {
+            string converted = PanelUnits.GeometryUnitSymbol(metric.Power, metric.Units, conversion);
+            return converted.Length > 0 ? converted : metric.Units + (metric.Power == 2 ? "²" : metric.Power == 3 ? "³" : "");
+        }
 
         internal static string GeometryHeaderSuffix(PanelGeometryInfo? metric, PanelUnitConversion conversion)
         {
@@ -346,7 +355,7 @@ namespace BetterGhPanel.Core
             foreach (var row in rows) Line(new[] { row.Path, row.Index.ToString(CultureInfo.InvariantCulture) }.Concat(row.Values));
             return text.ToString();
         }
-        private static string Escape(string value) => value.IndexOfAny(new[] { '\t', '\r', '\n', '"' }) < 0 ? value :
+        internal static string Escape(string value) => value.IndexOfAny(new[] { '\t', '\r', '\n', '"' }) < 0 ? value :
             "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 }
