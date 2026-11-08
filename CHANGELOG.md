@@ -1,9 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.3.0-beta
 
-- **Geometry in table columns.** Add optional columns beside frozen D, with independent pairing, saved widths, sorting and TSV copy. Geometry cells show background measurements with type/shape details in tooltips. Single-metric columns use number-only cells and metric/unit headers, retaining model units unless a matching conversion applies; mixed kinds use aligned type/symbol/value/unit text. Copy waits for measurements, summaries use the same suffixes as other columns, and hidden tables measure only the active sort column. D/S/B/F outputs and D-only preview/search/filter behavior stay unchanged. Opening a file with added columns in an older Panel+ version drops those added inputs.
-- **Column titles input.** Toggle **Column titles input** in the component menu for optional H, always last. H item 0 titles D, item 1 titles F even when F is absent, and items 2+ title added columns. Empty titles keep port nicknames. Headers, tooltips, column notes, sort labels and TSV share the titles; ports keep their names. H and its wire support save/reload and Undo, and title changes use a normal solve.
+- **Breaking: D|F is now the Table.** The **D|F** chip is replaced by **Table**, and the two side-by-side panes by one list with D frozen on the left. Linked and independent scrolling are gone. Files saved with D|F on open as a table with F as its first column. F's input and output are unchanged.
+- **Breaking: copying and display with the table on.** Ctrl/Cmd+C and **Copy as table** copy whole rows with a header row, every visible column included. Units, rounding and decimal places now also change how F's numbers are shown; the F output stays raw. Turning the table on widens the panel to fit its columns once, instead of always doubling it.
+- **Files saved with added columns need this version.** Opening one in an older Panel+ keeps D and F but drops the added inputs and the column titles input.
+- **Table columns.** Right-click the component → **Add column** to show any number of named, view-only columns beside D; each header is its input's name. Click a header to sort (▲ / ▼ / off), drag its border to resize, and scroll sideways with D frozen. Columns pair with D like F does: missing cells show "—", branch headings show "9 of 10" or "+1 extra", and a column with a different branch count gets an amber header. D, S, B and F outputs are unchanged.
+- **Geometry in columns.** Geometry is measured in the background, like D. A column with one kind of measurement shows just the numbers, with the metric and unit in its header (`Edges · L · mm`) and shape details in the tooltip; mixed columns show `Crv L 4.20 m`. Sorting uses the shown value, and copying waits for measurements still in progress.
+- **Column titles input.** Tick **Column titles input** in the component menu for an optional H input, always last. Item 0 titles D, item 1 titles F (even when F is unwired), and the rest title the added columns. Empty items keep the input's name, and port names don't change.
+- **Validation.** Tested live in Rhino 8 on Windows with real geometry. The automated Rhino fixtures could not run for this release because their hidden host would not start on the validation machine.
+
 
 ## 0.2.8-beta
 
