@@ -100,7 +100,7 @@ namespace BetterGhPanel
 
         private PanelLayout _layout = new PanelLayout();
         // Measured at paint: the search mode chip and the Units label widths.
-        private float _searchChipWidth = 38, _unitsWidth = 48;
+        private float _searchChipWidth = 38, _unitsWidth = 48, _sortChipWidth = 43;
 
         // Units may widen until the two-line footer status keeps room for a
         // "D: 1 filter ×" chip (59 units; 300-wide panels keep the 48 minimum).
@@ -155,14 +155,14 @@ namespace BetterGhPanel
             // drops below a readable query such as "Length > 800".
             float squeeze = Math.Max(0, Math.Min(34, 120 - (panel.Width - 212)));
             float typeWidth = 76 - Math.Min(20, squeeze), branchWidth = 64 - Math.Max(0, squeeze - 20);
-            search = new RectangleF(x + 2, panel.Y + 25, panel.Width - 212 + squeeze, 21);
+            search = new RectangleF(x + 2, panel.Y + 25, panel.Width - 212 + squeeze - (_sortChipWidth - 43), 21);
             // The mode chip leads the field beyond the wire-grip strip and leaves
             // room for a short query; long property labels are ellipsized.
             filter = new RectangleF(panel.X + 14, search.Y,
                 Math.Min(_searchChipWidth, Math.Max(56, Math.Min(120, search.Right - panel.X - 64))), search.Height);
             searchClear = new RectangleF(search.Right - 18, search.Y, 16, search.Height);
             type = new RectangleF(search.Right + 3, search.Y, typeWidth, 21);
-            sort = new RectangleF(type.Right + 3, search.Y, 43, 21);
+            sort = new RectangleF(type.Right + 3, search.Y, _sortChipWidth, 21);
             branch = new RectangleF(sort.Right + 3, search.Y, branchWidth, 21);
             branchClear = new RectangleF(branch.Right - 30, branch.Y, 16, branch.Height);
             close = new RectangleF(panel.Right - 34, panel.Y + 2, 20, 18);

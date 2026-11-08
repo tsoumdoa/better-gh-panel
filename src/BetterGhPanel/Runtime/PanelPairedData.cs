@@ -16,9 +16,9 @@ namespace BetterGhPanel.Runtime
         {
             internal readonly string DataCount;
             internal readonly bool Unequal;
-            internal readonly int Total;
+            internal readonly int Total, DataTotal;
             internal PairHeading(int count, int dataCount, bool unequal)
-            { DataCount = "D " + dataCount; Total = count; Unequal = unequal; }
+            { DataCount = "D " + dataCount; DataTotal = dataCount; Total = count; Unequal = unequal; }
         }
         // Built during filtered output, never by expanding members while painting.
         internal sealed class Summary

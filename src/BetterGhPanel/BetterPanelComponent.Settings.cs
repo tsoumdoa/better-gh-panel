@@ -33,7 +33,36 @@ namespace BetterGhPanel
         internal string PreviewStatus => _highlight.Status;
         internal float EffectiveCanvasHeight => CanvasPanelSize.FullHeightForInputs(CanvasHeight, Params.Input.Count);
         internal float DisplayHeight => CanvasDisplay == CanvasPanelDisplay.Half ? EffectiveCanvasHeight / 2 : EffectiveCanvasHeight;
-        internal float DisplayWidth => CanvasWidth * (PanelSplit ? 2 : 1);
+        internal float TableWidthScale { get; private set; } = 2;
+        internal float DisplayWidth => CanvasWidth * (PanelSplit ? TableWidthScale : 1);
+        private sealed class TableViewState
+        {
+            internal readonly bool Split;
+            internal float Scale;
+            internal bool Fit;
+            internal TableViewState(bool split, float scale, bool fit = false) { Split = split; Scale = scale; Fit = fit; }
+        }
+        private TableViewState? _fittingTableState;
+        internal void FitTableWidth(float desired)
+        {
+            TableWidthScale = Math.Max(1, Math.Min(2, desired / CanvasWidth));
+            if (_fittingTableState != null) { _fittingTableState.Scale = TableWidthScale; _fittingTableState.Fit = false; }
+            _fittingTableState = null;
+            Attributes.ExpireLayout();
+            OnPingDocument()?.Modified();
+        }
+        private void RestoreTableView(TableViewState state)
+        {
+            _fittingTableState = null;
+            (Attributes as BetterPanelAttributes)?.CancelTableFit();
+            TableWidthScale = state.Scale;
+            ApplyPanelSplit(state.Split);
+            if (state.Split && state.Fit)
+            {
+                _fittingTableState = state;
+                (Attributes as BetterPanelAttributes)?.RequestTableFit();
+            }
+        }
         internal int TrimDepth { get; private set; }
         internal bool FlattenTree { get; private set; }
         internal bool ReverseTree { get; private set; }
@@ -187,6 +216,9 @@ namespace BetterGhPanel
         internal void SetCanvasSize(float width, float height)
         {
             (Attributes as BetterPanelAttributes)?.InvalidatePaintedHits();
+            (Attributes as BetterPanelAttributes)?.CancelTableFit();
+            if (_fittingTableState != null) _fittingTableState.Fit = false;
+            _fittingTableState = null;
             CanvasWidth = CanvasPanelSize.Width(width);
             CanvasHeight = CanvasPanelSize.Height(height);
             Attributes.ExpireLayout();
@@ -295,8 +327,11 @@ namespace BetterGhPanel
         internal void SetPanelSplit(bool split)
         {
             if (PanelSplit == split || split && !CanSplit) return;
-            RecordUndoEvent("Panel+ Table view", new PanelUndo<bool>(InstanceGuid, PanelSplit, split, (component, value) => component.ApplyPanelSplit(value)));
-            ApplyPanelSplit(split);
+            var before = new TableViewState(PanelSplit, TableWidthScale);
+            var after = new TableViewState(split, 2, split);
+            RecordUndoEvent("Panel+ Table view", new PanelUndo<TableViewState>(InstanceGuid, before, after,
+                (component, state) => component.RestoreTableView(state)));
+            RestoreTableView(after);
         }
 
         private void ApplyPanelSplit(bool split)
@@ -383,6 +418,7 @@ namespace BetterGhPanel
             // Retain the legacy key for older plug-in versions; dimensions take precedence.
             writer.SetInt32("PanelSize", PreviewSize < 0 ? 1 : PreviewSize);
             writer.SetSingle("PanelWidth", CanvasWidth);
+            if (TableWidthScale != 2) writer.SetSingle("PanelTableWidthScale", TableWidthScale);
             writer.SetSingle("PanelHeight", CanvasHeight);
             writer.SetInt32("PanelDisplay", (int)CanvasDisplay);
             writer.SetBoolean("PanelMinimized", PanelMinimized);
@@ -460,6 +496,11 @@ namespace BetterGhPanel
             reader.TryGetSingle("PanelHeight", ref height);
             CanvasWidth = CanvasPanelSize.Width(width);
             CanvasHeight = CanvasPanelSize.Height(height);
+            float tableScale = 2;
+            reader.TryGetSingle("PanelTableWidthScale", ref tableScale);
+            TableWidthScale = float.IsNaN(tableScale) || float.IsInfinity(tableScale) ? 2 : Math.Max(1, Math.Min(2, tableScale));
+            _fittingTableState = null;
+            (Attributes as BetterPanelAttributes)?.CancelTableFit();
             int display = 0;
             reader.TryGetInt32("PanelDisplay", ref display);
             CanvasDisplay = Enum.IsDefined(typeof(CanvasPanelDisplay), display)

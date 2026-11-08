@@ -20,6 +20,8 @@ namespace BetterGhPanel.Runtime
         internal CapturedMeasurementSource?[] Measurements { get; private set; } = Array.Empty<CapturedMeasurementSource?>();
         internal CaptureGraphWitness[] Graphs { get; private set; } = Array.Empty<CaptureGraphWitness>();
         internal bool HasGeometry { get; private set; }
+        internal bool ShowCellTypes => PanelTableText.ShowCellTypes(Snapshot);
+        internal bool Numeric => PanelTableText.NumericColumn(Snapshot);
         internal PanelTableColumn(IGH_Param input, PanelPairedData? pair, GH_Structure<IGH_Goo>? tree, string? error, bool present, GH_Structure<IGH_Goo>? liveTree)
         { Input = input; Pair = tree?.DataCount == 0 ? null : pair; Tree = tree; LiveTree = liveTree; Error = error; Present = present; }
         internal PanelRow? Row(int position) => Pair?.ItemAt(position) is int item ? Snapshot?.Rows[item] : null;

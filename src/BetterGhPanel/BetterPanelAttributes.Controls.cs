@@ -165,6 +165,7 @@ namespace BetterGhPanel
         private GH_ObjectResponse? ClickResize(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             var point = e.CanvasLocation;
+            CancelTableFit();
             PanelOwner.RecordUndoEvent("Panel+ resize");
             _resizing = true; _dragStart = point; _startWidth = _layout.Panel.Width; _startHeight = _layout.Panel.Height;
             return GH_ObjectResponse.Capture;
@@ -395,9 +396,9 @@ namespace BetterGhPanel
             var options = PanelOwner.Session.Options;
             e.Title = _layout.Type.Contains(point) ? "Filter by type" : _layout.Sort.Contains(point) ? "Sort this view" : "Filter by branch";
             e.Text = _layout.Type.Contains(point) ? PanelOwner.Session.HasCurrentResult ? CanvasMenu.TypeHint(PanelOwner.Session.Result, options) : "Types" :
-                _layout.Sort.Contains(point) ? options.SortMode.ToString() : options.BranchPath ?? "All branches";
+                _layout.Sort.Contains(point) ? (SortedColumnName(options) ?? "D") + " · " + options.SortMode : options.BranchPath ?? "All branches";
             e.Description = _layout.Sort.Contains(point)
-                ? "Asc/Desc sorts items within each branch. Sorting changes the view only. Output keeps its tree order."
+                ? "Sorting " + (SortedColumnName(options) ?? "D") + " changes the view within each branch only. Choosing Asc/Desc here sorts by D; output keeps its tree order."
                 : "Filters change both the view and the output wire.";
             if (_layout.Type.Contains(point) && PanelOwner.Session.HasCurrentResult)
                 e.Description = (PanelOwner.Session.Result.RowPositions.Count > 0 ? "Visible types: " : "Source types: ") +

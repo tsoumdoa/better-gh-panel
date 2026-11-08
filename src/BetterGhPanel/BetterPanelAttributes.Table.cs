@@ -26,6 +26,27 @@ namespace BetterGhPanel
         private Guid _headerSortColumn;
         private readonly Dictionary<Guid, float> _autoWidths = new Dictionary<Guid, float>();
         private PanelQueryResult? _autoWidthResult;
+        private bool _fitTablePending;
+        internal void RequestTableFit() => _fitTablePending = true;
+        internal void CancelTableFit() => _fitTablePending = false;
+        private void FitTableOnPaint(Graphics g, PanelQueryResult result, Font font)
+        {
+            if (!_fitTablePending || !TableVisible || !PanelOwner.Session.HasCurrentResult ||
+                !PanelOwner.TableSummariesCurrent) return;
+            using var renderer = new CanvasRowRenderer(g, result.Snapshot.Rows.Count, PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder);
+            if (PanelOwner.CreateSetTree) SizeSetColumn(g, renderer, result);
+            PrepareTable(g, result, font, renderer.GutterWidth);
+            float desired = renderer.GutterWidth + _autoWidths.Values.Sum(width => Math.Min(320, width)) + 36;
+            _fitTablePending = false;
+            PanelOwner.FitTableWidth(desired);
+            Layout();
+            _preservePaintedTargets = false;
+        }
+        private string? SortedColumnName(PanelQueryOptions options) => options.SortColumn == Guid.Empty ? null :
+            PanelOwner.TableColumns.FirstOrDefault(column => column.Input.InstanceGuid == options.SortColumn)?.Input.NickName;
+        private string SortChipLabel(PanelQueryOptions options) => options.SortMode == PanelSortMode.SourceOrder ? "Sort" :
+            SortedColumnName(options) is string name ? name + (options.SortMode == PanelSortMode.ValueAscending ? " ▲" : " ▼") :
+            options.SortMode == PanelSortMode.ValueAscending ? "Asc" : "Desc";
         private bool TableVisible => !_tableHeader.IsEmpty;
         internal bool EffectiveTableVisible => TableVisible && !PanelOwner.PanelMinimized && (_paintedCanvas?.Viewport.Zoom ?? 1f) >= 0.5f;
         private RectangleF ListBounds => _d.List;
@@ -117,7 +138,7 @@ namespace BetterGhPanel
             float Measure(string value, bool numeric = false) => TightWidth(g, Short(value, 256).Replace('\r', ' ').Replace('\n', ' '), numeric ? number : font);
             using var headerFont = new Font(font, FontStyle.Bold);
             var widths = new float[PanelOwner.TableColumns.Count + 1];
-            for (int index = 0; index < widths.Length; index++) widths[index] = Math.Max(48, TightWidth(g, ColumnTitle(index), headerFont) + 16);
+            for (int index = 0; index < widths.Length; index++) widths[index] = Math.Max(48, TightWidth(g, ColumnTitle(index), headerFont) + 24);
             if (DisplayListLengths)
             {
                 int end = Math.Min(result.BranchPaths.Count, _d.Offset + (int)(_d.List.Height / RowHeight));
@@ -152,21 +173,37 @@ namespace BetterGhPanel
                     if (item < 0)
                     {
                         if (extra >= 0)
+                        {
+                            using var noteFont = new Font(font.FontFamily, 10, FontStyle.Regular, GraphicsUnit.Pixel);
+                            widths[0] = Math.Max(widths[0], TightWidth(g, ExtraNote(result, extra), noteFont) + 16 - gutter);
                             for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
                             {
                                 int cell = TableIndex(result).Entries[extra].Cells[column];
                                 var source = PanelOwner.TableColumns[column];
                                 if (cell >= 0 && source.Snapshot != null)
-                                    widths[column + 1] = Math.Max(widths[column + 1], Measure(source.Value(source.Snapshot.Rows[cell], PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor), source.Snapshot.Rows[cell].NumericValue.HasValue) + 60);
+                                    widths[column + 1] = Math.Max(widths[column + 1], Measure(source.Value(source.Snapshot.Rows[cell], PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor), source.Snapshot.Rows[cell].NumericValue.HasValue) + (source.ShowCellTypes ? 60 : 12));
                             }
+                        }
                         continue;
                     }
                     int position = result.RowPositions[item];
-                    widths[0] = Math.Max(widths[0], Measure(PanelOwner.DisplayValue(result.Snapshot, result.Snapshot.Rows[position], position), result.Snapshot.Rows[position].NumericValue.HasValue) + 60);
+                    var dataRow = result.Snapshot.Rows[position];
+                    bool metric = PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null;
+                    bool showType = ShowDataTypes(result) && (metric || dataRow.GeometryInfo == null || StockTypeLabels.SeparateLabel(dataRow.TypeName));
+                    bool numeric = result.DisplaySet != null ? result.DisplaySet.Values[position].Number.HasValue :
+                        metric ? !PanelProperties.IsProperty(PanelOwner.Session.Options.SearchMode) || PanelProperties.Kind(PanelOwner.Session.Options.SearchMode) == PanelPropertyKind.Number : dataRow.NumericValue.HasValue;
+                    var statuses = CanvasStatistics.RowSourceStatuses(result, position);
+                    float reserved = (PanelOwner.CreateSetTree ? _setCountWidth : 0) + (showType ? TypeColumnWidth + CellGap : 12) + 6 +
+                        (statuses.VerifiedInvalid > 0 || statuses.Unverified > 0 ? 12 : 0);
+                    widths[0] = Math.Max(widths[0], Measure(PanelOwner.DisplayValue(result.Snapshot, dataRow, position), numeric) + reserved);
                     for (int index = 1; index < widths.Length; index++)
-                        widths[index] = Math.Max(widths[index], Measure(ColumnCell(result, position, index - 1), PanelOwner.TableColumns[index - 1].Row(position)?.NumericValue.HasValue == true) + 60);
+                        widths[index] = Math.Max(widths[index], Measure(ColumnCell(result, position, index - 1), result.DisplaySet == null && PanelOwner.TableColumns[index - 1].Row(position)?.NumericValue.HasValue == true) + (result.DisplaySet == null && PanelOwner.TableColumns[index - 1].ShowCellTypes ? 60 : 12));
                 }
             }
+            foreach (string path in result.BranchPaths.Skip(Math.Min(_d.Offset, result.BranchPaths.Count)).Take(Math.Max(1, (int)(_d.List.Height / RowHeight))))
+                for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
+                    if (ColumnHeading(path, column) is PanelPairedData.PairHeading heading && heading.Unequal)
+                        widths[column + 1] = Math.Max(widths[column + 1], Measure(heading.Total + " of " + heading.DataTotal) + 20);
             // Auto-fit only grows while the result stays the same, so scrolling never makes columns jump.
             if (!ReferenceEquals(_autoWidthResult, result)) { _autoWidths.Clear(); _autoWidthResult = result; }
             for (int index = 0; index < widths.Length; index++)
@@ -227,10 +264,10 @@ namespace BetterGhPanel
             g.DrawLine(line, _tableHeader.X, _tableHeader.Bottom - 1, _tableHeader.Right, _tableHeader.Bottom - 1);
         }
 
-        private void DrawTableCell(Graphics g, CanvasRowRenderer renderer, PanelRow? row, string value, RectangleF bounds, Font font, Font small, bool muted = false)
+        private void DrawTableCell(Graphics g, CanvasRowRenderer renderer, PanelRow? row, string value, RectangleF bounds, Font font, Font small, bool muted = false, bool showType = false)
         {
-            bool showType = row != null && (row.GeometryInfo == null || StockTypeLabels.SeparateLabel(row.TypeName));
-            float typeWidth = showType && bounds.Width >= 90 ? Math.Min(44, bounds.Width / 3) : 0;
+            showType = showType && row != null;
+            float typeWidth = showType ? Math.Min(44, Math.Max(0, bounds.Width - 12)) : 0;
             renderer.DrawValue(g, PanelValuePresentation.Visualize(value), font, muted ? Muted : Ink,
                 new RectangleF(bounds.X + 6, bounds.Y, Math.Max(0, bounds.Width - typeWidth - 12), bounds.Height), row?.NumericValue.HasValue == true);
             if (typeWidth > 0) renderer.DrawCell(g, CanvasMenu.ShortTypeName(row!.TypeName), small, Muted,
@@ -254,11 +291,34 @@ namespace BetterGhPanel
                             ViewEntry(result, offset - 1, out int previous, out _, out _, out _);
                             firstMissing = previous < 0 || result.Snapshot.Rows[result.RowPositions[previous]].Path != result.Snapshot.Rows[position].Path || column.Row(result.RowPositions[previous]) != null;
                         }
-                        if (column.Pair != null && firstMissing) renderer.DrawCell(g, "—", small, Muted, new RectangleF(cell.X + 6, cell.Y, cell.Width - 12, RowHeight));
+                        float typeWidth = column.ShowCellTypes ? Math.Min(44, Math.Max(0, cell.Width - 12)) : 0;
+                        if (column.Pair != null && firstMissing) renderer.DrawCell(g, "—", small, Muted,
+                            new RectangleF(cell.X + 6, cell.Y, Math.Max(0, cell.Width - 12 - typeWidth), RowHeight), column.Numeric);
                     }
-                    else DrawTableCell(g, renderer, result.DisplaySet == null ? row : null, ColumnCell(result, position, columnIndex), cell, font, small);
+                    else DrawTableCell(g, renderer, result.DisplaySet == null ? row : null, ColumnCell(result, position, columnIndex), cell, font, small, showType: column.ShowCellTypes);
                 });
             }
+        }
+
+        private string ExtraNote(PanelQueryResult result, int offset)
+        {
+            var entry = TableIndex(result).Entries[offset];
+            var notes = new List<string>();
+            bool hidden = false;
+            for (int index = 0; index < entry.Cells.Count; index++)
+            {
+                int item = entry.Cells[index];
+                var column = PanelOwner.TableColumns[index];
+                if (item < 0 || column.Pair == null) continue;
+                var pair = column.Pair.PairAtPaired(item);
+                bool only = item - pair.PairedOffset >= pair.Data.ItemCount;
+                bool first = offset == 0 || !TableIndex(result).Entries[offset - 1].Extra || TableIndex(result).Entries[offset - 1].Cells[index] < 0 ||
+                    !ReferenceEquals(pair, column.Pair.PairAtPaired(TableIndex(result).Entries[offset - 1].Cells[index])) ||
+                    (TableIndex(result).Entries[offset - 1].Cells[index] - pair.PairedOffset >= pair.Data.ItemCount) != only;
+                if (first) { if (only) notes.Add(column.Input.NickName); else hidden = true; }
+            }
+            return (hidden ? "paired with hidden D rows" : "") +
+                (hidden && notes.Count > 0 ? "; " : "") + (notes.Count > 0 ? "only in " + string.Join(", ", notes) : "");
         }
 
         private void DrawTableExtra(Graphics g, CanvasRowRenderer renderer, PanelQueryResult result, int offset, RectangleF bounds, Font font, Font small)
@@ -269,37 +329,41 @@ namespace BetterGhPanel
                 int item = entry.Cells[index];
                 var column = PanelOwner.TableColumns[index];
                 if (item < 0 || column.Snapshot == null || column.Pair == null) continue;
-                var pair = column.Pair.PairAtPaired(item);
-                bool only = item - pair.PairedOffset >= pair.Data.ItemCount;
-                bool first = offset == 0 || !TableIndex(result).Entries[offset - 1].Extra || TableIndex(result).Entries[offset - 1].Cells[index] < 0 ||
-                    !ReferenceEquals(pair, column.Pair.PairAtPaired(TableIndex(result).Entries[offset - 1].Cells[index])) ||
-                    (TableIndex(result).Entries[offset - 1].Cells[index] - pair.PairedOffset >= pair.Data.ItemCount) != only;
                 string value = column.Value(column.Snapshot.Rows[item], PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
-                string note = !first ? "" : only ? "only in " + column.Input.NickName : "paired with hidden D rows";
                 PaintColumn(g, index + 1, bounds.Y, RowHeight, cell =>
-                {
-                    float noteWidth = note.Length == 0 ? 0 : Math.Min(cell.Width * 0.6f, TightWidth(g, note, small) + 10);
-                    if (noteWidth > 0) renderer.DrawCell(g, note, small, Muted, new RectangleF(cell.X + 6, cell.Y, Math.Max(0, noteWidth - 8), cell.Height));
-                    DrawTableCell(g, renderer, column.Snapshot.Rows[item], value,
-                        new RectangleF(cell.X + noteWidth, cell.Y, cell.Width - noteWidth, cell.Height), font, small, muted: true);
-                });
+                    DrawTableCell(g, renderer, column.Snapshot.Rows[item], value, cell, font, small, muted: true, showType: column.ShowCellTypes));
             }
+            string note = ExtraNote(result, offset);
+            var state = g.Save();
+            g.SetClip(new RectangleF(bounds.X, bounds.Y, _frozenWidth, bounds.Height), CombineMode.Intersect);
+            renderer.DrawCell(g, note, small, Muted, new RectangleF(bounds.X + 6, bounds.Y, Math.Max(0, _frozenWidth - 12), bounds.Height));
+            g.Restore(state);
         }
 
-        private string[] LengthWarnings(string path) => PanelOwner.TableColumns.Where(column => column.Pair != null)
-            .Select(column => (Column: column, Heading: column.Pair!.Heading(path, PanelPairedData.EmptyPartnersInScope(PanelOwner.Session.Options))))
-            .Where(value => value.Heading.Unequal).Select(value => value.Column.Input.NickName + " " + value.Heading.Total + " / " + value.Heading.DataCount).ToArray();
+        private PanelPairedData.PairHeading? ColumnHeading(string path, int column) =>
+            PanelOwner.TableColumns[column].Pair?.Heading(path, PanelPairedData.EmptyPartnersInScope(PanelOwner.Session.Options));
+        private string? ColumnLengthWarning(string path, int column) => ColumnHeading(path, column) is PanelPairedData.PairHeading heading && heading.Unequal
+            ? PanelOwner.TableColumns[column].Input.NickName + " has " + heading.Total + " items; D has " + heading.DataTotal + "." : null;
+        private string[] LengthWarnings(string path) => Enumerable.Range(0, PanelOwner.TableColumns.Count)
+            .Select(column => ColumnLengthWarning(path, column)).Where(value => value != null).Cast<string>().ToArray();
 
         private void DrawTableBadge(Graphics g, string path, RectangleF bounds, Font small, StringFormat trim)
         {
-            var warnings = LengthWarnings(path);
-            if (warnings.Length == 0) return;
-            float width = Math.Min(bounds.Width - _frozenWidth - 12, TightWidth(g, warnings[0], small) + 10);
-            if (width < 30) return;
-            var badge = new RectangleF(bounds.X + _frozenWidth + 6, bounds.Y + 1, width, bounds.Height - 2);
-            using var pen = new Pen(PanelTheme.PairingWarning, 0.75f);
-            g.DrawRectangle(pen, badge.X, badge.Y, badge.Width, badge.Height);
-            Text(g, warnings[0], small, PanelTheme.PairingWarning, new RectangleF(badge.X + 4, badge.Y, badge.Width - 8, badge.Height), trim);
+            for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
+            {
+                if (!(ColumnHeading(path, column) is PanelPairedData.PairHeading heading) || !heading.Unequal) continue;
+                string text = heading.Total + " of " + heading.DataTotal;
+                float width = TightWidth(g, text, small) + 10;
+                PaintColumn(g, column + 1, bounds.Y, bounds.Height, cell =>
+                {
+                    var badge = new RectangleF(cell.X + 6, bounds.Y + 1, width, bounds.Height - 2);
+                    using var pen = new Pen(PanelTheme.PairingWarning, 0.75f);
+                    g.DrawRectangle(pen, badge.X, badge.Y, badge.Width, badge.Height);
+                    using var untrimmed = (StringFormat)trim.Clone();
+                    untrimmed.Trimming = StringTrimming.None;
+                    Text(g, text, small, PanelTheme.PairingWarning, new RectangleF(badge.X + 4, badge.Y, badge.Width - 8, badge.Height), untrimmed);
+                });
+            }
         }
 
         private void RenderTableRows(Graphics g, PanelQueryResult result, RectangleF visibleRegion, Font font, Font small, Font mono, StringFormat trim)
@@ -430,6 +494,8 @@ namespace BetterGhPanel
             if (index > 0)
             {
                 var column = PanelOwner.TableColumns[index - 1];
+                if (!column.ShowCellTypes && column.Snapshot?.TypeCounts.Count == 1)
+                    e.Text = column.Snapshot.TypeCounts.Keys.First();
                 if (!column.Present) e.Description = column.Input.NickName + " is not wired.";
                 else if (column.Pair == null) e.Description = column.Tree == null || column.Tree.DataCount == 0 ? column.Input.NickName + " has no usable data." :
                     column.Input.NickName + " has " + column.Tree.PathCount + " branches; D has " + PanelOwner.InputBranchCount + ".";

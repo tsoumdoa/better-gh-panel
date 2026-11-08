@@ -387,10 +387,14 @@ namespace BetterGhPanel
                     session.RequestGeometryMeasurements(session.Snapshot, Array.Empty<int>());
                     return;
                 }
+                FitTableOnPaint(graphics, result, font);
                 // Chip and Units widths follow their labels, so measure them before laying out.
                 float searchChipWidth = (float)Math.Ceiling(TightWidth(graphics, CanvasMenu.SearchModeChip(session.Options.SearchMode), small)) + 19;
                 float unitsWidth = (float)Math.Ceiling(graphics.MeasureString(UnitsLabel(), small, PointF.Empty, trim).Width) + 18;
-                bool resized = searchChipWidth != _searchChipWidth || unitsWidth != _unitsWidth;
+                float sortChipWidth = session.Options.SortMode != PanelSortMode.SourceOrder && SortedColumnName(session.Options) != null
+                    ? Math.Max(43, Math.Min(96, TightWidth(graphics, SortChipLabel(session.Options), small) + 27)) : 43;
+                bool resized = searchChipWidth != _searchChipWidth || unitsWidth != _unitsWidth || sortChipWidth != _sortChipWidth;
+                _sortChipWidth = sortChipWidth;
                 _searchChipWidth = searchChipWidth;
                 _unitsWidth = unitsWidth;
                 // Minimum Half split needs a one-line footer to fit a value row below the pane captions.
@@ -428,7 +432,7 @@ namespace BetterGhPanel
                     string typeHint = session.HasCurrentResult ? CanvasMenu.TypeHint(result, options) : "Types";
                     DropdownControl(graphics, _layout.Type, typeHint, small, trim, options.TypeName != null || options.OnlyInvalid,
                         warning: PanelQueryPolicy.InputDiagnostic(session.Snapshot, options).Length > 0);
-                    DropdownControl(graphics, _layout.Sort, options.SortMode == PanelSortMode.SourceOrder ? "Sort" : options.SortMode == PanelSortMode.ValueAscending ? "Asc" : "Desc", small, trim, options.SortMode != PanelSortMode.SourceOrder);
+                    DropdownControl(graphics, _layout.Sort, SortChipLabel(options), small, trim, options.SortMode != PanelSortMode.SourceOrder);
                     // Only an active path is a path; the placeholder reads like Types and Sort.
                     DropdownControl(graphics, _layout.Branch, Short(options.BranchPath ?? "Paths", 80), options.BranchPath != null ? mono : small, trim, options.BranchPath != null, branchClear ? _layout.BranchClear.Width : 0);
                     if (branchClear) DrawClear(graphics, _layout.BranchClear);
@@ -527,7 +531,16 @@ namespace BetterGhPanel
                 var grip = parameter.Attributes.InputGrip;
                 GH_CapsuleRenderEngine.RenderInputGrip(g, canvas.Viewport.Zoom, grip, false);
                 if (canvas.Viewport.Zoom >= 0.5f)
-                    Text(g, parameter.NickName, font, Muted, new RectangleF(grip.X - 20, grip.Y - 8, 12, 16), trim);
+                {
+                    if (parameter.NickName == "D" || parameter.NickName == "F")
+                        Text(g, parameter.NickName, font, Muted, new RectangleF(grip.X - 20, grip.Y - 8, 12, 16), trim);
+                    else
+                    {
+                        using var right = (StringFormat)trim.Clone();
+                        right.Alignment = StringAlignment.Far;
+                        Text(g, parameter.NickName, font, Muted, new RectangleF(grip.X - 72, grip.Y - 8, 64, 16), right);
+                    }
+                }
             }
             foreach (var parameter in Owner.Params.Output)
             {
@@ -1556,7 +1569,7 @@ namespace BetterGhPanel
                 // for that so the visible corner follows the cursor exactly.
                 float height = _startHeight + (e.CanvasY - _dragStart.Y) /
                     (PanelOwner.CanvasDisplay == CanvasPanelDisplay.Half ? 1.5f : 1);
-                PanelOwner.SetCanvasSize((_startWidth + e.CanvasX - _dragStart.X) / (PanelOwner.PanelSplit ? 2 : 1),
+                PanelOwner.SetCanvasSize((_startWidth + e.CanvasX - _dragStart.X) / (PanelOwner.PanelSplit ? PanelOwner.TableWidthScale : 1),
                     PanelOwner.CanvasDisplay == CanvasPanelDisplay.Half ? height * 2 : height);
                 PerformLayout();
                 sender.Invalidate();
@@ -1666,7 +1679,8 @@ namespace BetterGhPanel
                         if (PanelOwner.Session.Result.Warnings.IsOutlier(PanelOwner.Session.Result.Snapshot, hit.Path))
                             e.Description += "\nMost branches have " + PanelOwner.Session.Result.Warnings.MajorityLength + " items.";
                         if (TableVisible && LengthWarnings(hit.Path) is string[] lengths && lengths.Length > 0)
-                            e.Description = string.Join("; ", lengths) + ".";
+                            e.Description = CellColumnAt(point) is int column && column >= 0
+                                ? ColumnLengthWarning(hit.Path, column) ?? "Select this branch's results." : string.Join(" ", lengths);
                         if (PanelOwner.Session.Result.DisplaySet?.BranchOccurrences.TryGetValue(hit.Path, out var occurrences) == true)
                         {
                             e.Text = "List length: " + PanelOwner.Session.Snapshot.BranchItemCounts[hit.Path] + " · " + occurrences.Count + " branches";

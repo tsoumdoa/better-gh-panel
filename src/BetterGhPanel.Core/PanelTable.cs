@@ -150,6 +150,11 @@ namespace BetterGhPanel.Core
 
     internal static class PanelTableText
     {
+        internal static bool NumericColumn(PanelSnapshot? snapshot) => snapshot?.TypeCounts.Count > 0 &&
+            snapshot.TypeCounts.Keys.All(type => type == "Number" || type == "Integer");
+        internal static bool ShowCellTypes(PanelSnapshot? snapshot) => snapshot != null &&
+            (snapshot.TypeCounts.Count > 1 || snapshot.TypeCounts.Keys.Any(type =>
+                type != "Text" && type != "String" && type != "Number" && type != "Integer" && type != "Boolean"));
         internal static string Summary(IReadOnlyList<string> preview, int count, bool set = true) => count == 0 ? set ? "<empty set>" : "<empty branch>" :
             string.Join(" · ", preview.Select(PanelValuePresentation.Visualize).Select(value => value.Length <= 120 ? value : value.Substring(0, 119) + "…")) +
             (count > preview.Count ? " … +" + (count - preview.Count) + (set ? " in this set" : " items") : "");

@@ -351,9 +351,9 @@ internal static class UxInteractionChecks
             restored.CreateAttributes();
             Check(restored.Read(splitArchive), "Split view archive reads successfully");
             restored.Attributes.PerformLayout();
-            Check(PanelTestAdapter.Bounds(restored, CanvasControl.Panel).Width == PanelTestAdapter.Size(component).Width * (legacy ? 1 : 2) &&
+            Check(PanelTestAdapter.Bounds(restored, CanvasControl.Panel).Width == PanelTestAdapter.Size(component).Width * (legacy ? 1 : PropertyValue<float>(component, "TableWidthScale")) &&
                 PanelTestAdapter.Size(restored) == PanelTestAdapter.Size(component),
-                legacy ? "Archives without PanelSplit restore the ordinary width" : "Split view roundtrips without doubling the canonical saved width");
+                legacy ? "Archives without PanelSplit restore the ordinary width" : "Table roundtrips its fitted presentation width without changing canonical saved dimensions");
             restored.DocumentContextChanged(fixture.Document, Grasshopper.Kernel.GH_DocumentContext.Close);
         }
         // One split interaction scenario uses different values so a D lookup cannot pass as F.
@@ -578,8 +578,9 @@ internal static class UxInteractionChecks
         Call(component, "SetCanvasDisplay", Enum.Parse(displayType, "Full"));
         Call(component, "SetPanelSplit", true);
         attributes.PerformLayout();
-        Check(PanelTestAdapter.Bounds(component, CanvasControl.Panel).Width == 720,
-            "Review capture shows both 360-wide D and F panes");
         Save("data-paired-split.png");
+        float tableWidth = PanelTestAdapter.Bounds(component, CanvasControl.Panel).Width;
+        Check(tableWidth >= 360 && tableWidth <= 720,
+            "Review capture fits the D/F table between the single and doubled panel widths");
     }
 }

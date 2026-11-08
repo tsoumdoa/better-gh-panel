@@ -7,6 +7,23 @@ using Xunit;
 
 public class TableColumnsTests
 {
+    [Fact]
+    public void HomogeneousScalarColumnsUseHeaderTypesAndNumericMissingAlignment()
+    {
+        PanelSnapshot Snapshot(params PanelRow[] rows) => new PanelSnapshot(rows, new[] { new PanelBranch("{0}", rows.Length) });
+        var numbers = Snapshot(new PanelRow(0, "{0}", "Number", "1", 1));
+        Assert.True(PanelTableText.NumericColumn(numbers));
+        Assert.False(PanelTableText.ShowCellTypes(numbers));
+        var text = Snapshot(new PanelRow(0, "{0}", "Text", "a", null));
+        Assert.False(PanelTableText.NumericColumn(text));
+        Assert.False(PanelTableText.ShowCellTypes(text));
+        var mixed = Snapshot(numbers.Rows[0], text.Rows[0]);
+        Assert.True(PanelTableText.ShowCellTypes(mixed));
+        Assert.False(PanelTableText.NumericColumn(mixed));
+        Assert.True(PanelTableText.ShowCellTypes(Snapshot(new PanelRow(0, "{0}", "Curve", "curve", null))));
+        Assert.False(PanelTableText.NumericColumn(PanelSnapshot.Empty));
+    }
+
     private static PanelSnapshot Data() => new PanelSnapshot(new[]
     {
         new PanelRow(0, "{0}", "Number", "3", 3), new PanelRow(1, "{0}", "Number", "1", 1),

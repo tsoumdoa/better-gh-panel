@@ -58,7 +58,7 @@ internal static class TableColumnsChecks
         Check(LayoutRect(attributes, "Split").IsEmpty && FieldValue<RectangleF>(attributes, "_tableHeader").IsEmpty && component.Params.Input.Count == 2,
             "A new panel has no Table chip, header or added input");
         var defaultChunk = new GH_LooseChunk("Panel"); component.Write(defaultChunk);
-        Check(!defaultChunk.ItemExists("PanelSortColumn") && !defaultChunk.ChunkExists("PanelColumnWidths"), "Default saves contain no new table settings");
+        Check(!defaultChunk.ItemExists("PanelSortColumn") && !defaultChunk.ChunkExists("PanelColumnWidths") && !defaultChunk.ItemExists("PanelTableWidthScale"), "Default saves contain no new table settings");
         component.Params.Input[1].AddSource(fixture.Paired);
         Call(component, "AddColumn"); Call(component, "AddColumn");
         Check(component.Params.Input.Count == 4 && component.Params.Input[2].NickName == "C1" && component.Params.Input[3].NickName == "C2", "Add column appends named generic tree inputs after F");
