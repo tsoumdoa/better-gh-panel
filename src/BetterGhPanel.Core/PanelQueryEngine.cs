@@ -207,15 +207,16 @@ namespace BetterGhPanel.Core
                 {
                     var preview = new List<string>(4);
                     int count = 0, visits = 0;
+                    bool hasPartner = false;
                     foreach (var row in query.ColumnSortKeys!.GroupRows(snapshot, set.MembersAt(position)))
                     {
                         if (work.ShouldYield()) yield return null;
                         CheckCancellation(visits++, cancellationToken);
-                        if (row == null) continue;
+                        hasPartner |= row != null;
                         count++;
-                        if (preview.Count < 4) preview.Add(row.DisplayValue);
+                        if (preview.Count < 4) preview.Add(row?.DisplayValue ?? "—");
                     }
-                    columnSortRows.Add(position, count == 0 ? null : new PanelRow(snapshot.Rows[position].OriginalIndex,
+                    columnSortRows.Add(position, !hasPartner ? null : new PanelRow(snapshot.Rows[position].OriginalIndex,
                         snapshot.Rows[position].Path, "Text", PanelTableText.Summary(preview, count), null));
                 }
             var columnKeys = columnSortRows == null ? null : new PanelColumnSortKeys(columnSortRows);

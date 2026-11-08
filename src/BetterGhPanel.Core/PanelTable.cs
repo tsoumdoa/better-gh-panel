@@ -203,17 +203,19 @@ namespace BetterGhPanel.Core
                         {
                             if (work.ShouldYield()) yield return true;
                             token.ThrowIfCancellationRequested();
-                            if (column.ItemAt(position) is int item) cell.Add(item);
+                            cell.Add(column.ItemAt(position) ?? -1);
                         }
                         if (set.IsBranchSet) summary.Branches.Add(group.Path, cell);
                         else summary.Sets.Add(group.Item, cell);
                     }
+                }
+                if (set == null || set.IsBranchSet)
                     foreach (string path in result.BranchPaths)
                     {
                         if (work.ShouldYield()) yield return true;
                         token.ThrowIfCancellationRequested();
                         int count = 0;
-                        var paths = set.IsBranchSet ? set.BranchOccurrences[path] : (IReadOnlyList<string>)new[] { path };
+                        var paths = set?.IsBranchSet == true ? set.BranchOccurrences[path] : (IReadOnlyList<string>)new[] { path };
                         foreach (string original in paths)
                         {
                             if (work.ShouldYield()) yield return true;
@@ -227,7 +229,6 @@ namespace BetterGhPanel.Core
                         }
                         summary.Extras.Add(path, count);
                     }
-                }
                 result.TableSummaries.Add(column.Id, summary);
             }
         }

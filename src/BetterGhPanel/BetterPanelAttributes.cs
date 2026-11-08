@@ -50,6 +50,8 @@ namespace BetterGhPanel
         }
         private bool BranchClearVisible => !_layout.BranchClear.IsEmpty && PanelOwner.Session.Options.BranchPath != null;
         private readonly List<RowHit> _rowHits = new List<RowHit>();
+        private readonly Dictionary<Guid, RectangleF> _paintedHeaders = new Dictionary<Guid, RectangleF>();
+        private readonly Dictionary<Guid, RectangleF> _paintedHeaderBorders = new Dictionary<Guid, RectangleF>();
         private readonly List<BranchHit> _branchHits = new List<BranchHit>();
         private PanelSearchMode _editingSearchMode;
         private CanvasTextInput? _queryEditor;
@@ -201,7 +203,7 @@ namespace BetterGhPanel
 
         internal void InvalidatePaintedHits(bool closeRowMenu = true)
         {
-            ClearHeaderPaint();
+            _paintedHeaders.Clear(); _paintedHeaderBorders.Clear();
             if (_paintedResult != null)
             {
                 _staleList = _paintedList;
@@ -355,8 +357,6 @@ namespace BetterGhPanel
             }
             var visibleRegion = canvas.Viewport.VisibleRegion;
             _renderVisibleRegion = visibleRegion;
-            _headerRenderCanvas = canvas;
-            PanelOwner.SetTableSummaryVisibility(TableVisible && !PanelOwner.PanelMinimized && canvas.Viewport.Zoom >= 0.5f && Bounds.IntersectsWith(visibleRegion));
             session.AnimateBusyState(!PanelOwner.Locked && Bounds.IntersectsWith(visibleRegion) && canvas.Viewport.Zoom >= 0.5f);
             // Grasshopper also renders components outside the canvas viewport.
             // A menu extending beyond an offscreen panel may still be visible.

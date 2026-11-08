@@ -353,6 +353,12 @@ namespace BetterGhPanel
         private PanelQueryResult? _selectionRestore;
         private PanelRowSelection? _savedSelection;
 
+        internal void PreserveTableScroll()
+        {
+            if (PanelOwner.Session.HasCurrentResult)
+                _viewRestore = new ViewRestore(PanelOwner.Session.Snapshot, _offset, DisplayListLengths);
+        }
+
         internal void StashViewForRestore()
         {
             EndQueryPreview(_previewOwner);

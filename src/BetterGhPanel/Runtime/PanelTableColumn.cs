@@ -60,17 +60,10 @@ namespace BetterGhPanel.Runtime
         internal string BranchExtraNote(PanelQueryResult result, string path) =>
             result.TableSummaries.TryGetValue(Input.InstanceGuid, out var summary) && summary.Extras.TryGetValue(path, out int count) && count > 0
                 ? "+" + count + " only in " + Input.NickName : "";
-        internal string SetExtraNote(PanelQueryResult result, int position) => BranchExtraNote(result, result.Snapshot.Rows[position].Path);
         internal string BranchCellText(PanelQueryResult result, string path, PanelUnitConversion conversion, int decimals, double factor)
         {
             string value = BranchCell(result, path, conversion, decimals, factor);
             string note = BranchExtraNote(result, path);
-            return value + (note.Length > 0 ? " · " + note : "");
-        }
-        internal string CellText(PanelQueryResult result, int position, PanelUnitConversion conversion, int decimals, double factor)
-        {
-            string value = Cell(result, position, conversion, decimals, factor);
-            string note = SetExtraNote(result, position);
             return value + (note.Length > 0 ? " · " + note : "");
         }
         internal string Value(PanelRow row, PanelUnitConversion conversion, int decimals, double factor) =>
@@ -83,9 +76,9 @@ namespace BetterGhPanel.Runtime
             {
                 if (!SummaryCurrent(result)) return "…";
                 if (raw) return string.Join(Environment.NewLine, result.DisplaySet.Members[position].Select(Pair.ItemAt)
-                    .Where(item => item.HasValue).Select(item => Format(Snapshot.Rows[item!.Value])));
+                    .Select(item => item.HasValue ? Format(Snapshot.Rows[item.Value]) : "—"));
                 var summary = result.TableSummaries[Input.InstanceGuid].Sets[position];
-                return PanelTableText.Summary(summary.Preview.Select(item => Format(Snapshot.Rows[item])).ToArray(), summary.Count);
+                return PanelTableText.Summary(summary.Preview.Select(item => item < 0 ? "—" : Format(Snapshot.Rows[item])).ToArray(), summary.Count);
             }
             return Row(position) is PanelRow row ? Format(row) : "";
         }
@@ -97,14 +90,15 @@ namespace BetterGhPanel.Runtime
             {
                 var members = result.DisplaySet?.IsBranchSet == true ? result.DisplaySet.BranchMembers[path] : result.RowPositions.Where(position => result.Snapshot.Rows[position].Path == path).ToArray();
                 var paths = result.DisplaySet?.IsBranchSet == true ? result.DisplaySet.BranchOccurrences[path] : new[] { path };
-                var items = result.DisplaySet?.IsBranchSet == true ? members.Select(Pair.ItemAt).Where(item => item.HasValue).Select(item => item!.Value) :
-                    Pair.BranchItems(result.Snapshot, members, paths, result.DisplaySet == null).Select(item => item.Item);
-                return string.Join(Environment.NewLine, items.Select(item => Snapshot.Rows[item].StringValue ??
-                    PanelValuePresentation.FormatDisplay(Snapshot.Rows[item], PanelUnitConversion.None, PanelUnits.AutomaticDecimals)));
+                string Raw(int item) => Snapshot.Rows[item].StringValue ??
+                    PanelValuePresentation.FormatDisplay(Snapshot.Rows[item], PanelUnitConversion.None, PanelUnits.AutomaticDecimals);
+                return string.Join(Environment.NewLine, result.DisplaySet?.IsBranchSet == true
+                    ? members.Select(Pair.ItemAt).Select(item => item.HasValue ? Raw(item.Value) : "—")
+                    : Pair.BranchItems(result.Snapshot, members, paths, result.DisplaySet == null).Select(item => Raw(item.Item)));
             }
             result.TableSummaries[Input.InstanceGuid].Branches.TryGetValue(path, out var summary);
             return summary == null ? result.DisplaySet != null ? "<empty set>" : "<empty branch>" :
-                PanelTableText.Summary(summary.Preview.Select(item => Value(Snapshot.Rows[item], conversion, decimals, factor)).ToArray(), summary.Count, result.DisplaySet != null);
+                PanelTableText.Summary(summary.Preview.Select(item => item < 0 ? "—" : Value(Snapshot.Rows[item], conversion, decimals, factor)).ToArray(), summary.Count, result.DisplaySet != null);
         }
         private PanelTableSummarySource SummarySource()
         {

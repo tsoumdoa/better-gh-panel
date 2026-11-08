@@ -404,15 +404,13 @@ internal static class BranchPairingChecks
                     int k = f.Result.DisplaySet!.MemberIndices[position];
                     string path = f.Result.Snapshot.Rows[position].Path.TrimEnd('}') + ";" + k + "}";
                     string[] emitted = f.Result.DisplaySet.Members[position].Select(member => ColumnRow(component, member))
-                        .Where(row => row != null).Select(row => row!.StringValue!).ToArray();
+                        .Select(row => row?.StringValue ?? "—").ToArray();
                     string expected = emitted.Length == 0 ? "<empty set>" : string.Join(" · ", emitted.Take(4)) +
                         (emitted.Length > 4 ? " … +" + (emitted.Length - 4) + " in this set" : "");
                     Check((string)Call(attributes, "ColumnCell", f.Result, position, 0)! == expected,
                         scenario + ": displayed cell follows index-paired set members at " + path);
                     f.ClearSelection(); f.Select(position);
                     await Ready(() => FieldValue<long>(component, "_publishedSelectionVersion") == FieldValue<long>(component, "_selectionVersion"));
-                    string note = (string)Call(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "SetExtraNote", f.Result, position)!;
-                    expected += note.Length > 0 ? " · " + note : "";
                     string copyStatus = await (Task<string>)Call(component, "CopyColumnValuesAsync", f.Result.Snapshot, new[] { position }, 0, null)!;
                     await f.Ready(() => Forms.Clipboard.GetText() == expected);
                     Check(Forms.Clipboard.GetText() == expected,
@@ -558,12 +556,10 @@ internal static class BranchPairingChecks
         await f.Ready(() => f.Values(3) == "f0,f1" && f.Result.RowPositions.Count == 2);
         Call(component, "SetPanelSplit", true);
         component.Attributes.PerformLayout();
-        Call(component, "SetTableSummaryVisibility", true);
         await f.Ready(() => ColumnSummaryCurrent(component));
-        var pairing = PropertyValue<object>(component, "PairedData");
-        var oldSummary = PropertyValue<PanelQueryResult>(pairing, "SummaryResult");
+        var oldSummary = PropertyValue<IDictionary>(f.Result, "TableSummaries");
         Check(f.Result.RowPositions.Count == 2 && ColumnSummaryCurrent(component),
-            "Freshness regression starts with two item sets and a published F summary");
+            "Freshness regression starts with two item sets and a published column summary");
         bool? currentBeforeRebuild = null;
         var changed = f.Session.GetType().GetEvent("ResultChanged")!;
         string? staleCell = null;
@@ -584,9 +580,9 @@ internal static class BranchPairingChecks
             // Exercise a busy publication without committing trees through the final fence.
             Call(component, "PublishOutputs", null!, (Func<bool>)(() => false));
             Check(FieldValue<PanelQueryOptions>(component, "_outputOptions").Search == "^1$" &&
-                ReferenceEquals(oldSummary, PropertyValue<PanelQueryResult>(pairing, "SummaryResult")) &&
+                ReferenceEquals(oldSummary, PropertyValue<IDictionary>(f.Result, "TableSummaries")) &&
                 !ColumnSummaryCurrent(component),
-                "Busy publication updates output options but leaves the old F summaries stale");
+                "Busy publication updates output options but leaves the old column summaries stale");
             await f.Ready(() => f.Values(3) == "f1" && ColumnSummaryCurrent(component));
         }
         finally { changed.RemoveEventHandler(f.Session, onResult); }
@@ -594,12 +590,12 @@ internal static class BranchPairingChecks
             await staleCopy != "Column summaries are recomputing. Try copying again." && f.Result.RowPositions.Count == 1 &&
             ColumnSummaryCurrent(component),
             "Completed regex publishes matching column summaries with the result");
-        var filteredSummary = PropertyValue<PanelQueryResult>(pairing, "SummaryResult");
+        var filteredSummary = PropertyValue<IDictionary>(f.Result, "TableSummaries");
         f.Query(new PanelQueryOptions { CreateSet = true, SearchMode = PanelSearchMode.Regex, Search = "^1$",
             SortMode = PanelSortMode.ValueDescending });
-        await f.Ready(() => !ReferenceEquals(filteredSummary, f.Result) && ColumnSummaryCurrent(component));
+        await f.Ready(() => !ReferenceEquals(filteredSummary, PropertyValue<IDictionary>(f.Result, "TableSummaries")) && ColumnSummaryCurrent(component));
         Check(ColumnSummaryCurrent(component) &&
-            ReferenceEquals(filteredSummary, PropertyValue<PanelQueryResult>(pairing, "SummaryResult")),
-            "Sort-only set results publish column summaries without rebuilding raw F output");
+            !ReferenceEquals(filteredSummary, PropertyValue<IDictionary>(f.Result, "TableSummaries")) && PropertyValue<IDictionary>(f.Result, "TableSummaries").Count > 0,
+            "Sort-only set results publish their own column summaries");
     }
 }

@@ -88,23 +88,16 @@ namespace BetterGhPanel
             Session.PrepareColumnSort(options.SortColumn, options.ColumnSortKeys);
             Session.SetTableSource(CurrentTableSource(), false);
         }
-        private bool _tableSummariesVisible;
-        internal void SetTableSummaryVisibility(bool visible)
+        private void RefreshTableSource()
         {
-            visible &= PanelSplit;
-            if (_tableSummariesVisible == visible) return;
-            _tableSummariesVisible = visible;
-            if (_session != null)
-            {
-                var options = _session.Options;
-                bool summaryView = options.CreateSet || options.DisplayFilterValue && options.SearchMode == PanelSearchMode.ListLength;
-                bool restoring = _restoringView;
-                _restoringView = true;
-                try { _session.SetTableSource(CurrentTableSource(), summaryView); }
-                finally { _restoringView = restoring; }
-            }
+            (Attributes as BetterPanelAttributes)?.PreserveTableScroll();
+            bool restoring = _restoringView;
+            _restoringView = true;
+            try { Session.SetTableSource(CurrentTableSource(), true); }
+            finally { _restoringView = restoring; }
         }
-        private PanelTableSource? CurrentTableSource() => PanelSplit ? PanelTableColumn.ViewSource(TableColumns, ReverseTree, _tableSummariesVisible && !PanelMinimized) : null;
+        // Query mode decides whether to consume summaries; viewport and zoom never change this provider.
+        private PanelTableSource? CurrentTableSource() => PanelSplit ? PanelTableColumn.ViewSource(TableColumns, ReverseTree, !PanelMinimized) : null;
         internal string TableTsv(PanelQueryResult result, IReadOnlyList<int> positions)
         {
             RequireTableSummaries(result);
@@ -117,7 +110,7 @@ namespace BetterGhPanel
                 {
                     int index = result.DisplaySet?.BranchIndices.TryGetValue(path, out int k) == true ? k : numbers[path];
                     IReadOnlyList<string> values = new[] { result.Snapshot.BranchItemCounts[path].ToString(System.Globalization.CultureInfo.InvariantCulture) }
-                        .Concat(TableColumns.Select(column => column.BranchCellText(result, path, UnitConversion, DecimalPlaces, RoundUpFactor))).ToArray();
+                        .Concat(TableColumns.Select(column => column.BranchCell(result, path, UnitConversion, DecimalPlaces, RoundUpFactor))).ToArray();
                     return (path, index, values);
                 }));
             }
@@ -125,7 +118,7 @@ namespace BetterGhPanel
             {
                 PanelItemOrder.TryGetNumber(result, position, out int index);
                 IReadOnlyList<string> cells = new[] { DisplayValue(result.Snapshot, result.Snapshot.Rows[position], position) }
-                    .Concat(TableColumns.Select(column => column.CellText(result, position, UnitConversion, DecimalPlaces, RoundUpFactor))).ToArray();
+                    .Concat(TableColumns.Select(column => column.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor))).ToArray();
                 return (result.Snapshot.Rows[position].Path, index, cells);
             }));
         }

@@ -192,9 +192,8 @@ internal static class OutputValuesHostChecks
             Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, display));
             await Query(PanelSearchMode.Text);
             await Query(PanelSearchMode.ListLength);
-            var pairing = PropertyValue<object>(component, "PairedData");
-            var pairedRows = (System.Collections.IDictionary)pairing.GetType().GetField("BranchSummaries", AnyInstance)!.GetValue(pairing)!;
-            Check(pairedRows.Count > 0 && PanelTestAdapter.ViewField<RectangleF>(attributes, "List").Height >= 17 &&
+            var pairedRows = PropertyValue<System.Collections.IDictionary>(fixture.Result, "TableSummaries");
+            Check(pairedRows.Values.Cast<object>().Any(summary => FieldValue<System.Collections.IDictionary>(summary, "Branches").Count > 0) && PanelTestAdapter.ViewField<RectangleF>(attributes, "List").Height >= 17 &&
                 PanelTestAdapter.ViewField<RectangleF>(attributes, "List").Bottom <= Bounds("Footer").Top,
                 "Minimum table " + display + " retains branch summaries and a full data row without footer overlap");
         }

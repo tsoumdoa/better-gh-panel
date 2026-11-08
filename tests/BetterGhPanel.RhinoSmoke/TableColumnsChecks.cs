@@ -82,7 +82,7 @@ internal static class TableColumnsChecks
         var tooltip = (GH_TooltipDisplayEventArgs)Activator.CreateInstance(typeof(GH_TooltipDisplayEventArgs), BindingFlags.Instance | BindingFlags.NonPublic,
             null, new object[] { canvas, Point.Round(Center(Headers()[3])) }, null)!;
         attributes.SetupTooltip(Center(Headers()[3]), tooltip);
-        Check(tooltip.Description == "C2 has 2 branches; D has 3.", "A mismatched column has a precise header diagnostic");
+        Check(tooltip.Description == "C2 has 2 branches; D has 3. Sorting is unavailable.", "A mismatched column has a precise header diagnostic");
         Render("table-mismatch-header");
         Check(((PanelTableIndex)Call(attributes, "TableIndex", fixture.Result)!).Entries.Count(row => row.Extra) == 1 && (string)Call(component, "TableTsv", fixture.Result, new[] { 0 })! ==
             "Path\tIndex\tD\tF\tArea\tC2" + Environment.NewLine + "{7;0}\t0\t12\tA\t40\t" + Environment.NewLine,
@@ -171,11 +171,21 @@ internal static class TableColumnsChecks
         attributes.RespondToMouseDown(canvas, Mouse(Center(Headers()[2]), Forms.MouseButtons.Right)); Render("table-header-context-menu");
         Check(PropertyValue<int>(FieldValue<object>(attributes, "_menu"), "Count") == 3, "Header menu contains only the three sort commands");
         Call(FieldValue<object>(attributes, "_menu"), "Close");
+        PanelTestAdapter.Resize(component, 300, 220); Render();
+        int scroll = Math.Min(5, PropertyValue<int>(attributes, "MaximumOffset"));
+        Check(scroll > 0, "Provider-change scroll regression has overflow");
+        Call(attributes, "SetPaneOffset", canvas, scroll);
+        var previousResult = fixture.Result;
+        Call(component, "RefreshTableSource");
+        await fixture.Ready(() => !ReferenceEquals(previousResult, fixture.Result));
+        Check(FieldValue<int>(attributes, "_offset") == scroll, "Provider-only table queries keep the scroll position");
         PanelTestAdapter.Resize(component, 300, 420);
         foreach (var input in component.Params.Input) Call(component, "SetColumnWidth", input.InstanceGuid, (float?)260f);
         Render(); Call(attributes, "ScrollHorizontal", canvas, 190f); Render("table-narrow-scrolled");
-        Check(FieldValue<float>(attributes, "_horizontalOffset") > 0 && FieldValue<float>(attributes, "_frozenWidth") <= PanelTestAdapter.Bounds(component, CanvasControl.List).Width * 0.45f + 0.1f,
-            "Narrow tables scroll columns sideways while D stays within 45 percent of the list");
+        float listWidth = PanelTestAdapter.Bounds(component, CanvasControl.List).Width;
+        float frozenWidth = FieldValue<float>(attributes, "_frozenWidth");
+        Check(FieldValue<float>(attributes, "_horizontalOffset") > 0 && frozenWidth > listWidth * 0.45f && frozenWidth <= listWidth - 48 + 0.1f,
+            "Narrow tables honour manual D widths above 45 percent while leaving room for columns");
         // Serialize complete trees, including types, numeric bits and empty paths, across output modes.
         foreach (string mode in new[] { "ordinary", "reverse", "flatten", "set-items", "set-values", "list-length-set", "selection-follow", "values" })
         {

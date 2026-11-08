@@ -26,27 +26,14 @@ namespace BetterGhPanel
         private readonly Dictionary<Guid, float> _autoWidths = new Dictionary<Guid, float>();
         private PanelQueryResult? _autoWidthResult;
         internal void ClearTableWidths() { _autoWidths.Clear(); _autoWidthResult = null; _setCountResult = null; }
-        private readonly Dictionary<Guid, RectangleF> _paintedHeaders = new Dictionary<Guid, RectangleF>();
-        private readonly Dictionary<Guid, RectangleF> _paintedHeaderBorders = new Dictionary<Guid, RectangleF>();
-        private GH_Canvas? _headerRenderCanvas, _headerPaintCanvas;
-        private PanelQueryResult? _headerPaintResult;
-        private RectangleF _headerPaintBounds, _headerPaintPanel, _headerPaintViewport;
-        private float _headerPaintOffset, _headerPaintFrozen, _headerPaintZoom;
-        private void ClearHeaderPaint()
-        {
-            _paintedHeaders.Clear(); _paintedHeaderBorders.Clear(); _headerPaintResult = null; _headerPaintCanvas = null;
-        }
         private RectangleF HeaderTarget(int index, bool border)
         {
             var rect = _columnRects[index];
             return border ? new RectangleF(rect.Right - 4, rect.Y, 8, rect.Height) :
                 RectangleF.Intersect(rect, ColumnClip(index, _tableHeader.Y, RowHeight));
         }
-        private bool HeaderPaintCurrent(GH_Canvas canvas) => ReferenceEquals(_headerPaintCanvas, canvas) &&
-            ReferenceEquals(_headerPaintResult, PanelOwner.Session.Result) && ResultIsCurrent(PanelOwner.Session.Result) &&
-            _headerPaintBounds == _tableHeader && _headerPaintPanel == _layout.Panel && _headerPaintViewport == canvas.Viewport.VisibleRegion &&
-            _headerPaintZoom == canvas.Viewport.Zoom && _headerPaintOffset == _horizontalOffset && _headerPaintFrozen == _frozenWidth;
-        private bool HeaderTargetPainted(GH_Canvas canvas, int index, bool border = false) => index >= 0 && index < _columnRects.Count && HeaderPaintCurrent(canvas) &&
+        private bool HeaderTargetPainted(GH_Canvas canvas, int index, bool border = false) => index >= 0 && index < _columnRects.Count &&
+            ReferenceEquals(_paintedCanvas, canvas) && RowsAreCurrent(PanelOwner.Session.Result) &&
             (border ? _paintedHeaderBorders : _paintedHeaders).TryGetValue(ColumnId(index), out var painted) && painted == HeaderTarget(index, border);
 
         private bool _fitTablePending;
@@ -175,7 +162,7 @@ namespace BetterGhPanel
                         string label = result.DisplaySet.BranchIndices[path] + " · " + path;
                         widths[0] = Math.Max(widths[0], TightWidth(g, label, pathFont) + 76 + 40 + 12 - gutter);
                     }
-                    for (int index = 1; index < widths.Length; index++) widths[index] = Math.Max(widths[index], Measure(PanelOwner.TableColumns[index - 1].BranchCellText(result, path, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor)) + 16);
+                    for (int index = 1; index < widths.Length; index++) widths[index] = Math.Max(widths[index], Measure(PanelOwner.TableColumns[index - 1].BranchCell(result, path, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor)) + 16);
                 }
             }
             else
@@ -190,6 +177,10 @@ namespace BetterGhPanel
                     if (path != previousPath)
                     {
                         if (bottom + BranchHeight + (empty == null ? RowHeight : 0) > _list.Bottom) break;
+                        if (new RectangleF(_list.X, bottom, _list.Width, BranchHeight).IntersectsWith(_renderVisibleRegion))
+                            for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
+                                if (ColumnHeading(path, column) is PanelPairedData.PairHeading heading && heading.Unequal)
+                                    widths[column + 1] = Math.Max(widths[column + 1], Measure(PanelTableText.LengthBadge(heading.Total, heading.DataTotal)) + 20);
                         bottom += BranchHeight; previousPath = path;
                     }
                     if (empty != null) continue;
@@ -225,13 +216,9 @@ namespace BetterGhPanel
                         (statuses.VerifiedInvalid > 0 || statuses.Unverified > 0 ? 12 : 0);
                     widths[0] = Math.Max(widths[0], Measure(PanelOwner.DisplayValue(result.Snapshot, dataRow, position), numeric) + reserved);
                     for (int index = 1; index < widths.Length; index++)
-                        widths[index] = Math.Max(widths[index], Measure(PanelOwner.TableColumns[index - 1].CellText(result, position, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor), result.DisplaySet == null && PanelOwner.TableColumns[index - 1].Row(position)?.NumericValue.HasValue == true) + (result.DisplaySet == null && PanelOwner.TableColumns[index - 1].ShowCellTypes ? 60 : 12));
+                        widths[index] = Math.Max(widths[index], Measure(PanelOwner.TableColumns[index - 1].Cell(result, position, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor), result.DisplaySet == null && PanelOwner.TableColumns[index - 1].Row(position)?.NumericValue.HasValue == true) + (result.DisplaySet == null && PanelOwner.TableColumns[index - 1].ShowCellTypes ? 60 : 12));
                 }
             }
-            foreach (string path in result.BranchPaths.Skip(Math.Min(_offset, result.BranchPaths.Count)).Take(Math.Max(1, (int)(_list.Height / RowHeight))))
-                for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
-                    if (ColumnHeading(path, column) is PanelPairedData.PairHeading heading && heading.Unequal)
-                        widths[column + 1] = Math.Max(widths[column + 1], Measure(PanelTableText.LengthBadge(heading.Total, heading.DataTotal)) + 20);
             // Auto-fit only grows while the result stays the same, so scrolling never makes columns jump.
             if (!ReferenceEquals(_autoWidthResult, result)) { _autoWidths.Clear(); _autoWidthResult = result; }
             for (int index = 0; index < widths.Length; index++)
@@ -283,12 +270,6 @@ namespace BetterGhPanel
 
         private void DrawTableHeader(Graphics g, Font font, StringFormat trim, float gutter)
         {
-            if (_headerRenderCanvas == null) return;
-            if (!HeaderPaintCurrent(_headerRenderCanvas)) ClearHeaderPaint();
-            _headerPaintCanvas = _headerRenderCanvas;
-            _headerPaintResult = PanelOwner.Session.Result;
-            _headerPaintBounds = _tableHeader; _headerPaintPanel = _layout.Panel; _headerPaintViewport = _headerRenderCanvas.Viewport.VisibleRegion;
-            _headerPaintOffset = _horizontalOffset; _headerPaintFrozen = _frozenWidth; _headerPaintZoom = _headerRenderCanvas.Viewport.Zoom;
             Fill(g, PanelTheme.Rgb(242, 247, 241), _tableHeader);
             Text(g, "#", font, Muted, new RectangleF(_tableHeader.X + 4, _tableHeader.Y, gutter - 8, RowHeight), trim);
             using var bold = new Font(font, FontStyle.Bold);
@@ -353,7 +334,7 @@ namespace BetterGhPanel
                             new RectangleF(cell.X + 6, cell.Y, Math.Max(0, cell.Width - 12 - typeWidth), RowHeight), column.Numeric);
                     }
                     else if (column.Present && column.Pair != null && column.Snapshot != null) DrawTableCell(g, renderer, result.DisplaySet == null ? row : null, ColumnCell(result, position, columnIndex), cell, font, small,
-                        showType: column.ShowCellTypes, note: column.SetExtraNote(result, position));
+                        showType: column.ShowCellTypes);
                 });
             }
         }
@@ -386,10 +367,12 @@ namespace BetterGhPanel
             {
                 int item = entry.Cells[index];
                 var column = PanelOwner.TableColumns[index];
-                if (item < 0 || column.Snapshot == null || column.Pair == null) continue;
-                string value = column.Value(column.Snapshot.Rows[item], PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
                 PaintColumn(g, index + 1, bounds.Y, RowHeight, cell =>
-                    DrawTableCell(g, renderer, column.Snapshot.Rows[item], value, cell, font, small, muted: true, showType: column.ShowCellTypes));
+                {
+                    if (item < 0 || column.Snapshot == null || column.Pair == null) return;
+                    string value = column.Value(column.Snapshot.Rows[item], PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
+                    DrawTableCell(g, renderer, column.Snapshot.Rows[item], value, cell, font, small, muted: true, showType: column.ShowCellTypes);
+                });
             }
             string note = ExtraNote(result, offset);
             var state = g.Save();
@@ -518,7 +501,7 @@ namespace BetterGhPanel
         {
             for (int index = 0; index < _columnRects.Count; index++)
             {
-                if (_headerRenderCanvas == null || !HeaderTargetPainted(_headerRenderCanvas, index)) continue;
+                if (_paintedCanvas == null || !HeaderTargetPainted(_paintedCanvas, index)) continue;
                 var rect = RectangleF.Intersect(_columnRects[index], ColumnClip(index, _tableHeader.Y, RowHeight));
                 rect.X += 4; rect.Width = Math.Max(0, rect.Width - 8);
                 yield return rect;
@@ -557,7 +540,7 @@ namespace BetterGhPanel
                 if (_headerSortColumn != Guid.Empty)
                     for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
                         if (PanelOwner.TableColumns[column].Input.InstanceGuid == _headerSortColumn) { index = column + 1; break; }
-                return _headerRenderCanvas != null && HeaderTargetPainted(_headerRenderCanvas, index) && HeaderCanSort(index);
+                return _paintedCanvas != null && HeaderTargetPainted(_paintedCanvas, index) && HeaderCanSort(index);
             }
         }
 
@@ -593,6 +576,7 @@ namespace BetterGhPanel
         {
             int index = HeaderColumnAt(e.CanvasLocation);
             if (!HeaderTargetPainted(canvas, index)) return false;
+            if (!HeaderCanSort(index)) return true;
             _headerSortColumn = index == 0 ? Guid.Empty : ColumnId(index);
             _headerMenuAnchor = RectangleF.Intersect(_columnRects[index], ColumnClip(index, _tableHeader.Y, RowHeight));
             _menu.HeaderSortColumn = _headerSortColumn;
@@ -603,7 +587,7 @@ namespace BetterGhPanel
         private void TooltipTableHeader(PointF point, GH_TooltipDisplayEventArgs e)
         {
             int index = HeaderColumnAt(point);
-            if (_headerRenderCanvas == null || !HeaderTargetPainted(_headerRenderCanvas, index)) return;
+            if (_paintedCanvas == null || !HeaderTargetPainted(_paintedCanvas, index)) return;
             e.Title = ColumnTitle(index); e.Text = "";
             e.Description = "Click to sort ascending, descending, then tree order. Drag a border to resize; double-click it to auto-fit.";
             if (index > 0)

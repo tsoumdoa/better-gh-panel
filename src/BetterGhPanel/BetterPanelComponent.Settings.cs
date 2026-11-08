@@ -326,6 +326,9 @@ namespace BetterGhPanel
             if (options.SortColumn == Guid.Empty) { options.SortMode = PanelSortMode.SourceOrder; options.ColumnSortKeys = null; }
         }
 
+        private float RequestedColumnWidth(Guid id, float width) => Math.Max(PanelTableText.MinimumColumnWidth,
+            id == Params.Input[0].InstanceGuid ? width : Math.Min(PanelTableText.MaximumColumnWidth, width));
+
         internal void SetColumnWidth(Guid id, float? width)
         {
             var before = ColumnWidths.TryGetValue(id, out float value) ? (float?)value : null;
@@ -338,7 +341,7 @@ namespace BetterGhPanel
         {
             (Attributes as BetterPanelAttributes)?.ClearHover();
             (Attributes as BetterPanelAttributes)?.InvalidatePaintedHits();
-            if (width.HasValue) { ColumnWidths[id] = Math.Max(PanelTableText.MinimumColumnWidth, Math.Min(ColumnWidthLimit(id), width.Value));
+            if (width.HasValue) { ColumnWidths[id] = RequestedColumnWidth(id, width.Value);
                 _columnInputIndices[id] = Params.Input.FindIndex(input => input.InstanceGuid == id); }
             else ColumnWidths.Remove(id);
             OnPingDocument()?.Modified();
@@ -374,7 +377,6 @@ namespace BetterGhPanel
             PanelSplit = split;
             if (!split)
             {
-                _tableSummariesVisible = false;
                 (Attributes as BetterPanelAttributes)?.ClearTableWidths();
             }
             foreach (var column in _tableColumns)
@@ -387,7 +389,7 @@ namespace BetterGhPanel
                 _captureRetries = 0;
                 InvalidateStaleCapture(_session, OnPingDocument(), _solveGeneration);
             }
-            Session.SetTableSource(CurrentTableSource(), true);
+            RefreshTableSource();
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
@@ -401,7 +403,7 @@ namespace BetterGhPanel
             CanvasTextInput.CloseActive(this);
             (Attributes as BetterPanelAttributes)?.ClosePresentationControls();
             PanelMinimized = minimized;
-            if (minimized) SetTableSummaryVisibility(false);
+            if (PanelSplit) RefreshTableSource();
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
@@ -449,7 +451,7 @@ namespace BetterGhPanel
                 var widths = writer.CreateChunk("PanelColumnWidths");
                 foreach (var entry in savedWidths)
                 {
-                    float width = Math.Max(PanelTableText.MinimumColumnWidth, Math.Min(ColumnWidthLimit(entry.Key), entry.Value));
+                    float width = RequestedColumnWidth(entry.Key, entry.Value);
                     widths.SetSingle(entry.Key.ToString("D"), width);
                     widths.SetSingle("InputIndex" + Params.Input.FindIndex(input => input.InstanceGuid == entry.Key), width);
                 }
@@ -613,7 +615,7 @@ namespace BetterGhPanel
                 if (widths != null && (widths.TryGetSingle(input.InstanceGuid.ToString("D"), ref value) || widths.TryGetSingle("InputIndex" + index, ref value)) &&
                     !float.IsNaN(value) && !float.IsInfinity(value))
                 {
-                    ColumnWidths[input.InstanceGuid] = Math.Max(PanelTableText.MinimumColumnWidth, Math.Min(ColumnWidthLimit(input.InstanceGuid), value));
+                    ColumnWidths[input.InstanceGuid] = RequestedColumnWidth(input.InstanceGuid, value);
                     _columnInputIndices[input.InstanceGuid] = index;
                 }
             }

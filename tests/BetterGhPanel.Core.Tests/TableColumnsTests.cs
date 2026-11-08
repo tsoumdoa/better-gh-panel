@@ -30,7 +30,7 @@ public class TableColumnsTests
             branches ?? ((_, __, ___) => Array.Empty<(int Item, string Path)?>()), _ => Array.Empty<int>()) });
 
     [Fact]
-    public void SetCellSummariesFollowOnlyPairedMemberIndicesAndBoundThePreview()
+    public void SetCellSummariesPreserveMissingMembersAndBoundThePreview()
     {
         var members = new HashSet<int>(new[] { 0, 2, 5, 7, 9, 12, 15 });
         var id = Guid.NewGuid();
@@ -40,8 +40,8 @@ public class TableColumnsTests
         int checks = 0;
         while (!work.TryComplete(() => ++checks % 7 == 0)) Assert.Null(work.Result);
         var summary = work.Result!.TableSummaries[id].Sets[0];
-        Assert.Equal(5, summary.Count);
-        Assert.Equal(new[] { 100, 102, 105, 107 }, summary.Preview);
+        Assert.Equal(16, summary.Count);
+        Assert.Equal(new[] { 100, -1, 102, -1 }, summary.Preview);
     }
 
     [Fact]

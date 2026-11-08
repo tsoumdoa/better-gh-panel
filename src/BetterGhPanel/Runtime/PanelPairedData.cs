@@ -20,17 +20,6 @@ namespace BetterGhPanel.Runtime
             internal PairHeading(int count, int dataCount, bool unequal)
             { DataCount = "D " + dataCount; DataTotal = dataCount; Total = count; Unequal = unequal; }
         }
-        // Built during filtered output, never by expanding members while painting.
-        internal sealed class Summary
-        {
-            internal int Count;
-            internal readonly List<int> Preview = new List<int>(4);
-            internal void Add(int item) { Count++; if (Preview.Count < 4) Preview.Add(item); }
-            internal void Add(Summary other)
-            { Count += other.Count; Preview.AddRange(other.Preview.Take(4 - Preview.Count)); }
-        }
-        internal readonly Dictionary<string, Summary> BranchSummaries = new Dictionary<string, Summary>(StringComparer.Ordinal);
-        internal PanelQueryResult? SummaryResult { get; private set; }
         internal readonly Dictionary<string, PairHeading> Headings =
             new Dictionary<string, PairHeading>(StringComparer.Ordinal);
         private readonly int[] _sourcePairs, _pairedPairs, _dataPositions;
@@ -146,52 +135,35 @@ namespace BetterGhPanel.Runtime
 
         internal GH_Structure<IGH_Goo> Output(PanelQueryResult query, IReadOnlyList<int> positions,
             IReadOnlyList<string> branchPaths, bool flatten, bool includeEmpty, Action<long>? countVisits = null, bool selected = false)
-            => OutputCore(query, positions, branchPaths, flatten, includeEmpty, countVisits, selected, true);
-
-        internal void BuildSummaries(PanelQueryResult query, bool flatten, bool includeEmpty) =>
-            OutputCore(query, query.RowPositions, query.BranchPaths, flatten, includeEmpty, null, false, false);
-
-        private GH_Structure<IGH_Goo> OutputCore(PanelQueryResult query, IReadOnlyList<int> positions,
-            IReadOnlyList<string> branchPaths, bool flatten, bool includeEmpty, Action<long>? countVisits, bool selected, bool materialize)
         {
             var result = new GH_Structure<IGH_Goo>();
             long visits = 0;
             var set = query.DisplaySet;
-            if (!selected) { BranchSummaries.Clear(); }
             if (set == null) AddGroup(positions, branchPaths, path => Parse(path));
             else if (set.IsBranchSet)
                 foreach (string representative in branchPaths)
                 {
                     int k = set.BranchIndices[representative];
-                    var summary = AddGroup(set.BranchMembers[representative], set.BranchOccurrences[representative],
+                    AddGroup(set.BranchMembers[representative], set.BranchOccurrences[representative],
                         path => new GH_Path(new[] { k }.Concat(Parse(path).Indices).ToArray()));
-                    if (!selected) BranchSummaries[representative] = summary;
                 }
             else foreach (int representative in positions.OrderBy(value => value))
             {
                 int k = set.MemberIndices[representative];
                 var destination = flatten ? new GH_Path(k) : Parse(query.Snapshot.Rows[representative].Path).AppendElement(k);
-                var summary = AddGroup(set.Members[representative], Array.Empty<string>(), _ => destination);
-                if (!selected)
-                {
-                    string path = query.Snapshot.Rows[representative].Path;
-                    if (!BranchSummaries.TryGetValue(path, out var branchSummary)) BranchSummaries.Add(path, branchSummary = new Summary());
-                    branchSummary.Add(summary);
-                }
+                AddGroup(set.Members[representative], Array.Empty<string>(), _ => destination);
             }
             countVisits?.Invoke(visits + result.DataCount);
-            if (!selected) SummaryResult = query;
             return result;
 
-            Summary AddGroup(IReadOnlyList<int> members, IEnumerable<string> paths, Func<string, GH_Path> destination)
+            void AddGroup(IReadOnlyList<int> members, IEnumerable<string> paths, Func<string, GH_Path> destination)
             {
                 visits += members.Count;
-                var summaries = new Dictionary<string, Summary>(StringComparer.Ordinal);
                 var retainedPaths = paths.ToArray();
                 foreach (string path in retainedPaths)
                 {
                     visits++;
-                    if (materialize) result.EnsurePath(destination(path));
+                    result.EnsurePath(destination(path));
                 }
                 string? previousPath = null;
                 IList<IGH_Goo>? branch = null;
@@ -201,25 +173,10 @@ namespace BetterGhPanel.Runtime
                 foreach (var item in BranchItems(query.Snapshot, members, emptyPaths, includeEmpty))
                 {
                     visits++;
-                    if (materialize && item.Path != previousPath)
+                    if (item.Path != previousPath)
                     { branch = result.EnsurePath(destination(item.Path)); previousPath = item.Path; }
-                    if (materialize) branch!.Add(_rawItems[item.Item]);
-                    if (!selected)
-                    {
-                        // Item sets have one destination; branch sets retain tree path order.
-                        string key = set?.IsBranchSet == false ? "" : item.Path;
-                        if (!summaries.TryGetValue(key, out var summary)) summaries.Add(key, summary = new Summary());
-                        summary.Add(item.Item);
-                    }
+                    branch!.Add(_rawItems[item.Item]);
                 }
-                var combined = new Summary();
-                if (set?.IsBranchSet == true)
-                    foreach (string path in retainedPaths)
-                    { if (summaries.TryGetValue(path, out var summary)) combined.Add(summary); }
-                else foreach (var summary in summaries) combined.Add(summary.Value);
-                if (!selected && set == null)
-                    foreach (var summary in summaries) BranchSummaries[summary.Key] = summary.Value;
-                return combined;
             }
         }
 
