@@ -7,6 +7,26 @@ using Xunit;
 
 public class TableColumnsTests
 {
+    [Theory]
+    [InlineData(PanelUnitConversion.MillimetersToMeters, 1, 4200, "L 4.20 m")]
+    [InlineData(PanelUnitConversion.MillimetersToMeters, 2, 1800, "A 1800.00 mm²")]
+    [InlineData(PanelUnitConversion.MillimetersToMeters, 3, 5600, "V 5600.00 mm³")]
+    [InlineData(PanelUnitConversion.SquareMillimetersToSquareMeters, 2, 18000000, "A 18.00 m²")]
+    [InlineData(PanelUnitConversion.CubicMillimetersToCubicMeters, 3, 56000000000, "V 56.00 m³")]
+    public void MixedGeometryColumnUsesTheSameDimensionSpecificConversionAsPlainD(
+        PanelUnitConversion conversion, int power, double rawMetric, string expectedMetric)
+    {
+        string type = power == 1 ? "Curve" : power == 2 ? "Surface" : "Brep";
+        string label = power == 1 ? "Crv" : power == 2 ? "Srf" : "Brep";
+        var geometry = new PanelGeometryInfo(label + " · shape hints", rawMetric, power, "mm",
+            power == 1 ? "Length" : power == 2 ? "Area" : "Volume", power == 1 ? "L" : power == 2 ? "A" : "V");
+        var row = new PanelRow(0, "{0}", type, "", null, geometryInfo: geometry);
+        string plainD = PanelValuePresentation.FormatDisplay(row, conversion, 2, geometry);
+        string column = PanelTableText.GeometryCell(row, geometry, false, false, conversion, 2, 0);
+        Assert.EndsWith(" · " + expectedMetric, plainD);
+        Assert.Equal(label + " " + expectedMetric, column);
+    }
+
     [Fact]
     public void CompactGeometryCellsShareMetricRoundingAndOmitHints()
     {
