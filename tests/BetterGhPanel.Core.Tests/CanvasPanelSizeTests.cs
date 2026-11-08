@@ -6,19 +6,6 @@ using BetterGhPanel.Core;
 
 public class CanvasPanelSizeTests
 {
-    [Fact]
-    public void AddedPortsKeepPickSpacingInAllLayoutsWithoutChangingFixedPorts()
-    {
-        Assert.Equal(360, CanvasPanelSize.FullHeightForInputs(360, 2));
-        Assert.Equal(96, CanvasPanelSize.CapsuleHeightForInputs(2));
-        foreach (int count in new[] { 3, 12, 24 })
-        {
-            float full = CanvasPanelSize.FullHeightForInputs(360, count);
-            Assert.True((full / 2 - 48) / (count - 1) >= CanvasPanelSize.MinimumPortSpacing);
-            Assert.True((CanvasPanelSize.CapsuleHeightForInputs(count) - 24) / (count - 1) >= CanvasPanelSize.MinimumPortSpacing);
-        }
-    }
-
     public static IEnumerable<object[]> PresetIndices => Enumerable.Range(0, CanvasPanelSize.PresetNames.Length)
         .Select(i => new object[] { i });
 

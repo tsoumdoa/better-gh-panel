@@ -29,7 +29,6 @@ namespace BetterGhPanel.Runtime
             internal void Add(Summary other)
             { Count += other.Count; Preview.AddRange(other.Preview.Take(4 - Preview.Count)); }
         }
-        internal readonly Dictionary<int, Summary> SetSummaries = new Dictionary<int, Summary>();
         internal readonly Dictionary<string, Summary> BranchSummaries = new Dictionary<string, Summary>(StringComparer.Ordinal);
         internal PanelQueryResult? SummaryResult { get; private set; }
         internal readonly Dictionary<string, PairHeading> Headings =
@@ -158,7 +157,7 @@ namespace BetterGhPanel.Runtime
             var result = new GH_Structure<IGH_Goo>();
             long visits = 0;
             var set = query.DisplaySet;
-            if (!selected) { SetSummaries.Clear(); BranchSummaries.Clear(); }
+            if (!selected) { BranchSummaries.Clear(); }
             if (set == null) AddGroup(positions, branchPaths, path => Parse(path));
             else if (set.IsBranchSet)
                 foreach (string representative in branchPaths)
@@ -175,7 +174,6 @@ namespace BetterGhPanel.Runtime
                 var summary = AddGroup(set.Members[representative], Array.Empty<string>(), _ => destination);
                 if (!selected)
                 {
-                    SetSummaries[representative] = summary;
                     string path = query.Snapshot.Rows[representative].Path;
                     if (!BranchSummaries.TryGetValue(path, out var branchSummary)) BranchSummaries.Add(path, branchSummary = new Summary());
                     branchSummary.Add(summary);

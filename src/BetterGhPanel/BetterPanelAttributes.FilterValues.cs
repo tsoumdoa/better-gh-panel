@@ -10,14 +10,14 @@ namespace BetterGhPanel
     {
         private void RenderListLengths(Graphics graphics, PanelQueryResult result, Font font, Font small, Font mono, StringFormat trim)
         {
-            var pane = _d;
-            var list = pane.List;
-            var track = pane.Track;
-            ref int offset = ref pane.Offset;
-            ref int shown = ref pane.Shown;
+            var list = _list;
+            var track = _track;
+            ref int offset = ref _offset;
+            ref int shown = ref _shown;
             offset = Math.Max(0, Math.Min(Math.Max(0, Count - 1), offset));
             using var renderer = new CanvasRowRenderer(graphics, result.Snapshot.Branches.Count, false);
             if (TableVisible) { PrepareTable(graphics, result, font, renderer.GutterWidth); DrawTableHeader(graphics, font, trim, renderer.GutterWidth); }
+            list = _list; track = _track;
             var selected = _selection.BranchPaths(result);
             bool set = result.DisplaySet?.IsBranchSet == true;
             float y = list.Y;
@@ -60,7 +60,7 @@ namespace BetterGhPanel
                     for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
                     {
                         string text = ColumnBranchCell(path, column);
-                        PaintColumn(graphics, column + 1, y, RowHeight, cell => DrawTableCell(graphics, renderer, null, text, cell, font, small));
+                        PaintColumn(graphics, column + 1, y, RowHeight, cell => DrawTableCell(graphics, renderer, null, text, cell, font, small, note: PanelOwner.TableColumns[column].BranchExtraNote(result, path)));
                     }
                 shown++;
                 y += RowHeight;
@@ -68,6 +68,7 @@ namespace BetterGhPanel
             if (Count == 0)
                 Text(graphics, result.Snapshot.Branches.Count == 0 ? "Connect a tree to start exploring." : "No matching branches. Clear a filter or Reset all.",
                     small, Muted, new RectangleF(list.X + 6, list.Y, list.Width - 12, RowHeight), trim);
+            if (TableVisible) DrawFrozenEdge(graphics);
             if (TableVisible && _horizontalMaximum > 0) { Fill(graphics, PanelTheme.Rgb(232, 236, 229), _horizontalTrack); Fill(graphics, PanelTheme.Rgb(153, 174, 156), HorizontalThumb()); }
             if (Count > shown && !track.IsEmpty)
             {

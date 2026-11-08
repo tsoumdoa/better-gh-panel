@@ -61,7 +61,7 @@ namespace BetterGhPanel
         private ControlEntry[] CreateControlHits() => new[]
         {
             new ControlEntry("TableHeader", _ => _tableHeader, ClickTableHeader, TooltipTableHeader, click: ControlStep.BeforeDetails, hover: ControlStep.Main, tooltip: ControlStep.Main,
-                visible: _ => TableVisible && PanelOwner.Session.HasCurrentResult),
+                visible: _ => TableVisible && PanelOwner.Session.HasCurrentResult, hoverRects: HeaderHoverRects),
             new ControlEntry("Close", layout => layout.Close, ClickClose, TooltipClose, click: ControlStep.Header, hover: ControlStep.Header, tooltip: ControlStep.BeforeStatisticsMenu),
             new ControlEntry("Display", layout => layout.Display, ClickDisplay, TooltipDisplay, click: ControlStep.Header, hover: ControlStep.Header, tooltip: ControlStep.Main),
             new ControlEntry("Resize", layout => layout.Resize, ClickResize, TooltipResize, click: ControlStep.BeforeTrack, tooltip: ControlStep.Main, cursor: Cursors.SizeNWSE),
@@ -277,7 +277,7 @@ namespace BetterGhPanel
         {
             var jumpResult = PanelOwner.Session.Result;
             bool branchView = DisplayListLengths;
-            int firstItem = branchView ? _d.Offset : ViewItemAtOrAfter(jumpResult, _d.Offset);
+            int firstItem = branchView ? _offset : ViewItemAtOrAfter(jumpResult, _offset);
             var anchor = _jumpBounds.IsEmpty ? new RectangleF(_layout.Footer.X, _layout.Units.Y, 60, _layout.Units.Height) : _jumpBounds;
             CanvasTextInput.Show(sender, PanelOwner, anchor, (Math.Min(firstItem, Math.Max(0, (branchView ? jumpResult.BranchPaths.Count : jumpResult.RowPositions.Count) - 1)) + 1).ToString(), text =>
             {
@@ -292,8 +292,8 @@ namespace BetterGhPanel
                 // page capacity, so previous-page size must not hide the final item.
                 int index = Math.Max(0, Math.Min(Math.Max(0, itemCount - 1), row <= 1 ? 0 : row - 1));
                 int offset = itemCount == 0 ? 0 : branchView ? index : ViewOffset(jumpResult, index);
-                bool changed = _d.Offset != offset;
-                _d.Offset = offset;
+                bool changed = _offset != offset;
+                _offset = offset;
                 if (itemCount > 0 && (row < 1 || row > itemCount))
                     ShowNotice(sender, System.FormattableString.Invariant($"Row {row:N0} is out of range · showing row {index + 1:N0} of {itemCount:N0}"));
                 if (changed) InvalidatePaintedHits();

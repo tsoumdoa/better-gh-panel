@@ -24,8 +24,8 @@ namespace BetterGhPanel
             if (_warningsHeight == 0 || !ResultIsCurrent(result)) return;
             var warnings = result.Warnings;
             float separatorWidth = graphics.MeasureString(" · ", small, int.MaxValue, Tight).Width;
-            float x = _d.List.X + 2, y = _layout.Panel.Y + 48;
-            float right = _d.List.Right;
+            float x = _list.X + 2, y = _layout.Panel.Y + 48;
+            float right = _list.Right;
             bool hasSegment = false;
             void Segment(string text, int kind)
             {

@@ -238,8 +238,8 @@ namespace BetterGhPanel
                         string text;
                         if (includeColumns) text = TableTsv(result, ordered);
                         else if (tableColumn != null && action == PanelRowAction.CopyValues)
-                            text = columnBranch != null ? tableColumn.BranchCell(result, columnBranch, UnitConversion, DecimalPlaces, RoundUpFactor) :
-                                string.Join(Environment.NewLine, ordered.Select(position => tableColumn.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor)));
+                            text = columnBranch != null ? tableColumn.BranchCellText(result, columnBranch, UnitConversion, DecimalPlaces, RoundUpFactor) :
+                                string.Join(Environment.NewLine, ordered.Select(position => tableColumn.CellText(result, position, UnitConversion, DecimalPlaces, RoundUpFactor)));
                         else if (path != null) text = pathText!;
                         else if (action == PanelRowAction.CopyPaths)
                         {

@@ -148,8 +148,33 @@ namespace BetterGhPanel.Core
         internal Func<PanelQueryResult, IReadOnlyList<int>, bool, IEnumerable<PanelTableExtra?>> Extras { get; }
     }
 
+    internal static class PanelTableInputIdentity
+    {
+        internal static Guid Resolve(Guid saved, IReadOnlyList<Guid> current, int index)
+        {
+            if (current.Contains(saved)) return saved;
+            return index >= 0 && index < current.Count ? current[index] : Guid.Empty;
+        }
+    }
+
+    // Display summaries follow set-member indices, independently of wire-output expansion.
+    internal sealed class PanelTableMemberSummary
+    {
+        internal readonly List<int> Preview = new List<int>(4);
+        internal int Count { get; private set; }
+        internal static PanelTableMemberSummary Build(IEnumerable<int> members, Func<int, int?> pairedAt)
+        {
+            var summary = new PanelTableMemberSummary();
+            foreach (int member in members)
+                if (pairedAt(member) is int item)
+                { summary.Count++; if (summary.Preview.Count < 4) summary.Preview.Add(item); }
+            return summary;
+        }
+    }
+
     internal static class PanelTableText
     {
+        internal const float MinimumColumnWidth = 48, MaximumColumnWidth = 320;
         internal static bool NumericColumn(PanelSnapshot? snapshot) => snapshot?.TypeCounts.Count > 0 &&
             snapshot.TypeCounts.Keys.All(type => type == "Number" || type == "Integer");
         internal static bool ShowCellTypes(PanelSnapshot? snapshot) => snapshot != null &&

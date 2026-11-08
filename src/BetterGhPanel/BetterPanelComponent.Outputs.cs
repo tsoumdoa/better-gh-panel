@@ -19,12 +19,10 @@ namespace BetterGhPanel
         internal bool CanOutputValues => CanOutputValuesFor(CreateSetTree, Session.Options);
         internal bool OutputsValues => CanOutputValues && OutputValues == PanelOutputValues.Values;
         private GH_Structure<IGH_Goo>? _inputTree, _preConversionTree;
-        private GH_Structure<IGH_Goo>? _liveInputTree, _livePairedTree, _pairedInputTree;
-        private bool _pairedInputPresent;
+        private GH_Structure<IGH_Goo>? _liveInputTree;
         private IReadOnlyList<PanelSourceAddress> _retainedSources = Array.Empty<PanelSourceAddress>();
         private string? _pairedError;
         internal PanelPairedData? PairedData { get; private set; }
-        internal PanelSnapshot? PairedSnapshot { get; private set; }
         internal string? PairedError => _pairedError;
         internal bool CanSplit => TableColumns.Any(column => column.Present && column.Pair != null) && Session.HasCurrentResult;
         private long _selectionVersion, _publishedSelectionVersion;
@@ -45,19 +43,14 @@ namespace BetterGhPanel
         private void ClearOutputSources()
         {
             _inputTree = _preConversionTree = null;
-            _liveInputTree = _livePairedTree = _pairedInputTree = null;
-            _pairedInputPresent = false;
+            _liveInputTree = null;
             _captureGraphs = Array.Empty<CaptureGraphWitness>();
-            _captureHasGeometry = _pairedHasGeometry = false;
+            _captureHasGeometry = false;
             _retainedSources = Array.Empty<PanelSourceAddress>();
             _pairedError = null;
-            PairedSnapshot = null;
             PairedData = null;
             _tableColumns.Clear();
             if (_outputOptions != null) { _outputOptions.ColumnSortKeys = null; _outputOptions.TableSource = null; }
-            _pairedSourceItems = Array.Empty<IGH_Goo?>();
-            _pairedMeasurementSources = Array.Empty<CapturedMeasurementSource?>();
-            _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
             _cachedOutputResult = null;
             _filteredData = _filteredPair = null;
             _filteredMask = null;
@@ -87,8 +80,9 @@ namespace BetterGhPanel
                 _filteredPair = PairedData?.Output(query, query.RowPositions, query.BranchPaths, FlattenTree, PanelPairedData.EmptyPartnersInScope(session.Options), CountOutputVisits);
                 // Busy publications may advance output options; cells and copy
                 // accept summaries only when this result identity has been rebuilt.
-                foreach (var column in TableColumns.Where(column => !ReferenceEquals(column.Pair, PairedData) && column.Pair != null))
+                foreach (var column in TableColumns.Where(column => set == null && !ReferenceEquals(column.Pair, PairedData) && column.Pair != null))
                     column.Pair!.BuildSummaries(query, FlattenTree, PanelPairedData.EmptyPartnersInScope(session.Options));
+                foreach (var column in TableColumns) column.BuildDisplaySummaries(query);
                 _filteredMask = null;
             }
             // Selection-only solutions reuse unchanged query outputs. A large

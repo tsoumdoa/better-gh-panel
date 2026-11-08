@@ -66,7 +66,7 @@ internal static class PairingWysiwygChecks
             finally { GH_Skin.canvas_back = previous; }
         }
         object Heading() => FieldValue<IEnumerable>(attributes, "_branchHits").Cast<object>().First(hit =>
-            PropertyValue<string>(hit, "Path") == "{0;0}" && PanelTestAdapter.PaneField<RectangleF>(attributes, "List").Contains(PropertyValue<RectangleF>(hit, "Bounds")));
+            PropertyValue<string>(hit, "Path") == "{0;0}" && PanelTestAdapter.ViewField<RectangleF>(attributes, "List").Contains(PropertyValue<RectangleF>(hit, "Bounds")));
         PointF Center(RectangleF bounds) => new PointF(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
         Render();
         foreach (string mode in new[] { "Full", "Half" })
@@ -74,7 +74,7 @@ internal static class PairingWysiwygChecks
             Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, mode));
             Render();
             var caption = FieldValue<RectangleF>(attributes, "_tableHeader");
-            var list = PanelTestAdapter.PaneField<RectangleF>(attributes, "List");
+            var list = PanelTestAdapter.ViewField<RectangleF>(attributes, "List");
             var panel = PanelTestAdapter.LayoutRect(attributes, "Panel");
             Check(FieldValue<float>(attributes, "_warningsHeight") == 17 && caption.Top >= panel.Top + 64 &&
                 list.Top >= caption.Bottom && list.Bottom <= PanelTestAdapter.LayoutRect(attributes, "Footer").Top &&
@@ -111,7 +111,7 @@ internal static class PairingWysiwygChecks
                 "Table TSV uses D paths and displayed converted column values while F output stays raw");
             await Copy("CopyAddresses");
             Check(Forms.Clipboard.GetText() == "{0;0}(0)", "D address keeps its transformed D branch index");
-            var pane = PanelTestAdapter.PaneField<RectangleF>(attributes, "List");
+            var pane = PanelTestAdapter.ViewField<RectangleF>(attributes, "List");
             var rowHit = FieldValue<IEnumerable>(attributes, "_rowHits").Cast<object>().First(hit =>
                 PropertyValue<int>(hit, "SourcePosition") == 0 && pane.Contains(PropertyValue<RectangleF>(hit, "Bounds")));
             PanelTestAdapter.CanvasClick(canvas, Center(PropertyValue<RectangleF>(rowHit, "Bounds")), Forms.MouseButtons.Right); Render();
@@ -130,8 +130,8 @@ internal static class PairingWysiwygChecks
                     int item = FieldValue<int>(entry, "Extra");
                     foreach (var hit in FieldValue<IEnumerable>(attributes, "_rowHits").Cast<object>().Where(hit => pane.Contains(PropertyValue<RectangleF>(hit, "Bounds"))))
                         selectable |= ColumnRow(component, PropertyValue<int>(hit, "SourcePosition")) is PanelRow row &&
-                            row.Path == PropertyValue<PanelSnapshot>(component, "PairedSnapshot").Rows[item].Path &&
-                            row.OriginalIndex == PropertyValue<PanelSnapshot>(component, "PairedSnapshot").Rows[item].OriginalIndex;
+                            row.Path == ColumnSnapshot(component).Rows[item].Path &&
+                            row.OriginalIndex == ColumnSnapshot(component).Rows[item].OriginalIndex;
                 }
                 Check(found && !selectable, message);
             }
@@ -150,7 +150,7 @@ internal static class PairingWysiwygChecks
             PanelTestAdapter.Resize(component, 300, 650); Render();
             var clipped = PropertyValue<RectangleF>(Heading(), "Bounds");
             Call(attributes, "UpdateHover", canvas, Center(clipped)); Render();
-            Check(FieldValue<RectangleF>(attributes, "_tableHeader").Width == PanelTestAdapter.PaneField<RectangleF>(attributes, "List").Width,
+            Check(FieldValue<RectangleF>(attributes, "_tableHeader").Width == PanelTestAdapter.ViewField<RectangleF>(attributes, "List").Width,
                 "Narrow table header and list keep identical clipping widths");
         }
         finally { if (clipboard == null) Forms.Clipboard.Clear(); else Forms.Clipboard.SetDataObject(clipboard, true); }

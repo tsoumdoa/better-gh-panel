@@ -194,8 +194,8 @@ internal static class OutputValuesHostChecks
             await Query(PanelSearchMode.ListLength);
             var pairing = PropertyValue<object>(component, "PairedData");
             var pairedRows = (System.Collections.IDictionary)pairing.GetType().GetField("BranchSummaries", AnyInstance)!.GetValue(pairing)!;
-            Check(pairedRows.Count > 0 && PanelTestAdapter.PaneField<RectangleF>(attributes, "List").Height >= 17 &&
-                PanelTestAdapter.PaneField<RectangleF>(attributes, "List").Bottom <= Bounds("Footer").Top,
+            Check(pairedRows.Count > 0 && PanelTestAdapter.ViewField<RectangleF>(attributes, "List").Height >= 17 &&
+                PanelTestAdapter.ViewField<RectangleF>(attributes, "List").Bottom <= Bounds("Footer").Top,
                 "Minimum table " + display + " retains branch summaries and a full data row without footer overlap");
         }
     }

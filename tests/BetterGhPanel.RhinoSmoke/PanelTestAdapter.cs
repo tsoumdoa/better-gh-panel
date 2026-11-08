@@ -22,6 +22,8 @@ internal static class PanelTestAdapter
 
     internal static BetterGhPanel.Core.PanelRow? ColumnRow(GH_Component component, int position) =>
         (BetterGhPanel.Core.PanelRow?)Call(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "Row", position);
+    internal static BetterGhPanel.Core.PanelSnapshot ColumnSnapshot(GH_Component component) =>
+        PropertyValue<BetterGhPanel.Core.PanelSnapshot>(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "Snapshot");
     internal static bool ColumnSummaryCurrent(GH_Component component) =>
         PropertyValue<bool>(Session(component), "HasCurrentResult") && (bool)Call(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "SummaryCurrent",
             PropertyValue<BetterGhPanel.Core.PanelQueryResult>(Session(component), "Result"))!;
@@ -85,7 +87,7 @@ internal static class PanelTestAdapter
         component.GetType().GetMethod("SetTreeOperations", NonPublicInstance)!.Invoke(component, new object[] { depth, flatten, reverse, simplify, createSet });
     internal static BetterGhPanel.Core.PanelUnitConversion Conversion(GH_Component component) => Property<BetterGhPanel.Core.PanelUnitConversion>(component, "UnitConversion");
     internal static int Decimals(GH_Component component) => Property<int>(component, "DecimalPlaces");
-    internal static int Offset(GH_Component component) => PanelTestAdapter.PaneField<int>(component.Attributes, "Offset");
+    internal static int Offset(GH_Component component) => PanelTestAdapter.ViewField<int>(component.Attributes, "Offset");
     internal static int SelectedPosition(GH_Component component)
     {
         var selection = Field<object>(component.Attributes, "_selection");
@@ -105,7 +107,7 @@ internal static class PanelTestAdapter
         component.GetType().GetMethod("SetCanvasSize", NonPublicInstance)!.Invoke(component, new object[] { width, height });
     internal static RectangleF Bounds(GH_Component component, CanvasControl control) =>
         control == CanvasControl.List || control == CanvasControl.Track
-            ? PaneField<RectangleF>(component.Attributes, control.ToString())
+            ? ViewField<RectangleF>(component.Attributes, control.ToString())
             : LayoutRect(component.Attributes, control.ToString());
     internal static RectangleF MenuBounds(GH_Component component) => Property<RectangleF>(Field<object>(component.Attributes, "_menu"), "Bounds");
     internal static string RowMenuLabel(GH_Component component, int index) =>
@@ -192,8 +194,8 @@ internal static class PanelTestAdapter
     internal static RectangleF LayoutRect(object attributes, string name) =>
         Property<RectangleF>(Field<object>(attributes, "_layout"), name);
 
-    internal static T PaneField<T>(object attributes, string name) =>
-        Field<T>(Field<object>(attributes, "_d"), name);
+    internal static T ViewField<T>(object attributes, string name) =>
+        Field<T>(attributes, "_" + char.ToLowerInvariant(name[0]) + name.Substring(1));
 
     private static T Field<T>(object owner, string name) => (T)owner.GetType().GetField(name, NonPublicInstance)!.GetValue(owner)!;
 }

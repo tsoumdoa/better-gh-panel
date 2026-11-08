@@ -114,6 +114,11 @@ namespace BetterGhPanel.UI
         private int _paintedOffset = -1, _paintedVisible = -1;
         private bool[] _paintedRows = Array.Empty<bool>();
         private bool _paintedPrevious, _paintedNext;
+        private static readonly CanvasChoice<PanelSortMode>[] HeaderSortChoices = {
+            new CanvasChoice<PanelSortMode>(PanelSortMode.ValueAscending, "Sort ascending"),
+            new CanvasChoice<PanelSortMode>(PanelSortMode.ValueDescending, "Sort descending"),
+            new CanvasChoice<PanelSortMode>(PanelSortMode.SourceOrder, "Clear sort")
+        };
         internal Guid HeaderSortColumn { get; set; }
         internal CanvasMenuKind Kind { get; private set; }
         internal RectangleF Bounds { get; private set; }
@@ -401,7 +406,7 @@ namespace BetterGhPanel.UI
             InvalidatePaint();
             return true;
         }
-        internal PanelSortMode SortModeAt(int index) => Kind == CanvasMenuKind.HeaderSort ? new[] { PanelSortMode.ValueAscending, PanelSortMode.ValueDescending, PanelSortMode.SourceOrder }[index] : SortChoices[index].Value;
+        internal PanelSortMode SortModeAt(int index) => Kind == CanvasMenuKind.HeaderSort ? HeaderSortChoices[index].Value : SortChoices[index].Value;
         internal PanelSearchMode SearchModeAt(int index) => _searchChoices[index].Value;
         internal CanvasPreviewChoice PreviewChoiceAt(int index) => PreviewChoices[index];
         internal CanvasUnitChoice UnitChoiceAt(int index) => UnitChoices[index];
@@ -482,7 +487,7 @@ namespace BetterGhPanel.UI
                 string name = TypeNameAt(index), hint = ShortTypeName(name);
                 return hint == name ? name : hint + " · " + name;
             }
-            if (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) return Kind == CanvasMenuKind.HeaderSort ? new[] { "Sort ascending", "Sort descending", "Clear sort" }[index] : SortChoices[index].Label;
+            if (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) return Kind == CanvasMenuKind.HeaderSort ? HeaderSortChoices[index].Label : SortChoices[index].Label;
             if (Kind == CanvasMenuKind.SearchMode) return _searchChoices[index].Label;
             if (Kind == CanvasMenuKind.Comparison) return ComparisonChoiceAt(index).Label;
             if (index == 0) return "All branches";

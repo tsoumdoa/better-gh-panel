@@ -16,9 +16,9 @@ namespace BetterGhPanel
             return (index, PanelOwner.Session.Options.SortMode != PanelSortMode.SourceOrder);
         }
         private int ViewCount(PanelQueryResult result) => HasPairView ? TableIndex(result).Entries.Count : result.ViewIndex.Count;
-        private void ViewEntry(PanelQueryResult result, int offset, out int item, out string? empty, out int extra, out string label)
+        private void ViewEntry(PanelQueryResult result, int offset, out int item, out string? empty, out int extra)
         {
-            extra = -1; label = "";
+            extra = -1;
             if (!HasPairView) { result.ViewIndex.TryGet(offset, out item, out empty); return; }
             var entry = TableIndex(result).Entries[offset]; item = entry.Item; empty = entry.Empty; extra = entry.Extra ? offset : -1;
         }

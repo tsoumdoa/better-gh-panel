@@ -143,7 +143,7 @@ namespace BetterGhPanel
                 return GH_ObjectResponse.Handled;
             }
             var result = PanelOwner.Session.Result;
-            if (ListContains(e.CanvasLocation) && !RowsAreCurrent(result))
+            if (_list.Contains(e.CanvasLocation) && !RowsAreCurrent(result))
             {
                 _rowContextHandled = true;
                 _rowHits.Clear();
@@ -197,7 +197,7 @@ namespace BetterGhPanel
                 _rowMenuPath = null;
                 _rowMenuSourcePosition = hit.SourcePosition;
                 ShowRowMenu(canvas, result, CanvasRowActions.Create(_selection.Count, _selection.Indices(result), filtered,
-                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX, false,
+                    PanelOwner.SelectionHasGeometry(_selection.OrderedPositions(result)), !Rhino.Runtime.HostUtils.RunningOnOSX,
                     result.DisplaySet != null && !result.DisplaySet.IsBranchSet && PanelOwner.OutputValues == PanelOutputValues.Items),
                     e.CanvasLocation);
                 canvas.Invalidate();

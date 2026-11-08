@@ -55,10 +55,10 @@ internal static class WysiwygValuesChecks
         foreach (var scope in new[] { PanelOutputScope.Filtered, PanelOutputScope.Selected })
         {
             fixture.Scope(scope);
-            Check((string)Call(attributes, "OutputPortLabel", component.Params.Output[0])! == "D" &&
-                (string)Call(attributes, "OutputPortLabel", component.Params.Output[1])! == "S" &&
-                (string)Call(attributes, "OutputPortLabel", component.Params.Output[2])! == "B" &&
-                (string)Call(attributes, "OutputPortLabel", component.Params.Output[3])! == "F",
+            Check(component.Params.Output[0].NickName == "D" &&
+                component.Params.Output[1].NickName == "S" &&
+                component.Params.Output[2].NickName == "B" &&
+                component.Params.Output[3].NickName == "F",
                 "All scopes retain D/S/B/F port labels");
             string scopeLabel = scope == PanelOutputScope.Selected ? "Selection" : "Results";
             Check(component.Params.Output[2].Description.Contains(scopeLabel) && component.Params.Output[3].Description.Contains(scopeLabel),
@@ -266,7 +266,7 @@ internal static class WysiwygValuesChecks
         PanelTestAdapter.Resize(component, 300, 220);
         Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Half"));
         attributes.PerformLayout(); Render();
-        Check(FieldValue<float>(attributes, "_warningsHeight") == 0 && PanelTestAdapter.PaneField<RectangleF>(attributes, "List").Bottom <= PanelTestAdapter.LayoutRect(attributes, "Footer").Top &&
+        Check(FieldValue<float>(attributes, "_warningsHeight") == 0 && PanelTestAdapter.ViewField<RectangleF>(attributes, "List").Bottom <= PanelTestAdapter.LayoutRect(attributes, "Footer").Top &&
             FieldValue<System.Collections.Generic.List<(RectangleF Bounds, int Kind)>>(attributes, "_warningHits").Count == 0,
             "Compact Half hides warnings and keeps rows above footer with no stale warning hit targets");
         Capture("compact-half");

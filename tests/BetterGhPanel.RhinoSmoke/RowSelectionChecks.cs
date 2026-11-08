@@ -144,7 +144,7 @@ internal static class RowSelectionChecks
             "A double-click's second click on another row is a fresh click");
         fixture.ClearSelection();
 
-        attributes.GetType().GetMethod("SetOffset", NonPublicInstance)!.Invoke(attributes, new object[] { canvas, 5 });
+        attributes.GetType().GetMethod("SetPaneOffset", NonPublicInstance)!.Invoke(attributes, new object[] { canvas, 5 });
         PanelTestAdapter.CanvasClick(canvas, point);
         Check(fixture.SelectedCount == 0, "An offset change cannot select a row using its old painted address");
         Render();

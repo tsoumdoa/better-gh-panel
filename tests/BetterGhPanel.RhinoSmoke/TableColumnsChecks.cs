@@ -203,8 +203,13 @@ internal static class TableColumnsChecks
         }
         // Grasshopper's ordinary variable-parameter undo must restore the source wire.
         fixture.Document.UndoServer.Clear();
+        Call(component, "SetColumnSort", component.Params.Input[2].InstanceGuid, PanelSortMode.ValueAscending);
+        await fixture.Ready(() => PropertyValue<PanelQueryOptions>(fixture.Session, "Options").SortColumn == component.Params.Input[2].InstanceGuid);
         Guid columnId = component.Params.Input[2].InstanceGuid;
         Call(component, "RemoveColumn", component.Params.Input[2]);
+        Check(PropertyValue<PanelQueryOptions>(fixture.Session, "Options").SortColumn == Guid.Empty &&
+            PropertyValue<PanelQueryOptions>(fixture.Session, "Options").SortMode == PanelSortMode.SourceOrder,
+            "Removing the sorted column restores tree order rather than D ascending");
         Check(component.Params.Input.Count == 3, "Remove column removes only the requested added input");
         fixture.Document.UndoServer.PerformUndo();
         Check(component.Params.Input.Count == 4 && component.Params.Input[2].InstanceGuid == columnId && component.Params.Input[2].Sources.Single().InstanceGuid == area.InstanceGuid,

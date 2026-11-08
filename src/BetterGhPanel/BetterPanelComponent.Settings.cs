@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using BetterGhPanel.Core;
 using BetterGhPanel.Runtime;
 using BetterGhPanel.UI;
@@ -287,6 +288,15 @@ namespace BetterGhPanel
         {
             if (Params.Input.IndexOf(input) < 2) return;
             RecordUndoEvent("Panel+ Remove column");
+            bool sorted = Session.Options.SortColumn == input.InstanceGuid;
+            ColumnWidths.Remove(input.InstanceGuid); _columnInputIndices.Clear();
+            if (sorted)
+            {
+                _sortInputIndex = -1;
+                var options = Session.Options; options.SortColumn = Guid.Empty; options.SortMode = PanelSortMode.SourceOrder; options.ColumnSortKeys = null;
+                Session.PrepareColumnSort(Guid.Empty, null); Session.UpdateQuery(options);
+            }
+            else if (_sortInputIndex > Params.Input.IndexOf(input)) _sortInputIndex--;
             Params.UnregisterInputParameter(input, true);
             ColumnsChanged();
         }
@@ -297,17 +307,38 @@ namespace BetterGhPanel
             Attributes.ExpireLayout();
             ExpireSolution(true);
         }
+        private readonly Dictionary<Guid, int> _columnInputIndices = new Dictionary<Guid, int>();
+        private int _sortInputIndex = -1;
+        internal float ColumnWidthLimit(Guid id) => id == Params.Input[0].InstanceGuid
+            ? (Attributes as BetterPanelAttributes)?.DColumnWidthLimit ?? Math.Max(PanelTableText.MinimumColumnWidth, DisplayWidth - 33 - PanelTableText.MinimumColumnWidth - 24)
+            : PanelTableText.MaximumColumnWidth;
+        internal void ResolveColumnWidths()
+        {
+            foreach (var entry in ColumnWidths.ToArray())
+                if (!Params.Input.Any(input => input.InstanceGuid == entry.Key) && _columnInputIndices.TryGetValue(entry.Key, out int index) &&
+                    index >= 0 && index < Params.Input.Count)
+                { ColumnWidths.Remove(entry.Key); var id = Params.Input[index].InstanceGuid; ColumnWidths[id] = entry.Value; _columnInputIndices[id] = index; }
+        }
+        private void ResolveSortInput(PanelQueryOptions options)
+        {
+            if (options.SortColumn == Guid.Empty) return;
+            options.SortColumn = PanelTableInputIdentity.Resolve(options.SortColumn, Params.Input.Select(input => input.InstanceGuid).ToArray(), _sortInputIndex >= 1 ? _sortInputIndex : -1);
+            if (options.SortColumn == Guid.Empty) { options.SortMode = PanelSortMode.SourceOrder; options.ColumnSortKeys = null; }
+        }
+
         internal void SetColumnWidth(Guid id, float? width)
         {
             var before = ColumnWidths.TryGetValue(id, out float value) ? (float?)value : null;
             if (before == width) return;
-            RecordUndoEvent("Panel+ column width", new PanelUndo<float?>(InstanceGuid, before, width,
+            RecordUndoEvent("Panel+ Column width", new PanelUndo<float?>(InstanceGuid, before, width,
                 (component, next) => component.ApplyColumnWidth(id, next)));
             ApplyColumnWidth(id, width);
         }
         private void ApplyColumnWidth(Guid id, float? width)
         {
-            if (width.HasValue) ColumnWidths[id] = Math.Max(48, Math.Min(320, width.Value));
+            (Attributes as BetterPanelAttributes)?.ClearHover();
+            if (width.HasValue) { ColumnWidths[id] = Math.Max(PanelTableText.MinimumColumnWidth, Math.Min(ColumnWidthLimit(id), width.Value));
+                _columnInputIndices[id] = Params.Input.FindIndex(input => input.InstanceGuid == id); }
             else ColumnWidths.Remove(id);
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
@@ -319,8 +350,9 @@ namespace BetterGhPanel
             if (before.SortColumn == id && before.SortMode == mode) return;
             var options = before.Clone();
             options.SortColumn = id; options.SortMode = mode;
+            _sortInputIndex = id == Guid.Empty ? -1 : Params.Input.FindIndex(input => input.InstanceGuid == id);
             options = WithCurrentColumnSort(options);
-            RecordQueryUndo("Panel+ table sort", before, options);
+            RecordQueryUndo("Panel+ Sort", before, options);
             Session.UpdateQuery(options);
         }
 
@@ -344,12 +376,6 @@ namespace BetterGhPanel
                 if (split || Session.Options.SortColumn == column.Input.InstanceGuid) column.Capture(_geometryUnits);
                 else column.ReleasePresentation();
             }
-            var fColumn = _tableColumns.FirstOrDefault(column => column.Input == Params.Input[1]);
-            PairedSnapshot = split ? fColumn?.Snapshot : null;
-            _pairedSourceItems = PairedSnapshot != null ? fColumn!.Sources : Array.Empty<IGH_Goo?>();
-            _pairedMeasurementSources = PairedSnapshot != null ? fColumn!.Measurements : Array.Empty<CapturedMeasurementSource?>();
-            _pairedCaptureGraphs = PairedSnapshot != null ? fColumn!.Graphs : Array.Empty<CaptureGraphWitness>();
-            _pairedHasGeometry = PairedSnapshot != null && fColumn!.HasGeometry;
             if (ContextFenced && !GeometryContextCurrent(_geometryContext) && _session != null)
             {
                 _captureRetries = 0;
@@ -406,14 +432,23 @@ namespace BetterGhPanel
             writer.SetString("PanelBranch", options.BranchPath ?? "");
             writer.SetBoolean("PanelPrefix", options.BranchPrefix);
             writer.SetBoolean("PanelInvalid", options.OnlyInvalid);
+            ResolveColumnWidths(); ResolveSortInput(options);
             writer.SetInt32("PanelSort", (int)options.SortMode);
-            if (options.SortColumn != Guid.Empty) writer.SetGuid("PanelSortColumn", options.SortColumn);
+            if (options.SortColumn != Guid.Empty)
+            {
+                writer.SetGuid("PanelSortColumn", options.SortColumn);
+                writer.SetInt32("PanelSortInputIndex", Params.Input.FindIndex(input => input.InstanceGuid == options.SortColumn));
+            }
             var savedWidths = ColumnWidths.Where(entry => Params.Input.Any(input => input.InstanceGuid == entry.Key)).ToArray();
             if (savedWidths.Length > 0)
             {
                 var widths = writer.CreateChunk("PanelColumnWidths");
                 foreach (var entry in savedWidths)
-                    widths.SetSingle(entry.Key.ToString("D"), entry.Value);
+                {
+                    float width = Math.Max(PanelTableText.MinimumColumnWidth, Math.Min(ColumnWidthLimit(entry.Key), entry.Value));
+                    widths.SetSingle(entry.Key.ToString("D"), width);
+                    widths.SetSingle("InputIndex" + Params.Input.FindIndex(input => input.InstanceGuid == entry.Key), width);
+                }
             }
             // Retain the legacy key for older plug-in versions; dimensions take precedence.
             writer.SetInt32("PanelSize", PreviewSize < 0 ? 1 : PreviewSize);
@@ -476,6 +511,8 @@ namespace BetterGhPanel
             reader.TryGetInt32("PanelSort", ref sort);
             Guid sortColumn = Guid.Empty;
             reader.TryGetGuid("PanelSortColumn", ref sortColumn);
+            _sortInputIndex = -1;
+            reader.TryGetInt32("PanelSortInputIndex", ref _sortInputIndex);
             bool hasLegacySize = reader.TryGetInt32("PanelSize", ref size);
             _savedOptions = new PanelQueryOptions
             {
@@ -563,15 +600,20 @@ namespace BetterGhPanel
             }
             var success = base.Read(parameters);
             VariableParameterMaintenance();
-            ColumnWidths.Clear();
+            ColumnWidths.Clear(); _columnInputIndices.Clear();
             var widths = reader.FindChunk("PanelColumnWidths");
-            foreach (var input in Params.Input)
+            for (int index = 0; index < Params.Input.Count; index++)
             {
+                var input = Params.Input[index];
                 float value = 0;
-                if (widths != null && widths.TryGetSingle(input.InstanceGuid.ToString("D"), ref value) && !float.IsNaN(value) && !float.IsInfinity(value))
-                    ColumnWidths[input.InstanceGuid] = Math.Max(48, Math.Min(320, value));
+                if (widths != null && (widths.TryGetSingle(input.InstanceGuid.ToString("D"), ref value) || widths.TryGetSingle("InputIndex" + index, ref value)) &&
+                    !float.IsNaN(value) && !float.IsInfinity(value))
+                {
+                    ColumnWidths[input.InstanceGuid] = Math.Max(PanelTableText.MinimumColumnWidth, Math.Min(ColumnWidthLimit(input.InstanceGuid), value));
+                    _columnInputIndices[input.InstanceGuid] = index;
+                }
             }
-            if (!Params.Input.Any(input => input.InstanceGuid == _savedOptions.SortColumn)) _savedOptions.SortColumn = Guid.Empty;
+            ResolveSortInput(_savedOptions);
             _restoringView = true;
             try { _session?.UpdateQuery(_savedOptions); }
             finally { _restoringView = false; }

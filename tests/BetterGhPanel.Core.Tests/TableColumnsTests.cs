@@ -24,6 +24,27 @@ public class TableColumnsTests
         Assert.False(PanelTableText.NumericColumn(PanelSnapshot.Empty));
     }
 
+    [Fact]
+    public void SetCellSummariesFollowOnlyPairedMemberIndicesAndBoundThePreview()
+    {
+        var members = new[] { 0, 2, 5, 7, 9, 12, 15 };
+        var summary = PanelTableMemberSummary.Build(members, position => position < 12 ? position + 100 : (int?)null);
+        Assert.Equal(5, summary.Count);
+        Assert.Equal(new[] { 100, 102, 105, 107 }, summary.Preview);
+        Assert.Equal(0, PanelTableMemberSummary.Build(new[] { 12, 15 }, _ => null).Count);
+    }
+
+    [Fact]
+    public void SavedColumnIdentityPrefersGuidAndFallsBackToTheInputIndexAfterDuplication()
+    {
+        var saved = Guid.NewGuid(); var replacement = Guid.NewGuid();
+        var inputs = new[] { Guid.NewGuid(), replacement, saved };
+        Assert.Equal(saved, PanelTableInputIdentity.Resolve(saved, inputs, 1));
+        Assert.Equal(replacement, PanelTableInputIdentity.Resolve(Guid.NewGuid(), inputs, 1));
+        Assert.Equal(Guid.Empty, PanelTableInputIdentity.Resolve(Guid.NewGuid(), inputs, -1));
+        Assert.Equal(Guid.Empty, PanelTableInputIdentity.Resolve(Guid.NewGuid(), inputs, 3));
+    }
+
     private static PanelSnapshot Data() => new PanelSnapshot(new[]
     {
         new PanelRow(0, "{0}", "Number", "3", 3), new PanelRow(1, "{0}", "Number", "1", 1),

@@ -201,7 +201,7 @@ internal static class UxInteractionChecks
             fixture.Select(0);
             await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1 &&
                 FieldValue<long>(component, "_publishedSelectionVersion") == FieldValue<long>(component, "_selectionVersion"));
-            Call(attributes, "SetOffset", canvas, 18);
+            Call(attributes, "SetPaneOffset", canvas, 18);
             Render();
             int solutions = fixture.Solutions;
             fixture.Document.IsModified = false;
@@ -268,7 +268,7 @@ internal static class UxInteractionChecks
 
         fixture.Query(new PanelQueryOptions());
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 80);
-        Call(attributes, "SetOffset", canvas, 0);
+        Call(attributes, "SetPaneOffset", canvas, 0);
         Render();
         var input = assembly.GetType("BetterGhPanel.UI.IPanelInputTarget", true)!.GetMethod("HandleKey")!;
         void Key(Forms.Keys key) => input.Invoke(attributes, new object[] { canvas, key });
@@ -337,7 +337,7 @@ internal static class UxInteractionChecks
             "After Escape arrow navigation restarts at the first visible row");
 
         fixture.ClearSelection();
-        Call(attributes, "SetOffset", canvas, 0);
+        Call(attributes, "SetPaneOffset", canvas, 0);
         PanelTestAdapter.Resize(component, 700, 360); attributes.PerformLayout(); Render();
 
         Call(component, "SetPanelSplit", true);
@@ -360,7 +360,7 @@ internal static class UxInteractionChecks
         fixture.Query(new PanelQueryOptions { Search = "> 9", SortMode = PanelSortMode.ValueDescending });
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 70);
         PanelTestAdapter.Resize(component, 400, 360); attributes.PerformLayout(); Render();
-        var dataList = PanelTestAdapter.PaneField<RectangleF>(attributes, "List");
+        var dataList = PanelTestAdapter.ViewField<RectangleF>(attributes, "List");
         var pairedList = dataList;
         var dataRow = PanelTestAdapter.RowBounds(component, 74);
         var pairedPoint = new PointF(dataRow.X + FieldValue<float>(attributes, "_frozenWidth") + 20, dataRow.Y + dataRow.Height / 2);

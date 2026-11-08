@@ -21,17 +21,14 @@ namespace BetterGhPanel
         private CapturedScalar[] _scalarInputs = Array.Empty<CapturedScalar>(), _presentedScalars = Array.Empty<CapturedScalar>();
         private CapturedMeasurementSource?[] _measurementSources = Array.Empty<CapturedMeasurementSource?>();
         private CaptureGraphWitness[] _captureGraphs = Array.Empty<CaptureGraphWitness>();
-        private IGH_Goo?[] _pairedSourceItems = Array.Empty<IGH_Goo?>();
-        private CapturedMeasurementSource?[] _pairedMeasurementSources = Array.Empty<CapturedMeasurementSource?>();
-        private CaptureGraphWitness[] _pairedCaptureGraphs = Array.Empty<CaptureGraphWitness>();
         private PanelSnapshot? _measurementSnapshot, _staleMeasurementSnapshot;
         private string _geometryUnits = "units";
         private Rhino.UnitSystem _geometryUnitSystem = Rhino.UnitSystem.None;
         private double _geometryTolerance = 0.001;
         private MeasurementContextStamp _geometryContext;
-        private bool _captureHasGeometry, _pairedHasGeometry;
+        private bool _captureHasGeometry;
         // F geometry is fenced on the document context only while its snapshot is shown.
-        private bool ContextFenced => _captureHasGeometry || PairedSnapshot != null && _pairedHasGeometry || _tableColumns.Exists(column => column.HasGeometry);
+        private bool ContextFenced => _captureHasGeometry || _tableColumns.Exists(column => column.HasGeometry);
         private CancellationTokenSource? _copyCancellation;
         private bool _retainGeometryMeasurements;
         private GH_Structure<IGH_Goo>? _queryTree;
@@ -130,6 +127,7 @@ namespace BetterGhPanel
                     _session.SetCaptureCurrentResolver(CapturedSnapshotCurrent);
                     _savedOptions.DecimalPlaces = DecimalPlaces;
                     _savedOptions.RoundUpFactor = RoundUpFactor;
+                    ResolveSortInput(_savedOptions);
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {

@@ -114,7 +114,7 @@ namespace BetterGhPanel
             if (PanelOwner.PanelMinimized)
             {
                 var capsule = new RectangleF(Pivot.X, Pivot.Y, CanvasPanelSize.CapsuleWidth, CanvasPanelSize.CapsuleHeightForInputs(PanelOwner.Params.Input.Count));
-                _d.List = _d.Track = _d.TrackHit = _tableHeader = _horizontalTrack = RectangleF.Empty;
+                _list = _track = _trackHit = _tableHeader = _horizontalTrack = RectangleF.Empty;
                 return new PanelLayout(panel: capsule,
                     restore: new RectangleF(capsule.Right - 36, capsule.Y + (capsule.Height - 22) / 2, 22, 22));
             }
@@ -210,9 +210,9 @@ namespace BetterGhPanel
             _warningsHeight = WarningStripHeight(footerHeight, panel);
             // Keep interactive content beyond native grip picking's 12-unit
             // radius on both edges, including rows and the scroll track.
-            _d.List = new RectangleF(panel.X + 14, panel.Y + 52 + _warningsHeight, panel.Width - 33, Math.Max(RowHeight, panel.Height - 56 - footerHeight - _warningsHeight));
-            _d.Track = new RectangleF(panel.Right - 18, _d.List.Y, 4, _d.List.Height);
-            _d.TrackHit = new RectangleF(panel.Right - 21, _d.List.Y, 8, _d.List.Height);
+            _list = new RectangleF(panel.X + 14, panel.Y + 52 + _warningsHeight, panel.Width - 33, Math.Max(RowHeight, panel.Height - 56 - footerHeight - _warningsHeight));
+            _track = new RectangleF(panel.Right - 18, _list.Y, 4, _list.Height);
+            _trackHit = new RectangleF(panel.Right - 21, _list.Y, 8, _list.Height);
             LayoutTable();
             resize = new RectangleF(panel.Right - 24, panel.Bottom - 24, 24, 24);
             return new PanelLayout(panel, search, filter, type, sort, branch, reset, resize, footer, trim, simplify, flatten, reverse, createSet, units, outLabel, outItems, outValues, display, preview, move, statistics, selectAll, close, restore, searchClear, branchClear, split);

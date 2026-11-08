@@ -52,10 +52,10 @@ namespace BetterGhPanel
         private bool ColumnsCurrent(IReadOnlyList<PanelTableColumn> columns, out long visits)
         {
             visits = 0;
+            if (columns.Any(column => column.Input == Params.Input[1]) != PairedInputPresent()) return false;
             foreach (var column in columns)
             {
                 if (!Params.Input.Contains(column.Input) || InputPresent(column.Input) != column.Present) return false;
-                if (column.Input == Params.Input[1] && ReferenceEquals(column.Snapshot, PairedSnapshot) && PairedSnapshot != null) continue;
                 bool current = column.Current(out long count); visits += count;
                 if (!current) return false;
             }
@@ -72,8 +72,12 @@ namespace BetterGhPanel
         private PanelQueryOptions WithCurrentColumnSort(PanelQueryOptions saved)
         {
             var options = saved.Clone();
+            ResolveSortInput(options);
             var column = _tableColumns.FirstOrDefault(value => value.Input.InstanceGuid == options.SortColumn);
-            if (column == null) options.SortColumn = Guid.Empty;
+            if (column == null)
+            {
+                if (options.SortColumn != Guid.Empty) { options.SortColumn = Guid.Empty; options.SortMode = PanelSortMode.SourceOrder; }
+            }
             else column.Capture(_geometryUnits);
             options.ColumnSortKeys = column?.SortKeys(UnitConversion, DecimalPlaces, RoundUpFactor);
             return options;
@@ -92,11 +96,12 @@ namespace BetterGhPanel
             if (Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength)
             {
                 var selected = new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal);
+                var numbers = result.BranchPaths.Select((path, index) => (path, index)).ToDictionary(value => value.path, value => value.index, StringComparer.Ordinal);
                 return PanelTableTsv.Build(titles, result.BranchPaths.Where(selected.Contains).Select(path =>
                 {
-                    int index = result.DisplaySet?.BranchIndices.TryGetValue(path, out int k) == true ? k : 0;
+                    int index = result.DisplaySet?.BranchIndices.TryGetValue(path, out int k) == true ? k : numbers[path];
                     IReadOnlyList<string> values = new[] { result.Snapshot.BranchItemCounts[path].ToString(System.Globalization.CultureInfo.InvariantCulture) }
-                        .Concat(TableColumns.Select(column => column.BranchCell(result, path, UnitConversion, DecimalPlaces, RoundUpFactor))).ToArray();
+                        .Concat(TableColumns.Select(column => column.BranchCellText(result, path, UnitConversion, DecimalPlaces, RoundUpFactor))).ToArray();
                     return (path, index, values);
                 }));
             }
@@ -104,7 +109,7 @@ namespace BetterGhPanel
             {
                 PanelItemOrder.TryGetNumber(result, position, out int index);
                 IReadOnlyList<string> cells = new[] { DisplayValue(result.Snapshot, result.Snapshot.Rows[position], position) }
-                    .Concat(TableColumns.Select(column => column.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor))).ToArray();
+                    .Concat(TableColumns.Select(column => column.CellText(result, position, UnitConversion, DecimalPlaces, RoundUpFactor))).ToArray();
                 return (result.Snapshot.Rows[position].Path, index, cells);
             }));
         }

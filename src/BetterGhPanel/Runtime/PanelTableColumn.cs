@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using BetterGhPanel.Core;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
@@ -38,6 +39,7 @@ namespace BetterGhPanel.Runtime
             Snapshot = null;
             Sources = Array.Empty<IGH_Goo?>(); Measurements = Array.Empty<CapturedMeasurementSource?>(); Graphs = Array.Empty<CaptureGraphWitness>();
             HasGeometry = false;
+            _setCells.Clear(); _branchSetCells.Clear(); _extras.Clear(); _displaySummaryResult = null;
         }
         internal bool Current(out long visits)
         {
@@ -55,7 +57,46 @@ namespace BetterGhPanel.Runtime
             current = SnapshotCapture.ManagedRowsCurrentWithVisits(snapshot, Sources, out count); visits += count;
             return current && ReferenceEquals(snapshot, Snapshot);
         }
-        internal bool SummaryCurrent(PanelQueryResult result) => Pair == null || ReferenceEquals(Pair.SummaryResult, result);
+        private readonly Dictionary<int, PanelTableMemberSummary> _setCells = new Dictionary<int, PanelTableMemberSummary>();
+        private readonly Dictionary<string, PanelTableMemberSummary> _branchSetCells = new Dictionary<string, PanelTableMemberSummary>(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> _extras = new Dictionary<string, int>(StringComparer.Ordinal);
+        private PanelQueryResult? _displaySummaryResult;
+        internal void BuildDisplaySummaries(PanelQueryResult result)
+        {
+            _setCells.Clear(); _branchSetCells.Clear(); _extras.Clear();
+            if (Pair != null && result.DisplaySet?.IsBranchSet == false)
+            {
+                foreach (var group in result.DisplaySet.Members)
+                    _setCells.Add(group.Key, PanelTableMemberSummary.Build(group.Value, Pair.ItemAt));
+                foreach (string path in result.BranchPaths)
+                    _extras[path] = Pair.BranchesAt(path).Sum(pair => Math.Max(0, pair.Paired.ItemCount - pair.Data.ItemCount));
+            }
+            if (Pair != null && result.DisplaySet?.IsBranchSet == true)
+                foreach (var group in result.DisplaySet.BranchMembers)
+                {
+                    _branchSetCells.Add(group.Key, PanelTableMemberSummary.Build(group.Value, Pair.ItemAt));
+                    _extras[group.Key] = result.DisplaySet.BranchOccurrences[group.Key].Sum(path => Pair.BranchesAt(path)
+                        .Sum(pair => Math.Max(0, pair.Paired.ItemCount - pair.Data.ItemCount)));
+                }
+            _displaySummaryResult = result;
+        }
+        internal bool SummaryCurrent(PanelQueryResult result) => Pair == null || (result.DisplaySet != null
+            ? ReferenceEquals(_displaySummaryResult, result) : ReferenceEquals(Pair.SummaryResult, result));
+        internal string BranchExtraNote(PanelQueryResult result, string path) => SummaryCurrent(result) &&
+            _extras.TryGetValue(path, out int count) && count > 0 ? "+" + count + " only in " + Input.NickName : "";
+        internal string SetExtraNote(PanelQueryResult result, int position) => BranchExtraNote(result, result.Snapshot.Rows[position].Path);
+        internal string BranchCellText(PanelQueryResult result, string path, PanelUnitConversion conversion, int decimals, double factor)
+        {
+            string value = BranchCell(result, path, conversion, decimals, factor);
+            string note = BranchExtraNote(result, path);
+            return value + (note.Length > 0 ? " · " + note : "");
+        }
+        internal string CellText(PanelQueryResult result, int position, PanelUnitConversion conversion, int decimals, double factor)
+        {
+            string value = Cell(result, position, conversion, decimals, factor);
+            string note = SetExtraNote(result, position);
+            return value + (note.Length > 0 ? " · " + note : "");
+        }
         internal string Value(PanelRow row, PanelUnitConversion conversion, int decimals, double factor) =>
             PanelTableText.Value(row, conversion, decimals, factor);
         internal string Cell(PanelQueryResult result, int position, PanelUnitConversion conversion, int decimals, double factor, bool raw = false)
@@ -65,9 +106,10 @@ namespace BetterGhPanel.Runtime
             if (result.DisplaySet?.IsBranchSet == false)
             {
                 if (!SummaryCurrent(result)) return "…";
-                if (raw) return string.Join(Environment.NewLine, Pair.BranchItems(result.Snapshot, result.DisplaySet.Members[position], Array.Empty<string>(), false).Select(item => Format(Snapshot.Rows[item.Item])));
-                Pair.SetSummaries.TryGetValue(position, out var summary);
-                return Summary(summary, Format, true);
+                if (raw) return string.Join(Environment.NewLine, result.DisplaySet.Members[position].Select(Pair.ItemAt)
+                    .Where(item => item.HasValue).Select(item => Format(Snapshot.Rows[item!.Value])));
+                var summary = _setCells[position];
+                return PanelTableText.Summary(summary.Preview.Select(item => Format(Snapshot.Rows[item])).ToArray(), summary.Count);
             }
             return Row(position) is PanelRow row ? Format(row) : "";
         }
@@ -79,8 +121,15 @@ namespace BetterGhPanel.Runtime
             {
                 var members = result.DisplaySet?.IsBranchSet == true ? result.DisplaySet.BranchMembers[path] : result.RowPositions.Where(position => result.Snapshot.Rows[position].Path == path).ToArray();
                 var paths = result.DisplaySet?.IsBranchSet == true ? result.DisplaySet.BranchOccurrences[path] : new[] { path };
-                return string.Join(Environment.NewLine, Pair.BranchItems(result.Snapshot, members, paths, result.DisplaySet == null)
-                    .Select(item => Snapshot.Rows[item.Item].StringValue ?? PanelValuePresentation.FormatDisplay(Snapshot.Rows[item.Item], PanelUnitConversion.None, PanelUnits.AutomaticDecimals)));
+                var items = result.DisplaySet?.IsBranchSet == true ? members.Select(Pair.ItemAt).Where(item => item.HasValue).Select(item => item!.Value) :
+                    Pair.BranchItems(result.Snapshot, members, paths, result.DisplaySet == null).Select(item => item.Item);
+                return string.Join(Environment.NewLine, items.Select(item => Snapshot.Rows[item].StringValue ??
+                    PanelValuePresentation.FormatDisplay(Snapshot.Rows[item], PanelUnitConversion.None, PanelUnits.AutomaticDecimals)));
+            }
+            if (result.DisplaySet?.IsBranchSet == true)
+            {
+                var cell = _branchSetCells[path];
+                return PanelTableText.Summary(cell.Preview.Select(item => Value(Snapshot.Rows[item], conversion, decimals, factor)).ToArray(), cell.Count);
             }
             Pair.BranchSummaries.TryGetValue(path, out var summary);
             return Summary(summary, row => Value(row, conversion, decimals, factor), result.DisplaySet != null);
@@ -124,7 +173,7 @@ namespace BetterGhPanel.Runtime
             PanelRow Convert(PanelRow row) => PanelTableText.PresentedRow(row, conversion, decimals, factor);
             return new PanelColumnSortKeys(position => pair?.ItemAt(position) is int item && snapshot != null ? Convert(snapshot.Rows[item]) : null,
                 (data, members) => pair == null || snapshot == null ? Enumerable.Empty<PanelRow>() :
-                    pair.BranchItemSteps(data, members, Array.Empty<string>(), false, true).Select(item => item.HasValue ? Convert(snapshot.Rows[item.Value.Item]) : null));
+                    members.Select(position => pair.ItemAt(position) is int item ? Convert(snapshot.Rows[item]) : null));
         }
     }
 }

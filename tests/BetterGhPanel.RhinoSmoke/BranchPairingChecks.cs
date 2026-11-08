@@ -90,7 +90,7 @@ internal static class BranchPairingChecks
         }
         RectangleF PaneRow(int position)
         {
-            var pane = PanelTestAdapter.PaneField<RectangleF>(attributes, "List");
+            var pane = PanelTestAdapter.ViewField<RectangleF>(attributes, "List");
             foreach (var hit in FieldValue<IEnumerable>(attributes, "_rowHits"))
                 if (PropertyValue<int>(hit!, "SourcePosition") == position && pane.Contains(PropertyValue<RectangleF>(hit!, "Bounds")))
                     return PropertyValue<RectangleF>(hit!, "Bounds");
@@ -103,7 +103,7 @@ internal static class BranchPairingChecks
         var extraRows = display.Where(row => FieldValue<int>(row, "Extra") >= 0).ToArray();
         Check(display.Count(row => FieldValue<int>(row, "Item") >= 0 && ColumnRow(component, f.Result.RowPositions[FieldValue<int>(row, "Item")]) == null) == 11,
             "The table keeps missing F cells aligned with D identities");
-        Check(extraRows.Length == 2 && PropertyValue<PanelSnapshot>(component, "PairedSnapshot").Rows[FieldValue<int>(extraRows[0], "Extra")].OriginalIndex == 2,
+        Check(extraRows.Length == 2 && ColumnSnapshot(component).Rows[FieldValue<int>(extraRows[0], "Extra")].OriginalIndex == 2,
             "F extras keep raw identities after D rows");
         bool offsetsAgree = true;
         int successor = f.Result.RowPositions.Count;
@@ -120,7 +120,7 @@ internal static class BranchPairingChecks
         Check(ColumnRow(component, 3) == null && ((PanelRow)ColumnRow(component, 14)!).StringValue == "F2-0",
             "Explicit D to optional F mapping skips missing cells without shifting following branches");
         int hits = PanelTestAdapter.Hits(component, "_rowHits");
-        Check(hits == 16 && PanelTestAdapter.PaneField<int>(attributes, "Shown") == 18, "F-only rows and D spacers have no selection hits");
+        Check(hits == 16 && PanelTestAdapter.ViewField<int>(attributes, "Shown") == 18, "F-only rows and D spacers have no selection hits");
         using (var bitmap = new Bitmap(canvas.Width, canvas.Height))
         using (var graphics = Graphics.FromImage(bitmap))
         {
@@ -221,8 +221,8 @@ internal static class BranchPairingChecks
         Render();
         string lengthTwo = f.Result.BranchPaths.Single(path => f.Result.Snapshot.BranchItemCounts[path] == 2);
         string lengthSummary = (string)Call(attributes, "ColumnBranchCell", lengthTwo, 0)!;
-        Check(lengthSummary == "F1-0 · F1-1 · F1-2 · F1-3 … +2 in this set",
-            "List-length set summary expands every branch occurrence with a bounded preview");
+        Check(lengthSummary == "F1-0 · F1-1 · F2-0 · F2-1",
+            "List-length set summary uses index-paired members of every branch occurrence");
         Console.WriteLine("Branch-set outputs: D=" + Paths(f, 0) + "; F=" + Paths(f, 3) + "; values=" + f.Values(3));
         Check(f.Result.BranchPaths.Any(path => f.Result.DisplaySet!.BranchOccurrences[path].Contains("{0;3}") &&
             Branch(f, 3, "{" + f.Result.DisplaySet.BranchIndices[path] + ";0;3}") == ""), "List-length sets retain D group paths but exclude empty D partners");
@@ -357,7 +357,7 @@ internal static class BranchPairingChecks
         await Ready(() => f.Values(3) == "f3,f2,f1,f0,f4,f5");
         Call(attributes, "SetPaneOffset", canvas, 0); Render("uneven-hidden-reverse");
         var reversedView = TableRows(component).Cast<object>().ToArray();
-        var rawF = PropertyValue<PanelSnapshot>(component, "PairedSnapshot");
+        var rawF = ColumnSnapshot(component);
         string paneValues = string.Join(",", reversedView.Where(row => FieldValue<int>(row, "Extra") >= 0 || FieldValue<int>(row, "Item") >= 0)
             .Select(row => FieldValue<int>(row, "Extra") >= 0 ? rawF.Rows[FieldValue<int>(row, "Extra")].StringValue
                 : ((PanelRow)ColumnRow(component, f.Result.RowPositions[FieldValue<int>(row, "Item")])!).StringValue));
@@ -403,12 +403,16 @@ internal static class BranchPairingChecks
                 {
                     int k = f.Result.DisplaySet!.MemberIndices[position];
                     string path = f.Result.Snapshot.Rows[position].Path.TrimEnd('}') + ";" + k + "}";
-                    string[] emitted = Branch(f, 3, path).Split(',');
-                    string expected = string.Join(" · ", emitted.Take(4)) + (emitted.Length > 4 ? " … +" + (emitted.Length - 4) + " in this set" : "");
+                    string[] emitted = f.Result.DisplaySet.Members[position].Select(member => ColumnRow(component, member))
+                        .Where(row => row != null).Select(row => row!.StringValue!).ToArray();
+                    string expected = emitted.Length == 0 ? "<empty set>" : string.Join(" · ", emitted.Take(4)) +
+                        (emitted.Length > 4 ? " … +" + (emitted.Length - 4) + " in this set" : "");
                     Check((string)Call(attributes, "ColumnCell", f.Result, position, 0)! == expected,
-                        scenario + ": bounded F cell equals emitted group in output order at " + path);
+                        scenario + ": displayed cell follows index-paired set members at " + path);
                     f.ClearSelection(); f.Select(position);
                     await Ready(() => FieldValue<long>(component, "_publishedSelectionVersion") == FieldValue<long>(component, "_selectionVersion"));
+                    string note = (string)Call(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "SetExtraNote", f.Result, position)!;
+                    expected += note.Length > 0 ? " · " + note : "";
                     string copyStatus = await (Task<string>)Call(component, "CopyColumnValuesAsync", f.Result.Snapshot, new[] { position }, 0, null)!;
                     await f.Ready(() => Forms.Clipboard.GetText() == expected);
                     Check(Forms.Clipboard.GetText() == expected,
@@ -423,13 +427,15 @@ internal static class BranchPairingChecks
             f.ClearSelection(); f.SelectBranch(representative);
             await Ready(() => FieldValue<long>(component, "_publishedSelectionVersion") == FieldValue<long>(component, "_selectionVersion"));
             await (Task<string>)Call(component, "CopyColumnValuesAsync", f.Result.Snapshot, Array.Empty<int>(), 0, representative)!;
-            await f.Ready(() => Forms.Clipboard.GetText() == (string)Call(attributes, "ColumnBranchCell", representative, 0)!);
-            Check(Forms.Clipboard.GetText() == (string)Call(attributes, "ColumnBranchCell", representative, 0)!,
+            string branchNote = (string)Call(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "BranchExtraNote", f.Result, representative)!;
+            string branchCopy = (string)Call(attributes, "ColumnBranchCell", representative, 0)! + (branchNote.Length > 0 ? " · " + branchNote : "");
+            await f.Ready(() => Forms.Clipboard.GetText() == branchCopy);
+            Check(Forms.Clipboard.GetText() == branchCopy,
                 "List-length column copying uses its displayed summary");
             Render();
-            Check((string)Call(attributes, "ColumnBranchCell", representative, 0)! == "f0-0 · f0-1 · f0-2 · f0-3 … +8 in this set",
+            Check((string)Call(attributes, "ColumnBranchCell", representative, 0)! == "f0-0 · f0-1",
                 "List-length sets use the same bounded F summary rule as item sets");
-            var branchPane = PanelTestAdapter.PaneField<RectangleF>(attributes, "List");
+            var branchPane = PanelTestAdapter.ViewField<RectangleF>(attributes, "List");
             var branchHit = FieldValue<IEnumerable>(attributes, "_branchHits").Cast<object>().Single(hit =>
                 PropertyValue<string>(hit, "Path") == representative && branchPane.Contains(PropertyValue<RectangleF>(hit, "Bounds")));
             var branchBounds = PropertyValue<RectangleF>(branchHit, "Bounds");

@@ -114,10 +114,7 @@ namespace BetterGhPanel
             {
                 bool result = PanelTreeOperations.StructureStillMatchesWithVisits(_liveInputTree, _inputTree, out int count);
                 visits += count;
-                if (!result || PairedInputPresent() != _pairedInputPresent) return false;
-                if (!_pairedInputPresent) return true;
-                result = PanelTreeOperations.StructureStillMatchesWithVisits(_livePairedTree, _pairedInputTree, out count);
-                visits += count; return result;
+                return result;
             }
             bool TableCurrent()
             {
@@ -125,8 +122,6 @@ namespace BetterGhPanel
             }
             bool current = (!ContextFenced || GeometryContextCurrent(context)) &&
                 HoldersCurrent(_sourceItems, _measurementSources) && GraphsCurrent(_captureGraphs) && ManagedCurrent(snapshot, _sourceItems) &&
-                (PairedSnapshot == null || HoldersCurrent(_pairedSourceItems, _pairedMeasurementSources) &&
-                    GraphsCurrent(_pairedCaptureGraphs) && ManagedCurrent(PairedSnapshot, _pairedSourceItems)) &&
                 UnitsCurrent() && StructuresCurrent() && TableCurrent() &&
                 (!ContextFenced || (context.Equals(_geometryContext) && GeometryContextCurrent(context)));
             if (CaptureDiagnosticsForTesting) { CaptureValidationPassesForTesting++; CaptureValidationVisitsForTesting += visits; }
@@ -201,21 +196,13 @@ namespace BetterGhPanel
                     var snapshot = SnapshotCapture.CaptureForMeasurements(queryTree, out var sources, out var measurementSources, out var graphs,
                         conversion, units, retainedSources, CaptureObserverForTesting, null, queryScalars, inputSeed);
                     var tableColumns = CaptureTableColumns(da, inputTree, retainedSources, pairedTree, capturedPairedTree, livePairedTree, pairedError, pairedPresent, units);
-                    var fColumn = tableColumns.Find(column => column.Input == Params.Input[1]);
-                    var pairedSnapshot = PanelSplit ? fColumn?.Snapshot : null;
-                    var pairedSources = pairedSnapshot != null ? fColumn!.Sources : Array.Empty<IGH_Goo?>();
-                    var pairedMeasurements = pairedSnapshot != null ? fColumn!.Measurements : Array.Empty<CapturedMeasurementSource?>();
-                    var pairedGraphs = pairedSnapshot != null ? fColumn!.Graphs : Array.Empty<CaptureGraphWitness>();
                     StructureObserverForTesting?.Invoke(liveInputTree, livePairedTree);
                     if (!Current()) return;
                     bool hasGeometry = HasGeometry(snapshot) || tableColumns.Exists(column => column.HasGeometry);
                     if (!SnapshotCapture.MeasurementSourcesCurrent(sources, measurementSources) || !SnapshotCapture.GraphSourcesCurrent(graphs) ||
                         !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor, DecimalPlaces, scalarInputs, queryScalars) ||
-                        (pairedSnapshot != null && (!SnapshotCapture.MeasurementSourcesCurrent(pairedSources, pairedMeasurements) ||
-                            !SnapshotCapture.GraphSourcesCurrent(pairedGraphs) || !SnapshotCapture.ManagedRowsCurrent(pairedSnapshot, pairedSources))) ||
                         !ColumnsCurrent(tableColumns, out _) ||
-                        !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) || pairedPresent != PairedInputPresent() ||
-                        (pairedPresent && !PanelTreeOperations.StructureStillMatches(livePairedTree, capturedPairedTree)) ||
+                        !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) ||
                         (hasGeometry && !GeometryContextCurrent(context)))
                     {
                         if (Current()) InvalidateStaleCapture(session, document, generation);
@@ -226,16 +213,13 @@ namespace BetterGhPanel
                     // locals together only while this solve still owns the component.
                     _scalarInputs = scalarInputs; _presentedScalars = queryScalars;
                     _inputTree = inputTree; _preConversionTree = preConversionTree; _queryTree = queryTree; _retainedSources = retainedSources;
-                    _liveInputTree = liveInputTree; _livePairedTree = livePairedTree; _pairedInputTree = capturedPairedTree; _pairedInputPresent = pairedPresent;
+                    _liveInputTree = liveInputTree;
                     _pairedError = pairedError;
                     PairedData = pairedTree;
-                    PairedSnapshot = pairedSnapshot;
                     _tableColumns.Clear(); _tableColumns.AddRange(tableColumns);
-                    _pairedSourceItems = pairedSources; _pairedMeasurementSources = pairedMeasurements; _pairedCaptureGraphs = pairedGraphs;
                     bool retainContext = _geometryContext.Equals(context);
                     _geometryUnitSystem = unitSystem; _geometryTolerance = tolerance; _geometryUnits = units;
                     _geometryContext = context; _captureHasGeometry = HasGeometry(snapshot);
-                    _pairedHasGeometry = pairedSnapshot != null && HasGeometry(pairedSnapshot);
                     _sourceItems = sources; _measurementSources = measurementSources; _captureGraphs = graphs;
                     _measurementSnapshot = snapshot;
                     _staleMeasurementSnapshot = null;

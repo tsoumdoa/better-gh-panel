@@ -66,7 +66,7 @@ namespace BetterGhPanel
             if (System.Windows.Forms.Control.ModifierKeys != Keys.None)
             {
                 if (TableVisible && System.Windows.Forms.Control.ModifierKeys == Keys.Shift && _horizontalMaximum > 0 &&
-                    (ListContains(point) || _horizontalTrack.Contains(point)))
+                    (_list.Contains(point) || _horizontalTrackHit.Contains(point)))
                 { ScrollHorizontal(canvas, _horizontalOffset - delta / 3f); return true; }
                 return false;
             }
@@ -92,13 +92,13 @@ namespace BetterGhPanel
             }
             if (!_layout.Panel.Contains(point)) return false;
             // A list without overflow lets the wheel zoom the canvas as usual.
-            if (!ListContains(point) && !_d.TrackHit.Contains(point) || MaximumOffset == 0)
+            if (!_list.Contains(point) && !_trackHit.Contains(point) || MaximumOffset == 0)
             {
                 _wheelRemainder = 0;
                 return false;
             }
             int rows = WheelRows(delta);
-            if (rows != 0) SetPaneOffset(canvas, _d.Offset - rows);
+            if (rows != 0) SetPaneOffset(canvas, _offset - rows);
             return true;
         }
 
@@ -126,7 +126,6 @@ namespace BetterGhPanel
             if (_menu.Kind != CanvasMenuKind.None) return HandleMenuKey(canvas, key, none);
             var result = PanelOwner.Session.Result;
             bool current = ResultIsCurrent(result);
-            var pane = _d;
             switch (key)
             {
                 case Keys.Escape when none:
@@ -139,8 +138,8 @@ namespace BetterGhPanel
                     return true;
                 case Keys.PageUp when none:
                 case Keys.PageDown when none:
-                    SetPaneOffset(canvas, pane.Offset + (key == Keys.PageUp ? -1 : 1) *
-                        Math.Max(1, pane.Shown - 1));
+                    SetPaneOffset(canvas, _offset + (key == Keys.PageUp ? -1 : 1) *
+                        Math.Max(1, _shown - 1));
                     return true;
                 case Keys.Home when none || control:
                     SetPaneOffset(canvas, 0);
@@ -224,14 +223,13 @@ namespace BetterGhPanel
 
         private void MoveKeyboardCursor(GH_Canvas canvas, PanelQueryResult result, int step, bool extend)
         {
-            var pane = _d;
-            if (DisplayListLengths) { SetPaneOffset(canvas, pane.Offset + step); return; }
+            if (DisplayListLengths) { SetPaneOffset(canvas, _offset + step); return; }
             int count = result.RowPositions.Count;
             if (count == 0) return;
             int index;
             if (_keyboardCursor >= 0 && result.TryGetViewIndex(_keyboardCursor, out int cursor)) index = cursor + step;
             else if (_selection.Anchor >= 0 && result.TryGetViewIndex(_selection.Anchor, out int anchor)) index = anchor + step;
-            else index = _firstShownItem >= 0 ? _firstShownItem : ViewItemAtOrAfter(result, _d.Offset);
+            else index = _firstShownItem >= 0 ? _firstShownItem : ViewItemAtOrAfter(result, _offset);
             index = Math.Max(0, Math.Min(count - 1, index));
             int position = result.RowPositions[index];
             InvalidateCopyStatus();
@@ -240,8 +238,8 @@ namespace BetterGhPanel
             PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
             TrackSelectionCanvas(canvas);
             int offset = ViewOffset(result, index);
-            if (_firstShownItem < 0 || index < _firstShownItem) SetOffset(canvas, offset);
-            else if (index > _lastShownItem) SetOffset(canvas, offset - Math.Max(0, _d.Shown - 3));
+            if (_firstShownItem < 0 || index < _firstShownItem) SetPaneOffset(canvas, offset);
+            else if (index > _lastShownItem) SetPaneOffset(canvas, offset - Math.Max(0, _shown - 3));
             else canvas.Invalidate();
         }
 
@@ -283,6 +281,7 @@ namespace BetterGhPanel
             if (PanelOwner.PanelMinimized) return ControlAt(ControlPath.Hover, point, ControlStep.Capsule)?.Rect(_layout) ?? RectangleF.Empty;
             control = false;
             if (_menu.Kind != CanvasMenuKind.None || _rowMenuResult != null || _resizing || _scrolling) return RectangleF.Empty;
+            if (HeaderColumnAt(point, true) >= 0) return RectangleF.Empty;
             foreach (var bounds in HoverControls())
                 if (!bounds.IsEmpty && bounds.Contains(point)) { control = true; return bounds; }
             if (!RowsAreCurrent(PanelOwner.Session.Result)) return RectangleF.Empty;
@@ -338,7 +337,7 @@ namespace BetterGhPanel
 
         private void HoverCanvasMouseLeave(object? sender, EventArgs e) => ClearHover();
 
-        private void ClearHover()
+        internal void ClearHover()
         {
             var canvas = _hoverCanvas;
             bool had = !_hoverBounds.IsEmpty;
@@ -362,7 +361,7 @@ namespace BetterGhPanel
             if (result == null) return;
             _selectionRestore = result;
             _savedSelection = PanelOwner.CreateSetTree ? null : PanelOwner.CommittedSelection.CopyForPreview();
-            _viewRestore = _d.Offset == 0 ? null : new ViewRestore(result.Snapshot, _d.Offset, DisplayListLengths);
+            _viewRestore = _offset == 0 ? null : new ViewRestore(result.Snapshot, _offset, DisplayListLengths);
         }
 
         private void RestoreView(PanelQueryResult result)
@@ -384,7 +383,7 @@ namespace BetterGhPanel
             _viewRestore = null;
             if (restore.ListLengths != DisplayListLengths ||
                 !(sameStructure ?? PanelRowSelection.SameStructure(restore.Snapshot, result.Snapshot))) return;
-            _d.Offset = Math.Max(0, Math.Min(MaximumOffset, restore.Offset));
+            _offset = Math.Max(0, Math.Min(MaximumOffset, restore.Offset));
         }
 
         private sealed class ViewRestore
