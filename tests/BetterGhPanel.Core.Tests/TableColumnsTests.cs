@@ -7,6 +7,48 @@ using Xunit;
 
 public class TableColumnsTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GeometryColumnSortUsesPresentedPrimaryMetricAndKeepsEveryMissingMetricLast(bool descending)
+    {
+        var geometry = new PanelGeometryInfo("closed", 4201, units: "mm");
+        PanelRow Key(double? metric, bool valid = true) => PanelTableText.MetricSortRow(
+            new PanelRow(0, "{0}", "Curve", "ignored", null, isValid: valid),
+            metric.HasValue ? new PanelGeometryInfo("closed", metric, units: "mm") : geometry.WithUnavailableMeasurement(),
+            PanelUnitConversion.MillimetersToMeters, 2, 0.1);
+        var key = Key(4201);
+        Assert.Equal(4.3, key.NumericValue);
+        Assert.Contains("L 4.30 m", key.DisplayValue);
+        var keys = new PanelColumnSortKeys(new PanelRow?[] { key, Key(2000), Key(null), Key(1, false), Key(double.NaN),
+            PanelTableText.MetricSortRow(new PanelRow(0, "{0}", "Number", "900", 900), null, PanelUnitConversion.None, 2, 0),
+            Key(-1), Key(double.PositiveInfinity) });
+        int[] order = Enumerable.Range(0, 8).OrderBy(position => position,
+            System.Collections.Generic.Comparer<int>.Create((a, b) => keys.Compare(a, b, descending))).ToArray();
+        Assert.Equal(descending ? new[] { 0, 1, 2, 3, 4, 5, 6, 7 } : new[] { 1, 0, 2, 3, 4, 5, 6, 7 }, order);
+        // Rounding ties retain source order; conversion must match the displayed metric's dimension.
+        Assert.Equal(0, keys.Compare(0, 0, descending));
+        var area = PanelTableText.MetricSortRow(new PanelRow(0, "{0}", "Surface", "", null),
+            new PanelGeometryInfo("planar", 4201, 2, "mm", "Area", "A"), PanelUnitConversion.MillimetersToMeters, 2, 0);
+        Assert.Equal(4201, area.NumericValue);
+    }
+
+    [Fact]
+    public void GeometryHeaderUnitsRequireAUniformApplicableMetricAndNeverConvertCounts()
+    {
+        PanelSnapshot Snapshot(params PanelGeometryInfo[] metrics) => new PanelSnapshot(metrics.Select((metric, index) =>
+            new PanelRow(index, "{0}", "Geometry", "", null, geometryInfo: metric)).ToArray(), new[] { new PanelBranch("{0}", metrics.Length) });
+        var length = new PanelGeometryInfo("closed", canMeasure: true, units: "mm");
+        var area = new PanelGeometryInfo("planar", power: 2, units: "mm", metricName: "Area", metricLabel: "A", canMeasure: true);
+        string Unit(PanelSnapshot snapshot, PanelUnitConversion conversion) =>
+            PanelTableText.GeometryHeaderUnit(PanelTableText.CommonGeometryMetric(snapshot), conversion);
+        Assert.Equal("m", Unit(Snapshot(length, length), PanelUnitConversion.MillimetersToMeters));
+        Assert.Equal("", Unit(Snapshot(length, area), PanelUnitConversion.MillimetersToMeters));
+        Assert.Equal("", Unit(Snapshot(area), PanelUnitConversion.MillimetersToMeters));
+        Assert.Equal("", Unit(Snapshot(length), PanelUnitConversion.None));
+        Assert.Equal("", Unit(Snapshot(new PanelGeometryInfo("points", 4, 0, "", "Count", "")), PanelUnitConversion.MillimetersToMeters));
+    }
+
     [Fact]
     public void HomogeneousScalarColumnsUseHeaderTypesAndNumericMissingAlignment()
     {

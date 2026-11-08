@@ -205,7 +205,15 @@ namespace BetterGhPanel
                 ? ordered.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
                     session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray() : ordered;
             bool addressOnly = action != PanelRowAction.CopyValues && action != PanelRowAction.CopyTable;
-            bool measured = addressOnly || tableColumn != null || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, cancellation.Token);
+            var copyToken = cancellation.Token;
+            var columnMeasurements = (includeColumns ? TableColumns : tableColumn != null ? new[] { tableColumn } : Array.Empty<PanelTableColumn>())
+                .Select(value => (Column: value, Snapshot: value.Snapshot, Queue: value.Geometry,
+                    Items: ColumnCopyItems(value, result, ordered, columnBranch != null ? new[] { columnBranch } : branches))).ToArray();
+            bool measured = addressOnly || tableColumn != null || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, copyToken);
+            if (!addressOnly)
+                foreach (var request in columnMeasurements)
+                    if (request.Snapshot != null && request.Queue != null)
+                        measured &= await request.Queue.MeasureAsync(request.Snapshot, request.Items, copyToken);
             var completion = new TaskCompletionSource<string>();
             Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
             {
@@ -235,6 +243,7 @@ namespace BetterGhPanel
                     if (!measured || !SelectionCurrent()) Finish(PanelCommitOutcome.Stale);
                     else
                     {
+                        foreach (var request in columnMeasurements) request.Column.RequireMeasurements(request.Items);
                         string text;
                         if (includeColumns) text = TableTsv(result, ordered);
                         else if (tableColumn != null && action == PanelRowAction.CopyValues)
@@ -260,7 +269,9 @@ namespace BetterGhPanel
                             text = string.Join(Environment.NewLine, branches.Select(branch => snapshot.BranchItemCounts[branch].ToString(CultureInfo.InvariantCulture)));
                         else text = string.Join(Environment.NewLine, ordered.Select(position => CopyValue(snapshot, position)));
                         bool Current() => SelectionCurrent() && CapturedSnapshotCurrent(snapshot) && SelectionCurrent() &&
-                            session.GeometrySourcesCurrent(snapshot) && SelectionCurrent();
+                            session.GeometrySourcesCurrent(snapshot) && SelectionCurrent() && columnMeasurements.All(request =>
+                                request.Snapshot == null || ReferenceEquals(request.Column.Snapshot, request.Snapshot) &&
+                                request.Queue?.SourcesCurrent(request.Snapshot) == true) && SelectionCurrent();
                         var state = PanelGeometryActions.CommitClipboard(Current,
                             () => { using (var clipboard = new Eto.Forms.Clipboard()) clipboard.Text = text; }, Finish);
                         if (state != PanelCommitOutcome.Deferred) Finish(state);

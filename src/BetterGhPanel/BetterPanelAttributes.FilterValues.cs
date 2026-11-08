@@ -20,6 +20,7 @@ namespace BetterGhPanel
             list = _list; track = _track;
             var selected = _selection.BranchPaths(result);
             bool set = result.DisplaySet?.IsBranchSet == true;
+            var visibleBranches = new System.Collections.Generic.List<string>();
             float y = list.Y;
             // A header fits in Full and ordinary Half layouts; minimum Half still
             // leaves room for a branch and its explicitly labeled count.
@@ -35,6 +36,7 @@ namespace BetterGhPanel
             {
                 string path = result.BranchPaths[index];
                 var bounds = new RectangleF(list.X, y, list.Width, RowHeight);
+                if (bounds.IntersectsWith(_renderVisibleRegion)) visibleBranches.Add(path);
                 bool isSelected = selected.Contains(path);
                 Fill(graphics, isSelected ? PanelTheme.Rgb(216, 232, 219) : (shown & 1) == 0 ? PanelTheme.Background : PanelTheme.Rgb(247, 249, 246), bounds);
                 // The selection bar owns the edge; validity marks always start beside it.
@@ -70,7 +72,11 @@ namespace BetterGhPanel
             if (Count == 0)
                 Text(graphics, result.Snapshot.Branches.Count == 0 ? "Connect a tree to start exploring." : "No matching branches. Clear a filter or Reset all.",
                     small, Muted, new RectangleF(list.X + 6, list.Y, list.Width - 12, RowHeight), trim);
-            if (TableVisible) DrawFrozenEdge(graphics, y);
+            if (TableVisible)
+            {
+                DrawFrozenEdge(graphics, y);
+                RequestVisibleTableGeometry(result, Array.Empty<int>(), Array.Empty<int>(), visibleBranches);
+            }
             if (TableVisible && _horizontalMaximum > 0) { Fill(graphics, PanelTheme.Rgb(232, 236, 229), _horizontalTrack); Fill(graphics, PanelTheme.Rgb(153, 174, 156), HorizontalThumb()); }
             if (Count > shown && !track.IsEmpty)
             {

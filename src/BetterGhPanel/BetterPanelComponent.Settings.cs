@@ -389,6 +389,7 @@ namespace BetterGhPanel
                 _captureRetries = 0;
                 InvalidateStaleCapture(_session, OnPingDocument(), _solveGeneration);
             }
+            ConfigureColumnGeometry();
             RefreshTableSource();
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();

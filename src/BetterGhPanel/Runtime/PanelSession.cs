@@ -9,7 +9,7 @@ using Rhino;
 namespace BetterGhPanel.Runtime
 {
     /// <summary>Owns one component's view, background queries and lazy geometry measurements.</summary>
-    public sealed class PanelSession : IDisposable
+    public sealed partial class PanelSession : IDisposable
     {
         // Allow queries 120 ms to finish on the UI thread before handing off.
         // This is a soft deadline checked between operations.
@@ -35,21 +35,7 @@ namespace BetterGhPanel.Runtime
         public PanelSession(Action invalidate)
         {
             _invalidate = invalidate;
-            _geometry = new GeometryMeasurementQueue<PanelSnapshot, PanelGeometryInfo>(
-                action => RhinoApp.InvokeOnUiThread(action),
-                action => { _ = Task.Run(() => RhinoApp.InvokeOnUiThread(action)); },
-                (delay, action) => { _ = Task.Run(async () =>
-                {
-                    await Task.Delay(delay).ConfigureAwait(false);
-                    RhinoApp.InvokeOnUiThread(action);
-                }); },
-                action => { _ = Task.Run(action); return true; }, () => { },
-                (snapshot, position) => position >= 0 && position < snapshot.Rows.Count,
-                (snapshot, position) => position >= 0 && position < snapshot.Rows.Count &&
-                    snapshot.Rows[position].IsValid && snapshot.Rows[position].GeometryInfo?.CanMeasure == true,
-                (snapshot, position) => position >= 0 && position < snapshot.Rows.Count &&
-                    snapshot.Rows[position].GeometryInfo?.Value == null,
-                PrepareGeometry, NotifyMeasurement,
+            _geometry = CreateGeometryQueue(PrepareGeometry,
                 (snapshot, position) => _geometrySourceCurrent?.Invoke(snapshot, position) ?? true,
                 position => _geometryRetentionResolver != null ? _geometryRetentionResolver(position) : PrepareGeometry(position));
             _options.ColumnSortKeys = null;
@@ -57,6 +43,23 @@ namespace BetterGhPanel.Runtime
             Snapshot = PanelSnapshot.Empty;
             Result = EmptyResult;
         }
+
+        private GeometryMeasurementQueue<PanelSnapshot, PanelGeometryInfo> CreateGeometryQueue(
+            Func<int, PreparedMeasurement<PanelGeometryInfo>?> prepare, Func<PanelSnapshot, int, bool> current,
+            Func<int, PreparedMeasurement<PanelGeometryInfo>?>? retention = null) =>
+            new GeometryMeasurementQueue<PanelSnapshot, PanelGeometryInfo>(
+                action => RhinoApp.InvokeOnUiThread(action),
+                action => { _ = Task.Run(() => RhinoApp.InvokeOnUiThread(action)); },
+                (delay, action) => { _ = Task.Run(async () =>
+                {
+                    await Task.Delay(delay).ConfigureAwait(false);
+                    RhinoApp.InvokeOnUiThread(action);
+                }); }, SubmitGeometryWorker, () => { },
+                (snapshot, position) => position >= 0 && position < snapshot.Rows.Count,
+                (snapshot, position) => position >= 0 && position < snapshot.Rows.Count &&
+                    snapshot.Rows[position].IsValid && snapshot.Rows[position].GeometryInfo?.CanMeasure == true,
+                (snapshot, position) => position >= 0 && position < snapshot.Rows.Count && snapshot.Rows[position].GeometryInfo?.Value == null,
+                prepare, NotifyMeasurement, current, retention);
 
         public PanelSnapshot Snapshot { get; private set; }
         public PanelQueryResult Result { get; private set; }
@@ -107,6 +110,7 @@ namespace BetterGhPanel.Runtime
             if (_disposed) return;
             ++_request;
             _queryCancellation?.Cancel();
+            ClearColumnGeometry();
             _geometry.Suspend(retainMeasurements);
             _options.ColumnSortKeys = null;
             _options.TableSource = null; _tableSource = null;
@@ -182,7 +186,11 @@ namespace BetterGhPanel.Runtime
         internal long GeometrySourceScansForTesting => _geometry.SourceScansForTesting;
         internal int GeometryEntryCountForTesting => _geometry.EntryCountForTesting;
         internal void ResetGeometryDiagnosticsForTesting() => _geometry.ResetDiagnosticsForTesting();
-        internal void RequestGeometryMeasurements(PanelSnapshot snapshot, IEnumerable<int> visiblePositions) => _geometry.RequestVisible(snapshot, visiblePositions);
+        internal void RequestGeometryMeasurements(PanelSnapshot snapshot, IEnumerable<int> visiblePositions)
+        {
+            CancelVisibleColumnMeasurements();
+            _geometry.RequestVisible(snapshot, visiblePositions);
+        }
         internal Task<bool> MeasureGeometryAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken cancellationToken) =>
             _geometry.MeasureAsync(snapshot, positions, cancellationToken);
 
@@ -242,6 +250,11 @@ namespace BetterGhPanel.Runtime
             var snapshot = Snapshot;
             var options = _options.Clone();
             bool measureGeometry = snapshot.HasMeasurableGeometry && PanelQueryEngine.RequiresGeometryMeasurements(options);
+            var sortColumn = options.SortMode == PanelSortMode.SourceOrder ? null :
+                _columns.Find(column => column.Input.InstanceGuid == options.SortColumn && column.Snapshot?.HasMeasurableGeometry == true);
+            var sortSnapshot = sortColumn?.Snapshot;
+            var sortQueue = sortColumn?.Geometry;
+            CancelVisibleColumnMeasurements();
             var request = ++_request;
             IsBusy = !_inputSuspended;
             Error = null;
@@ -250,7 +263,7 @@ namespace BetterGhPanel.Runtime
             PanelQueryWork? work = null;
             // Regex and native calls cannot yield midway through one operation.
             // All other queries get the same time budget regardless of tree size.
-            if (options.SearchMode != PanelSearchMode.Regex && !measureGeometry)
+            if (options.SearchMode != PanelSearchMode.Regex && !measureGeometry && sortColumn == null)
             {
                 try
                 {
@@ -285,6 +298,27 @@ namespace BetterGhPanel.Runtime
                         measurements = await CaptureGeometryMeasurements(snapshot, request, token).ConfigureAwait(false);
                         if (measurements == null) return;
                     }
+                    if (sortColumn != null && sortSnapshot != null && sortQueue != null)
+                    {
+                        // Validate before native work, as D's candidate preparation does.
+                        _ = new PanelQueryScope(snapshot, options, new PanelSearchFilter(options));
+                        var positions = new int[sortSnapshot.Rows.Count];
+                        for (int i = 0; i < positions.Length; i++) { token.ThrowIfCancellationRequested(); positions[i] = i; }
+                        if (!await sortQueue.MeasureAsync(sortSnapshot, positions, token).ConfigureAwait(false)) return;
+                        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                        RhinoApp.InvokeOnUiThread((Action)(() =>
+                        {
+                            try
+                            {
+                                if (!CanPublish(snapshot, request, token) || !ReferenceEquals(sortColumn.Snapshot, sortSnapshot) ||
+                                    !sortQueue.SourcesCurrent(sortSnapshot)) { completion.TrySetResult(false); return; }
+                                options.ColumnSortKeys = sortColumn.SortKeys(sortColumn.SortConversion, options.DecimalPlaces, options.RoundUpFactor, true);
+                                completion.TrySetResult(CanPublish(snapshot, request, token));
+                            }
+                            catch (Exception ex) { completion.TrySetException(ex); }
+                        }));
+                        if (!await completion.Task.ConfigureAwait(false)) return;
+                    }
                     // Resume the same scan, statistics and sort state. Work already
                     // performed within the UI budget is never restarted.
                     var result = work?.Complete() ?? PanelQueryEngine.Execute(snapshot, options, token, measurements);
@@ -292,6 +326,8 @@ namespace BetterGhPanel.Runtime
                     {
                         if (!CanPublish(snapshot, request, token)) return;
                         if (measureGeometry && !_geometry.SourcesCurrent(snapshot)) return;
+                        if (sortColumn != null && (sortSnapshot == null || sortQueue == null ||
+                            !ReferenceEquals(sortColumn.Snapshot, sortSnapshot) || !sortQueue.SourcesCurrent(sortSnapshot))) return;
                         if (!CanPublish(snapshot, request, token)) return;
                         PublishQuery(result, null);
                     }));
@@ -367,6 +403,7 @@ namespace BetterGhPanel.Runtime
             _disposed = true;
             _busyAnimation?.Dispose();
             _busyAnimation = null;
+            ClearColumnGeometry();
             _geometry.Dispose();
             ++_request;
             _queryCancellation?.Cancel();

@@ -78,7 +78,7 @@ namespace BetterGhPanel
             {
                 if (options.SortColumn != Guid.Empty) { options.SortColumn = Guid.Empty; options.SortMode = PanelSortMode.SourceOrder; }
             }
-            else column.Capture(_geometryUnits);
+            else { column.Capture(_geometryUnits); ConfigureColumnGeometry(); }
             options.ColumnSortKeys = column?.SortKeys(UnitConversion, DecimalPlaces, RoundUpFactor);
             return options;
         }
@@ -86,8 +86,39 @@ namespace BetterGhPanel
         {
             var options = WithCurrentColumnSort(Session.Options);
             Session.PrepareColumnSort(options.SortColumn, options.ColumnSortKeys);
+            ConfigureColumnGeometry();
             Session.SetTableSource(CurrentTableSource(), false);
         }
+        private void ConfigureColumnGeometry() => Session.ConfigureColumnGeometry(_tableColumns,
+            (column, position) => column.Snapshot is PanelSnapshot snapshot && ColumnMeasurementCurrent(column, snapshot, position)
+                ? PrepareGeometrySource(column.Sources[position], column.Measurements[position], false,
+                    () => ColumnMeasurementCurrent(column, snapshot, position)) : null,
+            ColumnMeasurementCurrent);
+
+        private bool ColumnMeasurementCurrent(PanelTableColumn column, PanelSnapshot snapshot, int position)
+        {
+            var data = _measurementSnapshot;
+            var context = _geometryContext;
+            bool Owned() => data != null && !Locked && _session != null && !_session.IsDisposed &&
+                ReferenceEquals(data, _session.Snapshot) && ReferenceEquals(data, _measurementSnapshot) &&
+                _tableColumns.Contains(column) && Params.Input.Contains(column.Input) &&
+                ReferenceEquals(snapshot, column.Snapshot) && column.Geometry?.IsAttachedTo(snapshot) == true &&
+                position >= 0 && position < column.Measurements.Length && position < column.Sources.Length;
+            if (!Owned()) return false;
+            var capture = column.Measurements[position];
+            var holder = column.Sources[position];
+            try
+            {
+                if (GeometryContextCurrent(context) && (capture == null || SafeGooInspection.IsCurrentCapturedGeometry(holder, capture.Leaf)) &&
+                    context.Equals(_geometryContext) && GeometryContextCurrent(context) && Owned() &&
+                    ReferenceEquals(capture, column.Measurements[position]) && ReferenceEquals(holder, column.Sources[position])) return true;
+            }
+            catch (Exception) { /* A replaced or disposed column source is stale. */ }
+            finally { GC.KeepAlive(capture?.Geometry); }
+            if (data != null) RecaptureStaleMeasurementSource(data);
+            return false;
+        }
+
         private void RefreshTableSource()
         {
             (Attributes as BetterPanelAttributes)?.PreserveTableScroll();
@@ -98,9 +129,18 @@ namespace BetterGhPanel
         }
         // Query mode decides whether to consume summaries; viewport and zoom never change this provider.
         private PanelTableSource? CurrentTableSource() => PanelSplit ? PanelTableColumn.ViewSource(TableColumns, ReverseTree, !PanelMinimized) : null;
+        private static int[] ColumnCopyItems(PanelTableColumn column, PanelQueryResult result,
+            IReadOnlyList<int> positions, IReadOnlyList<string> branches) =>
+            positions.SelectMany(position => column.CellItems(result, position))
+                .Concat(branches.SelectMany(path => column.BranchItems(result, path))).Distinct().ToArray();
+
         internal string TableTsv(PanelQueryResult result, IReadOnlyList<int> positions)
         {
             RequireTableSummaries(result);
+            foreach (var column in TableColumns)
+                column.RequireMeasurements(ColumnCopyItems(column, result, positions,
+                    Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength
+                        ? RowSelection.BranchPaths(result).ToArray() : Array.Empty<string>()));
             var titles = new[] { Params.Input[0].NickName }.Concat(TableColumns.Select(column => column.Input.NickName));
             if (Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength)
             {

@@ -597,7 +597,7 @@ namespace BetterGhPanel
             {
                 _setDetails.Close();
                 RenderListLengths(g, result, font, small, mono, trim);
-                PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, Array.Empty<int>());
+                if (!TableVisible) PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, Array.Empty<int>());
                 return;
             }
             if (TableVisible) { RenderTableRows(g, result, visibleRegion, font, small, mono, trim); return; }
@@ -1705,8 +1705,20 @@ namespace BetterGhPanel
                         var column = PanelOwner.TableColumns[columnIndex];
                         var cell = column.Row(hit.SourcePosition);
                         e.Title = column.Input.NickName + (cell == null ? "" : " · " + cell.Path + " [" + cell.OriginalIndex + "]");
-                        e.Text = cell?.TypeName ?? "Missing value";
-                        e.Description = PanelTextPreview.ForTooltip(ColumnCell(PanelOwner.Session.Result, hit.SourcePosition, columnIndex)) + (cell == null ? "" : FullValueHint);
+                        e.Text = cell == null ? "Missing value" :
+                            (cell.Validity == PanelValidity.VerifiedInvalid ? "Invalid " : cell.Validity == PanelValidity.Unverified ? "Unverified " : "") + cell.TypeName;
+                        string cellDetails = ColumnCell(PanelOwner.Session.Result, hit.SourcePosition, columnIndex);
+                        if (cell != null && PanelOwner.Session.Result.DisplaySet == null && column.Pair?.ItemAt(hit.SourcePosition) is int item)
+                        {
+                            var cellGeometry = column.Details(item);
+                            if (cell.Validity != PanelValidity.VerifiedValid)
+                                cellDetails += "\n" + (string.IsNullOrWhiteSpace(cell.InvalidReason)
+                                    ? cell.Validity == PanelValidity.VerifiedInvalid ? "Geometry or value is invalid." : "Validity could not be verified." : cell.InvalidReason);
+                            else if (cellGeometry != null)
+                                cellDetails = cellGeometry.FormatDetails(PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor) +
+                                    (column.Measuring(item) ? "\nCalculating measurement…" : cellGeometry.MeasurementUnavailable ? "\nMeasurement unavailable." : "");
+                        }
+                        e.Description = PanelTextPreview.ForTooltip(cellDetails) + (cell == null ? "" : FullValueHint);
                         return;
                     }
                     e.Title = (PanelOwner.ShowItemOrder || PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder

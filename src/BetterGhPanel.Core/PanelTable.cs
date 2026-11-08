@@ -272,6 +272,38 @@ namespace BetterGhPanel.Core
             new PanelRow(row.OriginalIndex, row.Path, row.TypeName, Value(row, conversion, decimals, factor),
                 row.IsValid && row.NumericValue.HasValue ? PanelUnits.Transform(row.NumericValue.Value, conversion, factor, decimals) : (double?)null,
                 isNull: row.IsNull, isValid: row.IsValid);
+
+        // Geometry columns compare the primary displayed metric, never their type or hints.
+        // A metric column keeps every other kind (including ordinary numbers) last.
+        internal static PanelRow MetricSortRow(PanelRow row, PanelGeometryInfo? geometry,
+            PanelUnitConversion conversion, int decimals, double factor)
+        {
+            double? value = null;
+            if (row.IsValid && !row.IsNull && geometry?.Value is double metric && !geometry.MeasurementUnavailable &&
+                metric >= 0 && !double.IsNaN(metric) && !double.IsInfinity(metric))
+            {
+                double presented = PanelUnits.Transform(PanelUnits.ConvertGeometry(metric, geometry.Power, geometry.Units, conversion),
+                    PanelUnitConversion.None, factor, decimals);
+                if (!double.IsNaN(presented) && !double.IsInfinity(presented)) value = presented;
+            }
+            return new PanelRow(row.OriginalIndex, row.Path, row.TypeName, PanelValuePresentation.FormatDisplay(row, conversion, decimals, geometry, roundUpFactor: factor), value, isNull: !value.HasValue);
+        }
+
+        internal static PanelGeometryInfo? CommonGeometryMetric(PanelSnapshot snapshot)
+        {
+            PanelGeometryInfo? first = null;
+            foreach (var row in snapshot.Rows)
+            {
+                var geometry = row.GeometryInfo;
+                if (geometry == null || (!geometry.CanMeasure && !geometry.Value.HasValue)) continue;
+                if (first != null && (first.Power != geometry.Power || first.MetricName != geometry.MetricName || first.Units != geometry.Units)) return null;
+                first = geometry;
+            }
+            return first;
+        }
+        internal static string GeometryHeaderUnit(PanelGeometryInfo? metric, PanelUnitConversion conversion) =>
+            metric != null && metric.Power > 0 ? PanelUnits.GeometryUnitSymbol(metric.Power, metric.Units, conversion) : "";
+
     }
 
     public static class PanelTableTsv

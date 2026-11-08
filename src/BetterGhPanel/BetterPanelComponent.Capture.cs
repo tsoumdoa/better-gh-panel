@@ -22,16 +22,22 @@ namespace BetterGhPanel
         {
             var snapshot = _measurementSnapshot;
             if (snapshot == null || !ReferenceEquals(_session?.Snapshot, snapshot) || !MeasurementSourceCurrent(snapshot, position)) return null;
-            var capture = _measurementSources[position];
+            return PrepareGeometrySource(_sourceItems[position], _measurementSources[position], proofOnly,
+                () => MeasurementSourceCurrent(snapshot, position));
+        }
+
+        private PreparedMeasurement<PanelGeometryInfo>? PrepareGeometrySource(IGH_Goo? holder,
+            CapturedMeasurementSource? capture, bool proofOnly, Func<bool> current)
+        {
             if (capture == null || capture.Geometry == null || !capture.Leaf.Trusted || !capture.Leaf.HasReference) return null;
             var source = capture.Geometry;
             try
             {
                 var prepared = proofOnly
                     ? GeometryHints.PrepareCapturedMeasurement(source, _geometryUnits, (int)_geometryUnitSystem, _geometryTolerance, true)
-                    : GeometryHints.PrepareStandaloneMeasurement(_sourceItems[position]!, source, capture.Reference,
+                    : GeometryHints.PrepareStandaloneMeasurement(holder!, source, capture.Reference,
                         _geometryUnits, (int)_geometryUnitSystem, _geometryTolerance, true);
-                if (MeasurementSourceCurrent(snapshot, position)) return prepared;
+                if (current()) return prepared;
                 prepared?.Dispose();
                 return null;
             }
