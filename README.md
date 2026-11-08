@@ -115,10 +115,10 @@ The footer's tree tools run in a fixed order — **Simplify → Trim → Flatten
 
 Use **Add column** in the component's right-click menu to append optional C1, C2, … inputs after F. Rename an input to title its column; **Remove column** removes an added input and its wires, and Undo restores both. Added columns are display-only: D, S, B, F and geometry preview keep their existing contracts.
 
-Click **Table** in the header to show the columns beside D at double the saved width. With no wired columns and Table off, the ordinary panel is unchanged. Hiding the table retains its wires. Old files with D|F enabled open as a D/F table.
+Click **Table** in the header to show the columns beside D. It initially fits their content between the ordinary and doubled panel widths; subsequent resizing is yours. With no wired columns and Table off, the ordinary panel is unchanged. Hiding the table retains its wires. Old files with D|F enabled open as a D/F table.
 
 - D and the row-number gutter stay frozen. Other columns share a horizontal scrollbar; Shift+wheel scrolls sideways while the panel has focus. There is one vertical scrollbar.
-- Column titles follow input nicknames immediately. Widths auto-fit the visible cells; drag a header border to resize, or double-click it to restore auto-fit. Manual widths save with the input's identity.
+- Column titles follow input nicknames immediately. Widths auto-fit the visible cells and only grow while scrolling the same result; drag a header border to resize, or double-click it to restore auto-fit. Manual widths save with the input's identity.
 - Every column pairs independently against D using F's rule: equal original branch counts, exact paths first, then remaining branches in tree order, with items paired by index. A mismatched column has an amber header and explanatory tooltip; other columns continue working.
 - Missing cells are blank with a muted dash at the start of a run. Extra values appear after the D rows, muted beside blank D spacers, and are not selectable. **only in <column>** identifies extra tails; **paired with hidden D rows** identifies retained partners of filtered D rows. An amber branch badge names the first unequal column; its tooltip lists all unequal lengths.
 - Click a column title for ascending → descending → tree order; right-click it for the three sort commands. The existing Asc/Desc control sorts by D. Sorting stays inside each branch and never changes wire outputs.
