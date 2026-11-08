@@ -176,6 +176,9 @@ namespace BetterGhPanel.Core
         public static double ConvertGeometry(double value, int power, string units, PanelUnitConversion conversion) =>
             Convert(value, GeometryConversion(power, units, conversion));
 
+        internal static string GeometryUnitSymbol(int power, string units, PanelUnitConversion conversion) =>
+            Symbol(GeometryConversion(power, units, conversion));
+
         private static PanelUnitConversion GeometryConversion(int power, string units, PanelUnitConversion conversion)
         {
             var definition = Definition(conversion);

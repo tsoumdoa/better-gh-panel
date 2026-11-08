@@ -425,7 +425,7 @@ internal static class BranchPairingChecks
             f.ClearSelection(); f.SelectBranch(representative);
             await Ready(() => FieldValue<long>(component, "_publishedSelectionVersion") == FieldValue<long>(component, "_selectionVersion"));
             await (Task<string>)Call(component, "CopyColumnValuesAsync", f.Result.Snapshot, Array.Empty<int>(), 0, representative)!;
-            string branchNote = (string)Call(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "BranchExtraNote", f.Result, representative)!;
+            string branchNote = (string)Call(((IList)PropertyValue<object>(component, "TableColumns"))[0]!, "BranchExtraNote", f.Result, representative, "F")!;
             string branchCopy = (string)Call(attributes, "ColumnBranchCell", representative, 0)! + (branchNote.Length > 0 ? " · " + branchNote : "");
             await f.Ready(() => Forms.Clipboard.GetText() == branchCopy);
             Check(Forms.Clipboard.GetText() == branchCopy,

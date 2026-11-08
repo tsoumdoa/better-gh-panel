@@ -131,6 +131,13 @@ namespace BetterGhPanel
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
                     {
+                        if (!PanelSplit)
+                        {
+                            ReleaseInactiveColumns(_session.Options);
+                            if (_session.Options.SortMode == PanelSortMode.SourceOrder || _session.Options.SortColumn == Guid.Empty)
+                                _session.PrepareColumnSort(Guid.Empty, null);
+                            ConfigureColumnGeometry();
+                        }
                         if (!_restoringView && !QueryPreviewActive && !CanOutputValues) OutputValues = PanelOutputValues.Items;
                         (Attributes as BetterPanelAttributes)?.OnQueryStarted();
                         (Attributes as BetterPanelAttributes)?.InvalidateStatistics();
@@ -171,7 +178,7 @@ namespace BetterGhPanel
             if (side != GH_ParameterSide.Input || index < 2) return null!;
             int number = 1;
             foreach (var input in Params.Input)
-                if (input.Name.StartsWith("Column ", StringComparison.Ordinal) && int.TryParse(input.Name.Substring(7), out int existing) && existing >= number && existing < int.MaxValue)
+                if (IsTableDataInput(input) && input.Name.StartsWith("Column ", StringComparison.Ordinal) && int.TryParse(input.Name.Substring(7), out int existing) && existing >= number && existing < int.MaxValue)
                     number = existing + 1;
             return new Grasshopper.Kernel.Parameters.Param_GenericObject
             {
@@ -180,9 +187,10 @@ namespace BetterGhPanel
                 Access = GH_ParamAccess.tree, Optional = true, MutableNickName = true
             };
         }
-        public bool DestroyParameter(GH_ParameterSide side, int index) => side == GH_ParameterSide.Input && index >= 2;
+        public bool DestroyParameter(GH_ParameterSide side, int index) => side == GH_ParameterSide.Input && index >= 2 && index < Params.Input.Count && !IsHeaderInput(Params.Input[index]);
         public void VariableParameterMaintenance()
         {
+            MaintainHeaderInput();
             for (int i = 2; i < Params.Input.Count; i++)
             { Params.Input[i].Access = GH_ParamAccess.tree; Params.Input[i].Optional = true; Params.Input[i].MutableNickName = true; }
         }
@@ -348,9 +356,10 @@ namespace BetterGhPanel
             Menu_AppendItem(sizeMenu.DropDown, "Custom", (_, __) => { }, false, PreviewSize < 0);
             Menu_AppendSeparator(menu);
             Menu_AppendItem(menu, "Add column", (_, __) => AddColumn());
-            var remove = Menu_AppendItem(menu, "Remove column", null, Params.Input.Count > 2);
-            foreach (var input in Params.Input.GetRange(2, Params.Input.Count - 2))
-                Menu_AppendItem(remove.DropDown, input.NickName, (_, __) => RemoveColumn(input));
+            var remove = Menu_AppendItem(menu, "Remove column", null, Params.Input.GetRange(2, Params.Input.Count - 2).Exists(IsTableDataInput));
+            foreach (var input in Params.Input.GetRange(2, Params.Input.Count - 2).FindAll(IsTableDataInput))
+                Menu_AppendItem(remove.DropDown, HeaderTitleForInput(input), (_, __) => RemoveColumn(input));
+            Menu_AppendItem(menu, "Column titles input", (_, __) => { if (HeaderInput == null) AddHeaderInput(); else RemoveHeaderInput(); }, true, HeaderInput != null);
         }
 
     }

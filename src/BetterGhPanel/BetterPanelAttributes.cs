@@ -597,7 +597,7 @@ namespace BetterGhPanel
             {
                 _setDetails.Close();
                 RenderListLengths(g, result, font, small, mono, trim);
-                PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, Array.Empty<int>());
+                if (!TableVisible) PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, Array.Empty<int>());
                 return;
             }
             if (TableVisible) { RenderTableRows(g, result, visibleRegion, font, small, mono, trim); return; }
@@ -1692,6 +1692,18 @@ namespace BetterGhPanel
                                 ".\nSource items after filters: " + CanvasStatistics.SourceStatuses(PanelOwner.Session.Result.DisplaySet.BranchSourceStatuses[hit.Path]) +
                                 ". Out Items groups all matching branches. Out Values sends the count. B, F and geometry actions include every member.";
                         }
+                        int summaryColumn = DisplayListLengths ? CellColumnAt(point) : -1;
+                        if (summaryColumn >= 0 && summaryColumn < PanelOwner.TableColumns.Count)
+                        {
+                            var column = PanelOwner.TableColumns[summaryColumn];
+                            if (column.HasGeometry)
+                            {
+                                e.Title = PanelOwner.TableHeaderTitle(summaryColumn + 1);
+                                e.Text = ColumnBranchCell(hit.Path, summaryColumn);
+                                e.Description = PanelTextPreview.ForTooltip(string.Join("\n\n", column.BranchItems(PanelOwner.Session.Result, hit.Path)
+                                    .Select(item => column.ItemTooltip(item, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor))));
+                            }
+                        }
                         return;
                     }
                 foreach (var hit in _rowHits)
@@ -1704,9 +1716,18 @@ namespace BetterGhPanel
                     {
                         var column = PanelOwner.TableColumns[columnIndex];
                         var cell = column.Row(hit.SourcePosition);
-                        e.Title = column.Input.NickName + (cell == null ? "" : " · " + cell.Path + " [" + cell.OriginalIndex + "]");
-                        e.Text = cell?.TypeName ?? "Missing value";
-                        e.Description = PanelTextPreview.ForTooltip(ColumnCell(PanelOwner.Session.Result, hit.SourcePosition, columnIndex)) + (cell == null ? "" : FullValueHint);
+                        e.Title = PanelOwner.TableHeaderTitle(columnIndex + 1) + (cell == null ? "" : " · " + cell.Path + " [" + cell.OriginalIndex + "]");
+                        e.Text = cell == null ? "Missing value" :
+                            (cell.Validity == PanelValidity.VerifiedInvalid ? "Invalid " : cell.Validity == PanelValidity.Unverified ? "Unverified " : "") + cell.TypeName;
+                        string cellDetails = ColumnCell(PanelOwner.Session.Result, hit.SourcePosition, columnIndex);
+                        if (column.Snapshot != null)
+                        {
+                            var memberDetails = column.CellItems(PanelOwner.Session.Result, hit.SourcePosition)
+                                .Select(item => column.ItemTooltip(item, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor));
+                            if (cell != null && (!cell.IsValid || cell.GeometryInfo != null) || column.HasGeometry && PanelOwner.Session.Result.DisplaySet != null)
+                                cellDetails = string.Join("\n\n", memberDetails);
+                        }
+                        e.Description = PanelTextPreview.ForTooltip(cellDetails) + (cell == null ? "" : FullValueHint);
                         return;
                     }
                     e.Title = (PanelOwner.ShowItemOrder || PanelOwner.Session.Options.SortMode == PanelSortMode.SourceOrder

@@ -253,6 +253,9 @@ namespace BetterGhPanel.Core
 
     internal static class PanelTableText
     {
+        internal static string HeaderTitle(IReadOnlyList<string?> titles, int index, string fallback) =>
+            index >= 0 && index < titles.Count && !string.IsNullOrWhiteSpace(titles[index]) ? titles[index]! : fallback;
+
         internal const float MinimumColumnWidth = 48, MaximumColumnWidth = 320;
         internal static string LengthBadge(int total, int dataTotal) => total > dataTotal
             ? "+" + (total - dataTotal) + " extra" : total + " of " + dataTotal;
@@ -272,6 +275,82 @@ namespace BetterGhPanel.Core
             new PanelRow(row.OriginalIndex, row.Path, row.TypeName, Value(row, conversion, decimals, factor),
                 row.IsValid && row.NumericValue.HasValue ? PanelUnits.Transform(row.NumericValue.Value, conversion, factor, decimals) : (double?)null,
                 isNull: row.IsNull, isValid: row.IsValid);
+
+        // Geometry columns compare the primary displayed metric, never their type or hints.
+        // A metric column keeps every other kind (including ordinary numbers) last.
+        internal static PanelRow MetricSortRow(PanelRow row, PanelGeometryInfo? geometry,
+            PanelUnitConversion conversion, int decimals, double factor, bool homogeneous = false)
+        {
+            double? value = null;
+            if (row.IsValid && !row.IsNull && geometry?.Value is double metric &&
+                metric >= 0 && !double.IsNaN(metric) && !double.IsInfinity(metric))
+            {
+                double presented = PanelUnits.Transform(PanelUnits.ConvertGeometry(metric, geometry.Power, geometry.Units, conversion),
+                    PanelUnitConversion.None, factor, decimals);
+                if (!double.IsNaN(presented) && !double.IsInfinity(presented)) value = presented;
+            }
+            return new PanelRow(row.OriginalIndex, row.Path, row.TypeName,
+                GeometryCell(row, geometry, homogeneous, false, conversion, decimals, factor), value, isNull: !value.HasValue);
+        }
+
+        internal static PanelRow? ColumnSortRow(PanelSnapshot snapshot, PanelRow row, PanelGeometryInfo? geometry,
+            bool homogeneous, PanelUnitConversion conversion, int decimals, double factor, bool summary = false)
+        {
+            if (!snapshot.HasGeometryMetrics) return PresentedRow(row, conversion, decimals, factor);
+            if (summary) return SummarySortRow(row, geometry, homogeneous, conversion, decimals, factor);
+            var key = MetricSortRow(row, geometry, conversion, decimals, factor, homogeneous);
+            return key.IsNull ? null : key;
+        }
+
+        internal static PanelRow SummarySortRow(PanelRow row, PanelGeometryInfo? geometry, bool homogeneous,
+            PanelUnitConversion conversion, int decimals, double factor) => new PanelRow(row.OriginalIndex, row.Path,
+                row.TypeName, GeometryCell(row, geometry, homogeneous, false, conversion, decimals, factor), null);
+
+        internal static bool HasGeometryMetric(PanelGeometryInfo? geometry) => geometry != null &&
+            (geometry.CanMeasure || geometry.Value.HasValue || geometry.MeasurementUnavailable);
+
+        internal static string GeometryCell(PanelRow row, PanelGeometryInfo? geometry, bool homogeneous, bool measuring,
+            PanelUnitConversion conversion, int decimals, double factor)
+        {
+            if (row.IsNull || geometry == null) return Value(row, conversion, decimals, factor);
+            if (!row.IsValid) return row.Validity == PanelValidity.VerifiedInvalid ? "invalid" : "unverified";
+            if (!HasGeometryMetric(geometry)) return Value(row, conversion, decimals, factor);
+            if (measuring) return "measuring…";
+            string number = geometry!.Value is double primary && primary >= 0 && !double.IsNaN(primary) && !double.IsInfinity(primary)
+                ? PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units, conversion, decimals,
+                    includeUnits: !homogeneous, roundUpFactor: factor) : "unavailable";
+            return homogeneous ? number : StockTypeLabels.ShortName(row.TypeName) +
+                (geometry.MetricLabel.Length == 0 ? "" : " " + geometry.MetricLabel) + " " + number;
+        }
+
+        internal static PanelGeometryInfo? CommonGeometryMetric(PanelSnapshot snapshot)
+        {
+            PanelGeometryInfo? first = null;
+            foreach (var row in snapshot.Rows)
+            {
+                var geometry = row.GeometryInfo;
+                if (!row.IsValid || row.IsNull || geometry == null || (!geometry.CanMeasure && !geometry.Value.HasValue)) continue;
+                if (first != null && (first.Power != geometry.Power || first.MetricName != geometry.MetricName ||
+                    first.MetricLabel != geometry.MetricLabel || first.Units != geometry.Units)) return null;
+                first = geometry;
+            }
+            return first;
+        }
+        internal static string GeometryHeaderUnit(PanelGeometryInfo? metric, PanelUnitConversion conversion) =>
+            metric != null && metric.Power > 0 ? GeometryUnit(metric, conversion) : "";
+        private static string GeometryUnit(PanelGeometryInfo metric, PanelUnitConversion conversion)
+        {
+            string converted = PanelUnits.GeometryUnitSymbol(metric.Power, metric.Units, conversion);
+            return converted.Length > 0 ? converted : metric.Units + (metric.Power == 2 ? "²" : metric.Power == 3 ? "³" : "");
+        }
+
+        internal static string GeometryHeaderSuffix(PanelGeometryInfo? metric, PanelUnitConversion conversion)
+        {
+            if (metric == null || metric.MetricLabel.Length == 0) return "";
+            string unit = GeometryHeaderUnit(metric, conversion);
+            return " · " + metric.MetricLabel + (unit.Length == 0 ? "" : " · " + unit);
+        }
+
     }
 
     public static class PanelTableTsv
@@ -285,7 +364,7 @@ namespace BetterGhPanel.Core
             foreach (var row in rows) Line(new[] { row.Path, row.Index.ToString(CultureInfo.InvariantCulture) }.Concat(row.Values));
             return text.ToString();
         }
-        private static string Escape(string value) => value.IndexOfAny(new[] { '\t', '\r', '\n', '"' }) < 0 ? value :
+        internal static string Escape(string value) => value.IndexOfAny(new[] { '\t', '\r', '\n', '"' }) < 0 ? value :
             "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 }

@@ -44,9 +44,11 @@ namespace BetterGhPanel
             internal TableViewState(bool split, float scale, bool fit = false) { Split = split; Scale = scale; Fit = fit; }
         }
         private TableViewState? _fittingTableState;
+        private bool _tableWidthFitted;
         internal void FitTableWidth(float desired)
         {
             TableWidthScale = Math.Max(1, Math.Min(2, desired / CanvasWidth));
+            _tableWidthFitted = true;
             if (_fittingTableState != null) { _fittingTableState.Scale = TableWidthScale; _fittingTableState.Fit = false; }
             _fittingTableState = null;
             Attributes.ExpireLayout();
@@ -281,12 +283,13 @@ namespace BetterGhPanel
         internal void AddColumn()
         {
             RecordUndoEvent("Panel+ Add column");
-            Params.RegisterInputParam(CreateParameter(GH_ParameterSide.Input, Params.Input.Count));
+            int index = HeaderInput is { } header ? Params.Input.IndexOf(header) : Params.Input.Count;
+            Params.RegisterInputParam(CreateParameter(GH_ParameterSide.Input, index), index);
             ColumnsChanged();
         }
         internal void RemoveColumn(IGH_Param input)
         {
-            if (Params.Input.IndexOf(input) < 2) return;
+            if (Params.Input.IndexOf(input) < 2 || IsHeaderInput(input)) return;
             RecordUndoEvent("Panel+ Remove column");
             bool sorted = Session.Options.SortColumn == input.InstanceGuid;
             ColumnWidths.Remove(input.InstanceGuid); _columnInputIndices.Clear();
@@ -315,14 +318,20 @@ namespace BetterGhPanel
         internal void ResolveColumnWidths()
         {
             foreach (var entry in ColumnWidths.ToArray())
-                if (!Params.Input.Any(input => input.InstanceGuid == entry.Key) && _columnInputIndices.TryGetValue(entry.Key, out int index) &&
-                    index >= 0 && index < Params.Input.Count)
-                { ColumnWidths.Remove(entry.Key); var id = Params.Input[index].InstanceGuid; ColumnWidths[id] = entry.Value; _columnInputIndices[id] = index; }
+            {
+                if (Params.Input.Any(input => input.InstanceGuid == entry.Key && IsTableDataInput(input))) continue;
+                ColumnWidths.Remove(entry.Key);
+                if (HeaderInput?.InstanceGuid != entry.Key && _columnInputIndices.TryGetValue(entry.Key, out int index) &&
+                    index >= 0 && index < Params.Input.Count && IsTableDataInput(Params.Input[index]))
+                { var id = Params.Input[index].InstanceGuid; ColumnWidths[id] = entry.Value; _columnInputIndices[id] = index; }
+            }
         }
         private void ResolveSortInput(PanelQueryOptions options)
         {
             if (options.SortColumn == Guid.Empty) return;
-            options.SortColumn = PanelTableInputIdentity.Resolve(options.SortColumn, Params.Input.Select(input => input.InstanceGuid).ToArray(), _sortInputIndex >= 1 ? _sortInputIndex : -1);
+            options.SortColumn = HeaderInput?.InstanceGuid == options.SortColumn ? Guid.Empty :
+                PanelTableInputIdentity.Resolve(options.SortColumn, Params.Input.Select(input => IsHeaderInput(input) ? Guid.Empty : input.InstanceGuid).ToArray(),
+                    _sortInputIndex >= 1 ? _sortInputIndex : -1);
             if (options.SortColumn == Guid.Empty) { options.SortMode = PanelSortMode.SourceOrder; options.ColumnSortKeys = null; }
         }
 
@@ -331,6 +340,7 @@ namespace BetterGhPanel
 
         internal void SetColumnWidth(Guid id, float? width)
         {
+            if (HeaderInput?.InstanceGuid == id) return;
             var before = ColumnWidths.TryGetValue(id, out float value) ? (float?)value : null;
             if (before == width) return;
             RecordUndoEvent("Panel+ Column width", new PanelUndo<float?>(InstanceGuid, before, width,
@@ -349,6 +359,7 @@ namespace BetterGhPanel
         }
         internal void SetColumnSort(Guid id, PanelSortMode mode)
         {
+            if (HeaderInput?.InstanceGuid == id) return;
             var before = Session.Options;
             if (id == Params.Input[0].InstanceGuid || mode == PanelSortMode.SourceOrder) id = Guid.Empty;
             if (before.SortColumn == id && before.SortMode == mode) return;
@@ -364,7 +375,7 @@ namespace BetterGhPanel
         {
             if (PanelSplit == split || split && !CanSplit) return;
             var before = new TableViewState(PanelSplit, TableWidthScale);
-            var after = new TableViewState(split, 2, split);
+            var after = new TableViewState(split, TableWidthScale, split && !_tableWidthFitted && TableWidthScale == 2); // fit once; later toggles keep the chosen width
             RecordUndoEvent("Panel+ Table view", new PanelUndo<TableViewState>(InstanceGuid, before, after,
                 (component, state) => component.RestoreTableView(state)));
             RestoreTableView(after);
@@ -389,6 +400,7 @@ namespace BetterGhPanel
                 _captureRetries = 0;
                 InvalidateStaleCapture(_session, OnPingDocument(), _solveGeneration);
             }
+            ConfigureColumnGeometry();
             RefreshTableSource();
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
@@ -445,7 +457,7 @@ namespace BetterGhPanel
                 writer.SetGuid("PanelSortColumn", options.SortColumn);
                 writer.SetInt32("PanelSortInputIndex", Params.Input.FindIndex(input => input.InstanceGuid == options.SortColumn));
             }
-            var savedWidths = ColumnWidths.Where(entry => Params.Input.Any(input => input.InstanceGuid == entry.Key)).ToArray();
+            var savedWidths = ColumnWidths.Where(entry => Params.Input.Any(input => input.InstanceGuid == entry.Key && IsTableDataInput(input))).ToArray();
             if (savedWidths.Length > 0)
             {
                 var widths = writer.CreateChunk("PanelColumnWidths");
@@ -477,6 +489,7 @@ namespace BetterGhPanel
             writer.SetInt32("PanelOutputScope", (int)OutputScope);
             writer.SetInt32("PanelOutputValues", (int)OutputValues);
             writer.SetInt32("PanelOutputSchema", 1);
+            WriteHeaderInput(writer);
             bool success = base.Write(writer);
             // 0.2.8 and earlier have a fixed parameter server. Keep its base-port
             // chunks alongside GH's variable archive so it can ignore added columns.
@@ -489,6 +502,7 @@ namespace BetterGhPanel
 
         public override bool Read(GH_IReader reader)
         {
+            ReadHeaderInput(reader);
             ++_solveGeneration;
             ++_outputRequest;
             _queryTree = null;
@@ -611,6 +625,7 @@ namespace BetterGhPanel
             for (int index = 0; index < Params.Input.Count; index++)
             {
                 var input = Params.Input[index];
+                if (IsHeaderInput(input)) continue;
                 float value = 0;
                 if (widths != null && (widths.TryGetSingle(input.InstanceGuid.ToString("D"), ref value) || widths.TryGetSingle("InputIndex" + index, ref value)) &&
                     !float.IsNaN(value) && !float.IsInfinity(value))

@@ -18,7 +18,12 @@ using Forms = System.Windows.Forms;
 
 internal static class TableColumnsChecks
 {
-    internal static Task Run(Assembly assembly) => PanelHostFixture.RunWithEditor(assembly, Verify);
+    internal static Task Run(Assembly assembly) => PanelHostFixture.RunWithEditor(assembly, async value =>
+    {
+        await Verify(value);
+        await TableGeometryChecks.Verify(value);
+        await TableHeaderChecks.Verify(value);
+    });
     private static async Task Verify(Assembly assembly)
     {
         using var fixture = new PanelHostFixture.Fixture(assembly);

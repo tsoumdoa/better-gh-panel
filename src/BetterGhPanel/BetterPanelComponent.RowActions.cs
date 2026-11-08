@@ -205,7 +205,15 @@ namespace BetterGhPanel
                 ? ordered.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
                     session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray() : ordered;
             bool addressOnly = action != PanelRowAction.CopyValues && action != PanelRowAction.CopyTable;
-            bool measured = addressOnly || tableColumn != null || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, cancellation.Token);
+            var copyToken = cancellation.Token;
+            var columnMeasurements = (includeColumns ? TableColumns : tableColumn != null ? new[] { tableColumn } : Array.Empty<PanelTableColumn>())
+                .Select(value => (Column: value, Snapshot: value.Snapshot, Queue: value.Geometry,
+                    Items: ColumnCopyItems(value, result, ordered, columnBranch != null ? new[] { columnBranch } : branches))).ToArray();
+            bool measured = addressOnly || tableColumn != null || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, copyToken);
+            if (!addressOnly)
+                foreach (var request in columnMeasurements)
+                    if (request.Snapshot != null && request.Queue != null)
+                        measured &= await request.Queue.MeasureAsync(request.Snapshot, request.Items, copyToken);
             var completion = new TaskCompletionSource<string>();
             Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
             {
@@ -235,10 +243,12 @@ namespace BetterGhPanel
                     if (!measured || !SelectionCurrent()) Finish(PanelCommitOutcome.Stale);
                     else
                     {
+                        if (!includeColumns)
+                            foreach (var request in columnMeasurements) request.Column.RequireMeasurements(request.Items);
                         string text;
                         if (includeColumns) text = TableTsv(result, ordered);
                         else if (tableColumn != null && action == PanelRowAction.CopyValues)
-                            text = columnBranch != null ? tableColumn.BranchCellText(result, columnBranch, UnitConversion, DecimalPlaces, RoundUpFactor) :
+                            text = columnBranch != null ? tableColumn.BranchCellText(result, columnBranch, UnitConversion, DecimalPlaces, RoundUpFactor, HeaderTitleForInput(tableColumn.Input)) :
                                 string.Join(Environment.NewLine, ordered.Select(position => tableColumn.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor)));
                         else if (path != null) text = pathText!;
                         else if (action == PanelRowAction.CopyPaths)
@@ -249,18 +259,24 @@ namespace BetterGhPanel
                         else if (action == PanelRowAction.CopyAddresses)
                             text = string.Join(Environment.NewLine, ordered.Select(position => PanelItemOrder.Address(result, position, OutputValues == PanelOutputValues.Items, FlattenTree)));
                         else if (action == PanelRowAction.CopyTable)
-                            text = "Path\tIndex\tValue" + Environment.NewLine + string.Join(Environment.NewLine, ordered.Select(position =>
+                        {
+                            string title = HeaderTitleForInput(Params.Input[0], "Value");
+                            title = PanelTableTsv.Escape(title);
+                            text = "Path\tIndex\t" + title + Environment.NewLine + string.Join(Environment.NewLine, ordered.Select(position =>
                             {
                                 PanelItemOrder.TryGetNumber(result, position, out int index);
                                 string value = DisplayValue(snapshot, snapshot.Rows[position], position);
-                                if (value.IndexOfAny(new[] { '\t', '\r', '\n', '"' }) >= 0) value = "\"" + value.Replace("\"", "\"\"") + "\"";
+                                value = PanelTableTsv.Escape(value);
                                 return snapshot.Rows[position].Path + "\t" + index.ToString(CultureInfo.InvariantCulture) + "\t" + value;
                             }));
+                        }
                         else if (branchSet || listLengthCopy)
                             text = string.Join(Environment.NewLine, branches.Select(branch => snapshot.BranchItemCounts[branch].ToString(CultureInfo.InvariantCulture)));
                         else text = string.Join(Environment.NewLine, ordered.Select(position => CopyValue(snapshot, position)));
                         bool Current() => SelectionCurrent() && CapturedSnapshotCurrent(snapshot) && SelectionCurrent() &&
-                            session.GeometrySourcesCurrent(snapshot) && SelectionCurrent();
+                            session.GeometrySourcesCurrent(snapshot) && SelectionCurrent() && columnMeasurements.All(request =>
+                                request.Snapshot == null || ReferenceEquals(request.Column.Snapshot, request.Snapshot) &&
+                                request.Queue?.SourcesCurrent(request.Snapshot) == true) && SelectionCurrent();
                         var state = PanelGeometryActions.CommitClipboard(Current,
                             () => { using (var clipboard = new Eto.Forms.Clipboard()) clipboard.Text = text; }, Finish);
                         if (state != PanelCommitOutcome.Deferred) Finish(state);

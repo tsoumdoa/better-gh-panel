@@ -21,6 +21,36 @@ namespace BetterGhPanel.Runtime
         internal CapturedMeasurementSource?[] Measurements { get; private set; } = Array.Empty<CapturedMeasurementSource?>();
         internal CaptureGraphWitness[] Graphs { get; private set; } = Array.Empty<CaptureGraphWitness>();
         internal bool HasGeometry { get; private set; }
+        internal GeometryMeasurementQueue<PanelSnapshot, PanelGeometryInfo>? Geometry;
+        private PanelGeometryInfo? _headerMetric;
+        internal bool HomogeneousMetric => _headerMetric != null && _headerMetric.MetricLabel.Length > 0;
+        internal string HeaderSuffix(PanelUnitConversion conversion) => PanelTableText.GeometryHeaderSuffix(_headerMetric, conversion);
+        internal bool CellIsNumeric(PanelRow? row) => !HomogeneousMetric && row?.NumericValue.HasValue == true ||
+            row != null && HomogeneousMetric && row.GeometryInfo != null && (PanelTableText.HasGeometryMetric(row.GeometryInfo) || !row.IsValid);
+        internal bool CellShowsType(PanelRow? row) => ShowCellTypes && row != null &&
+            !PanelTableText.HasGeometryMetric(row.GeometryInfo) && (row.GeometryInfo == null || StockTypeLabels.SeparateLabel(row.TypeName));
+        internal float CellPadding(PanelRow? row) => (CellShowsType(row) ? 60 : 12) +
+            (row?.Validity == PanelValidity.VerifiedInvalid || row?.Validity == PanelValidity.Unverified ? 12 : 0);
+        internal string HeaderUnit(PanelUnitConversion conversion) => PanelTableText.GeometryHeaderUnit(_headerMetric, conversion);
+        internal string MetricTooltip(PanelUnitConversion conversion) => !HomogeneousMetric ? "" :
+            _headerMetric!.MetricName + (HeaderUnit(conversion).Length > 0 ? " · " + HeaderUnit(conversion) : "");
+        internal string MetricLane(PanelRow? row) => !HomogeneousMetric && row?.IsValid == true && PanelTableText.HasGeometryMetric(row.GeometryInfo)
+            ? StockTypeLabels.ShortName(row.TypeName) + (row.GeometryInfo!.MetricLabel.Length > 0 ? " " + row.GeometryInfo.MetricLabel : "") : "";
+        internal PanelGeometryInfo? Details(int item) => Snapshot == null ? null :
+            Geometry?.Get(Snapshot, item) ?? (Geometry?.Has(Snapshot, item) == true
+                ? Snapshot.Rows[item].GeometryInfo?.WithUnavailableMeasurement() : Snapshot.Rows[item].GeometryInfo);
+        internal bool Measuring(int item) => Snapshot != null && item >= 0 && Snapshot.Rows[item].IsValid &&
+            Snapshot.Rows[item].GeometryInfo?.CanMeasure == true && !Snapshot.Rows[item].GeometryInfo!.Value.HasValue &&
+            Geometry?.Has(Snapshot, item) != true;
+        internal IEnumerable<int> CellItems(PanelQueryResult result, int position)
+        {
+            if (result.DisplaySet?.IsBranchSet == false && result.TableSummaries.TryGetValue(Input.InstanceGuid, out var summary) &&
+                summary.Sets.TryGetValue(position, out var cell)) return cell.Preview.Where(item => item >= 0);
+            return Pair?.ItemAt(position) is int item ? new[] { item } : Array.Empty<int>();
+        }
+        internal IEnumerable<int> BranchItems(PanelQueryResult result, string path) =>
+            result.TableSummaries.TryGetValue(Input.InstanceGuid, out var summary) && summary.Branches.TryGetValue(path, out var cell)
+                ? cell.Preview.Where(item => item >= 0) : Enumerable.Empty<int>();
         internal bool ShowCellTypes => PanelTableText.ShowCellTypes(Snapshot);
         internal bool Numeric => PanelTableText.NumericColumn(Snapshot);
         internal PanelTableColumn(IGH_Param input, PanelPairedData? pair, GH_Structure<IGH_Goo>? tree, string? error, bool present, GH_Structure<IGH_Goo>? liveTree)
@@ -33,12 +63,16 @@ namespace BetterGhPanel.Runtime
                 PanelUnitConversion.None, units, null, null, null, null, null);
             Sources = sources; Measurements = measurements; Graphs = graphs;
             HasGeometry = Snapshot.Rows.Any(row => row.GeometryInfo != null || row.Components != null);
+            _headerMetric = PanelTableText.CommonGeometryMetric(Snapshot);
         }
         internal void ReleasePresentation()
         {
+            var retired = Geometry; Geometry = null;
+            _headerMetric = null;
             Snapshot = null;
             Sources = Array.Empty<IGH_Goo?>(); Measurements = Array.Empty<CapturedMeasurementSource?>(); Graphs = Array.Empty<CaptureGraphWitness>();
             HasGeometry = false;
+            retired?.Dispose();
         }
         internal bool Current(out long visits)
         {
@@ -56,31 +90,54 @@ namespace BetterGhPanel.Runtime
             current = SnapshotCapture.ManagedRowsCurrentWithVisits(snapshot, Sources, out count); visits += count;
             return current && ReferenceEquals(snapshot, Snapshot);
         }
+        internal void RequireMeasurements(IEnumerable<int> items)
+        {
+            foreach (int item in items)
+                if (Measuring(item) || Snapshot?.Rows[item].IsValid == true && Snapshot.Rows[item].GeometryInfo?.CanMeasure == true &&
+                    Details(item)?.Value == null)
+                    throw new InvalidOperationException("A selected measurement is unavailable.");
+        }
         internal bool SummaryCurrent(PanelQueryResult result) => Pair == null || result.TableSummaries.ContainsKey(Input.InstanceGuid);
-        internal string BranchExtraNote(PanelQueryResult result, string path) =>
+        internal string BranchExtraNote(PanelQueryResult result, string path, string title) =>
             result.TableSummaries.TryGetValue(Input.InstanceGuid, out var summary) && summary.Extras.TryGetValue(path, out int count) && count > 0
-                ? "+" + count + " only in " + Input.NickName : "";
-        internal string BranchCellText(PanelQueryResult result, string path, PanelUnitConversion conversion, int decimals, double factor)
+                ? "+" + count + " only in " + title : "";
+        internal string BranchCellText(PanelQueryResult result, string path, PanelUnitConversion conversion, int decimals, double factor, string title)
         {
             string value = BranchCell(result, path, conversion, decimals, factor);
-            string note = BranchExtraNote(result, path);
+            string note = BranchExtraNote(result, path, title);
             return value + (note.Length > 0 ? " · " + note : "");
         }
-        internal string Value(PanelRow row, PanelUnitConversion conversion, int decimals, double factor) =>
-            PanelTableText.Value(row, conversion, decimals, factor);
+        internal string ItemValue(int item, PanelUnitConversion conversion, int decimals, double factor)
+        {
+            var row = Snapshot!.Rows[item];
+            if (row.GeometryInfo == null) return PanelTableText.Value(row, conversion, decimals, factor);
+            return PanelTableText.GeometryCell(row, Details(item), HomogeneousMetric, Measuring(item), conversion, decimals, factor);
+        }
+        internal string ItemTooltip(int item, PanelUnitConversion conversion, int decimals, double factor)
+        {
+            var row = Snapshot!.Rows[item];
+            var geometry = Details(item);
+            string value = PanelValuePresentation.FormatDisplay(row, conversion, decimals, geometry, roundUpFactor: factor);
+            if (!row.IsValid)
+                return value + "\n" + (string.IsNullOrWhiteSpace(row.InvalidReason)
+                    ? row.Validity == PanelValidity.VerifiedInvalid ? "Geometry or value is invalid." : "Validity could not be verified." : row.InvalidReason);
+            return geometry == null ? value : geometry.Description + "\n" + geometry.FormatDetails(conversion, decimals, factor) +
+                (Measuring(item) ? "\nCalculating measurement\u2026" : geometry.MeasurementUnavailable ? "\nMeasurement unavailable." : "");
+        }
         internal string Cell(PanelQueryResult result, int position, PanelUnitConversion conversion, int decimals, double factor, bool raw = false)
         {
-            string Format(PanelRow row) => raw ? row.StringValue ?? PanelValuePresentation.FormatDisplay(row, PanelUnitConversion.None, PanelUnits.AutomaticDecimals) : Value(row, conversion, decimals, factor);
+            string Format(int item) => raw ? Snapshot!.Rows[item].StringValue ?? PanelValuePresentation.FormatDisplay(Snapshot.Rows[item], PanelUnitConversion.None, PanelUnits.AutomaticDecimals) : ItemValue(item, conversion, decimals, factor);
             if (Snapshot == null || Pair == null) return "";
             if (result.DisplaySet?.IsBranchSet == false)
             {
                 if (!SummaryCurrent(result)) return "…";
                 if (raw) return string.Join(Environment.NewLine, result.DisplaySet.Members[position].Select(Pair.ItemAt)
-                    .Select(item => item.HasValue ? Format(Snapshot.Rows[item.Value]) : "—"));
+                    .Select(item => item.HasValue ? Format(item.Value) : "—"));
                 var summary = result.TableSummaries[Input.InstanceGuid].Sets[position];
-                return PanelTableText.Summary(summary.Preview.Select(item => item < 0 ? "—" : Format(Snapshot.Rows[item])).ToArray(), summary.Count);
+                if (!raw && summary.Preview.Any(item => item >= 0 && Measuring(item))) return "measuring…";
+                return PanelTableText.Summary(summary.Preview.Select(item => item < 0 ? "—" : Format(item)).ToArray(), summary.Count);
             }
-            return Row(position) is PanelRow row ? Format(row) : "";
+            return Pair.ItemAt(position) is int paired ? Format(paired) : "";
         }
         internal string BranchCell(PanelQueryResult result, string path, PanelUnitConversion conversion, int decimals, double factor, bool raw = false)
         {
@@ -97,8 +154,9 @@ namespace BetterGhPanel.Runtime
                     : Pair.BranchItems(result.Snapshot, members, paths, result.DisplaySet == null).Select(item => Raw(item.Item)));
             }
             result.TableSummaries[Input.InstanceGuid].Branches.TryGetValue(path, out var summary);
+            if (summary?.Preview.Any(item => item >= 0 && Measuring(item)) == true) return "measuring…";
             return summary == null ? result.DisplaySet != null ? "<empty set>" : "<empty branch>" :
-                PanelTableText.Summary(summary.Preview.Select(item => item < 0 ? "—" : Value(Snapshot.Rows[item], conversion, decimals, factor)).ToArray(), summary.Count, result.DisplaySet != null);
+                PanelTableText.Summary(summary.Preview.Select(item => item < 0 ? "—" : ItemValue(item, conversion, decimals, factor)).ToArray(), summary.Count, result.DisplaySet != null);
         }
         private PanelTableSummarySource SummarySource()
         {
@@ -136,15 +194,21 @@ namespace BetterGhPanel.Runtime
             }
             return new PanelTableSource(columns.Count, hasExtras ? Extras : (Func<PanelQueryResult, IReadOnlyList<int>, bool, IEnumerable<PanelTableExtra?>>?)null, summaries);
         }
-        internal PanelColumnSortKeys SortKeys(PanelUnitConversion conversion, int decimals, double factor)
+        internal PanelColumnSortKeys SortKeys(PanelUnitConversion conversion, int decimals, double factor, IReadOnlyDictionary<int, PanelGeometryInfo?>? metrics = null)
         {
             // Capture both references now: later UI hiding/re-solving cannot change a worker's keys.
             var snapshot = Snapshot;
             var pair = Pair;
-            PanelRow Convert(PanelRow row) => PanelTableText.PresentedRow(row, conversion, decimals, factor);
-            return new PanelColumnSortKeys(position => pair?.ItemAt(position) is int item && snapshot != null ? Convert(snapshot.Rows[item]) : null,
+            bool homogeneous = HomogeneousMetric;
+            PanelRow? Convert(int item, bool summary = false)
+            {
+                var row = snapshot!.Rows[item];
+                var geometry = metrics != null && metrics.TryGetValue(item, out var value) ? value ?? row.GeometryInfo?.WithUnavailableMeasurement() : row.GeometryInfo;
+                return PanelTableText.ColumnSortRow(snapshot, row, geometry, homogeneous, conversion, decimals, factor, summary);
+            }
+            return new PanelColumnSortKeys(position => pair?.ItemAt(position) is int item && snapshot != null ? Convert(item) : null,
                 (data, members) => pair == null || snapshot == null ? Enumerable.Empty<PanelRow>() :
-                    members.Select(position => pair.ItemAt(position) is int item ? Convert(snapshot.Rows[item]) : null));
+                    members.Select(position => pair.ItemAt(position) is int item ? Convert(item, true) : null));
         }
     }
 }

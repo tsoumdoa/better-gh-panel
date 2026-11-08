@@ -10,6 +10,220 @@ using System.Threading.Tasks;
 [Collection("NurbsCandidateLimits")]
 public class GeometryQueueTests
 {
+    [Theory]
+    [InlineData(1)]
+    [InlineData(300)]
+    public void MillionPositionDemandStopsAtCancellationInsideBoundedRegistration(int cancelAt)
+    {
+        var ui = new Queue<Action>(); var delays = new Queue<Action>();
+        var snapshot = new object(); int checks = 0;
+        using var cancellation = new CancellationTokenSource();
+        using var queue = new GeometryMeasurementQueue<object, object>(ui.Enqueue, ui.Enqueue,
+            (_, action) => delays.Enqueue(action), _ => throw new InvalidOperationException("No geometry should prepare"), () => { },
+            (_, position) => position >= 0 && position < 1000000, (_, __) => false, (_, __) => true,
+            _ => null, () => { }, (_, __) => { if (++checks == cancelAt) cancellation.Cancel(); return true; });
+        queue.Attach(snapshot, false);
+        var work = queue.MeasureAllAsync(snapshot, 1000000, cancellation.Token);
+        ui.Dequeue()();
+        Assert.InRange(checks, 1, GeometryMeasurementQueue<object, object>.DemandChunkSize);
+        while (!work.IsCompleted) { Assert.NotEmpty(ui); ui.Dequeue()(); }
+        while (ui.Count > 0) ui.Dequeue()();
+        Assert.False(work.Result); Assert.Equal(cancelAt, checks);
+        Assert.Empty(delays); Assert.Equal(0, queue.EntryCountForTesting);
+    }
+
+    [Fact]
+    public void MeasurementMapFreezeYieldsAndCancelsBeforeScanningAMillionPositions()
+    {
+        using var fixture = new Fixture();
+        var measured = fixture.Measure(CancellationToken.None, 0, 1, 2);
+        fixture.Ui();
+        while (!measured.IsCompleted) { if (fixture.Delays.Count > 0) fixture.Delay(); if (!fixture.Workers.IsEmpty) fixture.Worker(); fixture.Ui(); }
+        Assert.True(measured.Result);
+        using var cancellation = new CancellationTokenSource();
+        fixture.Queue.DiagnosticsForTesting = true; fixture.Queue.ResetDiagnosticsForTesting();
+        var frozen = fixture.Queue.CaptureCompletedAsync(fixture.Current, 1000000, cancellation.Token);
+        fixture.UiOne();
+        Assert.False(frozen.IsCompleted); Assert.Empty(fixture.Delays);
+        cancellation.Cancel(); fixture.Ui();
+        Assert.Null(frozen.Result);
+        Assert.InRange(fixture.Queue.SourceChecksForTesting, 1, 3);
+        var complete = fixture.Queue.CaptureCompletedAsync(fixture.Current, 3, CancellationToken.None); fixture.Ui();
+        Assert.Equal(3, complete.Result!.Count);
+        fixture.Attach(new Snapshot(new Source(99)), false);
+        Assert.Equal(3, complete.Result.Count); // the projection owns immutable values, not the mutable cache
+    }
+
+    [Fact]
+    public void SessionAdmissionGuardsCrossQueueReentryAndPrioritizesDThenColumns()
+    {
+        var posts = new Queue<Action>();
+        using var scheduler = new GeometryMeasurementScheduler(posts.Enqueue);
+        void Dispatch() { while (posts.Count != 0) posts.Dequeue()(); }
+        using var data = new Fixture(scheduler, 0);
+        using var left = new Fixture(scheduler, 1, false);
+        using var right = new Fixture(scheduler, 2, false);
+        var seed = data.Measure(CancellationToken.None, 0);
+        data.Ui(); data.Delay(); Dispatch(); data.Worker(); data.Ui(); Dispatch();
+        Assert.True(seed.Result);
+        var order = new List<string>();
+        Task<bool>? d = null, r = null;
+        data.AfterCopy = () => order.Add("D");
+        right.AfterCopy = () => order.Add("right");
+        left.AfterCopy = () =>
+        {
+            order.Add("left");
+            // Even synchronous unit-retention proofs must not enter preparation
+            // while another queue's duplication callback owns the session slot.
+            data.Attach(new Snapshot(data.Current.Rows[0], data.Current.Rows[1]), true);
+            Assert.Equal(1, data.PreparedPositions.Count);
+            Assert.False(data.Queue.Has(data.Current, 0));
+            r = right.Measure(CancellationToken.None, 0); right.Ui(); right.Delay();
+            d = data.Measure(CancellationToken.None, 0, 1); data.Ui(); data.Delay();
+            Dispatch();
+            Assert.Equal(new[] { "left" }, order);
+            Assert.Empty(data.Workers); Assert.Empty(right.Workers);
+        };
+        var l = left.Measure(CancellationToken.None, 0);
+        left.Ui(); left.Delay(); Dispatch();
+        Assert.Equal(2, scheduler.PendingCount);
+        // Pending D work wins when the active column completes; its second row
+        // also wins before the right-hand column's already pending request.
+        left.Worker(); left.Ui(); Dispatch();
+        Assert.Equal(new[] { "left", "D" }, order);
+        data.Worker(); data.Ui(); Dispatch();
+        Assert.Equal(new[] { "left", "D", "D" }, order);
+        data.Worker(); data.Ui(); Dispatch();
+        Assert.Equal(new[] { "left", "D", "D", "right" }, order);
+        right.Worker(); right.Ui(); Dispatch();
+        Assert.True(l.Result && d!.Result && r!.Result);
+        Assert.All(left.Resources, resource => Assert.Equal(1, resource.Disposals));
+        Assert.Equal(0, scheduler.PendingCount);
+    }
+
+    [Fact]
+    public void ReentrantQueueRetirementKeepsAdmissionUntilPreparationUnwinds()
+    {
+        var posts = new Queue<Action>();
+        using var scheduler = new GeometryMeasurementScheduler(posts.Enqueue);
+        void Dispatch() { while (posts.Count != 0) posts.Dequeue()(); }
+        using var column = new Fixture(scheduler, 1, false);
+        using var data = new Fixture(scheduler, 0);
+        Task<bool>? replacement = null;
+        column.AfterCopy = () =>
+        {
+            column.Queue.Dispose();
+            replacement = data.Measure(CancellationToken.None, 0);
+            data.Ui(); data.Delay(); Dispatch();
+            Assert.Empty(data.PreparedPositions);
+        };
+        var old = column.Measure(CancellationToken.None, 0);
+        column.Ui(); column.Delay(); Dispatch();
+        Assert.False(old.Result);
+        Assert.Single(column.Resources); Assert.Equal(1, column.Resources[0].Disposals);
+        Assert.Empty(column.Workers);
+        Assert.Single(data.PreparedPositions);
+        data.Worker(); data.Ui(); Dispatch();
+        Assert.True(replacement!.Result);
+    }
+
+    [Fact]
+    public void PendingAdmissionIsBoundedAndRemovedOnCancellationReplacementAndDisposal()
+    {
+        var posts = new Queue<Action>();
+        using var scheduler = new GeometryMeasurementScheduler(posts.Enqueue);
+        void Dispatch() { while (posts.Count != 0) posts.Dequeue()(); }
+        using var active = new Fixture(scheduler, 0);
+        using var cancellation = new CancellationTokenSource();
+        var first = active.Measure(cancellation.Token, 0);
+        active.Ui(); active.Delay(); Dispatch();
+        cancellation.Cancel(); active.Ui(); Dispatch();
+        Assert.False(first.Result);
+        Assert.Equal(1, active.Resources[0].Disposals);
+        for (int i = 0; i < 256; i++)
+        {
+            using var retired = new Fixture(scheduler, 1, false);
+            retired.Queue.RequestVisible(retired.Current, new[] { 0 }); retired.Delay();
+            retired.Queue.RequestVisible(retired.Current, new[] { 1 }); retired.Delay();
+            Assert.Equal(1, scheduler.PendingCount); // replace, never append
+            Assert.Empty(retired.PreparedPositions);
+            retired.Attach(new Snapshot(new Source(i)), false);
+            Assert.Equal(0, scheduler.PendingCount);
+            using var cancelPending = new CancellationTokenSource();
+            var pending = retired.Measure(cancelPending.Token, 0);
+            retired.Ui(); retired.Delay();
+            Assert.Equal(1, scheduler.PendingCount);
+            cancelPending.Cancel(); retired.Ui();
+            Assert.False(pending.Result); Assert.Equal(0, scheduler.PendingCount);
+            var hidden = retired.Measure(CancellationToken.None, 0); retired.Ui(); retired.Delay();
+            Assert.Equal(1, scheduler.PendingCount);
+            retired.Queue.CancelRequests();
+            Assert.False(hidden.Result); Assert.Equal(0, scheduler.PendingCount);
+            retired.Queue.RequestVisible(retired.Current, new[] { 0 }); retired.Delay();
+            retired.Queue.Dispose(); Assert.Equal(0, scheduler.PendingCount);
+        }
+        using var newest = new Fixture(scheduler, 0);
+        var next = newest.Measure(CancellationToken.None, 0);
+        newest.Ui(); newest.Delay(); Dispatch();
+        Assert.Empty(newest.PreparedPositions);
+        Assert.Single(active.Workers); // at most one accepted stale callback
+        active.Worker(); active.Ui(); Dispatch();
+        Assert.Single(newest.PreparedPositions);
+        newest.Worker(); newest.Ui(); Dispatch();
+        Assert.True(next.Result); Assert.Equal(0, active.Computations);
+        Assert.Equal(0, scheduler.PendingCount);
+    }
+
+    [Fact]
+    public void ColumnQueuesNeverRetainWitnessesOrConsumeTheProcessRetentionCap()
+    {
+        for (int i = 0; i < 64; i++)
+        {
+            using var column = new Fixture(retainWitnesses: false);
+            var measured = column.Measure(CancellationToken.None, 0);
+            column.Ui(); column.Delay(); column.Worker(); column.Ui();
+            Assert.True(measured.Result);
+            Assert.True(MeasurementRetentionBudget.TryAcquire(MeasurementRetentionBudget.MaxBytes));
+            try { Assert.False(MeasurementRetentionBudget.TryAcquire(1)); }
+            finally { MeasurementRetentionBudget.Release(MeasurementRetentionBudget.MaxBytes); }
+            column.Attach(new Snapshot(column.Current.Rows[0]), true);
+            Assert.Single(column.PreparedPositions); // no retention proof call
+            Assert.False(column.Queue.Has(column.Current, 0));
+        }
+    }
+
+    [Fact]
+    public async Task ClaimedColumnKeepsSessionAdmissionUntilOwnedWorkerDisposalCompletes()
+    {
+        var posts = new Queue<Action>();
+        using var scheduler = new GeometryMeasurementScheduler(posts.Enqueue);
+        void Dispatch() { while (posts.Count != 0) posts.Dequeue()(); }
+        using var column = new Fixture(scheduler, 1, false);
+        using var data = new Fixture(scheduler, 0);
+        using var cancel = new CancellationTokenSource();
+        using var gate = new ManualResetEventSlim(false);
+        column.Gate = gate;
+        var canceled = column.Measure(cancel.Token, 0);
+        column.Ui(); column.Delay(); Dispatch();
+        var worker = Task.Run(column.Worker);
+        try
+        {
+            Assert.True(column.Started.Wait(TimeSpan.FromSeconds(5)));
+            cancel.Cancel(); column.Ui();
+            Assert.True(canceled.IsCompleted); Assert.False(await canceled);
+            var pending = data.Measure(CancellationToken.None, 0);
+            data.Ui(); data.Delay(); Dispatch();
+            Assert.Empty(data.PreparedPositions); Assert.Equal(0, column.Resources[0].Disposals);
+            gate.Set();
+            Assert.True(SpinWait.SpinUntil(() => worker.IsCompleted, TimeSpan.FromSeconds(5)));
+            column.Ui(); Dispatch();
+            Assert.Equal(1, column.Resources[0].Disposals); Assert.Single(data.PreparedPositions);
+            data.Worker(); data.Ui(); Dispatch();
+            Assert.True(pending.IsCompleted); Assert.True(await pending);
+        }
+        finally { gate.Set(); await worker; }
+    }
+
 
 
     [Fact]
@@ -24,9 +238,14 @@ public class GeometryQueueTests
         fixture.SourceCurrent = (_, __) => { sourceChecks++; return true; };
         var batch = fixture.Measure(CancellationToken.None, positions);
         fixture.Ui();
-        while (!batch.IsCompleted) { fixture.Delay(); fixture.Worker(); fixture.Ui(); }
+        while (!batch.IsCompleted) { if (fixture.Delays.Count > 0) fixture.Delay(); if (!fixture.Workers.IsEmpty) fixture.Worker(); fixture.Ui(); }
         Assert.True(batch.Result && fixture.Computations == count && fixture.Queue.EntryCountForTesting == count,
             "scan-count control populates every entry through the production worker queue");
+        var cached = fixture.Queue.MeasureAllAsync(fixture.Current, count, CancellationToken.None); fixture.Ui();
+        Assert.True(cached.IsCompleted && cached.Result);
+        var frozen = fixture.Queue.CaptureCompletedAsync(fixture.Current, count, CancellationToken.None); fixture.Ui();
+        Assert.Equal(count, frozen.Result!.Count);
+        Assert.Empty(fixture.Delays); // cached registration and map freezing add no timer ticks
         var queue = fixture.Queue;
         queue.DiagnosticsForTesting = true;
         queue.ResetDiagnosticsForTesting(); sourceChecks = 0;
@@ -715,7 +934,7 @@ public class GeometryQueueTests
         fixture.Attach(new Snapshot(sources), false);
         var batch = fixture.Measure(CancellationToken.None, positions);
         fixture.Ui();
-        while (!batch.IsCompleted) { fixture.Delay(); fixture.Worker(); fixture.Ui(); }
+        while (!batch.IsCompleted) { if (fixture.Delays.Count > 0) fixture.Delay(); if (!fixture.Workers.IsEmpty) fixture.Worker(); fixture.Ui(); }
         Assert.True(batch.Result, "large batch completes");
         int preparedBefore = fixture.PreparedPositions.Count;
         fixture.Attach(new Snapshot(sources), true);
@@ -854,7 +1073,7 @@ public class GeometryQueueTests
         internal bool InlineCancellation, RejectWorker, ThrowSubmit, FailCompute, UseReservations, UseLegacyAdmission, OmitWitness;
         internal int Computations, UiNotifications, WrongThreadCalls;
 
-        internal Fixture()
+        internal Fixture(GeometryMeasurementScheduler? scheduler = null, int priority = 0, bool retainWitnesses = true)
         {
             Queue = new GeometryMeasurementQueue<Snapshot, Result>(
                 action => _ui.Enqueue(action),
@@ -866,7 +1085,8 @@ public class GeometryQueueTests
                 (snapshot, position) => position >= 0 && position < snapshot.Rows.Length,
                 (snapshot, position) => position >= 0 && position < snapshot.Rows.Length,
                 Prepare, () => { VerifyUi(); UiNotifications++; AfterNotify?.Invoke(); },
-                (snapshot, position) => SourceCurrent?.Invoke(snapshot, position) ?? true);
+                (snapshot, position) => SourceCurrent?.Invoke(snapshot, position) ?? true,
+                scheduler: scheduler, priority: priority, retainWitnesses: retainWitnesses);
             Queue.Attach(Current, false);
         }
         private void VerifyUi()
@@ -907,6 +1127,7 @@ public class GeometryQueueTests
         internal Task<bool> Measure(CancellationToken token, params int[] positions) => Queue.MeasureAsync(Current, positions, token);
         internal void Attach(Snapshot snapshot, bool retain) { Current = snapshot; Queue.Attach(snapshot, retain); }
         internal void Ui() { while (_ui.TryDequeue(out var action)) action(); }
+        internal void UiOne() { if (!_ui.TryDequeue(out var action)) throw new InvalidOperationException("no UI callback"); action(); }
         internal void Delay() { var next = Delays.Dequeue(); next.action(); }
         internal void Worker()
         {
