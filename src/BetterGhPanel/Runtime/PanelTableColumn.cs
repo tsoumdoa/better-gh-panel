@@ -199,16 +199,12 @@ namespace BetterGhPanel.Runtime
             // Capture both references now: later UI hiding/re-solving cannot change a worker's keys.
             var snapshot = Snapshot;
             var pair = Pair;
-            bool geometryColumn = HasGeometry;
             bool homogeneous = HomogeneousMetric;
             PanelRow? Convert(int item, bool summary = false)
             {
                 var row = snapshot!.Rows[item];
                 var geometry = metrics != null && metrics.TryGetValue(item, out var value) ? value ?? row.GeometryInfo?.WithUnavailableMeasurement() : row.GeometryInfo;
-                if (!geometryColumn) return PanelTableText.PresentedRow(row, conversion, decimals, factor);
-                if (summary) return PanelTableText.SummarySortRow(row, geometry, homogeneous, conversion, decimals, factor);
-                var key = PanelTableText.MetricSortRow(row, geometry, conversion, decimals, factor, homogeneous);
-                return key.IsNull ? null : key;
+                return PanelTableText.ColumnSortRow(snapshot, row, geometry, homogeneous, conversion, decimals, factor, summary);
             }
             return new PanelColumnSortKeys(position => pair?.ItemAt(position) is int item && snapshot != null ? Convert(item) : null,
                 (data, members) => pair == null || snapshot == null ? Enumerable.Empty<PanelRow>() :

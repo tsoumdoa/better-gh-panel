@@ -341,7 +341,7 @@ namespace BetterGhPanel.Core
             }
             if (!Current()) { CompleteBatch(batch, false); return; }
             if (batch.Next == batch.Requested!.Count) { batch.Requested = null; batch.Registered = true; }
-            else _delayOnUi(1, () => RegisterDemand(batch)); // must yield even when postUi invokes inline
+            else _postCancellation(() => RegisterDemand(batch)); // asynchronous UI post, no timer floor
             PumpLater();
         }
 
@@ -363,7 +363,7 @@ namespace BetterGhPanel.Core
                     if (!IsCurrentEntry(snapshot, next, entry) || !Current()) { completion.TrySetResult(null); return; }
                     values.Add(next, entry.Value);
                 }
-                if (next < count) _delayOnUi(1, Step);
+                if (next < count) _postCancellation(Step);
                 else completion.TrySetResult(new ReadOnlyDictionary<int, TResult?>(values));
             }
             _postUi(Step);

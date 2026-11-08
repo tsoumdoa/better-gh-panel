@@ -331,9 +331,8 @@ namespace BetterGhPanel
             if (row?.Validity == PanelValidity.VerifiedInvalid || row?.Validity == PanelValidity.Unverified)
             {
                 bool invalid = row.Validity == PanelValidity.VerifiedInvalid;
-                using var numberFont = CanvasRowRenderer.MonospaceFont(11);
                 float badgeX = numeric && row.GeometryInfo != null
-                    ? Math.Max(bounds.X + 10, bounds.Right - 14 - TightWidth(g, value, numberFont)) : bounds.X + 10;
+                    ? Math.Max(bounds.X + 10, bounds.Right - 14 - renderer.MeasureNumber(g, value)) : bounds.X + 10;
                 DrawStatusBadge(g, new PointF(badgeX, bounds.Y + RowHeight / 2), invalid ? "!" : "?",
                     invalid ? PanelTheme.Warning : PanelTheme.Unverified, small);
                 marker = 12;
@@ -344,13 +343,16 @@ namespace BetterGhPanel
                 int unitAt = metric.LastIndexOf(' ');
                 string number = unitAt < 0 ? metric : metric.Substring(0, unitAt);
                 string unit = unitAt < 0 ? "" : metric.Substring(unitAt + 1);
-                renderer.DrawCell(g, metricLane, small, Muted, new RectangleF(bounds.X + 6, bounds.Y, Math.Max(0, Math.Min(MetricLaneWidth - 6, bounds.Width - 12)), bounds.Height));
-                renderer.DrawValue(g, number, font, muted ? Muted : Ink,
-                    new RectangleF(bounds.X + MetricLaneWidth, bounds.Y, Math.Max(0, bounds.Width - MetricLaneWidth - MetricUnitWidth - 6), bounds.Height), true);
-                using var unitFont = CanvasRowRenderer.MonospaceFont(11);
-                renderer.DrawCell(g, unit, unitFont, muted ? Muted : Ink,
-                    new RectangleF(bounds.Right - MetricUnitWidth, bounds.Y, MetricUnitWidth - 6, bounds.Height));
-                return;
+                if (bounds.Width >= MetricLaneWidth + renderer.MeasureNumber(g, number) + MetricUnitWidth + 6 &&
+                    renderer.MeasureNumber(g, unit) <= MetricUnitWidth - 6)
+                {
+                    renderer.DrawCell(g, metricLane, small, Muted, new RectangleF(bounds.X + 6, bounds.Y, Math.Max(0, Math.Min(MetricLaneWidth - 6, bounds.Width - 12)), bounds.Height));
+                    renderer.DrawValue(g, number, font, muted ? Muted : Ink,
+                        new RectangleF(bounds.X + MetricLaneWidth, bounds.Y, Math.Max(0, bounds.Width - MetricLaneWidth - MetricUnitWidth - 6), bounds.Height), true);
+                    renderer.DrawNumber(g, unit, muted ? Muted : Ink,
+                        new RectangleF(bounds.Right - MetricUnitWidth, bounds.Y, MetricUnitWidth - 6, bounds.Height), rightAligned: false);
+                    return;
+                }
             }
             float typeWidth = showType ? Math.Min(44, Math.Max(0, bounds.Width - 12)) : 0;
             renderer.DrawValue(g, PanelValuePresentation.Visualize(value), font, muted ? Muted : Ink,
@@ -376,14 +378,14 @@ namespace BetterGhPanel
                             ViewEntry(result, offset - 1, out int previous, out _, out _);
                             firstMissing = previous < 0 || result.Snapshot.Rows[result.RowPositions[previous]].Path != result.Snapshot.Rows[position].Path || column.Row(result.RowPositions[previous]) != null;
                         }
-                        float typeWidth = column.ShowCellTypes ? Math.Min(44, Math.Max(0, cell.Width - 12)) : 0;
+                        float typeWidth = !column.HomogeneousMetric && column.ShowCellTypes ? Math.Min(44, Math.Max(0, cell.Width - 12)) : 0;
                         if (column.Pair != null && firstMissing) renderer.DrawCell(g, "—", small, Muted,
-                            new RectangleF(cell.X + 6, cell.Y, Math.Max(0, cell.Width - 12 - typeWidth), RowHeight), column.Numeric);
+                            new RectangleF(cell.X + 6, cell.Y, Math.Max(0, cell.Width - 12 - typeWidth), RowHeight), column.Numeric || column.HomogeneousMetric);
                     }
                     else if (column.Present && column.Pair != null && column.Snapshot != null) DrawTableCell(g, renderer, result.DisplaySet == null ? row : null, ColumnCell(result, position, columnIndex), cell, font, small,
                         showType: result.DisplaySet == null && column.CellShowsType(row), numeric: result.DisplaySet == null && column.CellIsNumeric(row),
                         metricLane: result.DisplaySet == null ? column.MetricLane(row) : "",
-                        muted: column.HomogeneousMetric && row?.GeometryInfo == null);
+                        muted: result.DisplaySet == null && column.HomogeneousMetric && row?.GeometryInfo == null);
                 });
             }
         }

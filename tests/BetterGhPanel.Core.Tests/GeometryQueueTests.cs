@@ -26,10 +26,10 @@ public class GeometryQueueTests
         var work = queue.MeasureAllAsync(snapshot, 1000000, cancellation.Token);
         ui.Dequeue()();
         Assert.InRange(checks, 1, GeometryMeasurementQueue<object, object>.DemandChunkSize);
-        while (!work.IsCompleted) { Assert.NotEmpty(delays); delays.Dequeue()(); }
+        while (!work.IsCompleted) { Assert.NotEmpty(ui); ui.Dequeue()(); }
         while (ui.Count > 0) ui.Dequeue()();
         Assert.False(work.Result); Assert.Equal(cancelAt, checks);
-        Assert.InRange(delays.Count, 0, 1); Assert.Equal(0, queue.EntryCountForTesting);
+        Assert.Empty(delays); Assert.Equal(0, queue.EntryCountForTesting);
     }
 
     [Fact]
@@ -43,9 +43,9 @@ public class GeometryQueueTests
         using var cancellation = new CancellationTokenSource();
         fixture.Queue.DiagnosticsForTesting = true; fixture.Queue.ResetDiagnosticsForTesting();
         var frozen = fixture.Queue.CaptureCompletedAsync(fixture.Current, 1000000, cancellation.Token);
-        fixture.Ui();
-        Assert.False(frozen.IsCompleted); Assert.Single(fixture.Delays);
-        cancellation.Cancel(); fixture.Delay(); fixture.Ui();
+        fixture.UiOne();
+        Assert.False(frozen.IsCompleted); Assert.Empty(fixture.Delays);
+        cancellation.Cancel(); fixture.Ui();
         Assert.Null(frozen.Result);
         Assert.InRange(fixture.Queue.SourceChecksForTesting, 1, 3);
         var complete = fixture.Queue.CaptureCompletedAsync(fixture.Current, 3, CancellationToken.None); fixture.Ui();
@@ -241,6 +241,11 @@ public class GeometryQueueTests
         while (!batch.IsCompleted) { if (fixture.Delays.Count > 0) fixture.Delay(); if (!fixture.Workers.IsEmpty) fixture.Worker(); fixture.Ui(); }
         Assert.True(batch.Result && fixture.Computations == count && fixture.Queue.EntryCountForTesting == count,
             "scan-count control populates every entry through the production worker queue");
+        var cached = fixture.Queue.MeasureAllAsync(fixture.Current, count, CancellationToken.None); fixture.Ui();
+        Assert.True(cached.IsCompleted && cached.Result);
+        var frozen = fixture.Queue.CaptureCompletedAsync(fixture.Current, count, CancellationToken.None); fixture.Ui();
+        Assert.Equal(count, frozen.Result!.Count);
+        Assert.Empty(fixture.Delays); // cached registration and map freezing add no timer ticks
         var queue = fixture.Queue;
         queue.DiagnosticsForTesting = true;
         queue.ResetDiagnosticsForTesting(); sourceChecks = 0;
@@ -1122,6 +1127,7 @@ public class GeometryQueueTests
         internal Task<bool> Measure(CancellationToken token, params int[] positions) => Queue.MeasureAsync(Current, positions, token);
         internal void Attach(Snapshot snapshot, bool retain) { Current = snapshot; Queue.Attach(snapshot, retain); }
         internal void Ui() { while (_ui.TryDequeue(out var action)) action(); }
+        internal void UiOne() { if (!_ui.TryDequeue(out var action)) throw new InvalidOperationException("no UI callback"); action(); }
         internal void Delay() { var next = Delays.Dequeue(); next.action(); }
         internal void Worker()
         {

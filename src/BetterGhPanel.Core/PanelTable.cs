@@ -293,6 +293,15 @@ namespace BetterGhPanel.Core
                 GeometryCell(row, geometry, homogeneous, false, conversion, decimals, factor), value, isNull: !value.HasValue);
         }
 
+        internal static PanelRow? ColumnSortRow(PanelSnapshot snapshot, PanelRow row, PanelGeometryInfo? geometry,
+            bool homogeneous, PanelUnitConversion conversion, int decimals, double factor, bool summary = false)
+        {
+            if (!snapshot.HasGeometryMetrics) return PresentedRow(row, conversion, decimals, factor);
+            if (summary) return SummarySortRow(row, geometry, homogeneous, conversion, decimals, factor);
+            var key = MetricSortRow(row, geometry, conversion, decimals, factor, homogeneous);
+            return key.IsNull ? null : key;
+        }
+
         internal static PanelRow SummarySortRow(PanelRow row, PanelGeometryInfo? geometry, bool homogeneous,
             PanelUnitConversion conversion, int decimals, double factor) => new PanelRow(row.OriginalIndex, row.Path,
                 row.TypeName, GeometryCell(row, geometry, homogeneous, false, conversion, decimals, factor), null);

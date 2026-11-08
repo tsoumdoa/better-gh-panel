@@ -70,6 +70,14 @@ namespace BetterGhPanel
         {
             if (!SummariesCurrent(result)) throw new InvalidOperationException("Column summaries are recomputing. Try copying again.");
         }
+        private void ReleaseInactiveColumns(PanelQueryOptions options)
+        {
+            if (PanelSplit) return;
+            foreach (var column in _tableColumns)
+                if (options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != options.SortColumn)
+                    column.ReleasePresentation();
+        }
+
         private PanelQueryOptions WithCurrentColumnSort(PanelQueryOptions saved)
         {
             var options = saved.Clone();
@@ -80,8 +88,7 @@ namespace BetterGhPanel
             {
                 if (options.SortColumn != Guid.Empty) { options.SortColumn = Guid.Empty; options.SortMode = PanelSortMode.SourceOrder; }
             }
-            foreach (var item in _tableColumns)
-                if (!PanelSplit && (options.SortMode == PanelSortMode.SourceOrder || !ReferenceEquals(item, column))) item.ReleasePresentation();
+            ReleaseInactiveColumns(options);
             column?.Capture(_geometryUnits);
             ConfigureColumnGeometry();
             options.ColumnSortKeys = column?.SortKeys(UnitConversion, DecimalPlaces, RoundUpFactor);

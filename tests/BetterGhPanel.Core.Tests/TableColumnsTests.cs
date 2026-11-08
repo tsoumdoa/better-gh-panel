@@ -7,6 +7,25 @@ using Xunit;
 
 public class TableColumnsTests
 {
+    [Theory]
+    [InlineData("Point", false)]
+    [InlineData("Point", true)]
+    [InlineData("Vector", false)]
+    [InlineData("Vector", true)]
+    public void ComponentOnlyColumnsKeepPresentedTextSortKeys(string type, bool descending)
+    {
+        var rows = new[] { 2, 1, 3 }.Select((value, index) => new PanelRow(index, "{0}", type,
+            "(" + value + ", 0, 0)", null, PanelValidity.VerifiedValid, components: new PanelComponents(value, 0, 0, "mm"))).ToArray();
+        var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", rows.Length) });
+        Assert.False(snapshot.HasGeometryMetrics);
+        var keys = new PanelColumnSortKeys(rows.Select(row => PanelTableText.ColumnSortRow(snapshot, row,
+            row.GeometryInfo, false, PanelUnitConversion.None, 2, 0)));
+        Assert.All(rows.Select((_, index) => keys.RowAt(index)), key => Assert.NotNull(key));
+        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SortColumn = Guid.NewGuid(), ColumnSortKeys = keys,
+            SortMode = descending ? PanelSortMode.ValueDescending : PanelSortMode.ValueAscending });
+        Assert.Equal(descending ? new[] { 2, 0, 1 } : new[] { 1, 0, 2 }, result.RowPositions);
+    }
+
     [Fact]
     public void HeaderTitlesMapByShownColumnOrderAndKeepNamesForEmptyItems()
     {

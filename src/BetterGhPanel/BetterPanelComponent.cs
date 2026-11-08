@@ -133,9 +133,7 @@ namespace BetterGhPanel
                     {
                         if (!PanelSplit)
                         {
-                            foreach (var column in _tableColumns)
-                                if (_session.Options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != _session.Options.SortColumn)
-                                    column.ReleasePresentation();
+                            ReleaseInactiveColumns(_session.Options);
                             if (_session.Options.SortMode == PanelSortMode.SourceOrder || _session.Options.SortColumn == Guid.Empty)
                                 _session.PrepareColumnSort(Guid.Empty, null);
                             ConfigureColumnGeometry();
