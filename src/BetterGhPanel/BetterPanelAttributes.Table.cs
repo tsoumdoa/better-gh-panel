@@ -133,6 +133,7 @@ namespace BetterGhPanel
         {
             PanelOwner.ResolveColumnWidths();
             using var number = CanvasRowRenderer.MonospaceFont(11);
+            using var pathFont = CanvasRowRenderer.MonospaceFont(10);
             float Measure(string value, bool numeric = false) => TightWidth(g, Short(value, 256).Replace('\r', ' ').Replace('\n', ' '), numeric ? number : font);
             using var headerFont = new Font(font, FontStyle.Bold);
             var widths = new float[PanelOwner.TableColumns.Count + 1];
@@ -145,6 +146,11 @@ namespace BetterGhPanel
                     if (!new RectangleF(_list.X, _list.Y + (offset - _offset) * RowHeight, _list.Width, RowHeight).IntersectsWith(_renderVisibleRegion)) continue;
                     string path = result.BranchPaths[offset];
                     widths[0] = Math.Max(widths[0], Measure(path + " " + result.Snapshot.BranchItemCounts[path] + " items") + 24);
+                    if (result.DisplaySet?.IsBranchSet == true)
+                    {
+                        string label = result.DisplaySet.BranchIndices[path] + " · " + path;
+                        widths[0] = Math.Max(widths[0], TightWidth(g, label, pathFont) + 76 + 40 + 12 - gutter);
+                    }
                     for (int index = 1; index < widths.Length; index++) widths[index] = Math.Max(widths[index], Measure(PanelOwner.TableColumns[index - 1].BranchCellText(result, path, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor)) + 16);
                 }
             }
