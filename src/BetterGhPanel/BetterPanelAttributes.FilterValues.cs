@@ -70,7 +70,7 @@ namespace BetterGhPanel
             if (Count == 0)
                 Text(graphics, result.Snapshot.Branches.Count == 0 ? "Connect a tree to start exploring." : "No matching branches. Clear a filter or Reset all.",
                     small, Muted, new RectangleF(list.X + 6, list.Y, list.Width - 12, RowHeight), trim);
-            if (TableVisible) DrawFrozenEdge(graphics);
+            if (TableVisible) DrawFrozenEdge(graphics, y);
             if (TableVisible && _horizontalMaximum > 0) { Fill(graphics, PanelTheme.Rgb(232, 236, 229), _horizontalTrack); Fill(graphics, PanelTheme.Rgb(153, 174, 156), HorizontalThumb()); }
             if (Count > shown && !track.IsEmpty)
             {

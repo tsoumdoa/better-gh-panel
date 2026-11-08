@@ -481,7 +481,7 @@ namespace BetterGhPanel
                 _shown++; y += RowHeight;
             }
             g.Restore(clip);
-            DrawFrozenEdge(g);
+            DrawFrozenEdge(g, y);
             PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, measurements);
             if (Count > _shown) { Fill(g, PanelTheme.Rgb(232, 236, 229), _track); Fill(g, PanelTheme.Rgb(153, 174, 156), Thumb()); }
             if (_horizontalMaximum > 0) { Fill(g, PanelTheme.Rgb(232, 236, 229), _horizontalTrack); Fill(g, PanelTheme.Rgb(153, 174, 156), HorizontalThumb()); }
@@ -502,15 +502,17 @@ namespace BetterGhPanel
             _horizontalTrack = new RectangleF(_list.X + _frozenWidth, _list.Bottom + 2, Math.Max(0, _list.Width - _frozenWidth), 4);
             _horizontalTrackHit = new RectangleF(_horizontalTrack.X, _list.Bottom, _horizontalTrack.Width, 10);
         }
-        private void DrawFrozenEdge(Graphics g)
+        private void DrawFrozenEdge(Graphics g, float bottom)
         {
+            float height = Math.Min(_list.Bottom, bottom) - _list.Y;
+            if (height <= 0) return;
             float edge = _list.X + _frozenWidth;
             if (_horizontalOffset > 0)
-                using (var shadow = new LinearGradientBrush(new RectangleF(edge, _list.Y, 2, _list.Height),
+                using (var shadow = new LinearGradientBrush(new RectangleF(edge, _list.Y, 2, height),
                     PanelTheme.Rgb(60, 80, 90, 75), Color.Transparent, LinearGradientMode.Horizontal))
-                    g.FillRectangle(shadow, edge, _list.Y, 2, _list.Height);
+                    g.FillRectangle(shadow, edge, _list.Y, 2, height);
             using var line = new Pen(PanelTheme.Rgb(193, 205, 191));
-            g.DrawLine(line, edge, _list.Y, edge, _list.Bottom);
+            g.DrawLine(line, edge, _list.Y, edge, _list.Y + height);
         }
         private IEnumerable<RectangleF> HeaderHoverRects()
         {
