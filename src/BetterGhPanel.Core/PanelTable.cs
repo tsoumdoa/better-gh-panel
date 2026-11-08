@@ -253,6 +253,8 @@ namespace BetterGhPanel.Core
     internal static class PanelTableText
     {
         internal const float MinimumColumnWidth = 48, MaximumColumnWidth = 320;
+        internal static string LengthBadge(int total, int dataTotal) => total > dataTotal
+            ? "+" + (total - dataTotal) + " extra" : total + " of " + dataTotal;
         internal static bool NumericColumn(PanelSnapshot? snapshot) => snapshot?.TypeCounts.Count > 0 &&
             snapshot.TypeCounts.Keys.All(type => type == "Number" || type == "Integer");
         internal static bool ShowCellTypes(PanelSnapshot? snapshot) => snapshot != null &&

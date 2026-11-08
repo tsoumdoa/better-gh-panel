@@ -231,7 +231,7 @@ namespace BetterGhPanel
             foreach (string path in result.BranchPaths.Skip(Math.Min(_offset, result.BranchPaths.Count)).Take(Math.Max(1, (int)(_list.Height / RowHeight))))
                 for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
                     if (ColumnHeading(path, column) is PanelPairedData.PairHeading heading && heading.Unequal)
-                        widths[column + 1] = Math.Max(widths[column + 1], Measure(heading.Total + " of " + heading.DataTotal) + 20);
+                        widths[column + 1] = Math.Max(widths[column + 1], Measure(PanelTableText.LengthBadge(heading.Total, heading.DataTotal)) + 20);
             // Auto-fit only grows while the result stays the same, so scrolling never makes columns jump.
             if (!ReferenceEquals(_autoWidthResult, result)) { _autoWidths.Clear(); _autoWidthResult = result; }
             for (int index = 0; index < widths.Length; index++)
@@ -410,7 +410,7 @@ namespace BetterGhPanel
             for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
             {
                 if (!(ColumnHeading(path, column) is PanelPairedData.PairHeading heading) || !heading.Unequal) continue;
-                string text = heading.Total + " of " + heading.DataTotal;
+                string text = PanelTableText.LengthBadge(heading.Total, heading.DataTotal);
                 float width = TightWidth(g, text, small) + 10;
                 PaintColumn(g, column + 1, bounds.Y, bounds.Height, cell =>
                 {
