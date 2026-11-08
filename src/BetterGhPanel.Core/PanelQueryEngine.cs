@@ -318,11 +318,14 @@ namespace BetterGhPanel.Core
             }
             cancellationToken.ThrowIfCancellationRequested();
             var result = new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings);
-            if (query.TableSource != null && displaySet == null && !(query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
+            if (query.TableSource?.Extras != null && displaySet == null && !(query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
                 foreach (var index in PanelTableIndex.Build(result, query.TableSource.Columns,
                     query.TableSource.Extras(result, rowPositions, !HasItemFilter(query)), work, cancellationToken))
                     if (index == null) yield return null;
                     else result.TableIndex = index;
+            if (query.TableSource != null && (displaySet != null || query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
+                foreach (var step in PanelTableSummaries.Build(result, rowPositions, query.TableSource, !HasItemFilter(query), work, cancellationToken))
+                    if (step) yield return null;
             yield return result;
         }
 

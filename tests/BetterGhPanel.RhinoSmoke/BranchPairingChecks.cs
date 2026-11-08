@@ -547,8 +547,6 @@ internal static class BranchPairingChecks
     {
         using var f = new PanelHostFixture.Fixture(assembly);
         var component = f.Component;
-        Call(component, "SetPanelSplit", true);
-        component.Attributes.PerformLayout();
         f.Source.PersistentData.Clear(); f.Paired.PersistentData.Clear();
         for (int i = 0; i < 2; i++)
         {
@@ -557,7 +555,11 @@ internal static class BranchPairingChecks
         }
         PanelTestAdapter.TreeTools(component, 0, false, false, false, true);
         f.Query(new PanelQueryOptions { CreateSet = true }); f.Solve();
-        await f.Ready(() => f.Values(3) == "f0,f1" && ColumnSummaryCurrent(component));
+        await f.Ready(() => f.Values(3) == "f0,f1" && f.Result.RowPositions.Count == 2);
+        Call(component, "SetPanelSplit", true);
+        component.Attributes.PerformLayout();
+        Call(component, "SetTableSummaryVisibility", true);
+        await f.Ready(() => ColumnSummaryCurrent(component));
         var pairing = PropertyValue<object>(component, "PairedData");
         var oldSummary = PropertyValue<PanelQueryResult>(pairing, "SummaryResult");
         Check(f.Result.RowPositions.Count == 2 && ColumnSummaryCurrent(component),
@@ -588,16 +590,16 @@ internal static class BranchPairingChecks
             await f.Ready(() => f.Values(3) == "f1" && ColumnSummaryCurrent(component));
         }
         finally { changed.RemoveEventHandler(f.Session, onResult); }
-        Check(currentBeforeRebuild == false && staleCell == "…" && staleCopy != null &&
-            await staleCopy == "Column summaries are recomputing. Try copying again." && f.Result.RowPositions.Count == 1 &&
+        Check(currentBeforeRebuild == true && staleCell == "f1" && staleCopy != null &&
+            await staleCopy != "Column summaries are recomputing. Try copying again." && f.Result.RowPositions.Count == 1 &&
             ColumnSummaryCurrent(component),
-            "Completed regex keeps the old heading pending until summaries rebuild to one of two items");
+            "Completed regex publishes matching column summaries with the result");
         var filteredSummary = PropertyValue<PanelQueryResult>(pairing, "SummaryResult");
         f.Query(new PanelQueryOptions { CreateSet = true, SearchMode = PanelSearchMode.Regex, Search = "^1$",
             SortMode = PanelSortMode.ValueDescending });
         await f.Ready(() => !ReferenceEquals(filteredSummary, f.Result) && ColumnSummaryCurrent(component));
         Check(ColumnSummaryCurrent(component) &&
-            ReferenceEquals(f.Result, PropertyValue<PanelQueryResult>(pairing, "SummaryResult")),
-            "Sort-only set results publish summaries for the new result identity");
+            ReferenceEquals(filteredSummary, PropertyValue<PanelQueryResult>(pairing, "SummaryResult")),
+            "Sort-only set results publish column summaries without rebuilding raw F output");
     }
 }

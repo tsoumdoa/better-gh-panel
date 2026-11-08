@@ -507,6 +507,7 @@ namespace BetterGhPanel.Core
     public sealed class PanelQueryResult
     {
         public PanelTableIndex? TableIndex { get; internal set; }
+        internal Dictionary<Guid, PanelTableColumnSummary> TableSummaries { get; } = new Dictionary<Guid, PanelTableColumnSummary>();
         private readonly PanelResultPositionIndex _viewIndices;
         private readonly HashSet<string> _branchPaths;
 

@@ -85,7 +85,7 @@ namespace BetterGhPanel
                 if (count == 0) return 0;
                 if (DisplayListLengths)
                 {
-                    float header = _list.Height >= BranchHeight + RowHeight ? BranchHeight : 0;
+                    float header = !TableVisible && _list.Height >= BranchHeight + RowHeight ? BranchHeight : 0;
                     return Math.Max(0, count - Math.Max(1, (int)((_list.Height - header) / RowHeight)));
                 }
                 var result = PanelOwner.Session.Result;
@@ -115,6 +115,7 @@ namespace BetterGhPanel
 
         internal void ResetViewState(bool keepViewRestore = false)
         {
+            ClearTableWidths();
             // An unconfirmed live search never survives a reset or a new input.
             EndQueryPreview(_previewOwner);
             if (!keepViewRestore) { _viewRestore = null; _selectionRestore = null; _savedSelection = null; }
@@ -200,6 +201,7 @@ namespace BetterGhPanel
 
         internal void InvalidatePaintedHits(bool closeRowMenu = true)
         {
+            ClearHeaderPaint();
             if (_paintedResult != null)
             {
                 _staleList = _paintedList;
@@ -222,6 +224,7 @@ namespace BetterGhPanel
 
         internal void OnQueryStarted()
         {
+            ClearTableWidths();
             InvalidatePaintedHits();
         }
 
@@ -352,6 +355,8 @@ namespace BetterGhPanel
             }
             var visibleRegion = canvas.Viewport.VisibleRegion;
             _renderVisibleRegion = visibleRegion;
+            _headerRenderCanvas = canvas;
+            PanelOwner.SetTableSummaryVisibility(TableVisible && !PanelOwner.PanelMinimized && canvas.Viewport.Zoom >= 0.5f && Bounds.IntersectsWith(visibleRegion));
             session.AnimateBusyState(!PanelOwner.Locked && Bounds.IntersectsWith(visibleRegion) && canvas.Viewport.Zoom >= 0.5f);
             // Grasshopper also renders components outside the canvas viewport.
             // A menu extending beyond an offscreen panel may still be visible.
@@ -1577,7 +1582,8 @@ namespace BetterGhPanel
                 return GH_ObjectResponse.Capture;
             }
             // Grasshopper replaces the cursor after an ignored move event.
-            if (HeaderColumnAt(e.CanvasLocation, true) >= 0) { sender.Cursor = Cursors.SizeWE; return GH_ObjectResponse.Handled; }
+            int headerBorder = HeaderColumnAt(e.CanvasLocation, true);
+            if (HeaderTargetPainted(sender, headerBorder, true)) { sender.Cursor = Cursors.SizeWE; return GH_ObjectResponse.Handled; }
             if (cursorControl != null || setControl) return GH_ObjectResponse.Handled;
             return base.RespondToMouseMove(sender, e);
         }
@@ -1608,6 +1614,7 @@ namespace BetterGhPanel
                 return GH_ObjectResponse.Handled;
             if (sender.Viewport.Zoom < 0.5f) return base.RespondToMouseDoubleClick(sender, e);
             int border = HeaderColumnAt(e.CanvasLocation, true);
+            if (border >= 0 && !HeaderTargetPainted(sender, border, true)) return GH_ObjectResponse.Handled;
             if (border >= 0) { _resizingColumn = null; PanelOwner.SetColumnWidth(ColumnId(border), null); _autoWidths.Remove(ColumnId(border)); sender.Invalidate(); return GH_ObjectResponse.Handled; }
             if (_tableHeader.Contains(e.CanvasLocation)) return GH_ObjectResponse.Handled;
             if (!RowsAreCurrent(PanelOwner.Session.Result) &&

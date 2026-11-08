@@ -59,6 +59,8 @@ namespace BetterGhPanel
                 if (TableVisible)
                     for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
                     {
+                        var source = PanelOwner.TableColumns[column];
+                        if (!source.Present || source.Pair == null || source.Snapshot == null) continue;
                         string text = ColumnBranchCell(path, column);
                         PaintColumn(graphics, column + 1, y, RowHeight, cell => DrawTableCell(graphics, renderer, null, text, cell, font, small, note: PanelOwner.TableColumns[column].BranchExtraNote(result, path)));
                     }

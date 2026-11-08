@@ -337,6 +337,7 @@ namespace BetterGhPanel
         private void ApplyColumnWidth(Guid id, float? width)
         {
             (Attributes as BetterPanelAttributes)?.ClearHover();
+            (Attributes as BetterPanelAttributes)?.InvalidatePaintedHits();
             if (width.HasValue) { ColumnWidths[id] = Math.Max(PanelTableText.MinimumColumnWidth, Math.Min(ColumnWidthLimit(id), width.Value));
                 _columnInputIndices[id] = Params.Input.FindIndex(input => input.InstanceGuid == id); }
             else ColumnWidths.Remove(id);
@@ -371,6 +372,11 @@ namespace BetterGhPanel
             CanvasTextInput.CloseActive(this);
             (Attributes as BetterPanelAttributes)?.ClosePresentationControls();
             PanelSplit = split;
+            if (!split)
+            {
+                _tableSummariesVisible = false;
+                (Attributes as BetterPanelAttributes)?.ClearTableWidths();
+            }
             foreach (var column in _tableColumns)
             {
                 if (split || Session.Options.SortColumn == column.Input.InstanceGuid) column.Capture(_geometryUnits);
@@ -383,9 +389,6 @@ namespace BetterGhPanel
             }
             Session.SetTableSource(CurrentTableSource(), true);
             Attributes.ExpireLayout();
-            if (split && (Session.Result.DisplaySet != null || Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength) &&
-                TableColumns.Any(column => !column.SummaryCurrent(Session.Result)))
-            { _cachedOutputResult = null; _outputOptions = null; ScheduleOutput(); }
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();
         }
@@ -398,6 +401,7 @@ namespace BetterGhPanel
             CanvasTextInput.CloseActive(this);
             (Attributes as BetterPanelAttributes)?.ClosePresentationControls();
             PanelMinimized = minimized;
+            if (minimized) SetTableSummaryVisibility(false);
             Attributes.ExpireLayout();
             OnPingDocument()?.Modified();
             Instances.ActiveCanvas?.Invalidate();

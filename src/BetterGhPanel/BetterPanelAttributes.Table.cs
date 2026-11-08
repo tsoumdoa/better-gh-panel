@@ -25,6 +25,30 @@ namespace BetterGhPanel
         private Guid _headerSortColumn;
         private readonly Dictionary<Guid, float> _autoWidths = new Dictionary<Guid, float>();
         private PanelQueryResult? _autoWidthResult;
+        internal void ClearTableWidths() { _autoWidths.Clear(); _autoWidthResult = null; _setCountResult = null; }
+        private readonly Dictionary<Guid, RectangleF> _paintedHeaders = new Dictionary<Guid, RectangleF>();
+        private readonly Dictionary<Guid, RectangleF> _paintedHeaderBorders = new Dictionary<Guid, RectangleF>();
+        private GH_Canvas? _headerRenderCanvas, _headerPaintCanvas;
+        private PanelQueryResult? _headerPaintResult;
+        private RectangleF _headerPaintBounds, _headerPaintPanel, _headerPaintViewport;
+        private float _headerPaintOffset, _headerPaintFrozen, _headerPaintZoom;
+        private void ClearHeaderPaint()
+        {
+            _paintedHeaders.Clear(); _paintedHeaderBorders.Clear(); _headerPaintResult = null; _headerPaintCanvas = null;
+        }
+        private RectangleF HeaderTarget(int index, bool border)
+        {
+            var rect = _columnRects[index];
+            return border ? new RectangleF(rect.Right - 4, rect.Y, 8, rect.Height) :
+                RectangleF.Intersect(rect, ColumnClip(index, _tableHeader.Y, RowHeight));
+        }
+        private bool HeaderPaintCurrent(GH_Canvas canvas) => ReferenceEquals(_headerPaintCanvas, canvas) &&
+            ReferenceEquals(_headerPaintResult, PanelOwner.Session.Result) && ResultIsCurrent(PanelOwner.Session.Result) &&
+            _headerPaintBounds == _tableHeader && _headerPaintPanel == _layout.Panel && _headerPaintViewport == canvas.Viewport.VisibleRegion &&
+            _headerPaintZoom == canvas.Viewport.Zoom && _headerPaintOffset == _horizontalOffset && _headerPaintFrozen == _frozenWidth;
+        private bool HeaderTargetPainted(GH_Canvas canvas, int index, bool border = false) => index >= 0 && index < _columnRects.Count && HeaderPaintCurrent(canvas) &&
+            (border ? _paintedHeaderBorders : _paintedHeaders).TryGetValue(ColumnId(index), out var painted) && painted == HeaderTarget(index, border);
+
         private bool _fitTablePending;
         internal void RequestTableFit() => _fitTablePending = true;
         internal void CancelTableFit() => _fitTablePending = false;
@@ -259,6 +283,12 @@ namespace BetterGhPanel
 
         private void DrawTableHeader(Graphics g, Font font, StringFormat trim, float gutter)
         {
+            if (_headerRenderCanvas == null) return;
+            if (!HeaderPaintCurrent(_headerRenderCanvas)) ClearHeaderPaint();
+            _headerPaintCanvas = _headerRenderCanvas;
+            _headerPaintResult = PanelOwner.Session.Result;
+            _headerPaintBounds = _tableHeader; _headerPaintPanel = _layout.Panel; _headerPaintViewport = _headerRenderCanvas.Viewport.VisibleRegion;
+            _headerPaintOffset = _horizontalOffset; _headerPaintFrozen = _frozenWidth; _headerPaintZoom = _headerRenderCanvas.Viewport.Zoom;
             Fill(g, PanelTheme.Rgb(242, 247, 241), _tableHeader);
             Text(g, "#", font, Muted, new RectangleF(_tableHeader.X + 4, _tableHeader.Y, gutter - 8, RowHeight), trim);
             using var bold = new Font(font, FontStyle.Bold);
@@ -273,6 +303,12 @@ namespace BetterGhPanel
                     Text(g, ColumnTitle(columnIndex), bold, columnIndex == 0 ? Accent : column?.Present == false ? Muted : column?.Pair == null ? PanelTheme.PairingWarning : Ink,
                         new RectangleF(left + 6, bounds.Y, Math.Max(0, bounds.Right - left - 12), bounds.Height), trim);
                 });
+                var target = HeaderTarget(index, false);
+                if (target.Width > 0 && TargetPainted(g, target)) _paintedHeaders[ColumnId(index)] = target;
+                float edge = _columnRects[index].Right;
+                var clip = ColumnClip(index, _tableHeader.Y, RowHeight);
+                var border = HeaderTarget(index, true);
+                if (edge >= clip.Left && edge <= clip.Right && TargetPainted(g, border)) _paintedHeaderBorders[ColumnId(index)] = border;
             }
             using var line = new Pen(PanelTheme.Rgb(193, 205, 191));
             g.DrawLine(line, _tableHeader.X, _tableHeader.Bottom - 1, _tableHeader.Right, _tableHeader.Bottom - 1);
@@ -316,7 +352,7 @@ namespace BetterGhPanel
                         if (column.Pair != null && firstMissing) renderer.DrawCell(g, "—", small, Muted,
                             new RectangleF(cell.X + 6, cell.Y, Math.Max(0, cell.Width - 12 - typeWidth), RowHeight), column.Numeric);
                     }
-                    else DrawTableCell(g, renderer, result.DisplaySet == null ? row : null, ColumnCell(result, position, columnIndex), cell, font, small,
+                    else if (column.Present && column.Pair != null && column.Snapshot != null) DrawTableCell(g, renderer, result.DisplaySet == null ? row : null, ColumnCell(result, position, columnIndex), cell, font, small,
                         showType: column.ShowCellTypes, note: column.SetExtraNote(result, position));
                 });
             }
@@ -480,6 +516,7 @@ namespace BetterGhPanel
         {
             for (int index = 0; index < _columnRects.Count; index++)
             {
+                if (_headerRenderCanvas == null || !HeaderTargetPainted(_headerRenderCanvas, index)) continue;
                 var rect = RectangleF.Intersect(_columnRects[index], ColumnClip(index, _tableHeader.Y, RowHeight));
                 rect.X += 4; rect.Width = Math.Max(0, rect.Width - 8);
                 yield return rect;
@@ -510,8 +547,17 @@ namespace BetterGhPanel
             (_columnRects.Count > 0 ? _frozenWidth - _columnRects[0].Width : 24));
         private bool HeaderCanSort(int index) => index == 0 || index > 0 && index <= PanelOwner.TableColumns.Count &&
             PanelOwner.TableColumns[index - 1].Present && PanelOwner.TableColumns[index - 1].Pair != null;
-        private bool HeaderSortEnabled => _headerSortColumn == Guid.Empty || PanelOwner.TableColumns.Any(column =>
-            column.Input.InstanceGuid == _headerSortColumn && column.Present && column.Pair != null);
+        private bool HeaderSortEnabled
+        {
+            get
+            {
+                int index = _headerSortColumn == Guid.Empty ? 0 : -1;
+                if (_headerSortColumn != Guid.Empty)
+                    for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
+                        if (PanelOwner.TableColumns[column].Input.InstanceGuid == _headerSortColumn) { index = column + 1; break; }
+                return _headerRenderCanvas != null && HeaderTargetPainted(_headerRenderCanvas, index) && HeaderCanSort(index);
+            }
+        }
 
         private string ColumnBranchCell(string path, int column) => PanelOwner.TableColumns[column].BranchCell(PanelOwner.Session.Result, path, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
 
@@ -526,7 +572,7 @@ namespace BetterGhPanel
         {
             int border = HeaderColumnAt(e.CanvasLocation, true);
             int index = border >= 0 ? border : HeaderColumnAt(e.CanvasLocation);
-            if (index < 0) return GH_ObjectResponse.Handled;
+            if (!HeaderTargetPainted(canvas, index, border >= 0)) return GH_ObjectResponse.Handled;
             if (border >= 0)
             {
                 if (e.Clicks > 1) return GH_ObjectResponse.Handled;
@@ -543,9 +589,8 @@ namespace BetterGhPanel
         }
         private bool HeaderContext(GH_Canvas canvas, GH_CanvasMouseEvent e)
         {
-            if (!RowsAreCurrent(PanelOwner.Session.Result)) return false;
             int index = HeaderColumnAt(e.CanvasLocation);
-            if (index < 0) return false;
+            if (!HeaderTargetPainted(canvas, index)) return false;
             _headerSortColumn = index == 0 ? Guid.Empty : ColumnId(index);
             _headerMenuAnchor = RectangleF.Intersect(_columnRects[index], ColumnClip(index, _tableHeader.Y, RowHeight));
             _menu.HeaderSortColumn = _headerSortColumn;
@@ -556,7 +601,7 @@ namespace BetterGhPanel
         private void TooltipTableHeader(PointF point, GH_TooltipDisplayEventArgs e)
         {
             int index = HeaderColumnAt(point);
-            if (index < 0) return;
+            if (_headerRenderCanvas == null || !HeaderTargetPainted(_headerRenderCanvas, index)) return;
             e.Title = ColumnTitle(index); e.Text = "";
             e.Description = "Click to sort ascending, descending, then tree order. Drag a border to resize; double-click it to auto-fit.";
             if (index > 0)

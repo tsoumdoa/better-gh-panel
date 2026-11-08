@@ -88,7 +88,23 @@ namespace BetterGhPanel
             Session.PrepareColumnSort(options.SortColumn, options.ColumnSortKeys);
             Session.SetTableSource(CurrentTableSource(), false);
         }
-        private PanelTableSource? CurrentTableSource() => PanelSplit ? PanelTableColumn.ViewSource(TableColumns, ReverseTree) : null;
+        private bool _tableSummariesVisible;
+        internal void SetTableSummaryVisibility(bool visible)
+        {
+            visible &= PanelSplit;
+            if (_tableSummariesVisible == visible) return;
+            _tableSummariesVisible = visible;
+            if (_session != null)
+            {
+                var options = _session.Options;
+                bool summaryView = options.CreateSet || options.DisplayFilterValue && options.SearchMode == PanelSearchMode.ListLength;
+                bool restoring = _restoringView;
+                _restoringView = true;
+                try { _session.SetTableSource(CurrentTableSource(), summaryView); }
+                finally { _restoringView = restoring; }
+            }
+        }
+        private PanelTableSource? CurrentTableSource() => PanelSplit ? PanelTableColumn.ViewSource(TableColumns, ReverseTree, _tableSummariesVisible && !PanelMinimized) : null;
         internal string TableTsv(PanelQueryResult result, IReadOnlyList<int> positions)
         {
             RequireTableSummaries(result);

@@ -206,7 +206,7 @@ namespace BetterGhPanel
             if (_solving || _restoringView || Locked || document == null || session == null || _queryTree == null) return;
             var options = session.Options;
             if (!_outputPending && _outputOptions != null && PanelQueryPolicy.SameOutputFilter(_outputOptions, options) &&
-                TableSummariesCurrent && _publishedSelectionVersion == _selectionVersion && _publishedScope == OutputScope && _publishedValues == OutputValues) return;
+                _publishedSelectionVersion == _selectionVersion && _publishedScope == OutputScope && _publishedValues == OutputValues) return;
             var snapshot = session.Snapshot;
             long request = ++_outputRequest;
             // Never solve recursively from a query callback. Publish through a

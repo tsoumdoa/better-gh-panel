@@ -142,10 +142,95 @@ namespace BetterGhPanel.Core
     // Immutable adapter callbacks enumerate managed identities, including null budget checkpoints.
     internal sealed class PanelTableSource
     {
-        internal PanelTableSource(int columns, Func<PanelQueryResult, IReadOnlyList<int>, bool, IEnumerable<PanelTableExtra?>> extras)
-        { Columns = columns; Extras = extras; }
+        internal PanelTableSource(int columns, Func<PanelQueryResult, IReadOnlyList<int>, bool, IEnumerable<PanelTableExtra?>>? extras,
+            IReadOnlyList<PanelTableSummarySource>? summaries = null)
+        { Columns = columns; Extras = extras; Summaries = summaries ?? Array.Empty<PanelTableSummarySource>(); }
         internal int Columns { get; }
-        internal Func<PanelQueryResult, IReadOnlyList<int>, bool, IEnumerable<PanelTableExtra?>> Extras { get; }
+        internal Func<PanelQueryResult, IReadOnlyList<int>, bool, IEnumerable<PanelTableExtra?>>? Extras { get; }
+        internal IReadOnlyList<PanelTableSummarySource> Summaries { get; }
+    }
+
+    internal sealed class PanelTableSummarySource
+    {
+        internal PanelTableSummarySource(Guid id, Func<int, int?> itemAt,
+            Func<PanelQueryResult, IReadOnlyList<int>, bool, IEnumerable<(int Item, string Path)?>> branchItems,
+            Func<string, IEnumerable<int>> extraCounts)
+        { Id = id; ItemAt = itemAt; BranchItems = branchItems; ExtraCounts = extraCounts; }
+        internal Guid Id { get; }
+        internal Func<int, int?> ItemAt { get; }
+        internal Func<PanelQueryResult, IReadOnlyList<int>, bool, IEnumerable<(int Item, string Path)?>> BranchItems { get; }
+        internal Func<string, IEnumerable<int>> ExtraCounts { get; }
+    }
+    internal sealed class PanelTableColumnSummary
+    {
+        internal readonly Dictionary<int, PanelTableMemberSummary> Sets = new Dictionary<int, PanelTableMemberSummary>();
+        internal readonly Dictionary<string, PanelTableMemberSummary> Branches = new Dictionary<string, PanelTableMemberSummary>(StringComparer.Ordinal);
+        internal readonly Dictionary<string, int> Extras = new Dictionary<string, int>(StringComparer.Ordinal);
+    }
+    internal static class PanelTableSummaries
+    {
+        internal static IEnumerable<bool> Build(PanelQueryResult result, IReadOnlyList<int> members, PanelTableSource source,
+            bool includeEmpty, PanelQueryWork work, CancellationToken token)
+        {
+            foreach (var column in source.Summaries)
+            {
+                if (work.ShouldYield()) yield return true;
+                token.ThrowIfCancellationRequested();
+                var summary = new PanelTableColumnSummary();
+                var set = result.DisplaySet;
+                if (set == null)
+                {
+                    foreach (var step in column.BranchItems(result, members, includeEmpty))
+                    {
+                        if (work.ShouldYield()) yield return true;
+                        token.ThrowIfCancellationRequested();
+                        if (!step.HasValue) continue;
+                        var cell = step.Value;
+                        if (!summary.Branches.TryGetValue(cell.Path, out var branch)) summary.Branches.Add(cell.Path, branch = new PanelTableMemberSummary());
+                        branch.Add(cell.Item);
+                    }
+                }
+                else
+                {
+                    var groups = set.IsBranchSet ? set.BranchMembers.Select(group => (Item: -1, Path: group.Key, Members: group.Value)) :
+                        set.Members.Select(group => (Item: group.Key, Path: result.Snapshot.Rows[group.Key].Path, Members: group.Value));
+                    foreach (var group in groups)
+                    {
+                        if (work.ShouldYield()) yield return true;
+                        token.ThrowIfCancellationRequested();
+                        var cell = new PanelTableMemberSummary();
+                        foreach (int position in group.Members)
+                        {
+                            if (work.ShouldYield()) yield return true;
+                            token.ThrowIfCancellationRequested();
+                            if (column.ItemAt(position) is int item) cell.Add(item);
+                        }
+                        if (set.IsBranchSet) summary.Branches.Add(group.Path, cell);
+                        else summary.Sets.Add(group.Item, cell);
+                    }
+                    foreach (string path in result.BranchPaths)
+                    {
+                        if (work.ShouldYield()) yield return true;
+                        token.ThrowIfCancellationRequested();
+                        int count = 0;
+                        var paths = set.IsBranchSet ? set.BranchOccurrences[path] : (IReadOnlyList<string>)new[] { path };
+                        foreach (string original in paths)
+                        {
+                            if (work.ShouldYield()) yield return true;
+                            token.ThrowIfCancellationRequested();
+                            foreach (int extra in column.ExtraCounts(original))
+                            {
+                                if (work.ShouldYield()) yield return true;
+                                token.ThrowIfCancellationRequested();
+                                count += extra;
+                            }
+                        }
+                        summary.Extras.Add(path, count);
+                    }
+                }
+                result.TableSummaries.Add(column.Id, summary);
+            }
+        }
     }
 
     internal static class PanelTableInputIdentity
@@ -162,14 +247,7 @@ namespace BetterGhPanel.Core
     {
         internal readonly List<int> Preview = new List<int>(4);
         internal int Count { get; private set; }
-        internal static PanelTableMemberSummary Build(IEnumerable<int> members, Func<int, int?> pairedAt)
-        {
-            var summary = new PanelTableMemberSummary();
-            foreach (int member in members)
-                if (pairedAt(member) is int item)
-                { summary.Count++; if (summary.Preview.Count < 4) summary.Preview.Add(item); }
-            return summary;
-        }
+        internal void Add(int item) { Count++; if (Preview.Count < 4) Preview.Add(item); }
     }
 
     internal static class PanelTableText

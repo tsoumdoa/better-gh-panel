@@ -24,14 +24,76 @@ public class TableColumnsTests
         Assert.False(PanelTableText.NumericColumn(PanelSnapshot.Empty));
     }
 
+    private static PanelTableSource SummarySource(Guid id, Func<int, int?> itemAt,
+        Func<PanelQueryResult, IReadOnlyList<int>, bool, IEnumerable<(int Item, string Path)?>>? branches = null) =>
+        new PanelTableSource(1, null, new[] { new PanelTableSummarySource(id, itemAt,
+            branches ?? ((_, __, ___) => Array.Empty<(int Item, string Path)?>()), _ => Array.Empty<int>()) });
+
     [Fact]
     public void SetCellSummariesFollowOnlyPairedMemberIndicesAndBoundThePreview()
     {
-        var members = new[] { 0, 2, 5, 7, 9, 12, 15 };
-        var summary = PanelTableMemberSummary.Build(members, position => position < 12 ? position + 100 : (int?)null);
+        var members = new HashSet<int>(new[] { 0, 2, 5, 7, 9, 12, 15 });
+        var id = Guid.NewGuid();
+        var snapshot = new PanelSnapshot(Enumerable.Range(0, 16).Select(index => new PanelRow(index, "{0}", "Number", "1", 1)).ToArray(), new[] { new PanelBranch("{0}", 16) });
+        using var work = PanelQueryEngine.Start(snapshot, new PanelQueryOptions { CreateSet = true,
+            TableSource = SummarySource(id, position => members.Contains(position) && position < 12 ? position + 100 : (int?)null) });
+        int checks = 0;
+        while (!work.TryComplete(() => ++checks % 7 == 0)) Assert.Null(work.Result);
+        var summary = work.Result!.TableSummaries[id].Sets[0];
         Assert.Equal(5, summary.Count);
         Assert.Equal(new[] { 100, 102, 105, 107 }, summary.Preview);
-        Assert.Equal(0, PanelTableMemberSummary.Build(new[] { 12, 15 }, _ => null).Count);
+    }
+
+    [Fact]
+    public void ColumnSummariesAreSkippedOutsideSummaryViewsOrWithoutVisibleProviders()
+    {
+        int visits = 0;
+        var id = Guid.NewGuid();
+        var source = SummarySource(id, position => { visits++; return position; }, (_, __, ___) =>
+        { visits++; return Array.Empty<(int, string)?>(); });
+        Assert.Empty(PanelQueryEngine.Execute(Data(), new PanelQueryOptions { TableSource = source }).TableSummaries);
+        Assert.Empty(PanelQueryEngine.Execute(Data(), new PanelQueryOptions { CreateSet = true }).TableSummaries);
+        Assert.Equal(0, visits);
+    }
+
+    [Fact]
+    public void ListLengthSummariesPublishBoundedBranchPreviewsWithinTheQueryBudget()
+    {
+        var id = Guid.NewGuid();
+        IEnumerable<(int Item, string Path)?> Branches()
+        {
+            for (int item = 0; item < 100; item++) { yield return null; yield return (item, "{0}"); }
+        }
+        var source = SummarySource(id, _ => throw new InvalidOperationException("List lengths use branch traversal"), (_, __, includeEmpty) =>
+        { Assert.True(includeEmpty); return Branches(); });
+        using var work = PanelQueryEngine.Start(Data(), new PanelQueryOptions { DisplayFilterValue = true, SearchMode = PanelSearchMode.ListLength, TableSource = source });
+        int checks = 0;
+        while (!work.TryComplete(() => ++checks % 7 == 0)) Assert.Null(work.Result);
+        var branch = work.Result!.TableSummaries[id].Branches["{0}"];
+        Assert.Equal(100, branch.Count);
+        Assert.Equal(new[] { 0, 1, 2, 3 }, branch.Preview);
+    }
+
+    [Fact]
+    public void CancellationInterruptsColumnSummaryMembersAndNullBranchCheckpoints()
+    {
+        var snapshot = new PanelSnapshot(Enumerable.Range(0, 4096).Select(index => new PanelRow(index, "{0}", "Number", "1", 1)).ToArray(), new[] { new PanelBranch("{0}", 4096) });
+        foreach (bool branchView in new[] { false, true })
+        {
+            using var cancellation = new CancellationTokenSource();
+            int visits = 0;
+            int? Item(int position) { if (++visits == 37) cancellation.Cancel(); return position; }
+            IEnumerable<(int Item, string Path)?> Branches()
+            {
+                for (int i = 0; i < 4096; i++) { if (++visits == 37) cancellation.Cancel(); yield return null; }
+            }
+            var source = SummarySource(Guid.NewGuid(), Item, (_, __, ___) => Branches());
+            using var work = PanelQueryEngine.Start(snapshot, new PanelQueryOptions { CreateSet = !branchView, DisplayFilterValue = branchView,
+                SearchMode = branchView ? PanelSearchMode.ListLength : PanelSearchMode.Text, TableSource = source }, cancellation.Token);
+            Assert.Throws<OperationCanceledException>(() => work.Complete());
+            Assert.Equal(37, visits);
+            Assert.Null(work.Result);
+        }
     }
 
     [Fact]

@@ -42,6 +42,7 @@ namespace BetterGhPanel
 
         private void ClearOutputSources()
         {
+            (Attributes as BetterPanelAttributes)?.ClearTableWidths();
             _inputTree = _preConversionTree = null;
             _liveInputTree = null;
             _captureGraphs = Array.Empty<CaptureGraphWitness>();
@@ -78,11 +79,6 @@ namespace BetterGhPanel
                     CountOutputVisits(_queryTree.DataCount);
                 _filteredData = BuildDataOutput(_queryTree, query, query.RowPositions, query.BranchPaths, false);
                 _filteredPair = PairedData?.Output(query, query.RowPositions, query.BranchPaths, FlattenTree, PanelPairedData.EmptyPartnersInScope(session.Options), CountOutputVisits);
-                // Busy publications may advance output options; cells and copy
-                // accept summaries only when this result identity has been rebuilt.
-                foreach (var column in TableColumns.Where(column => set == null && !ReferenceEquals(column.Pair, PairedData) && column.Pair != null))
-                    column.Pair!.BuildSummaries(query, FlattenTree, PanelPairedData.EmptyPartnersInScope(session.Options));
-                foreach (var column in TableColumns) column.BuildDisplaySummaries(query);
                 _filteredMask = null;
             }
             // Selection-only solutions reuse unchanged query outputs. A large

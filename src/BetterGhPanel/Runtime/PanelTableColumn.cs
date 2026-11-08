@@ -39,7 +39,6 @@ namespace BetterGhPanel.Runtime
             Snapshot = null;
             Sources = Array.Empty<IGH_Goo?>(); Measurements = Array.Empty<CapturedMeasurementSource?>(); Graphs = Array.Empty<CaptureGraphWitness>();
             HasGeometry = false;
-            _setCells.Clear(); _branchSetCells.Clear(); _extras.Clear(); _displaySummaryResult = null;
         }
         internal bool Current(out long visits)
         {
@@ -57,33 +56,10 @@ namespace BetterGhPanel.Runtime
             current = SnapshotCapture.ManagedRowsCurrentWithVisits(snapshot, Sources, out count); visits += count;
             return current && ReferenceEquals(snapshot, Snapshot);
         }
-        private readonly Dictionary<int, PanelTableMemberSummary> _setCells = new Dictionary<int, PanelTableMemberSummary>();
-        private readonly Dictionary<string, PanelTableMemberSummary> _branchSetCells = new Dictionary<string, PanelTableMemberSummary>(StringComparer.Ordinal);
-        private readonly Dictionary<string, int> _extras = new Dictionary<string, int>(StringComparer.Ordinal);
-        private PanelQueryResult? _displaySummaryResult;
-        internal void BuildDisplaySummaries(PanelQueryResult result)
-        {
-            _setCells.Clear(); _branchSetCells.Clear(); _extras.Clear();
-            if (Pair != null && result.DisplaySet?.IsBranchSet == false)
-            {
-                foreach (var group in result.DisplaySet.Members)
-                    _setCells.Add(group.Key, PanelTableMemberSummary.Build(group.Value, Pair.ItemAt));
-                foreach (string path in result.BranchPaths)
-                    _extras[path] = Pair.BranchesAt(path).Sum(pair => Math.Max(0, pair.Paired.ItemCount - pair.Data.ItemCount));
-            }
-            if (Pair != null && result.DisplaySet?.IsBranchSet == true)
-                foreach (var group in result.DisplaySet.BranchMembers)
-                {
-                    _branchSetCells.Add(group.Key, PanelTableMemberSummary.Build(group.Value, Pair.ItemAt));
-                    _extras[group.Key] = result.DisplaySet.BranchOccurrences[group.Key].Sum(path => Pair.BranchesAt(path)
-                        .Sum(pair => Math.Max(0, pair.Paired.ItemCount - pair.Data.ItemCount)));
-                }
-            _displaySummaryResult = result;
-        }
-        internal bool SummaryCurrent(PanelQueryResult result) => Pair == null || (result.DisplaySet != null
-            ? ReferenceEquals(_displaySummaryResult, result) : ReferenceEquals(Pair.SummaryResult, result));
-        internal string BranchExtraNote(PanelQueryResult result, string path) => SummaryCurrent(result) &&
-            _extras.TryGetValue(path, out int count) && count > 0 ? "+" + count + " only in " + Input.NickName : "";
+        internal bool SummaryCurrent(PanelQueryResult result) => Pair == null || result.TableSummaries.ContainsKey(Input.InstanceGuid);
+        internal string BranchExtraNote(PanelQueryResult result, string path) =>
+            result.TableSummaries.TryGetValue(Input.InstanceGuid, out var summary) && summary.Extras.TryGetValue(path, out int count) && count > 0
+                ? "+" + count + " only in " + Input.NickName : "";
         internal string SetExtraNote(PanelQueryResult result, int position) => BranchExtraNote(result, result.Snapshot.Rows[position].Path);
         internal string BranchCellText(PanelQueryResult result, string path, PanelUnitConversion conversion, int decimals, double factor)
         {
@@ -108,7 +84,7 @@ namespace BetterGhPanel.Runtime
                 if (!SummaryCurrent(result)) return "…";
                 if (raw) return string.Join(Environment.NewLine, result.DisplaySet.Members[position].Select(Pair.ItemAt)
                     .Where(item => item.HasValue).Select(item => Format(Snapshot.Rows[item!.Value])));
-                var summary = _setCells[position];
+                var summary = result.TableSummaries[Input.InstanceGuid].Sets[position];
                 return PanelTableText.Summary(summary.Preview.Select(item => Format(Snapshot.Rows[item])).ToArray(), summary.Count);
             }
             return Row(position) is PanelRow row ? Format(row) : "";
@@ -126,23 +102,24 @@ namespace BetterGhPanel.Runtime
                 return string.Join(Environment.NewLine, items.Select(item => Snapshot.Rows[item].StringValue ??
                     PanelValuePresentation.FormatDisplay(Snapshot.Rows[item], PanelUnitConversion.None, PanelUnits.AutomaticDecimals)));
             }
-            if (result.DisplaySet?.IsBranchSet == true)
-            {
-                var cell = _branchSetCells[path];
-                return PanelTableText.Summary(cell.Preview.Select(item => Value(Snapshot.Rows[item], conversion, decimals, factor)).ToArray(), cell.Count);
-            }
-            Pair.BranchSummaries.TryGetValue(path, out var summary);
-            return Summary(summary, row => Value(row, conversion, decimals, factor), result.DisplaySet != null);
+            result.TableSummaries[Input.InstanceGuid].Branches.TryGetValue(path, out var summary);
+            return summary == null ? result.DisplaySet != null ? "<empty set>" : "<empty branch>" :
+                PanelTableText.Summary(summary.Preview.Select(item => Value(Snapshot.Rows[item], conversion, decimals, factor)).ToArray(), summary.Count, result.DisplaySet != null);
         }
-        private string Summary(PanelPairedData.Summary? summary, Func<PanelRow, string> format, bool set)
+        private PanelTableSummarySource SummarySource()
         {
-            if (Snapshot == null || summary == null || summary.Count == 0) return set ? "<empty set>" : "<empty branch>";
-            return PanelTableText.Summary(summary.Preview.Select(index => format(Snapshot.Rows[index])).ToArray(), summary.Count, set);
+            var pair = Pair!;
+            return new PanelTableSummarySource(Input.InstanceGuid, pair.ItemAt,
+                (result, members, includeEmpty) => pair.BranchItemSteps(result.Snapshot, members, result.BranchPaths, includeEmpty, true),
+                path => pair.BranchesAt(path).Select(branch => Math.Max(0, branch.Paired.ItemCount - branch.Data.ItemCount)));
         }
-        internal static PanelTableSource? ViewSource(System.Collections.Generic.IReadOnlyList<PanelTableColumn> columns, bool reverse)
+        internal static PanelTableSource? ViewSource(System.Collections.Generic.IReadOnlyList<PanelTableColumn> columns, bool reverse, bool summariesVisible = false)
         {
             var maps = columns.Select(column => column.Pair).ToArray();
-            if (!maps.Any(map => map?.HasUnequal == true)) return null;
+            bool hasExtras = maps.Any(map => map?.HasUnequal == true);
+            var summaries = summariesVisible ? columns.Where(column => column.Pair != null && column.Snapshot != null)
+                .Select(column => column.SummarySource()).ToArray() : Array.Empty<PanelTableSummarySource>();
+            if (!hasExtras && summaries.Length == 0) return null;
             System.Collections.Generic.IEnumerable<PanelTableExtra?> Extras(PanelQueryResult result, System.Collections.Generic.IReadOnlyList<int> members, bool includeEmpty)
             {
                 for (int column = 0; column < maps.Length; column++)
@@ -163,7 +140,7 @@ namespace BetterGhPanel.Runtime
                     }
                 }
             }
-            return new PanelTableSource(columns.Count, Extras);
+            return new PanelTableSource(columns.Count, hasExtras ? Extras : (Func<PanelQueryResult, IReadOnlyList<int>, bool, IEnumerable<PanelTableExtra?>>?)null, summaries);
         }
         internal PanelColumnSortKeys SortKeys(PanelUnitConversion conversion, int decimals, double factor)
         {
