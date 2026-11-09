@@ -434,7 +434,7 @@ namespace BetterGhPanel.Runtime
                     // Every leaf comes from this one bounded graph capture. Do
                     // not resolve a later member from the live group here.
                     var copy = PanelPreviewLeaf.Create(inspected.Leaves[i], estimates[i], scans[i], budget, ref remaining,
-                        delta => { if (ReferenceEquals(scopeToken, _scopeToken)) MeshStatusChanged(delta); },
+                        MeshStatusCallback(scopeToken),
                         () => Current(generation, current), _displayMemory, RetireMeshes, RetireCurves);
                     if (copy == null)
                     {
@@ -537,6 +537,11 @@ namespace BetterGhPanel.Runtime
             AddLabel(entry, () => Current(generation, current));
             return true;
         }
+
+        // Leaves keep this delegate for their lifetime, so it must not share a closure
+        // with admission locals that hold the expired source and query.
+        private Action<int> MeshStatusCallback(object scopeToken) =>
+            delta => { if (ReferenceEquals(scopeToken, _scopeToken)) MeshStatusChanged(delta); };
 
         private void MeshStatusChanged(int delta)
         {
