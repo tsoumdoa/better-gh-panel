@@ -243,7 +243,7 @@ namespace BetterGhPanel.Core
         }
     }
 
-    // Display summaries follow set-member indices, independently of wire-output expansion.
+    // Display summaries follow set-member indices, keeping missing partners as dashes.
     internal sealed class PanelTableMemberSummary
     {
         internal readonly List<int> Preview = new List<int>(4);

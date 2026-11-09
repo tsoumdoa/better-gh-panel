@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1-beta
+
+- **F now matches B item by item.** When a D branch and its F branch had different lengths, a filter or selection sent the whole F branch. F now sends only the partners of the items B marks True, on equal and unequal branches alike.
+- **Behaviour change on unequal branches.** F items beyond D's length are sent only when no item filter, Create set or selection narrows D. A True D row with no F partner sends nothing but keeps its path. Each Create set group gets only its own members' partners. Under an item filter the table no longer shows the muted "paired with hidden D rows" lines, so it matches the output.
+- **Validation.** The automated Rhino fixtures could not run for this release. F was checked against B on the released build outside Rhino.
+
 ## 0.3.0-beta
 
 - **Breaking: D|F is now the Table.** The **D|F** chip is replaced by **Table**, and the two side-by-side panes by one list with D frozen on the left. Linked and independent scrolling are gone. Files saved with D|F on open as a table with F as its first column. F's input and output are unchanged.

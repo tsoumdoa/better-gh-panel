@@ -140,7 +140,7 @@ namespace BetterGhPanel
             finally { _restoringView = restoring; }
         }
         // Query mode decides whether to consume summaries; viewport and zoom never change this provider.
-        private PanelTableSource? CurrentTableSource() => PanelSplit ? PanelTableColumn.ViewSource(TableColumns, ReverseTree, !PanelMinimized) : null;
+        private PanelTableSource? CurrentTableSource() => PanelSplit ? PanelTableColumn.ViewSource(TableColumns, !PanelMinimized) : null;
         private static int[] ColumnCopyItems(PanelTableColumn column, PanelQueryResult result,
             IReadOnlyList<int> positions, IReadOnlyList<string> branches) =>
             positions.SelectMany(position => column.CellItems(result, position))

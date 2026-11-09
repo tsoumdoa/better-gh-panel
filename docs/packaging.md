@@ -21,7 +21,7 @@ New builds use the Yak package name `panel-plus` and stage to `artifacts/panel-p
 To install a local package, close Rhino first, then run Yak using the artifact folder as the package source:
 
 ```text
-yak install --source artifacts/panel-plus-0.3.0-beta panel-plus 0.3.0-beta
+yak install --source artifacts/panel-plus-0.3.1-beta panel-plus 0.3.1-beta
 ```
 
 Replace `yak` with the full executable path if it is not on PATH. On Windows it is normally `C:\Program Files\Rhino 8\System\Yak.exe`; on Mac it is normally `/Applications/Rhino 8.app/Contents/Resources/bin/yak`. Restart Rhino and open Grasshopper afterward. Local install uses Yak's package directory and avoids copying a second `.gha` into the Grasshopper Libraries folder.
@@ -36,7 +36,7 @@ tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmo
 Install the current public beta with:
 
 ```text
-yak install panel-plus 0.3.0-beta
+yak install panel-plus 0.3.1-beta
 ```
 
 In Rhino 8's `PackageManager`, enable prereleases to find the beta. For CLI discovery, use `yak search --all --prerelease panel-plus`.

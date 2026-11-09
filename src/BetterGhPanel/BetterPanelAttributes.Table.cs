@@ -394,21 +394,16 @@ namespace BetterGhPanel
         {
             var entry = TableIndex(result).Entries[offset];
             var notes = new List<string>();
-            bool hidden = false;
             for (int index = 0; index < entry.Cells.Count; index++)
             {
                 int item = entry.Cells[index];
                 var column = PanelOwner.TableColumns[index];
                 if (item < 0 || column.Pair == null) continue;
-                var pair = column.Pair.PairAtPaired(item);
-                bool only = item - pair.PairedOffset >= pair.Data.ItemCount;
                 bool first = offset == 0 || !TableIndex(result).Entries[offset - 1].Extra || TableIndex(result).Entries[offset - 1].Cells[index] < 0 ||
-                    !ReferenceEquals(pair, column.Pair.PairAtPaired(TableIndex(result).Entries[offset - 1].Cells[index])) ||
-                    (TableIndex(result).Entries[offset - 1].Cells[index] - pair.PairedOffset >= pair.Data.ItemCount) != only;
-                if (first) { if (only) notes.Add(PanelOwner.TableHeaderTitle(index + 1)); else hidden = true; }
+                    !ReferenceEquals(column.Pair.PairAtPaired(item), column.Pair.PairAtPaired(TableIndex(result).Entries[offset - 1].Cells[index]));
+                if (first) notes.Add(PanelOwner.TableHeaderTitle(index + 1));
             }
-            return (hidden ? "paired with hidden " + PanelOwner.TableHeaderTitle(0) + " rows" : "") +
-                (hidden && notes.Count > 0 ? "; " : "") + (notes.Count > 0 ? "only in " + string.Join(", ", notes) : "");
+            return notes.Count > 0 ? "only in " + string.Join(", ", notes) : "";
         }
 
         private void DrawTableExtra(Graphics g, CanvasRowRenderer renderer, PanelQueryResult result, int offset, RectangleF bounds, Font font, Font small)

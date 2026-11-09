@@ -154,14 +154,14 @@ internal static class BranchPairingChecks
         Call(attributes, "SetPaneOffset", canvas, 0);
         PanelTestAdapter.Resize(component, 560, 650); Render();
         f.ClearSelection(); f.Select(3); f.Scope(PanelOutputScope.Selected);
-        await Ready(() => f.Values(3) == "Branch name");
-        Check(f.Sinks[2].VolatileData.AllData(false).Cast<GH_Boolean>().Count(value => value.Value) == 1,
-            "Selected missing-F row still emits its whole unequal branch while B marks only D membership");
+        await Ready(() => f.Sinks[3].VolatileData.DataCount == 0);
+        Check(f.Sinks[2].VolatileData.AllData(false).Cast<GH_Boolean>().Count(value => value.Value) == 1 && Paths(f, 3) == Paths(f, 1),
+            "A selected row with no F partner sends no F item but keeps S's path");
         f.ClearSelection(); await Ready(() => f.Sinks[3].VolatileData.PathCount == 0);
         f.Scope(PanelOutputScope.Filtered);
         f.Query(new PanelQueryOptions { Search = "= 11" });
-        await Ready(() => f.Values(0) == "11" && f.Values(3) == "F1-0,F1-1,F1-2,F1-3");
-        Check(Paths(f, 3) == "{0;1}", "Filtered scope emits a whole unequal branch exactly once at D's path");
+        await Ready(() => f.Values(0) == "11" && f.Values(3) == "F1-1");
+        Check(Paths(f, 3) == "{0;1}", "An item filter on an unequal branch sends only the partner of the row B marks True");
         f.Query(new PanelQueryOptions { Search = "= 20" });
         await Ready(() => f.Values(3) == "F2-0,F2-1");
         Check(f.Sinks[3].VolatileData.DataCount == 2, "Equal original counts retain item-level filtering");
@@ -201,11 +201,11 @@ internal static class BranchPairingChecks
             PanelTestAdapter.TreeTools(component, 0, flatten, false, false, true);
             f.Query(new PanelQueryOptions { CreateSet = true, DisplayFilterValue = true, SearchMode = PanelSearchMode.Value });
             await Ready(() => f.Result.DisplaySet?.IsBranchSet == false && Paths(f, 3) == Paths(f, 0) &&
-                f.Sinks[3].VolatileData.AllData(false).Count(value => value.ToString() == "Branch name") == 2);
+                f.Sinks[3].VolatileData.AllData(false).Count(value => value.ToString() == "Branch name") == 1);
             var tree = f.Sinks[3].VolatileData;
-            Check(tree.AllData(false).Count(value => value.ToString() == "Branch name") == 2 &&
-                tree.AllData(false).Count(value => value.ToString() == "F1-3") == 2,
-                "Create set duplicates each whole unequal F branch into every D member group, once per group; flatten=" + flatten);
+            Check(tree.AllData(false).Count(value => value.ToString() == "Branch name") == 1 &&
+                tree.AllData(false).All(value => value.ToString() != "F1-3"),
+                "Create set sends each member's own F partner and no F-only items; flatten=" + flatten);
             Check(Paths(f, 3) == Paths(f, 0), "Create-set F paths exactly match set Items {path;k} groups; flatten=" + flatten);
             f.Select(f.Result.RowPositions[0]); f.Scope(PanelOutputScope.Selected);
             await Ready(() => Paths(f, 3) == Paths(f, 1) && f.Values(3) == "Branch name");
@@ -277,24 +277,24 @@ internal static class BranchPairingChecks
         }
         f.Solve();
         f.Query(new PanelQueryOptions { Search = "= 2" });
-        await Ready(() => f.Values(3) == "b,b-extra"); Render();
+        await Ready(() => f.Values(3) == "b"); Render();
         var filteredView = TableRows(component).Cast<object>().ToArray();
-        Check(filteredView.Where(row => FieldValue<int>(row, "Extra") >= 0).Select(row => FieldValue<int>(row, "Extra")).SequenceEqual(new[] { 3 }),
-            "Merged filtered pane excludes every F value from unrelated original branches");
+        Check(!filteredView.Any(row => FieldValue<int>(row, "Extra") >= 0),
+            "An item filter sends and shows no F-only values");
         f.Query(new PanelQueryOptions { Search = "= 99" });
         await Ready(() => f.Result.RowPositions.Count == 0 && f.Sinks[3].VolatileData.DataCount == 0);
         Check((int)Call(attributes, "ViewItemAtOrAfter", f.Result, -1)! == 0,
             "Empty paired index retains the ordinary successor lookup boundary behavior");
         PanelTestAdapter.TreeTools(component, 0, true, false, false, true);
         f.Query(new PanelQueryOptions { CreateSet = true, Search = "= 2" });
-        await Ready(() => f.Result.DisplaySet != null && f.Values(3) == "b,b-extra"); Render();
-        Check(!PropertyValue<bool>(attributes, "HasPairView") && (string)Call(attributes, "ColumnCell", f.Result, f.Result.RowPositions.Single(), 0)! == "b · b-extra",
-            "Merged set pane summarizes expanded current members in one cell");
+        await Ready(() => f.Result.DisplaySet != null && f.Values(3) == "b"); Render();
+        Check(!PropertyValue<bool>(attributes, "HasPairView") && (string)Call(attributes, "ColumnCell", f.Result, f.Result.RowPositions.Single(), 0)! == "b",
+            "Merged set pane summarizes current members in one cell");
         f.Query(new PanelQueryOptions { CreateSet = true });
         f.Source.PersistentData.Branches[0][0] = new GH_Integer(2); f.Solve();
-        await Ready(() => f.Result.DisplaySet?.Members.Values.Single().Count == 2 && f.Values(3) == "a,b,a-extra,b-extra"); Render();
-        Check((string)Call(attributes, "ColumnCell", f.Result, f.Result.RowPositions.Single(), 0)! == "a · b · a-extra · b-extra",
-            "One set cell keeps nonrepresentative partners and F-only tails in wire order");
+        await Ready(() => f.Result.DisplaySet?.Members.Values.Single().Count == 2 && f.Values(3) == "a,b"); Render();
+        Check((string)Call(attributes, "ColumnCell", f.Result, f.Result.RowPositions.Single(), 0)! == "a · b",
+            "One set cell keeps nonrepresentative partners in wire order");
         // A run of extras fills both panes; Down must resume at the following D item.
         PanelTestAdapter.TreeTools(component, 0, false, false, false);
         f.Query(new PanelQueryOptions());
@@ -354,17 +354,11 @@ internal static class BranchPairingChecks
         for (int i = 0; i < 6; i++) f.Paired.PersistentData.Append(new GH_String("f" + i), new GH_Path(0));
         PanelTestAdapter.TreeTools(component, 0, false, true, false);
         f.Query(new PanelQueryOptions { Search = "= 1" }); f.Solve();
-        await Ready(() => f.Values(3) == "f3,f2,f1,f0,f4,f5");
+        await Ready(() => f.Values(3) == "f1");
         Call(attributes, "SetPaneOffset", canvas, 0); Render("uneven-hidden-reverse");
         var reversedView = TableRows(component).Cast<object>().ToArray();
-        var rawF = ColumnSnapshot(component);
-        string paneValues = string.Join(",", reversedView.Where(row => FieldValue<int>(row, "Extra") >= 0 || FieldValue<int>(row, "Item") >= 0)
-            .Select(row => FieldValue<int>(row, "Extra") >= 0 ? rawF.Rows[FieldValue<int>(row, "Extra")].StringValue
-                : ((PanelRow)ColumnRow(component, f.Result.RowPositions[FieldValue<int>(row, "Item")])!).StringValue));
-        Check(paneValues == "f1,f3,f2,f0,f4,f5" && f.Values(3) == "f3,f2,f1,f0,f4,f5",
-            "The table retains D view order followed by hidden partners and extras while F output keeps wire order");
-        Check(reversedView.Where(row => FieldValue<int>(row, "Extra") >= 0).Select(row => FieldValue<int>(row, "Extra")).SequenceEqual(new[] { 3, 2, 0, 4, 5 }),
-            "Reverse preserves raw F identities for hidden partners and extra tails");
+        Check(!reversedView.Any(row => FieldValue<int>(row, "Extra") >= 0) && ((PanelRow)ColumnRow(component, f.Result.RowPositions.Single())!).StringValue == "f1",
+            "With Reverse on, the table and F wire both follow the retained D row's original index");
         f.Query(new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending });
         await Ready(() => f.Result.RowPositions.Count == 4); Render();
         Check(TableRows(component).Cast<object>().Where(row => FieldValue<int>(row, "Item") >= 0)

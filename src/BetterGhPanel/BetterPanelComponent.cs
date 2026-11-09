@@ -197,7 +197,7 @@ namespace BetterGhPanel
 
         private const string MaskDescription = "True/False mask, in the original D input tree, of the items B + F follow. Preserves original paths and item counts. Every member of a kept or selected set is True. This mask conveys membership, not transformed ordering.";
 
-        private const string PairedDescription = "F sends the F items paired with what D sends, at D's paths; an unequal branch sends its whole F branch. Values and types are unchanged.";
+        private const string PairedDescription = "F sends the F item paired with each item B marks True, at D's paths. Items beyond D's length are sent only when no item filter, set or selection narrows D. Values and types are unchanged.";
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {

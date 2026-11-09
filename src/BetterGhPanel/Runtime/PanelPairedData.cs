@@ -26,7 +26,6 @@ namespace BetterGhPanel.Runtime
         private readonly Dictionary<string, PairHeading> _headingsWithoutEmpty = new Dictionary<string, PairHeading>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> _dataOrder;
         private readonly IReadOnlyList<PanelSourceAddress> _sources;
-        private readonly bool _reverse;
         private readonly Dictionary<string, List<PanelBranchPair>> _byDestination = new Dictionary<string, List<PanelBranchPair>>(StringComparer.Ordinal);
         private readonly IGH_Goo[] _rawItems;
         internal PanelPairedData(GH_Structure<IGH_Goo> data, GH_Structure<IGH_Goo> paired,
@@ -35,7 +34,7 @@ namespace BetterGhPanel.Runtime
             Pairs = PanelPairing.Match(Shape(data), Shape(paired));
             HasUnequal = Pairs.Any(pair => pair.Unequal);
             _dataOrder = Pairs.Select((pair, index) => (pair, index)).ToDictionary(value => value.pair.Data.Path, value => value.index, StringComparer.Ordinal);
-            _sources = sources; _reverse = reverse;
+            _sources = sources;
             _sourcePairs = sources.Select(source => _dataOrder[source.Path]).ToArray();
             _rawItems = paired.Branches.SelectMany(branch => branch).ToArray();
             _pairedPairs = new int[_rawItems.Length];
@@ -85,51 +84,43 @@ namespace BetterGhPanel.Runtime
 
         // The single ordered membership traversal used by wire output and branch summaries.
         internal IEnumerable<(int Item, string Path)> BranchItems(PanelSnapshot snapshot, IReadOnlyList<int> members,
-            IEnumerable<string> paths, bool includeEmpty)
+            IEnumerable<string> paths, bool includeFOnly)
         {
-            foreach (var step in BranchItemSteps(snapshot, members, paths, includeEmpty, false))
+            foreach (var step in BranchItemSteps(snapshot, members, paths, includeFOnly, false))
                 if (step.HasValue) yield return step.Value;
         }
         internal int OriginalBranchOrder(PanelBranchPair pair) => _dataOrder[pair.Data.Path];
+        // Emits the partner of each member, so F matches B item for item. F-only items
+        // have no B entry and follow only when nothing narrows D's rows (includeFOnly).
         // Query callers already hold members in snapshot order. Null steps preserve
-        // cancellation/budget checkpoints even for missing cells or repeated unequal members.
+        // cancellation/budget checkpoints even for missing cells.
         internal IEnumerable<(int Item, string Path)?> BranchItemSteps(PanelSnapshot snapshot, IReadOnlyList<int> members,
-            IEnumerable<string> paths, bool includeEmpty, bool snapshotOrder)
+            IEnumerable<string> paths, bool includeFOnly, bool snapshotOrder)
         {
-            var emitted = new HashSet<int>();
-            var extras = new SortedDictionary<int, string>();
+            var tails = new SortedDictionary<int, string>();
             foreach (int position in snapshotOrder ? (IEnumerable<int>)members : members.OrderBy(value => value))
             {
                 yield return null;
-                int index = _sourcePairs[position];
-                var pair = Pairs[index];
                 string path = snapshot.Rows[position].Path;
-                if (!pair.Unequal)
-                    yield return (pair.PairedOffset + _sources[position].ItemIndex, path);
-                else if (emitted.Add(index))
-                {
-                    int count = Math.Min(pair.Data.ItemCount, pair.Paired.ItemCount);
-                    for (int i = 0; i < count; i++)
-                        yield return (pair.PairedOffset + (_reverse ? count - i - 1 : i), path);
-                    extras.Add(index, path);
-                }
+                if (ItemAt(position) is int item) yield return (item, path);
+                if (includeFOnly && BranchAt(position).Unequal) tails[_sourcePairs[position]] = path;
             }
-            if (includeEmpty)
+            if (includeFOnly)
                 foreach (string path in paths)
                 {
                     yield return null;
                     foreach (var pair in BranchesAt(path))
                     {
                         yield return null;
-                        if (pair.Data.ItemCount == 0 && !extras.ContainsKey(_dataOrder[pair.Data.Path])) extras.Add(_dataOrder[pair.Data.Path], path);
+                        if (pair.Data.ItemCount == 0) tails[_dataOrder[pair.Data.Path]] = path;
                     }
                 }
-            foreach (var extra in extras)
+            foreach (var tail in tails)
             {
                 yield return null;
-                var pair = Pairs[extra.Key];
-                for (int i = Math.Min(pair.Data.ItemCount, pair.Paired.ItemCount); i < pair.Paired.ItemCount; i++)
-                    yield return (pair.PairedOffset + i, extra.Value);
+                var pair = Pairs[tail.Key];
+                for (int i = pair.Data.ItemCount; i < pair.Paired.ItemCount; i++)
+                    yield return (pair.PairedOffset + i, tail.Value);
             }
         }
 
@@ -139,7 +130,8 @@ namespace BetterGhPanel.Runtime
             var result = new GH_Structure<IGH_Goo>();
             long visits = 0;
             var set = query.DisplaySet;
-            if (set == null) AddGroup(positions, branchPaths, path => Parse(path));
+            // A selected row or set group with no F partner keeps its path, as S and D do.
+            if (set == null) AddGroup(positions, selected ? branchPaths.Concat(positions.Select(position => query.Snapshot.Rows[position].Path)).Distinct() : branchPaths, path => Parse(path));
             else if (set.IsBranchSet)
                 foreach (string representative in branchPaths)
                 {
@@ -151,7 +143,7 @@ namespace BetterGhPanel.Runtime
             {
                 int k = set.MemberIndices[representative];
                 var destination = flatten ? new GH_Path(k) : Parse(query.Snapshot.Rows[representative].Path).AppendElement(k);
-                AddGroup(set.Members[representative], Array.Empty<string>(), _ => destination);
+                AddGroup(set.Members[representative], new[] { query.Snapshot.Rows[representative].Path }, _ => destination);
             }
             countVisits?.Invoke(visits + result.DataCount);
             return result;
@@ -167,10 +159,7 @@ namespace BetterGhPanel.Runtime
                 }
                 string? previousPath = null;
                 IList<IGH_Goo>? branch = null;
-                // A selected nonempty destination does not select unrelated empty
-                // original branches that structural tools merged into it.
-                var emptyPaths = selected ? retainedPaths.Where(path => query.Snapshot.BranchItemCounts[path] == 0) : retainedPaths;
-                foreach (var item in BranchItems(query.Snapshot, members, emptyPaths, includeEmpty))
+                foreach (var item in BranchItems(query.Snapshot, members, retainedPaths, includeEmpty && !selected))
                 {
                     visits++;
                     if (item.Path != previousPath)

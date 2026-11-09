@@ -136,10 +136,11 @@ internal static class PairingWysiwygChecks
                 Check(found && !selectable, message);
             }
             CheckExtras("F-only values have no selectable row/menu hits");
-            // Use an index filter to retain one D member of each unequal pair.
+            // An item filter retains one D member of each unequal pair and no F-only rows.
             f.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.ItemIndex, Search = "= 1" });
             await f.Ready(() => f.Result.RowPositions.Count == 4);
-            CheckExtras("Hidden-partner F values also have no selectable row/menu hits");
+            Render();
+            Check(!TableRows(component).Cast<object>().Any(entry => FieldValue<int>(entry, "Extra") >= 0), "An item filter shows only the partners of retained D rows");
             f.Query(new PanelQueryOptions()); await f.Ready(() => f.Result.RowPositions.Count == 18);
             f.Paired.PersistentData.Clear();
             for (int b = 0; b < 4; b++)

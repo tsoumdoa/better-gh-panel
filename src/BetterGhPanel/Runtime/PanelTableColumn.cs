@@ -165,7 +165,7 @@ namespace BetterGhPanel.Runtime
                 (result, members, includeEmpty) => pair.BranchItemSteps(result.Snapshot, members, result.BranchPaths, includeEmpty, true),
                 path => pair.BranchesAt(path).Select(branch => Math.Max(0, branch.Paired.ItemCount - branch.Data.ItemCount)));
         }
-        internal static PanelTableSource? ViewSource(System.Collections.Generic.IReadOnlyList<PanelTableColumn> columns, bool reverse, bool summariesVisible = false)
+        internal static PanelTableSource? ViewSource(System.Collections.Generic.IReadOnlyList<PanelTableColumn> columns, bool summariesVisible = false)
         {
             var maps = columns.Select(column => column.Pair).ToArray();
             bool hasExtras = maps.Any(map => map?.HasUnequal == true);
@@ -186,8 +186,7 @@ namespace BetterGhPanel.Runtime
                         if (result.TryGetViewIndex(map.DataPositionAt(cell.Item), out _)) { yield return null; continue; }
                         var pair = map.PairAtPaired(cell.Item);
                         int index = cell.Item - pair.PairedOffset;
-                        int withinBranch = reverse && index < pair.Data.ItemCount ? pair.Data.ItemCount - 1 - index : index;
-                        long order = ((long)map.OriginalBranchOrder(pair) << 32) + (uint)withinBranch;
+                        long order = ((long)map.OriginalBranchOrder(pair) << 32) + (uint)index;
                         yield return new PanelTableExtra(cell.Path, pair.Data.Path + ":" + index, column, cell.Item, order);
                     }
                 }
