@@ -177,7 +177,7 @@ namespace BetterGhPanel
                 if (!reuse)
                 {
                     CancelPendingCopy();
-                    ClearHighlight();
+                    ClearHighlightCore(keepValues: true);
                     var options = session.Options;
                     if (options.DecimalPlaces != DecimalPlaces || options.RoundUpFactor != RoundUpFactor)
                     {

@@ -357,11 +357,7 @@ namespace BetterGhPanel.Runtime
                 estimates.Add(bytes);
                 scans.Add(scan);
             }
-            while (mayEvict && (_entries.Count >= MaxEntries || RetainedBytes + estimate > MaxRetainedBytes) && _unselected.Count > 0)
-            {
-                Remove(_entries[_unselected.Max]);
-                if (!Current(generation, current)) return;
-            }
+            if (mayEvict && !MakeAdmissionRoom(estimate, needsEntry: true, generation, current)) return;
             if (_entries.Count >= MaxEntries || RetainedBytes + estimate > MaxRetainedBytes)
             { _partial = true; _partialReason ??= "preview memory or entry limit"; return; }
             // Reserve the whole staged group before native construction. A
@@ -410,7 +406,9 @@ namespace BetterGhPanel.Runtime
                 _entries.Add(order, entry); _byPosition.Add(position, entry);
                 _bytes += estimate; _stagedBytes -= estimate; reserved = false; admitted = true;
                 _bounds.Add(bounds);
-                if (_membership.Contains(position)) _selectedCount++; else _unselected.Add(order);
+                if (_membership.Contains(position))
+                { _selectedCount++; RequestMeshPriority(); }
+                else _unselected.Add(order);
                 AddLabel(entry, () => Current(generation, current));
                 if (!Current(generation, current)) return;
             }
@@ -423,11 +421,7 @@ namespace BetterGhPanel.Runtime
 
         private bool ReserveInspectionValue(long bytes, bool mayEvict, long generation, Func<bool> current)
         {
-            while (mayEvict && bytes > MaxRetainedBytes - RetainedBytes && _unselected.Count > 0)
-            {
-                Remove(_entries[_unselected.Max]);
-                if (!Current(generation, current)) return false;
-            }
+            if (mayEvict && !MakeAdmissionRoom(bytes, needsEntry: false, generation, current)) return false;
             if (!Current(generation, current) || bytes < 0 || bytes > MaxRetainedBytes - RetainedBytes) return false;
             _stagedBytes += bytes;
             return true;
@@ -444,11 +438,7 @@ namespace BetterGhPanel.Runtime
             bool mayEvict, long generation, Func<bool> current)
         {
             const long estimate = 512;
-            while (mayEvict && (_entries.Count >= MaxEntries || RetainedBytes + estimate > MaxRetainedBytes) && _unselected.Count > 0)
-            {
-                Remove(_entries[_unselected.Max]);
-                if (!Current(generation, current)) return true;
-            }
+            if (mayEvict && !MakeAdmissionRoom(estimate, needsEntry: true, generation, current)) return true;
             if (!Current(generation, current)) return true;
             if (source[position]?.GetType() != typeof(GH_Point) || ((GH_Point)source[position]!).ReferenceID != Guid.Empty) return false;
             if (!_orderLabels.CanAddWithoutEnabling) return false;
@@ -468,7 +458,9 @@ namespace BetterGhPanel.Runtime
             var entry = new Entry(position, order, leaf.Bounds, estimate, new List<PanelPreviewLeaf> { leaf });
             _entries.Add(order, entry); _byPosition.Add(position, entry);
             _bytes += estimate; _bounds.Add(entry.Bounds);
-            if (_membership.Contains(position)) _selectedCount++; else _unselected.Add(order);
+            if (_membership.Contains(position))
+            { _selectedCount++; RequestMeshPriority(); }
+            else _unselected.Add(order);
             AddLabel(entry, () => Current(generation, current));
             return true;
         }
@@ -506,29 +498,66 @@ namespace BetterGhPanel.Runtime
             ScheduleRelease();
         }
 
+        private long RetiringBytes
+        {
+            get
+            {
+                long bytes = _retiredBytes + _retiredMaterials.Count * 512L;
+                foreach (var entry in _retired)
+                    foreach (var leaf in entry.Leaves) bytes += leaf.DisplayBytes;
+                foreach (var cache in _retiredMeshes) bytes += cache.Charge?.Bytes ?? 0;
+                foreach (var cache in _retiredCurves) bytes += cache.Charge?.Bytes ?? 0;
+                return bytes;
+            }
+        }
+
+        private bool MakeAdmissionRoom(long bytes, bool needsEntry, long generation, Func<bool> current)
+        {
+            while (_unselected.Count > 0 && (needsEntry && _entries.Count >= MaxEntries ||
+                _displayMemory.RequiredRelease(bytes, RetiringBytes) > 0))
+            {
+                Remove(_entries[_unselected.Max]);
+                if (!Current(generation, current)) return false;
+            }
+            return Current(generation, current);
+        }
+
+        private void RequestMeshPriority()
+        {
+            _meshPriorityDirty = true;
+            ScheduleRelease();
+        }
+
         private void YieldUnselectedResources(long generation, Func<bool> current)
         {
             if (!_meshPriorityDirty) return;
             if (_activeDraws != 0) { ScheduleRelease(); return; }
-            _meshPriorityDirty = false;
-            if (_selectedCount == 0 || _displayMemory.UsedBytes == 0) return;
-            bool needed = false;
+            long needed = 0;
             foreach (var entry in _entries.Values)
                 if (_membership.Contains(entry.Position))
-                    foreach (var leaf in entry.Leaves) needed |= leaf.NeedsDisplayResources;
-            if (!needed) return;
-            // Selection changes run outside drawing. Keep entries, wires and labels;
-            // retire only lower-priority display caches so selected ones can rebuild first.
+                    foreach (var leaf in entry.Leaves) needed += leaf.PendingDisplayBytes;
+            // Do not consume the flag before examining newly admitted selected leaves.
+            // Unknown sizes are learned by their first bounded preparation attempt.
+            _meshPriorityDirty = false;
+            long shortfall = _displayMemory.RequiredRelease(needed, RetiringBytes);
+            if (needed == 0 || shortfall == 0) return;
+            var entries = new List<Entry>(_entries.Values);
+            // Keep the earliest previews. Retire only enough lower-priority caches,
+            // outside drawing, to cover the selected resources' measured shortfall.
             _activeDraws++;
             try
             {
-                foreach (var entry in new List<Entry>(_entries.Values))
+                for (int index = entries.Count - 1; index >= 0 && shortfall > 0; index--)
                 {
+                    var entry = entries[index];
                     if (_membership.Contains(entry.Position)) continue;
                     foreach (var leaf in entry.Leaves)
                     {
+                        long bytes = leaf.DisplayBytes;
                         try { leaf.ReleaseDisplayResources(); } catch (Exception) { }
                         if (!Current(generation, current)) return;
+                        shortfall -= bytes - leaf.DisplayBytes;
+                        if (shortfall <= 0) break;
                     }
                 }
             }
@@ -646,6 +675,7 @@ namespace BetterGhPanel.Runtime
                     if (parameters == null) return;
                     try { leaf.PrepareMeshes(parameters, () => generation == _generation); } catch (Exception) { }
                     if (generation != _generation) return;
+                    if (leaf.PendingDisplayBytes > 0) RequestMeshPriority();
                 }
             }
         }
@@ -672,6 +702,7 @@ namespace BetterGhPanel.Runtime
                     {
                         try { leaf.PrepareWires(() => generation == _generation); } catch (Exception) { }
                         if (generation != _generation) return;
+                        if (pass == 0 && leaf.PendingDisplayBytes > 0) RequestMeshPriority();
                     }
                 }
             var normal = new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour, args.DefaultCurveThickness);
@@ -684,7 +715,7 @@ namespace BetterGhPanel.Runtime
             {
                 colours = new GH_PreviewWireArgs[_valueMaterials.Length];
             }
-            DrawWires(normal, false, colours, args.DefaultCurveThickness);
+            DrawWires(normal, false, colours, args.DefaultCurveThickness, args.Document.PreviewMode == GH_PreviewMode.Shaded);
             if (generation != _generation) return;
             bool pushed = false;
             try
@@ -696,7 +727,7 @@ namespace BetterGhPanel.Runtime
                         args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
                     args.Display.PushModelTransform(bias * args.Display.ModelTransform); pushed = true;
                 }
-                DrawWires(selected, true, colours, args.DefaultCurveThickness);
+                DrawWires(selected, true, colours, args.DefaultCurveThickness, args.Document.PreviewMode == GH_PreviewMode.Shaded);
             }
             finally { if (pushed) args.Display.PopModelTransform(); }
             if (generation != _generation) return;
@@ -705,7 +736,7 @@ namespace BetterGhPanel.Runtime
             finally { EndDraw(args.Display); }
         }
 
-        private void DrawWires(GH_PreviewWireArgs args, bool selected, GH_PreviewWireArgs[]? colours, int normalThickness)
+        private void DrawWires(GH_PreviewWireArgs args, bool selected, GH_PreviewWireArgs[]? colours, int normalThickness, bool shaded)
         {
             long generation = _generation;
             foreach (var entry in _entries.Values)
@@ -721,7 +752,7 @@ namespace BetterGhPanel.Runtime
                         if (selected && colours != null)
                         {
                             args.Pipeline.PushDepthWriting(false);
-                            try { leaf.DrawWires(args, () => generation == _generation, colourByValue: true, halo: true); }
+                            try { leaf.DrawWires(args, () => generation == _generation, colourByValue: true, halo: true, shaded: shaded); }
                             finally { args.Pipeline.PopDepthWriting(); }
                         }
                         if (generation != _generation) return;

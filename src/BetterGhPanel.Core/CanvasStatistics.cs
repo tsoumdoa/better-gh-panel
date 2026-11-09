@@ -8,6 +8,7 @@ namespace BetterGhPanel.Core
     internal static class CanvasStatistics
     {
         internal const int OverviewRows = 9;
+        internal const int UniqueRow = 6;
         internal const string Scope = "Counts the current results after tree tools, units and rounding, or the displayed output values with Create set. " +
             "Item counts include every type. Totals are taken before filters and sets. " +
             "Orange marks invalid and blue unverified; for sets they describe source occurrences.";
@@ -49,7 +50,7 @@ namespace BetterGhPanel.Core
                 case 3: return "Max: " + Number(stats.Maximum, result, decimals);
                 case 4: return "Average: " + Number(stats.Mean, result, decimals);
                 case 5: return FormattableString.Invariant($"{stats.NullCount:N0} null · {stats.InvalidCount:N0} invalid · {stats.UnverifiedCount:N0} unverified · {stats.TypeCounts.Count:N0} types");
-                case 6: return FormattableString.Invariant($"Unique: {stats.UniqueValues.Count:N0} values in {stats.ScalarCount:N0} number/text items");
+                case UniqueRow: return FormattableString.Invariant($"Unique: {stats.UniqueValues.Count:N0} values in {stats.ScalarCount:N0} number/text items");
                 case 7: return FormattableString.Invariant($"Excluded from unique values: {stats.UniqueExcludedCount:N0}");
                 case 8: return "Sources after filters: " + SourceStatuses(stats.FilteredSourceStatuses);
             }

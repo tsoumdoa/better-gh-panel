@@ -125,13 +125,13 @@ namespace BetterGhPanel
             if (_previewSuspended || Locked || PreviewMode == PanelPreviewMode.Off || session == null || !session.HasCurrentResult ||
                 !ReferenceEquals(snapshot, session.Snapshot))
             {
-                ClearHighlight();
+                ClearHighlightCore(keepValues: true);
                 return;
             }
             IReadOnlyList<int> ordered = Array.Empty<int>();
             if (positions.Count > 0 && !TryGetActionPositions(snapshot, positions, out ordered))
             {
-                ClearHighlight();
+                ClearHighlightCore(keepValues: true);
                 return;
             }
             ordered = ExpandSetMembers(ordered);
@@ -165,11 +165,13 @@ namespace BetterGhPanel
         private IReadOnlyList<int> ExpandSetMembers(IReadOnlyList<int> positions) =>
             Session.Result.DisplaySet?.ExpandMembers(Session.Snapshot, positions) ?? positions;
 
-        internal void ClearHighlight()
+        internal void ClearHighlight() => ClearHighlightCore(keepValues: false);
+
+        internal void ClearHighlightCore(bool keepValues)
         {
             _session?.RequestPreviewMeasurements(null, null);
             bool visible = _highlight.PreviewCount > 0;
-            _highlight.ClearForQuery(keepValues: PreviewMode != PanelPreviewMode.Off && !Locked && !_previewSuspended && _session?.IsBusy == true);
+            _highlight.ClearForQuery(keepValues: keepValues && PreviewMode != PanelPreviewMode.Off && !Hidden && !Locked && !_previewSuspended);
             if (visible) { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
         }
 

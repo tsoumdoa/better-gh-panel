@@ -59,7 +59,7 @@ namespace BetterGhPanel.UI
         internal const string ItemOrderDescription = "Shows each item's zero-based index, starting at 0 in each branch. Filters, sorting and selection keep these numbers. " +
             "Dots follow Preview and stay on when minimized. Curves label a point on the curve; closed solids and meshes keep their centre, while open surfaces stay on the material. " +
             "Choose Box top or Box bottom to move dots above or below their geometry. Overlapping dots are hidden, keeping selected items first. " +
-            "Show values uses the chosen numeric Search value or the row's usual measurement; circles and arcs show radius in other Search modes.";
+            "Show values uses the chosen numeric Search value or the row's usual measurement; circles show radius in other Search modes.";
         private static readonly CanvasChoice<PanelSortMode>[] SortChoices =
         {
             new CanvasChoice<PanelSortMode>(PanelSortMode.SourceOrder, "Source order"),

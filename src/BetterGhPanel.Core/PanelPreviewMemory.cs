@@ -17,6 +17,10 @@ namespace BetterGhPanel.Core
             return bytes >= 0 && other >= 0 && other <= _limit && UsedBytes <= _limit - other &&
                 bytes <= _limit - other - UsedBytes;
         }
+        // Pending retirement covers a shortfall for eviction planning, but does not
+        // make capacity reservable until the corresponding leases are disposed.
+        internal long RequiredRelease(long bytes, long retiringBytes) =>
+            Math.Max(0, _otherBytes() + UsedBytes + bytes - _limit - retiringBytes);
         internal Lease? TryReserve(long bytes)
         {
             if (!CanReserve(bytes)) return null;

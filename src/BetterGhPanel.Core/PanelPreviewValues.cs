@@ -7,7 +7,7 @@ namespace BetterGhPanel.Core
     public enum PanelDotPlacement { Centre, BoxTop, BoxBottom }
     public enum PanelValuePalette { Off, Viridis, Heat, BlueWhiteRed }
 
-    /// <summary>Captured, formatted dot value. Missing and pending values never enter a range.</summary>
+    /// <summary>Captured dot value. Pending replacements can retain a published number until measured.</summary>
     public readonly struct PanelPreviewValue
     {
         public PanelPreviewValue(string metric, string unit, double? number, string text, bool pending = false)
@@ -18,6 +18,9 @@ namespace BetterGhPanel.Core
         public string Text { get; }
         public bool Pending { get; }
         public string Key { get; }
+        public PanelPreviewValue RetainNumber(PanelPreviewValue previous) => Pending && previous.Number.HasValue &&
+            (string.IsNullOrEmpty(Metric) || Metric == previous.Metric) && (string.IsNullOrEmpty(Unit) || Unit == previous.Unit)
+                ? new PanelPreviewValue(previous.Metric, previous.Unit, previous.Number, previous.Text, pending: true) : this;
         public string Label(int? order, bool values) => (order?.ToString(CultureInfo.InvariantCulture) ?? "") +
             (values && (Number.HasValue || Pending) ? (order.HasValue ? " · " : "") + (Pending ? "…" : Text) : "");
     }

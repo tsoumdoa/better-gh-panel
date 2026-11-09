@@ -407,20 +407,20 @@ namespace BetterGhPanel.Runtime
         }
 
         internal bool UsesGeneratedMeshes => _value is Brep || _value is Surface || _value is SubD || _value is Sphere;
-        internal bool NeedsDisplayResources => _value is SubD && _subdWires == null && !_wiresLimited ||
-            UsesGeneratedMeshes &&
-            _generatedMeshes == null && (_meshParameters == null || _meshCapacityBytes > 0);
+        internal long DisplayBytes => (_generatedCharge?.Bytes ?? 0) + (_subdWireCharge?.Bytes ?? 0);
+        internal long PendingDisplayBytes => (_subdWires == null ? _wireCapacityBytes : 0) +
+            (_generatedMeshes == null ? _meshCapacityBytes : 0);
 
         internal void ReleaseDisplayResources()
         {
-            try { if (_generatedMeshes != null) ClearGeneratedMeshes(defer: true); }
-            finally { if (_subdWires != null) ClearSubDWires(defer: true); }
+            try { if (_generatedMeshes != null) ClearGeneratedMeshes(defer: true, retry: true); }
+            finally { if (_subdWires != null) ClearSubDWires(defer: true, retry: true); }
         }
 
-        private void ClearSubDWires(bool defer)
+        private void ClearSubDWires(bool defer, bool retry = false)
         {
             var curves = _subdWires; var charge = _subdWireCharge;
-            _subdWires = null; _subdWireCharge = null; _wireCapacityBytes = 0;
+            _subdWires = null; _subdWireCharge = null; _wireCapacityBytes = retry ? charge?.Bytes ?? 0 : 0;
             if (curves == null) { charge?.Dispose(); return; }
             if (defer && _retireCurves != null) { _retireCurves(curves, charge); return; }
             try { DisposeCurves(curves); }
@@ -438,10 +438,10 @@ namespace BetterGhPanel.Runtime
             _wireUnavailable = unavailable; _meshStatus(unavailable ? 1 : -1);
         }
 
-        internal void DrawWires(GH_PreviewWireArgs args, Func<bool> current, bool colourByValue = false, bool halo = false)
+        internal void DrawWires(GH_PreviewWireArgs args, Func<bool> current, bool colourByValue = false, bool halo = false, bool shaded = false)
         {
             if (_value is PanelGeometrySources.StandalonePreview custom) { custom.Value.DrawViewportWires(args); return; }
-            if (args.Pipeline == null || halo && _value is Mesh) return;
+            if (args.Pipeline == null || halo && shaded && _value is Mesh) return;
             if (_value is Point3d p) args.Pipeline.DrawPoint(p, CentralSettings.PreviewPointStyle, CentralSettings.PreviewPointRadius + (halo ? 2 : 0), args.Color);
             else if (_value is Line line) args.Pipeline.DrawLine(line, args.Color, args.Thickness);
             else if (_value is Arc arc) args.Pipeline.DrawArc(arc, args.Color, args.Thickness);
@@ -471,7 +471,7 @@ namespace BetterGhPanel.Runtime
                         !colourByValue && cloud.HasColors ? Color.FromArgb(batch.Argb) : args.Color);
                 }
             }
-            else if (_value is Mesh mesh && CentralSettings.PreviewMeshEdges) args.Pipeline.DrawMeshWires(mesh, args.Color, args.Thickness);
+            else if (_value is Mesh mesh && (halo || CentralSettings.PreviewMeshEdges)) args.Pipeline.DrawMeshWires(mesh, args.Color, args.Thickness);
             else if (_value is Brep brep)
                 for (int i = 0; current() && i < brep.Edges.Count; i++) args.Pipeline.DrawCurve(brep.Edges[i], args.Color, args.Thickness);
             else if (_value is Surface surface) args.Pipeline.DrawSurface(surface, args.Color, args.Thickness);
@@ -708,14 +708,17 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        private void ClearGeneratedMeshes(bool defer)
+        private void ClearGeneratedMeshes(bool defer, bool retry = false)
         {
             var meshes = _generatedMeshes;
             var faces = _generatedFaces;
             var charge = _generatedCharge;
-            _generatedMeshes = null; _generatedFaces = null; _meshDensity = -1; _cacheLimited = false;
-            _generatedCharge = null; _meshCapacityBytes = 0;
-            var parameters = _meshParameters; _meshParameters = null;
+            _generatedMeshes = null; _generatedFaces = null; _cacheLimited = retry;
+            _generatedCharge = null; _meshCapacityBytes = retry ? charge?.Bytes ?? 0 : 0;
+            // A yielded cache still knows its settings and required size: do not remesh
+            // it just to discover that selected resources have consumed its capacity.
+            var parameters = retry ? null : _meshParameters;
+            if (!retry) { _meshParameters = null; _meshDensity = -1; }
             try { parameters?.Dispose(); }
             finally
             {

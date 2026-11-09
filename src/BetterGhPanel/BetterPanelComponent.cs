@@ -144,7 +144,7 @@ namespace BetterGhPanel
                         (Attributes as BetterPanelAttributes)?.OnQueryStarted();
                         (Attributes as BetterPanelAttributes)?.InvalidateStatistics();
                         CancelPendingCopy();
-                        ClearHighlight();
+                        ClearHighlightCore(keepValues: true);
                         if (!_restoringView && !QueryPreviewActive)
                         {
                             var document = OnPingDocument();
@@ -262,7 +262,7 @@ namespace BetterGhPanel
                 }
                 _reuseQuery = false;
                 CancelPendingCopy();
-                ClearHighlight();
+                ClearHighlightCore(keepValues: true);
                 // An upstream recompute keeps the scroll position when the new tree
                 // has exactly the same paths and lengths. Selection is explicitly re-bound after checking the replacement structure.
                 var attributes = Attributes as BetterPanelAttributes;

@@ -40,6 +40,23 @@ public class PreviewMemoryTests
     }
 
     [Fact]
+    public void RetirementCoversOnlyTheShortfallWithoutMakingItReservable()
+    {
+        long sources = 40;
+        var memory = new PanelPreviewMemory(100, () => sources);
+        var display = memory.TryReserve(60)!;
+        Assert.Equal(15, memory.RequiredRelease(15, 0));
+        // One removed entry contributes both its source copy and display lease,
+        // stopping further eviction while both remain alive until the idle flush.
+        Assert.Equal(0, memory.RequiredRelease(15, retiringBytes: 5 + display.Bytes));
+        Assert.False(memory.CanReserve(15));
+        Assert.Equal(5, memory.RequiredRelease(15, retiringBytes: 10));
+        display.Dispose(); sources -= 5;
+        Assert.Equal(0, memory.RequiredRelease(15, 0));
+        Assert.True(memory.CanReserve(15));
+    }
+
+    [Fact]
     public void FailedReservationsAndReentrantSourceChangesDoNotUnbalanceCharges()
     {
         long sources = 10;

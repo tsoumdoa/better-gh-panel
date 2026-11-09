@@ -81,7 +81,7 @@ namespace BetterGhPanel
                 if (row < _menu.Visible && index < _menu.Count)
                 {
                     e.Text = _menu.StatisticsDetails(index, PanelOwner.DecimalPlaces);
-                    e.Description = index == CanvasPreviewRows.Colour || index == 7 || index >= CanvasStatistics.OverviewRows ? CanvasStatistics.UniqueScope :
+                    e.Description = index == CanvasStatistics.UniqueRow || index == 7 || index >= CanvasStatistics.OverviewRows ? CanvasStatistics.UniqueScope :
                         index == 8 ? "Source counts after filters are measured before Create set removes duplicate occurrences. Valid, invalid and unverified are distinct." : CanvasStatistics.Scope;
                 }
                 else e.Description = "Use Previous and Next to inspect all values.";

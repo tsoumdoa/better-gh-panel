@@ -52,6 +52,25 @@ public class PreviewValueTests
     }
 
     [Fact]
+    public void PendingReplacementRetainsColourAndRangeNumberButShowsEllipsis()
+    {
+        var previous = new PanelPreviewValue("Length", "m", 12.4, "12.40 m");
+        var pending = new PanelPreviewValue("", "", null, "", pending: true).RetainNumber(previous);
+        Assert.Equal(previous.Key, pending.Key);
+        Assert.Equal(previous.Number, pending.Number);
+        Assert.Equal("2 · …", pending.Label(2, true));
+        var range = new PanelPreviewRange(pending);
+        Assert.Equal("12.40", range.MinText);
+        Assert.Equal(32, range.Bucket(pending.Number!.Value));
+        Assert.Equal(previous.Number, pending.RetainNumber(pending).Number);
+        // Completed, unavailable and different metrics must replace the old value.
+        Assert.Null(default(PanelPreviewValue).RetainNumber(previous).Number);
+        Assert.Null(new PanelPreviewValue("Area", "m²", null, "", pending: true).RetainNumber(previous).Number);
+        var completed = new PanelPreviewValue("Length", "m", 15, "15.00 m").RetainNumber(previous);
+        Assert.Equal(15, completed.Number); Assert.False(completed.Pending);
+    }
+
+    [Fact]
     public void CircleKeepsRadiusUnlessLengthIsExplicitlyRequested()
     {
         var row = Geometry(new PanelGeometryInfo("Circle", 2000, units: "mm", metricName: "Radius", metricLabel: "R"));

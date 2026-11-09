@@ -80,8 +80,10 @@ The existing 2 MiB generated-cache/curve-collection and 16,384-face limits remai
 
 Accepted caches and deterministic size/quality rejections are reused for unchanged
 meshing settings/density. A cache that does not fit is disposed before drawing;
-the owned source, wires, dot and colours remain, with the existing Preview partial
-status. Budget failures remember the required size and retry when capacity permits,
+the owned source, dot and colours remain, with the existing Preview partial
+status. Brep/surface wires remain available; SubD limit-edge curves share the
+budget, so a late SubD may retain only its dot until capacity becomes available.
+Budget failures remember the required size and retry when capacity permits,
 without rebuilding the same rejected mesh every frame. A settings change transfers
 the old cache, its face-index arrays and its unchanged charge to retirement before
 building a replacement. The charge is released only after native disposal; Clear
@@ -89,9 +91,11 @@ never resets resource accounting while retired objects are still alive.
 
 Selected entries prepare display resources first, including when Grasshopper asks
 for wires before shaded meshes. If a newly selected entry needs resources, an
-outside-draw selection/idle pass retires lower-priority display caches while keeping
-their entries and labels. Their charges remain until the existing flush/idle
-retirement boundary, then a redraw retries selected preparation first. Drawing
+outside-draw selection/idle pass retires lower-priority display caches from the end
+of draw order, only until the measured shortfall is covered, while keeping their
+entries and labels. Yielded caches remember their size to avoid doomed rebuilds.
+Their charges remain until the existing flush/idle retirement boundary, then a
+redraw retries selected preparation first. Drawing
 never evicts preview entries to make a mesh fit. Selected shaded geometry can
 still draw last. Temporary anchor meshes remain independently capped, disposable
 work and have no separate reservation.
@@ -129,8 +133,10 @@ The entire staged group's estimate is reserved before leaf creation,
 including across reentrant builds; a rejected stage releases its reservation
 after its owned leaves are disposed. Retired resources remain charged until
 release. These are estimates rather than a cap on all native or callback
-allocations. A later selected row may evict an unselected preview;
-sparse selection classification examines selected membership, not all results.
+allocations. A later selected row may evict an unselected preview; bytes already
+awaiting disposal count towards covering its admission shortfall, but cannot be
+reserved again before release.
+Sparse selection classification examines selected membership, not all results.
 An unvisited selected suffix remains visibly partial across sparse toggles.
 Recovery visits at most 128 selection positions per idle turn and retains its
 cursor without copying the selection or rescanning it on each sparse click.

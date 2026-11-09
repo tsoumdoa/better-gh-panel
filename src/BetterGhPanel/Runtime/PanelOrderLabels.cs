@@ -115,6 +115,7 @@ namespace BetterGhPanel.Runtime
             {
                 int position = positions[_cursor]; var value = sample(position);
                 if (generation != _valueGeneration || current?.Invoke() != true || !ReferenceEquals(result, _valueResult)) return;
+                if (_values.TryGetValue(position, out var previous)) value = value.RetainNumber(previous);
                 _buildingValues[position] = value;
                 if (value.Pending) _buildingPending!.Add(position);
                 if (!value.Number.HasValue) continue;

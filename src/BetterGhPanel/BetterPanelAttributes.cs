@@ -134,7 +134,7 @@ namespace BetterGhPanel
             _lastResult = null;
             if (keepViewRestore) _selection.Clear();
             else ClearRowSelection();
-            PanelOwner.ClearHighlight();
+            PanelOwner.ClearHighlightCore(keepValues: true);
             _scrolling = false;
             _resizingColumn = null; _horizontalDragging = false;
             _activeTableColumn = -1;
@@ -235,7 +235,7 @@ namespace BetterGhPanel
             var session = PanelOwner.Session;
             if (_queryEditorSnapshot != null && !ReferenceEquals(_queryEditorSnapshot, session.Snapshot)) CancelQueryEditor();
             if (!StatisticsAreCurrent()) InvalidateStatistics();
-            if (session.IsBusy) { InvalidatePaintedHits(); PanelOwner.ClearHighlight(); return; }
+            if (session.IsBusy) { InvalidatePaintedHits(); PanelOwner.ClearHighlightCore(keepValues: true); return; }
             var result = session.Result;
             if (!session.HasCurrentResult)
             {
