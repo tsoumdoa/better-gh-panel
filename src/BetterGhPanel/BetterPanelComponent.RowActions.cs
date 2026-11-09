@@ -158,6 +158,7 @@ namespace BetterGhPanel
             _highlight.SetScopeChecked(source, expectedResult, mode == PanelPreviewMode.FilteredResults, ordered, Current, RowSelection);
             if (!Current()) return;
             if (!ShowValues && ValuePalette == PanelValuePalette.Off) session.RequestPreviewMeasurements(null, null);
+            StopRetainedPreviewCheck();
             InvalidatePreviewCaches();
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
@@ -173,7 +174,34 @@ namespace BetterGhPanel
             bool visible = _highlight.PreviewCount > 0;
             bool retained = _highlight.ClearForQuery(keepValues: keepValues && (ShowValues || ValuePalette != PanelValuePalette.Off) &&
                 PreviewMode != PanelPreviewMode.Off && !Hidden && !Locked && !_previewSuspended);
+            if (retained) WatchRetainedPreviewSolution();
+            else StopRetainedPreviewCheck();
             if (visible && !retained) { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
+        }
+
+        private GH_Document? _retainedPreviewDocument;
+        private void WatchRetainedPreviewSolution()
+        {
+            var document = OnPingDocument();
+            if (ReferenceEquals(document, _retainedPreviewDocument)) return;
+            StopRetainedPreviewCheck();
+            _retainedPreviewDocument = document;
+            if (document != null) document.SolutionEnd += RetainedPreviewSolutionEnd;
+        }
+
+        private void StopRetainedPreviewCheck()
+        {
+            if (_retainedPreviewDocument != null) _retainedPreviewDocument.SolutionEnd -= RetainedPreviewSolutionEnd;
+            _retainedPreviewDocument = null;
+        }
+
+        private void RetainedPreviewSolutionEnd(object? sender, GH_SolutionEventArgs args)
+        {
+            var document = _retainedPreviewDocument;
+            StopRetainedPreviewCheck();
+            // Esc and capture exceptions can finish a solution without attaching input.
+            // A valid replacement may still be querying asynchronously; keep its preview.
+            if (ReferenceEquals(document, OnPingDocument()) && _queryTree == null) ClearHighlight();
         }
 
         private void InvalidatePreviewCaches()

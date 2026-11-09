@@ -70,6 +70,7 @@ namespace BetterGhPanel.Core
             internal int AddedPosition { get; }
         }
 
-        internal void Clear() { _selected.Clear(); _selection = null; _result = null; }
+        internal void DetachResult() { _selection = null; _result = null; }
+        internal void Clear() { _selected.Clear(); DetachResult(); }
     }
 }

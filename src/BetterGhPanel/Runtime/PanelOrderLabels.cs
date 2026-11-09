@@ -199,7 +199,7 @@ namespace BetterGhPanel.Runtime
         internal void SuspendValues()
         {
             _valueGeneration++;
-            _valueResult = null; _sample = null; _current = null;
+            _result = null; _valueResult = null; _sample = null; _current = null;
             _refresh?.Stop(); _refresh?.Dispose(); _refresh = null;
             ClearBuild();
             _valuePositions = Array.Empty<int>();

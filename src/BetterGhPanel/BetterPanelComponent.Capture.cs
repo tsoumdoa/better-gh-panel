@@ -292,6 +292,7 @@ namespace BetterGhPanel
             if (invalidated != _solveGeneration || !ReferenceEquals(session, _session)) return;
             if (!retry)
             {
+                ClearHighlight();
                 if (!Locked && document != null && _captureRetries > 1)
                     AddRuntimeMessage(GH_RuntimeMessageLevel.Warning, "Input kept changing during capture; expire the source to retry.");
                 return;

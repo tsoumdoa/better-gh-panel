@@ -10,9 +10,14 @@ Panel+ uses result-local owned preview generations for bounds, labels and
 geometry drawing. Exact wrappers and groups are flattened under per-root and
 per-build budgets and are never retained as recursive preview targets. New
 solutions and source expiration cancel the generation's pending work. With value
-preview enabled, its owned geometry, labels, materials and bounds stay visible
-until the replacement result arrives; otherwise expiration discards the preview.
-Replacement and full removal retire those owned resources by the same rules.
+preview enabled, drawing resources, prepared labels, materials and bounds stay
+visible until replacement. This includes owned geometry copies and borrowed
+third-party `StandalonePreview` objects, which are also still drawn while retained.
+Expired admission sources and query/row references are detached during retention.
+Otherwise expiration discards the preview. Replacement and full removal retire
+owned resources by the same rules. A terminal capture failure or a solution ending
+without replacement input clears retained drawing; an attached input still being
+queried may continue retaining it.
 Before expiration a snapshot remains internally consistent when a source holder
 or group changes.
 Independent standalone third-party preview and standalone point subclasses keep
@@ -145,7 +150,11 @@ An unvisited selected suffix remains visibly partial across sparse toggles.
 Recovery visits at most 128 selection positions per idle turn and retains its
 cursor without copying the selection or rescanning it on each sparse click.
 Capacity exhaustion stops the pump; selection changes or retired-resource
-release retry it. Clearing the generation cancels its idle subscription.
+release retry it. Filtered admission blocked by retired resources keeps its cursor
+at the first blocked row and resumes in at most 128-row idle batches after capacity
+is released. It does not rescan the admitted prefix, exceed the cap, or retain a
+partial status once this temporary blockage is resolved. Clearing or retaining the
+generation cancels both recovery cursors and their idle subscription.
 Successful recovery refreshes component/document bounds, labels and drawing.
 The component's `ExpirePreview(false)` event invalidates its owning document's
 draw list and clipping cache without marking selection as a document edit.

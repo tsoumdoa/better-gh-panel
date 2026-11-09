@@ -56,6 +56,30 @@ public sealed class PreviewRecoveryTests
     }
 
     [Fact]
+    public void FilteredSuffixResumesAfterRetirementWithoutRevisitingThePrefix()
+    {
+        var recovery = new PanelPreviewRecovery();
+        var positions = Enumerable.Range(0, 500).ToArray();
+        recovery.Reset(positions, start: 200, limit: 300);
+        bool retiring = true;
+        var seen = new List<int>();
+        PanelPreviewRecovery.Admission Admit(int position)
+        {
+            if (retiring) return PanelPreviewRecovery.Admission.Blocked;
+            seen.Add(position); return PanelPreviewRecovery.Admission.Complete;
+        }
+        Assert.False(recovery.Pump(64, _ => true, _ => false, Admit));
+        Assert.True(recovery.Pending);
+        Assert.Empty(seen);
+        retiring = false;
+        Assert.True(recovery.Pump(64, _ => true, _ => false, Admit));
+        Assert.Equal(64, seen.Count);
+        Assert.False(recovery.Pump(64, _ => true, _ => false, Admit));
+        Assert.Equal(Enumerable.Range(200, 100), seen);
+        Assert.False(recovery.Pending);
+    }
+
+    [Fact]
     public void ReentrantReplacementCannotAdvanceOrAttachTheNewBatch()
     {
         var recovery = new PanelPreviewRecovery();
