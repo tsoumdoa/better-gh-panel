@@ -1,5 +1,19 @@
 # Release validation records
 
+## 0.3.2-beta
+
+Geometry sorts by its measured number, selected previews are thicker and always drawn in front, the footer explains a hidden preview, a plain click narrows a multi-selection, and a sort keeps the selected row in view. Committed directly to main at the maintainer's direction, without a PR or review round. The maintainer chose to release before anyone had seen the preview changes in Rhino.
+
+`npm run check` passed on the release commit: 354 managed tests on each of net48 and net8.0, 17 coordinator tests, one packaging test, both runtime builds, source encoding/style checks and the native smoke host compile. Three desktop-launcher tests passed. Managed capture checks against the final extracted archive passed with 225 PASS records without starting Rhino. The extracted assemblies contain no local checkout paths. A new managed test failed before the sort fix and passes with it.
+
+Temporary harnesses ran the real code from the extracted archive without starting Rhino: the 13 F-against-B cases from 0.3.1-beta, and 5 cases driving the panel's query-completion path for scrolling after a sort. All passed.
+
+**Automated native fixtures did not execute.** Against the plugin extracted from the final archive, run `run-BmkLuz` stopped when `row-selection` timed out in hidden-host startup after 180 seconds, with the user session disconnected: 0 of 2 selected fixtures passed, one was not run and no assertions executed. The new `row-selection` click check has compiled but never run.
+
+**Not exercised:** how the thicker, depth-biased selection looks in a live viewport, the hidden-preview footer messages, the plain-click narrowing gesture, Mac and the Windows .NET Framework host.
+
+Artifact source commit: `b2f157f3363ea9173365420fe2b1efbee9d67371`. Archive: `panel-plus-0.3.2-beta-rh8_0-any.yak`. SHA-256: `346c66180c3de3d678f8894673f9eb2bc94139539fb9cd181eab02535e0b6578`. GitHub prerelease and public Yak publication succeeded. A fresh GitHub asset download matches the archive SHA-256.
+
 ## 0.3.1-beta
 
 F now follows B item by item on branches where D and F differ in length. Committed directly to main at the maintainer's direction, without a PR or review round.
