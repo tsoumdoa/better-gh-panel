@@ -17,7 +17,7 @@ namespace BetterGhPanel.Runtime
         internal const int MaxEntries = 1024;
         internal const int MaxBuildRows = 20000;
         internal const int MaxUpdateRows = 128;
-        internal const long MaxRetainedBytes = 16L * 1024 * 1024;
+        internal const long MaxRetainedBytes = 64L * 1024 * 1024;
         private const int MinSelectionThickening = 2;
         private readonly SortedDictionary<int, Entry> _entries = new SortedDictionary<int, Entry>();
         private readonly Dictionary<int, Entry> _byPosition = new Dictionary<int, Entry>();
@@ -27,6 +27,9 @@ namespace BetterGhPanel.Runtime
         private readonly Queue<int> _attemptOrder = new Queue<int>();
         private readonly Queue<Entry> _retired = new Queue<Entry>();
         private readonly Queue<RetiredMeshes> _retiredMeshes = new Queue<RetiredMeshes>();
+        private readonly Queue<RetiredCurves> _retiredCurves = new Queue<RetiredCurves>();
+        private readonly PanelPreviewMemory _displayMemory;
+        private bool _meshPriorityDirty;
         private readonly PanelPreviewMembership _membership = new PanelPreviewMembership();
         private readonly PanelPreviewRecovery _recovery = new PanelPreviewRecovery();
         private readonly PanelOrderLabels _orderLabels;
@@ -110,13 +113,15 @@ namespace BetterGhPanel.Runtime
         internal PanelGeometryHighlight(Action<int, object>? admissionObserver)
         {
             _admissionObserver = admissionObserver;
+            _displayMemory = new PanelPreviewMemory(MaxRetainedBytes, () => SourceAndMaterialBytes);
             _orderLabels = new PanelOrderLabels(_membership);
             _orderLabels.ValuesChanged = ValuesChanged;
             _orderLabels.PendingChanged = (result, positions) => PendingMeasurements?.Invoke(result, positions);
         }
         internal int Count => _selectedCount;
         internal int PreviewCount => _entries.Count;
-        internal long RetainedBytes => _bytes + _retiredBytes + _stagedBytes + ((_valueMaterials?.Length ?? 0) + _retiredMaterials.Count) * 512L;
+        private long SourceAndMaterialBytes => _bytes + _retiredBytes + _stagedBytes + ((_valueMaterials?.Length ?? 0) + _retiredMaterials.Count) * 512L;
+        internal long RetainedBytes => SourceAndMaterialBytes + _displayMemory.UsedBytes;
         internal int LastVisitedRows { get; private set; }
         internal int LastVisitedNodes { get; private set; }
         internal int DrawWireCalls { get; private set; }
@@ -156,6 +161,8 @@ namespace BetterGhPanel.Runtime
             if (!filtered) { _partial = false; _partialReason = null; }
             LastVisitedRows = LastVisitedNodes = 0;
             var update = UpdateMembership(selectedPositions, result, selection);
+            if (!Current(generation, current)) return;
+            YieldUnselectedResources(generation, current);
             if (!Current(generation, current)) return;
             var budget = new PanelGeometrySources.OperationBudget();
             _recoveryGeneration = generation;
@@ -273,6 +280,7 @@ namespace BetterGhPanel.Runtime
             var removed = new List<Entry>();
             void Changed(int position, bool isSelected)
             {
+                _meshPriorityDirty = true;
                 if (_byPosition.TryGetValue(position, out var entry))
                 {
                     if (isSelected) { _unselected.Remove(entry.Order); _selectedCount++; }
@@ -372,7 +380,7 @@ namespace BetterGhPanel.Runtime
                     // not resolve a later member from the live group here.
                     var copy = PanelPreviewLeaf.Create(inspected.Leaves[i], estimates[i], scans[i], budget, ref remaining,
                         delta => { if (ReferenceEquals(scopeToken, _scopeToken)) MeshStatusChanged(delta); },
-                        () => Current(generation, current), CanRetireMeshes, RetireMeshes);
+                        () => Current(generation, current), _displayMemory, RetireMeshes, RetireCurves);
                     if (copy == null)
                     {
                         if (Current(generation, current))
@@ -486,12 +494,45 @@ namespace BetterGhPanel.Runtime
             if (entry.WasDrawn || _activeDraws != 0) ScheduleRelease();
         }
 
-        private bool CanRetireMeshes(long bytes) => bytes >= 0 && bytes <= MaxRetainedBytes - RetainedBytes;
-        private void RetireMeshes(Mesh[] meshes, int[][]? faces, long bytes)
+        private void RetireMeshes(Mesh[] meshes, int[][]? faces, PanelPreviewMemory.Lease? charge)
         {
-            _retiredMeshes.Enqueue(new RetiredMeshes(meshes, faces, bytes));
-            _retiredBytes += bytes;
+            _retiredMeshes.Enqueue(new RetiredMeshes(meshes, faces, charge));
             ScheduleRelease();
+        }
+
+        private void RetireCurves(NurbsCurve[] curves, PanelPreviewMemory.Lease? charge)
+        {
+            _retiredCurves.Enqueue(new RetiredCurves(curves, charge));
+            ScheduleRelease();
+        }
+
+        private void YieldUnselectedResources(long generation, Func<bool> current)
+        {
+            if (!_meshPriorityDirty) return;
+            if (_activeDraws != 0) { ScheduleRelease(); return; }
+            _meshPriorityDirty = false;
+            if (_selectedCount == 0 || _displayMemory.UsedBytes == 0) return;
+            bool needed = false;
+            foreach (var entry in _entries.Values)
+                if (_membership.Contains(entry.Position))
+                    foreach (var leaf in entry.Leaves) needed |= leaf.NeedsDisplayResources;
+            if (!needed) return;
+            // Selection changes run outside drawing. Keep entries, wires and labels;
+            // retire only lower-priority display caches so selected ones can rebuild first.
+            _activeDraws++;
+            try
+            {
+                foreach (var entry in new List<Entry>(_entries.Values))
+                {
+                    if (_membership.Contains(entry.Position)) continue;
+                    foreach (var leaf in entry.Leaves)
+                    {
+                        try { leaf.ReleaseDisplayResources(); } catch (Exception) { }
+                        if (!Current(generation, current)) return;
+                    }
+                }
+            }
+            finally { _activeDraws--; FlushRetired(); }
         }
 
         private void ScheduleRelease()
@@ -507,7 +548,10 @@ namespace BetterGhPanel.Runtime
             Rhino.RhinoApp.Idle -= ReleaseOnIdle;
             _releaseScheduled = false;
             IdleReleases++;
+            long before = RetainedBytes;
+            if (_meshPriorityDirty && _recoveryCurrent != null) YieldUnselectedResources(_generation, _recoveryCurrent);
             FlushRetired();
+            if (RetainedBytes < before && _entries.Count > 0) PreviewChanged?.Invoke();
             ScheduleRecovery();
         }
 
@@ -521,7 +565,7 @@ namespace BetterGhPanel.Runtime
                 // for a later idle turn rather than draining them immediately.
                 int materials = _retiredMaterials.Count;
                 while (materials-- > 0 && _retiredMaterials.Count > 0) _retiredMaterials.Dequeue().Dispose();
-                int entries = _retired.Count, caches = _retiredMeshes.Count;
+                int entries = _retired.Count, caches = _retiredMeshes.Count, curves = _retiredCurves.Count;
                 while (entries-- > 0 && _retired.Count > 0 && _activeDraws == 0 && !_releaseScheduled)
                 {
                     var entry = _retired.Dequeue();
@@ -532,13 +576,19 @@ namespace BetterGhPanel.Runtime
                 {
                     var cache = _retiredMeshes.Dequeue();
                     try { PanelPreviewLeaf.DisposeGeneratedMeshes(cache.Meshes); }
-                    finally { GC.KeepAlive(cache.Faces); _retiredBytes -= cache.Bytes; }
+                    finally { GC.KeepAlive(cache.Faces); cache.Charge?.Dispose(); }
+                }
+                while (curves-- > 0 && _retiredCurves.Count > 0 && _activeDraws == 0 && !_releaseScheduled)
+                {
+                    var cache = _retiredCurves.Dequeue();
+                    try { PanelPreviewLeaf.DisposeCurves(cache.Curves); }
+                    finally { cache.Charge?.Dispose(); }
                 }
             }
             finally
             {
                 _flushingRetired = false;
-                if ((_retired.Count > 0 || _retiredMeshes.Count > 0 || _retiredMaterials.Count > 0) && !_releaseScheduled) ScheduleRelease();
+                if ((_retired.Count > 0 || _retiredMeshes.Count > 0 || _retiredCurves.Count > 0 || _retiredMaterials.Count > 0) && !_releaseScheduled) ScheduleRelease();
             }
         }
 
@@ -578,9 +628,26 @@ namespace BetterGhPanel.Runtime
             _scopeToken = new object();
             _entries.Clear(); _byPosition.Clear(); _unselected.Clear(); _attempted.Clear(); _unavailablePositions.Clear(); _attemptOrder.Clear(); _membership.Clear();
             _bounds.Clear(); _orderLabels.ClearEntries(); _selectedCount = _unavailable = _meshFailures = 0; _bytes = 0; _partial = false; _partialReason = null;
-            _source = null; _result = null; _legacyPositions = null;
+            _source = null; _result = null; _legacyPositions = null; _meshPriorityDirty = false;
             foreach (var entry in old) Retire(entry);
             FlushRetired();
+        }
+
+        private void PrepareSelectedMeshes(IGH_PreviewArgs args, long generation)
+        {
+            MeshingParameters? parameters = null;
+            foreach (var entry in _entries.Values)
+            {
+                if (!_membership.Contains(entry.Position)) continue;
+                foreach (var leaf in entry.Leaves)
+                {
+                    if (!leaf.UsesGeneratedMeshes) continue;
+                    parameters ??= args.MeshingParameters;
+                    if (parameters == null) return;
+                    try { leaf.PrepareMeshes(parameters, () => generation == _generation); } catch (Exception) { }
+                    if (generation != _generation) return;
+                }
+            }
         }
 
         internal void DrawWires(IGH_PreviewArgs args, bool componentSelected)
@@ -594,6 +661,19 @@ namespace BetterGhPanel.Runtime
             try
             {
             long generation = _generation;
+            // GH can request wires first. Reserve selected shading first when shading is on.
+            if (args.Document.PreviewMode == GH_PreviewMode.Shaded) PrepareSelectedMeshes(args, generation);
+            if (generation != _generation) return;
+            for (int pass = 0; pass < 2; pass++)
+                foreach (var entry in _entries.Values)
+                {
+                    if (_membership.Contains(entry.Position) != (pass == 0)) continue;
+                    foreach (var leaf in entry.Leaves)
+                    {
+                        try { leaf.PrepareWires(() => generation == _generation); } catch (Exception) { }
+                        if (generation != _generation) return;
+                    }
+                }
             var normal = new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour, args.DefaultCurveThickness);
             // Selected rows must stand out against the same geometry's upstream preview,
             // whether or not this component is selected on the canvas.
@@ -662,6 +742,8 @@ namespace BetterGhPanel.Runtime
             try
             {
             long generation = _generation;
+            PrepareSelectedMeshes(args, generation);
+            if (generation != _generation) return;
             var normal = new GH_PreviewMeshArgs(args.Viewport, args.Display, args.ShadeMaterial, args.MeshingParameters);
             var selected = new GH_PreviewMeshArgs(args.Viewport, args.Display, args.ShadeMaterial_Selected, args.MeshingParameters);
             var halo = _orderLabels.Gradient ? new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour_Selected,
@@ -731,10 +813,17 @@ namespace BetterGhPanel.Runtime
 
         private sealed class RetiredMeshes
         {
-            internal RetiredMeshes(Mesh[] meshes, int[][]? faces, long bytes) { Meshes = meshes; Faces = faces; Bytes = bytes; }
+            internal RetiredMeshes(Mesh[] meshes, int[][]? faces, PanelPreviewMemory.Lease? charge) { Meshes = meshes; Faces = faces; Charge = charge; }
             internal readonly Mesh[] Meshes;
             internal readonly int[][]? Faces;
-            internal readonly long Bytes;
+            internal readonly PanelPreviewMemory.Lease? Charge;
+        }
+
+        private sealed class RetiredCurves
+        {
+            internal RetiredCurves(NurbsCurve[] curves, PanelPreviewMemory.Lease? charge) { Curves = curves; Charge = charge; }
+            internal readonly NurbsCurve[] Curves;
+            internal readonly PanelPreviewMemory.Lease? Charge;
         }
 
         // Incremental extrema avoid a full admitted-row scan on a sparse eviction.

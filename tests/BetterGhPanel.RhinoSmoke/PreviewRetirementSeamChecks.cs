@@ -99,7 +99,7 @@ internal static partial class PreviewSafetyChecks
                         meshGuarded = !wireOwned.Disposed && !resetOwned.Disposed && !meshOwned.Disposed &&
                             resetMeshes.All(mesh => !mesh.Disposed) && (int)live.GetValue(null)! > 0 &&
                             PropertyValue<bool>(highlight, "RetirementPending") && PropertyValue<int>(highlight, "DrawMeshCalls") == calls &&
-                            heldBytes > 0 && heldBytes <= 16L * 1024 * 1024;
+                            heldBytes > 0 && heldBytes <= 64L * 1024 * 1024;
                     };
                     component.DrawViewportMeshes(args);
                     meshFrameHeld = !wireOwned.Disposed && !resetOwned.Disposed && !meshOwned.Disposed &&

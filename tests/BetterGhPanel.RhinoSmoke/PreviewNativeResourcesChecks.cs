@@ -74,7 +74,7 @@ internal static partial class PreviewSafetyChecks
                 view.Redraw();
                 using var bitmap = CapturePreview(view, highlight, "native Breps " + mode, null);
                 Check(bitmap != null && Count(highlight) == 2 && (int)builds.GetValue(null)! > before &&
-                    (int)live.GetValue(null)! > 0 && PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+                    (int)live.GetValue(null)! > 0 && PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024,
                     "standalone and grouped Breps regenerate bounded shaded meshes after a meshing setting change");
                 int cachedBuilds = (int)builds.GetValue(null)!;
                 int cachedMeshes = (int)live.GetValue(null)!;

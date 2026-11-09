@@ -66,7 +66,7 @@ internal static class PreviewGeometryChecks
         var values = new IGH_Goo?[] { curve, polyHolder, surfaceHolder, solidHolder, subdHolder };
         Set(highlight, values, new[] { 0, 1, 2, 3, 4 }, new[] { 0, 2 });
         Check(Count(highlight) == 5 && Box(highlight).Contains(subd.GetBoundingBox(false).Center) &&
-            PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+            PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024,
             "ordinary NURBS, polycurve, surface, Brep and SubD receive bounded owned previews");
         var oldBounds = Box(highlight);
         Check(nurbs.Points.SetPoint(1, new Point4d(40, 60, 0, 2)), "live NURBS changes after admission");
@@ -223,7 +223,7 @@ internal static class PreviewGeometryChecks
         var largeGroup = new GH_GeometryGroup(); largeGroup.Objects.Add(holder);
         Set(highlight, new IGH_Goo?[] { holder, largeGroup }, new[] { 0, 1 }, new[] { 0 });
         Check(Count(highlight) == 2 && Box(highlight).Contains(new Point3d(1024, 0, 0)) &&
-            PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+            PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024,
             "standalone and grouped NURBS beyond narrow reconstruction use bounded compatibility snapshots");
         object largeCopy = Copy(assembly, new IGH_Goo?[] { holder, largeGroup });
         Check(PropertyValue<bool>(largeCopy, "Success") && PropertyValue<int>(largeCopy, "Count") == 2 && PropertyValue<int>(largeCopy, "Skipped") == 0,
@@ -236,7 +236,7 @@ internal static class PreviewGeometryChecks
         var polylineHolder = new GH_Curve { Value = polyline };
         var polylineGroup = new GH_GeometryGroup(); polylineGroup.Objects.Add(polylineHolder);
         Set(highlight, new IGH_Goo?[] { polylineHolder, polylineGroup }, new[] { 0, 1 }, new[] { 0 });
-        Check(Count(highlight) == 2 && Box(highlight).Max.X == 2048 && PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+        Check(Count(highlight) == 2 && Box(highlight).Max.X == 2048 && PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024,
             "standalone and grouped 2049-point polylines receive bounded compatibility previews");
         object polylineCopy = Copy(assembly, new IGH_Goo?[] { polylineHolder, polylineGroup });
         Check(PropertyValue<bool>(polylineCopy, "Success") && PropertyValue<int>(polylineCopy, "Count") == 2 && PropertyValue<int>(polylineCopy, "Skipped") == 0,
@@ -246,9 +246,9 @@ internal static class PreviewGeometryChecks
                 polyline.GetUserString("long") == "preserved", "long polylines preserve point counts and user strings across clipboard serialization");
         using var brep = new Box(new BoundingBox(Point3d.Origin, new Point3d(2, 2, 2))).ToBrep();
         var group = new GH_GeometryGroup(); group.Objects.Add(new GH_Brep { Value = brep });
-        var repeated = Enumerable.Repeat<IGH_Goo?>(group, 300).ToArray();
+        var repeated = Enumerable.Repeat<IGH_Goo?>(group, 1200).ToArray();
         Set(highlight, repeated, Enumerable.Range(0, repeated.Length).ToArray(), Array.Empty<int>());
-        Check(PropertyValue<int>(highlight, "LastVisitedNodes") <= 20000 && PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024 &&
+        Check(PropertyValue<int>(highlight, "LastVisitedNodes") <= 20000 && PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024 &&
             PropertyValue<string>(highlight, "Status").Contains("partial"), "repeated Breps obey aggregate inspection and retained-resource limits");
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
         var snapshot = new PanelSnapshot(Enumerable.Range(0, repeated.Length)
@@ -256,11 +256,11 @@ internal static class PreviewGeometryChecks
             new[] { new PanelBranch("{0}", repeated.Length) });
         var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
         Method(highlight, "SetScope").Invoke(highlight, new object[] { repeated, result, true, Array.Empty<int>() });
-        for (int i = 280; i < 290; i++)
+        for (int i = 1100; i < 1110; i++)
         {
             Method(highlight, "SetScope").Invoke(highlight, new object[] { repeated, result, true, new[] { i } });
             Check(PropertyValue<int>(highlight, "Count") == 1 && PropertyValue<int>(highlight, "LastVisitedRows") <= 1 &&
-                PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+                PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024,
                 "successive explicit Brep selections recover through bounded eviction without rescanning filtered rows");
         }
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());

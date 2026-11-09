@@ -70,11 +70,31 @@ or clipboard serialization will stay within a fixed time or memory bound.
 The snapshot classifier separately calls `Brep.IsValid` during capture as well.
 The unpublished mangled C++ adjacency export is not used.
 
-Owned Brep and SubD meshes are generated from the requested meshing parameters
-within the reserved mesh allowance. Accepted results and deterministic limit
-rejections are reused for unchanged settings/density. Capacity failures remain
-retryable. A settings change retires old meshes and face-index arrays before
-replacement; eviction and clear retire the owning entries.
+Admission reserves the owned source copy and a small fixed overhead, without
+reserving worst-case display mesh or SubD limit-edge space. Fixed value previews
+(such as a box's six-face mesh) remain part of the source representation.
+Brep, surface, extrusion, sphere and SubD display caches are charged when built,
+using their reported native size plus face-index storage. SubD limit-edge curves
+are prepared lazily and charged at their reported size plus per-curve overhead.
+The existing 2 MiB generated-cache/curve-collection and 16,384-face limits remain.
+
+Accepted caches and deterministic size/quality rejections are reused for unchanged
+meshing settings/density. A cache that does not fit is disposed before drawing;
+the owned source, wires, dot and colours remain, with the existing Preview partial
+status. Budget failures remember the required size and retry when capacity permits,
+without rebuilding the same rejected mesh every frame. A settings change transfers
+the old cache, its face-index arrays and its unchanged charge to retirement before
+building a replacement. The charge is released only after native disposal; Clear
+never resets resource accounting while retired objects are still alive.
+
+Selected entries prepare display resources first, including when Grasshopper asks
+for wires before shaded meshes. If a newly selected entry needs resources, an
+outside-draw selection/idle pass retires lower-priority display caches while keeping
+their entries and labels. Their charges remain until the existing flush/idle
+retirement boundary, then a redraw retries selected preparation first. Drawing
+never evicts preview entries to make a mesh fit. Selected shaded geometry can
+still draw last. Temporary anchor meshes remain independently capped, disposable
+work and have no separate reservation.
 
 All shaded meshes, including fixed boxes, use the face-index overload. Each
 component draw explicitly calls `DisplayPipeline.Flush` before releasing its
@@ -102,9 +122,10 @@ Native duplication and meshing can still exceed estimated allocation peaks.
 
 Each root has a 4,096-visit, 1,024-leaf and depth-64 limit. Builds and actions
 share a 20,000-visit budget. At most 1,024 root preview entries and an estimated
-16 MiB are admitted. The accounting includes admitted entries, estimates reserved
-for leaves being staged, and retired entries and generated meshes awaiting
-release. The entire staged group's estimate is reserved before leaf creation,
+64 MiB are admitted. The accounting includes source-copy estimates for admitted,
+staged and retired entries; fixed material-cache overhead; and actual charges for
+active and retired display meshes, face indices and SubD limit-edge curves.
+The entire staged group's estimate is reserved before leaf creation,
 including across reentrant builds; a rejected stage releases its reservation
 after its owned leaves are disposed. Retired resources remain charged until
 release. These are estimates rather than a cap on all native or callback
