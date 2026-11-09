@@ -1,5 +1,17 @@
 # Release validation records
 
+## 0.3.1-beta
+
+F now follows B item by item on branches where D and F differ in length. Committed directly to main at the maintainer's direction, without a PR or review round.
+
+`npm run check` passed on the release commit: 353 managed tests on each of net48 and net8.0, 17 coordinator tests, one packaging test, both runtime builds, source encoding/style checks and the native smoke host compile. Three desktop-launcher tests passed. Managed capture checks against the final extracted archive passed with 225 PASS records without starting Rhino. The extracted assemblies contain no local checkout paths.
+
+A temporary harness ran the real pairing code from the extracted archive without starting Rhino and compared F with B across 13 cases: filters on unequal and equal branches, Reverse, Flatten, selection, Create set, and empty D branches. All 13 passed; an earlier build failed 9 of them.
+
+**Automated native fixtures did not execute.** Against the plugin extracted from the final archive, run `run-T9VAZi` stopped when `branch-pairing` timed out in hidden-host startup after 180 seconds, with the user session disconnected: 0 of 2 selected fixtures passed, one was not run and no assertions executed. The updated `branch-pairing` and `pairing-wysiwyg` expectations have compiled but never run. Not tested in a live Rhino session, on Mac or on the Windows .NET Framework host.
+
+Artifact source commit: `406bb157a24f68b0620f799fdfcf9c4fb99eca44`. Archive: `panel-plus-0.3.1-beta-rh8_0-any.yak`. SHA-256: `628c84b5ee5b82e90545af651618a17b075719eac75f670fef3c0c323b82e892`. GitHub prerelease and public Yak publication succeeded. Yak search lists `0.3.1-beta`, and a fresh GitHub asset download matches the archive SHA-256.
+
 ## 0.3.0-beta
 
 Table columns PRs [#63](https://github.com/tsoumdoa/better-gh-panel/pull/63) and [#64](https://github.com/tsoumdoa/better-gh-panel/pull/64) and the release preparation [#65](https://github.com/tsoumdoa/better-gh-panel/pull/65) were squash-merged into main. This is a minor version with the beta flag because D|F becomes the Table and files saved with added columns need this version.
