@@ -17,6 +17,7 @@ namespace BetterGhPanel.Runtime
         internal const int MaxBuildRows = 20000;
         internal const int MaxUpdateRows = 128;
         internal const long MaxRetainedBytes = 16L * 1024 * 1024;
+        private const int MinSelectionThickening = 2;
         private readonly SortedDictionary<int, Entry> _entries = new SortedDictionary<int, Entry>();
         private readonly Dictionary<int, Entry> _byPosition = new Dictionary<int, Entry>();
         private readonly SortedSet<int> _unselected = new SortedSet<int>();
@@ -523,14 +524,16 @@ namespace BetterGhPanel.Runtime
             {
             long generation = _generation;
             var normal = new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour, args.DefaultCurveThickness);
-            int thickness = args.DefaultCurveThickness + (componentSelected ? 0 : CentralSettings.PreviewSelectionThickening);
+            // Selected rows must stand out against the same geometry's upstream preview,
+            // whether or not this component is selected on the canvas.
+            int thickness = args.DefaultCurveThickness + Math.Max(MinSelectionThickening, componentSelected ? 0 : CentralSettings.PreviewSelectionThickening);
             var selected = new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour_Selected, thickness);
             DrawWires(normal, false);
             if (generation != _generation) return;
             bool pushed = false;
             try
             {
-                if (!componentSelected && _selectedCount > 0 && args.Display != null)
+                if (_selectedCount > 0 && args.Display != null)
                 {
                     var clipBias = Transform.Identity; clipBias.M22 = 0.995; clipBias.M23 = 0.01;
                     var bias = args.Viewport.GetTransform(CoordinateSystem.Clip, CoordinateSystem.World) * clipBias *

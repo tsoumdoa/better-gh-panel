@@ -248,6 +248,10 @@ namespace BetterGhPanel
             }
             if (!ReferenceEquals(result, _lastResult))
             {
+                var options = session.Options;
+                var sort = (options.SortMode, options.SortColumn);
+                bool resorted = _lastResult != null && ReferenceEquals(_lastResult.Snapshot, result.Snapshot) && !sort.Equals(_lastSort);
+                _lastSort = sort;
                 InvalidatePaintedHits();
                 InvalidateCopyStatus();
                 _selection.Synchronize(result);
@@ -257,6 +261,7 @@ namespace BetterGhPanel
                 _menu.Close();
                 ClearHover();
                 RestoreView(result);
+                if (resorted) RevealSelection(result);
             }
             LayoutSetDetails();
             PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
@@ -1244,7 +1249,7 @@ namespace BetterGhPanel
                         return GH_ObjectResponse.Handled;
                     }
                     InvalidateCopyStatus();
-                    _selection.SelectAt(currentResult, hit.SourcePosition, hit.ViewNumber - 1, modifiers.Toggle, modifiers.Range, preserveSelected: true);
+                    _selection.SelectAt(currentResult, hit.SourcePosition, hit.ViewNumber - 1, modifiers.Toggle, modifiers.Range);
                     var positions = _selection.OrderedPositions(currentResult);
                     PanelOwner.HighlightRows(currentResult.Snapshot, positions);
                     TrackSelectionCanvas(sender);

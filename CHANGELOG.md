@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.2-beta
+
+- **Sorting geometry by number.** Lines and other geometry sorted as text, so a length of 100 came before 9. They now sort by their measured value. The Length, Area, Volume and X/Y/Z value displays sort by the value shown.
+- **Selected rows are easier to see in Rhino.** Selected geometry is drawn at least 2 pixels thicker and in front of its upstream preview, including when Panel+ is selected on the canvas. Brep and mesh edges thicken too.
+- **The footer says why a preview is hidden.** It reports when Grasshopper preview is off, this component's preview is off, or Grasshopper only previews selected components.
+- **A plain click narrows a multi-selection.** Clicking one of several selected rows now selects only that row. Right-click still keeps the group.
+- **Sorting keeps your place.** After a sort the list scrolls to the last-clicked selected row. With nothing selected it goes to the top.
+- **Validation.** The automated Rhino fixtures could not run for this release, and the preview changes have not been seen in a live Rhino viewport.
+
 ## 0.3.1-beta
 
 - **F now matches B item by item.** When a D branch and its F branch had different lengths, a filter or selection sent the whole F branch. F now sends only the partners of the items B marks True, on equal and unequal branches alike.

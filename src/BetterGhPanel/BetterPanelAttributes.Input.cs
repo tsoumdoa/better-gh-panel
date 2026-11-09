@@ -352,6 +352,18 @@ namespace BetterGhPanel
         // Selection is re-bound explicitly only after the same structure check.
         private PanelQueryResult? _selectionRestore;
         private PanelRowSelection? _savedSelection;
+        private (PanelSortMode Mode, Guid Column) _lastSort;
+        private const int RevealContextRows = 2;
+
+        // After a sort the last-clicked row (or else the first selected one) stays in view.
+        private void RevealSelection(PanelQueryResult result)
+        {
+            if (DisplayListLengths) return;
+            var ordered = _selection.OrderedPositions(result);
+            int position = _selection.Contains(_selection.Anchor) ? _selection.Anchor : ordered.Count > 0 ? ordered[0] : -1;
+            if (position >= 0 && result.TryGetViewIndex(position, out int index))
+                _offset = Math.Max(0, Math.Min(MaximumOffset, ViewOffset(result, index) - RevealContextRows));
+        }
 
         internal void PreserveTableScroll()
         {

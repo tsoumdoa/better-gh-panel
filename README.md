@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.3.1-beta
+yak install panel-plus 0.3.2-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -28,11 +28,14 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
-**[`0.3.1-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.3.1-beta)**
+**[`0.3.2-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.3.2-beta)**
 
-- **F now matches B item by item.** When a D branch and its F branch had different lengths, a filter or selection sent the whole F branch. F now sends only the partners of the items B marks True, on equal and unequal branches alike.
-- **Behaviour change on unequal branches.** F items beyond D's length are sent only when no item filter, Create set or selection narrows D. A True D row with no F partner sends nothing but keeps its path. Each Create set group gets only its own members' partners. Under an item filter the table no longer shows the muted "paired with hidden D rows" lines, so it matches the output.
-- **Validation.** The automated Rhino fixtures could not run for this release. F was checked against B on the released build outside Rhino.
+- **Sorting geometry by number.** Lines and other geometry sorted as text, so a length of 100 came before 9. They now sort by their measured value. The Length, Area, Volume and X/Y/Z value displays sort by the value shown.
+- **Selected rows are easier to see in Rhino.** Selected geometry is drawn at least 2 pixels thicker and in front of its upstream preview, including when Panel+ is selected on the canvas. Brep and mesh edges thicken too.
+- **The footer says why a preview is hidden.** It reports when Grasshopper preview is off, this component's preview is off, or Grasshopper only previews selected components.
+- **A plain click narrows a multi-selection.** Clicking one of several selected rows now selects only that row. Right-click still keeps the group.
+- **Sorting keeps your place.** After a sort the list scrolls to the last-clicked selected row. With nothing selected it goes to the top.
+- **Validation.** The automated Rhino fixtures could not run for this release, and the preview changes have not been seen in a live Rhino viewport.
 
 See [CHANGELOG](CHANGELOG.md) for earlier releases.
 

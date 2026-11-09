@@ -117,6 +117,10 @@ internal static class RowSelectionChecks
         PanelTestAdapter.CanvasClick(canvas, PointOn(3));
         Check(ReferenceEquals(paintedResult, fixture.Result) && PanelTestAdapter.SelectedPosition(component) == 3,
             "A selection-only solution retains current hits for the next normal click");
+        fixture.Select(5, toggle: true); Render();
+        PanelTestAdapter.CanvasClick(canvas, PointOn(3));
+        Check(fixture.SelectedCount == 1 && PanelTestAdapter.SelectedPosition(component) == 3,
+            "A plain click on one of several selected rows narrows the selection to it");
 
         attributes.GetType().GetMethod("SuppressTrailingDoubleClick", NonPublicInstance)!.Invoke(attributes, Array.Empty<object>());
         var point = PointOn(4);

@@ -54,11 +54,11 @@ namespace BetterGhPanel.Core
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
             var outputValues = query.OutputValues && query.DisplayFilterValue && set == null ? new Dictionary<int, PanelPropertyValue?>() : null;
-            var propertySortValues = query.ColumnSortKeys == null && set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplayFilterValue && PanelProperties.IsProperty(query.SearchMode)
+            var propertySortValues = query.ColumnSortKeys == null && set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplayFilterValue && ShowsMetric(query.SearchMode)
                 ? new Dictionary<int, PanelDisplayedValue>() : null;
-            // Sets and property views already supply complete displayed sort keys.
+            // Sets and metric views already supply complete displayed sort keys.
             var sortText = query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder && set == null && propertySortValues == null
-                ? new Dictionary<int, PanelText>() : null;
+                ? new Dictionary<int, RowSortKey>() : null;
             var columnSortRows = query.ColumnSortKeys != null && query.SortMode != PanelSortMode.SourceOrder
                 ? new Dictionary<int, PanelRow?>() : null;
             var branches = new HashSet<string>(StringComparer.Ordinal);
@@ -133,7 +133,8 @@ namespace BetterGhPanel.Core
                 outputValues?.Add(i, metric);
                 if (propertySortValues != null) propertySortValues.Add(i, PanelDisplayedValue.Capture(snapshot, row, query, measured));
                 if (sortText != null && !row.IsNull && !HasFiniteNumber(row))
-                    sortText.Add(i, PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, query.RoundUpFactor));
+                    sortText.Add(i, new RowSortKey(PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, query.RoundUpFactor),
+                        row.IsValid ? measured ?? row.GeometryInfo : null));
                 branches.Add(row.Path);
                 Increment(branchCounts, row.Path);
                 if (set?.IsBranchSet == true) continue;
@@ -410,6 +411,23 @@ namespace BetterGhPanel.Core
         private static bool HasFiniteNumber(PanelRow row) => !row.IsNull && row.IsValid && row.NumericValue.HasValue &&
             !double.IsNaN(row.NumericValue.Value) && !double.IsInfinity(row.NumericValue.Value);
 
+        private static bool ShowsMetric(PanelSearchMode mode) => PanelProperties.IsProperty(mode) ||
+            mode >= PanelSearchMode.Length && mode <= PanelSearchMode.Volume || mode >= PanelSearchMode.X && mode <= PanelSearchMode.Z;
+
+        // Non-scalar rows sort by their measurement when they have one, so 9 precedes 10.
+        private readonly struct RowSortKey
+        {
+            internal RowSortKey(PanelText text, PanelGeometryInfo? geometry)
+            {
+                Text = text;
+                Metric = geometry?.Value is double value && !double.IsNaN(value) && !double.IsInfinity(value) ? geometry.MetricName : null;
+                Value = geometry?.Value ?? 0;
+            }
+            internal PanelText Text { get; }
+            internal string? Metric { get; }
+            internal double Value { get; }
+        }
+
         private sealed class ValueCount
         {
             internal HashSet<double>? DistinctNumbers;
@@ -438,7 +456,7 @@ namespace BetterGhPanel.Core
         // Group stably in transformed-tree order, even if snapshot rows are interleaved.
         // Only values in the same branch compete; path text never determines branch order.
         private static IEnumerable<PanelQueryResult?> SortBranches(int[] ids, PanelSnapshot snapshot,
-            IReadOnlyDictionary<string, int> branchCounts, IReadOnlyDictionary<int, PanelText> sortText,
+            IReadOnlyDictionary<string, int> branchCounts, IReadOnlyDictionary<int, RowSortKey> sortText,
             bool descending, CancellationToken token, PanelQueryWork work, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues = null, PanelColumnSortKeys? columnKeys = null)
         {
             if (ids.Length < 2) yield break;
@@ -501,7 +519,7 @@ namespace BetterGhPanel.Core
         // Own merge sort keeps cancellation exceptions unwrapped and never mutates snapshot data.
         private static IEnumerable<PanelQueryResult?> StableSort(int[] ids, int[] buffer, int offset, int count,
             IReadOnlyList<PanelRow> rows,
-            IReadOnlyDictionary<int, PanelText> sortText, bool descending,
+            IReadOnlyDictionary<int, RowSortKey> sortText, bool descending,
             CancellationToken token, PanelQueryWork work, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues, PanelColumnSortKeys? columnKeys)
         {
             if (count < 2) yield break;
@@ -545,7 +563,7 @@ namespace BetterGhPanel.Core
         }
 
         private static int Compare(int leftId, int rightId, IReadOnlyList<PanelRow> rows,
-            IReadOnlyDictionary<int, PanelText> sortText, bool descending, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues, PanelColumnSortKeys? columnKeys)
+            IReadOnlyDictionary<int, RowSortKey> sortText, bool descending, IReadOnlyDictionary<int, PanelDisplayedValue>? displayedValues, PanelColumnSortKeys? columnKeys)
         {
             if (columnKeys != null) return columnKeys.Compare(leftId, rightId, descending);
             if (displayedValues != null)
@@ -570,7 +588,11 @@ namespace BetterGhPanel.Core
             {
                 comparison = StringComparer.OrdinalIgnoreCase.Compare(left.TypeName, right.TypeName);
                 if (comparison != 0) return comparison;
-                comparison = sortText[leftId].Compare(sortText[rightId], StringComparison.OrdinalIgnoreCase);
+                RowSortKey leftKey = sortText[leftId], rightKey = sortText[rightId];
+                if ((leftKey.Metric == null) != (rightKey.Metric == null)) return leftKey.Metric != null ? -1 : 1;
+                comparison = leftKey.Metric == null ? leftKey.Text.Compare(rightKey.Text, StringComparison.OrdinalIgnoreCase)
+                    : StringComparer.OrdinalIgnoreCase.Compare(leftKey.Metric, rightKey.Metric);
+                if (comparison == 0 && leftKey.Metric != null) comparison = leftKey.Value.CompareTo(rightKey.Value);
             }
             if (comparison != 0) return descending ? -comparison : comparison;
             return leftId.CompareTo(rightId);

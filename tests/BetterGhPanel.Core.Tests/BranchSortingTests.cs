@@ -111,6 +111,21 @@ public class BranchSortingTests
     }
 
     [Fact]
+    public void GeometryMetricsSortAsNumbers()
+    {
+        PanelRow Line(double length) => new PanelRow(0, "{0}", "Line", "Captured", null, geometryInfo: new PanelGeometryInfo("Ln", length, units: "mm"));
+        var snapshot = new PanelSnapshot(new[] { Line(100), Line(9), Line(10), Line(2000) }, new[] { new PanelBranch("{0}", 4) });
+        foreach (bool showLengths in new[] { false, true })
+        {
+            var options = new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending, DisplayFilterValue = showLengths,
+                SearchMode = showLengths ? PanelSearchMode.Length : PanelSearchMode.Text };
+            Positions(PanelQueryEngine.Execute(snapshot, options), new[] { 1, 2, 0, 3 });
+            options.SortMode = PanelSortMode.ValueDescending;
+            Positions(PanelQueryEngine.Execute(snapshot, options), new[] { 3, 0, 2, 1 });
+        }
+    }
+
+    [Fact]
     public void MissingBranchMetadata()
     {
         var snapshot = new PanelSnapshot(new[]

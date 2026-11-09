@@ -31,7 +31,19 @@ namespace BetterGhPanel
         internal bool PanelSplit { get; private set; }
         internal PanelPreviewMode PreviewMode { get; private set; }
         internal bool ShowItemOrder { get; private set; }
-        internal string PreviewStatus => _highlight.Status;
+        internal string PreviewStatus => PreviewHiddenReason ?? _highlight.Status;
+        // Grasshopper skips this component's drawing in these states, so say why nothing appears.
+        internal string? PreviewHiddenReason
+        {
+            get
+            {
+                if (PreviewMode == PanelPreviewMode.Off || _highlight.PreviewCount == 0) return null;
+                var document = OnPingDocument();
+                return document?.PreviewMode == GH_PreviewMode.Disabled ? "Preview hidden: Grasshopper preview is off." :
+                    Hidden ? "Preview hidden: this component's preview is off." :
+                    document?.PreviewFilter == GH_PreviewFilter.Selected && !Attributes.Selected ? "Preview hidden: Grasshopper previews selected components only." : null;
+            }
+        }
         internal float EffectiveCanvasHeight => CanvasPanelSize.FullHeightForInputs(CanvasHeight, Params.Input.Count);
         internal float DisplayHeight => CanvasDisplay == CanvasPanelDisplay.Half ? EffectiveCanvasHeight / 2 : EffectiveCanvasHeight;
         internal float TableWidthScale { get; private set; } = 2;

@@ -309,9 +309,9 @@ namespace BetterGhPanel.Runtime
                         cloud.HasColors ? Color.FromArgb(batch.Argb) : args.Color);
                 }
             }
-            else if (_value is Mesh mesh && CentralSettings.PreviewMeshEdges) args.Pipeline.DrawMeshWires(mesh, args.Color, 1);
+            else if (_value is Mesh mesh && CentralSettings.PreviewMeshEdges) args.Pipeline.DrawMeshWires(mesh, args.Color, args.Thickness);
             else if (_value is Brep brep)
-                for (int i = 0; current() && i < brep.Edges.Count; i++) args.Pipeline.DrawCurve(brep.Edges[i], args.Color, 1);
+                for (int i = 0; current() && i < brep.Edges.Count; i++) args.Pipeline.DrawCurve(brep.Edges[i], args.Color, args.Thickness);
             else if (_value is Surface surface) args.Pipeline.DrawSurface(surface, args.Color, args.Thickness);
             else if (_subdWires != null)
             {

@@ -360,7 +360,8 @@ namespace BetterGhPanel
             e.Text = CanvasMenu.PreviewLabel(PanelOwner.PreviewMode);
             e.Description = "Selection: draws selected rows only.\nResults: draws every result and highlights the selection.\nOff: no Panel+ preview.\nItem order labels: " +
                 (PanelOwner.ShowItemOrder ? "on" : "off") + ".";
-            if (!string.IsNullOrEmpty(PanelOwner.PreviewStatus)) e.Description += "\n\n" + PanelOwner.PreviewStatus +
+            if (PanelOwner.PreviewHiddenReason is string hidden) e.Description += "\n\n" + hidden;
+            else if (!string.IsNullOrEmpty(PanelOwner.PreviewStatus)) e.Description += "\n\n" + PanelOwner.PreviewStatus +
                 "\nOversized geometry, unsupported nested types, custom UserData or mesh limits can prevent part of the preview.";
         }
 
