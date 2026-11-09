@@ -136,14 +136,29 @@ namespace BetterGhPanel
             }
             ordered = ExpandSetMembers(ordered);
             var previewPositions = PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.DisplaySet?.AllMembers ?? session.Result.RowPositions : ordered;
-            _highlight.SetOrderResult(ShowItemOrder && previewPositions.Count > 0 ? session.Result : null);
             var source = _sourceItems;
             var expectedResult = session.Result;
             var mode = PreviewMode;
+            bool showOrder = ShowItemOrder, showValues = ShowValues, reverse = ReversePalette;
+            var placement = DotPlacement; var palette = ValuePalette;
             var stamp = new ActionStamp(this, session, snapshot, expectedResult, source, _selectionVersion);
             bool Current() => !_previewSuspended && !Locked && PreviewMode == mode &&
+                ShowItemOrder == showOrder && ShowValues == showValues && ReversePalette == reverse && DotPlacement == placement && ValuePalette == palette &&
                 stamp.IsCurrent();
+            var options = session.Options;
+            PanelPreviewValue Sample(int position)
+            {
+                var geometry = session.GetGeometryDetails(snapshot, position);
+                if (geometry == null && session.HasGeometryMeasurement(snapshot, position)) geometry = snapshot.Rows[position].GeometryInfo?.WithUnavailableMeasurement();
+                return PanelPreviewValues.Sample(snapshot, snapshot.Rows[position], options.SearchMode, geometry, DecimalPlaces, RoundUpFactor);
+            }
+            _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, ValuePalette, ReversePalette,
+                options.SearchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current);
+            if (!Current()) return;
             _highlight.SetScopeChecked(source, expectedResult, mode == PanelPreviewMode.FilteredResults, ordered, Current, RowSelection);
+            if (!Current()) return;
+            session.RequestPreviewMeasurements(ShowValues || ValuePalette != PanelValuePalette.Off ? expectedResult : null,
+                ValuePalette != PanelValuePalette.Off ? expectedResult.DisplaySet?.AllMembers ?? expectedResult.RowPositions : previewPositions);
             InvalidatePreviewCaches();
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
@@ -153,6 +168,7 @@ namespace BetterGhPanel
 
         internal void ClearHighlight()
         {
+            _session?.RequestPreviewMeasurements(null, null);
             bool visible = _highlight.PreviewCount > 0;
             _highlight.Clear();
             if (visible) { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }

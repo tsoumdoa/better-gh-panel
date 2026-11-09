@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Preview adds **Show values**, **Dot placement** (Centre / Box top / Box bottom), and **Colour by value** (Viridis / Heat / Blue–white–red, with Reverse). Value dots share row units and precision, combine with item order, and update as the existing measurement queue completes scoped work.
+- Gradients use all filtered Results, separate metric/unit ranges, reusable bucketed materials, selection halos and stacked viewport legends. New settings are saved, undoable and retained by Reset all; values and gradients default off.
+- Centre placement now puts item-order dots at curve mid-parameters and stable coarse-mesh surface anchors instead of bounding-box centres. D/S/B/F and component ports are unchanged.
+
 ## 0.3.2-beta
 
 - **Sorting geometry by number.** Lines and other geometry sorted as text, so a length of 100 came before 9. They now sort by their measured value. The Length, Area, Volume and X/Y/Z value displays sort by the value shown.

@@ -115,6 +115,7 @@ namespace BetterGhPanel
                 if (_session == null)
                 {
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
+                    _session.PreviewMeasurementsChanged += (_, __) => _highlight.InvalidateValues();
                     _session.GeometryDiagnosticsForTesting = CaptureDiagnosticsForTesting;
                     _session.SetDecimalPlacesResolver(() => DecimalPlaces);
                     _session.SetRoundUpFactorResolver(() => RoundUpFactor);

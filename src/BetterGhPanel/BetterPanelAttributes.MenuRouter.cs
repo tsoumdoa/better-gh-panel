@@ -12,6 +12,30 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
+        private bool PreviewMenuRowEnabled(int index) => _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette);
+
+        private void ChoosePreviewMenu(int index, GH_Canvas canvas)
+        {
+            if (!PreviewMenuRowEnabled(index)) return;
+            var page = _menu.Kind;
+            var next = page;
+            if (page == CanvasMenuKind.Preview)
+            {
+                if (index < 3) { PanelOwner.SetPreviewMode(_menu.PreviewChoiceAt(index).Mode!.Value); _menu.Close(); canvas.Invalidate(); return; }
+                if (index == 3) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
+                if (index == 4) PanelOwner.SetShowValues(!PanelOwner.ShowValues);
+                if (index == 5) next = CanvasMenuKind.DotPlacement;
+                if (index == 6) next = CanvasMenuKind.ValuePalette;
+            }
+            else if (index == 0) next = CanvasMenuKind.Preview;
+            else if (page == CanvasMenuKind.DotPlacement) { PanelOwner.SetDotPlacement((PanelDotPlacement)(index - 1)); next = CanvasMenuKind.Preview; }
+            else if (index == 5) PanelOwner.SetReversePalette(!PanelOwner.ReversePalette);
+            else PanelOwner.SetValuePalette((PanelValuePalette)(index - 1));
+            _menu.Close();
+            OpenMenu(next, canvas);
+            canvas.Invalidate();
+        }
+
         private MenuRouter? _menuRouter;
 
         // Set while the router forwards a menu click. PanelCanvasInput checks focus

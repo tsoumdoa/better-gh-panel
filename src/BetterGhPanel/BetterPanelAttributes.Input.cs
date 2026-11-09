@@ -187,7 +187,12 @@ namespace BetterGhPanel
                     return true;
                 case Keys.Up:
                 case Keys.Down:
-                    _menu.MoveHover(key == Keys.Up ? -1 : 1);
+                    _menu.MoveHover(key == Keys.Up ? -1 : 1, _menu.IsPreviewPage ? PreviewMenuRowEnabled : (Func<int, bool>?)null);
+                    canvas.Invalidate();
+                    return true;
+                case Keys.Home when _menu.IsPreviewPage:
+                case Keys.End when _menu.IsPreviewPage:
+                    _menu.MoveHover(key == Keys.Home ? 1 : -1, PreviewMenuRowEnabled, fromEdge: true);
                     canvas.Invalidate();
                     return true;
                 case Keys.PageUp:

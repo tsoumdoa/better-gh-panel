@@ -72,6 +72,20 @@ namespace BetterGhPanel.Runtime
         public string? Error { get; private set; }
         public event EventHandler? QueryChanged;
         public event EventHandler? ResultChanged;
+        internal event EventHandler? PreviewMeasurementsChanged;
+        private CancellationTokenSource? _previewMeasurements;
+        private PanelQueryResult? _previewMeasurementResult;
+        private IReadOnlyList<int>? _previewMeasurementPositions;
+        internal void RequestPreviewMeasurements(PanelQueryResult? result, IReadOnlyList<int>? positions)
+        {
+            if (ReferenceEquals(result, _previewMeasurementResult) && ReferenceEquals(positions, _previewMeasurementPositions)) return;
+            var old = _previewMeasurements; _previewMeasurements = null;
+            _previewMeasurementResult = result; _previewMeasurementPositions = positions;
+            old?.Cancel(); old?.Dispose();
+            if (result == null || positions == null || positions.Count == 0 || !HasCurrentResult) return;
+            var cancellation = _previewMeasurements = new CancellationTokenSource();
+            _ = _geometry.MeasureAsync(result.Snapshot, positions, cancellation.Token);
+        }
 
         // Capture stages these immutable providers immediately before attaching their
         // D snapshot. Never query the previous snapshot with a replacement pairing map.
@@ -110,6 +124,7 @@ namespace BetterGhPanel.Runtime
         internal void InvalidateInput(bool retainMeasurements, bool suspended = false)
         {
             if (_disposed) return;
+            RequestPreviewMeasurements(null, null);
             ++_request;
             _queryCancellation?.Cancel();
             ClearColumnGeometry();
@@ -213,7 +228,7 @@ namespace BetterGhPanel.Runtime
                 RhinoApp.InvokeOnUiThread((Action)(() =>
                 {
                     _measurementNotifyScheduled = false;
-                    if (!_disposed && !IsBusy) Notify();
+                    if (!_disposed && !IsBusy) { PreviewMeasurementsChanged?.Invoke(this, EventArgs.Empty); Notify(); }
                 }));
             });
         }
@@ -414,12 +429,14 @@ namespace BetterGhPanel.Runtime
             _geometry.Dispose();
             _geometryScheduler.Dispose();
             GeometryWorkerSubmissionForTesting = null;
+            RequestPreviewMeasurements(null, null);
             ++_request;
             _queryCancellation?.Cancel();
             _queryCancellation?.Dispose();
             _queryCancellation = null;
             QueryChanged = null;
             ResultChanged = null;
+            PreviewMeasurementsChanged = null;
             _decimalPlacesResolver = null;
             _geometryPreparationResolver = null;
             _geometryRetentionResolver = null;

@@ -978,8 +978,8 @@ namespace BetterGhPanel
             {
                 int index = i + _menu.Offset;
                 var row = new RectangleF(_menu.Bounds.X + 1, _menu.Bounds.Y + i * 20, _menu.Bounds.Width - 2, 20);
-                bool enabled = _menu.Kind != CanvasMenuKind.HeaderSort || HeaderSortEnabled;
-                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor);
+                bool enabled = (_menu.Kind != CanvasMenuKind.HeaderSort || HeaderSortEnabled) && _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette);
+                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor, PanelOwner.ShowValues, PanelOwner.DotPlacement, PanelOwner.ValuePalette, PanelOwner.ReversePalette);
                 if (enabled && (index == _menu.HoveredIndex || selected))
                     Fill(g, index == _menu.HoveredIndex ? PanelTheme.Rgb(226, 236, 226) : PanelTheme.Rgb(242, 247, 241), row);
                 if (_menu.IsSectionStart(index))
@@ -989,8 +989,15 @@ namespace BetterGhPanel
                     using (var check = new Pen(Accent, 1.3f))
                         g.DrawLines(check, new[] { new PointF(row.X + 7, row.Y + 10), new PointF(row.X + 10, row.Y + 13), new PointF(row.X + 16, row.Y + 7) });
                 float inset = _menu.Kind == CanvasMenuKind.Statistics ? 7 : 23;
+                string tail = _menu.Trailing(index, PanelOwner.DotPlacement, PanelOwner.ValuePalette);
+                if (tail.Length > 0) Text(g, tail, small, enabled ? PanelTheme.Muted : PanelTheme.Disabled,
+                    new RectangleF(row.Right - 112, row.Y, 105, 20), trim);
+                var swatch = _menu.Swatch(index);
+                if (swatch != PanelValuePalette.Off)
+                    for (int bucket = 0; bucket < PanelPreviewValues.Buckets; bucket++)
+                        Fill(g, PanelPreviewValues.Colour(swatch, bucket, PanelOwner.ReversePalette), new RectangleF(row.Right - 72 + bucket, row.Y + 6, 1, 8));
                 Text(g, _menu.Label(index, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor), _menu.Kind == CanvasMenuKind.Branch ? mono : small,
-                    !enabled ? PanelTheme.Disabled : selected ? Accent : Ink, new RectangleF(row.X + inset, row.Y, row.Width - inset - 7, 20), trim);
+                    !enabled ? PanelTheme.Disabled : selected ? Accent : Ink, new RectangleF(row.X + inset, row.Y, row.Width - inset - 7 - (tail.Length > 0 ? 110 : swatch != PanelValuePalette.Off ? 75 : 0), 20), trim);
                 var target = new RectangleF(_menu.Bounds.X, row.Y, _menu.Bounds.Width, row.Height);
                 if (TargetPainted(g, target)) _menu.MarkRowPainted(i);
             }
@@ -1270,6 +1277,7 @@ namespace BetterGhPanel
         {
             if (index < 0 || index >= _menu.Count || _menu.Kind == CanvasMenuKind.HeaderSort && !HeaderSortEnabled) return;
             var kind = _menu.Kind;
+            if (_menu.IsPreviewPage) { ChoosePreviewMenu(index, canvas); return; }
             // Statistics are inspection only. A click must not select rows or change the output.
             if (kind == CanvasMenuKind.Statistics) return;
             // Resolve choices before closing releases the captured menu data.
@@ -1277,20 +1285,12 @@ namespace BetterGhPanel
             var selectedPath = kind == CanvasMenuKind.Branch && index > 1 ? _menu.BranchPathAt(index) : null;
             var selectedSearch = kind == CanvasMenuKind.SearchMode ? _menu.SearchModeAt(index) : (PanelSearchMode?)null;
             var selectedSort = kind == CanvasMenuKind.Sort || kind == CanvasMenuKind.HeaderSort ? _menu.SortModeAt(index) : (PanelSortMode?)null;
-            var selectedPreview = kind == CanvasMenuKind.Preview ? _menu.PreviewChoiceAt(index) : (CanvasPreviewChoice?)null;
             var selectedUnit = kind == CanvasMenuKind.Units ? _menu.UnitChoiceAt(index) : (CanvasUnitChoice?)null;
             var selectedComparison = kind == CanvasMenuKind.Comparison ? _menu.ComparisonChoiceAt(index) : (CanvasComparisonChoice?)null;
             var branchFilter = kind == CanvasMenuKind.Branch ? _menu.BranchFilter : string.Empty;
             _menu.Close();
             if (kind == CanvasMenuKind.HeaderSort)
             { PanelOwner.SetColumnSort(_headerSortColumn, selectedSort!.Value); canvas.Invalidate(); return; }
-            if (kind == CanvasMenuKind.Preview)
-            {
-                if (selectedPreview!.Value.IsItemOrder) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
-                else PanelOwner.SetPreviewMode(selectedPreview.Value.Mode!.Value);
-                canvas.Invalidate();
-                return;
-            }
             if (kind == CanvasMenuKind.Units)
             {
                 if (selectedUnit!.Value.Conversion.HasValue)

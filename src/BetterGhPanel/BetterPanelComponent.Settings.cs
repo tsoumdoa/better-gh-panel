@@ -31,6 +31,30 @@ namespace BetterGhPanel
         internal bool PanelSplit { get; private set; }
         internal PanelPreviewMode PreviewMode { get; private set; }
         internal bool ShowItemOrder { get; private set; }
+        internal bool ShowValues { get; private set; }
+        internal PanelDotPlacement DotPlacement { get; private set; }
+        internal PanelValuePalette ValuePalette { get; private set; }
+        internal bool ReversePalette { get; private set; }
+
+        internal void SetShowValues(bool value) => SetPreviewSetting("values", ShowValues, value, (c, v) => c.ShowValues = v);
+        internal void SetDotPlacement(PanelDotPlacement value)
+        { if (Enum.IsDefined(typeof(PanelDotPlacement), value)) SetPreviewSetting("dot placement", DotPlacement, value, (c, v) => c.DotPlacement = v); }
+        internal void SetValuePalette(PanelValuePalette value)
+        { if (Enum.IsDefined(typeof(PanelValuePalette), value)) SetPreviewSetting("colour by value", ValuePalette, value, (c, v) => c.ValuePalette = v); }
+        internal void SetReversePalette(bool value) => SetPreviewSetting("reverse palette", ReversePalette, value, (c, v) => c.ReversePalette = v);
+        private void SetPreviewSetting<T>(string name, T before, T after, Action<BetterPanelComponent, T> apply)
+        {
+            if (EqualityComparer<T>.Default.Equals(before, after)) return;
+            void Apply(BetterPanelComponent component, T value)
+            {
+                apply(component, value);
+                (component.Attributes as BetterPanelAttributes)?.OnQueryCompleted();
+                component.OnPingDocument()?.Modified();
+                Instances.ActiveCanvas?.Invalidate();
+            }
+            RecordUndoEvent("Panel+ " + name, new PanelUndo<T>(InstanceGuid, before, after, Apply));
+            Apply(this, after);
+        }
         internal string PreviewStatus => PreviewHiddenReason ?? _highlight.Status;
         // Grasshopper skips this component's drawing in these states, so say why nothing appears.
         internal string? PreviewHiddenReason
@@ -490,6 +514,10 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelSplit", PanelSplit);
             writer.SetInt32("PanelPreviewMode", (int)PreviewMode);
             writer.SetBoolean("PanelShowItemOrder", ShowItemOrder);
+            writer.SetBoolean("PanelShowValues", ShowValues);
+            writer.SetInt32("PanelDotPlacement", (int)DotPlacement);
+            writer.SetInt32("PanelValuePalette", (int)ValuePalette);
+            writer.SetBoolean("PanelReversePalette", ReversePalette);
             writer.SetInt32("PanelTrimDepth", TrimDepth);
             writer.SetBoolean("PanelFlatten", FlattenTree);
             writer.SetBoolean("PanelReverse", ReverseTree);
@@ -587,6 +615,15 @@ namespace BetterGhPanel
             bool showOrder = false;
             reader.TryGetBoolean("PanelShowItemOrder", ref showOrder);
             ShowItemOrder = showOrder;
+            bool showValues = false, reversePalette = false;
+            int dotPlacement = 0, valuePalette = 0;
+            reader.TryGetBoolean("PanelShowValues", ref showValues);
+            reader.TryGetBoolean("PanelReversePalette", ref reversePalette);
+            reader.TryGetInt32("PanelDotPlacement", ref dotPlacement);
+            reader.TryGetInt32("PanelValuePalette", ref valuePalette);
+            ShowValues = showValues; ReversePalette = reversePalette;
+            DotPlacement = Enum.IsDefined(typeof(PanelDotPlacement), dotPlacement) ? (PanelDotPlacement)dotPlacement : PanelDotPlacement.Centre;
+            ValuePalette = Enum.IsDefined(typeof(PanelValuePalette), valuePalette) ? (PanelValuePalette)valuePalette : PanelValuePalette.Off;
             int trimDepth = 0;
             bool flatten = false, reverse = false, simplify = false, createSet = false;
             reader.TryGetInt32("PanelTrimDepth", ref trimDepth);

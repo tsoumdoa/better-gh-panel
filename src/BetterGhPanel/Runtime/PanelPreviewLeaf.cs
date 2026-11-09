@@ -51,6 +51,68 @@ namespace BetterGhPanel.Runtime
             _canRetireMeshes = canRetireMeshes; _retireMeshes = retireMeshes; _subdWires = subdWires;
             var fixedMesh = boxMesh ?? value as Mesh;
             if (fixedMesh != null) _fixedFaces = FaceIndices(fixedMesh); }
+        private Point3d? _anchor;
+        internal Point3d Anchor(Func<bool> current)
+        {
+            if (_anchor.HasValue) return _anchor.Value;
+            var centre = Bounds.Center;
+            try
+            {
+                if (_value is Point3d p) centre = p;
+                else if (_value is Line line) centre = line.PointAt(.5);
+                else if (_value is Arc arc) centre = arc.PointAt(arc.AngleDomain.Mid);
+                else if (_value is Circle circle) centre = circle.PointAt(Math.PI);
+                else if (_value is Rectangle3d rectangle) centre = rectangle.PointAt(2);
+                else if (_value is Curve curve) centre = curve.PointAt(curve.Domain.Mid);
+                else if (_value is Box box) centre = box.Center;
+                else if (_value is Sphere sphere) centre = sphere.Center;
+                else
+                {
+                    var meshes = _value is Mesh mesh ? new[] { mesh } : _generatedMeshes;
+                    if (meshes == null && (_value is Brep || _value is Surface || _value is SubD))
+                    {
+                        using var coarse = new MeshingParameters(MeshingParameters.FastRenderMesh) { GridMinCount = 0, GridMaxCount = 32 };
+                        EnsureGeneratedMeshes(coarse, current);
+                        meshes = _generatedMeshes;
+                    }
+                    if (current() && meshes != null) centre = MeshAnchor(meshes, centre);
+                }
+            }
+            catch (Exception) { /* The already-owned bounding box is a safe fallback. */ }
+            if (current()) _anchor = centre.IsValid ? centre : Bounds.Center;
+            return _anchor ?? Bounds.Center;
+        }
+
+        private static Point3d MeshAnchor(Mesh[] meshes, Point3d fallback)
+        {
+            double total = 0; var sum = Vector3d.Zero;
+            void Triangle(Point3d a, Point3d b, Point3d c)
+            {
+                double weight = Vector3d.CrossProduct(b - a, c - a).Length;
+                if (weight <= 0 || double.IsInfinity(weight) || double.IsNaN(weight)) return;
+                sum += ((Vector3d)a + (Vector3d)b + (Vector3d)c) * (weight / 3); total += weight;
+            }
+            foreach (var mesh in meshes)
+                for (int i = 0; i < mesh.Faces.Count; i++)
+                {
+                    var face = mesh.Faces[i]; var a = mesh.Vertices.Point3dAt(face.A); var c = mesh.Vertices.Point3dAt(face.C);
+                    Triangle(a, mesh.Vertices.Point3dAt(face.B), c);
+                    if (face.IsQuad) Triangle(a, c, mesh.Vertices.Point3dAt(face.D));
+                }
+            if (total <= 0 || double.IsInfinity(total) || double.IsNaN(total)) return fallback;
+            var centre = (Point3d)(sum / total);
+            if (!centre.IsValid) return fallback;
+            // ClosestPoint returns the centre itself on material, or snaps a hole/concavity to it.
+            var nearest = fallback; double distance = double.MaxValue;
+            foreach (var mesh in meshes)
+            {
+                var point = mesh.ClosestPoint(centre);
+                double d = point.DistanceToSquared(centre);
+                if (point.IsValid && d < distance) { nearest = point; distance = d; }
+            }
+            return nearest;
+        }
+
         internal BoundingBox Bounds { get; }
         internal long Bytes { get; }
 
@@ -371,20 +433,21 @@ namespace BetterGhPanel.Runtime
             return new CloudPoints(hasColors, batches.ToArray());
         }
 
-        internal void DrawMeshes(GH_PreviewMeshArgs args, Func<bool> current)
+        internal void DrawMeshes(GH_PreviewMeshArgs args, Func<bool> current, bool colourByValue = false)
         {
             if (_value is PanelGeometrySources.StandalonePreview custom) { custom.Value.DrawViewportMeshes(args); return; }
             if (args.Pipeline == null) return;
             if (_value is Mesh mesh)
             {
-                if (mesh.VertexColors.Count > 0) args.Pipeline.DrawMeshFalseColors(mesh);
+                if (!colourByValue && mesh.VertexColors.Count > 0) args.Pipeline.DrawMeshFalseColors(mesh);
                 else args.Pipeline.DrawMeshShaded(mesh, args.Material, _fixedFaces!);
             }
             else if (_boxMesh != null) args.Pipeline.DrawMeshShaded(_boxMesh, args.Material, _fixedFaces!);
-            else if (_value is Brep || _value is Surface || _value is SubD || _value is Sphere) DrawGeneratedMesh(args, current);
+            else if (_value is Brep || _value is Surface || _value is SubD || _value is Sphere)
+            { EnsureGeneratedMeshes(args.MeshingParameters, current); if (current()) DrawCachedMeshes(args, current); }
         }
 
-        private void DrawGeneratedMesh(GH_PreviewMeshArgs args, Func<bool> current)
+        private void EnsureGeneratedMeshes(MeshingParameters requested, Func<bool> current)
         {
             Mesh[]? meshes = null;
             bool limited = false, counted = false;
@@ -393,14 +456,13 @@ namespace BetterGhPanel.Runtime
                 int requestedDensity = -1;
                 if (_value is SubD currentSubd)
                 {
-                    using var settings = args.MeshingParameters.SubDDisplayParameters();
+                    using var settings = requested.SubDDisplayParameters();
                     requestedDensity = (int)settings.DisplayDensity(currentSubd);
                 }
                 if (!current()) return;
-                if (_meshParameters != null && _meshParameters.Equals(args.MeshingParameters) &&
+                if (_meshParameters != null && _meshParameters.Equals(requested) &&
                     (_value is not SubD || requestedDensity == _meshDensity))
                 {
-                    DrawCachedMeshes(args, current);
                     if (current()) SetMeshUnavailable(_cacheLimited);
                     return;
                 }
@@ -411,7 +473,7 @@ namespace BetterGhPanel.Runtime
                 if (!current()) return;
                 // Cache both accepted and deterministically rejected preparation
                 // for these settings/density. Capacity rejection above stays retryable.
-                _meshParameters = new MeshingParameters(args.MeshingParameters);
+                _meshParameters = new MeshingParameters(requested);
                 _meshDensity = requestedDensity;
                 _cacheLimited = true;
                 Interlocked.Increment(ref _generatedMeshAttempts);
@@ -483,7 +545,6 @@ namespace BetterGhPanel.Runtime
                 meshes = null; counted = false; // ownership moved to this entry
                 Interlocked.Increment(ref _generatedMeshBuilds);
                 SetMeshUnavailable(limited);
-                if (current()) DrawCachedMeshes(args, current);
             }
             catch (Exception)
             {
