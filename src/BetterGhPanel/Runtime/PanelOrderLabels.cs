@@ -270,11 +270,15 @@ namespace BetterGhPanel.Runtime
                 if (!occupied.TryAdd(bounds)) continue;
                 if (Gradient && selected)
                 {
-                    float x = (float)screen.X, y = (float)screen.Y, delta = 2 * scale;
+                    float x = (float)screen.X, y = (float)screen.Y, delta = 3 * scale, diagonal = delta * 0.70710678f;
                     args.Display.DrawDot(x - delta, y, label.Text, _selectedColor, _selectedColor);
                     args.Display.DrawDot(x + delta, y, label.Text, _selectedColor, _selectedColor);
                     args.Display.DrawDot(x, y - delta, label.Text, _selectedColor, _selectedColor);
                     args.Display.DrawDot(x, y + delta, label.Text, _selectedColor, _selectedColor);
+                    args.Display.DrawDot(x - diagonal, y - diagonal, label.Text, _selectedColor, _selectedColor);
+                    args.Display.DrawDot(x + diagonal, y - diagonal, label.Text, _selectedColor, _selectedColor);
+                    args.Display.DrawDot(x - diagonal, y + diagonal, label.Text, _selectedColor, _selectedColor);
+                    args.Display.DrawDot(x + diagonal, y + diagonal, label.Text, _selectedColor, _selectedColor);
                 }
                 args.Display.DrawDot((float)screen.X, (float)screen.Y, label.Text,
                     Gradient ? _colours[label.ColourId] : fill, Gradient ? _textColours[label.ColourId] : foreground);

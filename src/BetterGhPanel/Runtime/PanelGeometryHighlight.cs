@@ -722,10 +722,7 @@ namespace BetterGhPanel.Runtime
             {
                 if (_selectedCount > 0 && args.Display != null)
                 {
-                    var clipBias = Transform.Identity; clipBias.M22 = 0.995; clipBias.M23 = 0.01;
-                    var bias = args.Viewport.GetTransform(CoordinateSystem.Clip, CoordinateSystem.World) * clipBias *
-                        args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
-                    args.Display.PushModelTransform(bias * args.Display.ModelTransform); pushed = true;
+                    PushPreviewDepthBias(args); pushed = true;
                 }
                 DrawWires(selected, true, colours, args.DefaultCurveThickness, args.Document.PreviewMode == GH_PreviewMode.Shaded);
             }
@@ -764,6 +761,14 @@ namespace BetterGhPanel.Runtime
             }
         }
 
+        private static void PushPreviewDepthBias(IGH_PreviewArgs args)
+        {
+            var clipBias = Transform.Identity; clipBias.M22 = 0.995; clipBias.M23 = 0.01;
+            var bias = args.Viewport.GetTransform(CoordinateSystem.Clip, CoordinateSystem.World) * clipBias *
+                args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
+            args.Display.PushModelTransform(bias * args.Display.ModelTransform);
+        }
+
         internal void DrawMeshes(IGH_PreviewArgs args)
         {
             if (args.MeshingParameters == null) return;
@@ -786,20 +791,29 @@ namespace BetterGhPanel.Runtime
             {
                 colours = new GH_PreviewMeshArgs[_valueMaterials.Length];
             }
-            for (int pass = 0; pass < (colours == null ? 1 : 2); pass++)
-                foreach (var entry in _entries.Values)
-                {
-                    bool isSelected = _membership.Contains(entry.Position);
-                    if (colours != null && isSelected != (pass == 1)) continue;
-                    entry.WasDrawn = true;
-                    var draw = colours == null ? isSelected ? selected : normal : colours[entry.ColourId] ??=
-                        new GH_PreviewMeshArgs(args.Viewport, args.Display, _valueMaterials![entry.ColourId], args.MeshingParameters);
-                    foreach (var leaf in entry.Leaves)
+            bool pushed = false;
+            try
+            {
+                // Pull all value-coloured fills ahead of coincident upstream preview,
+                // using the same clip-space bias as selected wires.
+                if (colours != null && args.Display != null)
+                { PushPreviewDepthBias(args); pushed = true; }
+                for (int pass = 0; pass < (colours == null ? 1 : 2); pass++)
+                    foreach (var entry in _entries.Values)
                     {
-                        try { leaf.DrawMeshes(draw, () => generation == _generation, colours != null, isSelected && colours != null ? halo : null); } catch (Exception) { }
-                        if (generation != _generation) return;
+                        bool isSelected = _membership.Contains(entry.Position);
+                        if (colours != null && isSelected != (pass == 1)) continue;
+                        entry.WasDrawn = true;
+                        var draw = colours == null ? isSelected ? selected : normal : colours[entry.ColourId] ??=
+                            new GH_PreviewMeshArgs(args.Viewport, args.Display, _valueMaterials![entry.ColourId], args.MeshingParameters);
+                        foreach (var leaf in entry.Leaves)
+                        {
+                            try { leaf.DrawMeshes(draw, () => generation == _generation, colours != null, isSelected && colours != null ? halo : null); } catch (Exception) { }
+                            if (generation != _generation) return;
+                        }
                     }
-                }
+            }
+            finally { if (pushed) args.Display.PopModelTransform(); }
             }
             finally { EndDraw(args.Display); }
         }
