@@ -639,21 +639,36 @@ namespace BetterGhPanel.Runtime
         }
 
         internal void Clear() => ClearForQuery(false);
-        internal void ClearForQuery(bool keepValues)
+        internal bool ClearForQuery(bool keepValues)
         {
-            _generation++; _orderLabels.Clear(keepValues); _orderResult = null; ClearGeometry();
+            _generation++;
+            if (keepValues && _orderLabels.HasValuePreview)
+            {
+                // Keep the owned preview visible until SetScopeChecked replaces it.
+                // No callback tied to the expired input may clear this retained generation.
+                CancelRecovery(); _meshPriorityDirty = false;
+                _orderLabels.SuspendValues();
+                return true;
+            }
+            _orderLabels.Clear(); _orderResult = null; ClearGeometry();
             if (_valueMaterials != null)
             {
                 foreach (var material in _valueMaterials) _retiredMaterials.Enqueue(material);
                 _valueMaterials = null;
                 ScheduleRelease();
             }
+            return false;
         }
+        private void CancelRecovery()
+        {
+            if (_recoveryScheduled) Rhino.RhinoApp.Idle -= RecoverOnIdle;
+            _recoveryScheduled = false; _recoveryCurrent = null; _recovery.Clear();
+        }
+
         private void ClearGeometry()
         {
             var old = new List<Entry>(_entries.Values);
-            if (_recoveryScheduled) Rhino.RhinoApp.Idle -= RecoverOnIdle;
-            _recoveryScheduled = false; _recoveryCurrent = null; _recovery.Clear();
+            CancelRecovery();
             _scopeToken = new object();
             _entries.Clear(); _byPosition.Clear(); _unselected.Clear(); _attempted.Clear(); _unavailablePositions.Clear(); _attemptOrder.Clear(); _membership.Clear();
             _bounds.Clear(); _orderLabels.ClearEntries(); _selectedCount = _unavailable = _meshFailures = 0; _bytes = 0; _partial = false; _partialReason = null;
@@ -769,6 +784,25 @@ namespace BetterGhPanel.Runtime
             args.Display.PushModelTransform(bias * args.Display.ModelTransform);
         }
 
+        private const double GradientDepthOffset = 1e-3;
+        private static bool PushGradientDepthOffset(IGH_PreviewArgs args)
+        {
+            var viewport = args.Viewport;
+            Transform offset;
+            if (viewport.IsParallelProjection)
+            {
+                // A small fraction of the visible world height, independent of clip depth.
+                if (!viewport.GetFrustum(out _, out _, out double bottom, out double top, out _, out _)) return false;
+                var direction = viewport.CameraDirection;
+                double distance = (top - bottom) * GradientDepthOffset;
+                if (!direction.Unitize() || distance <= 0 || double.IsNaN(distance) || double.IsInfinity(distance)) return false;
+                offset = Transform.Translation(direction * -distance);
+            }
+            else offset = Transform.Scale(viewport.CameraLocation, 1 - GradientDepthOffset);
+            args.Display.PushModelTransform(offset * args.Display.ModelTransform);
+            return true;
+        }
+
         internal void DrawMeshes(IGH_PreviewArgs args)
         {
             if (args.MeshingParameters == null) return;
@@ -794,10 +828,10 @@ namespace BetterGhPanel.Runtime
             bool pushed = false;
             try
             {
-                // Pull all value-coloured fills ahead of coincident upstream preview,
-                // using the same clip-space bias as selected wires.
+                // Keep fills just ahead of coincident upstream preview, without
+                // the wire bias's dependence on clipping-plane depth.
                 if (colours != null && args.Display != null)
-                { PushPreviewDepthBias(args); pushed = true; }
+                    pushed = PushGradientDepthOffset(args);
                 for (int pass = 0; pass < (colours == null ? 1 : 2); pass++)
                     foreach (var entry in _entries.Values)
                     {

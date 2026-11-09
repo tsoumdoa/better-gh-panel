@@ -171,8 +171,9 @@ namespace BetterGhPanel
         {
             _session?.RequestPreviewMeasurements(null, null);
             bool visible = _highlight.PreviewCount > 0;
-            _highlight.ClearForQuery(keepValues: keepValues && PreviewMode != PanelPreviewMode.Off && !Hidden && !Locked && !_previewSuspended);
-            if (visible) { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
+            bool retained = _highlight.ClearForQuery(keepValues: keepValues && (ShowValues || ValuePalette != PanelValuePalette.Off) &&
+                PreviewMode != PanelPreviewMode.Off && !Hidden && !Locked && !_previewSuspended);
+            if (visible && !retained) { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
         }
 
         private void InvalidatePreviewCaches()

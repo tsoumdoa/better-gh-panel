@@ -9,8 +9,12 @@ Final-package validation and independent review are required before merging.
 Panel+ uses result-local owned preview generations for bounds, labels and
 geometry drawing. Exact wrappers and groups are flattened under per-root and
 per-build budgets and are never retained as recursive preview targets. New
-solutions and source expiration discard the generation; before expiration a
-snapshot remains internally consistent when a source holder or group changes.
+solutions and source expiration cancel the generation's pending work. With value
+preview enabled, its owned geometry, labels, materials and bounds stay visible
+until the replacement result arrives; otherwise expiration discards the preview.
+Replacement and full removal retire those owned resources by the same rules.
+Before expiration a snapshot remains internally consistent when a source holder
+or group changes.
 Independent standalone third-party preview and standalone point subclasses keep
 their existing best-effort behavior. Arbitrary native subclasses and concurrent
 external native mutation or disposal remain host limitations, not a sandbox.

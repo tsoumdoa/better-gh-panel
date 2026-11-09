@@ -21,6 +21,7 @@ namespace BetterGhPanel.Runtime
         private Guid _viewport;
         private Transform _model;
         private Color _selectedColor;
+        private TextDot? _haloDot;
 
         private PanelQueryResult? _valueResult;
         private bool _dirty;
@@ -51,6 +52,7 @@ namespace BetterGhPanel.Runtime
         internal Action? ValuesChanged { get; set; }
         internal Action<PanelQueryResult, IReadOnlyList<int>>? PendingChanged { get; set; }
         internal bool Gradient => _settings.Palette != PanelValuePalette.Off;
+        internal bool HasValuePreview => _settings.Values || Gradient;
         internal Color Colour(int id) => _colours[id];
         internal int ColourId(int position)
         {
@@ -194,14 +196,21 @@ namespace BetterGhPanel.Runtime
             _labels.Clear();
             UpdateEnabled();
         }
-        internal void Clear(bool keepValues = false)
+        internal void SuspendValues()
         {
             _valueGeneration++;
-            ClearEntries(); SetResult(null); _valueResult = null; _sample = null; _current = null;
+            _valueResult = null; _sample = null; _current = null;
             _refresh?.Stop(); _refresh?.Dispose(); _refresh = null;
-            if (!keepValues) { _values.Clear(); _ranges.Clear(); _legend = Array.Empty<LegendRow>(); _lastPublish = -PublishInterval; }
             ClearBuild();
             _valuePositions = Array.Empty<int>();
+        }
+
+        internal void Clear()
+        {
+            SuspendValues();
+            ClearEntries(); SetResult(null);
+            _values.Clear(); _ranges.Clear(); _legend = Array.Empty<LegendRow>(); _lastPublish = -PublishInterval;
+            _haloDot?.Dispose(); _haloDot = null;
             UpdateEnabled();
         }
 
@@ -251,7 +260,14 @@ namespace BetterGhPanel.Runtime
             if (scale <= 0 || float.IsNaN(scale) || float.IsInfinity(scale)) scale = 1;
             // Selected labels win collisions. Each list retains current view order; hidden
             // labels keep their original numbers and can reappear as the view separates them.
-            DrawLabels(e, occupied, scale, _selectedColor, true);
+            if (Gradient)
+            {
+                // Halo TextDots use world coordinates; the top dots use screen coordinates.
+                e.Display.PushModelTransform(Transform.Identity);
+                try { DrawLabels(e, occupied, scale, _selectedColor, true); }
+                finally { e.Display.PopModelTransform(); }
+            }
+            else DrawLabels(e, occupied, scale, _selectedColor, true);
             DrawLabels(e, occupied, scale, Color.FromArgb(245, 247, 244), false);
             DrawLegend(e, scale);
         }
@@ -259,6 +275,8 @@ namespace BetterGhPanel.Runtime
         private void DrawLabels(DrawEventArgs args, LabelCollisionGrid occupied, float scale, Color fill, bool selected)
         {
             var foreground = fill.GetBrightness() < 0.45f ? Color.White : Color.FromArgb(35, 41, 37);
+            var cameraX = Gradient && selected ? args.Viewport.CameraX : Vector3d.Zero;
+            var cameraY = Gradient && selected ? args.Viewport.CameraY : Vector3d.Zero;
             foreach (var label in _labels.Values)
             {
                 if (label.Text.Length == 0 || _membership.Contains(label.Position) != selected) continue;
@@ -268,21 +286,36 @@ namespace BetterGhPanel.Runtime
                 float width = (_settings.Values ? label.Text.Length * 8 + 12 : label.Text.Length * 9 + 14) * scale, height = 24 * scale;
                 var bounds = new RectangleF((float)screen.X - width / 2, (float)screen.Y - height / 2, width, height);
                 if (!occupied.TryAdd(bounds)) continue;
-                if (Gradient && selected)
-                {
-                    float x = (float)screen.X, y = (float)screen.Y, delta = 3 * scale, diagonal = delta * 0.70710678f;
-                    args.Display.DrawDot(x - delta, y, label.Text, _selectedColor, _selectedColor);
-                    args.Display.DrawDot(x + delta, y, label.Text, _selectedColor, _selectedColor);
-                    args.Display.DrawDot(x, y - delta, label.Text, _selectedColor, _selectedColor);
-                    args.Display.DrawDot(x, y + delta, label.Text, _selectedColor, _selectedColor);
-                    args.Display.DrawDot(x - diagonal, y - diagonal, label.Text, _selectedColor, _selectedColor);
-                    args.Display.DrawDot(x + diagonal, y - diagonal, label.Text, _selectedColor, _selectedColor);
-                    args.Display.DrawDot(x - diagonal, y + diagonal, label.Text, _selectedColor, _selectedColor);
-                    args.Display.DrawDot(x + diagonal, y + diagonal, label.Text, _selectedColor, _selectedColor);
-                }
+                if (Gradient && selected) DrawDotHalo(args, label, scale, cameraX, cameraY);
                 args.Display.DrawDot((float)screen.X, (float)screen.Y, label.Text,
                     Gradient ? _colours[label.ColourId] : fill, Gradient ? _textColours[label.ColourId] : foreground);
             }
+        }
+
+        private void DrawDotHalo(DrawEventArgs args, Label label, float scale, Vector3d cameraX, Vector3d cameraY)
+        {
+            var anchor = label.Anchor; anchor.Transform(_model);
+            if (!args.Viewport.GetWorldToScreenScale(anchor, out double pixelsPerUnit) ||
+                pixelsPerUnit <= 0 || double.IsNaN(pixelsPerUnit) || double.IsInfinity(pixelsPerUnit)) return;
+            _haloDot ??= new TextDot("", Point3d.Origin);
+            _haloDot.Text = label.Text;
+            double radius = 3 * scale / pixelsPerUnit;
+            var x = cameraX * radius; var y = cameraY * radius;
+            var diagonalUp = (x + y) * 0.70710678; var diagonalDown = (x - y) * 0.70710678;
+            DrawHaloDot(args.Display, anchor - x);
+            DrawHaloDot(args.Display, anchor + x);
+            DrawHaloDot(args.Display, anchor - y);
+            DrawHaloDot(args.Display, anchor + y);
+            DrawHaloDot(args.Display, anchor - diagonalUp);
+            DrawHaloDot(args.Display, anchor + diagonalUp);
+            DrawHaloDot(args.Display, anchor - diagonalDown);
+            DrawHaloDot(args.Display, anchor + diagonalDown);
+        }
+
+        private void DrawHaloDot(DisplayPipeline display, Point3d point)
+        {
+            _haloDot!.Point = point;
+            display.DrawDot(_haloDot, _selectedColor, _selectedColor, _selectedColor);
         }
 
         internal static bool TryProject(RhinoViewport viewport, Transform model, Point3d anchor, out Point2d screen)
