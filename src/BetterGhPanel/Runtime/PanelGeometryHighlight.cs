@@ -46,10 +46,9 @@ namespace BetterGhPanel.Runtime
                 if (!current()) return;
                 bool coloursChanged = _orderLabels.Configure(result, order, values, placement, palette, reverse, search, decimals, factor, scope, sample, current);
                 if (generation != _generation || !current()) return;
-                if (palette != PanelValuePalette.Off && _valueMaterials == null && !_displayFlushFailed &&
-                    RetainedBytes <= MaxRetainedBytes - (1 + 3 * PanelPreviewValues.Buckets) * 512L)
+                if (palette != PanelValuePalette.Off && _valueMaterials == null && !_displayFlushFailed)
                 {
-                    _valueMaterials = new DisplayMaterial[1 + 3 * PanelPreviewValues.Buckets];
+                    _valueMaterials = new DisplayMaterial[PanelPreviewValues.ColourCount];
                     for (int id = 0; id < _valueMaterials.Length; id++)
                     {
                         var colour = _orderLabels.Colour(id);
@@ -104,11 +103,17 @@ namespace BetterGhPanel.Runtime
         private long _recoveryGeneration;
         private Func<bool>? _recoveryCurrent;
         internal Action? PreviewChanged { get; set; }
+        internal Action<PanelQueryResult, IReadOnlyList<int>>? PendingMeasurements { get; set; }
 
         internal PanelGeometryHighlight() : this(null) { }
         // A fixture can inject a reentrant callback at the exact ownership seam.
         internal PanelGeometryHighlight(Action<int, object>? admissionObserver)
-        { _admissionObserver = admissionObserver; _orderLabels = new PanelOrderLabels(_membership); _orderLabels.ValuesChanged = ValuesChanged; }
+        {
+            _admissionObserver = admissionObserver;
+            _orderLabels = new PanelOrderLabels(_membership);
+            _orderLabels.ValuesChanged = ValuesChanged;
+            _orderLabels.PendingChanged = (result, positions) => PendingMeasurements?.Invoke(result, positions);
+        }
         internal int Count => _selectedCount;
         internal int PreviewCount => _entries.Count;
         internal long RetainedBytes => _bytes + _retiredBytes + _stagedBytes + ((_valueMaterials?.Length ?? 0) + _retiredMaterials.Count) * 512L;
@@ -554,9 +559,10 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        internal void Clear()
+        internal void Clear() => ClearForQuery(false);
+        internal void ClearForQuery(bool keepValues)
         {
-            _generation++; _orderLabels.Clear(); _orderResult = null; ClearGeometry();
+            _generation++; _orderLabels.Clear(keepValues); _orderResult = null; ClearGeometry();
             if (_valueMaterials != null)
             {
                 foreach (var material in _valueMaterials) _retiredMaterials.Enqueue(material);
@@ -658,6 +664,8 @@ namespace BetterGhPanel.Runtime
             long generation = _generation;
             var normal = new GH_PreviewMeshArgs(args.Viewport, args.Display, args.ShadeMaterial, args.MeshingParameters);
             var selected = new GH_PreviewMeshArgs(args.Viewport, args.Display, args.ShadeMaterial_Selected, args.MeshingParameters);
+            var halo = _orderLabels.Gradient ? new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour_Selected,
+                args.DefaultCurveThickness + Math.Max(MinSelectionThickening, CentralSettings.PreviewSelectionThickening)) : null;
             // Fixed meshes need no remeshing. Brep/Surface/SubD entries manage
             // their own bounded meshes and invalidate them on setting changes.
             GH_PreviewMeshArgs[]? colours = null;
@@ -675,7 +683,7 @@ namespace BetterGhPanel.Runtime
                         new GH_PreviewMeshArgs(args.Viewport, args.Display, _valueMaterials![entry.ColourId], args.MeshingParameters);
                     foreach (var leaf in entry.Leaves)
                     {
-                        try { leaf.DrawMeshes(draw, () => generation == _generation, colours != null); } catch (Exception) { }
+                        try { leaf.DrawMeshes(draw, () => generation == _generation, colours != null, isSelected && colours != null ? halo : null); } catch (Exception) { }
                         if (generation != _generation) return;
                     }
                 }

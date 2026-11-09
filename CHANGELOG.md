@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- Preview adds **Show values**, **Dot placement** (Centre / Box top / Box bottom), and **Colour by value** (Viridis / Heat / Blue–white–red, with Reverse). Value dots share row units and precision, combine with item order, and update as the existing measurement queue completes scoped work.
-- Gradients use all filtered Results, separate metric/unit ranges, reusable bucketed materials, selection halos and stacked viewport legends. New settings are saved, undoable and retained by Reset all; values and gradients default off.
-- Centre placement now puts item-order dots at curve mid-parameters and stable coarse-mesh surface anchors instead of bounding-box centres. D/S/B/F and component ports are unchanged.
+- **Values in Rhino.** Preview's **Show values** adds the chosen numeric Search value or each row's usual measurement. Circles and arcs show radius in other Search modes. Units and rounding match the rows, and values can appear beside item-order numbers.
+- **Choose dot position and colour.** **Dot placement** offers Centre, Box top and Box bottom. Closed solids and meshes keep their centre; open surfaces stay on the material. **Colour by value** colours dots and geometry, with selection halos and a compact viewport legend.
+- **Preview settings stay with the file.** The new settings support Undo and survive Reset all. Values and colouring start off. D/S/B/F are unchanged.
 
 ## 0.3.2-beta
 

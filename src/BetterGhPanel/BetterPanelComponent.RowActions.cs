@@ -157,8 +157,7 @@ namespace BetterGhPanel
             if (!Current()) return;
             _highlight.SetScopeChecked(source, expectedResult, mode == PanelPreviewMode.FilteredResults, ordered, Current, RowSelection);
             if (!Current()) return;
-            session.RequestPreviewMeasurements(ShowValues || ValuePalette != PanelValuePalette.Off ? expectedResult : null,
-                ValuePalette != PanelValuePalette.Off ? expectedResult.DisplaySet?.AllMembers ?? expectedResult.RowPositions : previewPositions);
+            if (!ShowValues && ValuePalette == PanelValuePalette.Off) session.RequestPreviewMeasurements(null, null);
             InvalidatePreviewCaches();
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
@@ -170,7 +169,7 @@ namespace BetterGhPanel
         {
             _session?.RequestPreviewMeasurements(null, null);
             bool visible = _highlight.PreviewCount > 0;
-            _highlight.Clear();
+            _highlight.ClearForQuery(keepValues: PreviewMode != PanelPreviewMode.Off && !Locked && !_previewSuspended && _session?.IsBusy == true);
             if (visible) { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
         }
 

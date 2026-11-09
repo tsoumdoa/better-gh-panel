@@ -21,18 +21,22 @@ namespace BetterGhPanel
             var next = page;
             if (page == CanvasMenuKind.Preview)
             {
-                if (index < 3) { PanelOwner.SetPreviewMode(_menu.PreviewChoiceAt(index).Mode!.Value); _menu.Close(); canvas.Invalidate(); return; }
-                if (index == 3) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
-                if (index == 4) PanelOwner.SetShowValues(!PanelOwner.ShowValues);
-                if (index == 5) next = CanvasMenuKind.DotPlacement;
-                if (index == 6) next = CanvasMenuKind.ValuePalette;
+                if (index < CanvasPreviewRows.ScopeCount) { PanelOwner.SetPreviewMode(_menu.PreviewChoiceAt(index).Mode!.Value); _menu.Close(); canvas.Invalidate(); return; }
+                if (index == CanvasPreviewRows.ItemOrder) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
+                if (index == CanvasPreviewRows.Values) PanelOwner.SetShowValues(!PanelOwner.ShowValues);
+                if (index == CanvasPreviewRows.Placement) next = CanvasMenuKind.DotPlacement;
+                if (index == CanvasPreviewRows.Colour) next = CanvasMenuKind.ValuePalette;
             }
-            else if (index == 0) next = CanvasMenuKind.Preview;
-            else if (page == CanvasMenuKind.DotPlacement) { PanelOwner.SetDotPlacement((PanelDotPlacement)(index - 1)); next = CanvasMenuKind.Preview; }
-            else if (index == 5) PanelOwner.SetReversePalette(!PanelOwner.ReversePalette);
-            else PanelOwner.SetValuePalette((PanelValuePalette)(index - 1));
-            _menu.Close();
-            OpenMenu(next, canvas);
+            else if (index == CanvasPreviewRows.Back) next = CanvasMenuKind.Preview;
+            else if (page == CanvasMenuKind.DotPlacement) { PanelOwner.SetDotPlacement((PanelDotPlacement)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
+            else if (index == CanvasPreviewRows.Reverse) PanelOwner.SetReversePalette(!PanelOwner.ReversePalette);
+            else PanelOwner.SetValuePalette((PanelValuePalette)(index - CanvasPreviewRows.FirstChoice));
+            if (next != page)
+            {
+                _menu.Close();
+                OpenMenu(next, canvas);
+            }
+            else _menu.InvalidatePaint();
             canvas.Invalidate();
         }
 
@@ -77,7 +81,7 @@ namespace BetterGhPanel
                 if (row < _menu.Visible && index < _menu.Count)
                 {
                     e.Text = _menu.StatisticsDetails(index, PanelOwner.DecimalPlaces);
-                    e.Description = index == 6 || index == 7 || index >= CanvasStatistics.OverviewRows ? CanvasStatistics.UniqueScope :
+                    e.Description = index == CanvasPreviewRows.Colour || index == 7 || index >= CanvasStatistics.OverviewRows ? CanvasStatistics.UniqueScope :
                         index == 8 ? "Source counts after filters are measured before Create set removes duplicate occurrences. Valid, invalid and unverified are distinct." : CanvasStatistics.Scope;
                 }
                 else e.Description = "Use Previous and Next to inspect all values.";

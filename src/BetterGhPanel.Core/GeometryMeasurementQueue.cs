@@ -295,7 +295,7 @@ namespace BetterGhPanel.Core
         internal Task<bool> MeasureAllAsync(TSnapshot snapshot, int count, CancellationToken token) =>
             MeasureAsync(snapshot, new SequentialPositions(count), token);
 
-        internal Task<bool> MeasureAsync(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token)
+        internal Task<bool> MeasureAsync(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token, bool background = false)
         {
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _postUi(() =>
@@ -303,7 +303,7 @@ namespace BetterGhPanel.Core
                 _verifyUi();
                 if (_disposed || !ReferenceEquals(snapshot, _snapshot) || token.IsCancellationRequested)
                 { completion.TrySetResult(false); return; }
-                var batch = new Batch(snapshot, positions, token, completion);
+                var batch = new Batch(snapshot, positions, token, completion, background);
                 _batches.Add(batch);
                 var registration = token.Register(() => _postCancellation(() =>
                 {
@@ -382,12 +382,15 @@ namespace BetterGhPanel.Core
         private bool CanStart(TSnapshot snapshot, int position) =>
             _canMeasure(snapshot, position) && SourceCurrent(snapshot, position) && !Has(snapshot, position);
 
-        private int NextPosition()
+        private int NextPosition(bool foregroundOnly = false)
         {
             if (_snapshot == null) return -1;
             foreach (var batch in _batches)
-                if (!batch.Token.IsCancellationRequested && batch.Positions.Count > 0) return batch.Positions.Peek();
+                if (!batch.Background && !batch.Token.IsCancellationRequested && batch.Positions.Count > 0) return batch.Positions.Peek();
             foreach (int position in _visible) if (CanStart(_snapshot, position)) return position;
+            if (!foregroundOnly)
+                foreach (var batch in _batches)
+                    if (batch.Background && !batch.Token.IsCancellationRequested && batch.Positions.Count > 0) return batch.Positions.Peek();
             return -1;
         }
 
@@ -439,7 +442,7 @@ namespace BetterGhPanel.Core
             var snapshot = _snapshot;
             if (_scheduler == null) { Pump(); return; }
             if (snapshot == null || _disposed) { _scheduler.Cancel(this); return; }
-            _scheduler.RequestWork(this, snapshot, _priority,
+            _scheduler.RequestWork(this, snapshot, NextPosition(foregroundOnly: true) >= 0 ? _priority : int.MaxValue,
                 () => !_disposed && ReferenceEquals(snapshot, _snapshot) && _running == null &&
                     _preparingDepth == 0 && _capacityWait == null && NextPosition() >= 0,
                 admission => Pump(admission));
@@ -671,11 +674,12 @@ namespace BetterGhPanel.Core
         }
         private sealed class Batch
         {
-            internal Batch(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token, TaskCompletionSource<bool> completion)
-            { Snapshot = snapshot; Requested = positions; Token = token; Completion = completion; }
+            internal Batch(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token, TaskCompletionSource<bool> completion, bool background)
+            { Snapshot = snapshot; Requested = positions; Token = token; Completion = completion; Background = background; }
             internal IReadOnlyList<int>? Requested;
             internal int Next;
             internal bool Registered;
+            internal readonly bool Background;
             internal readonly TSnapshot Snapshot;
             internal readonly Queue<int> Positions = new Queue<int>();
             internal readonly HashSet<int> Pending = new HashSet<int>();

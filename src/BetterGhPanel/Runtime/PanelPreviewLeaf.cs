@@ -386,7 +386,7 @@ namespace BetterGhPanel.Runtime
         internal void DrawWires(GH_PreviewWireArgs args, Func<bool> current, bool colourByValue = false, bool halo = false)
         {
             if (_value is PanelGeometrySources.StandalonePreview custom) { custom.Value.DrawViewportWires(args); return; }
-            if (args.Pipeline == null) return;
+            if (args.Pipeline == null || halo && _value is Mesh) return;
             if (_value is Point3d p) args.Pipeline.DrawPoint(p, CentralSettings.PreviewPointStyle, CentralSettings.PreviewPointRadius + (halo ? 2 : 0), args.Color);
             else if (_value is Line line) args.Pipeline.DrawLine(line, args.Color, args.Thickness);
             else if (_value is Arc arc) args.Pipeline.DrawArc(arc, args.Color, args.Thickness);
@@ -412,11 +412,11 @@ namespace BetterGhPanel.Runtime
                 foreach (var batch in cloud.Batches)
                 {
                     if (!current()) return;
-                    args.Pipeline.DrawPoints(batch.Points, style, radius,
+                    args.Pipeline.DrawPoints(batch.Points, style, radius + (halo ? 2 : 0),
                         !colourByValue && cloud.HasColors ? Color.FromArgb(batch.Argb) : args.Color);
                 }
             }
-            else if (_value is Mesh mesh && (CentralSettings.PreviewMeshEdges || halo)) args.Pipeline.DrawMeshWires(mesh, args.Color, args.Thickness);
+            else if (_value is Mesh mesh && CentralSettings.PreviewMeshEdges) args.Pipeline.DrawMeshWires(mesh, args.Color, args.Thickness);
             else if (_value is Brep brep)
                 for (int i = 0; current() && i < brep.Edges.Count; i++) args.Pipeline.DrawCurve(brep.Edges[i], args.Color, args.Thickness);
             else if (_value is Surface surface) args.Pipeline.DrawSurface(surface, args.Color, args.Thickness);
@@ -478,12 +478,19 @@ namespace BetterGhPanel.Runtime
             return new CloudPoints(hasColors, batches.ToArray());
         }
 
-        internal void DrawMeshes(GH_PreviewMeshArgs args, Func<bool> current, bool colourByValue = false)
+        internal void DrawMeshes(GH_PreviewMeshArgs args, Func<bool> current, bool colourByValue = false, GH_PreviewWireArgs? halo = null)
         {
             if (_value is PanelGeometrySources.StandalonePreview custom) { custom.Value.DrawViewportMeshes(args); return; }
             if (args.Pipeline == null) return;
             if (_value is Mesh mesh)
             {
+                if (halo != null)
+                {
+                    args.Pipeline.PushDepthWriting(false);
+                    try { args.Pipeline.DrawMeshWires(mesh, halo.Color, halo.Thickness); }
+                    finally { args.Pipeline.PopDepthWriting(); }
+                    if (!current()) return;
+                }
                 if (!colourByValue && mesh.VertexColors.Count > 0) args.Pipeline.DrawMeshFalseColors(mesh);
                 else args.Pipeline.DrawMeshShaded(mesh, args.Material, _fixedFaces!);
             }

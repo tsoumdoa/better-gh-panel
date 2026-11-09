@@ -72,6 +72,7 @@ namespace BetterGhPanel
             "Inspect and manipulate data trees on the canvas. Choose Items or displayed Values for D/S. Create set groups every member in a branch per value, or emits unique displayed values. B/F and geometry actions include all set members. Sorting changes only view order.",
             "Params", "Util")
         {
+            _highlight.PendingMeasurements = (result, positions) => _session?.RequestPreviewMeasurements(result, positions);
             _highlight.PreviewChanged = () =>
             {
                 InvalidatePreviewCaches();

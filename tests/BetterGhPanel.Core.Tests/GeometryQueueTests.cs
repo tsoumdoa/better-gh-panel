@@ -128,6 +128,38 @@ public class GeometryQueueTests
     }
 
     [Fact]
+    public void PreviewBackgroundDemandYieldsToVisibleDataAndColumnsBetweenRows()
+    {
+        var posts = new Queue<Action>();
+        using var scheduler = new GeometryMeasurementScheduler(posts.Enqueue);
+        void Dispatch() { while (posts.Count != 0) posts.Dequeue()(); }
+        using var data = new Fixture(scheduler, 0);
+        using var column = new Fixture(scheduler, 1, false);
+        var order = new List<string>();
+        data.AfterCopy = () => order.Add("D" + data.PreparedPositions[data.PreparedPositions.Count - 1]);
+        column.AfterCopy = () => order.Add("column");
+        var preview = data.Queue.MeasureAsync(data.Current, new[] { 0, 1 }, CancellationToken.None, background: true);
+        data.Ui(); data.Delay(); // Preview admission is pending, with no geometry owned yet.
+        data.Queue.RequestVisible(data.Current, new[] { 2 });
+        data.Delay();
+        column.Queue.RequestVisible(column.Current, new[] { 0 }); column.Delay();
+        Dispatch();
+        Assert.Equal(new[] { "D2" }, order);
+        data.Worker(); data.Ui(); Dispatch();
+        Assert.Equal(new[] { "D2", "column" }, order);
+        column.Worker(); column.Ui(); Dispatch();
+        Assert.Equal(new[] { "D2", "column", "D0" }, order);
+        // A new visible column must still progress between background preview rows.
+        column.Queue.RequestVisible(column.Current, new[] { 1 }); column.Delay();
+        data.Worker(); data.Ui(); Dispatch();
+        Assert.Equal(new[] { "D2", "column", "D0", "column" }, order);
+        column.Worker(); column.Ui(); Dispatch();
+        data.Worker(); data.Ui(); Dispatch();
+        Assert.True(preview.Result);
+        Assert.Equal(new[] { "D2", "column", "D0", "column", "D1" }, order);
+    }
+
+    [Fact]
     public void PendingAdmissionIsBoundedAndRemovedOnCancellationReplacementAndDisposal()
     {
         var posts = new Queue<Action>();

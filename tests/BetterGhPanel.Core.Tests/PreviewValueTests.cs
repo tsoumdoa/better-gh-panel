@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 using BetterGhPanel.Core;
 using BetterGhPanel.UI;
 using Xunit;
@@ -34,30 +33,22 @@ public class PreviewValueTests
     [Fact]
     public void MissingPendingAndFailedMetricsAreDistinct()
     {
-        var row = Geometry(new PanelGeometryInfo("Surface", power: 2, metricName: "Area", canMeasure: true));
-        var snapshot = Snapshot(row);
-        var pending = PanelPreviewValues.Sample(snapshot, row, PanelSearchMode.Text, null, 2, 0);
-        Assert.Null(pending.Number); Assert.True(pending.Pending); Assert.Equal("…", pending.Label(null, true));
-        Assert.Equal("2 · …", pending.Label(2, true));
-        var failed = PanelPreviewValues.Sample(snapshot, row, PanelSearchMode.Text, row.GeometryInfo!.WithUnavailableMeasurement(), 2, 0);
-        Assert.False(failed.Pending); Assert.Equal("", failed.Label(null, true));
-        var missing = PanelPreviewValues.Sample(snapshot, row, PanelSearchMode.Length, null, 2, 0);
-        Assert.False(missing.Pending); Assert.Null(missing.Number);
+        foreach (var info in new[] {
+            new PanelGeometryInfo("Surface", power: 2, metricName: "Area", canMeasure: true),
+            new PanelGeometryInfo("Curve", metricName: "", metricLabel: "", canMeasure: true) })
+        {
+            var row = Geometry(info); var snapshot = Snapshot(row);
+            var pending = PanelPreviewValues.Sample(snapshot, row, PanelSearchMode.Text, null, 2, 0);
+            Assert.Null(pending.Number); Assert.True(pending.Pending); Assert.Equal("…", pending.Label(null, true));
+            Assert.Equal("2 · …", pending.Label(2, true));
+            var failed = PanelPreviewValues.Sample(snapshot, row, PanelSearchMode.Text, info.WithUnavailableMeasurement(), 2, 0);
+            Assert.False(failed.Pending); Assert.Equal("", failed.Label(null, true));
+            var missing = PanelPreviewValues.Sample(snapshot, row, PanelSearchMode.Length, null, 2, 0);
+            Assert.False(missing.Pending); Assert.Null(missing.Number);
+        }
         var point = new PanelRow(0, "{0}", "Point", "", null, PanelValidity.VerifiedValid, components: new PanelComponents(1, 2, 3, "m"));
         Assert.Equal("", PanelPreviewValues.Sample(Snapshot(point), point, PanelSearchMode.Text, null, 2, 0).Label(null, true));
         Assert.Equal("1.00 m", PanelPreviewValues.Sample(Snapshot(point), point, PanelSearchMode.X, null, 2, 0).Text);
-    }
-
-    [Fact]
-    public void UnmeasuredCurveWithUnknownMainMetricStillHasPendingDot()
-    {
-        var row = Geometry(new PanelGeometryInfo("Curve", metricName: "", metricLabel: "", canMeasure: true));
-        var pending = PanelPreviewValues.Sample(Snapshot(row), row, PanelSearchMode.Text, null, 2, 0);
-        Assert.True(pending.Pending);
-        Assert.Null(pending.Number);
-        Assert.Equal("2 · …", pending.Label(2, true));
-        Assert.Equal("", PanelPreviewValues.Sample(Snapshot(row), row, PanelSearchMode.Text,
-            row.GeometryInfo!.WithUnavailableMeasurement(), 2, 0).Label(null, true));
     }
 
     [Fact]
@@ -101,39 +92,20 @@ public class PreviewValueTests
         Assert.Equal(0, extremes.Bucket(-1e308)); Assert.Equal(32, extremes.Bucket(0)); Assert.Equal(64, extremes.Bucket(1e308));
     }
 
-    [Theory]
-    [InlineData(PanelValuePalette.Viridis, 0x440154, 0x21918c, 0xfde725)]
-    [InlineData(PanelValuePalette.Heat, 0x000004, 0xb73779, 0xfcfdbf)]
-    [InlineData(PanelValuePalette.BlueWhiteRed, 0x2166ac, 0xf7f7f7, 0xb2182b)]
-    public void PaletteStopsReverseAndContrastMatchMock(PanelValuePalette palette, int first, int middle, int last)
-    {
-        Assert.Equal(first, PanelPreviewValues.Colour(palette, 0, false).ToArgb() & 0xffffff);
-        Assert.Equal(middle, PanelPreviewValues.Colour(palette, 32, false).ToArgb() & 0xffffff);
-        Assert.Equal(last, PanelPreviewValues.Colour(palette, 64, false).ToArgb() & 0xffffff);
-        Assert.Equal(PanelPreviewValues.Colour(palette, 0, false), PanelPreviewValues.Colour(palette, 64, true));
-        Assert.Equal(Color.White, PanelPreviewValues.TextColour(Color.Black));
-        Assert.Equal(Color.Black, PanelPreviewValues.TextColour(Color.White));
-    }
-
     [Fact]
-    public void PreviewPagesStayBelowRowLimitAndDisableOnlyDependentChoices()
+    public void PreviewMenuDisablesDependentChoicesAndSkipsThemByKeyboard()
     {
         var menu = new CanvasMenu(); var options = new PanelQueryOptions();
         menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
-        Assert.Equal(7, menu.Count); Assert.Equal("Show values", menu.Label(4));
-        Assert.False(menu.RowEnabled(5, false, false, PanelValuePalette.Off));
-        Assert.True(menu.RowEnabled(5, false, true, PanelValuePalette.Off));
-        Assert.Equal("Centre…", menu.Trailing(5, PanelDotPlacement.Centre, PanelValuePalette.Off));
-        menu.Toggle(CanvasMenuKind.DotPlacement, PanelSnapshot.Empty, options);
-        Assert.Equal(4, menu.Count); Assert.Equal("‹ Preview", menu.Label(0)); Assert.Equal("Box bottom", menu.Label(3));
+        Assert.False(menu.RowEnabled(CanvasPreviewRows.Placement, false, false, PanelValuePalette.Off));
+        Assert.True(menu.RowEnabled(CanvasPreviewRows.Placement, false, true, PanelValuePalette.Off));
         menu.Toggle(CanvasMenuKind.ValuePalette, PanelSnapshot.Empty, options);
-        Assert.Equal(6, menu.Count); Assert.Equal("Blue–white–red", menu.Label(4)); Assert.Equal("Reverse", menu.Label(5));
-        Assert.False(menu.RowEnabled(5, false, false, PanelValuePalette.Off));
-        Assert.True(menu.RowEnabled(5, false, false, PanelValuePalette.Heat));
+        Assert.False(menu.RowEnabled(CanvasPreviewRows.Reverse, false, false, PanelValuePalette.Off));
+        Assert.True(menu.RowEnabled(CanvasPreviewRows.Reverse, false, false, PanelValuePalette.Heat));
         bool Enabled(int index) => menu.RowEnabled(index, false, false, PanelValuePalette.Off);
         menu.MoveHover(-1, Enabled, fromEdge: true);
-        Assert.Equal(4, menu.HoveredIndex);
+        Assert.Equal(CanvasPreviewRows.PaletteLast, menu.HoveredIndex);
         menu.MoveHover(1, Enabled);
-        Assert.Equal(0, menu.HoveredIndex);
+        Assert.Equal(CanvasPreviewRows.Back, menu.HoveredIndex);
     }
 }

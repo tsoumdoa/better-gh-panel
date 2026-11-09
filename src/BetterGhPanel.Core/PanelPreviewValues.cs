@@ -51,6 +51,7 @@ namespace BetterGhPanel.Core
     public static class PanelPreviewValues
     {
         public const int Buckets = 65;
+        public const int ColourCount = 1 + 3 * Buckets;
         private static readonly int[][] Stops = {
             new[] { 0x440154, 0x3b528b, 0x21918c, 0x5ec962, 0xfde725 },
             new[] { 0x000004, 0x51127c, 0xb73779, 0xfc8961, 0xfcfdbf },

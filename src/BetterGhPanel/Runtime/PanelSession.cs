@@ -75,16 +75,19 @@ namespace BetterGhPanel.Runtime
         internal event EventHandler? PreviewMeasurementsChanged;
         private CancellationTokenSource? _previewMeasurements;
         private PanelQueryResult? _previewMeasurementResult;
-        private IReadOnlyList<int>? _previewMeasurementPositions;
+        private HashSet<int>? _previewMeasurementPositions;
         internal void RequestPreviewMeasurements(PanelQueryResult? result, IReadOnlyList<int>? positions)
         {
-            if (ReferenceEquals(result, _previewMeasurementResult) && ReferenceEquals(positions, _previewMeasurementPositions)) return;
+            if (ReferenceEquals(result, _previewMeasurementResult) &&
+                (positions == null ? _previewMeasurementPositions == null : _previewMeasurementPositions?.SetEquals(positions) == true)) return;
             var old = _previewMeasurements; _previewMeasurements = null;
-            _previewMeasurementResult = result; _previewMeasurementPositions = positions;
+            var pending = positions == null ? null : new HashSet<int>(positions);
+            _previewMeasurementResult = result; _previewMeasurementPositions = pending;
             old?.Cancel(); old?.Dispose();
-            if (result == null || positions == null || positions.Count == 0 || !HasCurrentResult) return;
+            if (result == null || positions == null || positions.Count == 0 || !HasCurrentResult ||
+                !ReferenceEquals(result, Result) || !ReferenceEquals(_previewMeasurementPositions, pending)) return;
             var cancellation = _previewMeasurements = new CancellationTokenSource();
-            _ = _geometry.MeasureAsync(result.Snapshot, positions, cancellation.Token);
+            _ = _geometry.MeasureAsync(result.Snapshot, positions, cancellation.Token, background: true);
         }
 
         // Capture stages these immutable providers immediately before attaching their

@@ -990,12 +990,23 @@ namespace BetterGhPanel
                         g.DrawLines(check, new[] { new PointF(row.X + 7, row.Y + 10), new PointF(row.X + 10, row.Y + 13), new PointF(row.X + 16, row.Y + 7) });
                 float inset = _menu.Kind == CanvasMenuKind.Statistics ? 7 : 23;
                 string tail = _menu.Trailing(index, PanelOwner.DotPlacement, PanelOwner.ValuePalette);
-                if (tail.Length > 0) Text(g, tail, small, enabled ? PanelTheme.Muted : PanelTheme.Disabled,
-                    new RectangleF(row.Right - 112, row.Y, 105, 20), trim);
+                if (tail.Length > 0)
+                {
+                    using var trailing = new StringFormat(trim) { Alignment = StringAlignment.Far };
+                    Text(g, tail, small, enabled ? PanelTheme.Muted : PanelTheme.Disabled, new RectangleF(row.Right - 112, row.Y, 105, 20), trailing);
+                }
                 var swatch = _menu.Swatch(index);
                 if (swatch != PanelValuePalette.Off)
-                    for (int bucket = 0; bucket < PanelPreviewValues.Buckets; bucket++)
-                        Fill(g, PanelPreviewValues.Colour(swatch, bucket, PanelOwner.ReversePalette), new RectangleF(row.Right - 72 + bucket, row.Y + 6, 1, 8));
+                {
+                    var swatchBounds = new RectangleF(row.Right - 72, row.Y + 6, 65, 8);
+                    using var gradient = new LinearGradientBrush(swatchBounds, Color.Black, Color.White, LinearGradientMode.Horizontal);
+                    gradient.InterpolationColors = new ColorBlend
+                    {
+                        Colors = new[] { 0, 16, 32, 48, 64 }.Select(bucket => PanelPreviewValues.Colour(swatch, bucket, PanelOwner.ReversePalette)).ToArray(),
+                        Positions = new[] { 0f, .25f, .5f, .75f, 1f }
+                    };
+                    g.FillRectangle(gradient, swatchBounds);
+                }
                 Text(g, _menu.Label(index, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor), _menu.Kind == CanvasMenuKind.Branch ? mono : small,
                     !enabled ? PanelTheme.Disabled : selected ? Accent : Ink, new RectangleF(row.X + inset, row.Y, row.Width - inset - 7 - (tail.Length > 0 ? 110 : swatch != PanelValuePalette.Off ? 75 : 0), 20), trim);
                 var target = new RectangleF(_menu.Bounds.X, row.Y, _menu.Bounds.Width, row.Height);
