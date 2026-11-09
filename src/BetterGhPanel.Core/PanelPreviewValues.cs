@@ -86,8 +86,18 @@ namespace BetterGhPanel.Core
                 PanelProperties.IsProperty(mode) && PanelProperties.Kind(mode) == PanelPropertyKind.Number;
             if (!explicitMetric)
             {
-                if (geometry == null || geometry.MetricName != "Length" && geometry.MetricName != "Radius" && geometry.MetricName != "Area" && geometry.MetricName != "Volume") return default;
-                mode = (geometry.MetricName == "Length" || geometry.MetricName == "Radius") ? PanelSearchMode.Length : geometry.MetricName == "Area" ? PanelSearchMode.Area : PanelSearchMode.Volume;
+                if (geometry == null) return default;
+                if (geometry.CanMeasure && !geometry.MeasurementUnavailable && !geometry.Value.HasValue)
+                    return new PanelPreviewValue(geometry.MetricName, "", null, "", pending: true);
+                if (geometry.MetricName == "Radius" && geometry.Value.HasValue)
+                {
+                    string radiusText = PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units, snapshot.UnitConversion, decimals, roundUpFactor: factor);
+                    string numberText = PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units, snapshot.UnitConversion, decimals, false, factor);
+                    return PanelUnits.TryParseOperand(numberText, out double radius)
+                        ? new PanelPreviewValue("Radius", PanelPropertyValue.Numeric(1, geometry.Power, geometry.Units).UnitSymbol(snapshot.UnitConversion), radius, radiusText) : default;
+                }
+                if (geometry.MetricName != "Length" && geometry.MetricName != "Area" && geometry.MetricName != "Volume") return default;
+                mode = geometry.MetricName == "Length" ? PanelSearchMode.Length : geometry.MetricName == "Area" ? PanelSearchMode.Area : PanelSearchMode.Volume;
             }
             string metric = PanelProperties.IsProperty(mode) ? PanelProperties.Label(mode) : mode.ToString();
             string unit = PanelFilterValue.UnitSymbol(snapshot, row, mode, geometry);

@@ -38,6 +38,8 @@ namespace BetterGhPanel.Runtime
         private Dictionary<int, PanelPreviewValue>? _buildingValues;
         private Dictionary<string, PanelPreviewRange>? _buildingRanges;
         private LegendRow[] _legend = Array.Empty<LegendRow>();
+        private float _legendWidth, _legendNameWidth, _legendMinWidth;
+        private const float LegendPadding = 7, LegendGap = 8, LegendBarWidth = 90;
         private readonly Color[] _colours = new Color[1 + 3 * PanelPreviewValues.Buckets];
         private readonly Color[] _textColours = new Color[1 + 3 * PanelPreviewValues.Buckets];
         private static readonly Dictionary<Guid, int> LegendOffsets = new Dictionary<Guid, int>();
@@ -52,15 +54,23 @@ namespace BetterGhPanel.Runtime
             return 1 + ((int)_palette - 1) * PanelPreviewValues.Buckets + bucket;
         }
 
-        internal void Configure(PanelQueryResult result, bool order, bool values, PanelDotPlacement placement,
+        internal bool Configure(PanelQueryResult result, bool order, bool values, PanelDotPlacement placement,
             PanelValuePalette palette, bool reverse, PanelSearchMode search, int decimals, double factor,
             IReadOnlyList<int> scope, Func<int, PanelPreviewValue> sample, Func<bool> current)
         {
             _valueGeneration++;
             var positions = palette != PanelValuePalette.Off ? result.DisplaySet?.AllMembers ?? result.RowPositions : scope;
             bool changed = !ReferenceEquals(result, _valueResult) || _search != search || _decimals != decimals || _factor != factor;
-            bool scopeChanged = !ReferenceEquals(positions, _valuePositions);
+            bool coloursChanged = changed || _palette != palette || _reverse != reverse;
+            bool labelsChanged = changed && (order || values) || _showOrder != order || _showValues != values ||
+                _placement != placement || _palette != palette || _reverse != reverse;
+            bool scopeChanged = (values || palette != PanelValuePalette.Off) && !ReferenceEquals(positions, _valuePositions);
             bool demandChanged = changed || _showValues != values || _palette != palette || scopeChanged;
+            if (!labelsChanged && !demandChanged)
+            {
+                _sample = sample; _current = current;
+                return false;
+            }
             if (scopeChanged) { _buildingValues = null; _buildingRanges = null; }
             _valuePositions = positions;
             _valueResult = result; _showOrder = order; _showValues = values; _placement = placement;
@@ -78,8 +88,9 @@ namespace BetterGhPanel.Runtime
                 _values.Clear(); _ranges.Clear(); _legend = Array.Empty<LegendRow>();
             }
             else if (demandChanged) InvalidateValues();
-            RebuildLabels();
-            UpdateEnabled();
+            if (labelsChanged) RebuildLabels();
+            if (labelsChanged || demandChanged) UpdateEnabled();
+            return coloursChanged;
         }
 
         internal void InvalidateValues()
@@ -122,6 +133,7 @@ namespace BetterGhPanel.Runtime
                 legend.Add(new LegendRow(range));
             }
             _legend = legend.ToArray();
+            LayoutLegend();
             RebuildLabels(); UpdateEnabled(); ValuesChanged?.Invoke();
             if (!_dirty) _refresh?.Stop();
         }
@@ -239,12 +251,17 @@ namespace BetterGhPanel.Runtime
                 if (!TryProject(args.Viewport, _model, label.Anchor, out var screen)) continue;
                 // Native dots choose their own font. Reserve a conservative constant-pixel
                 // footprint including padding, instead of measuring or allocating text per frame.
-                float width = (label.Text.Length * 9 + 14) * scale, height = 24 * scale;
+                float width = (_showValues ? label.Text.Length * 8 + 12 : label.Text.Length * 9 + 14) * scale, height = 24 * scale;
                 var bounds = new RectangleF((float)screen.X - width / 2, (float)screen.Y - height / 2, width, height);
                 if (!occupied.TryAdd(bounds)) continue;
                 if (Gradient && selected)
-                    args.Display.DrawRoundedRectangle(new PointF((float)screen.X, (float)screen.Y), width + 4 * scale, height + 4 * scale, 5 * scale,
-                        _selectedColor, 2 * scale, _selectedColor);
+                {
+                    float x = (float)screen.X, y = (float)screen.Y, delta = 2 * scale;
+                    args.Display.DrawDot(x - delta, y, label.Text, _selectedColor, _selectedColor);
+                    args.Display.DrawDot(x + delta, y, label.Text, _selectedColor, _selectedColor);
+                    args.Display.DrawDot(x, y - delta, label.Text, _selectedColor, _selectedColor);
+                    args.Display.DrawDot(x, y + delta, label.Text, _selectedColor, _selectedColor);
+                }
                 args.Display.DrawDot((float)screen.X, (float)screen.Y, label.Text,
                     Gradient ? _colours[label.ColourId] : fill, Gradient ? _textColours[label.ColourId] : foreground);
             }
@@ -260,29 +277,50 @@ namespace BetterGhPanel.Runtime
             return screen.IsValid && screen.X >= 0 && screen.Y >= 0 && screen.X < viewport.Size.Width && screen.Y < viewport.Size.Height;
         }
 
+        // Measure once in logical pixels. The foreground pass only scales this layout.
+        private void LayoutLegend()
+        {
+            _legendNameWidth = _legendMinWidth = _legendWidth = 0;
+            if (_legend.Length == 0) return;
+            float maxWidth = 0; bool hasRange = false;
+            using var font = new Eto.Drawing.Font("Arial", 9); // 12 logical pixels.
+            foreach (var row in _legend)
+            {
+                float Measure(string text) => (float)Math.Ceiling(font.MeasureString(text).Width);
+                _legendNameWidth = Math.Max(_legendNameWidth, Measure(row.Name));
+                row.MinWidth = Measure(row.Min);
+                _legendMinWidth = Math.Max(_legendMinWidth, row.MinWidth);
+                if (!row.Single) { maxWidth = Math.Max(maxWidth, Measure(row.Max)); hasRange = true; }
+            }
+            _legendWidth = 2 * LegendPadding + _legendNameWidth + LegendGap + _legendMinWidth + LegendGap +
+                (hasRange ? LegendBarWidth + LegendGap + maxWidth : 16);
+        }
+
         private void DrawLegend(DrawEventArgs args, float scale)
         {
             if (!Gradient || _legend.Length == 0) return;
             LegendOffsets.TryGetValue(args.Viewport.Id, out int offset);
-            int height = (int)(24 * scale), width = (int)(390 * scale);
+            int height = (int)(24 * scale), width = (int)Math.Ceiling(_legendWidth * scale);
             int x = Math.Max(4, args.Viewport.Size.Width - width - (int)(16 * scale));
             int bottom = args.Viewport.Size.Height - (int)(16 * scale) - offset;
             foreach (var row in _legend)
             {
                 int y = bottom - height; bottom = y;
                 args.Display.Draw2dRectangle(new Rectangle(x, y, width, height), Color.Transparent, 0, Color.FromArgb(238, 245, 247, 244));
-                args.Display.Draw2dText(row.Name, Color.FromArgb(35, 41, 37), new Point2d(x + 7 * scale, y + 5 * scale), false, (int)(12 * scale));
-                args.Display.Draw2dText(row.Min, Color.FromArgb(35, 41, 37), new Point2d(x + 150 * scale, y + 5 * scale), false, (int)(12 * scale));
-                int barX = x + (int)(224 * scale), barY = y + (int)(7 * scale);
+                float minRight = LegendPadding + _legendNameWidth + LegendGap + _legendMinWidth;
+                args.Display.Draw2dText(row.Name, Color.FromArgb(35, 41, 37), new Point2d(x + LegendPadding * scale, y + 5 * scale), false, (int)(12 * scale));
+                args.Display.Draw2dText(row.Min, Color.FromArgb(35, 41, 37), new Point2d(x + (minRight - row.MinWidth) * scale, y + 5 * scale), false, (int)(12 * scale));
+                int barX = x + (int)((minRight + LegendGap) * scale), barY = y + (int)(7 * scale);
                 if (row.Single)
                     args.Display.Draw2dRectangle(new Rectangle(barX, barY, (int)(16 * scale), (int)(10 * scale)), Color.Transparent, 0,
                         _colours[1 + ((int)_palette - 1) * PanelPreviewValues.Buckets + PanelPreviewValues.Buckets / 2]);
                 else
                 {
                     for (int bucket = 0; bucket < PanelPreviewValues.Buckets; bucket++)
-                        args.Display.Draw2dRectangle(new Rectangle(barX + (int)(bucket * scale), barY, (int)Math.Ceiling(scale), (int)(10 * scale)), Color.Transparent, 0,
+                        args.Display.Draw2dRectangle(new Rectangle(barX + (int)(bucket * LegendBarWidth / PanelPreviewValues.Buckets * scale), barY,
+                            (int)Math.Ceiling(LegendBarWidth / PanelPreviewValues.Buckets * scale), (int)(10 * scale)), Color.Transparent, 0,
                             _colours[1 + ((int)_palette - 1) * PanelPreviewValues.Buckets + (_reverse ? PanelPreviewValues.Buckets - 1 - bucket : bucket)]);
-                    args.Display.Draw2dText(row.Max, Color.FromArgb(35, 41, 37), new Point2d(x + 300 * scale, y + 5 * scale), false, (int)(12 * scale));
+                    args.Display.Draw2dText(row.Max, Color.FromArgb(35, 41, 37), new Point2d(barX + (LegendBarWidth + LegendGap) * scale, y + 5 * scale), false, (int)(12 * scale));
                 }
             }
             LegendOffsets[args.Viewport.Id] = offset + _legend.Length * height + (int)(6 * scale);
@@ -298,6 +336,7 @@ namespace BetterGhPanel.Runtime
                 Single = range.Min == range.Max;
             }
             internal readonly string Name, Min, Max;
+            internal float MinWidth;
             internal readonly bool Single;
         }
 

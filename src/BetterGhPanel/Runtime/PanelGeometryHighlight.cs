@@ -39,22 +39,31 @@ namespace BetterGhPanel.Runtime
             _activeDraws++;
             try
             {
-                SetOrderResult(order || values ? result : null);
+                var labelResult = order || values ? result : null;
+                bool attachLabels = labelResult != null && !ReferenceEquals(_orderResult, labelResult);
+                SetOrderResult(labelResult);
                 long generation = _generation;
                 if (!current()) return;
-                _orderLabels.Configure(result, order, values, placement, palette, reverse, search, decimals, factor, scope, sample, current);
+                bool coloursChanged = _orderLabels.Configure(result, order, values, placement, palette, reverse, search, decimals, factor, scope, sample, current);
                 if (generation != _generation || !current()) return;
                 if (palette != PanelValuePalette.Off && _valueMaterials == null && !_displayFlushFailed &&
                     RetainedBytes <= MaxRetainedBytes - (1 + 3 * PanelPreviewValues.Buckets) * 512L)
                 {
                     _valueMaterials = new DisplayMaterial[1 + 3 * PanelPreviewValues.Buckets];
-                    for (int id = 0; id < _valueMaterials.Length; id++) _valueMaterials[id] = new DisplayMaterial(_orderLabels.Colour(id));
+                    for (int id = 0; id < _valueMaterials.Length; id++)
+                    {
+                        var colour = _orderLabels.Colour(id);
+                        var half = System.Drawing.Color.FromArgb(colour.R / 2, colour.G / 2, colour.B / 2);
+                        _valueMaterials[id] = new DisplayMaterial(half) { Emission = half, Specular = System.Drawing.Color.Black, Shine = 0 };
+                    }
                 }
-                foreach (var entry in _entries.Values)
-                {
-                    AddLabel(entry, current);
-                    if (generation != _generation || !current()) return;
-                }
+                if (attachLabels || coloursChanged && palette != PanelValuePalette.Off)
+                    foreach (var entry in _entries.Values)
+                    {
+                        if (attachLabels) AddLabel(entry, current);
+                        else entry.ColourId = _orderLabels.ColourId(entry.Position);
+                        if (generation != _generation || !current()) return;
+                    }
             }
             finally { _activeDraws--; FlushRetired(); }
         }
@@ -588,9 +597,8 @@ namespace BetterGhPanel.Runtime
             if (_orderLabels.Gradient && _valueMaterials != null)
             {
                 colours = new GH_PreviewWireArgs[_valueMaterials.Length];
-                for (int id = 0; id < colours.Length; id++) colours[id] = new GH_PreviewWireArgs(args.Viewport, args.Display, _orderLabels.Colour(id), args.DefaultCurveThickness);
             }
-            DrawWires(normal, false, colours);
+            DrawWires(normal, false, colours, args.DefaultCurveThickness);
             if (generation != _generation) return;
             bool pushed = false;
             try
@@ -602,7 +610,7 @@ namespace BetterGhPanel.Runtime
                         args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
                     args.Display.PushModelTransform(bias * args.Display.ModelTransform); pushed = true;
                 }
-                DrawWires(selected, true, colours);
+                DrawWires(selected, true, colours, args.DefaultCurveThickness);
             }
             finally { if (pushed) args.Display.PopModelTransform(); }
             if (generation != _generation) return;
@@ -611,13 +619,15 @@ namespace BetterGhPanel.Runtime
             finally { EndDraw(args.Display); }
         }
 
-        private void DrawWires(GH_PreviewWireArgs args, bool selected, GH_PreviewWireArgs[]? colours)
+        private void DrawWires(GH_PreviewWireArgs args, bool selected, GH_PreviewWireArgs[]? colours, int normalThickness)
         {
             long generation = _generation;
             foreach (var entry in _entries.Values)
             {
                 if (_membership.Contains(entry.Position) != selected) continue;
                 entry.WasDrawn = true;
+                var draw = colours == null ? args : colours[entry.ColourId] ??=
+                    new GH_PreviewWireArgs(args.Viewport, args.Pipeline, _orderLabels.Colour(entry.ColourId), normalThickness);
                 foreach (var leaf in entry.Leaves)
                 {
                     try
@@ -625,11 +635,11 @@ namespace BetterGhPanel.Runtime
                         if (selected && colours != null)
                         {
                             args.Pipeline.PushDepthWriting(false);
-                            try { leaf.DrawWires(args, () => generation == _generation); }
+                            try { leaf.DrawWires(args, () => generation == _generation, colourByValue: true, halo: true); }
                             finally { args.Pipeline.PopDepthWriting(); }
                         }
                         if (generation != _generation) return;
-                        leaf.DrawWires(colours == null ? args : colours[entry.ColourId], () => generation == _generation);
+                        leaf.DrawWires(draw, () => generation == _generation, colourByValue: colours != null);
                     }
                     catch (Exception) { }
                     if (generation != _generation) return;
@@ -654,7 +664,6 @@ namespace BetterGhPanel.Runtime
             if (_orderLabels.Gradient && _valueMaterials != null)
             {
                 colours = new GH_PreviewMeshArgs[_valueMaterials.Length];
-                for (int id = 0; id < colours.Length; id++) colours[id] = new GH_PreviewMeshArgs(args.Viewport, args.Display, _valueMaterials[id], args.MeshingParameters);
             }
             for (int pass = 0; pass < (colours == null ? 1 : 2); pass++)
                 foreach (var entry in _entries.Values)
@@ -662,7 +671,8 @@ namespace BetterGhPanel.Runtime
                     bool isSelected = _membership.Contains(entry.Position);
                     if (colours != null && isSelected != (pass == 1)) continue;
                     entry.WasDrawn = true;
-                    var draw = colours == null ? isSelected ? selected : normal : colours[entry.ColourId];
+                    var draw = colours == null ? isSelected ? selected : normal : colours[entry.ColourId] ??=
+                        new GH_PreviewMeshArgs(args.Viewport, args.Display, _valueMaterials![entry.ColourId], args.MeshingParameters);
                     foreach (var leaf in entry.Leaves)
                     {
                         try { leaf.DrawMeshes(draw, () => generation == _generation, colours != null); } catch (Exception) { }

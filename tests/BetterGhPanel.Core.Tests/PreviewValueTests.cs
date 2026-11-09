@@ -49,6 +49,33 @@ public class PreviewValueTests
     }
 
     [Fact]
+    public void UnmeasuredCurveWithUnknownMainMetricStillHasPendingDot()
+    {
+        var row = Geometry(new PanelGeometryInfo("Curve", metricName: "", metricLabel: "", canMeasure: true));
+        var pending = PanelPreviewValues.Sample(Snapshot(row), row, PanelSearchMode.Text, null, 2, 0);
+        Assert.True(pending.Pending);
+        Assert.Null(pending.Number);
+        Assert.Equal("2 · …", pending.Label(2, true));
+        Assert.Equal("", PanelPreviewValues.Sample(Snapshot(row), row, PanelSearchMode.Text,
+            row.GeometryInfo!.WithUnavailableMeasurement(), 2, 0).Label(null, true));
+    }
+
+    [Fact]
+    public void CircleKeepsRadiusUnlessLengthIsExplicitlyRequested()
+    {
+        var row = Geometry(new PanelGeometryInfo("Circle", 2000, units: "mm", metricName: "Radius", metricLabel: "R"));
+        var snapshot = Snapshot(row, PanelUnitConversion.MillimetersToMeters);
+        var radius = PanelPreviewValues.Sample(snapshot, row, PanelSearchMode.Text, null, 2, 0);
+        Assert.Equal("2.00 m", radius.Text);
+        Assert.Equal(2, radius.Number);
+        Assert.Equal("Radius", radius.Metric);
+        var circumference = PanelPreviewValues.Sample(snapshot, row, PanelSearchMode.Length, null, 2, 0);
+        Assert.Equal("12.57 m", circumference.Text);
+        Assert.Equal("Length", circumference.Metric);
+        Assert.NotEqual(radius.Key, circumference.Key);
+    }
+
+    [Fact]
     public void VectorAxesAreUnitlessAndNumericPropertiesOverrideMainMetric()
     {
         var vector = new PanelRow(0, "{0}", "Vector", "", null, PanelValidity.VerifiedValid, components: new PanelComponents(2, 3, 4, "mm"));

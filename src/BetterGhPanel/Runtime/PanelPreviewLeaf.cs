@@ -66,24 +66,68 @@ namespace BetterGhPanel.Runtime
                 else if (_value is Curve curve) centre = curve.PointAt(curve.Domain.Mid);
                 else if (_value is Box box) centre = box.Center;
                 else if (_value is Sphere sphere) centre = sphere.Center;
-                else
-                {
-                    var meshes = _value is Mesh mesh ? new[] { mesh } : _generatedMeshes;
-                    if (meshes == null && (_value is Brep || _value is Surface || _value is SubD))
-                    {
-                        using var coarse = new MeshingParameters(MeshingParameters.FastRenderMesh) { GridMinCount = 0, GridMaxCount = 32 };
-                        EnsureGeneratedMeshes(coarse, current);
-                        meshes = _generatedMeshes;
-                    }
-                    if (current() && meshes != null) centre = MeshAnchor(meshes, centre);
-                }
+                else if (_value is Mesh mesh) centre = MeshAnchor(new[] { mesh }, centre, snap: false);
+                else centre = CoarseAnchor(current);
             }
             catch (Exception) { /* The already-owned bounding box is a safe fallback. */ }
             if (current()) _anchor = centre.IsValid ? centre : Bounds.Center;
             return _anchor ?? Bounds.Center;
         }
 
-        private static Point3d MeshAnchor(Mesh[] meshes, Point3d fallback)
+        // Placement never reads or replaces the display cache. Temporary meshes have
+        // fixed quality and the same post-meshing limits as the shaded cache.
+        private Point3d CoarseAnchor(Func<bool> current)
+        {
+            Mesh[]? meshes = null;
+            try
+            {
+                using var parameters = new MeshingParameters(MeshingParameters.FastRenderMesh) { GridMinCount = 0, GridMaxCount = 32 };
+                bool snap;
+                if (_value is Brep brep) { snap = !brep.IsSolid; meshes = Mesh.CreateFromBrep(brep, parameters); }
+                else if (_value is Extrusion extrusion)
+                {
+                    snap = !extrusion.IsSolid;
+                    using var converted = extrusion.ToBrep();
+                    if (converted == null || !current()) return Bounds.Center;
+                    meshes = Mesh.CreateFromBrep(converted, parameters);
+                }
+                else if (_value is Surface surface)
+                {
+                    snap = !surface.IsSolid;
+                    var mesh = Mesh.CreateFromSurface(surface, parameters);
+                    if (mesh != null) meshes = new[] { mesh };
+                }
+                else if (_value is SubD subd)
+                {
+                    const int density = 1;
+                    if (subd.Faces.Count * 4L > MaxGeneratedFaces) return Bounds.Center;
+                    snap = !subd.IsSolid;
+                    try
+                    {
+                        var mesh = Mesh.CreateFromSubD(subd, density);
+                        if (mesh != null) meshes = new[] { mesh };
+                    }
+                    finally { subd.ClearEvaluationCache(); }
+                }
+                else return Bounds.Center;
+                if (!current() || meshes == null || meshes.Length == 0 || meshes.Length > PanelNativeGeometry.MaxCollection) return Bounds.Center;
+                long bytes = 0, faces = 0;
+                foreach (var mesh in meshes)
+                {
+                    if (mesh == null) return Bounds.Center;
+                    bytes += mesh.MemoryEstimate(); faces += mesh.Faces.Count;
+                    if (bytes < 0 || bytes + faces * sizeof(int) > MaxGeneratedBytes || faces > MaxGeneratedFaces ||
+                        mesh.Vertices.Count > MaxGeneratedFaces * 2) return Bounds.Center;
+                }
+                return faces > 0 && current() ? MeshAnchor(meshes, Bounds.Center, snap) : Bounds.Center;
+            }
+            finally
+            {
+                if (meshes != null) foreach (var mesh in meshes) try { mesh?.Dispose(); } catch (Exception) { }
+            }
+        }
+
+        private static Point3d MeshAnchor(Mesh[] meshes, Point3d fallback, bool snap)
         {
             double total = 0; var sum = Vector3d.Zero;
             void Triangle(Point3d a, Point3d b, Point3d c)
@@ -102,6 +146,7 @@ namespace BetterGhPanel.Runtime
             if (total <= 0 || double.IsInfinity(total) || double.IsNaN(total)) return fallback;
             var centre = (Point3d)(sum / total);
             if (!centre.IsValid) return fallback;
+            if (!snap) return centre;
             // ClosestPoint returns the centre itself on material, or snaps a hole/concavity to it.
             var nearest = fallback; double distance = double.MaxValue;
             foreach (var mesh in meshes)
@@ -338,11 +383,11 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        internal void DrawWires(GH_PreviewWireArgs args, Func<bool> current)
+        internal void DrawWires(GH_PreviewWireArgs args, Func<bool> current, bool colourByValue = false, bool halo = false)
         {
             if (_value is PanelGeometrySources.StandalonePreview custom) { custom.Value.DrawViewportWires(args); return; }
             if (args.Pipeline == null) return;
-            if (_value is Point3d p) args.Pipeline.DrawPoint(p, CentralSettings.PreviewPointStyle, CentralSettings.PreviewPointRadius, args.Color);
+            if (_value is Point3d p) args.Pipeline.DrawPoint(p, CentralSettings.PreviewPointStyle, CentralSettings.PreviewPointRadius + (halo ? 2 : 0), args.Color);
             else if (_value is Line line) args.Pipeline.DrawLine(line, args.Color, args.Thickness);
             else if (_value is Arc arc) args.Pipeline.DrawArc(arc, args.Color, args.Thickness);
             else if (_value is Circle circle) args.Pipeline.DrawCircle(circle, args.Color, args.Thickness);
@@ -368,10 +413,10 @@ namespace BetterGhPanel.Runtime
                 {
                     if (!current()) return;
                     args.Pipeline.DrawPoints(batch.Points, style, radius,
-                        cloud.HasColors ? Color.FromArgb(batch.Argb) : args.Color);
+                        !colourByValue && cloud.HasColors ? Color.FromArgb(batch.Argb) : args.Color);
                 }
             }
-            else if (_value is Mesh mesh && CentralSettings.PreviewMeshEdges) args.Pipeline.DrawMeshWires(mesh, args.Color, args.Thickness);
+            else if (_value is Mesh mesh && (CentralSettings.PreviewMeshEdges || halo)) args.Pipeline.DrawMeshWires(mesh, args.Color, args.Thickness);
             else if (_value is Brep brep)
                 for (int i = 0; current() && i < brep.Edges.Count; i++) args.Pipeline.DrawCurve(brep.Edges[i], args.Color, args.Thickness);
             else if (_value is Surface surface) args.Pipeline.DrawSurface(surface, args.Color, args.Thickness);

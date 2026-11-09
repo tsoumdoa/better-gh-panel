@@ -426,10 +426,10 @@ namespace BetterGhPanel.Runtime
             _busyAnimation?.Dispose();
             _busyAnimation = null;
             ClearColumnGeometry();
+            RequestPreviewMeasurements(null, null);
             _geometry.Dispose();
             _geometryScheduler.Dispose();
             GeometryWorkerSubmissionForTesting = null;
-            RequestPreviewMeasurements(null, null);
             ++_request;
             _queryCancellation?.Cancel();
             _queryCancellation?.Dispose();
