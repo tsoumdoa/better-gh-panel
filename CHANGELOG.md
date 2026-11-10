@@ -1,10 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.4.0-beta
 
 - **Values in Rhino.** Preview's **Show values** adds the chosen numeric Search value or each row's usual measurement. Circles show radius in other Search modes. Units and rounding match the rows, and values can appear beside item-order numbers.
 - **Choose dot position and colour.** **Dot placement** offers Centre, Box top and Box bottom. Closed solids and meshes keep their centre; open surfaces stay on the material. **Colour by value** colours dots and geometry, with selection halos and a compact viewport legend.
 - **Preview settings stay with the file.** The new settings support Undo and survive Reset all. Values and colouring start off. D/S/B/F are unchanged.
+- **Many more solids in Preview: Results.** Panel+ now counts each mesh's real size, so Results shows far more Breps and surfaces than the previous limit of about 7. An item that doesn't fit keeps its wires, dot and colour, and the footer says **Preview partial**.
+- **Values stay up while Grasshopper solves.** With values or colouring on, the preview stays visible during a re-solve and updates when the new result arrives.
+- **Behaviour change: item-order dots moved.** At the default Centre placement they now sit on the curve or material instead of at the bounding-box centre.
+- **Validation.** The automated Rhino fixtures could not run for this release. Panel+ was tested by hand in Rhino 8 on Windows instead. Dragging a slider frame by frame, very large trees and Mac were not checked.
 
 ## 0.3.2-beta
 
