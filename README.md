@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.3.2-beta
+yak install panel-plus 0.4.0-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -28,14 +28,15 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
-**[`0.3.2-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.3.2-beta)**
+**[`0.4.0-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.4.0-beta)**
 
-- **Sorting geometry by number.** Lines and other geometry sorted as text, so a length of 100 came before 9. They now sort by their measured value. The Length, Area, Volume and X/Y/Z value displays sort by the value shown.
-- **Selected rows are easier to see in Rhino.** Selected geometry is drawn at least 2 pixels thicker and in front of its upstream preview, including when Panel+ is selected on the canvas. Brep and mesh edges thicken too.
-- **The footer says why a preview is hidden.** It reports when Grasshopper preview is off, this component's preview is off, or Grasshopper only previews selected components.
-- **A plain click narrows a multi-selection.** Clicking one of several selected rows now selects only that row. Right-click still keeps the group.
-- **Sorting keeps your place.** After a sort the list scrolls to the last-clicked selected row. With nothing selected it goes to the top.
-- **Validation.** The automated Rhino fixtures could not run for this release, and the preview changes have not been seen in a live Rhino viewport.
+- **Values in Rhino.** Preview's **Show values** adds the chosen numeric Search value or each row's usual measurement. Circles show radius in other Search modes. Units and rounding match the rows, and values can appear beside item-order numbers.
+- **Choose dot position and colour.** **Dot placement** offers Centre, Box top and Box bottom. Closed solids and meshes keep their centre; open surfaces stay on the material. **Colour by value** colours dots and geometry, with selection halos and a compact viewport legend.
+- **Preview settings stay with the file.** The new settings support Undo and survive Reset all. Values and colouring start off. D/S/B/F are unchanged.
+- **Many more solids in Preview: Results.** Panel+ now counts each mesh's real size, so Results shows far more Breps and surfaces than the previous limit of about 7. An item that doesn't fit keeps its wires, dot and colour, and the footer says **Preview partial**.
+- **Values stay up while Grasshopper solves.** With values or colouring on, the preview stays visible during a re-solve and updates when the new result arrives.
+- **Behaviour change: item-order dots moved.** At the default Centre placement they now sit on the curve or material instead of at the bounding-box centre.
+- **Validation.** The automated Rhino fixtures could not run for this release. Panel+ was tested by hand in Rhino 8 on Windows instead. Dragging a slider frame by frame, very large trees and Mac were not checked.
 
 See [CHANGELOG](CHANGELOG.md) for earlier releases.
 
