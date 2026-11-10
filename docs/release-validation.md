@@ -1,5 +1,19 @@
 # Release validation records
 
+## 0.4.0-beta
+
+Preview gains Show values, Dot placement and Colour by value with a viewport legend. Preview memory now charges generated meshes at their actual size against a 64 MiB limit, and value previews stay visible across a re-solve. Built in #67 with Sol and Opus adversarial review rounds.
+
+`npm run check` passed on the release commit: 367 managed tests on each of net48 and net8.0, 17 coordinator tests, one packaging test, both runtime builds, source encoding/style checks and the native smoke host compile. Three desktop-launcher tests passed. Managed capture checks against the final extracted archive passed with 225 PASS records without starting Rhino. The extracted assemblies report `0.4.0-beta+db83bc7ba196c97c09946bac82c2dd5a584fd782`.
+
+**Automated native fixtures did not execute.** Against the plugin extracted from the final archive, run `run-2QtUql` stopped when `capture-safety` timed out in hidden-host startup after 45 seconds, with the user session Active and no interactive Rhino running: 0 of 25 fixtures passed, 24 were not run and no assertions executed. A disconnected session is therefore not the only cause of this hang. The new `PreviewValueChecks` fixture has compiled but never run.
+
+**Tested by hand in Rhino 8 on Windows (.NET mode), by computer use, on development builds up to `16577dd`:** value dots on curves, circle, surfaces, Breps and meshes; 48 solids all coloured with no partial preview; L-shape and closed-box anchors; Box top and bottom alignment; millimetres and metres; stacked legends; selection ring and mesh rim; colours matching dots with upstream preview on; real objects occluding gradient geometry; stable colours in Selection scope; Off baseline; Undo of the four settings; save and reopen.
+
+**Not exercised:** the two later commits that clear a retained preview after an aborted solve, resume admission on large previews and detach expired input; dragging a slider frame by frame; the far-zoom colour comparison; trees of thousands of items; Mac and the Windows .NET Framework host.
+
+Artifact source commit: `db83bc7ba196c97c09946bac82c2dd5a584fd782`. Archive: `panel-plus-0.4.0-beta-rh8_0-any.yak`. SHA-256: `cd930f94595b61fbe790d87f444b6692b9ded155618c468cd99b8a7680ea22ba`. GitHub prerelease and public Yak publication succeeded. A fresh GitHub asset download matches the archive SHA-256.
+
 ## 0.3.2-beta
 
 Geometry sorts by its measured number, selected previews are thicker and always drawn in front, the footer explains a hidden preview, a plain click narrows a multi-selection, and a sort keeps the selected row in view. Committed directly to main at the maintainer's direction, without a PR or review round. The maintainer chose to release before anyone had seen the preview changes in Rhino.
