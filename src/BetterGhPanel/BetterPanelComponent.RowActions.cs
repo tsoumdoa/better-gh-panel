@@ -125,25 +125,40 @@ namespace BetterGhPanel
             if (_previewSuspended || Locked || PreviewMode == PanelPreviewMode.Off || session == null || !session.HasCurrentResult ||
                 !ReferenceEquals(snapshot, session.Snapshot))
             {
-                ClearHighlight();
+                ClearHighlightCore(keepValues: true);
                 return;
             }
             IReadOnlyList<int> ordered = Array.Empty<int>();
             if (positions.Count > 0 && !TryGetActionPositions(snapshot, positions, out ordered))
             {
-                ClearHighlight();
+                ClearHighlightCore(keepValues: true);
                 return;
             }
             ordered = ExpandSetMembers(ordered);
             var previewPositions = PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.DisplaySet?.AllMembers ?? session.Result.RowPositions : ordered;
-            _highlight.SetOrderResult(ShowItemOrder && previewPositions.Count > 0 ? session.Result : null);
             var source = _sourceItems;
             var expectedResult = session.Result;
             var mode = PreviewMode;
+            bool showOrder = ShowItemOrder, showValues = ShowValues, reverse = ReversePalette;
+            var placement = DotPlacement; var palette = ValuePalette;
             var stamp = new ActionStamp(this, session, snapshot, expectedResult, source, _selectionVersion);
             bool Current() => !_previewSuspended && !Locked && PreviewMode == mode &&
+                ShowItemOrder == showOrder && ShowValues == showValues && ReversePalette == reverse && DotPlacement == placement && ValuePalette == palette &&
                 stamp.IsCurrent();
+            var options = session.Options;
+            PanelPreviewValue Sample(int position)
+            {
+                var geometry = session.GetGeometryDetails(snapshot, position);
+                if (geometry == null && session.HasGeometryMeasurement(snapshot, position)) geometry = snapshot.Rows[position].GeometryInfo?.WithUnavailableMeasurement();
+                return PanelPreviewValues.Sample(snapshot, snapshot.Rows[position], options.SearchMode, geometry, DecimalPlaces, RoundUpFactor);
+            }
+            _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, ValuePalette, ReversePalette,
+                options.SearchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current);
+            if (!Current()) return;
             _highlight.SetScopeChecked(source, expectedResult, mode == PanelPreviewMode.FilteredResults, ordered, Current, RowSelection);
+            if (!Current()) return;
+            if (!ShowValues && ValuePalette == PanelValuePalette.Off) session.RequestPreviewMeasurements(null, null);
+            StopRetainedPreviewCheck();
             InvalidatePreviewCaches();
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
         }
@@ -151,11 +166,42 @@ namespace BetterGhPanel
         private IReadOnlyList<int> ExpandSetMembers(IReadOnlyList<int> positions) =>
             Session.Result.DisplaySet?.ExpandMembers(Session.Snapshot, positions) ?? positions;
 
-        internal void ClearHighlight()
+        internal void ClearHighlight() => ClearHighlightCore(keepValues: false);
+
+        internal void ClearHighlightCore(bool keepValues)
         {
+            _session?.RequestPreviewMeasurements(null, null);
             bool visible = _highlight.PreviewCount > 0;
-            _highlight.Clear();
-            if (visible) { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
+            bool retained = _highlight.ClearForQuery(keepValues: keepValues && (ShowValues || ValuePalette != PanelValuePalette.Off) &&
+                PreviewMode != PanelPreviewMode.Off && !Hidden && !Locked && !_previewSuspended);
+            if (retained) WatchRetainedPreviewSolution();
+            else StopRetainedPreviewCheck();
+            if (visible && !retained) { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
+        }
+
+        private GH_Document? _retainedPreviewDocument;
+        private void WatchRetainedPreviewSolution()
+        {
+            var document = OnPingDocument();
+            if (ReferenceEquals(document, _retainedPreviewDocument)) return;
+            StopRetainedPreviewCheck();
+            _retainedPreviewDocument = document;
+            if (document != null) document.SolutionEnd += RetainedPreviewSolutionEnd;
+        }
+
+        private void StopRetainedPreviewCheck()
+        {
+            if (_retainedPreviewDocument != null) _retainedPreviewDocument.SolutionEnd -= RetainedPreviewSolutionEnd;
+            _retainedPreviewDocument = null;
+        }
+
+        private void RetainedPreviewSolutionEnd(object? sender, GH_SolutionEventArgs args)
+        {
+            var document = _retainedPreviewDocument;
+            StopRetainedPreviewCheck();
+            // Esc and capture exceptions can finish a solution without attaching input.
+            // A valid replacement may still be querying asynchronously; keep its preview.
+            if (ReferenceEquals(document, OnPingDocument()) && _queryTree == null) ClearHighlight();
         }
 
         private void InvalidatePreviewCaches()

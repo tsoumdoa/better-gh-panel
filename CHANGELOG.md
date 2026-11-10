@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Values in Rhino.** Preview's **Show values** adds the chosen numeric Search value or each row's usual measurement. Circles show radius in other Search modes. Units and rounding match the rows, and values can appear beside item-order numbers.
+- **Choose dot position and colour.** **Dot placement** offers Centre, Box top and Box bottom. Closed solids and meshes keep their centre; open surfaces stay on the material. **Colour by value** colours dots and geometry, with selection halos and a compact viewport legend.
+- **Preview settings stay with the file.** The new settings support Undo and survive Reset all. Values and colouring start off. D/S/B/F are unchanged.
+
 ## 0.3.2-beta
 
 - **Sorting geometry by number.** Lines and other geometry sorted as text, so a length of 100 came before 9. They now sort by their measured value. The Length, Area, Volume and X/Y/Z value displays sort by the value shown.

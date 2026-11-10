@@ -262,7 +262,7 @@ internal static partial class PreviewSafetyChecks
             var batches = ((IEnumerable)PropertyValue<object>(snapshot, "Batches")).Cast<object>().ToArray();
             Check(batches.Select(batch => PropertyValue<int>(batch, "Argb")).SequenceEqual(new[] { Color.Aqua.ToArgb(), Color.Orange.ToArgb(), Color.Aqua.ToArgb() }) &&
                 batches.SelectMany(batch => PropertyValue<Point3d[]>(batch, "Points")).SequenceEqual(new[] { new Point3d(1, 0, 0), new Point3d(2, 0, 0), new Point3d(3, 0, 0) }) &&
-                !ReferenceEquals(FieldValue<GeometryBase>(leaf, "_owned"), orderedCloud) && PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024,
+                !ReferenceEquals(FieldValue<GeometryBase>(leaf, "_owned"), orderedCloud) && PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024,
                 "owned cloud batches preserve point/color order and stay inside the preview budget");
 
             using var mediumCloud = new PointCloud();

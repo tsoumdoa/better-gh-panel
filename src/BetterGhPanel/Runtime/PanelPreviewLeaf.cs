@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
 using Grasshopper;
+using BetterGhPanel.Core;
 using Grasshopper.Kernel;
 using Rhino.Geometry;
 using Rhino.Display;
@@ -32,25 +33,136 @@ namespace BetterGhPanel.Runtime
         private readonly GeometryBase? _owned;
         private readonly Mesh? _boxMesh;
         private readonly int[]? _fixedFaces;
-        private readonly NurbsCurve[]? _subdWires;
+        private NurbsCurve[]? _subdWires;
+        private PanelPreviewMemory.Lease? _subdWireCharge, _generatedCharge;
+        private long _wireCapacityBytes, _meshCapacityBytes;
+        private bool _wiresLimited, _wireUnavailable;
         private readonly Action<int> _meshStatus;
-        private readonly Func<long, bool>? _canRetireMeshes;
-        private readonly Action<Mesh[], int[][]?, long>? _retireMeshes;
+        private readonly PanelPreviewMemory? _memory;
+        private readonly Action<Mesh[], int[][]?, PanelPreviewMemory.Lease?>? _retireMeshes;
+        private readonly Action<NurbsCurve[], PanelPreviewMemory.Lease?>? _retireCurves;
         private Mesh[]? _generatedMeshes;
         private int[][]? _generatedFaces;
         private MeshingParameters? _meshParameters;
         private int _meshDensity = -1;
-        private long _generatedBytes;
         private bool _meshUnavailable, _cacheLimited;
         private bool _disposed;
         internal int DisposeCount { get; private set; }
 
         private PanelPreviewLeaf(object value, BoundingBox bounds, long bytes, GeometryBase? owned, Mesh? boxMesh, Action<int> meshStatus,
-            Func<long, bool>? canRetireMeshes, Action<Mesh[], int[][]?, long>? retireMeshes, NurbsCurve[]? subdWires = null)
+            PanelPreviewMemory? memory, Action<Mesh[], int[][]?, PanelPreviewMemory.Lease?>? retireMeshes,
+            Action<NurbsCurve[], PanelPreviewMemory.Lease?>? retireCurves)
         { _value = value; Bounds = bounds; Bytes = bytes; _owned = owned; _boxMesh = boxMesh; _meshStatus = meshStatus;
-            _canRetireMeshes = canRetireMeshes; _retireMeshes = retireMeshes; _subdWires = subdWires;
+            _memory = memory; _retireMeshes = retireMeshes; _retireCurves = retireCurves;
             var fixedMesh = boxMesh ?? value as Mesh;
             if (fixedMesh != null) _fixedFaces = FaceIndices(fixedMesh); }
+        private Point3d? _anchor;
+        internal Point3d Anchor(Func<bool> current)
+        {
+            if (_anchor.HasValue) return _anchor.Value;
+            var centre = Bounds.Center;
+            try
+            {
+                if (_value is Point3d p) centre = p;
+                else if (_value is Line line) centre = line.PointAt(.5);
+                else if (_value is Arc arc) centre = arc.PointAt(arc.AngleDomain.Mid);
+                else if (_value is Circle circle) centre = circle.PointAt(Math.PI);
+                else if (_value is Rectangle3d rectangle) centre = rectangle.PointAt(2);
+                else if (_value is Curve curve) centre = curve.PointAt(curve.Domain.Mid);
+                else if (_value is Box box) centre = box.Center;
+                else if (_value is Sphere sphere) centre = sphere.Center;
+                else if (_value is Mesh mesh) centre = MeshAnchor(new[] { mesh }, centre, snap: false);
+                else centre = CoarseAnchor(current);
+            }
+            catch (Exception) { /* The already-owned bounding box is a safe fallback. */ }
+            if (current()) _anchor = centre.IsValid ? centre : Bounds.Center;
+            return _anchor ?? Bounds.Center;
+        }
+
+        // Placement never reads or replaces the display cache. Temporary meshes have
+        // fixed quality and the same post-meshing limits as the shaded cache.
+        private Point3d CoarseAnchor(Func<bool> current)
+        {
+            Mesh[]? meshes = null;
+            try
+            {
+                using var parameters = new MeshingParameters(MeshingParameters.FastRenderMesh) { GridMinCount = 0, GridMaxCount = 32 };
+                bool snap;
+                if (_value is Brep brep) { snap = !brep.IsSolid; meshes = Mesh.CreateFromBrep(brep, parameters); }
+                else if (_value is Extrusion extrusion)
+                {
+                    snap = !extrusion.IsSolid;
+                    using var converted = extrusion.ToBrep();
+                    if (converted == null || !current()) return Bounds.Center;
+                    meshes = Mesh.CreateFromBrep(converted, parameters);
+                }
+                else if (_value is Surface surface)
+                {
+                    snap = !surface.IsSolid;
+                    var mesh = Mesh.CreateFromSurface(surface, parameters);
+                    if (mesh != null) meshes = new[] { mesh };
+                }
+                else if (_value is SubD subd)
+                {
+                    const int density = 1;
+                    if (subd.Faces.Count * 4L > MaxGeneratedFaces) return Bounds.Center;
+                    snap = !subd.IsSolid;
+                    try
+                    {
+                        var mesh = Mesh.CreateFromSubD(subd, density);
+                        if (mesh != null) meshes = new[] { mesh };
+                    }
+                    finally { subd.ClearEvaluationCache(); }
+                }
+                else return Bounds.Center;
+                if (!current() || meshes == null || meshes.Length == 0 || meshes.Length > PanelNativeGeometry.MaxCollection) return Bounds.Center;
+                long bytes = 0, faces = 0;
+                foreach (var mesh in meshes)
+                {
+                    if (mesh == null) return Bounds.Center;
+                    bytes += mesh.MemoryEstimate(); faces += mesh.Faces.Count;
+                    if (bytes < 0 || bytes + faces * sizeof(int) > MaxGeneratedBytes || faces > MaxGeneratedFaces ||
+                        mesh.Vertices.Count > MaxGeneratedFaces * 2) return Bounds.Center;
+                }
+                return faces > 0 && current() ? MeshAnchor(meshes, Bounds.Center, snap) : Bounds.Center;
+            }
+            finally
+            {
+                if (meshes != null) foreach (var mesh in meshes) try { mesh?.Dispose(); } catch (Exception) { }
+            }
+        }
+
+        private static Point3d MeshAnchor(Mesh[] meshes, Point3d fallback, bool snap)
+        {
+            double total = 0; var sum = Vector3d.Zero;
+            void Triangle(Point3d a, Point3d b, Point3d c)
+            {
+                double weight = Vector3d.CrossProduct(b - a, c - a).Length;
+                if (weight <= 0 || double.IsInfinity(weight) || double.IsNaN(weight)) return;
+                sum += ((Vector3d)a + (Vector3d)b + (Vector3d)c) * (weight / 3); total += weight;
+            }
+            foreach (var mesh in meshes)
+                for (int i = 0; i < mesh.Faces.Count; i++)
+                {
+                    var face = mesh.Faces[i]; var a = mesh.Vertices.Point3dAt(face.A); var c = mesh.Vertices.Point3dAt(face.C);
+                    Triangle(a, mesh.Vertices.Point3dAt(face.B), c);
+                    if (face.IsQuad) Triangle(a, c, mesh.Vertices.Point3dAt(face.D));
+                }
+            if (total <= 0 || double.IsInfinity(total) || double.IsNaN(total)) return fallback;
+            var centre = (Point3d)(sum / total);
+            if (!centre.IsValid) return fallback;
+            if (!snap) return centre;
+            // ClosestPoint returns the centre itself on material, or snaps a hole/concavity to it.
+            var nearest = fallback; double distance = double.MaxValue;
+            foreach (var mesh in meshes)
+            {
+                var point = mesh.ClosestPoint(centre);
+                double d = point.DistanceToSquared(centre);
+                if (point.IsValid && d < distance) { nearest = point; distance = d; }
+            }
+            return nearest;
+        }
+
         internal BoundingBox Bounds { get; }
         internal long Bytes { get; }
 
@@ -76,7 +188,7 @@ namespace BetterGhPanel.Runtime
             if (value is PanelGeometrySources.StandalonePreview) return true;
             if (value is Point3d || value is Line || value is Arc || value is Circle || value is Rectangle3d) return true;
             if (value is Box) { bytes = 8192; return true; }
-            if (value is Sphere) { bytes = MaxGeneratedBytes + 262144L; return true; }
+            if (value is Sphere) { bytes = 262144L; return true; }
             if (value is PanelGeometrySources.PolylineSnapshot capturedPolyline)
             { bytes = 4096L + capturedPolyline.Points.Length * 256L; return bytes <= PanelGeometryHighlight.MaxRetainedBytes; }
             if (value is GeometryBase && Rhino.Runtime.CommonObject.PerformCorruptionTesting) return false;
@@ -105,11 +217,9 @@ namespace BetterGhPanel.Runtime
             }
             if (!(value is GeometryBase geometry) || !PanelNativeGeometry.TryScanForCopy(geometry, budget, ref remaining, current, out scan) || scan == null)
                 return false;
-            // Reserve for source duplication and the largest generated mesh.
-            // A single native meshing call can exceed its estimate; the created
-            // mesh is checked before it enters the bounded result-local cache.
-            bytes = 65536L + scan.NativeBytes * 8L + (geometry is Brep || geometry is Surface || geometry is SubD ? MaxGeneratedBytes + 131072L : 0);
-            if (geometry is SubD) bytes += MaxGeneratedBytes; // Independent limit-edge curves.
+            // Admission reserves the owned source copy and fixed overhead only.
+            // Display meshes and SubD limit curves acquire their actual charge later.
+            bytes = 65536L + scan.NativeBytes * 8L;
             // A cloud is rendered from owned, ordered point batches, including
             // temporary lists and colour-run arrays. Reserve before construction
             // even when every point has a different colour.
@@ -119,17 +229,17 @@ namespace BetterGhPanel.Runtime
 
         internal static PanelPreviewLeaf? Create(object value, long bytes, PanelNativeGeometry.Scan? scan,
             PanelGeometrySources.OperationBudget budget, ref int remaining, Action<int> meshStatus, Func<bool>? current = null,
-            Func<long, bool>? canRetireMeshes = null, Action<Mesh[], int[][]?, long>? retireMeshes = null)
+            PanelPreviewMemory? memory = null, Action<Mesh[], int[][]?, PanelPreviewMemory.Lease?>? retireMeshes = null,
+            Action<NurbsCurve[], PanelPreviewMemory.Lease?>? retireCurves = null)
         {
             GeometryBase? owned = null;
             Mesh? boxMesh = null;
-            NurbsCurve[]? subdWires = null;
             try
             {
                 if (value is PanelGeometrySources.StandalonePreview custom)
                 {
                     var customBounds = custom.Value.ClippingBox;
-                    return customBounds.IsValid ? new PanelPreviewLeaf(custom, customBounds, bytes, null, null, meshStatus, canRetireMeshes, retireMeshes) : null;
+                    return customBounds.IsValid ? new PanelPreviewLeaf(custom, customBounds, bytes, null, null, meshStatus, memory, retireMeshes, retireCurves) : null;
                 }
                 if (value is Point point) value = point.Location;
                 else if (value is LineCurve lineCurve) value = lineCurve.Line;
@@ -202,11 +312,6 @@ namespace BetterGhPanel.Runtime
                     value = owned;
                 }
                 if (owned != null && (!owned.IsValid || (current != null && !current()))) return null;
-                if (value is SubD subd)
-                {
-                    subdWires = CaptureSubDWires(subd, current);
-                    if (subdWires == null) return null;
-                }
                 BoundingBox? cloudBounds = null;
                 if (value is PointCloud cloud)
                 {
@@ -221,33 +326,32 @@ namespace BetterGhPanel.Runtime
                     value is Box b ? b.BoundingBox : value is Sphere s ? s.BoundingBox :
                     value is GeometryBase g ? g.GetBoundingBox(false) : BoundingBox.Empty);
                 if (!bounds.IsValid) return null;
-                var result = new PanelPreviewLeaf(value, bounds, bytes, owned, boxMesh, meshStatus, canRetireMeshes, retireMeshes, subdWires);
-                owned = null; boxMesh = null; subdWires = null;
+                var result = new PanelPreviewLeaf(value, bounds, bytes, owned, boxMesh, meshStatus, memory, retireMeshes, retireCurves);
+                owned = null; boxMesh = null;
                 return result;
             }
             catch (Exception) { return null; }
             finally
             {
-                if (subdWires != null) foreach (var curve in subdWires) curve.Dispose();
                 owned?.Dispose(); boxMesh?.Dispose();
             }
         }
 
-        private static NurbsCurve[]? CaptureSubDWires(SubD subd, Func<bool>? current)
+        private static NurbsCurve[]? CaptureSubDWires(SubD subd, Func<bool>? current, out long bytes)
         {
+            bytes = 0;
             var curves = new List<NurbsCurve>();
             bool accepted = false;
             try
             {
                 if (subd.Edges.Count > PanelNativeGeometry.MaxComponents) return null;
                 // Edge limit curves can need evaluated surface data. Use the
-                // 8.0 API at a fixed low density; this temporary mesh fits the
-                // separately reserved generated-mesh allowance and is never drawn.
+                // 8.0 API at a fixed low density. This capped temporary mesh is
+                // discarded before the independent curves reach the display.
                 using var preparation = Mesh.CreateFromSubD(subd, 1);
                 if (preparation == null || preparation.Faces.Count > MaxGeneratedFaces ||
                     preparation.Vertices.Count > MaxGeneratedFaces * 2 || preparation.MemoryEstimate() > MaxGeneratedBytes)
                     return null;
-                long bytes = 0;
                 foreach (var edge in subd.Edges)
                 {
                     if (current != null && !current()) return null;
@@ -256,7 +360,7 @@ namespace BetterGhPanel.Runtime
                     curves.Add(curve);
                     bytes += curve.MemoryEstimate() + 256L;
                     if (curves.Count > PanelNativeGeometry.MaxComponents || curve.Points.Count > MaxPolylinePoints ||
-                        bytes > MaxGeneratedBytes || !curve.IsValid) return null;
+                        bytes < 0 || bytes > MaxGeneratedBytes || !curve.IsValid) return null;
                 }
                 // The independent curves never borrow SubDDisplay. Clear all
                 // preparation caches before any curve reaches the pipeline.
@@ -270,17 +374,75 @@ namespace BetterGhPanel.Runtime
             {
                 if (!accepted)
                 {
-                    foreach (var curve in curves) curve.Dispose();
-                    subd.ClearEvaluationCache();
+                    try { DisposeCurves(curves.ToArray()); }
+                    finally { subd.ClearEvaluationCache(); }
                 }
             }
         }
 
-        internal void DrawWires(GH_PreviewWireArgs args, Func<bool> current)
+        internal void PrepareWires(Func<bool> current)
+        {
+            if (_disposed || _value is not SubD subd || _subdWires != null || _wiresLimited) return;
+            if (_wireCapacityBytes > 0 && _memory?.CanReserve(_wireCapacityBytes) == false) return;
+            NurbsCurve[]? curves = null;
+            PanelPreviewMemory.Lease? charge = null;
+            try
+            {
+                curves = CaptureSubDWires(subd, current, out long bytes);
+                if (!current()) return;
+                if (curves == null) { _wiresLimited = true; SetWireUnavailable(true); return; }
+                charge = _memory?.TryReserve(bytes);
+                if (_memory != null && charge == null)
+                { _wireCapacityBytes = bytes; SetWireUnavailable(true); return; }
+                _subdWires = curves; _subdWireCharge = charge;
+                curves = null; charge = null; _wireCapacityBytes = 0;
+                SetWireUnavailable(false);
+            }
+            catch (Exception) { SetWireUnavailable(true); }
+            finally
+            {
+                if (curves != null) DisposeCurves(curves);
+                charge?.Dispose();
+            }
+        }
+
+        internal bool UsesGeneratedMeshes => _value is Brep || _value is Surface || _value is SubD || _value is Sphere;
+        internal long DisplayBytes => (_generatedCharge?.Bytes ?? 0) + (_subdWireCharge?.Bytes ?? 0);
+        internal long PendingDisplayBytes => (_subdWires == null ? _wireCapacityBytes : 0) +
+            (_generatedMeshes == null ? _meshCapacityBytes : 0);
+
+        internal void ReleaseDisplayResources()
+        {
+            try { if (_generatedMeshes != null) ClearGeneratedMeshes(defer: true, retry: true); }
+            finally { if (_subdWires != null) ClearSubDWires(defer: true, retry: true); }
+        }
+
+        private void ClearSubDWires(bool defer, bool retry = false)
+        {
+            var curves = _subdWires; var charge = _subdWireCharge;
+            _subdWires = null; _subdWireCharge = null; _wireCapacityBytes = retry ? charge?.Bytes ?? 0 : 0;
+            if (curves == null) { charge?.Dispose(); return; }
+            if (defer && _retireCurves != null) { _retireCurves(curves, charge); return; }
+            try { DisposeCurves(curves); }
+            finally { charge?.Dispose(); }
+        }
+
+        internal static void DisposeCurves(NurbsCurve[] curves)
+        {
+            foreach (var curve in curves) try { curve.Dispose(); } catch (Exception) { }
+        }
+
+        private void SetWireUnavailable(bool unavailable)
+        {
+            if (_wireUnavailable == unavailable) return;
+            _wireUnavailable = unavailable; _meshStatus(unavailable ? 1 : -1);
+        }
+
+        internal void DrawWires(GH_PreviewWireArgs args, Func<bool> current, bool colourByValue = false, bool halo = false, bool shaded = false)
         {
             if (_value is PanelGeometrySources.StandalonePreview custom) { custom.Value.DrawViewportWires(args); return; }
-            if (args.Pipeline == null) return;
-            if (_value is Point3d p) args.Pipeline.DrawPoint(p, CentralSettings.PreviewPointStyle, CentralSettings.PreviewPointRadius, args.Color);
+            if (args.Pipeline == null || halo && shaded && _value is Mesh) return;
+            if (_value is Point3d p) args.Pipeline.DrawPoint(p, CentralSettings.PreviewPointStyle, CentralSettings.PreviewPointRadius + (halo ? 2 : 0), args.Color);
             else if (_value is Line line) args.Pipeline.DrawLine(line, args.Color, args.Thickness);
             else if (_value is Arc arc) args.Pipeline.DrawArc(arc, args.Color, args.Thickness);
             else if (_value is Circle circle) args.Pipeline.DrawCircle(circle, args.Color, args.Thickness);
@@ -305,11 +467,11 @@ namespace BetterGhPanel.Runtime
                 foreach (var batch in cloud.Batches)
                 {
                     if (!current()) return;
-                    args.Pipeline.DrawPoints(batch.Points, style, radius,
-                        cloud.HasColors ? Color.FromArgb(batch.Argb) : args.Color);
+                    args.Pipeline.DrawPoints(batch.Points, style, radius + (halo ? 2 : 0),
+                        !colourByValue && cloud.HasColors ? Color.FromArgb(batch.Argb) : args.Color);
                 }
             }
-            else if (_value is Mesh mesh && CentralSettings.PreviewMeshEdges) args.Pipeline.DrawMeshWires(mesh, args.Color, args.Thickness);
+            else if (_value is Mesh mesh && (halo || CentralSettings.PreviewMeshEdges)) args.Pipeline.DrawMeshWires(mesh, args.Color, args.Thickness);
             else if (_value is Brep brep)
                 for (int i = 0; current() && i < brep.Edges.Count; i++) args.Pipeline.DrawCurve(brep.Edges[i], args.Color, args.Thickness);
             else if (_value is Surface surface) args.Pipeline.DrawSurface(surface, args.Color, args.Thickness);
@@ -371,47 +533,65 @@ namespace BetterGhPanel.Runtime
             return new CloudPoints(hasColors, batches.ToArray());
         }
 
-        internal void DrawMeshes(GH_PreviewMeshArgs args, Func<bool> current)
+        internal void PrepareMeshes(MeshingParameters parameters, Func<bool> current)
+        {
+            PrepareWires(current);
+            if (!current()) return;
+            if (UsesGeneratedMeshes) EnsureGeneratedMeshes(parameters, current);
+        }
+
+        internal void DrawMeshes(GH_PreviewMeshArgs args, Func<bool> current, bool colourByValue = false, GH_PreviewWireArgs? halo = null)
         {
             if (_value is PanelGeometrySources.StandalonePreview custom) { custom.Value.DrawViewportMeshes(args); return; }
             if (args.Pipeline == null) return;
+            PrepareWires(current);
+            if (!current()) return;
             if (_value is Mesh mesh)
             {
-                if (mesh.VertexColors.Count > 0) args.Pipeline.DrawMeshFalseColors(mesh);
+                if (halo != null)
+                {
+                    args.Pipeline.PushDepthWriting(false);
+                    try { args.Pipeline.DrawMeshWires(mesh, halo.Color, halo.Thickness); }
+                    finally { args.Pipeline.PopDepthWriting(); }
+                    if (!current()) return;
+                }
+                if (!colourByValue && mesh.VertexColors.Count > 0) args.Pipeline.DrawMeshFalseColors(mesh);
                 else args.Pipeline.DrawMeshShaded(mesh, args.Material, _fixedFaces!);
             }
             else if (_boxMesh != null) args.Pipeline.DrawMeshShaded(_boxMesh, args.Material, _fixedFaces!);
-            else if (_value is Brep || _value is Surface || _value is SubD || _value is Sphere) DrawGeneratedMesh(args, current);
+            else if (_value is Brep || _value is Surface || _value is SubD || _value is Sphere)
+            { EnsureGeneratedMeshes(args.MeshingParameters, current); if (current()) DrawCachedMeshes(args, current); }
         }
 
-        private void DrawGeneratedMesh(GH_PreviewMeshArgs args, Func<bool> current)
+        private void EnsureGeneratedMeshes(MeshingParameters requested, Func<bool> current)
         {
             Mesh[]? meshes = null;
+            PanelPreviewMemory.Lease? charge = null;
             bool limited = false, counted = false;
             try
             {
                 int requestedDensity = -1;
                 if (_value is SubD currentSubd)
                 {
-                    using var settings = args.MeshingParameters.SubDDisplayParameters();
+                    using var settings = requested.SubDDisplayParameters();
                     requestedDensity = (int)settings.DisplayDensity(currentSubd);
                 }
                 if (!current()) return;
-                if (_meshParameters != null && _meshParameters.Equals(args.MeshingParameters) &&
+                if (_meshParameters != null && _meshParameters.Equals(requested) &&
                     (_value is not SubD || requestedDensity == _meshDensity))
                 {
-                    DrawCachedMeshes(args, current);
-                    if (current()) SetMeshUnavailable(_cacheLimited);
-                    return;
+                    if (_meshCapacityBytes == 0 || _memory?.CanReserve(_meshCapacityBytes) == false)
+                    {
+                        if (current()) SetMeshUnavailable(_cacheLimited);
+                        return;
+                    }
                 }
                 if (!current()) return;
-                if (_generatedMeshes != null && _retireMeshes != null && (_canRetireMeshes == null || !_canRetireMeshes(_generatedBytes)))
-                { SetMeshUnavailable(true); return; }
                 ClearGeneratedMeshes(defer: true);
                 if (!current()) return;
                 // Cache both accepted and deterministically rejected preparation
                 // for these settings/density. Capacity rejection above stays retryable.
-                _meshParameters = new MeshingParameters(args.MeshingParameters);
+                _meshParameters = new MeshingParameters(requested);
                 _meshDensity = requestedDensity;
                 _cacheLimited = true;
                 Interlocked.Increment(ref _generatedMeshAttempts);
@@ -473,17 +653,22 @@ namespace BetterGhPanel.Runtime
                 }
                 if (faces == 0) { SetMeshUnavailable(true); return; }
                 if (bytes + faces * sizeof(int) > MaxGeneratedBytes) { SetMeshUnavailable(true); return; }
+                long retainedBytes = bytes + faces * sizeof(int);
+                charge = _memory?.TryReserve(retainedBytes);
+                if (_memory != null && charge == null)
+                { _meshCapacityBytes = retainedBytes; SetMeshUnavailable(true); return; }
+                if (!current()) return;
                 var faceIndices = new int[meshes.Length][];
                 for (int index = 0; index < meshes.Length; index++)
                 {
                     faceIndices[index] = FaceIndices(meshes[index]);
                 }
+                if (!current()) return;
                 _generatedMeshes = meshes; _generatedFaces = faceIndices; _cacheLimited = limited;
-                _generatedBytes = bytes + faces * sizeof(int);
+                _generatedCharge = charge; charge = null;
                 meshes = null; counted = false; // ownership moved to this entry
                 Interlocked.Increment(ref _generatedMeshBuilds);
                 SetMeshUnavailable(limited);
-                if (current()) DrawCachedMeshes(args, current);
             }
             catch (Exception)
             {
@@ -501,6 +686,7 @@ namespace BetterGhPanel.Runtime
                     try { mesh.Dispose(); } catch (Exception) { }
                     finally { if (counted) Interlocked.Decrement(ref _liveGeneratedMeshes); }
                 }
+                charge?.Dispose();
             }
         }
 
@@ -522,17 +708,28 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        private void ClearGeneratedMeshes(bool defer)
+        private void ClearGeneratedMeshes(bool defer, bool retry = false)
         {
             var meshes = _generatedMeshes;
             var faces = _generatedFaces;
-            long bytes = _generatedBytes;
-            _generatedMeshes = null; _generatedFaces = null; _meshDensity = -1; _cacheLimited = false;
-            _generatedBytes = 0;
-            _meshParameters?.Dispose(); _meshParameters = null;
-            if (meshes == null) return;
-            if (defer && _retireMeshes != null) { _retireMeshes(meshes, faces, bytes); return; }
-            DisposeGeneratedMeshes(meshes);
+            var charge = _generatedCharge;
+            _generatedMeshes = null; _generatedFaces = null; _cacheLimited = retry;
+            _generatedCharge = null; _meshCapacityBytes = retry ? charge?.Bytes ?? 0 : 0;
+            // A yielded cache still knows its settings and required size: do not remesh
+            // it just to discover that selected resources have consumed its capacity.
+            var parameters = retry ? null : _meshParameters;
+            if (!retry) { _meshParameters = null; _meshDensity = -1; }
+            try { parameters?.Dispose(); }
+            finally
+            {
+                if (meshes == null) charge?.Dispose();
+                else if (defer && _retireMeshes != null) _retireMeshes(meshes, faces, charge);
+                else
+                {
+                    try { DisposeGeneratedMeshes(meshes); }
+                    finally { charge?.Dispose(); }
+                }
+            }
         }
 
         internal static void DisposeGeneratedMeshes(Mesh[] meshes)
@@ -556,11 +753,20 @@ namespace BetterGhPanel.Runtime
             if (_disposed) return;
             _disposed = true;
             DisposeCount++;
-            SetMeshUnavailable(false);
-            ClearGeneratedMeshes(defer: false);
-            if (_subdWires != null) foreach (var curve in _subdWires) curve.Dispose();
-            try { _owned?.Dispose(); }
-            finally { _boxMesh?.Dispose(); }
+            try { SetMeshUnavailable(false); SetWireUnavailable(false); }
+            finally
+            {
+                try { ClearGeneratedMeshes(defer: false); }
+                finally
+                {
+                    try { ClearSubDWires(defer: false); }
+                    finally
+                    {
+                        try { _owned?.Dispose(); }
+                        finally { _boxMesh?.Dispose(); }
+                    }
+                }
+            }
         }
     }
 }

@@ -33,9 +33,10 @@ internal static partial class PreviewSafetyChecks
             new[] { 0, 1, 2, 3 }, new[] { 0, 1, 2, 3 });
         Check(Count(highlight) == 4, "fixed mesh, box, Brep and SubD are admitted at the consumption seam");
         var leaves = PreviewLeaves(highlight).ToArray();
+        component.DrawViewportMeshes(args); // Limit-edge curves now prepare lazily, before the first wire pass.
         var wires = leaves.SelectMany(leaf => FieldValue<NurbsCurve[]?>(leaf, "_subdWires") ?? Array.Empty<NurbsCurve>()).ToArray();
         Check(wires.Length > 0 && wires.All(curve => !curve.Disposed && curve.IsValid),
-            "SubD retains independent bounded limit-edge curves before display");
+            "SubD retains independent bounded limit-edge curves after preparation");
         // Clear again to prove that drawing no longer needs SubDDisplay's pointer.
         foreach (var ownedSubd in OwnedGeometry(highlight).OfType<SubD>()) ownedSubd.ClearEvaluationCache();
         int flushes = PropertyValue<int>(highlight, "CompletedDisplayFlushes");
@@ -100,13 +101,15 @@ internal static partial class PreviewSafetyChecks
         {
             // Reserve the remaining capacity without allocating native geometry.
             highlight.GetType().GetField("_stagedBytes", AnyInstance)!.SetValue(highlight,
-                staged + 16L * 1024 * 1024 - PropertyValue<long>(highlight, "RetainedBytes"));
+                staged + 64L * 1024 * 1024 - PropertyValue<long>(highlight, "RetainedBytes"));
             component.DrawViewportMeshes(changedArgs);
-            Check(Attempts() == before + 2, "retirement capacity failure performs no new meshing");
+            component.DrawViewportMeshes(changedArgs);
+            Check(Attempts() == before + 3 && FieldValue<Mesh[]?>(leaf, "_generatedMeshes") == null && Status(highlight).Contains("partial"),
+                "an over-budget mesh is discarded and unchanged capacity denial does not remesh every frame");
         }
         finally { highlight.GetType().GetField("_stagedBytes", AnyInstance)!.SetValue(highlight, staged); }
         component.DrawViewportMeshes(changedArgs);
-        Check(Attempts() == before + 3, "the same settings retry when retirement capacity becomes available");
+        Check(Attempts() == before + 4, "the same settings retry when display capacity becomes available");
         Method(component, "ClearHighlight").Invoke(component, Array.Empty<object>());
         RetireNow(highlight);
     }

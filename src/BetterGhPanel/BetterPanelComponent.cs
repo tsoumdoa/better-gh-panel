@@ -72,6 +72,7 @@ namespace BetterGhPanel
             "Inspect and manipulate data trees on the canvas. Choose Items or displayed Values for D/S. Create set groups every member in a branch per value, or emits unique displayed values. B/F and geometry actions include all set members. Sorting changes only view order.",
             "Params", "Util")
         {
+            _highlight.PendingMeasurements = (result, positions) => _session?.RequestPreviewMeasurements(result, positions);
             _highlight.PreviewChanged = () =>
             {
                 InvalidatePreviewCaches();
@@ -115,6 +116,7 @@ namespace BetterGhPanel
                 if (_session == null)
                 {
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
+                    _session.PreviewMeasurementsChanged += (_, __) => _highlight.InvalidateValues();
                     _session.GeometryDiagnosticsForTesting = CaptureDiagnosticsForTesting;
                     _session.SetDecimalPlacesResolver(() => DecimalPlaces);
                     _session.SetRoundUpFactorResolver(() => RoundUpFactor);
@@ -142,7 +144,7 @@ namespace BetterGhPanel
                         (Attributes as BetterPanelAttributes)?.OnQueryStarted();
                         (Attributes as BetterPanelAttributes)?.InvalidateStatistics();
                         CancelPendingCopy();
-                        ClearHighlight();
+                        ClearHighlightCore(keepValues: true);
                         if (!_restoringView && !QueryPreviewActive)
                         {
                             var document = OnPingDocument();
@@ -260,7 +262,7 @@ namespace BetterGhPanel
                 }
                 _reuseQuery = false;
                 CancelPendingCopy();
-                ClearHighlight();
+                ClearHighlightCore(keepValues: true);
                 // An upstream recompute keeps the scroll position when the new tree
                 // has exactly the same paths and lengths. Selection is explicitly re-bound after checking the replacement structure.
                 var attributes = Attributes as BetterPanelAttributes;

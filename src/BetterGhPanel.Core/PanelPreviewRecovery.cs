@@ -3,18 +3,19 @@ using System.Collections.Generic;
 
 namespace BetterGhPanel.Core
 {
-    // Retain the ordered selection, rather than dropping its unvisited suffix
-    // at the per-turn budget. Sparse toggles do not restart or scan that suffix.
+    // Retain ordered positions instead of dropping their unvisited suffix at the
+    // per-turn budget. Selection toggles and retirement retries keep their cursor.
     internal sealed class PanelPreviewRecovery
     {
         internal enum Admission { Complete, Retry, Blocked }
         private IReadOnlyList<int>? _positions;
-        private int _next;
+        private int _next, _end;
         private int _retryFrom = -1;
         private long _version;
-        internal bool Pending => _positions != null && _next < _positions.Count;
+        internal bool Pending => _positions != null && _next < _end;
 
-        internal void Reset(IReadOnlyList<int> positions) { _version++; _positions = positions; _next = 0; _retryFrom = -1; }
+        internal void Reset(IReadOnlyList<int> positions, int start = 0, int limit = int.MaxValue)
+        { _version++; _positions = positions; _end = Math.Min(positions.Count, limit); _next = Math.Min(start, _end); _retryFrom = -1; }
         internal void Clear() { _version++; _positions = null; _next = 0; _retryFrom = -1; }
 
         // False means capacity/preparation blocked, no work remains, or a

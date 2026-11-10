@@ -12,6 +12,34 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
+        private bool PreviewMenuRowEnabled(int index) => _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette);
+
+        private void ChoosePreviewMenu(int index, GH_Canvas canvas)
+        {
+            if (!PreviewMenuRowEnabled(index)) return;
+            var page = _menu.Kind;
+            var next = page;
+            if (page == CanvasMenuKind.Preview)
+            {
+                if (index < CanvasPreviewRows.ScopeCount) { PanelOwner.SetPreviewMode(_menu.PreviewChoiceAt(index).Mode!.Value); _menu.Close(); canvas.Invalidate(); return; }
+                if (index == CanvasPreviewRows.ItemOrder) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
+                if (index == CanvasPreviewRows.Values) PanelOwner.SetShowValues(!PanelOwner.ShowValues);
+                if (index == CanvasPreviewRows.Placement) next = CanvasMenuKind.DotPlacement;
+                if (index == CanvasPreviewRows.Colour) next = CanvasMenuKind.ValuePalette;
+            }
+            else if (index == CanvasPreviewRows.Back) next = CanvasMenuKind.Preview;
+            else if (page == CanvasMenuKind.DotPlacement) { PanelOwner.SetDotPlacement((PanelDotPlacement)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
+            else if (index == CanvasPreviewRows.Reverse) PanelOwner.SetReversePalette(!PanelOwner.ReversePalette);
+            else PanelOwner.SetValuePalette((PanelValuePalette)(index - CanvasPreviewRows.FirstChoice));
+            if (next != page)
+            {
+                _menu.Close();
+                OpenMenu(next, canvas);
+            }
+            else _menu.InvalidatePaint();
+            canvas.Invalidate();
+        }
+
         private MenuRouter? _menuRouter;
 
         // Set while the router forwards a menu click. PanelCanvasInput checks focus
@@ -53,7 +81,7 @@ namespace BetterGhPanel
                 if (row < _menu.Visible && index < _menu.Count)
                 {
                     e.Text = _menu.StatisticsDetails(index, PanelOwner.DecimalPlaces);
-                    e.Description = index == 6 || index == 7 || index >= CanvasStatistics.OverviewRows ? CanvasStatistics.UniqueScope :
+                    e.Description = index == CanvasStatistics.UniqueRow || index == 7 || index >= CanvasStatistics.OverviewRows ? CanvasStatistics.UniqueScope :
                         index == 8 ? "Source counts after filters are measured before Create set removes duplicate occurrences. Valid, invalid and unverified are distinct." : CanvasStatistics.Scope;
                 }
                 else e.Description = "Use Previous and Next to inspect all values.";

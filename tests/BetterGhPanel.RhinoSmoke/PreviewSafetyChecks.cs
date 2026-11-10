@@ -25,6 +25,7 @@ internal static partial class PreviewSafetyChecks
             VerifyActions(assembly);
             VerifyResources(highlight);
             await VerifyDocumentCacheAndDrawing(assembly, rhino);
+            await VerifyValueDots(assembly, rhino);
         }
         finally { rhino.Modified = previousModified; }
     }

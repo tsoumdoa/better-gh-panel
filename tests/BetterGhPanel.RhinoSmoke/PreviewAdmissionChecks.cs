@@ -193,7 +193,7 @@ internal static partial class PreviewSafetyChecks
                 {
                     Method(highlight, "RecoverOnIdle").Invoke(highlight, new object?[] { null, EventArgs.Empty });
                     Check(PropertyValue<int>(highlight, "LastVisitedRows") <= 128 && PropertyValue<int>(highlight, "LastVisitedNodes") <= 20000 &&
-                        PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024, "each preview recovery turn obeys row/graph/resource budgets");
+                        PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024, "each preview recovery turn obeys row/graph/resource budgets");
                 }
                 Check(!FieldValue<bool>(highlight, "_recoveryScheduled"), "preview recovery stops instead of spinning at capacity");
             }

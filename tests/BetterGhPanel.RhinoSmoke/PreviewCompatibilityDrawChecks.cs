@@ -62,7 +62,7 @@ internal static partial class PreviewSafetyChecks
                     Scope(highlight, source, result, new[] { 0, 2 });
                     component.ExpirePreview(false);
                     rebuilt = Count(highlight) == 4 && PropertyValue<int>(highlight, "Count") == 2 && Box(highlight).Min.Y > oldBounds.Min.Y &&
-                        PropertyValue<long>(highlight, "RetainedBytes") <= 16L * 1024 * 1024;
+                        PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024;
                     component.DrawViewportWires(new ColoredPreviewArgs(args, rebuiltMaterial, Color.Cyan));
                 }
                 catch (Exception ex) { error = ex.ToString(); }

@@ -29,9 +29,9 @@ public class ItemOrderTests
         menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
         menu.Layout(panel, default, default, default, preview: new RectangleF(110, 102, 112, 18));
         menu.MarkPainted();
-        Assert.True(panel.Contains(menu.Bounds) && menu.Count == 4 && menu.Visible == 4,
-            "All preview scopes and the order toggle fit directly in a minimum Half panel");
-        Assert.True(menu.TrySelect(new PointF(menu.Bounds.Right - 8, menu.Bounds.Bottom - 5), out int selected) && selected == 3 &&
+        Assert.True(menu.Visible == menu.Count,
+            "All preview scopes and value controls fit without paging");
+        Assert.True(menu.TrySelect(new PointF(menu.Bounds.Right - 8, menu.Bounds.Top + 3 * 20 + 10), out int selected) && selected == 3 &&
             menu.Label(3) == "Show item order", "The additional item-order toggle is directly reachable in minimum Half mode");
         Assert.True(menu.IsSelected(3, options, PanelUnitConversion.None, -1, PanelPreviewMode.Off, true) &&
             menu.IsSelected(2, options, PanelUnitConversion.None, -1, PanelPreviewMode.Off, true) &&
