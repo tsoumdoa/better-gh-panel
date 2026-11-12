@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.4.1-beta
+yak install panel-plus 0.5.0-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -28,14 +28,13 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
-**[`0.4.1-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.4.1-beta)**
+**[`0.5.0-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.5.0-beta)**
 
-- **Value formula.** Units → Formula… applies a formula such as `x*2` or `x-50` after unit conversion and before rounding. Rows update while typing, with an example or a clear error above the footer; Esc restores. Saved with the component, with Undo.
-- Rows, Stats, comparisons, sorting, sets, numeric outputs, copy and viewport values share the result. Negative results work; unavailable results send null on Values. Table formulas apply to D only, marked ƒ; other columns retain units and rounding.
-- **Units menu order.** Formula sits between conversions and Round up by factor. Decimal controls now follow rounding, matching the order they apply.
-- **Vector value dots match rows.** Vector X/Y/Z dots and Colour by value now include unit conversion, formula and rounding, like rows, Values and Stats.
-- **Cancelling Search no longer holds back output.** If an output update was waiting while the Search editor was open, Esc now sends it downstream.
-- **Validation.** The automated Rhino fixtures could not run for this release, and the formula has not yet been tried in a live Rhino session. Core tests cover the parser, the number pipeline and the outputs.
+- **Branch stats (Σ).** A new tree tool beside Create set. Each branch's rows become its stats (Count, Sum, Avg, Median, Min, Max, Range, Std dev; you tick which), and D sends exactly those numbers per branch. Add Flatten for stats across all branches.
+- Stats use the numbers the rows show, after filters, units, formula and rounding. Skipped items and mixed metrics are explained in the branch heading; branches without numbers keep null slots so every branch has the same length.
+- Click Min or Max to select the item it came from. Table columns show the same stats for their own numbers, and Ctrl+C copies the stats.
+- **Removed:** the footer Stats button and its popup. Create set covers unique values with counts, and the Check line covers null and invalid counts.
+- **Validation.** The automated Rhino fixtures could not run for this release, and Σ has not yet been tried in a live Rhino session. Core tests cover the stats, the D output and the table columns.
 
 See [CHANGELOG](CHANGELOG.md) for earlier releases.
 
