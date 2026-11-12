@@ -105,7 +105,6 @@ namespace BetterGhPanel.Core
             }
             string metric = PanelProperties.IsProperty(mode) ? PanelProperties.Label(mode) : mode.ToString();
             string unit = PanelFilterValue.UnitSymbol(snapshot, row, mode, geometry);
-            // Vectors are dimensionless even in a document with model units.
             bool axis = mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z;
             bool vector = axis && row.TypeName.IndexOf("Vector", StringComparison.OrdinalIgnoreCase) >= 0;
             if (vector) metric = "Vector " + metric;

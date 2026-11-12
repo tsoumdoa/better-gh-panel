@@ -232,6 +232,16 @@ internal static class UxInteractionChecks
                 "Returning to the original query and pressing Enter preserves redo and selection as a no-op");
         }
 
+        // The filter was changed before the editor opened. Its result completes
+        // under the preview guard, so cancelling must still publish that result.
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "7[0-9]" });
+        Call(attributes, "EditFormula", canvas);
+        fixture.Document.IsModified = false;
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 10);
+        CanvasEditorAdapter.Active(assembly).Cancel();
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 10);
+        Check(!fixture.Document.IsModified, "Cancelling publishes an originally pending filter result without dirtying the document");
+
         string[] WireImages() => fixture.Sinks.Select(sink =>
         {
             var chunk = new GH_IO.Serialization.GH_LooseChunk("Wire");
@@ -290,6 +300,26 @@ internal static class UxInteractionChecks
             (row.SearchCapabilities & PanelSearchCapabilities.Value) != 0) && fixture.Sinks[0].VolatileData.AllData(false).All(item => item == null),
             "Non-finite transforms keep numeric capture identity and capabilities; numeric Items sends null at the wire boundary");
         Call(component, "ResetAll");
+        fixture.Source.PersistentData.Branches[0][0] = new GH_Integer(30);
+        fixture.Solve();
+        PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, -1);
+        fixture.Query(new PanelQueryOptions { TypeName = "Number" });
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80 && fixture.Sinks[0].VolatileData.DataCount == 80);
+        Check(fixture.Result.Snapshot.Rows[0].TypeName == "Number" && fixture.Sinks[0].VolatileData.AllData(false).First() is GH_Number convertedInteger && convertedInteger.Value == .03,
+            "Converted Integer inputs retain main's Number identity and saved Number filters");
+        PanelTestAdapter.Units(component, PanelUnitConversion.None, -1);
+        fixture.Query(new PanelQueryOptions());
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 80 && fixture.Sinks[0].VolatileData.AllData(false).First() is GH_Integer);
+        fixture.Document.UndoServer.Clear(); fixture.Document.IsModified = false;
+        int identitySolutions = fixture.Solutions;
+        Call(attributes, "EditFormula", canvas);
+        CanvasEditorAdapter.Active(assembly).Submit("x");
+        await Task.Delay(50);
+        Check(Options(fixture).Formula == null && fixture.Document.UndoServer.UndoCount == 0 && !fixture.Document.IsModified &&
+            fixture.Solutions == identitySolutions && fixture.Sinks[0].VolatileData.AllData(false).First() is GH_Integer,
+            "Accepting prefilled x stays off, preserves Integer Items and changes no history or output");
+        fixture.Source.PersistentData.Branches[0][0] = new GH_Number(0);
+        fixture.Solve();
 
         fixture.Query(new PanelQueryOptions());
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);

@@ -27,12 +27,19 @@ namespace BetterGhPanel.Core
             formula = null;
             error = "";
             string normalized = (text ?? "").Trim().Replace('×', '*').Replace('÷', '/').Replace('−', '-').Replace('–', '-');
-            // A signed x expression is unary (so -x^2 means -(x^2)); a
-            // leading offset such as -50 is the shorthand x-50.
-            string operand = normalized.Length > 1 ? normalized.Substring(1).TrimStart() : "";
-            bool signedExpression = normalized.Length > 0 && (normalized[0] == '-' || normalized[0] == '+') &&
-                operand.Length > 0 && (operand[0] == '(' || char.IsLetter(operand[0]) && !operand.StartsWith("pi", StringComparison.OrdinalIgnoreCase));
-            if (!signedExpression && normalized.Length > 0 && "+-*/^".IndexOf(normalized[0]) >= 0) normalized = "x" + normalized;
+            if (normalized.Length > 0 && (normalized[0] == '+' || normalized[0] == '-') &&
+                TryParse(normalized, out formula, out error)) return true;
+            if (normalized.Length > 0 && "+-*/^".IndexOf(normalized[0]) >= 0) normalized = "x" + normalized;
+            return TryParse(normalized, out formula, out error);
+        }
+
+        public static PanelFormula? NormalizeSetting(PanelFormula? formula) =>
+            string.Equals(formula?.Text, "x", StringComparison.OrdinalIgnoreCase) ? null : formula;
+
+        private static bool TryParse(string normalized, out PanelFormula? formula, out string error)
+        {
+            formula = null;
+            error = "";
             if (normalized.Length > MaximumLength) { error = "Keep the formula to 200 characters"; return false; }
             try
             {
@@ -59,7 +66,12 @@ namespace BetterGhPanel.Core
                 var expression = Expression();
                 if (Peek == ')') throw Error("Extra )");
                 if (Peek == ',') throw Error("Use . for decimals (1.5, not 1,5)");
-                if (char.IsLetter(Peek)) throw Error("Leave out units like '" + Name() + "'. x is already in the shown unit");
+                if (char.IsLetter(Peek))
+                {
+                    string name = Name(), key = name.ToLowerInvariant();
+                    throw Error(key == "x" || key == "pi" || Arity(key) > 0 ? "Use * between numbers and x (2*x)" :
+                        "Leave out units like '" + name + "'. x is already in the shown unit");
+                }
                 if (Peek != '\0') throw Error("Unexpected '" + Peek + "'");
                 if (!_usesX) throw Error("Use x for the shown number, e.g. x*2");
                 return expression;
@@ -98,6 +110,8 @@ namespace BetterGhPanel.Core
                 while (_position < _text.Length && (char.IsLetter(_text[_position]) || _text[_position] == '_' || _text[_position] == '²' || _text[_position] == '³')) _position++;
                 return _text.Substring(start, _position - start);
             }
+            private static int Arity(string key) => key == "min" || key == "max" ? 2 :
+                key == "abs" || key == "sqrt" || key == "floor" || key == "ceil" ? 1 : 0;
             private Func<double, double> Primary()
             {
                 if (Take('(')) { var value = Expression(); if (!Take(')')) throw Error("Missing )"); return value; }
@@ -117,7 +131,7 @@ namespace BetterGhPanel.Core
                     string name = Name(), key = name.ToLowerInvariant();
                     if (key == "x") { _usesX = true; return x => x; }
                     if (key == "pi") return _ => Math.PI;
-                    int count = key == "min" || key == "max" ? 2 : key == "abs" || key == "sqrt" || key == "floor" || key == "ceil" ? 1 : 0;
+                    int count = Arity(key);
                     if (count == 0) throw Error("Unknown name '" + name + "'. Use x");
                     string arity = name + " takes " + count + " value" + (count == 1 ? "" : "s");
                     if (!Take('(')) throw Error(arity);

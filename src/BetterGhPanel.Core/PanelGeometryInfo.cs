@@ -57,8 +57,15 @@ namespace BetterGhPanel.Core
         public PanelGeometryInfo WithAdditionalLength(double length) =>
             new PanelGeometryInfo(Description, Value, Power, Units, MetricName, MetricLabel, CanMeasure, Details, MeasurementUnavailable, length, HasArea, AreaValue, Properties);
 
-        public string FormatCompact(PanelUnitConversion conversion, int decimals, double roundUpFactor = 0, PanelFormula? formula = null) => Description +
-            (Value.HasValue ? (Description.Length == 0 ? "" : " · ") + (MetricLabel.Length == 0 ? "" : MetricLabel + " ") + FormatValue(conversion, decimals, roundUpFactor, formula) : "");
+        public string FormatCompact(PanelUnitConversion conversion, int decimals, double roundUpFactor = 0, PanelFormula? formula = null) =>
+            FormatCompact(conversion, decimals, roundUpFactor, formula, out _);
+
+        internal string FormatCompact(PanelUnitConversion conversion, int decimals, double roundUpFactor, PanelFormula? formula, out bool unavailable)
+        {
+            string value = Value.HasValue ? FormatValue(conversion, decimals, roundUpFactor, formula) : "";
+            unavailable = value == "unavailable";
+            return Description + (Value.HasValue ? (Description.Length == 0 ? "" : " · ") + (MetricLabel.Length == 0 ? "" : MetricLabel + " ") + value : "");
+        }
 
         public string FormatDetails(PanelUnitConversion conversion, int decimals, double roundUpFactor = 0, PanelFormula? formula = null) =>
             (Value.HasValue ? MetricName + ": " + FormatValue(conversion, decimals, roundUpFactor, formula) + "\n" : "") +

@@ -40,7 +40,6 @@ namespace BetterGhPanel.Core
             }
             else if (mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z)
             {
-                if (row.TypeName.IndexOf("Vector", StringComparison.OrdinalIgnoreCase) >= 0) return "";
                 property = PanelPropertyValue.Numeric(1, 1, row.Components?.Units ?? "");
             }
             else
@@ -68,8 +67,7 @@ namespace BetterGhPanel.Core
                 var components = row.Components;
                 if (components == null) return false;
                 value = mode == PanelSearchMode.X ? components.X : mode == PanelSearchMode.Y ? components.Y : components.Z;
-                if (row.TypeName.IndexOf("Vector", StringComparison.OrdinalIgnoreCase) < 0)
-                    value = PanelUnits.ConvertGeometry(value, 1, components.Units, conversion);
+                value = PanelUnits.ConvertGeometry(value, 1, components.Units, conversion);
             }
             else
             {
@@ -188,30 +186,16 @@ namespace BetterGhPanel.Core
             unit = "";
             if (row.IsNull || !row.IsValid) return false;
             var mode = options.SearchMode;
-            if (options.DisplayFilterValue)
+            if (options.DisplayFilterValue || row.NumericValue.HasValue)
             {
+                if (!options.DisplayFilterValue) mode = PanelSearchMode.Value;
                 if (mode == PanelSearchMode.ListLength) return false;
-                if (PanelProperties.IsProperty(mode))
-                {
-                    if (!PanelProperties.TryGet(row, mode, measured, out var property) || property?.Kind != PanelPropertyKind.Number || property.Power == 0) return false;
-                    number = property.Converted(snapshot.UnitConversion);
-                }
-                else if (mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z)
-                {
-                    if (!TryScalarValue(row, mode, snapshot.UnitConversion, out number)) return false;
-                }
-                else if (mode != PanelSearchMode.Value)
-                {
-                    if (!TryGeometryValue(row, mode, snapshot.UnitConversion, measured, out number)) return false;
-                }
-                else if (row.RawNumericValue.HasValue) number = row.RawNumericValue.Value;
-                else return false;
+                if (PanelProperties.IsProperty(mode) &&
+                    (!PanelProperties.TryGet(row, mode, measured, out var property) || property?.Power == 0)) return false;
+                var input = OutputValue(snapshot, row, mode, measured, decimals: -1, roundUpFactor: 0, formula: null);
+                if (input?.Kind != PanelPropertyKind.Number) return false;
+                number = input.Number;
                 unit = UnitSymbol(snapshot, row, mode, measured);
-            }
-            else if (row.RawNumericValue.HasValue)
-            {
-                number = row.RawNumericValue.Value;
-                unit = PanelUnits.Symbol(snapshot.UnitConversion);
             }
             else
             {

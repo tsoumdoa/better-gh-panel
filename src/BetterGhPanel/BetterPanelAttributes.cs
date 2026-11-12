@@ -743,10 +743,10 @@ namespace BetterGhPanel
             }
             renderer.DrawValue(g, PanelValuePresentation.Visualize(PanelOwner.DisplayValue(result.Snapshot, row, position)), font, Ink,
                 new RectangleF(bounds.X + valueStart + 3 + marker, y, Math.Max(0, valueRight - bounds.X - valueStart - 3 - marker), RowHeight),
-                projectedType != null ? projectedType.Number.HasValue : (numericMetric || !displayMetric && row.NumericValue.HasValue));
+                projectedType != null ? projectedType.IsNumeric : (numericMetric || !displayMetric && row.NumericValue.HasValue));
             if (showRowType)
                 renderer.DrawCell(g, projectedType != null
-                        ? projectedType.Number.HasValue ? "Num" : "Text" : CanvasMenu.ShortTypeName(row.TypeName), small, Muted,
+                        ? projectedType.IsNumeric ? "Num" : "Text" : CanvasMenu.ShortTypeName(row.TypeName), small, Muted,
                     new RectangleF(bounds.Right - setWidth - TypeColumnWidth, y, TypeColumnWidth - CellGap, RowHeight), true);
             DrawSetCount(g, renderer, bounds, position, viewNumber, small);
         }

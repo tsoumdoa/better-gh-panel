@@ -15,6 +15,7 @@ namespace BetterGhPanel
         private PanelFormula? _draftFormula;
         private float _formulaEditorHeight;
         private int _formulaOffset;
+        private PanelQueryResult? _formulaOpeningResult;
 
         private float FormulaFooterHeight(float height) => _formulaDraft == null ? height : Math.Max(height, _formulaEditorHeight);
 
@@ -23,6 +24,7 @@ namespace BetterGhPanel
             CanvasTextInput.CloseActive(PanelOwner);
             CanvasTextInput.CompletePending();
             _formulaOffset = _offset;
+            _formulaOpeningResult = PanelOwner.Session.Result;
             PanelOwner.BeginFormulaEdit();
             _formulaDraft = PanelOwner.Formula?.Text ?? "x";
             // The native overlay has a minimum screen height and a two-pixel
@@ -52,6 +54,7 @@ namespace BetterGhPanel
             _draftFormula = null;
             _formulaError = "";
             _formulaEditorHeight = 0;
+            _formulaOpeningResult = null;
             if (!commit) _viewRestore = new ViewRestore(PanelOwner.Session.Snapshot, _formulaOffset, DisplayListLengths);
             PanelOwner.EndFormulaEdit(formula, commit);
             Layout();
@@ -62,11 +65,11 @@ namespace BetterGhPanel
         {
             if (_formulaDraft == null) return;
             var bounds = new RectangleF(_list.X, _layout.Footer.Top - 24, _list.Width, 23);
-            Fill(g, PanelTheme.Rgb(247, 250, 248), bounds);
+            bool valid = _draftFormula != null;
+            Fill(g, valid ? PanelTheme.Rgb(247, 250, 248) : PanelTheme.Rgb(253, 243, 238), bounds);
             using var line = new Pen(PanelTheme.Rgb(199, 204, 199));
             g.DrawLine(line, bounds.Left, bounds.Top, bounds.Right, bounds.Top);
-            bool valid = _draftFormula != null;
-            string message = valid ? "ƒ " + _draftFormula!.Pretty : _formulaError;
+            string message = valid ? "ƒ " + _draftFormula!.Pretty : "⚠ " + _formulaError;
             if (valid && ResultIsCurrent(result))
             {
                 var options = PanelOwner.Session.Options;

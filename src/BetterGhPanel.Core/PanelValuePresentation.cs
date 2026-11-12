@@ -11,16 +11,25 @@ namespace BetterGhPanel.Core
 
         internal static PanelText DisplayText(PanelRow row, PanelUnitConversion conversion, int decimals,
             PanelGeometryInfo? measuredGeometry = null, double roundUpFactor = 0, PanelFormula? formula = null)
+            => DisplayText(row, conversion, decimals, out _, measuredGeometry, roundUpFactor, formula);
+
+        internal static PanelText DisplayText(PanelRow row, PanelUnitConversion conversion, int decimals, out bool unavailable,
+            PanelGeometryInfo? measuredGeometry = null, double roundUpFactor = 0, PanelFormula? formula = null)
         {
+            unavailable = false;
             if (row == null) throw new ArgumentNullException(nameof(row));
             if (row.Validity == PanelValidity.VerifiedInvalid) return row.GroupSummary != null
                 ? new PanelText(row.GroupSummary, true) : new PanelText("Invalid · " + (row.NumericSummary?.Format(decimals) ?? row.DisplayValue));
             if (row.NumericSummary != null) return new PanelText(row.NumericSummary.Format(decimals));
             var geometry = measuredGeometry ?? row.GeometryInfo;
-            if (geometry != null) return new PanelText(geometry.FormatCompact(conversion, decimals, roundUpFactor, formula) +
+            if (geometry != null) return new PanelText(geometry.FormatCompact(conversion, decimals, roundUpFactor, formula, out unavailable) +
                 (geometry.MeasurementUnavailable ? " · measurement unavailable" : ""));
             if (!row.IsNull && row.NumericValue.HasValue)
-                return new PanelText(PanelUnits.Format(PresentedNumber(row, decimals, roundUpFactor, formula), conversion, decimals));
+            {
+                double number = PresentedNumber(row, decimals, roundUpFactor, formula);
+                unavailable = double.IsNaN(number) || double.IsInfinity(number);
+                return new PanelText(PanelUnits.Format(number, conversion, decimals));
+            }
             return row.GroupSummary != null ? new PanelText(row.GroupSummary, false) : new PanelText(row.DisplayValue);
         }
 

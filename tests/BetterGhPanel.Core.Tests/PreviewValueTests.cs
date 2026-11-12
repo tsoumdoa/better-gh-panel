@@ -86,11 +86,11 @@ public class PreviewValueTests
     }
 
     [Fact]
-    public void VectorAxesAreUnitlessAndNumericPropertiesOverrideMainMetric()
+    public void VectorAxesUseConvertedValuesAndNumericPropertiesOverrideMainMetric()
     {
         var vector = new PanelRow(0, "{0}", "Vector", "", null, PanelValidity.VerifiedValid, components: new PanelComponents(2, 3, 4, "mm"));
-        var value = PanelPreviewValues.Sample(Snapshot(vector, PanelUnitConversion.MillimetersToMeters), vector, PanelSearchMode.X, null, 2, 1);
-        Assert.Equal(2, value.Number); Assert.Equal("2.00", value.Text); Assert.Equal("Vector X", value.Metric); Assert.Equal("", value.Unit);
+        var value = PanelPreviewValues.Sample(Snapshot(vector, PanelUnitConversion.MillimetersToMeters), vector, PanelSearchMode.X, null, 3, 0);
+        Assert.Equal(.002, value.Number); Assert.Equal("0.002 m", value.Text); Assert.Equal("Vector X", value.Metric); Assert.Equal("m", value.Unit);
         var row = Geometry(new PanelGeometryInfo("Curve", 9).WithProperties(new Dictionary<PanelSearchMode, PanelPropertyValue?> { [PanelSearchMode.Degree] = PanelPropertyValue.Integer(3) }));
         var degree = PanelPreviewValues.Sample(Snapshot(row), row, PanelSearchMode.Degree, null, 2, 0);
         Assert.Equal("3", degree.Text);
@@ -106,19 +106,21 @@ public class PreviewValueTests
     {
         var row = new PanelRow(0, "{0}", "Vector", "", null, PanelValidity.VerifiedValid, components: new PanelComponents(30, 30, 30, "mm"));
         var snapshot = Snapshot(row, PanelUnitConversion.MillimetersToMeters);
+        Assert.Equal(.03, PanelFilterValue.OutputValue(snapshot, row, axis, null)!.Number);
+        Assert.Equal("0.03 m", PanelPreviewValues.Sample(snapshot, row, axis, null, -1, 0).Text);
         Assert.True(PanelFormula.TryCompile("x*2", out var formula, out _));
-        var preview = PanelPreviewValues.Sample(snapshot, row, axis, null, 1, .25, formula);
-        var value = PanelFilterValue.OutputValue(snapshot, row, axis, null, 1, .25, formula);
-        Assert.Equal(60, preview.Number);
+        var preview = PanelPreviewValues.Sample(snapshot, row, axis, null, 3, .025, formula);
+        var value = PanelFilterValue.OutputValue(snapshot, row, axis, null, 3, .025, formula);
+        Assert.Equal(.075, preview.Number);
         Assert.Equal(value!.Number, preview.Number);
-        Assert.Equal(PanelFilterValue.Format(snapshot, row, axis, 1, roundUpFactor: .25, formula: formula), preview.Text);
-        Assert.Equal("", preview.Unit);
+        Assert.Equal(PanelFilterValue.Format(snapshot, row, axis, 3, roundUpFactor: .025, formula: formula) + " m", preview.Text);
+        Assert.Equal("m", preview.Unit);
         Assert.True(PanelFormula.TryCompile("x/0", out formula, out _));
-        preview = PanelPreviewValues.Sample(snapshot, row, axis, null, 1, .25, formula);
+        preview = PanelPreviewValues.Sample(snapshot, row, axis, null, 3, .025, formula);
         Assert.Null(preview.Number);
         Assert.False(preview.Pending);
-        Assert.Null(PanelFilterValue.OutputValue(snapshot, row, axis, null, 1, .25, formula));
-        Assert.Equal("unavailable", PanelFilterValue.Format(snapshot, row, axis, 1, roundUpFactor: .25, formula: formula));
+        Assert.Null(PanelFilterValue.OutputValue(snapshot, row, axis, null, 3, .025, formula));
+        Assert.Equal("unavailable", PanelFilterValue.Format(snapshot, row, axis, 3, roundUpFactor: .025, formula: formula));
     }
 
     [Fact]

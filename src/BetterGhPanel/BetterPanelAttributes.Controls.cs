@@ -379,7 +379,7 @@ namespace BetterGhPanel
             if (PanelOwner.UnitConversion != PanelUnitConversion.None) parts.Insert(0, PanelUnits.Label(PanelOwner.UnitConversion));
             string setting = string.Join(" · ", parts);
             e.Text = setting.Length > 0 ? setting + " · changes numeric output" : "Changes numeric output";
-            e.Description = "Convert units, apply a formula in x (e.g. x*2, x-50), then round up by factor and set decimals (0–12). x is the converted number before rounding. Changes numeric output; geometry stays unchanged.";
+            e.Description = "Convert units, apply a formula in x (e.g. x*2, x-50), then round up by factor and set decimals (0–12). x is the converted number before rounding. Geometry stays unchanged.";
         }
 
         private void TooltipTree(PointF point, GH_TooltipDisplayEventArgs e)

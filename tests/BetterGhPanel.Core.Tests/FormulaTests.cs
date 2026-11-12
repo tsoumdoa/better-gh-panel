@@ -38,7 +38,12 @@ public sealed class FormulaTests
     [InlineData("+2", "x+2", 12)]
     [InlineData("/2", "x/2", 5)]
     [InlineData("^2", "x^2", 100)]
-    public void SavesExpandedNormalizedShorthand(string text, string normalized, double expected)
+    [InlineData("-2*x", "-2*x", -20)]
+    [InlineData("-pi*x", "-pi*x", -10 * Math.PI)]
+    [InlineData("-x^2", "-x^2", -100)]
+    [InlineData("-50", "x-50", -40)]
+    [InlineData("+5", "x+5", 15)]
+    public void SavesNormalizedExpressionsAndShorthand(string text, string normalized, double expected)
     {
         var formula = Formula(text);
         Assert.Equal(normalized, formula.Text);
@@ -88,58 +93,15 @@ public sealed class FormulaTests
         Assert.Equal(sort == PanelSortMode.ValueAscending ? new[] { 1, 0 } : new[] { 0, 1 }, result.RowPositions);
     }
 
-    [Fact]
-    public void UnavailableScalarKeepsTypeCapabilitiesAndCanPreviewAnotherFormula()
-    {
-        var row = new PanelRow(0, "{0}", "Number", "unavailable", double.PositiveInfinity,
-            PanelValidity.VerifiedValid, rawNumericValue: 30);
-        var snapshot = new PanelSnapshot(new[] { row }, new[] { new PanelBranch("{0}", 1) });
-        var options = new PanelQueryOptions { TypeName = "Number", Formula = Formula("x/0"),
-            SearchMode = PanelSearchMode.Value, DisplayFilterValue = true, OutputValues = true };
-        var result = PanelQueryEngine.Execute(snapshot, options);
-        Assert.Equal(new[] { 0 }, result.RowPositions);
-        Assert.Equal("Number", result.Snapshot.Rows[0].TypeName);
-        Assert.True(row.TypeIdentityAvailable);
-        Assert.Equal(PanelSearchCapabilities.Value, row.SearchCapabilities);
-        Assert.False(row.IsNull);
-        Assert.Equal("unavailable", PanelFilterValue.Format(snapshot, row, PanelSearchMode.Value, -1, formula: options.Formula));
-        Assert.Null(result.OutputValues![0]);
-        Assert.Equal(0, result.Statistics.NumericCount);
-        options.DisplayFilterValue = false; options.Search = "> -1";
-        Assert.Empty(PanelQueryEngine.Execute(snapshot, options).RowPositions);
-        options.Formula = Formula("x*2");
-        Assert.Single(PanelQueryEngine.Execute(snapshot, options).RowPositions);
-        Assert.Equal("60", PanelValuePresentation.FormatDisplay(row, PanelUnitConversion.None, -1, formula: options.Formula));
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void CancelledFormulaPreviewPreservesCommittedSelectionAndSetMembers(bool createSet)
-    {
-        var snapshot = new PanelSnapshot(new[] { 10d, 10, 30, 30 }.Select((n, i) =>
-            new PanelRow(i, "{0}", "Number", "", n)).ToArray(), new[] { new PanelBranch("{0}", 4) });
-        var options = new PanelQueryOptions { CreateSet = createSet, SearchMode = PanelSearchMode.Value, Search = "< 20" };
-        var opening = PanelQueryEngine.Execute(snapshot, options);
-        var committed = new PanelRowSelection(); committed.Select(opening, 0);
-        var selected = committed.OrderedPositions(opening).ToArray();
-        var members = opening.DisplaySet?.ExpandMembers(snapshot, selected) ?? selected;
-        var previewSelection = committed.CopyForPreview();
-        var draft = options.Clone(); draft.Formula = Formula("x*2");
-        var preview = PanelQueryEngine.Execute(snapshot, draft);
-        previewSelection.Synchronize(preview);
-        Assert.Empty(previewSelection.OrderedPositions(preview));
-        var restored = PanelQueryEngine.Execute(snapshot, options);
-        Assert.Equal(selected, committed.OrderedPositions(restored));
-        Assert.Equal(members, restored.DisplaySet?.ExpandMembers(snapshot, committed.OrderedPositions(restored)) ?? committed.OrderedPositions(restored));
-        Assert.Equal(createSet ? new[] { 0, 1 } : new[] { 0 }, members);
-    }
-
     [Theory]
     [InlineData("", "Use x for the shown number, e.g. x*2")]
     [InlineData("2*pi", "Use x for the shown number, e.g. x*2")]
     [InlineData("x+y", "Unknown name 'y'. Use x")]
     [InlineData("x+1,5", "Use . for decimals (1.5, not 1,5)")]
+    [InlineData("2x", "Use * between numbers and x (2*x)")]
+    [InlineData("2pi", "Use * between numbers and x (2*x)")]
+    [InlineData("2sqrt(x)", "Use * between numbers and x (2*x)")]
+    [InlineData("x abs(x)", "Use * between numbers and x (2*x)")]
     [InlineData("x-50mm", "Leave out units like 'mm'. x is already in the shown unit")]
     [InlineData("(x+2", "Missing )")]
     [InlineData("x+2)", "Extra )")]
@@ -237,14 +199,24 @@ public sealed class FormulaTests
         Assert.Equal(1, PanelFilterValue.OutputValue(snapshot, row, PanelSearchMode.ListLength, null, formula: formula)!.Number);
     }
 
-    [Fact]
-    public void TableColumnsKeepUnitsAndRoundingWithoutDFormula()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CreateSetUnavailableNumbersKeepTheirNumericKind(bool displayValue)
     {
-        var formula = Formula("x-50");
-        var rawColumn = new PanelRow(0, "{0}", "Number", "1240.5", 1240.5);
-        double d = PanelUnits.Transform(1240.5, PanelUnitConversion.MillimetersToMeters, .25, 1, formula);
-        Assert.Equal(-48.7, d);
-        Assert.Equal("1.3", PanelTableText.Value(rawColumn, PanelUnitConversion.MillimetersToMeters, 1, .25));
+        var snapshot = new PanelSnapshot(new[] { 10d, 20 }.Select((n, i) =>
+            new PanelRow(i, "{0}", "Number", "", n)).ToArray(), new[] { new PanelBranch("{0}", 2) });
+        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Formula = Formula("x/0"),
+            CreateSet = true, TypeName = "Number", SearchMode = PanelSearchMode.Value, DisplayFilterValue = displayValue, OutputValues = true });
+        Assert.Single(result.RowPositions);
+        var value = result.DisplaySet!.Values[result.RowPositions[0]];
+        Assert.True(value.IsNumeric);
+        Assert.True(value.Unavailable);
+        Assert.Null(value.Number);
+        Assert.Equal("unavailable", value.Text);
+        Assert.Equal(1, result.Statistics.TypeCounts["Number"]);
+        Assert.False(result.Statistics.TypeCounts.ContainsKey("Text"));
+        Assert.Equal(0, result.Statistics.NumericCount);
     }
 
     [Fact]

@@ -126,9 +126,9 @@ namespace BetterGhPanel
         internal void PreviewFormula(PanelFormula formula)
         {
             if (!FormulaEditing) return;
-            _formulaPreview = formula;
+            _formulaPreview = PanelFormula.NormalizeSetting(formula);
             var options = Session.Options;
-            options.Formula = formula;
+            options.Formula = _formulaPreview;
             Session.UpdateQuery(options);
         }
 
@@ -136,6 +136,7 @@ namespace BetterGhPanel
         {
             if (!FormulaEditing) return;
             var original = _queryPreviewOptions!;
+            accepted = PanelFormula.NormalizeSetting(accepted);
             bool changed = commit && Formula?.Text != accepted?.Text;
             if (changed) RecordUndoEvent("Panel+ formula");
             FormulaEditing = false;
@@ -158,9 +159,19 @@ namespace BetterGhPanel
 
         internal void SetFormula(PanelFormula? formula)
         {
+            formula = PanelFormula.NormalizeSetting(formula);
             if (Formula?.Text == formula?.Text) return;
-            BeginFormulaEdit();
-            EndFormulaEdit(formula, commit: true);
+            RecordUndoEvent("Panel+ formula");
+            Formula = formula;
+            CancelPendingCopy();
+            RefreshFormulaItems();
+            var options = Session.Options;
+            options.Formula = Formula;
+            _restoringView = true;
+            try { Session.UpdateQuery(options); }
+            finally { _restoringView = false; }
+            OnPingDocument()?.Modified();
+            if (!Session.IsBusy) ScheduleOutput();
         }
 
         internal static bool HasFilters(PanelQueryOptions options) =>
@@ -265,11 +276,8 @@ namespace BetterGhPanel
             if (committed && !CanOutputValues) OutputValues = PanelOutputValues.Items;
             (Attributes as BetterPanelAttributes)?.UseRowSelection(RowSelection);
             (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
-            if (committed)
-            {
-                OnPingDocument()?.Modified();
-                if (!Session.IsBusy) ScheduleOutput();
-            }
+            if (committed) OnPingDocument()?.Modified();
+            if (!Session.IsBusy) ScheduleOutput();
         }
 
         internal bool ResetAll()
@@ -707,7 +715,7 @@ namespace BetterGhPanel
             string formulaText = "";
             reader.TryGetString("PanelFormula", ref formulaText);
             PanelFormula.TryCompile(formulaText, out var formula, out _);
-            Formula = formula;
+            Formula = PanelFormula.NormalizeSetting(formula);
             FormulaEditing = false;
             _formulaPreview = null;
             int outputScope = 0;
