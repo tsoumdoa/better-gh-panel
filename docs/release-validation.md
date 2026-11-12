@@ -1,5 +1,17 @@
 # Release validation records
 
+## 0.5.0-beta
+
+The footer Stats popup is replaced by the Σ tree tool: each branch's rows become the ticked stats (Count, Sum, Avg, Median, Min, Max, Range, Std dev), D sends exactly those numbers per branch, and Flatten gives stats across all branches. Table columns show the same stats for their own numbers. Built in #73 with a Sol first review, then Sol and Opus adversarial rounds and re-checks.
+
+`npm run check` passed on the release commit: 446 managed tests on each of net48 and net8.0, 17 coordinator tests, one packaging test, 12 headless branch-stats assertions, both runtime builds, source encoding/style checks and the native smoke host compile. The extracted assemblies report `0.5.0-beta+8fab400141ce5650cd8290b7b8ecc0814de372b9`.
+
+**Automated native fixtures did not run.** The hidden host has hung at RhinoCore startup since 0.4.0-beta, so the fixtures were not attempted for this release.
+
+**Not exercised in a live Rhino:** Σ on large trees, the picker, clicking Min/Max to select, table column stats while measuring, Ctrl+C, Undo, save and reopen, Mac and the Windows .NET Framework host.
+
+Artifact source commit: `8fab400141ce5650cd8290b7b8ecc0814de372b9`. Archive: `panel-plus-0.5.0-beta-rh8_0-any.yak`. SHA-256: `8c928d1e7397e759d0facfefa3dd2262b81e1eaedc134f7e04d4a3f49313fd87`. GitHub prerelease and public Yak publication succeeded. Yak search lists `0.5.0-beta`, and a fresh GitHub asset download matches the archive SHA-256.
+
 ## 0.4.1-beta
 
 Units → Formula… applies a formula in `x` (for example `x*2` or `x-50`) after unit conversion and before rounding, with a live panel-only preview while typing. Vector X/Y/Z value dots now follow the rows' units, formula and rounding, and cancelling Search releases a pending output. Built in #70 with a Sol first review, then Sol and Opus adversarial rounds and re-checks.
