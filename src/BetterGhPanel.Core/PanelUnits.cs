@@ -52,9 +52,10 @@ namespace BetterGhPanel.Core
         public static bool IsRoundingFactor(double factor) => factor > 0 && !double.IsInfinity(factor);
 
         /// <summary>Rounds numeric output toward positive infinity after unit conversion. Zero disables rounding.</summary>
-        public static double Transform(double value, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = AutomaticDecimals)
+        public static double Transform(double value, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = AutomaticDecimals, PanelFormula? formula = null)
         {
             value = Convert(value, conversion);
+            if (formula != null) value = formula.Evaluate(value);
             if (IsRoundingFactor(roundUpFactor) && !double.IsNaN(value) && !double.IsInfinity(value) &&
                 Math.Abs(value) < PanelNumber.IntegerBoundary && (value == 0 || Math.Abs(value) >= 1e-27))
             {
@@ -156,17 +157,17 @@ namespace BetterGhPanel.Core
         // Geometry retains its model units. Convert only a matching source unit and
         // dimension; numeric output conversion must never scale the geometry itself.
         public static string FormatGeometry(double value, int power, string units, PanelUnitConversion conversion, int decimals,
-            bool includeUnits = true, double roundUpFactor = 0)
+            bool includeUnits = true, double roundUpFactor = 0, PanelFormula? formula = null)
         {
             if (double.IsNaN(value) || double.IsInfinity(value) || value < 0) return "unavailable";
             var matchingConversion = GeometryConversion(power, units, conversion);
             if (matchingConversion != PanelUnitConversion.None)
             {
-                var converted = Transform(value, matchingConversion, roundUpFactor, decimals);
-                return double.IsInfinity(converted) ? "unavailable" : Format(converted,
+                var converted = Transform(value, matchingConversion, roundUpFactor, decimals, formula);
+                return double.IsNaN(converted) || double.IsInfinity(converted) ? "unavailable" : Format(converted,
                     includeUnits ? matchingConversion : PanelUnitConversion.None, decimals, "G6");
             }
-            value = Transform(value, PanelUnitConversion.None, roundUpFactor, decimals);
+            value = Transform(value, PanelUnitConversion.None, roundUpFactor, decimals, formula);
             if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";
             return Format(value, PanelUnitConversion.None, decimals, "G6") +
                 (includeUnits ? " " + units + (power == 2 ? "²" : power == 3 ? "³" : "") : "");

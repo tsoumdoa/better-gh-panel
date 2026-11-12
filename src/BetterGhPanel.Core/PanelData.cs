@@ -399,6 +399,7 @@ namespace BetterGhPanel.Core
         public bool OutputValues { get; set; }
         /// <summary>Geometry/property rounding; captured scalars already carry this transform.</summary>
         public double RoundUpFactor { get; set; }
+        public PanelFormula? Formula { get; set; }
         /// <summary>Explicit presented precision for output, filtering and statistics; Automatic preserves the number.</summary>
         public int DecimalPlaces { get; set; } = PanelUnits.AutomaticDecimals;
         public string? TypeName { get; set; }
@@ -422,6 +423,7 @@ namespace BetterGhPanel.Core
             OutputValues = OutputValues,
             DecimalPlaces = DecimalPlaces,
             RoundUpFactor = RoundUpFactor,
+            Formula = Formula,
             TypeName = TypeName,
             BranchPath = BranchPath,
             BranchPrefix = BranchPrefix,
@@ -517,7 +519,7 @@ namespace BetterGhPanel.Core
         internal PanelQueryResult(PanelSnapshot snapshot, int[] rowPositions, PanelResultPositionIndex viewIndices,
             PanelStatistics statistics, List<string> orderedBranches, HashSet<string> branchPaths,
             PanelViewIndex viewIndex, PanelDisplaySetResult? displaySet = null,
-            Dictionary<int, PanelPropertyValue?>? outputValues = null, PanelDataWarnings? warnings = null)
+            Dictionary<int, PanelPropertyValue?>? outputValues = null, PanelDataWarnings? warnings = null, bool hasFormulaValues = false)
         {
             Snapshot = snapshot;
             RowPositions = Array.AsReadOnly(rowPositions);
@@ -528,6 +530,7 @@ namespace BetterGhPanel.Core
             BranchPaths = orderedBranches.AsReadOnly();
             ViewIndex = viewIndex;
             DisplaySet = displaySet;
+            HasFormulaValues = hasFormulaValues;
             OutputValues = outputValues == null ? null : new ReadOnlyDictionary<int, PanelPropertyValue?>(outputValues);
         }
 
@@ -544,6 +547,8 @@ namespace BetterGhPanel.Core
         public bool ContainsBranchPath(string path) => _branchPaths.Contains(path);
         public PanelViewIndex ViewIndex { get; }
         public PanelDisplaySetResult? DisplaySet { get; }
+        /// <summary>Matching rows include numbers or metrics to which a formula applies, including pending metrics.</summary>
+        public bool HasFormulaValues { get; }
         public IReadOnlyDictionary<int, PanelPropertyValue?>? OutputValues { get; }
         /// <summary>Preview includes every set member, with a distinct tree-order slot.</summary>
         public bool TryGetPreviewIndex(int position, out int index)

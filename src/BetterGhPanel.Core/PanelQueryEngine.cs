@@ -104,6 +104,7 @@ namespace BetterGhPanel.Core
 
             string? numericUnits = null;
             var numericCount = 0;
+            var hasFormulaValues = false;
             var nullCount = 0;
             var invalidCount = 0;
             var unverifiedCount = 0;
@@ -126,15 +127,26 @@ namespace BetterGhPanel.Core
                 filteredSourceStatuses = filteredSourceStatuses.Add(row.Validity);
                 if (set != null && !set.IncludeRow(i, measured)) continue;
 
+                if (query.Formula != null && !hasFormulaValues && row.IsValid && !row.IsNull)
+                {
+                    hasFormulaValues = PanelFilterValue.TryFormulaInput(snapshot, row, query, measured, out _, out _);
+                    var geometry = measured ?? row.GeometryInfo;
+                    // Pending measurements cannot change whether a metric accepts a
+                    // formula. Capture that fact here, never by scanning rows in paint.
+                    if (!hasFormulaValues && geometry?.CanMeasure == true)
+                        hasFormulaValues = query.DisplayFilterValue
+                            ? !PanelProperties.IsProperty(query.SearchMode) && PanelFilterValue.MatchesGeometry(query.SearchMode, geometry)
+                            : geometry.MetricName.Length > 0;
+                }
+
                 rowPositions.Add(i);
                 if (columnSortRows != null && set == null) columnSortRows.Add(i, query.ColumnSortKeys!.RowAt(i));
                 var metric = set == null && query.DisplayFilterValue
-                    ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor) : null;
+                    ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor, query.Formula) : null;
                 outputValues?.Add(i, metric);
                 if (propertySortValues != null) propertySortValues.Add(i, PanelDisplayedValue.Capture(snapshot, row, query, measured));
-                if (sortText != null && !row.IsNull && !HasFiniteNumber(row))
-                    sortText.Add(i, new RowSortKey(PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, query.RoundUpFactor),
-                        row.IsValid ? measured ?? row.GeometryInfo : null));
+                if (sortText != null && !row.IsNull)
+                    sortText.Add(i, new RowSortKey(row, measured, snapshot.UnitConversion, query));
                 branches.Add(row.Path);
                 Increment(branchCounts, row.Path);
                 if (set?.IsBranchSet == true) continue;
@@ -143,11 +155,11 @@ namespace BetterGhPanel.Core
                 if (projected == null)
                     numeric = query.DisplayFilterValue
                         ? metric?.Kind == PanelPropertyKind.Number ? metric.Number : (double?)null
-                        : HasFiniteNumber(row) ? PanelUnits.Transform(row.NumericValue!.Value, PanelUnitConversion.None, 0, query.DecimalPlaces) : (double?)null;
+                        : !row.IsNull && row.IsValid && row.NumericValue.HasValue ? PanelValuePresentation.PresentedNumber(row, query.DecimalPlaces, query.RoundUpFactor, query.Formula) : (double?)null;
                 if (numeric.HasValue && (double.IsNaN(numeric.Value) || double.IsInfinity(numeric.Value))) numeric = null;
-                PanelText? text = projected != null ? projected.Number.HasValue || projected.Unavailable ? (PanelText?)null : projected.SemanticText :
+                PanelText? text = projected != null ? projected.IsNumeric || projected.Unavailable ? (PanelText?)null : projected.SemanticText :
                     row.StringValue != null ? new PanelText(row.StringValue) : (PanelText?)null;
-                Increment(typeCounts, projected == null ? row.TypeName : projected.Number.HasValue ? "Number" : "Text");
+                Increment(typeCounts, projected == null ? row.TypeName : projected.IsNumeric ? "Number" : "Text");
                 if (projected == null && row.IsNull) nullCount++;
                 if (projected == null && row.Validity == PanelValidity.VerifiedInvalid) invalidCount++;
                 if (projected == null && row.Validity == PanelValidity.Unverified) unverifiedCount++;
@@ -319,7 +331,7 @@ namespace BetterGhPanel.Core
                 viewIndices.Add(positions[index], index);
             }
             cancellationToken.ThrowIfCancellationRequested();
-            var result = new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings);
+            var result = new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings, hasFormulaValues);
             if (query.TableSource?.Extras != null && displaySet == null && !(query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
                 foreach (var index in PanelTableIndex.Build(result, query.TableSource.Columns,
                     query.TableSource.Extras(result, rowPositions, !HasItemFilter(query)), work, cancellationToken))
@@ -408,22 +420,24 @@ namespace BetterGhPanel.Core
             counts[key] = count + 1;
         }
 
-        private static bool HasFiniteNumber(PanelRow row) => !row.IsNull && row.IsValid && row.NumericValue.HasValue &&
-            !double.IsNaN(row.NumericValue.Value) && !double.IsInfinity(row.NumericValue.Value);
-
         private static bool ShowsMetric(PanelSearchMode mode) => PanelProperties.IsProperty(mode) ||
             mode >= PanelSearchMode.Length && mode <= PanelSearchMode.Volume || mode >= PanelSearchMode.X && mode <= PanelSearchMode.Z;
 
         // Non-scalar rows sort by their measurement when they have one, so 9 precedes 10.
         private readonly struct RowSortKey
         {
-            internal RowSortKey(PanelText text, PanelGeometryInfo? geometry)
+            internal RowSortKey(PanelRow row, PanelGeometryInfo? measured, PanelUnitConversion conversion, PanelQueryOptions query)
             {
-                Text = text;
-                Metric = geometry?.Value is double value && !double.IsNaN(value) && !double.IsInfinity(value) ? geometry.MetricName : null;
-                Value = geometry?.Value ?? 0;
+                var geometry = row.IsValid ? measured ?? row.GeometryInfo : null;
+                double scalar = row.IsValid && row.NumericValue.HasValue ? PanelValuePresentation.PresentedNumber(row, query.DecimalPlaces, query.RoundUpFactor, query.Formula) : double.NaN;
+                Number = !double.IsNaN(scalar) && !double.IsInfinity(scalar) ? scalar : (double?)null;
+                Text = Number.HasValue ? default : PanelValuePresentation.DisplayText(row, conversion, query.DecimalPlaces, measured, query.RoundUpFactor, query.Formula);
+                double value = geometry?.Value is double raw && raw >= 0 ? PanelUnits.Transform(PanelUnits.ConvertGeometry(raw, geometry.Power, geometry.Units, conversion), PanelUnitConversion.None, query.RoundUpFactor, query.DecimalPlaces, query.Formula) : double.NaN;
+                Metric = !double.IsNaN(value) && !double.IsInfinity(value) ? geometry!.MetricName : null;
+                Value = value;
             }
             internal PanelText Text { get; }
+            internal double? Number { get; }
             internal string? Metric { get; }
             internal double Value { get; }
         }
@@ -570,6 +584,7 @@ namespace BetterGhPanel.Core
             {
                 var leftValue = displayedValues[leftId];
                 var rightValue = displayedValues[rightId];
+                if (leftValue.Unavailable != rightValue.Unavailable) return leftValue.Unavailable ? 1 : -1;
                 if (leftValue.Number.HasValue != rightValue.Number.HasValue) return leftValue.Number.HasValue ? -1 : 1;
                 int order = leftValue.Number.HasValue ? leftValue.Number.Value.CompareTo(rightValue.Number!.Value) :
                     leftValue.SemanticText.Compare(rightValue.SemanticText, StringComparison.OrdinalIgnoreCase);
@@ -579,16 +594,16 @@ namespace BetterGhPanel.Core
             var right = rows[rightId];
             if (left.IsNull != right.IsNull) return left.IsNull ? 1 : -1;
             if (left.IsNull) return leftId.CompareTo(rightId);
-            var leftNumeric = HasFiniteNumber(left);
-            var rightNumeric = HasFiniteNumber(right);
+            RowSortKey leftKey = sortText[leftId], rightKey = sortText[rightId];
+            var leftNumeric = leftKey.Number.HasValue;
+            var rightNumeric = rightKey.Number.HasValue;
             if (leftNumeric != rightNumeric) return leftNumeric ? -1 : 1;
             int comparison;
-            if (leftNumeric) comparison = left.NumericValue!.Value.CompareTo(right.NumericValue!.Value);
+            if (leftNumeric) comparison = leftKey.Number!.Value.CompareTo(rightKey.Number!.Value);
             else
             {
                 comparison = StringComparer.OrdinalIgnoreCase.Compare(left.TypeName, right.TypeName);
                 if (comparison != 0) return comparison;
-                RowSortKey leftKey = sortText[leftId], rightKey = sortText[rightId];
                 if ((leftKey.Metric == null) != (rightKey.Metric == null)) return leftKey.Metric != null ? -1 : 1;
                 comparison = leftKey.Metric == null ? leftKey.Text.Compare(rightKey.Text, StringComparison.OrdinalIgnoreCase)
                     : StringComparer.OrdinalIgnoreCase.Compare(leftKey.Metric, rightKey.Metric);

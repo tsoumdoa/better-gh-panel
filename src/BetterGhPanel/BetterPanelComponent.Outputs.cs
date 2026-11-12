@@ -19,7 +19,7 @@ namespace BetterGhPanel
         internal bool CanOutputValues => CanOutputValuesFor(CreateSetTree, Session.Options);
         internal bool OutputsValues => CanOutputValues && OutputValues == PanelOutputValues.Values;
         private GH_Structure<IGH_Goo>? _inputTree, _preConversionTree;
-        private GH_Structure<IGH_Goo>? _liveInputTree;
+        private GH_Structure<IGH_Goo>? _liveInputTree, _itemOutputTree;
         private IReadOnlyList<PanelSourceAddress> _retainedSources = Array.Empty<PanelSourceAddress>();
         private string? _pairedError;
         internal PanelPairedData? PairedData { get; private set; }
@@ -44,7 +44,7 @@ namespace BetterGhPanel
         {
             (Attributes as BetterPanelAttributes)?.ClearTableWidths();
             _inputTree = _preConversionTree = null;
-            _liveInputTree = null;
+            _liveInputTree = _itemOutputTree = null;
             _captureGraphs = Array.Empty<CaptureGraphWitness>();
             _captureHasGeometry = false;
             _retainedSources = Array.Empty<PanelSourceAddress>();
@@ -57,9 +57,20 @@ namespace BetterGhPanel
             _filteredMask = null;
         }
 
+        private void RefreshFormulaItems()
+        {
+            if (_queryTree == null || _preConversionTree == null) return;
+            var presented = Formula == null ? _presentedScalars : CapturedScalar.Convert(_scalarInputs, UnitConversion, RoundUpFactor, DecimalPlaces, Formula);
+            var items = Formula == null ? _queryTree : PanelUnitOperations.ApplyCaptured(_preConversionTree, UnitConversion,
+                _scalarInputs, RoundUpFactor, DecimalPlaces, presented, Formula);
+            _itemOutputTree = PanelUnitOperations.OutputItems(items, presented);
+            _cachedOutputResult = null;
+        }
+
         private void PublishOutputs(IGH_DataAccess da, Func<bool> solveCurrent)
         {
             var session = Session;
+            var items = _itemOutputTree ?? _queryTree;
             _outputOptions = session.Options;
             _outputOptions.ColumnSortKeys = null; _outputOptions.TableSource = null;
             _outputPending = session.IsBusy;
@@ -77,7 +88,7 @@ namespace BetterGhPanel
                 _cachedOutputResult = session.Result;
                 if (set == null && !OutputsValues && filtering && (session.Result.RowPositions.Count != _queryTree.DataCount || session.Result.BranchPaths.Count != _queryTree.PathCount))
                     CountOutputVisits(_queryTree.DataCount);
-                _filteredData = BuildDataOutput(_queryTree, query, query.RowPositions, query.BranchPaths, false);
+                _filteredData = BuildDataOutput(items!, query, query.RowPositions, query.BranchPaths, false);
                 _filteredPair = PairedData?.Output(query, query.RowPositions, query.BranchPaths, FlattenTree, PanelPairedData.EmptyPartnersInScope(session.Options), CountOutputVisits);
                 _filteredMask = null;
             }
@@ -89,7 +100,7 @@ namespace BetterGhPanel
                 CountOutputVisits((long)_inputTree.DataCount + members.Count);
                 _filteredMask = PanelOutputOperations.Mask(_inputTree, _retainedSources, members);
             }
-            var data = current ? _filteredData ?? empty : !filtering && _queryTree != null ? _queryTree : empty;
+            var data = current ? _filteredData ?? empty : !filtering && items != null ? items : empty;
             var selectedPositions = current ? RowSelection.OrderedPositions(session.Result) : Array.Empty<int>();
             var selectedBranches = current ? RowSelection.BranchPaths(query) : Array.Empty<string>();
             var selectedMembers = current && set != null && OutputScope == PanelOutputScope.Selected
@@ -99,7 +110,7 @@ namespace BetterGhPanel
             if (current && _queryTree != null && set == null && !OutputsValues && selectedPositions.Count > 0)
                 CountOutputVisits(_queryTree.DataCount);
             var selected = current && _queryTree != null
-                ? BuildDataOutput(_queryTree, query, selectedPositions, selectedBranches, true) : empty;
+                ? BuildDataOutput(items!, query, selectedPositions, selectedBranches, true) : empty;
             if (current && _inputTree != null && OutputScope == PanelOutputScope.Selected)
                 CountOutputVisits((long)_inputTree.DataCount + selectedMembers.Count);
             var mask = !current || _inputTree == null ? new GH_Structure<GH_Boolean>() : OutputScope == PanelOutputScope.Filtered

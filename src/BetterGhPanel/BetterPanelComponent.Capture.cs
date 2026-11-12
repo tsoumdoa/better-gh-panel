@@ -179,10 +179,11 @@ namespace BetterGhPanel
                     CancelPendingCopy();
                     ClearHighlightCore(keepValues: true);
                     var options = session.Options;
-                    if (options.DecimalPlaces != DecimalPlaces || options.RoundUpFactor != RoundUpFactor)
+                    if (options.DecimalPlaces != DecimalPlaces || options.RoundUpFactor != RoundUpFactor || options.Formula != Formula)
                     {
                         options.DecimalPlaces = DecimalPlaces;
                         options.RoundUpFactor = RoundUpFactor;
+                        options.Formula = Formula;
                         session.UpdateQuery(options);
                     }
                     if (!Current()) return;
@@ -219,7 +220,9 @@ namespace BetterGhPanel
                     // All callback-bearing inspection has completed. Commit these
                     // locals together only while this solve still owns the component.
                     _scalarInputs = scalarInputs; _presentedScalars = queryScalars;
-                    _inputTree = inputTree; _preConversionTree = preConversionTree; _queryTree = queryTree; _retainedSources = retainedSources;
+                    _inputTree = inputTree; _preConversionTree = preConversionTree; _queryTree = queryTree;
+                    RefreshFormulaItems();
+                    _retainedSources = retainedSources;
                     _liveInputTree = liveInputTree;
                     _pairedError = pairedError;
                     PairedData = pairedTree;

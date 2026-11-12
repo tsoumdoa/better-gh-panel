@@ -100,7 +100,7 @@ internal static class UxInteractionChecks
         var okEdit = Search(); okEdit.Type("Wall("); okEdit.ClickOk();
         await fixture.Ready(() => Options(fixture).Search == "Wall(", allowError: true);
         Check(fixture.Document.UndoServer.UndoCount == 1, "OK submits invalid input exactly like Enter");
-        foreach (var choice in new[] { (Menu: "Branch", Index: 1), (Menu: "Units", Index: 10), (Menu: "Units", Index: 12) })
+        foreach (var choice in new[] { (Menu: "Branch", Index: 1), (Menu: "Units", Index: 14), (Menu: "Units", Index: 12), (Menu: "Units", Index: 10) })
         {
             Call(component, "ResetAll");
             await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
@@ -110,7 +110,7 @@ internal static class UxInteractionChecks
             Call(attributes, "ChooseMenu", choice.Index, canvas);
             CanvasEditorAdapter.Active(assembly).Blur();
             await Task.Delay(50);
-            Check(Options(fixture).BranchPath == null && Options(fixture).DecimalPlaces < 0 && Options(fixture).RoundUpFactor == 0 &&
+            Check(Options(fixture).BranchPath == null && Options(fixture).DecimalPlaces < 0 && Options(fixture).RoundUpFactor == 0 && Options(fixture).Formula == null &&
                 fixture.SelectedCount == 1 && fixture.Document.UndoServer.UndoCount == 0,
                 "An unchanged prefilled default abandons on blur: " + choice);
         }
@@ -231,6 +231,95 @@ internal static class UxInteractionChecks
                 !fixture.Document.IsModified && fixture.Solutions == solutions,
                 "Returning to the original query and pressing Enter preserves redo and selection as a no-op");
         }
+
+        // The filter was changed before the editor opened. Its result completes
+        // under the preview guard, so cancelling must still publish that result.
+        fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = "7[0-9]" });
+        Call(attributes, "EditFormula", canvas);
+        fixture.Document.IsModified = false;
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 10);
+        CanvasEditorAdapter.Active(assembly).Cancel();
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 10);
+        Check(!fixture.Document.IsModified, "Cancelling publishes an originally pending filter result without dirtying the document");
+
+        string[] WireImages() => fixture.Sinks.Select(sink =>
+        {
+            var chunk = new GH_IO.Serialization.GH_LooseChunk("Wire");
+            ((GH_Structure<IGH_Goo>)sink.VolatileData).Write(chunk);
+            return Convert.ToBase64String(chunk.Serialize_Binary());
+        }).ToArray();
+        foreach (bool sets in new[] { false, true })
+        foreach (bool cancelButton in new[] { false, true })
+        {
+            Call(component, "ResetAll");
+            Call(component, "SetTreeOperations", 0, false, false, false, sets);
+            fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Value, Search = sets ? "" : "< 20" });
+            await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == (sets ? 80 : 20));
+            fixture.Select(10);
+            await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1 &&
+                FieldValue<long>(component, "_publishedSelectionVersion") == FieldValue<long>(component, "_selectionVersion"));
+            var wires = WireImages();
+            int solutions = fixture.Solutions;
+            fixture.Document.UndoServer.Clear(); fixture.Document.IsModified = false;
+            Call(attributes, "EditFormula", canvas);
+            var editor = CanvasEditorAdapter.Active(assembly);
+            editor.Type("x*2");
+            await fixture.Ready(() => Options(fixture).Formula?.Text == "x*2" && fixture.Result.RowPositions.Count == (sets ? 80 : 10));
+            Check(fixture.Solutions == solutions && !fixture.Document.IsModified && fixture.Document.UndoServer.UndoCount == 0 &&
+                WireImages().SequenceEqual(wires), "Formula previews leave every wire, saved state and downstream solution untouched");
+            var saved = new GH_IO.Serialization.GH_LooseChunk("Panel");
+            Check(component.Write(saved) && saved.GetString("PanelFormula") == "", "Saving a formula preview keeps the committed formula");
+            if (cancelButton) editor.ClickCancel(); else editor.Cancel();
+            await fixture.Ready(() => Options(fixture).Formula == null && fixture.Result.RowPositions.Count == (sets ? 80 : 20) && fixture.SelectedCount == 1);
+            Check(PanelTestAdapter.SelectedPosition(component) == 10 && WireImages().SequenceEqual(wires) &&
+                fixture.Solutions == solutions && !fixture.Document.IsModified && fixture.Document.UndoServer.UndoCount == 0,
+                "Formula Esc/Cancel restores the opening selection and S/B/F exactly, including sets and excluded rows");
+        }
+        foreach (bool blur in new[] { false, true })
+        {
+            Call(component, "ResetAll");
+            await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 80);
+            fixture.Document.UndoServer.Clear(); fixture.Document.IsModified = false;
+            int solutions = fixture.Solutions;
+            Call(attributes, "EditFormula", canvas);
+            var editor = CanvasEditorAdapter.Active(assembly);
+            editor.Type("x*2");
+            await fixture.Ready(() => Options(fixture).Formula?.Text == "x*2");
+            if (blur) editor.Blur(); else editor.Submit("x*2");
+            await fixture.Ready(() => fixture.Values(0).Split(',').Last() == "158");
+            Check(fixture.Solutions == solutions + 1 && fixture.Document.IsModified && fixture.Document.UndoServer.UndoCount == 1,
+                "Formula Enter/blur commits one undo record, marks the document modified and solves once");
+        }
+        Call(component, "ResetAll");
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 80);
+        Call(attributes, "EditFormula", canvas);
+        CanvasEditorAdapter.Active(assembly).Submit("x/0");
+        fixture.Query(new PanelQueryOptions { TypeName = "Number" });
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80 && fixture.Sinks[0].VolatileData.DataCount == 80);
+        Check(fixture.Result.Snapshot.Rows.All(row => row.TypeName == "Number" && !row.IsNull &&
+            (row.SearchCapabilities & PanelSearchCapabilities.Value) != 0) && fixture.Sinks[0].VolatileData.AllData(false).All(item => item == null),
+            "Non-finite transforms keep numeric capture identity and capabilities; numeric Items sends null at the wire boundary");
+        Call(component, "ResetAll");
+        fixture.Source.PersistentData.Branches[0][0] = new GH_Integer(30);
+        fixture.Solve();
+        PanelTestAdapter.Units(component, PanelUnitConversion.MillimetersToMeters, -1);
+        fixture.Query(new PanelQueryOptions { TypeName = "Number" });
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80 && fixture.Sinks[0].VolatileData.DataCount == 80);
+        Check(fixture.Result.Snapshot.Rows[0].TypeName == "Number" && fixture.Sinks[0].VolatileData.AllData(false).First() is GH_Number convertedInteger && convertedInteger.Value == .03,
+            "Converted Integer inputs retain main's Number identity and saved Number filters");
+        PanelTestAdapter.Units(component, PanelUnitConversion.None, -1);
+        fixture.Query(new PanelQueryOptions());
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 80 && fixture.Sinks[0].VolatileData.AllData(false).First() is GH_Integer);
+        fixture.Document.UndoServer.Clear(); fixture.Document.IsModified = false;
+        int identitySolutions = fixture.Solutions;
+        Call(attributes, "EditFormula", canvas);
+        CanvasEditorAdapter.Active(assembly).Submit("x");
+        await Task.Delay(50);
+        Check(Options(fixture).Formula == null && fixture.Document.UndoServer.UndoCount == 0 && !fixture.Document.IsModified &&
+            fixture.Solutions == identitySolutions && fixture.Sinks[0].VolatileData.AllData(false).First() is GH_Integer,
+            "Accepting prefilled x stays off, preserves Integer Items and changes no history or output");
+        fixture.Source.PersistentData.Branches[0][0] = new GH_Number(0);
+        fixture.Solve();
 
         fixture.Query(new PanelQueryOptions());
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);

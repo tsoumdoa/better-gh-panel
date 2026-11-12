@@ -120,6 +120,7 @@ namespace BetterGhPanel
                     _session.GeometryDiagnosticsForTesting = CaptureDiagnosticsForTesting;
                     _session.SetDecimalPlacesResolver(() => DecimalPlaces);
                     _session.SetRoundUpFactorResolver(() => RoundUpFactor);
+                    _session.SetFormulaResolver(() => PresentedFormula);
                     _session.SetCreateSetResolver(() => CreateSetTree);
                     _session.SetOutputValuesResolver(() => OutputValues == PanelOutputValues.Values);
                     if (Locked) _session.InvalidateInput(false, suspended: true);
@@ -129,6 +130,7 @@ namespace BetterGhPanel
                     _session.SetCaptureCurrentResolver(CapturedSnapshotCurrent);
                     _savedOptions.DecimalPlaces = DecimalPlaces;
                     _savedOptions.RoundUpFactor = RoundUpFactor;
+                    _savedOptions.Formula = Formula;
                     ResolveSortInput(_savedOptions);
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
@@ -203,7 +205,7 @@ namespace BetterGhPanel
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddGenericParameter("Data", "D", "Matching Items or displayed Values after tree tools, units and filters. Set Items: all members in {path;k} ({k} when flattened); list-length sets use {k;path}. Set Values: unique values at displayed precision. Values use the shown rounding; unavailable values are null. Sorting changes only the view.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Data", "D", "Matching Items or displayed Values after tree tools, units, formula and filters. Set Items: all members in {path;k} ({k} when flattened); list-length sets use {k;path}. Set Values: unique values at displayed precision. Values use the shown rounding; unavailable values are null. Sorting changes only the view.", GH_ParamAccess.tree);
             p.AddGenericParameter("Selected data", "S", "Selected Items or Values in tree order. Set Items include every member and keep the same group paths as D. Empty when no rows are selected.", GH_ParamAccess.tree);
             p.AddBooleanParameter("Membership mask", "B", MaskDescription, GH_ParamAccess.tree);
             p.AddGenericParameter("Paired results", "F", PairedDescription, GH_ParamAccess.tree);
@@ -213,7 +215,7 @@ namespace BetterGhPanel
         {
             var document = OnPingDocument();
             var session = _session;
-            if (_solving || _restoringView || Locked || document == null || session == null || _queryTree == null) return;
+            if (_solving || _restoringView || QueryPreviewActive || Locked || document == null || session == null || _queryTree == null) return;
             var options = session.Options;
             if (!_outputPending && _outputOptions != null && PanelQueryPolicy.SameOutputFilter(_outputOptions, options) &&
                 _publishedSelectionVersion == _selectionVersion && _publishedScope == OutputScope && _publishedValues == OutputValues) return;

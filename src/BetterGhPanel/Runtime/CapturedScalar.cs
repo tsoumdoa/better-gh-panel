@@ -54,19 +54,17 @@ namespace BetterGhPanel.Runtime
             return values;
         }
 
-        internal static CapturedScalar[] Convert(CapturedScalar[] source, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = PanelUnits.AutomaticDecimals)
+        internal static CapturedScalar[] Convert(CapturedScalar[] source, PanelUnitConversion conversion, double roundUpFactor = 0, int decimals = PanelUnits.AutomaticDecimals, PanelFormula? formula = null)
         {
-            if (conversion == PanelUnitConversion.None && roundUpFactor == 0 && decimals < 0) return source;
+            if (conversion == PanelUnitConversion.None && roundUpFactor == 0 && decimals < 0 && formula == null) return source;
             var result = (CapturedScalar[])source.Clone();
             for (int i = 0; i < result.Length; i++)
             {
                 var value = source[i];
                 if (!value.IsNumeric || !value.IsValid) continue;
-                double converted = PanelUnits.Transform(value._number, conversion, roundUpFactor, decimals);
-                // An overflowing conversion has no finite display-unit raw value.
-                // Retain the finite source as the witness of transformed unavailability.
-                double raw = double.IsNaN(converted) || double.IsInfinity(converted) ? value._number : PanelUnits.Convert(value._number, conversion);
-                result[i] = new CapturedScalar(value.IsInteger && conversion == PanelUnitConversion.None && roundUpFactor == 0 ? Integer : Number, converted, null, value.IsValid, raw);
+                double converted = PanelUnits.Transform(value._number, conversion, roundUpFactor, decimals, formula);
+                double raw = PanelUnits.Convert(value._number, conversion);
+                result[i] = new CapturedScalar(value.IsInteger && conversion == PanelUnitConversion.None && roundUpFactor == 0 && formula == null ? Integer : Number, converted, null, value.IsValid, raw);
             }
             return result;
         }

@@ -19,7 +19,7 @@ namespace BetterGhPanel
         // Tree tools and Reset change what each address holds; their recompute
         // starts at the top instead of keeping the scroll position.
         private bool _discardViewRestore;
-        // A live search edit previews the view only. Wire outputs, document
+        // A live query edit previews the view only. Wire outputs, document
         // modification and downstream solutions wait for Enter.
         internal bool QueryPreviewActive { get; private set; }
         private PanelQueryOptions? _queryPreviewOptions;
@@ -111,6 +111,68 @@ namespace BetterGhPanel
         internal PanelUnitConversion UnitConversion { get; private set; }
         internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
         internal double RoundUpFactor { get; private set; }
+        internal PanelFormula? Formula { get; private set; }
+        internal bool FormulaEditing { get; private set; }
+        private PanelFormula? _formulaPreview;
+        internal PanelFormula? PresentedFormula => FormulaEditing ? _formulaPreview : Formula;
+
+        internal void BeginFormulaEdit()
+        {
+            _formulaPreview = Formula;
+            FormulaEditing = true;
+            BeginQueryPreview();
+        }
+
+        internal void PreviewFormula(PanelFormula formula)
+        {
+            if (!FormulaEditing) return;
+            _formulaPreview = PanelFormula.NormalizeSetting(formula);
+            var options = Session.Options;
+            options.Formula = _formulaPreview;
+            Session.UpdateQuery(options);
+        }
+
+        internal void EndFormulaEdit(PanelFormula? accepted, bool commit)
+        {
+            if (!FormulaEditing) return;
+            var original = _queryPreviewOptions!;
+            accepted = PanelFormula.NormalizeSetting(accepted);
+            bool changed = commit && Formula?.Text != accepted?.Text;
+            if (changed) RecordUndoEvent("Panel+ formula");
+            FormulaEditing = false;
+            _formulaPreview = null;
+            if (changed)
+            {
+                Formula = accepted;
+                CancelPendingCopy();
+                RefreshFormulaItems();
+                var options = Session.Options;
+                options.Formula = Formula;
+                Session.UpdateQuery(options);
+            }
+            else Session.UpdateQuery(original);
+            // Keep the guard through query restoration/update, then publish a
+            // changed setting once, through the same path as a search commit.
+            EndQueryPreview(committed: changed);
+            Attributes.ExpireLayout();
+        }
+
+        internal void SetFormula(PanelFormula? formula)
+        {
+            formula = PanelFormula.NormalizeSetting(formula);
+            if (Formula?.Text == formula?.Text) return;
+            RecordUndoEvent("Panel+ formula");
+            Formula = formula;
+            CancelPendingCopy();
+            RefreshFormulaItems();
+            var options = Session.Options;
+            options.Formula = Formula;
+            _restoringView = true;
+            try { Session.UpdateQuery(options); }
+            finally { _restoringView = false; }
+            OnPingDocument()?.Modified();
+            if (!Session.IsBusy) ScheduleOutput();
+        }
 
         internal static bool HasFilters(PanelQueryOptions options) =>
             !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue ||
@@ -132,7 +194,7 @@ namespace BetterGhPanel
             (Attributes as BetterPanelAttributes)?.ResetViewState();
             RowSelection.Clear();
             var previousResult = Session.Result;
-            var options = new PanelQueryOptions { DecimalPlaces = DecimalPlaces, RoundUpFactor = RoundUpFactor };
+            var options = new PanelQueryOptions { DecimalPlaces = DecimalPlaces, RoundUpFactor = RoundUpFactor, Formula = Formula };
             if (!CanOutputValuesFor(CreateSetTree, options)) OutputValues = PanelOutputValues.Items;
             Session.UpdateQuery(options);
             if (ReferenceEquals(previousResult, Session.Result)) (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
@@ -203,8 +265,8 @@ namespace BetterGhPanel
         }
 
         // Ends a live edit. A committed edit publishes like any other query change;
-        // an abandoned one already restored the original query, so outputs and the
-        // document never changed.
+        // an abandoned one restores the original query without marking the document.
+        // Either can publish an output that was already pending before the preview.
         internal void EndQueryPreview(bool committed)
         {
             if (!QueryPreviewActive) return;
@@ -215,7 +277,7 @@ namespace BetterGhPanel
             (Attributes as BetterPanelAttributes)?.UseRowSelection(RowSelection);
             (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
             if (committed) OnPingDocument()?.Modified();
-            ScheduleOutput();
+            if (!Session.IsBusy) ScheduleOutput();
         }
 
         internal bool ResetAll()
@@ -224,7 +286,7 @@ namespace BetterGhPanel
             CanvasTextInput.CompletePending();
             _discardViewRestore = true;
             var options = Session.Options;
-            bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0 || DecimalPlaces >= 0;
+            bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0 || Formula != null || DecimalPlaces >= 0;
             bool settingsChanged = outputChanged || OutputScope != PanelOutputScope.Filtered || OutputValues != PanelOutputValues.Items || DecimalPlaces != PanelUnits.AutomaticDecimals ||
                 !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.TypeName != null || options.BranchPath != null ||
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
@@ -233,6 +295,7 @@ namespace BetterGhPanel
             FlattenTree = ReverseTree = SimplifyTree = CreateSetTree = false;
             UnitConversion = PanelUnitConversion.None;
             RoundUpFactor = 0;
+            Formula = null;
             DecimalPlaces = PanelUnits.AutomaticDecimals;
             OutputScope = PanelOutputScope.Filtered;
             UpdateOutputDescriptions();
@@ -526,6 +589,7 @@ namespace BetterGhPanel
             writer.SetInt32("PanelUnitConversion", (int)UnitConversion);
             writer.SetInt32("PanelDecimalPlaces", DecimalPlaces);
             writer.SetDouble("PanelRoundUpFactor", RoundUpFactor);
+            writer.SetString("PanelFormula", Formula?.Text ?? "");
             writer.SetInt32("PanelOutputScope", (int)OutputScope);
             writer.SetInt32("PanelOutputValues", (int)OutputValues);
             writer.SetInt32("PanelOutputSchema", 1);
@@ -648,11 +712,18 @@ namespace BetterGhPanel
             double roundUpFactor = 0;
             reader.TryGetDouble("PanelRoundUpFactor", ref roundUpFactor);
             RoundUpFactor = PanelUnits.IsRoundingFactor(roundUpFactor) ? roundUpFactor : 0;
+            string formulaText = "";
+            reader.TryGetString("PanelFormula", ref formulaText);
+            PanelFormula.TryCompile(formulaText, out var formula, out _);
+            Formula = PanelFormula.NormalizeSetting(formula);
+            FormulaEditing = false;
+            _formulaPreview = null;
             int outputScope = 0;
             reader.TryGetInt32("PanelOutputScope", ref outputScope);
             OutputScope = Enum.IsDefined(typeof(PanelOutputScope), outputScope) ? (PanelOutputScope)outputScope : PanelOutputScope.Filtered;
             _savedOptions.DecimalPlaces = DecimalPlaces;
             _savedOptions.RoundUpFactor = RoundUpFactor;
+            _savedOptions.Formula = Formula;
             if (!CanOutputValuesFor(CreateSetTree, _savedOptions)) OutputValues = PanelOutputValues.Items;
             var parameters = UpgradeLegacyOutputParameters(reader);
             if (!parameters.ChunkExists("ParameterData") && !parameters.ChunkExists("ParamTypeData"))

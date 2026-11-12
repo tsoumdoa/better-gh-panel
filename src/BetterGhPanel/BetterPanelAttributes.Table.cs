@@ -100,6 +100,7 @@ namespace BetterGhPanel
         private string ColumnTitle(int index)
         {
             string title = PanelOwner.TableHeaderTitle(index);
+            if (index == 0 && DataHasFormula()) title += " ƒ";
             bool numeric = index > 0 && PanelOwner.TableColumns[index - 1].Snapshot?.TypeCounts.Keys.Any(type => type == "Number" || type == "Integer") == true;
             string units = index == 0 ? DataHeaderUnit() : PanelOwner.TableColumns[index - 1].HasGeometry
                 ? PanelOwner.TableColumns[index - 1].HeaderUnit(PanelOwner.UnitConversion) : numeric ? PanelUnits.Symbol(PanelOwner.UnitConversion) : "";
@@ -118,6 +119,15 @@ namespace BetterGhPanel
             return title;
         }
 
+        private bool DataHasFormula()
+        {
+            if (PanelOwner.Formula == null || DisplayListLengths) return false;
+            // Use the opening rows for the whole edit so a draft cannot change
+            // D's heading or width. Applicability is captured by the query pass.
+            var result = _formulaOpeningResult ?? PanelOwner.Session.Result;
+            return result.HasFormulaValues;
+        }
+
         private string DataHeaderUnit()
         {
             var session = PanelOwner.Session;
@@ -133,7 +143,7 @@ namespace BetterGhPanel
                 var geometry = session.GetGeometryDetails(result.Snapshot, position) ?? row.GeometryInfo;
                 if (options.DisplayFilterValue)
                 {
-                    var value = PanelFilterValue.OutputValue(result.Snapshot, row, options.SearchMode, geometry, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
+                    var value = PanelFilterValue.OutputValue(result.Snapshot, row, options.SearchMode, geometry, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor, PanelOwner.PresentedFormula);
                     if (value?.Kind == PanelPropertyKind.Number)
                     {
                         string symbol = PanelFilterValue.UnitSymbol(result.Snapshot, row, options.SearchMode, geometry);
@@ -225,7 +235,7 @@ namespace BetterGhPanel
                     var dataRow = result.Snapshot.Rows[position];
                     bool metric = PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null;
                     bool showType = ShowDataTypes(result) && (metric || dataRow.GeometryInfo == null || StockTypeLabels.SeparateLabel(dataRow.TypeName));
-                    bool numeric = result.DisplaySet != null ? result.DisplaySet.Values[position].Number.HasValue :
+                    bool numeric = result.DisplaySet != null ? result.DisplaySet.Values[position].IsNumeric :
                         metric ? !PanelProperties.IsProperty(PanelOwner.Session.Options.SearchMode) || PanelProperties.Kind(PanelOwner.Session.Options.SearchMode) == PanelPropertyKind.Number : dataRow.NumericValue.HasValue;
                     var statuses = CanvasStatistics.RowSourceStatuses(result, position);
                     float reserved = (PanelOwner.CreateSetTree ? _setCountWidth : 0) + (showType ? TypeColumnWidth + CellGap : 12) + 6 +

@@ -80,7 +80,7 @@ namespace BetterGhPanel.Core
             return (l + .05) / .05 >= 1.05 / (l + .05) ? Color.Black : Color.White;
         }
 
-        public static PanelPreviewValue Sample(PanelSnapshot snapshot, PanelRow row, PanelSearchMode search, PanelGeometryInfo? measured, int decimals, double factor)
+        public static PanelPreviewValue Sample(PanelSnapshot snapshot, PanelRow row, PanelSearchMode search, PanelGeometryInfo? measured, int decimals, double factor, PanelFormula? formula = null)
         {
             if (!row.IsValid || row.IsNull) return default;
             var geometry = measured ?? row.GeometryInfo;
@@ -95,8 +95,8 @@ namespace BetterGhPanel.Core
                     return new PanelPreviewValue(geometry.MetricName, "", null, "", pending: true);
                 if (geometry.MetricName == "Radius" && geometry.Value.HasValue)
                 {
-                    string radiusText = PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units, snapshot.UnitConversion, decimals, roundUpFactor: factor);
-                    string numberText = PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units, snapshot.UnitConversion, decimals, false, factor);
+                    string radiusText = PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units, snapshot.UnitConversion, decimals, roundUpFactor: factor, formula: formula);
+                    string numberText = PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units, snapshot.UnitConversion, decimals, false, factor, formula);
                     return PanelUnits.TryParseOperand(numberText, out double radius)
                         ? new PanelPreviewValue("Radius", PanelPropertyValue.Numeric(1, geometry.Power, geometry.Units).UnitSymbol(snapshot.UnitConversion), radius, radiusText) : default;
                 }
@@ -105,24 +105,16 @@ namespace BetterGhPanel.Core
             }
             string metric = PanelProperties.IsProperty(mode) ? PanelProperties.Label(mode) : mode.ToString();
             string unit = PanelFilterValue.UnitSymbol(snapshot, row, mode, geometry);
-            // Vectors are dimensionless even in a document with model units.
             bool axis = mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z;
             bool vector = axis && row.TypeName.IndexOf("Vector", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (vector && row.Components != null)
-            {
-                var components = row.Components;
-                var scalar = PanelPropertyValue.Numeric(mode == PanelSearchMode.X ? components.X : mode == PanelSearchMode.Y ? components.Y : components.Z);
-                double number = scalar.Presented(PanelUnitConversion.None, decimals, 0);
-                if (double.IsNaN(number) || double.IsInfinity(number)) return default;
-                return new PanelPreviewValue("Vector " + metric, "", number, scalar.Format(PanelUnitConversion.None, decimals, true));
-            }
-            var value = PanelFilterValue.OutputValue(snapshot, row, mode, geometry, decimals, factor);
-            string text = PanelFilterValue.Format(snapshot, row, mode, decimals, geometry, roundUpFactor: factor);
+            if (vector) metric = "Vector " + metric;
+            var value = PanelFilterValue.OutputValue(snapshot, row, mode, geometry, decimals, factor, formula);
+            string text = PanelFilterValue.Format(snapshot, row, mode, decimals, geometry, roundUpFactor: factor, formula: formula);
             if (value?.Kind == PanelPropertyKind.Number && !double.IsNaN(value.Number) && !double.IsInfinity(value.Number))
             {
                 double number = value.Number;
                 if (!axis && !PanelProperties.IsProperty(mode) && decimals < 0 &&
-                    PanelUnits.TryParseOperand(PanelFilterValue.Format(snapshot, row, mode, decimals, geometry, false, factor), out double displayed)) number = displayed;
+                    PanelUnits.TryParseOperand(PanelFilterValue.Format(snapshot, row, mode, decimals, geometry, false, factor, formula), out double displayed)) number = displayed;
                 if (axis && unit.Length > 0) text += " " + unit;
                 return new PanelPreviewValue(metric, unit, number, text);
             }

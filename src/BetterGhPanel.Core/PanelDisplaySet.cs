@@ -9,9 +9,10 @@ namespace BetterGhPanel.Core
     public sealed class PanelDisplayedValue
     {
         private readonly PanelText _text, _copyText;
-        internal PanelDisplayedValue(PanelText text, PanelText copyText, double? number, bool unavailable = false)
-        { _text = text; _copyText = copyText; Number = number; Unavailable = unavailable; }
+        internal PanelDisplayedValue(PanelText text, PanelText copyText, double? number, bool numeric, bool unavailable = false)
+        { _text = text; _copyText = copyText; Number = number; IsNumeric = numeric; Unavailable = unavailable; }
         public bool Unavailable { get; }
+        public bool IsNumeric { get; }
         public string Text => _text.ToString();
         public string CopyText => _copyText.ToString();
         public double? Number { get; }
@@ -21,30 +22,31 @@ namespace BetterGhPanel.Core
             PanelGeometryInfo? measured)
         {
             PanelText text, copy;
-            bool numeric;
+            bool numeric, unavailable = false;
             if (query.DisplayFilterValue)
             {
-                text = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, roundUpFactor: query.RoundUpFactor));
-                copy = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false, roundUpFactor: query.RoundUpFactor));
+                text = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, roundUpFactor: query.RoundUpFactor, formula: query.Formula));
+                copy = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false, roundUpFactor: query.RoundUpFactor, formula: query.Formula));
                 numeric = !PanelProperties.IsProperty(query.SearchMode) || PanelProperties.Kind(query.SearchMode) == PanelPropertyKind.Number;
+                numeric &= PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, -1, 0, null)?.Kind == PanelPropertyKind.Number;
             }
             else
             {
-                text = PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, query.RoundUpFactor);
+                text = PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, out unavailable, measured, query.RoundUpFactor, query.Formula);
                 numeric = !row.IsNull && row.IsValid && row.NumericValue.HasValue;
-                copy = numeric ? new PanelText(PanelUnits.Format(row.NumericValue!.Value, PanelUnitConversion.None,
+                copy = numeric ? new PanelText(PanelUnits.Format(PanelValuePresentation.PresentedNumber(row, query.DecimalPlaces, query.RoundUpFactor, query.Formula), PanelUnitConversion.None,
                     query.DecimalPlaces)) : text;
             }
             var presented = query.DisplayFilterValue
-                ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor)
-                : numeric ? PanelFilterValue.OutputValue(snapshot, row, PanelSearchMode.Value, measured, query.DecimalPlaces) : null;
-            bool unavailable = numeric && presented == null || PanelValuePresentation.IsTransformedUnavailable(row);
+                ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor, query.Formula)
+                : numeric ? PanelFilterValue.OutputValue(snapshot, row, PanelSearchMode.Value, measured, query.DecimalPlaces, query.RoundUpFactor, query.Formula) : null;
+            unavailable |= numeric && presented == null;
             // Automatic deliberately preserves main's compact set grouping/value semantics.
             double? number = presented?.Kind == PanelPropertyKind.Number ? presented.Number : (double?)null;
             if (query.DecimalPlaces < 0 && number.HasValue)
                 number = PanelNumber.GeneralValue(number.Value, query.DisplayFilterValue &&
                     query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume ? 6 : 12);
-            return new PanelDisplayedValue(text, copy, number, unavailable);
+            return new PanelDisplayedValue(text, copy, number, numeric, unavailable);
         }
     }
 

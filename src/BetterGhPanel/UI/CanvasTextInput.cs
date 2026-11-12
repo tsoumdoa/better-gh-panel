@@ -39,7 +39,7 @@ namespace BetterGhPanel.UI
         private CanvasTextInput(Action<string> accepted) { _accepted = accepted; }
 
         internal static CanvasTextInput Show(GH_Canvas canvas, object owner, RectangleF canvasBounds, string current, Action<string> accepted,
-            Action<string>? changed = null, Action? abandoned = null, Func<string, bool>? valid = null)
+            Action<string>? changed = null, Action? abandoned = null, Func<string, bool>? valid = null, bool alignRight = false)
         {
             CompletePending();
             if (_active != null && _active.TryGetTarget(out var previous)) previous.HideTextInputBox();
@@ -50,6 +50,11 @@ namespace BetterGhPanel.UI
             // buttons still need a readable editor, including when zoomed out.
             bounds.Width = Math.Min(canvas.ClientSize.Width, Math.Max(bounds.Width, Grasshopper.Global_Proc.UiAdjust(160)));
             bounds.Height = Math.Min(canvas.ClientSize.Height, Math.Max(bounds.Height, Grasshopper.Global_Proc.UiAdjust(24)));
+            if (alignRight)
+            {
+                bounds.X = projected.Right - bounds.Width;
+                bounds.Y = projected.Bottom - bounds.Height;
+            }
             bounds.X = Math.Max(0, Math.Min(bounds.X, canvas.ClientSize.Width - bounds.Width));
             bounds.Y = Math.Max(0, Math.Min(bounds.Y, canvas.ClientSize.Height - bounds.Height));
             var editor = new CanvasTextInput(accepted)

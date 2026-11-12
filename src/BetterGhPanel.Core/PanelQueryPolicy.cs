@@ -31,7 +31,7 @@ namespace BetterGhPanel.Core
         }
 
         private static bool SameFilterSettings(PanelQueryOptions left, PanelQueryOptions right) =>
-            left.RoundUpFactor == right.RoundUpFactor && left.Search == right.Search && left.SearchMode == right.SearchMode && left.TypeName == right.TypeName &&
+            left.Formula?.Text == right.Formula?.Text && left.RoundUpFactor == right.RoundUpFactor && left.Search == right.Search && left.SearchMode == right.SearchMode && left.TypeName == right.TypeName &&
             left.BranchPath == right.BranchPath && left.BranchPrefix == right.BranchPrefix &&
             left.OnlyInvalid == right.OnlyInvalid && left.DisplayFilterValue == right.DisplayFilterValue &&
             left.CreateSet == right.CreateSet && left.OutputValues == right.OutputValues;

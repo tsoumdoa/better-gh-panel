@@ -8,7 +8,7 @@ namespace BetterGhPanel.UI
 {
     internal enum CanvasMenuKind { None, Type, Sort, HeaderSort, Branch, Units, SearchMode, Comparison, Preview, DotPlacement, ValuePalette, Statistics }
     internal enum CanvasComparison { GreaterThan, AtLeast, LessThan, AtMost, Equal, NotEqual }
-    internal enum CanvasNumberSetting { Automatic, Custom, RoundingOff, RoundingFactor }
+    internal enum CanvasNumberSetting { Automatic, Custom, RoundingOff, RoundingFactor, FormulaOff, Formula }
     internal enum CanvasPreviewSetting { None, ItemOrder, Values, Placement, Colour }
     internal static class CanvasPreviewRows
     {
@@ -111,10 +111,12 @@ namespace BetterGhPanel.UI
             new CanvasUnitChoice(PanelUnitConversion.DegreesToRadians),
             new CanvasUnitChoice(PanelUnitConversion.CubicMillimetersToCubicMeters),
             new CanvasUnitChoice(PanelUnitConversion.CubicMetersToCubicMillimeters),
-            new CanvasUnitChoice(CanvasNumberSetting.Automatic),
-            new CanvasUnitChoice(CanvasNumberSetting.Custom),
+            new CanvasUnitChoice(CanvasNumberSetting.FormulaOff),
+            new CanvasUnitChoice(CanvasNumberSetting.Formula),
             new CanvasUnitChoice(CanvasNumberSetting.RoundingOff),
-            new CanvasUnitChoice(CanvasNumberSetting.RoundingFactor)
+            new CanvasUnitChoice(CanvasNumberSetting.RoundingFactor),
+            new CanvasUnitChoice(CanvasNumberSetting.Automatic),
+            new CanvasUnitChoice(CanvasNumberSetting.Custom)
         };
         private CanvasComparisonChoice[] _comparisonChoices = ComparisonChoices;
         private PanelSearchMode _comparisonMode;
@@ -284,7 +286,7 @@ namespace BetterGhPanel.UI
             float below = viewport.IsEmpty ? float.MaxValue : viewport.Bottom - 4 - (anchor.Bottom + 2);
             float above = viewport.IsEmpty ? float.MaxValue : anchor.Top - 3 - (viewport.Top + 4);
             float preferred = rightAligned ? above : below, other = rightAligned ? below : above;
-            bool upward = rightAligned != (MenuHeight(Math.Min(Count, MaximumRows)) > preferred && other > preferred);
+            bool upward = rightAligned != (MenuHeight(Math.Min(Count, Kind == CanvasMenuKind.Units ? UnitChoices.Length : MaximumRows)) > preferred && other > preferred);
             float height = MenuHeight(RowsFitting(upward ? above : below));
             float y = upward ? anchor.Top - height - 3 : anchor.Bottom + 2;
             if (rightAligned)
@@ -302,7 +304,7 @@ namespace BetterGhPanel.UI
 
         private int RowsFitting(float room)
         {
-            int rows = Math.Min(Count, MaximumRows);
+            int rows = Math.Min(Count, Kind == CanvasMenuKind.Units ? UnitChoices.Length : MaximumRows);
             return MenuHeight(rows) <= room ? rows : Math.Max(1, Math.Min(rows, (int)(room / 20) - 1));
         }
 
@@ -354,6 +356,8 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.Units)
             {
                 var choice = UnitChoiceAt(index);
+                if (choice.Setting == CanvasNumberSetting.FormulaOff) return options.Formula == null;
+                if (choice.Setting == CanvasNumberSetting.Formula) return options.Formula != null;
                 if (choice.Setting == CanvasNumberSetting.RoundingOff) return roundUpFactor == 0;
                 if (choice.Setting == CanvasNumberSetting.RoundingFactor) return roundUpFactor > 0;
                 return choice.Conversion.HasValue ? choice.Conversion == conversion :
@@ -446,7 +450,7 @@ namespace BetterGhPanel.UI
         internal CanvasUnitChoice UnitChoiceAt(int index) => UnitChoices[index];
         internal CanvasComparisonChoice ComparisonChoiceAt(int index) => _comparisonChoices[index];
         internal bool IsSectionStart(int index) =>
-            Kind == CanvasMenuKind.Units && (UnitChoiceAt(index).Setting == CanvasNumberSetting.Automatic || UnitChoiceAt(index).Setting == CanvasNumberSetting.RoundingOff) ||
+            Kind == CanvasMenuKind.Units && (UnitChoiceAt(index).Setting == CanvasNumberSetting.FormulaOff || UnitChoiceAt(index).Setting == CanvasNumberSetting.Automatic || UnitChoiceAt(index).Setting == CanvasNumberSetting.RoundingOff) ||
             Kind == CanvasMenuKind.Statistics && index == CanvasStatistics.OverviewRows ||
             Kind == CanvasMenuKind.Preview && (index == CanvasPreviewRows.ItemOrder || index == CanvasPreviewRows.Placement) ||
             Kind == CanvasMenuKind.DotPlacement && index == CanvasPreviewRows.FirstChoice || Kind == CanvasMenuKind.ValuePalette && (index == CanvasPreviewRows.FirstChoice || index == CanvasPreviewRows.Reverse) ||
@@ -501,7 +505,7 @@ namespace BetterGhPanel.UI
             return "";
         }
 
-        internal string Label(int index, int decimals = PanelUnits.AutomaticDecimals, double roundUpFactor = 0)
+        internal string Label(int index, int decimals = PanelUnits.AutomaticDecimals, double roundUpFactor = 0, PanelFormula? formula = null)
         {
             if (Kind == CanvasMenuKind.Statistics) return CanvasStatistics.Label(_statisticsResult!, index, decimals);
             if (Kind == CanvasMenuKind.DotPlacement) return index == CanvasPreviewRows.Back ? "‹ Preview" : PanelPreviewValues.PlacementLabel((PanelDotPlacement)(index - CanvasPreviewRows.FirstChoice));
@@ -511,6 +515,8 @@ namespace BetterGhPanel.UI
             {
                 var choice = UnitChoiceAt(index);
                 if (choice.Conversion.HasValue) return PanelUnits.Label(choice.Conversion.Value);
+                if (choice.Setting == CanvasNumberSetting.FormulaOff) return "Formula: off";
+                if (choice.Setting == CanvasNumberSetting.Formula) return "Formula…" + (formula == null ? "" : " (" + formula.Pretty + ")");
                 if (choice.Setting == CanvasNumberSetting.RoundingOff) return "Rounding: off";
                 if (choice.Setting == CanvasNumberSetting.RoundingFactor) return "Round up by factor…" +
                     (roundUpFactor > 0 ? " (" + PanelUnits.FormatFactor(roundUpFactor, "G6") + ")" : "");
