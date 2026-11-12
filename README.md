@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.4.0-beta
+yak install panel-plus 0.4.1-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -28,15 +28,14 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
-**[`0.4.0-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.4.0-beta)**
+**[`0.4.1-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.4.1-beta)**
 
-- **Values in Rhino.** Preview's **Show values** adds the chosen numeric Search value or each row's usual measurement. Circles show radius in other Search modes. Units and rounding match the rows, and values can appear beside item-order numbers.
-- **Choose dot position and colour.** **Dot placement** offers Centre, Box top and Box bottom. Closed solids and meshes keep their centre; open surfaces stay on the material. **Colour by value** colours dots and geometry, with selection halos and a compact viewport legend.
-- **Preview settings stay with the file.** The new settings support Undo and survive Reset all. Values and colouring start off. D/S/B/F are unchanged.
-- **Many more solids in Preview: Results.** Panel+ now counts each mesh's real size, so Results shows far more Breps and surfaces than the previous limit of about 7. An item that doesn't fit keeps its wires, dot and colour, and the footer says **Preview partial**.
-- **Values stay up while Grasshopper solves.** With values or colouring on, the preview stays visible during a re-solve and updates when the new result arrives.
-- **Behaviour change: item-order dots moved.** At the default Centre placement they now sit on the curve or material instead of at the bounding-box centre.
-- **Validation.** The automated Rhino fixtures could not run for this release. Panel+ was tested by hand in Rhino 8 on Windows instead. Dragging a slider frame by frame, very large trees and Mac were not checked.
+- **Value formula.** Units → Formula… applies a formula such as `x*2` or `x-50` after unit conversion and before rounding. Rows update while typing, with an example or a clear error above the footer; Esc restores. Saved with the component, with Undo.
+- Rows, Stats, comparisons, sorting, sets, numeric outputs, copy and viewport values share the result. Negative results work; unavailable results send null on Values. Table formulas apply to D only, marked ƒ; other columns retain units and rounding.
+- **Units menu order.** Formula sits between conversions and Round up by factor. Decimal controls now follow rounding, matching the order they apply.
+- **Vector value dots match rows.** Vector X/Y/Z dots and Colour by value now include unit conversion, formula and rounding, like rows, Values and Stats.
+- **Cancelling Search no longer holds back output.** If an output update was waiting while the Search editor was open, Esc now sends it downstream.
+- **Validation.** The automated Rhino fixtures could not run for this release, and the formula has not yet been tried in a live Rhino session. Core tests cover the parser, the number pipeline and the outputs.
 
 See [CHANGELOG](CHANGELOG.md) for earlier releases.
 

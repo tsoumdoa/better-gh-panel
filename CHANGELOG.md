@@ -1,11 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.4.1-beta
 
 - **Value formula.** Units → Formula… applies a formula such as `x*2` or `x-50` after unit conversion and before rounding. Rows update while typing, with an example or a clear error above the footer; Esc restores. Saved with the component, with Undo.
 - Rows, Stats, comparisons, sorting, sets, numeric outputs, copy and viewport values share the result. Negative results work; unavailable results send null on Values. Table formulas apply to D only, marked ƒ; other columns retain units and rounding.
 - **Units menu order.** Formula sits between conversions and Round up by factor. Decimal controls now follow rounding, matching the order they apply.
 - **Vector value dots match rows.** Vector X/Y/Z dots and Colour by value now include unit conversion, formula and rounding, like rows, Values and Stats.
+- **Cancelling Search no longer holds back output.** If an output update was waiting while the Search editor was open, Esc now sends it downstream.
+- **Validation.** The automated Rhino fixtures could not run for this release, and the formula has not yet been tried in a live Rhino session. Core tests cover the parser, the number pipeline and the outputs.
 
 ## 0.4.0-beta
 
