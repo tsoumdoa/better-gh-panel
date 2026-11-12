@@ -1,5 +1,17 @@
 # Release validation records
 
+## 0.4.1-beta
+
+Units → Formula… applies a formula in `x` (for example `x*2` or `x-50`) after unit conversion and before rounding, with a live panel-only preview while typing. Vector X/Y/Z value dots now follow the rows' units, formula and rounding, and cancelling Search releases a pending output. Built in #70 with a Sol first review, then Sol and Opus adversarial rounds and re-checks.
+
+`npm run check` passed on the release commit: 432 managed tests on each of net48 and net8.0, 17 coordinator tests, one packaging test, both runtime builds, source encoding/style checks and the native smoke host compile. The extracted assemblies report `0.4.1-beta+f18d797959eeadd33ad9a7fe272b3aa05431ca5d`.
+
+**Automated native fixtures did not run.** The user's Windows session was disconnected, and the hidden host also hung at RhinoCore startup for 0.4.0-beta with the session Active. The new formula native checks (cancel with a pending output, integer identity, bare `x` as off) have compiled but never run.
+
+**Not exercised in a live Rhino:** typing a formula and its solve count, Enter/Esc, Undo, copy and duplicate of a component with a formula, save and reopen, the D ƒ table header, vector value dots with a formula, Mac and the Windows .NET Framework host.
+
+Artifact source commit: `f18d797959eeadd33ad9a7fe272b3aa05431ca5d`. Archive: `panel-plus-0.4.1-beta-rh8_0-any.yak`. SHA-256: `c4ba69bb3dc6b6bc4cc13cc26ae5a11a954d2b5cd8f7438622f7a55421f1a6a6`. GitHub prerelease and public Yak publication succeeded. A fresh GitHub asset download matches the archive SHA-256.
+
 ## 0.4.0-beta
 
 Preview gains Show values, Dot placement and Colour by value with a viewport legend. Preview memory now charges generated meshes at their actual size against a 64 MiB limit, and value previews stay visible across a re-solve. Built in #67 with Sol and Opus adversarial review rounds.
