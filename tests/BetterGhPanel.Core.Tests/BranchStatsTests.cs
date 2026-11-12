@@ -76,7 +76,7 @@ public class BranchStatsTests
         Assert.Equal(0, mixed.Value(PanelStatKinds.Count));
         Assert.Null(mixed.Value(PanelStatKinds.Sum));
         Assert.Equal(-1, mixed.Source(PanelStatKinds.Min));
-        var length = Stats(snapshot, new PanelQueryOptions { SearchMode = PanelSearchMode.Length }).BranchStats!["{0}"];
+        var length = Stats(snapshot, new PanelQueryOptions { SearchMode = PanelSearchMode.Length, DisplayFilterValue = true }).BranchStats!["{0}"];
         Assert.False(length.Mixed); Assert.Equal(4, length.Value(PanelStatKinds.Sum)); Assert.Equal(1, length.Skipped);
     }
 
@@ -162,6 +162,16 @@ public class BranchStatsTests
         var metric = Stats(snapshot).BranchStats!["{0}"];
         Assert.Equal("1.23457 mm", metric.Format(PanelStatKinds.Sum, -1));
         Assert.Equal(1.23457, metric.Value(PanelStatKinds.Sum));
+    }
+
+    [Fact]
+    public void PropertyFilterWithoutShowValuesUsesTheShownMetric()
+    {
+        var curve = new PanelGeometryInfo("NURBS curve", 2500, power: 1, units: "mm", metricName: "Length", metricLabel: "L").WithProperties(
+            new Dictionary<PanelSearchMode, PanelPropertyValue?> { [PanelSearchMode.Degree] = PanelPropertyValue.Numeric(3) });
+        var snapshot = new PanelSnapshot(new[] { new PanelRow(0, "{0}", "Curve", "", null, geometryInfo: curve) }, new[] { new PanelBranch("{0}", 1) });
+        var options = new PanelQueryOptions { BranchStats = true, SearchMode = PanelSearchMode.Degree, Search = "= 3" };
+        Assert.Equal(2500, PanelQueryEngine.Execute(snapshot, options).BranchStats!["{0}"].Value(PanelStatKinds.Sum));
     }
 
     [Fact]

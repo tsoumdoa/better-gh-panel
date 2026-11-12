@@ -116,9 +116,9 @@ namespace BetterGhPanel.Runtime
                 {
                     Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
                     {
-                        if (!ReferenceEquals(_statColumnsRunning, result)) return;
-                        _statColumnsRunning = null;
-                        if (CanPublish(result.Snapshot, request, token)) Notify();
+                        // No repaint here: a column that keeps failing must not retry on every paint.
+                        // The next natural paint (scroll, zoom, pan back) retries columns cancelled offscreen.
+                        if (ReferenceEquals(_statColumnsRunning, result)) _statColumnsRunning = null;
                     }));
                 }
             });

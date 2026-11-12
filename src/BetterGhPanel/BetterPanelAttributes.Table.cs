@@ -185,10 +185,10 @@ namespace BetterGhPanel
                 foreach (string path in result.BranchPaths.Skip(_offset / (result.StatRows.Count + 1)).Take(16))
                     foreach (var kind in result.StatRows)
                     {
-                        widths[0] = Math.Max(widths[0], Measure(result.BranchStats[path].Format(kind, PanelOwner.DecimalPlaces), true) + 100);
+                        widths[0] = Math.Max(widths[0], Measure(result.BranchStats[path].Format(kind, result.StatDecimals), true) + 100);
                         for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
                             if (result.ColumnBranchStats.TryGetValue(PanelOwner.TableColumns[column].Input.InstanceGuid, out var branches))
-                                widths[column + 1] = Math.Max(widths[column + 1], Measure(branches[path].Format(kind, PanelOwner.DecimalPlaces), true) + 100);
+                                widths[column + 1] = Math.Max(widths[column + 1], Measure(branches[path].Format(kind, result.StatDecimals), true) + 100);
                     }
             }
             else if (DisplayListLengths)

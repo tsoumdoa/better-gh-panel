@@ -272,7 +272,7 @@ namespace BetterGhPanel
                         outcome == PanelCommitOutcome.Committed && !ClipboardGeneration.IsCurrent(clipboardGeneration)
                             ? "Copy context changed during clipboard publication; clipboard state is uncertain." :
                         outcome != PanelCommitOutcome.Committed ? "Copy cancelled" :
-                        path != null ? "Copied " + pathText : addressOnly ? "Addresses copied" : action == PanelRowAction.CopyTable ? "Table copied" :
+                        path != null ? "Copied " + pathText : addressOnly ? "Addresses copied" : action == PanelRowAction.CopyTable ? "Table copied" : statsTable ? "Stats copied" :
                         tableColumn != null ? ordered.Count <= 1 ? "Value copied" : ordered.Count + " values copied" :
                         branchSet || listLengthCopy ? branches.Length + (branches.Length == 1 ? " count copied" : " counts copied") :
                         ordered.Count == 1 ? "Value copied" : ordered.Count + " values copied";

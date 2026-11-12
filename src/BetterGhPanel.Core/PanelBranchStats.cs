@@ -42,7 +42,7 @@ namespace BetterGhPanel.Core
             }
             return suffix ?? "";
         }
-        public string Details => Skipped == 0 && !Mixed ? "Stats use the shown input numbers." : Mixed ? "Pick one numeric Search mode to use one kind of number (Length, Area or Volume for geometry)." :
+        public string Details => Skipped == 0 && !Mixed ? "Stats use the shown input numbers." : Mixed ? "Rows show different kinds of numbers. Choose one numeric Search mode, such as Length, Area or Volume, to show one kind." :
             string.Join(", ", SkipReasons()) + ": not numbers; left out of the stats.";
         private IEnumerable<string> SkipReasons()
         {
@@ -102,7 +102,8 @@ namespace BetterGhPanel.Core
         internal static IReadOnlyList<int> ColumnItems(PanelQueryResult data, Func<int, int?> partner) =>
             data.RowPositions.Select(partner).Where(item => item.HasValue).Select(item => item!.Value).Distinct().ToArray();
 
-        internal static bool UsesMainMetric(PanelQueryOptions query) => query.SearchMode == PanelSearchMode.Text || query.SearchMode == PanelSearchMode.Regex;
+        // Rows show the Search value only with Show values; otherwise they show each row's main metric.
+        internal static bool UsesMainMetric(PanelQueryOptions query) => !query.DisplayFilterValue || query.SearchMode == PanelSearchMode.Text || query.SearchMode == PanelSearchMode.Regex;
         internal static bool NeedsMeasurement(PanelRow row, PanelQueryOptions query)
         {
             var geometry = row.GeometryInfo;
