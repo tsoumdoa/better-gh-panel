@@ -127,7 +127,7 @@ namespace BetterGhPanel.Core
                 filteredSourceStatuses = filteredSourceStatuses.Add(row.Validity);
                 if (set != null && !set.IncludeRow(i, measured)) continue;
 
-                if (!hasFormulaValues && row.IsValid && !row.IsNull)
+                if (query.Formula != null && !hasFormulaValues && row.IsValid && !row.IsNull)
                 {
                     hasFormulaValues = PanelFilterValue.TryFormulaInput(snapshot, row, query, measured, out _, out _);
                     var geometry = measured ?? row.GeometryInfo;

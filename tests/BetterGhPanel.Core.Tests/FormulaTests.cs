@@ -236,7 +236,10 @@ public sealed class FormulaTests
             new PanelRow(1, "{1}", "Curve", "", null, geometryInfo: new PanelGeometryInfo("Curve", canMeasure: true)),
             new PanelRow(2, "{2}", "Number", "10", 10) };
         var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", 1), new PanelBranch("{1}", 1), new PanelBranch("{2}", 1) });
-        var query = new PanelQueryOptions { BranchPath = "{0}" };
+        var query = new PanelQueryOptions { BranchPath = "{1}" };
+        Assert.False(PanelQueryEngine.Execute(snapshot, query).HasFormulaValues);
+        query.Formula = Formula("x*2");
+        query.BranchPath = "{0}";
         Assert.False(PanelQueryEngine.Execute(snapshot, query).HasFormulaValues);
         query.BranchPath = "{1}";
         Assert.True(PanelQueryEngine.Execute(snapshot, query).HasFormulaValues);
