@@ -399,6 +399,7 @@ namespace BetterGhPanel.Core
         public bool OutputValues { get; set; }
         /// <summary>Geometry/property rounding; captured scalars already carry this transform.</summary>
         public double RoundUpFactor { get; set; }
+        public PanelFormula? Formula { get; set; }
         /// <summary>Explicit presented precision for output, filtering and statistics; Automatic preserves the number.</summary>
         public int DecimalPlaces { get; set; } = PanelUnits.AutomaticDecimals;
         public string? TypeName { get; set; }
@@ -422,6 +423,7 @@ namespace BetterGhPanel.Core
             OutputValues = OutputValues,
             DecimalPlaces = DecimalPlaces,
             RoundUpFactor = RoundUpFactor,
+            Formula = Formula,
             TypeName = TypeName,
             BranchPath = BranchPath,
             BranchPrefix = BranchPrefix,

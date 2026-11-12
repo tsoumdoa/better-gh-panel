@@ -153,12 +153,12 @@ public class CanvasMenuTests
         menu.Toggle(CanvasMenuKind.Units, PanelSnapshot.Empty, new PanelQueryOptions());
         menu.Layout(panel, anchor, anchor, anchor, anchor);
         menu.MarkPainted();
-        Assert.Equal(PanelUnits.ConversionCount + 4, menu.Count);
+        Assert.Equal(PanelUnits.ConversionCount + 6, menu.Count);
         Assert.True(menu.Bounds.Bottom < anchor.Top && menu.Bounds.Right <= panel.Right && menu.Visible == menu.Count);
         Assert.True(menu.Bounds.Width < 180 && menu.Bounds.Right == anchor.Right);
         Assert.Equal("mm² → m²", menu.Label(3));
         Assert.True(menu.IsSelected(3, new PanelQueryOptions(), PanelUnitConversion.SquareMillimetersToSquareMeters, 2));
-        int decimalsIndex = PanelUnits.ConversionCount + 1;
+        int decimalsIndex = PanelUnits.ConversionCount + 5;
         Assert.Equal("Decimal places… (2)", menu.Label(decimalsIndex, decimals: 2));
         Assert.Equal("mm³ → m³", menu.Label((int)PanelUnitConversion.CubicMillimetersToCubicMeters));
         Assert.True(menu.Hover(new System.Drawing.PointF(menu.Bounds.Left + 5, menu.Bounds.Top + 5)));

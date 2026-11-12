@@ -100,7 +100,7 @@ internal static class UxInteractionChecks
         var okEdit = Search(); okEdit.Type("Wall("); okEdit.ClickOk();
         await fixture.Ready(() => Options(fixture).Search == "Wall(", allowError: true);
         Check(fixture.Document.UndoServer.UndoCount == 1, "OK submits invalid input exactly like Enter");
-        foreach (var choice in new[] { (Menu: "Branch", Index: 1), (Menu: "Units", Index: 10), (Menu: "Units", Index: 12) })
+        foreach (var choice in new[] { (Menu: "Branch", Index: 1), (Menu: "Units", Index: 14), (Menu: "Units", Index: 12), (Menu: "Units", Index: 10) })
         {
             Call(component, "ResetAll");
             await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
@@ -110,7 +110,7 @@ internal static class UxInteractionChecks
             Call(attributes, "ChooseMenu", choice.Index, canvas);
             CanvasEditorAdapter.Active(assembly).Blur();
             await Task.Delay(50);
-            Check(Options(fixture).BranchPath == null && Options(fixture).DecimalPlaces < 0 && Options(fixture).RoundUpFactor == 0 &&
+            Check(Options(fixture).BranchPath == null && Options(fixture).DecimalPlaces < 0 && Options(fixture).RoundUpFactor == 0 && Options(fixture).Formula == null &&
                 fixture.SelectedCount == 1 && fixture.Document.UndoServer.UndoCount == 0,
                 "An unchanged prefilled default abandons on blur: " + choice);
         }

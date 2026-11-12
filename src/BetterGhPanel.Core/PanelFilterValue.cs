@@ -7,7 +7,7 @@ namespace BetterGhPanel.Core
     public static class PanelFilterValue
     {
         /// <summary>Presented typed value; null preserves an unavailable row's output slot.</summary>
-        public static PanelPropertyValue? OutputValue(PanelSnapshot snapshot, PanelRow row, PanelSearchMode mode, PanelGeometryInfo? measured, int decimals = PanelUnits.AutomaticDecimals, double roundUpFactor = 0)
+        public static PanelPropertyValue? OutputValue(PanelSnapshot snapshot, PanelRow row, PanelSearchMode mode, PanelGeometryInfo? measured, int decimals = PanelUnits.AutomaticDecimals, double roundUpFactor = 0, PanelFormula? formula = null)
         {
             if (mode == PanelSearchMode.ListLength) return PanelPropertyValue.Integer(snapshot.BranchItemCounts[row.Path]);
             if (PanelProperties.IsProperty(mode))
@@ -15,17 +15,17 @@ namespace BetterGhPanel.Core
                 if (!PanelProperties.TryGet(row, mode, measured, out var property) || property == null) return null;
                 if (property.Kind != PanelPropertyKind.Number) return property;
                 double number = property.Converted(snapshot.UnitConversion);
-                return Presented(number, property.Power == 0 ? 0 : roundUpFactor, property.KeepInteger ? -1 : decimals);
+                return Presented(number, property.Power == 0 ? 0 : roundUpFactor, property.KeepInteger ? -1 : decimals, property.Power == 0 ? null : formula);
             }
             bool available = mode == PanelSearchMode.Value || mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z
                 ? TryScalarValue(row, mode, snapshot.UnitConversion, out double value)
                 : TryGeometryValue(row, mode, snapshot.UnitConversion, measured, out value);
-            return available ? Presented(value, mode == PanelSearchMode.Value ? 0 : roundUpFactor, decimals) : null;
+            return available ? Presented(value, mode == PanelSearchMode.Value ? 0 : roundUpFactor, decimals, mode == PanelSearchMode.Value ? null : formula) : null;
         }
 
-        private static PanelPropertyValue? Presented(double value, double factor, int decimals)
+        private static PanelPropertyValue? Presented(double value, double factor, int decimals, PanelFormula? formula)
         {
-            value = PanelUnits.Transform(value, PanelUnitConversion.None, factor, decimals);
+            value = PanelUnits.Transform(value, PanelUnitConversion.None, factor, decimals, formula);
             return IsFinite(value) ? PanelPropertyValue.Numeric(value) : null;
         }
 
@@ -95,14 +95,14 @@ namespace BetterGhPanel.Core
         }
 
         public static string Format(PanelSnapshot snapshot, PanelRow row, PanelSearchMode mode, int decimals,
-            PanelGeometryInfo? measured = null, bool includeUnits = true, double roundUpFactor = 0)
+            PanelGeometryInfo? measured = null, bool includeUnits = true, double roundUpFactor = 0, PanelFormula? formula = null)
         {
             if (mode == PanelSearchMode.ListLength)
                 return snapshot.BranchItemCounts.TryGetValue(row.Path, out int count) ? count.ToString(CultureInfo.InvariantCulture) : "unavailable";
             if (PanelProperties.IsProperty(mode))
             {
                 if (PanelProperties.TryGet(row, mode, measured, out var property))
-                    return property?.Format(snapshot.UnitConversion, decimals, includeUnits, roundUpFactor) ?? ((measured ?? row.GeometryInfo)?.MeasurementUnavailable == true ? "unavailable" : "measuring…");
+                    return property?.Format(snapshot.UnitConversion, decimals, includeUnits, roundUpFactor, formula) ?? ((measured ?? row.GeometryInfo)?.MeasurementUnavailable == true ? "unavailable" : "measuring…");
                 if (row.IsValid && !row.IsNull) return "n/a";
             }
             if (PanelValuePresentation.IsTransformedUnavailable(row)) return "unavailable";
@@ -115,18 +115,26 @@ namespace BetterGhPanel.Core
                         decimals) : "n/a";
             if (mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z)
                 return TryScalarValue(row, mode, snapshot.UnitConversion, out double component)
-                    ? PanelUnits.Format(PanelUnits.Transform(component, PanelUnitConversion.None, roundUpFactor, decimals), PanelUnitConversion.None, decimals) : "n/a";
+                    ? PanelUnits.Format(PanelUnits.Transform(component, PanelUnitConversion.None, roundUpFactor, decimals, formula), PanelUnitConversion.None, decimals) : "n/a";
             var geometry = measured ?? row.GeometryInfo;
             if (geometry == null || !MatchesGeometry(mode, geometry)) return "n/a";
             if (!TryGeometryValue(row, mode, snapshot.UnitConversion, geometry, out _))
                 return geometry.CanMeasure && !geometry.MeasurementUnavailable && !MetricValue(mode, geometry).HasValue ? "measuring…" : "unavailable";
             return PanelUnits.FormatGeometry(RawValue(mode, geometry), mode == PanelSearchMode.Area ? 2 : geometry.Power,
-                geometry.Units, snapshot.UnitConversion, decimals, includeUnits, roundUpFactor);
+                geometry.Units, snapshot.UnitConversion, decimals, includeUnits, roundUpFactor, formula);
         }
 
         public static string RoundingDescription(PanelSnapshot snapshot, PanelRow row, PanelQueryOptions options, PanelGeometryInfo? measured = null)
         {
             if (row.IsNull || !row.IsValid) return "";
+            if (options.Formula != null && TryFormulaInput(snapshot, row, options, measured, out double input, out string unit))
+            {
+                double output = PanelUnits.Transform(input, PanelUnitConversion.None, options.RoundUpFactor, options.DecimalPlaces, options.Formula);
+                string formulaSuffix = unit.Length == 0 ? "" : " " + unit;
+                string formulaShown = PanelUnits.Format(output, PanelUnitConversion.None, options.DecimalPlaces);
+                return (row.RawNumericValue.HasValue ? "Input " : "Measured ") + PanelUnits.FormatRoundTrip(input) + formulaSuffix +
+                    " → ƒ " + options.Formula.Pretty + " → " + formulaShown + (IsFinite(output) ? formulaSuffix : "");
+            }
             PanelPropertyValue raw;
             var mode = options.SearchMode;
             var geometry = measured ?? row.GeometryInfo;
@@ -167,6 +175,49 @@ namespace BetterGhPanel.Core
             if (shown != factored) reason += " · " + options.DecimalPlaces.ToString(CultureInfo.InvariantCulture) + " decimal places";
             return "Shown " + shownText + suffix +
                 " · raw " + number.ToString("R", CultureInfo.InvariantCulture) + suffix + reason;
+        }
+
+        /// <summary>The converted, unrounded input for a formula example or row tooltip.</summary>
+        public static bool TryFormulaInput(PanelSnapshot snapshot, PanelRow row, PanelQueryOptions options,
+            PanelGeometryInfo? measured, out double number, out string unit)
+        {
+            number = 0;
+            unit = "";
+            if (row.IsNull || !row.IsValid) return false;
+            var mode = options.SearchMode;
+            if (options.DisplayFilterValue)
+            {
+                if (mode == PanelSearchMode.ListLength) return false;
+                if (PanelProperties.IsProperty(mode))
+                {
+                    if (!PanelProperties.TryGet(row, mode, measured, out var property) || property?.Kind != PanelPropertyKind.Number || property.Power == 0) return false;
+                    number = property.Converted(snapshot.UnitConversion);
+                }
+                else if (mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z)
+                {
+                    if (!TryScalarValue(row, mode, snapshot.UnitConversion, out number)) return false;
+                }
+                else if (mode != PanelSearchMode.Value)
+                {
+                    if (!TryGeometryValue(row, mode, snapshot.UnitConversion, measured, out number)) return false;
+                }
+                else if (row.RawNumericValue.HasValue) number = row.RawNumericValue.Value;
+                else return false;
+                unit = UnitSymbol(snapshot, row, mode, measured);
+            }
+            else if (row.RawNumericValue.HasValue)
+            {
+                number = row.RawNumericValue.Value;
+                unit = PanelUnits.Symbol(snapshot.UnitConversion);
+            }
+            else
+            {
+                var geometry = measured ?? row.GeometryInfo;
+                if (geometry?.Value == null || geometry.Value < 0) return false;
+                number = PanelUnits.ConvertGeometry(geometry.Value.Value, geometry.Power, geometry.Units, snapshot.UnitConversion);
+                unit = PanelPropertyValue.Numeric(1, geometry.Power, geometry.Units).UnitSymbol(snapshot.UnitConversion);
+            }
+            return IsFinite(number);
         }
 
         private static double? MetricValue(PanelSearchMode mode, PanelGeometryInfo geometry) =>

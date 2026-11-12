@@ -24,21 +24,27 @@ namespace BetterGhPanel.Core
             bool numeric;
             if (query.DisplayFilterValue)
             {
-                text = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, roundUpFactor: query.RoundUpFactor));
-                copy = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false, roundUpFactor: query.RoundUpFactor));
+                text = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, roundUpFactor: query.RoundUpFactor, formula: query.Formula));
+                copy = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false, roundUpFactor: query.RoundUpFactor, formula: query.Formula));
                 numeric = !PanelProperties.IsProperty(query.SearchMode) || PanelProperties.Kind(query.SearchMode) == PanelPropertyKind.Number;
             }
             else
             {
-                text = PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, query.RoundUpFactor);
+                text = PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, query.RoundUpFactor, query.Formula);
                 numeric = !row.IsNull && row.IsValid && row.NumericValue.HasValue;
                 copy = numeric ? new PanelText(PanelUnits.Format(row.NumericValue!.Value, PanelUnitConversion.None,
                     query.DecimalPlaces)) : text;
             }
             var presented = query.DisplayFilterValue
-                ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor)
+                ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor, query.Formula)
                 : numeric ? PanelFilterValue.OutputValue(snapshot, row, PanelSearchMode.Value, measured, query.DecimalPlaces) : null;
             bool unavailable = numeric && presented == null || PanelValuePresentation.IsTransformedUnavailable(row);
+            if (!query.DisplayFilterValue && !numeric && query.Formula != null &&
+                PanelFilterValue.TryFormulaInput(snapshot, row, query, measured, out double input, out _))
+            {
+                double output = PanelUnits.Transform(input, PanelUnitConversion.None, query.RoundUpFactor, query.DecimalPlaces, query.Formula);
+                unavailable = double.IsNaN(output) || double.IsInfinity(output);
+            }
             // Automatic deliberately preserves main's compact set grouping/value semantics.
             double? number = presented?.Kind == PanelPropertyKind.Number ? presented.Number : (double?)null;
             if (query.DecimalPlaces < 0 && number.HasValue)

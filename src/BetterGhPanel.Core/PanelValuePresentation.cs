@@ -6,11 +6,11 @@ namespace BetterGhPanel.Core
     public static class PanelValuePresentation
     {
         public static string FormatDisplay(PanelRow row, PanelUnitConversion conversion, int decimals,
-            PanelGeometryInfo? measuredGeometry = null, double roundUpFactor = 0)
-            => DisplayText(row, conversion, decimals, measuredGeometry, roundUpFactor).ToString();
+            PanelGeometryInfo? measuredGeometry = null, double roundUpFactor = 0, PanelFormula? formula = null)
+            => DisplayText(row, conversion, decimals, measuredGeometry, roundUpFactor, formula).ToString();
 
         internal static PanelText DisplayText(PanelRow row, PanelUnitConversion conversion, int decimals,
-            PanelGeometryInfo? measuredGeometry = null, double roundUpFactor = 0)
+            PanelGeometryInfo? measuredGeometry = null, double roundUpFactor = 0, PanelFormula? formula = null)
         {
             if (row == null) throw new ArgumentNullException(nameof(row));
             if (IsTransformedUnavailable(row)) return new PanelText("unavailable");
@@ -18,7 +18,7 @@ namespace BetterGhPanel.Core
                 ? new PanelText(row.GroupSummary, true) : new PanelText("Invalid · " + (row.NumericSummary?.Format(decimals) ?? row.DisplayValue));
             if (row.NumericSummary != null) return new PanelText(row.NumericSummary.Format(decimals));
             var geometry = measuredGeometry ?? row.GeometryInfo;
-            if (geometry != null) return new PanelText(geometry.FormatCompact(conversion, decimals, roundUpFactor) +
+            if (geometry != null) return new PanelText(geometry.FormatCompact(conversion, decimals, roundUpFactor, formula) +
                 (geometry.MeasurementUnavailable ? " · measurement unavailable" : ""));
             if (!row.IsNull && row.NumericValue.HasValue)
                 return new PanelText(PanelUnits.Format(row.NumericValue.Value, conversion, decimals));

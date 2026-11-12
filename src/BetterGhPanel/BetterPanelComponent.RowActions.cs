@@ -23,8 +23,8 @@ namespace BetterGhPanel
                     ? row.GeometryInfo?.WithUnavailableMeasurement() : row.GeometryInfo;
             var options = Session.Options;
             if (options.DisplayFilterValue)
-                return PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor);
-            var display = PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor);
+                return PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor, formula: Formula);
+            var display = PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor, formula: Formula);
             if (row.IsValid && geometry != null)
                 return display + (Session.IsGeometryPending(snapshot, sourcePosition) ? " · measuring…" : "");
             return display;
@@ -41,7 +41,7 @@ namespace BetterGhPanel
             {
                 var metric = Session.GetGeometryDetails(snapshot, position);
                 if (metric == null && Session.HasGeometryMeasurement(snapshot, position)) metric = row.GeometryInfo?.WithUnavailableMeasurement();
-                var value = PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, metric, includeUnits: false, roundUpFactor: RoundUpFactor);
+                var value = PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, metric, includeUnits: false, roundUpFactor: RoundUpFactor, formula: Formula);
                 bool literalProperty = PanelProperties.IsProperty(options.SearchMode) &&
                     PanelProperties.TryGet(row, options.SearchMode, metric, out var property) && property != null && property.Kind != PanelPropertyKind.Number;
                 if (!literalProperty && (value == "measuring…" || value == "unavailable")) throw new InvalidOperationException("A selected measurement is unavailable.");
@@ -55,13 +55,13 @@ namespace BetterGhPanel
             if (row.IsValid && geometry?.Value != null)
             {
                 var value = PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units,
-                    snapshot.UnitConversion, DecimalPlaces, includeUnits: false, roundUpFactor: RoundUpFactor);
+                    snapshot.UnitConversion, DecimalPlaces, includeUnits: false, roundUpFactor: RoundUpFactor, formula: Formula);
                 if (value == "unavailable") throw new InvalidOperationException("A selected measurement is unavailable.");
                 return value;
             }
             if (row.IsValid && geometry?.CanMeasure == true)
                 throw new InvalidOperationException("A selected measurement is unavailable.");
-            return PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor);
+            return PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor, formula: Formula);
         }
 
         internal void CancelPendingCopy()
@@ -150,7 +150,7 @@ namespace BetterGhPanel
             {
                 var geometry = session.GetGeometryDetails(snapshot, position);
                 if (geometry == null && session.HasGeometryMeasurement(snapshot, position)) geometry = snapshot.Rows[position].GeometryInfo?.WithUnavailableMeasurement();
-                return PanelPreviewValues.Sample(snapshot, snapshot.Rows[position], options.SearchMode, geometry, DecimalPlaces, RoundUpFactor);
+                return PanelPreviewValues.Sample(snapshot, snapshot.Rows[position], options.SearchMode, geometry, DecimalPlaces, RoundUpFactor, Formula);
             }
             _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, ValuePalette, ReversePalette,
                 options.SearchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current);

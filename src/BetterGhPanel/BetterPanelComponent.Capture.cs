@@ -113,7 +113,7 @@ namespace BetterGhPanel
             }
             bool UnitsCurrent()
             {
-                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count, RoundUpFactor, DecimalPlaces, _scalarInputs, _presentedScalars);
+                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count, RoundUpFactor, DecimalPlaces, _scalarInputs, _presentedScalars, Formula);
                 visits += count; return result;
             }
             bool StructuresCurrent()
@@ -179,10 +179,11 @@ namespace BetterGhPanel
                     CancelPendingCopy();
                     ClearHighlightCore(keepValues: true);
                     var options = session.Options;
-                    if (options.DecimalPlaces != DecimalPlaces || options.RoundUpFactor != RoundUpFactor)
+                    if (options.DecimalPlaces != DecimalPlaces || options.RoundUpFactor != RoundUpFactor || options.Formula != Formula)
                     {
                         options.DecimalPlaces = DecimalPlaces;
                         options.RoundUpFactor = RoundUpFactor;
+                        options.Formula = Formula;
                         session.UpdateQuery(options);
                     }
                     if (!Current()) return;
@@ -192,9 +193,10 @@ namespace BetterGhPanel
                     var preConversionTree = tree;
                     var conversion = UnitConversion;
                     var roundUpFactor = RoundUpFactor;
+                    var formula = Formula;
                     var scalarInputs = CapturedScalar.Capture(preConversionTree);
-                    var queryScalars = CapturedScalar.Convert(scalarInputs, conversion, roundUpFactor, DecimalPlaces);
-                    var queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.ApplyCaptured(preConversionTree, conversion, scalarInputs, roundUpFactor, DecimalPlaces, queryScalars));
+                    var queryScalars = CapturedScalar.Convert(scalarInputs, conversion, roundUpFactor, DecimalPlaces, formula);
+                    var queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.ApplyCaptured(preConversionTree, conversion, scalarInputs, roundUpFactor, DecimalPlaces, queryScalars, formula));
                     var inputSeed = SnapshotCapture.PrepareInputs(queryTree);
                     CapturePairedInput(da, inputTree, retainedSources, out var pairedTree, out var pairedError,
                         out var livePairedTree, out var capturedPairedTree, out bool pairedPresent);
@@ -207,7 +209,7 @@ namespace BetterGhPanel
                     if (!Current()) return;
                     bool hasGeometry = HasGeometry(snapshot) || tableColumns.Exists(column => column.HasGeometry);
                     if (!SnapshotCapture.MeasurementSourcesCurrent(sources, measurementSources) || !SnapshotCapture.GraphSourcesCurrent(graphs) ||
-                        !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor, DecimalPlaces, scalarInputs, queryScalars) ||
+                        !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor, DecimalPlaces, scalarInputs, queryScalars, formula) ||
                         !ColumnsCurrent(tableColumns, out _) ||
                         !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) ||
                         (hasGeometry && !GeometryContextCurrent(context)))

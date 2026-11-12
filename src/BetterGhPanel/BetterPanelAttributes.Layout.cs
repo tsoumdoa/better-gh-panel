@@ -174,7 +174,7 @@ namespace BetterGhPanel
             // Reserve the corner for resizing rather than overlaying footer controls.
             // Wide panels fit status, selection, statistics, tools and Units on one line.
             _singleLineFooter &= panel.Width >= 500;
-            float footerHeight = _singleLineFooter ? 20 : 36;
+            float footerHeight = FormulaFooterHeight(_singleLineFooter ? 20 : 36);
             // The footer starts at the rows' inset so its clickable status stays clear of the grips.
             footer = new RectangleF(panel.X + 14, panel.Bottom - footerHeight - 2, panel.Width - 42, footerHeight);
             // Keep the existing footer controls fixed when the output switch appears.
@@ -210,7 +210,7 @@ namespace BetterGhPanel
             _warningsHeight = WarningStripHeight(footerHeight, panel);
             // Keep interactive content beyond native grip picking's 12-unit
             // radius on both edges, including rows and the scroll track.
-            _list = new RectangleF(panel.X + 14, panel.Y + 52 + _warningsHeight, panel.Width - 33, Math.Max(RowHeight, panel.Height - 56 - footerHeight - _warningsHeight));
+            _list = new RectangleF(panel.X + 14, panel.Y + 52 + _warningsHeight, panel.Width - 33, Math.Max(RowHeight, panel.Height - 56 - footerHeight - _warningsHeight - (_formulaDraft != null ? 24 : 0)));
             _track = new RectangleF(panel.Right - 18, _list.Y, 4, _list.Height);
             _trackHit = new RectangleF(panel.Right - 21, _list.Y, 8, _list.Height);
             LayoutTable();

@@ -368,17 +368,18 @@ namespace BetterGhPanel
         private void TooltipOutput(PointF point, GH_TooltipDisplayEventArgs e)
         {
             e.Title = "Output: Items / Values";
-            e.Description = _layout.OutValues.Contains(point) ? (PanelOwner.CreateSetTree ? "Sends the displayed set values." : PanelOwner.DecimalPlaces >= 0 ? "Sends the values exactly as shown." : PanelOwner.RoundUpFactor != 0 ? "Sends the rounded values at full precision. Rows may be abbreviated." : "Sends full-precision values. Rows may be abbreviated.") : "Items sends items with shown numeric rounding (full precision in Automatic). Sets group all members by set index. Values sends the displayed property. Unavailable values are null.";
+            e.Description = _layout.OutValues.Contains(point) ? (PanelOwner.CreateSetTree ? "Sends the displayed set values." : PanelOwner.DecimalPlaces >= 0 ? "Sends the values exactly as shown." : PanelOwner.RoundUpFactor != 0 ? "Sends the rounded values at full precision. Rows may be abbreviated." : "Sends full-precision values. Rows may be abbreviated.") : "Items sends numbers with units, formula and rounding (full precision in Automatic). Geometry stays unchanged. Sets group all members by set index. Values sends the displayed property. Unavailable values are null.";
         }
 
         private void TooltipUnits(PointF point, GH_TooltipDisplayEventArgs e)
         {
-            e.Title = "Units and decimals";
+            e.Title = "Units, formula and decimals";
             var parts = PrecisionParts().ToList();
+            if (PanelOwner.Formula != null) parts.Insert(0, "ƒ " + PanelOwner.Formula.Pretty);
             if (PanelOwner.UnitConversion != PanelUnitConversion.None) parts.Insert(0, PanelUnits.Label(PanelOwner.UnitConversion));
             string setting = string.Join(" · ", parts);
             e.Text = setting.Length > 0 ? setting + " · changes numeric output" : "Changes numeric output";
-            e.Description = "Convert mm ↔ m, mm² ↔ m², mm³ ↔ m³ or rad ↔ deg. Set explicit decimals (0–12), shared with numeric output. Or round output up to a factor (factor 5: 12.1 → 15).";
+            e.Description = "Convert units, apply a formula in x (e.g. x*2, x-50), then round up by factor and set decimals (0–12). x is the converted number before rounding. Changes numeric output; geometry stays unchanged.";
         }
 
         private void TooltipTree(PointF point, GH_TooltipDisplayEventArgs e)

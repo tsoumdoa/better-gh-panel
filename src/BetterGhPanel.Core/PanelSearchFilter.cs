@@ -17,6 +17,7 @@ namespace BetterGhPanel.Core
         private readonly Stopwatch? _regexBudget;
         private readonly int _decimals;
         private readonly double _roundUpFactor;
+        private readonly PanelFormula? _formula;
         private readonly Dictionary<PanelGroupKey, bool> _groupMatches = new Dictionary<PanelGroupKey, bool>();
         private readonly Queue<PanelGroupKey> _groupMatchOrder = new Queue<PanelGroupKey>();
         private const int MaxCachedGroupMatches = 16384;
@@ -27,6 +28,7 @@ namespace BetterGhPanel.Core
             _mode = options.SearchMode;
             _decimals = options.DecimalPlaces;
             _roundUpFactor = options.RoundUpFactor;
+            _formula = options.Formula;
             if (!Enum.IsDefined(typeof(PanelSearchMode), _mode)) throw new ArgumentException("Unknown search mode.");
             _text = options.DisplayFilterValue && _mode >= PanelSearchMode.Value ? string.Empty : options.Search ?? string.Empty;
             // Spaces in a regular expression are significant.
@@ -80,12 +82,12 @@ namespace BetterGhPanel.Core
         {
             if (!HasFilter || IsBranchFilter) return true;
             if (_propertyFilter != null)
-                return PanelProperties.TryGet(row, _mode, measured, out var property) && property != null && _propertyFilter.Matches(property, conversion, _decimals, _roundUpFactor);
+                return PanelProperties.TryGet(row, _mode, measured, out var property) && property != null && _propertyFilter.Matches(property, conversion, _decimals, _roundUpFactor, _formula);
             if (_regex != null)
             {
                 token.ThrowIfCancellationRequested();
                 if (_regexBudget!.ElapsedMilliseconds >= 2000) throw RegexTooSlow();
-                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _roundUpFactor);
+                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _roundUpFactor, _formula);
                 if (TryGroupMatch(value, out bool cached)) return cached;
                 try
                 {
@@ -97,7 +99,7 @@ namespace BetterGhPanel.Core
             }
             if (_comparison == null)
             {
-                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _roundUpFactor);
+                var value = PanelValuePresentation.DisplayText(row, conversion, _decimals, measured, _roundUpFactor, _formula);
                 bool matches;
                 if (TryGroupMatch(value, out bool cached)) matches = cached;
                 else { matches = value.Contains(_text); RememberGroupMatch(value, matches); }
@@ -111,7 +113,7 @@ namespace BetterGhPanel.Core
 
         private bool ComparePresented(double value, double factor)
         {
-            value = PanelUnits.Transform(value, PanelUnitConversion.None, factor, _decimals);
+            value = PanelUnits.Transform(value, PanelUnitConversion.None, factor, _decimals, _mode == PanelSearchMode.Value || _mode == PanelSearchMode.Text ? null : _formula);
             return IsFinite(value) && _comparison!(value);
         }
 

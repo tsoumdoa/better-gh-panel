@@ -111,6 +111,55 @@ namespace BetterGhPanel
         internal PanelUnitConversion UnitConversion { get; private set; }
         internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
         internal double RoundUpFactor { get; private set; }
+        internal PanelFormula? Formula { get; private set; }
+        internal bool FormulaEditing { get; private set; }
+        internal bool RefreshingFormula { get; private set; }
+        private PanelFormula? _formulaBefore;
+        internal PanelFormula? CommittedFormula => FormulaEditing ? _formulaBefore : Formula;
+
+        internal void BeginFormulaEdit()
+        {
+            _formulaBefore = Formula;
+            FormulaEditing = true;
+        }
+
+        internal void PreviewFormula(PanelFormula formula) => ApplyFormula(formula);
+
+        internal void EndFormulaEdit(PanelFormula? accepted, bool commit)
+        {
+            if (!FormulaEditing) return;
+            var before = _formulaBefore;
+            FormulaEditing = false;
+            _formulaBefore = null;
+            if (commit && before?.Text != accepted?.Text)
+            {
+                RecordUndoEvent("Panel+ formula", new PanelUndo<PanelFormula?>(InstanceGuid, before, accepted,
+                    (component, value) => { CanvasTextInput.CloseActive(component); CanvasTextInput.CompletePending(); component.ApplyFormula(value); component.OnPingDocument()?.Modified(); }));
+                OnPingDocument()?.Modified();
+            }
+            ApplyFormula(commit ? accepted : before);
+            Attributes.ExpireLayout();
+        }
+
+        internal void SetFormula(PanelFormula? formula)
+        {
+            if (Formula?.Text == formula?.Text) return;
+            RecordUndoEvent("Panel+ formula");
+            ApplyFormula(formula);
+            OnPingDocument()?.Modified();
+        }
+
+        private void ApplyFormula(PanelFormula? formula)
+        {
+            if (Formula?.Text == formula?.Text) return;
+            Formula = formula;
+            CancelPendingCopy();
+            _retainGeometryMeasurements = true;
+            RefreshingFormula = true;
+            try { if (!_completingInClearData) ExpireSolution(true); }
+            finally { RefreshingFormula = false; _retainGeometryMeasurements = false; }
+            Instances.ActiveCanvas?.Invalidate();
+        }
 
         internal static bool HasFilters(PanelQueryOptions options) =>
             !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue ||
@@ -132,7 +181,7 @@ namespace BetterGhPanel
             (Attributes as BetterPanelAttributes)?.ResetViewState();
             RowSelection.Clear();
             var previousResult = Session.Result;
-            var options = new PanelQueryOptions { DecimalPlaces = DecimalPlaces, RoundUpFactor = RoundUpFactor };
+            var options = new PanelQueryOptions { DecimalPlaces = DecimalPlaces, RoundUpFactor = RoundUpFactor, Formula = Formula };
             if (!CanOutputValuesFor(CreateSetTree, options)) OutputValues = PanelOutputValues.Items;
             Session.UpdateQuery(options);
             if (ReferenceEquals(previousResult, Session.Result)) (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
@@ -224,7 +273,7 @@ namespace BetterGhPanel
             CanvasTextInput.CompletePending();
             _discardViewRestore = true;
             var options = Session.Options;
-            bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0 || DecimalPlaces >= 0;
+            bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0 || Formula != null || DecimalPlaces >= 0;
             bool settingsChanged = outputChanged || OutputScope != PanelOutputScope.Filtered || OutputValues != PanelOutputValues.Items || DecimalPlaces != PanelUnits.AutomaticDecimals ||
                 !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.TypeName != null || options.BranchPath != null ||
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
@@ -233,6 +282,7 @@ namespace BetterGhPanel
             FlattenTree = ReverseTree = SimplifyTree = CreateSetTree = false;
             UnitConversion = PanelUnitConversion.None;
             RoundUpFactor = 0;
+            Formula = null;
             DecimalPlaces = PanelUnits.AutomaticDecimals;
             OutputScope = PanelOutputScope.Filtered;
             UpdateOutputDescriptions();
@@ -526,6 +576,7 @@ namespace BetterGhPanel
             writer.SetInt32("PanelUnitConversion", (int)UnitConversion);
             writer.SetInt32("PanelDecimalPlaces", DecimalPlaces);
             writer.SetDouble("PanelRoundUpFactor", RoundUpFactor);
+            writer.SetString("PanelFormula", CommittedFormula?.Text ?? "");
             writer.SetInt32("PanelOutputScope", (int)OutputScope);
             writer.SetInt32("PanelOutputValues", (int)OutputValues);
             writer.SetInt32("PanelOutputSchema", 1);
@@ -556,7 +607,10 @@ namespace BetterGhPanel
             _session?.InvalidateInput(false, suspended: Locked);
             CancelPendingCopy();
             ClearHighlight();
-            (Attributes as BetterPanelAttributes)?.ResetViewState();
+            bool completing = _completingInClearData;
+            _completingInClearData = true;
+            try { (Attributes as BetterPanelAttributes)?.ResetViewState(); }
+            finally { _completingInClearData = completing; }
             RowSelection.Clear();
             var search = ""; var type = ""; var branch = "";
             var prefix = false; var invalid = false; var sort = 0; var size = 1; var searchMode = 0;
@@ -648,11 +702,18 @@ namespace BetterGhPanel
             double roundUpFactor = 0;
             reader.TryGetDouble("PanelRoundUpFactor", ref roundUpFactor);
             RoundUpFactor = PanelUnits.IsRoundingFactor(roundUpFactor) ? roundUpFactor : 0;
+            string formulaText = "";
+            reader.TryGetString("PanelFormula", ref formulaText);
+            PanelFormula.TryCompile(formulaText, out var formula, out _);
+            Formula = formula;
+            FormulaEditing = false;
+            _formulaBefore = null;
             int outputScope = 0;
             reader.TryGetInt32("PanelOutputScope", ref outputScope);
             OutputScope = Enum.IsDefined(typeof(PanelOutputScope), outputScope) ? (PanelOutputScope)outputScope : PanelOutputScope.Filtered;
             _savedOptions.DecimalPlaces = DecimalPlaces;
             _savedOptions.RoundUpFactor = RoundUpFactor;
+            _savedOptions.Formula = Formula;
             if (!CanOutputValuesFor(CreateSetTree, _savedOptions)) OutputValues = PanelOutputValues.Items;
             var parameters = UpgradeLegacyOutputParameters(reader);
             if (!parameters.ChunkExists("ParameterData") && !parameters.ChunkExists("ParamTypeData"))

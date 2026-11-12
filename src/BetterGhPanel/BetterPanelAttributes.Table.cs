@@ -100,6 +100,7 @@ namespace BetterGhPanel
         private string ColumnTitle(int index)
         {
             string title = PanelOwner.TableHeaderTitle(index);
+            if (index == 0 && PanelOwner.Formula != null) title += " ƒ";
             bool numeric = index > 0 && PanelOwner.TableColumns[index - 1].Snapshot?.TypeCounts.Keys.Any(type => type == "Number" || type == "Integer") == true;
             string units = index == 0 ? DataHeaderUnit() : PanelOwner.TableColumns[index - 1].HasGeometry
                 ? PanelOwner.TableColumns[index - 1].HeaderUnit(PanelOwner.UnitConversion) : numeric ? PanelUnits.Symbol(PanelOwner.UnitConversion) : "";
@@ -133,7 +134,7 @@ namespace BetterGhPanel
                 var geometry = session.GetGeometryDetails(result.Snapshot, position) ?? row.GeometryInfo;
                 if (options.DisplayFilterValue)
                 {
-                    var value = PanelFilterValue.OutputValue(result.Snapshot, row, options.SearchMode, geometry, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
+                    var value = PanelFilterValue.OutputValue(result.Snapshot, row, options.SearchMode, geometry, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor, PanelOwner.Formula);
                     if (value?.Kind == PanelPropertyKind.Number)
                     {
                         string symbol = PanelFilterValue.UnitSymbol(result.Snapshot, row, options.SearchMode, geometry);

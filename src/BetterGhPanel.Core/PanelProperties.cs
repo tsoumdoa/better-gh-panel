@@ -28,14 +28,14 @@ namespace BetterGhPanel.Core
             ? PanelUnits.Convert(Number, conversion == PanelUnitConversion.RadiansToDegrees ? conversion : PanelUnitConversion.None)
             : Power == 0 ? Number : PanelUnits.ConvertGeometry(Number, Power, Units, conversion);
         internal bool KeepInteger { get; }
-        internal double Presented(PanelUnitConversion conversion, int decimals, double roundUpFactor) =>
-            PanelUnits.Transform(Converted(conversion), PanelUnitConversion.None, Power == 0 ? 0 : roundUpFactor, KeepInteger ? -1 : decimals);
-        public string Format(PanelUnitConversion conversion, int decimals, bool includeUnits, double roundUpFactor = 0)
+        internal double Presented(PanelUnitConversion conversion, int decimals, double roundUpFactor, PanelFormula? formula = null) =>
+            PanelUnits.Transform(Converted(conversion), PanelUnitConversion.None, Power == 0 ? 0 : roundUpFactor, KeepInteger ? -1 : decimals, Power == 0 ? null : formula);
+        public string Format(PanelUnitConversion conversion, int decimals, bool includeUnits, double roundUpFactor = 0, PanelFormula? formula = null)
         {
             if (Kind == PanelPropertyKind.Text) return Text;
             if (Kind == PanelPropertyKind.Boolean) return Number == 0 ? "False" : "True";
             if (Kind == PanelPropertyKind.DateTime) return Date.ToString("yyyy-MM-dd HH:mm:ss.fffffff", CultureInfo.InvariantCulture);
-            double value = Presented(conversion, decimals, roundUpFactor);
+            double value = Presented(conversion, decimals, roundUpFactor, formula);
             if (double.IsNaN(value) || double.IsInfinity(value)) return "unavailable";
             string suffix = includeUnits ? UnitSymbol(conversion) : "";
             return PanelUnits.Format(value, PanelUnitConversion.None, KeepInteger ? -1 : decimals) + (suffix.Length == 0 ? "" : " " + suffix);

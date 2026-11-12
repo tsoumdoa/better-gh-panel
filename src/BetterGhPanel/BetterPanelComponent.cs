@@ -120,6 +120,7 @@ namespace BetterGhPanel
                     _session.GeometryDiagnosticsForTesting = CaptureDiagnosticsForTesting;
                     _session.SetDecimalPlacesResolver(() => DecimalPlaces);
                     _session.SetRoundUpFactorResolver(() => RoundUpFactor);
+                    _session.SetFormulaResolver(() => Formula);
                     _session.SetCreateSetResolver(() => CreateSetTree);
                     _session.SetOutputValuesResolver(() => OutputValues == PanelOutputValues.Values);
                     if (Locked) _session.InvalidateInput(false, suspended: true);
@@ -129,6 +130,7 @@ namespace BetterGhPanel
                     _session.SetCaptureCurrentResolver(CapturedSnapshotCurrent);
                     _savedOptions.DecimalPlaces = DecimalPlaces;
                     _savedOptions.RoundUpFactor = RoundUpFactor;
+                    _savedOptions.Formula = Formula;
                     ResolveSortInput(_savedOptions);
                     _session.UpdateQuery(_savedOptions);
                     _session.QueryChanged += (_, __) =>
@@ -267,7 +269,12 @@ namespace BetterGhPanel
                 // has exactly the same paths and lengths. Selection is explicitly re-bound after checking the replacement structure.
                 var attributes = Attributes as BetterPanelAttributes;
                 if (!_discardViewRestore) attributes?.StashViewForRestore();
-                attributes?.ResetViewState(keepViewRestore: !_discardViewRestore);
+                // Abandoning a live formula can restore a setting here. This
+                // solve will capture it; do not start a nested solution.
+                bool completing = _completingInClearData;
+                _completingInClearData = true;
+                try { attributes?.ResetViewState(keepViewRestore: !_discardViewRestore); }
+                finally { _completingInClearData = completing; }
                 RowSelection.Clear();
                 _session?.InvalidateInput(_retainGeometryMeasurements, suspended: Locked);
             }

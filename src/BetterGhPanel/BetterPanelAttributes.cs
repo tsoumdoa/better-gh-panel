@@ -123,7 +123,7 @@ namespace BetterGhPanel
             if (!keepViewRestore) { _viewRestore = null; _selectionRestore = null; _savedSelection = null; }
             ClearHover();
             _keyboardCursor = -1;
-            CanvasTextInput.CloseActive(PanelOwner);
+            if (!PanelOwner.RefreshingFormula) CanvasTextInput.CloseActive(PanelOwner);
             CancelQueryEditor();
             _setDetails.Close();
             InvalidatePaintedHits();
@@ -406,8 +406,9 @@ namespace BetterGhPanel
                 bool singleLine = PanelOwner.PanelSplit && _layout.Panel.Height < 140 || _layout.Panel.Width >= 500 &&
                     TightWidth(graphics, CanvasStatistics.Summary(result) + " · ", small) + OutputPartWidth(graphics, result, small) <=
                         _layout.Panel.Width - 313 - UnitsWidth(_layout.Panel.Width) - (PanelOwner.CanOutputValues ? OutputControlWidth + 4 : 0);
+                if (_formulaDraft != null) singleLine = _singleLineFooter;
                 if (resized || singleLine != _singleLineFooter || PanelOwner.CanOutputValues == _layout.OutLabel.IsEmpty ||
-                    _warningsHeight != WarningStripHeight(singleLine ? 20 : 36))
+                    _warningsHeight != WarningStripHeight(FormulaFooterHeight(singleLine ? 20 : 36)))
                 {
                     _singleLineFooter = singleLine;
                     Layout();
@@ -443,6 +444,7 @@ namespace BetterGhPanel
                     RenderWarnings(graphics, result, small);
                     RenderRows(graphics, result, visibleRegion, font, small, mono, trim);
                     RenderFooter(graphics, result, small, trim);
+                    RenderFormulaFeedback(graphics, result, small, trim);
                     RenderSetDetails(graphics, result, small, mono, trim);
                     RenderHover(graphics);
                     using (var gripPen = new Pen(PanelTheme.Rgb(165, 173, 166), 1))
@@ -775,7 +777,7 @@ namespace BetterGhPanel
             if (filters > 0) return filters == 1 ? "D: 1 filter" : "D: " + filters + " filters";
             if (result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count)
                 return "D: filtered";
-            return PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.RoundUpFactor > 0 || PanelOwner.DecimalPlaces >= 0
+            return PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.RoundUpFactor > 0 || PanelOwner.Formula != null || PanelOwner.DecimalPlaces >= 0
                 ? "D: tools" : PanelOwner.OutputsValues ? "D: values" : "D = input";
         }
 
@@ -829,7 +831,7 @@ namespace BetterGhPanel
             TreeToolIcons.Draw(g, _layout.CreateSet, TreeToolIcon.CreateSet, PanelOwner.CreateSetTree);
             DrawResetAction(g);
             DropdownControl(g, _layout.Units, UnitsLabel(), small, trim,
-                PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor > 0);
+                PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.DecimalPlaces >= 0 || PanelOwner.RoundUpFactor > 0 || PanelOwner.Formula != null);
         }
 
         private RectangleF KeepPaintedTarget(Graphics g, RectangleF previous, RectangleF target) =>
@@ -879,6 +881,7 @@ namespace BetterGhPanel
         private string UnitsLabel()
         {
             var parts = PrecisionParts().ToList();
+            if (PanelOwner.CommittedFormula != null) parts.Insert(0, "ƒ " + Short(PanelOwner.CommittedFormula.Pretty, 12));
             if (PanelOwner.UnitConversion != PanelUnitConversion.None) parts.Insert(0, "→" + PanelUnits.Symbol(PanelOwner.UnitConversion));
             return parts.Count == 0 ? "Units" : string.Join(" ", parts);
         }
@@ -1007,7 +1010,7 @@ namespace BetterGhPanel
                     };
                     g.FillRectangle(gradient, swatchBounds);
                 }
-                Text(g, _menu.Label(index, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor), _menu.Kind == CanvasMenuKind.Branch ? mono : small,
+                Text(g, _menu.Label(index, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor, PanelOwner.Formula), _menu.Kind == CanvasMenuKind.Branch ? mono : small,
                     !enabled ? PanelTheme.Disabled : selected ? Accent : Ink, new RectangleF(row.X + inset, row.Y, row.Width - inset - 7 - (tail.Length > 0 ? 110 : swatch != PanelValuePalette.Off ? 75 : 0), 20), trim);
                 var target = new RectangleF(_menu.Bounds.X, row.Y, _menu.Bounds.Width, row.Height);
                 if (TargetPainted(g, target)) _menu.MarkRowPainted(i);
@@ -1306,6 +1309,10 @@ namespace BetterGhPanel
             {
                 if (selectedUnit!.Value.Conversion.HasValue)
                     PanelOwner.SetUnits(selectedUnit.Value.Conversion!.Value, PanelOwner.DecimalPlaces);
+                else if (selectedUnit.Value.Setting == CanvasNumberSetting.FormulaOff)
+                    PanelOwner.SetFormula(null);
+                else if (selectedUnit.Value.Setting == CanvasNumberSetting.Formula)
+                    EditFormula(canvas);
                 else if (selectedUnit.Value.Setting == CanvasNumberSetting.Automatic)
                     PanelOwner.SetUnits(PanelOwner.UnitConversion, PanelUnits.AutomaticDecimals);
                 else if (selectedUnit.Value.Setting == CanvasNumberSetting.RoundingOff)
@@ -1761,7 +1768,7 @@ namespace BetterGhPanel
                         details = value + "\n" + (string.IsNullOrWhiteSpace(row.InvalidReason) ? "Validity could not be verified." : row.InvalidReason);
                     else if (geometry != null)
                     {
-                        details = geometry.FormatDetails(snapshot.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
+                        details = geometry.FormatDetails(snapshot.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor, PanelOwner.Formula);
                         if (PanelOwner.Session.IsGeometryPending(snapshot, hit.SourcePosition)) details += "\nCalculating measurement…";
                         else if (PanelOwner.Session.HasGeometryMeasurement(snapshot, hit.SourcePosition) && !geometry.Value.HasValue)
                             details += "\nMeasurement unavailable.";
@@ -1772,7 +1779,7 @@ namespace BetterGhPanel
                     // the labeled geometry details without repeating its compact summaries.
                     if (PanelOwner.Session.Options.DisplayFilterValue && !(rounding.Length > 0 && geometry != null))
                         details = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode) + ": " + value + "\n" +
-                            PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, PanelOwner.DecimalPlaces, geometry, roundUpFactor: PanelOwner.RoundUpFactor) + "\n" + details;
+                            PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, PanelOwner.DecimalPlaces, geometry, roundUpFactor: PanelOwner.RoundUpFactor, formula: PanelOwner.Formula) + "\n" + details;
                     if (rounding.Length > 0) details = rounding + "\n" + details;
                     if (setOccurrences != null)
                     {
