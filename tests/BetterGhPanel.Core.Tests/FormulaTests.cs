@@ -71,7 +71,7 @@ public sealed class FormulaTests
         var result = PanelQueryEngine.Execute(snapshot, options);
         Assert.Same(snapshot, result.Snapshot);
         Assert.Equal("1.5 m", PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, 1, roundUpFactor: .25, formula: draft));
-        Assert.Equal(1.5, result.Statistics.Minimum);
+
         Assert.Equal(1.5, result.OutputValues![0]!.Number);
         options.DisplayFilterValue = false; options.Search = "> 1.4";
         Assert.Single(PanelQueryEngine.Execute(snapshot, options).RowPositions);
@@ -150,7 +150,7 @@ public sealed class FormulaTests
         options.Formula = Formula("x*-1");
         var sorted = PanelQueryEngine.Execute(snapshot, options);
         Assert.Equal(new[] { 1, 0, 2 }, sorted.RowPositions);
-        Assert.Equal(-30, sorted.Statistics.Minimum);
+
         Assert.Equal(-10, PanelFilterValue.OutputValue(snapshot, snapshot.Rows[0], PanelSearchMode.Length, null, formula: options.Formula)!.Number);
         options.Formula = Formula("floor(x/100)"); options.CreateSet = true;
         var set = PanelQueryEngine.Execute(snapshot, options);
@@ -217,7 +217,7 @@ public sealed class FormulaTests
         Assert.Equal("unavailable", value.Text);
         Assert.Equal(1, result.Statistics.TypeCounts["Number"]);
         Assert.Equal(2, result.Statistics.TypeCounts["Text"]);
-        Assert.Equal(0, result.Statistics.NumericCount);
+
         foreach (int position in new[] { 2, 3 })
         {
             var other = result.DisplaySet.Values[position];
@@ -251,7 +251,7 @@ public sealed class FormulaTests
         query.BranchPath = "{2}";
         query.Formula = Formula("x/0");
         var unavailable = PanelQueryEngine.Execute(snapshot, query);
-        Assert.Equal(0, unavailable.Statistics.NumericCount);
+
         Assert.True(unavailable.HasFormulaValues);
         query.SearchMode = PanelSearchMode.ListLength;
         Assert.False(PanelQueryEngine.Execute(snapshot, query).HasFormulaValues);

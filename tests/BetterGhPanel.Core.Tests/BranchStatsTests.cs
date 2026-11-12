@@ -170,6 +170,72 @@ public class BranchStatsTests
     }
 
     [Fact]
+    public void StatsMeasureMainMetricWhenAPropertyValueIsAlreadyShown()
+    {
+        var pending = new PanelGeometryInfo("NURBS curve", canMeasure: true).WithProperties(
+            new Dictionary<PanelSearchMode, PanelPropertyValue?> { [PanelSearchMode.Degree] = PanelPropertyValue.Numeric(3) });
+        var row = new PanelRow(0, "{0}", "Curve", "", null, geometryInfo: pending);
+        var snapshot = new PanelSnapshot(new[] { row }, new[] { new PanelBranch("{0}", 1) });
+        var options = new PanelQueryOptions { BranchStats = true, SearchMode = PanelSearchMode.Degree, DisplayFilterValue = true };
+        Assert.Equal(new[] { 0 }, PanelQueryEngine.GeometryCandidates(snapshot, options));
+        var result = PanelQueryEngine.Execute(snapshot, options, measuredGeometry:
+            new Dictionary<int, PanelGeometryInfo> { [0] = new PanelGeometryInfo("NURBS curve", 12).WithProperties(pending.Properties) });
+        Assert.False(result.BranchStats!["{0}"].Measuring);
+        Assert.Equal(12, result.BranchStats["{0}"].Value(PanelStatKinds.Sum));
+    }
+
+    [Fact]
+    public void FailedColumnMeasurementIsSkippedRatherThanPending()
+    {
+        var data = Stats(Numbers(1));
+        var snapshot = new PanelSnapshot(new[] { Geometry(0, "{0}", 1, null, true) }, new[] { new PanelBranch("{0}", 1) });
+        var columns = PanelBranchStats.Column(data, snapshot, position => position, new PanelQueryOptions(),
+            new Dictionary<int, PanelGeometryInfo?> { [0] = null }, CancellationToken.None);
+        var stats = columns["{0}"];
+        Assert.False(stats.Measuring); Assert.Equal(1, stats.Skipped);
+        Assert.Equal(0, stats.Value(PanelStatKinds.Count)); Assert.Null(stats.Value(PanelStatKinds.Sum));
+        Assert.Equal("—", stats.Format(PanelStatKinds.Sum, -1));
+    }
+
+    [Fact]
+    public void AutomaticAggregatesDisplayedInputsRatherThanHiddenDigits()
+    {
+        var snapshot = new PanelSnapshot(new[] { Geometry(0, "{0}", 1, 1.234564), Geometry(1, "{0}", 1, 1.234564) },
+            new[] { new PanelBranch("{0}", 2) });
+        Assert.All(snapshot.Rows, row => Assert.EndsWith("1.23456 mm", PanelValuePresentation.FormatDisplay(row, PanelUnitConversion.None, -1)));
+        Assert.Equal(2.46912, Stats(snapshot).BranchStats!["{0}"].Value(PanelStatKinds.Sum));
+        var scalars = Numbers(1.234560000004, -1.234559999996);
+        Assert.Equal("1.23456", PanelValuePresentation.FormatDisplay(scalars.Rows[0], PanelUnitConversion.None, -1));
+        Assert.Equal("-1.23456", PanelValuePresentation.FormatDisplay(scalars.Rows[1], PanelUnitConversion.None, -1));
+        Assert.Equal(0, Stats(scalars).BranchStats!["{0}"].Value(PanelStatKinds.Sum));
+    }
+
+    [Fact]
+    public void ColumnsUseTheirOwnPrimaryMetricDespiteDsSearchMode()
+    {
+        var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Length, DisplayFilterValue = true };
+        var data = Stats(new PanelSnapshot(new[] { Geometry(0, "{0}", 1, 4) }, new[] { new PanelBranch("{0}", 1) }), options);
+        var area = new PanelSnapshot(new[] { Geometry(0, "{0}", 2, 12) }, new[] { new PanelBranch("{0}", 1) });
+        var columns = PanelBranchStats.Column(data, area, position => position, options, null, CancellationToken.None);
+        Assert.Equal(12, columns["{0}"].Value(PanelStatKinds.Sum));
+        Assert.Equal("12 mm²", columns["{0}"].Format(PanelStatKinds.Sum, -1));
+        Assert.Equal(0, columns["{0}"].Skipped);
+    }
+
+    [Fact]
+    public void ColumnMeasurementDemandUsesOnlyPairedFilteredMembers()
+    {
+        var data = Stats(Numbers(1, 2, 3, 4, 5), new PanelQueryOptions { Search = "> 3" });
+        var visited = new List<int>();
+        var items = PanelBranchStats.ColumnItems(data, position =>
+        {
+            visited.Add(position); return position == 3 ? 7 : (int?)null;
+        });
+        Assert.Equal(new[] { 3, 4 }, visited);
+        Assert.Equal(new[] { 7 }, items);
+    }
+
+    [Fact]
     public void PickerHasFixedOrderAndMutedGuidance()
     {
         var menu = new CanvasMenu(); var options = new PanelQueryOptions { BranchStats = true };

@@ -54,13 +54,13 @@ namespace BetterGhPanel.Core
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
-            var outputValues = query.OutputValues && query.DisplayFilterValue && set == null ? new Dictionary<int, PanelPropertyValue?>() : null;
-            var propertySortValues = query.ColumnSortKeys == null && set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplayFilterValue && ShowsMetric(query.SearchMode)
+            var outputValues = !query.BranchStats && query.OutputValues && query.DisplayFilterValue && set == null ? new Dictionary<int, PanelPropertyValue?>() : null;
+            var propertySortValues = !query.BranchStats && query.ColumnSortKeys == null && set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplayFilterValue && ShowsMetric(query.SearchMode)
                 ? new Dictionary<int, PanelDisplayedValue>() : null;
             // Sets and metric views already supply complete displayed sort keys.
-            var sortText = query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder && set == null && propertySortValues == null
+            var sortText = !query.BranchStats && query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder && set == null && propertySortValues == null
                 ? new Dictionary<int, RowSortKey>() : null;
-            var columnSortRows = query.ColumnSortKeys != null && query.SortMode != PanelSortMode.SourceOrder
+            var columnSortRows = !query.BranchStats && query.ColumnSortKeys != null && query.SortMode != PanelSortMode.SourceOrder
                 ? new Dictionary<int, PanelRow?>() : null;
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -100,16 +100,11 @@ namespace BetterGhPanel.Core
                 }
             }
 
-            string? numericUnits = null;
-            var numericCount = 0;
             var hasFormulaValues = false;
             var nullCount = 0;
             var invalidCount = 0;
             var unverifiedCount = 0;
             var filteredSourceStatuses = default(PanelSourceStatusCounts);
-            var minimum = double.PositiveInfinity;
-            var maximum = double.NegativeInfinity;
-            var mean = 0.0;
             for (var i = 0; i < snapshot.Rows.Count; i++)
             {
                 if (work.ShouldYield()) yield return null;
@@ -144,9 +139,8 @@ namespace BetterGhPanel.Core
                 }
                 rowPositions.Add(i);
                 if (columnSortRows != null && set == null) columnSortRows.Add(i, query.ColumnSortKeys!.RowAt(i));
-                var metric = set == null && query.DisplayFilterValue
-                    ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor, query.Formula) : null;
-                outputValues?.Add(i, metric);
+                outputValues?.Add(i, PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured,
+                    query.DecimalPlaces, query.RoundUpFactor, query.Formula));
                 if (propertySortValues != null) propertySortValues.Add(i, PanelDisplayedValue.Capture(snapshot, row, query, measured));
                 if (sortText != null && !row.IsNull)
                     sortText.Add(i, new RowSortKey(row, measured, snapshot.UnitConversion, query));
@@ -154,28 +148,11 @@ namespace BetterGhPanel.Core
                 Increment(branchCounts, row.Path);
                 if (set?.IsBranchSet == true) continue;
                 var projected = set == null ? null : set.Values[i];
-                double? numeric = projected?.Number;
-                if (projected == null)
-                    numeric = query.DisplayFilterValue
-                        ? metric?.Kind == PanelPropertyKind.Number ? metric.Number : (double?)null
-                        : !row.IsNull && row.IsValid && row.NumericValue.HasValue ? PanelValuePresentation.PresentedNumber(row, query.DecimalPlaces, query.RoundUpFactor, query.Formula) : (double?)null;
-                if (numeric.HasValue && (double.IsNaN(numeric.Value) || double.IsInfinity(numeric.Value))) numeric = null;
                 Increment(typeCounts, projected == null ? row.TypeName : projected.IsNumeric ? "Number" : "Text");
                 if (projected == null && row.IsNull) nullCount++;
                 if (projected == null && row.Validity == PanelValidity.VerifiedInvalid) invalidCount++;
                 if (projected == null && row.Validity == PanelValidity.Unverified) unverifiedCount++;
-                if (!numeric.HasValue || double.IsNaN(numeric.Value) || double.IsInfinity(numeric.Value)) continue;
-                string units = query.DisplayFilterValue ? PanelFilterValue.UnitSymbol(snapshot, row, query.SearchMode, measured) : PanelUnits.Symbol(snapshot.UnitConversion);
-                numericUnits = numericUnits == null ? units : numericUnits == units ? units : "";
-                var value = numeric.Value;
-                numericCount++;
-                minimum = Math.Min(minimum, value);
-                maximum = Math.Max(maximum, value);
-                var delta = value - mean;
-                // The alternate update handles opposite-sign values near double.MaxValue.
-                mean = double.IsInfinity(delta)
-                    ? mean * ((numericCount - 1.0) / numericCount) + value / numericCount
-                    : mean + delta / numericCount;
+
             }
 
             if (work.ShouldYield()) yield return null;
@@ -255,22 +232,15 @@ namespace BetterGhPanel.Core
                 {
                     if (work.ShouldYield()) yield return null;
                     cancellationToken.ThrowIfCancellationRequested();
-                    double count = snapshot.BranchItemCounts[path];
                     branchCounts[path] = 1;
-                    numericCount++;
-                    minimum = Math.Min(minimum, count);
-                    maximum = Math.Max(maximum, count);
-                    mean += (count - mean) / numericCount;
                 }
-                if (numericCount > 0) typeCounts.Add("Integer", numericCount);
+                if (branches.Count > 0) typeCounts.Add("Integer", branches.Count);
             }
             if (work.ShouldYield()) yield return null;
             cancellationToken.ThrowIfCancellationRequested();
-            var statistics = new PanelStatistics(set?.IsBranchSet == true ? branches.Count : positions.Length, branches.Count, numericCount, nullCount,
-                invalidCount, numericCount == 0 ? (double?)null : minimum,
-                numericCount == 0 ? (double?)null : maximum, numericCount == 0 ? (double?)null : mean,
-                new ReadOnlyDictionary<string, int>(typeCounts), new ReadOnlyDictionary<string, int>(branchCounts),
-                unverifiedCount, filteredSourceStatuses, numericUnits ?? "");
+            var statistics = new PanelStatistics(set?.IsBranchSet == true ? branches.Count : positions.Length, branches.Count, nullCount,
+                invalidCount, new ReadOnlyDictionary<string, int>(typeCounts), new ReadOnlyDictionary<string, int>(branchCounts),
+                unverifiedCount, filteredSourceStatuses);
             PanelDisplaySetResult? displaySet = null;
             if (set != null)
                 foreach (var step in set.Complete(work, cancellationToken))
@@ -292,7 +262,7 @@ namespace BetterGhPanel.Core
                     query.TableSource.Extras(result, rowPositions, !HasItemFilter(query)), work, cancellationToken))
                     if (index == null) yield return null;
                     else result.TableIndex = index;
-            if (query.TableSource != null && (displaySet != null || query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
+            if (!query.BranchStats && query.TableSource != null && (displaySet != null || query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
                 foreach (var step in PanelTableSummaries.Build(result, rowPositions, query.TableSource, !HasItemFilter(query), work, cancellationToken))
                     if (step) yield return null;
             if (statBranches != null)
@@ -345,7 +315,7 @@ namespace BetterGhPanel.Core
             cancellationToken.ThrowIfCancellationRequested();
             var query = options.Clone();
             var filter = new PanelSearchFilter(query);
-            var sorting = query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder;
+            var sorting = !query.BranchStats && query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder;
             bool setGeometry = PresentationNeedsGeometry(query);
             if (!sorting && !setGeometry && (!filter.HasFilter || !filter.IsGeometry && !filter.UsesDisplayText)) return Array.Empty<int>();
             var scope = new PanelQueryScope(snapshot, query, filter);
@@ -355,7 +325,8 @@ namespace BetterGhPanel.Core
                 CheckCancellation(index, cancellationToken);
                 var row = snapshot.Rows[index];
                 bool forSet = setGeometry && (query.BranchStats || !query.DisplayFilterValue || row.GeometryInfo != null && PanelFilterValue.MatchesGeometry(query.SearchMode, row.GeometryInfo));
-                bool propertySummary = PanelProperties.IsProperty(query.SearchMode) && !query.DisplayFilterValue && (sorting || forSet);
+                // Stats need the aggregate metric even when a shown property is already captured.
+                bool propertySummary = query.BranchStats || PanelProperties.IsProperty(query.SearchMode) && !query.DisplayFilterValue && (sorting || forSet);
                 if (!scope.MatchesRow(row) || !filter.CanMeasure(row, sorting || forSet, propertySummary)) continue;
                 candidates.Add(index);
             }

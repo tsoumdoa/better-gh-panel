@@ -841,7 +841,7 @@ namespace BetterGhPanel
             string range = FooterRange(result, _singleLineFooter), output = OutputPartLabel(result);
             bool clearable = PanelOwner.BranchStatsTree || BetterPanelComponent.HasFilters(PanelOwner.Session.Options);
             float rangeWidth = TightWidth(g, range, small), separator = TightWidth(g, " · ", small), width = OutputPartWidth(g, result, small);
-            bool both = rangeWidth + separator + width <= status.Width;
+            bool both = (!PanelOwner.BranchStatsTree || _singleLineFooter) && rangeWidth + separator + width <= status.Width;
             float x = status.X, y = status.Y + 2;
             if (both || !clearable)
             {

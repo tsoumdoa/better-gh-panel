@@ -48,13 +48,16 @@ namespace BetterGhPanel.Core
         {
             var stats = data.BranchPaths.ToDictionary(path => path, path => new PanelBranchStats(), StringComparer.Ordinal);
             var query = options.Clone(); query.Formula = null;
+            query.SearchMode = PanelSearchMode.Text; query.DisplayFilterValue = false;
             var converted = new PanelSnapshot(snapshot.Rows, snapshot.Branches, data.Snapshot.UnitConversion);
             foreach (int position in data.RowPositions)
             {
                 token.ThrowIfCancellationRequested();
                 if (partner(position) is not int item) continue;
-                PanelGeometryInfo? measured = null; measurements?.TryGetValue(item, out measured);
                 var row = snapshot.Rows[item];
+                PanelGeometryInfo? measured = null;
+                if (measurements?.TryGetValue(item, out measured) == true && measured == null)
+                    measured = row.GeometryInfo?.WithUnavailableMeasurement();
                 if (row.NumericValue.HasValue && row.IsValid)
                     row = new PanelRow(row.OriginalIndex, row.Path, row.TypeName, row.DisplayValue,
                         PanelUnits.Convert(row.RawNumericValue!.Value, converted.UnitConversion));
@@ -63,6 +66,9 @@ namespace BetterGhPanel.Core
             foreach (var branch in stats.Values) { token.ThrowIfCancellationRequested(); branch.Complete(query); }
             return stats;
         }
+        internal static IReadOnlyList<int> ColumnItems(PanelQueryResult data, Func<int, int?> partner) =>
+            data.RowPositions.Select(partner).Where(item => item.HasValue).Select(item => item!.Value).Distinct().ToArray();
+
         public string Format(PanelStatKinds kind, int decimals, bool includeUnits = true) => Measuring ? "measuring…" :
             !Value(kind).HasValue ? "—" : kind == PanelStatKinds.Count ? Value(kind)!.Value.ToString("0", System.Globalization.CultureInfo.InvariantCulture) :
             PanelUnits.Format(Value(kind)!.Value, PanelUnitConversion.None, decimals, Precision == 6 ? "G6" : "G12") + (includeUnits && _units.Length > 0 ? " " + _units : "");
@@ -105,6 +111,7 @@ namespace BetterGhPanel.Core
             }
             if (!Finite(number)) { Skip("non-finite values"); return; }
             if (!_hasUnits) { _units = unit; _hasUnits = true; } else if (_units != unit) _units = "";
+            if (query.DecimalPlaces < 0) number = PanelNumber.GeneralValue(number, row.NumericValue.HasValue ? 12 : 6);
             _numbers.Add(number);
             if (number < _minimum) { _minimum = number; _min = position; }
             if (number > _maximum) { _maximum = number; _max = position; }

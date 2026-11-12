@@ -50,8 +50,7 @@ internal static class WysiwygValuesChecks
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.AllData(false).OfType<GH_Number>().FirstOrDefault()?.Value == 1300);
         fixture.SelectAt(0);
         await fixture.Ready(() => fixture.Sinks[1].VolatileData.AllData(false).OfType<GH_Number>().FirstOrDefault()?.Value == 1300);
-        Check(fixture.Result.Statistics.Minimum == 1300 && fixture.Result.Statistics.Maximum == 1350 && fixture.Result.Statistics.Mean == 1325,
-            "Native Length rows, D, S and Stats share the presented numbers");
+
         foreach (var scope in new[] { PanelOutputScope.Filtered, PanelOutputScope.Selected })
         {
             fixture.Scope(scope);
@@ -198,7 +197,7 @@ internal static class WysiwygValuesChecks
         Call(component, "SetUnits", PanelUnitConversion.MetersToMillimeters, 2, (double?)0);
         await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 1 && fixture.Sinks[0].VolatileData.AllData(false).Single() == null);
         Check(PanelValuePresentation.FormatDisplay(fixture.Result.Snapshot.Rows[0], PanelUnitConversion.MetersToMillimeters, 2) == "unavailable" &&
-            fixture.Result.Statistics.NumericCount == 0 && fixture.Result.Statistics.InvalidCount == 0 && fixture.Result.Statistics.NullCount == 0 &&
+            fixture.Result.Statistics.InvalidCount == 0 && fixture.Result.Statistics.NullCount == 0 &&
             fixture.Result.Warnings.InvalidCount == 0 && fixture.Result.Warnings.NullCount == 0,
             "Final conversion overflow is unavailable in rows/Items/Stats and never an invalid or null source warning");
         Call(component, "SetTreeOperations", 0, false, false, false, true);

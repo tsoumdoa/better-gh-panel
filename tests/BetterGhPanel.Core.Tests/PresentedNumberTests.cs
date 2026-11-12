@@ -180,9 +180,6 @@ public sealed class PresentedNumberTests
         var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Length, DisplayFilterValue = true, OutputValues = true, DecimalPlaces = 2 };
         var result = PanelQueryEngine.Execute(snapshot, options);
         Assert.Equal(4.5, result.OutputValues![0]!.Number);
-        Assert.Equal(4.5, result.Statistics.Minimum);
-        Assert.Equal(4.5, result.Statistics.Maximum);
-        Assert.Equal(4.5, result.Statistics.Mean);
 
         Assert.Equal("4.50 mm", PanelFilterValue.Format(snapshot, rows[0], options.SearchMode, 2));
     }
@@ -226,7 +223,6 @@ public sealed class PresentedNumberTests
         var snapshot = new PanelSnapshot(new[] { scalar }, new[] { new PanelBranch("{0}", 1) });
         options.SearchMode = PanelSearchMode.Value;
         Assert.Single(PanelQueryEngine.Execute(snapshot, options).RowPositions);
-        Assert.Equal(4.5, PanelQueryEngine.Execute(snapshot, options).Statistics.Minimum);
     }
 
     [Fact]
@@ -252,31 +248,6 @@ public sealed class PresentedNumberTests
         Assert.Contains("2 decimal places", PanelFilterValue.RoundingDescription(snapshot, scalar, options));
         options.DecimalPlaces = -1;
         Assert.Equal("", PanelFilterValue.RoundingDescription(snapshot, scalar, options));
-    }
-
-    [Fact]
-    public void GeometryStatisticsRetainUnconvertedSourceUnits()
-    {
-        var options = new PanelQueryOptions { DisplayFilterValue = false, OutputValues = true, DecimalPlaces = 2, Search = "= 4.5" };
-        var feet = new PanelRow(0, "{0}", "Curve", "", null, geometryInfo: new PanelGeometryInfo("Curve", 12.345, units: "ft"));
-        var snapshot = new PanelSnapshot(new[] { feet }, new[] { new PanelBranch("{0}", 1) }, PanelUnitConversion.MillimetersToMeters);
-        options.SearchMode = PanelSearchMode.Length; options.Search = ""; options.DisplayFilterValue = true; options.DecimalPlaces = 2;
-        var result = PanelQueryEngine.Execute(snapshot, options);
-        Assert.Equal("ft", result.Statistics.NumericUnits);
-
-    }
-
-    [Fact]
-    public void ItemIndexStatisticsHaveNoLengthUnits()
-    {
-        var options = new PanelQueryOptions { DisplayFilterValue = false, OutputValues = true, DecimalPlaces = 2, Search = "= 4.5" };
-        var feet = new PanelRow(0, "{0}", "Curve", "", null, geometryInfo: new PanelGeometryInfo("Curve", 12.345, units: "ft"));
-        var snapshot = new PanelSnapshot(new[] { feet }, new[] { new PanelBranch("{0}", 1) }, PanelUnitConversion.MillimetersToMeters);
-        options.SearchMode = PanelSearchMode.Length; options.Search = ""; options.DisplayFilterValue = true; options.DecimalPlaces = 2;
-        options.SearchMode = PanelSearchMode.ItemIndex;
-        var result = PanelQueryEngine.Execute(snapshot, options);
-        Assert.Equal("", result.Statistics.NumericUnits);
-
     }
 
     [Fact]

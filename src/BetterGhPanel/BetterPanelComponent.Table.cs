@@ -64,7 +64,9 @@ namespace BetterGhPanel
         }
         internal bool EffectiveTableVisible => (Attributes as BetterPanelAttributes)?.EffectiveTableVisible == true;
         internal bool TableSummariesCurrent => !PanelSplit || SummariesCurrent(Session.Result);
-        private bool SummariesCurrent(PanelQueryResult result) => !(result.DisplaySet != null || Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength) ||
+        private bool SummariesCurrent(PanelQueryResult result) => result.BranchStats != null
+            ? TableColumns.All(column => column.Snapshot == null || column.Pair == null || result.ColumnBranchStats.ContainsKey(column.Input.InstanceGuid))
+            : !(result.DisplaySet != null || Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength) ||
             TableColumns.All(column => column.SummaryCurrent(result));
         private void RequireTableSummaries(PanelQueryResult result)
         {
@@ -150,6 +152,7 @@ namespace BetterGhPanel
         {
             if (result.BranchStats != null)
             {
+                RequireTableSummaries(result);
                 var statTitles = new[] { TableHeaderTitle(0) }.Concat(TableColumns.Select((column, index) => TableHeaderTitle(index + 1)));
                 return PanelTableTsv.Build(statTitles, result.BranchPaths.SelectMany(path => PanelBranchStats.Picks(StatKinds).Select((kind, index) =>
                 {

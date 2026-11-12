@@ -440,40 +440,30 @@ namespace BetterGhPanel.Core
 
     public sealed class PanelStatistics
     {
-        internal PanelStatistics(int itemCount, int branchCount, int numericCount, int nullCount,
-            int invalidCount, double? minimum, double? maximum, double? mean,
+        internal PanelStatistics(int itemCount, int branchCount, int nullCount,
+            int invalidCount,
             IReadOnlyDictionary<string, int> typeCounts, IReadOnlyDictionary<string, int> branchItemCounts,
             int unverifiedCount,
-            PanelSourceStatusCounts filteredSourceStatuses, string numericUnits = "")
+            PanelSourceStatusCounts filteredSourceStatuses)
         {
-            NumericUnits = numericUnits;
             ItemCount = itemCount;
             BranchCount = branchCount;
-            NumericCount = numericCount;
             NullCount = nullCount;
             InvalidCount = invalidCount;
             UnverifiedCount = unverifiedCount;
             FilteredSourceStatuses = filteredSourceStatuses;
-            Minimum = minimum;
-            Maximum = maximum;
-            Mean = mean;
             TypeCounts = typeCounts;
             BranchItemCounts = branchItemCounts;
         }
 
         public int ItemCount { get; }
         public int BranchCount { get; }
-        public int NumericCount { get; }
         public int NullCount { get; }
         public int InvalidCount { get; }
         /// <summary>Unverified projected rows, separate from verified invalid rows.</summary>
         public int UnverifiedCount { get; }
         /// <summary>Filtered input occurrences before Create set, independent of representatives.</summary>
         public PanelSourceStatusCounts FilteredSourceStatuses { get; }
-        public string NumericUnits { get; }
-        public double? Minimum { get; }
-        public double? Maximum { get; }
-        public double? Mean { get; }
         public IReadOnlyDictionary<string, int> TypeCounts { get; }
         /// <summary>Counts in this filtered result, including retained empty branches.</summary>
         public IReadOnlyDictionary<string, int> BranchItemCounts { get; }

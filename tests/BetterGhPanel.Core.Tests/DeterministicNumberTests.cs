@@ -144,7 +144,7 @@ public sealed class DeterministicNumberTests
             var snapshot = new PanelSnapshot(new[] { row }, new[] { new PanelBranch("{0}", 1) });
             var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { DecimalPlaces = c.Item3, CreateSet = true });
             Assert.Equal(wire, result.DisplaySet!.Values[0].Number);
-            Assert.Equal(wire, result.Statistics.Minimum);
+
         }
         const double precise = 1.2345678901234567;
         Assert.Equal(precise, PanelUnits.Transform(precise, PanelUnitConversion.None));
@@ -157,7 +157,7 @@ public sealed class DeterministicNumberTests
             OutputValues = true, RoundUpFactor = 1e308 };
         Assert.Equal("unavailable", PanelFilterValue.Format(input, geometry, options.SearchMode, -1, roundUpFactor: options.RoundUpFactor));
         var unavailable = PanelQueryEngine.Execute(input, options);
-        Assert.Null(unavailable.OutputValues![0]); Assert.Equal(0, unavailable.Statistics.NumericCount);
+        Assert.Null(unavailable.OutputValues![0]);
         options.CreateSet = true;
         var set = PanelQueryEngine.Execute(input, options);
         Assert.True(set.DisplaySet!.Values[0].Unavailable);
@@ -220,7 +220,7 @@ public sealed class DeterministicNumberTests
             Assert.Equal(2, result.RowPositions.Count);
             Assert.Equal(first, result.DisplaySet!.Values[0].Number);
             Assert.Equal(second, result.DisplaySet.Values[1].Number);
-            Assert.Equal(first, result.Statistics.Minimum);
+
             Assert.Equal("", PanelFilterValue.RoundingDescription(snapshot, snapshot.Rows[0], options));
             options.DisplayFilterValue = false;
             options.Search = "= 1.23456789012E-25";

@@ -58,6 +58,51 @@ namespace BetterGhPanel.Runtime
             }
         }
 
+        // D is already published. Column stats have their own completion and never hold its output open.
+        private void StartBranchStatColumns(PanelQueryResult result, long request, CancellationToken token)
+        {
+            if (_tableSource == null) return;
+            var options = _options.Clone();
+            var columns = _columns.Where(column => column.Snapshot != null && column.Pair != null)
+                .Select(column => (Column: column, Snapshot: column.Snapshot!, Queue: column.Geometry, Pair: column.Pair!)).ToArray();
+            if (columns.Length == 0) return;
+            _ = Task.Run(async () =>
+            {
+                foreach (var column in columns)
+                {
+                    var items = PanelBranchStats.ColumnItems(result, column.Pair.ItemAt);
+                    IReadOnlyDictionary<string, PanelBranchStats> stats;
+                    try
+                    {
+                        token.ThrowIfCancellationRequested();
+                        IReadOnlyDictionary<int, PanelGeometryInfo?>? measurements = null;
+                        if (column.Snapshot.HasMeasurableGeometry && column.Queue != null)
+                        {
+                            if (!await column.Queue.MeasureAsync(column.Snapshot, items, token).ConfigureAwait(false)) return;
+                            measurements = await column.Queue.CaptureCompletedAsync(column.Snapshot, column.Snapshot.Rows.Count, token).ConfigureAwait(false);
+                            if (measurements == null) return;
+                        }
+                        stats = PanelBranchStats.Column(result, column.Snapshot, column.Pair.ItemAt, options, measurements, token);
+                    }
+                    catch (OperationCanceledException) { return; }
+                    catch (Exception)
+                    {
+                        // Failed column measurements are unavailable, without failing D's completed result.
+                        stats = PanelBranchStats.Column(result, column.Snapshot, column.Pair.ItemAt, options,
+                            items.ToDictionary(item => item, _ => (PanelGeometryInfo?)null), token);
+                    }
+                    Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
+                    {
+                        if (!CanPublish(result.Snapshot, request, token) || !ReferenceEquals(Result, result) ||
+                            !ReferenceEquals(column.Column.Snapshot, column.Snapshot) ||
+                            column.Queue != null && !column.Queue.SourcesCurrent(column.Snapshot)) return;
+                        result.ColumnBranchStats[column.Column.Input.InstanceGuid] = stats;
+                        Notify();
+                    }));
+                }
+            }, token);
+        }
+
         private void ClearColumnGeometry()
         {
             ++_columnGeneration;

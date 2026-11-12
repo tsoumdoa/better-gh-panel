@@ -231,7 +231,7 @@ namespace BetterGhPanel
             var result = session.Result;
             if ((includeColumns || tableColumn != null) && !SummariesCurrent(result)) return "Column summaries are recomputing. Try copying again.";
             bool statsTable = includeColumns && result.BranchStats != null;
-            bool listLengthCopy = path == null && (action == PanelRowAction.CopyValues || includeColumns) && session.Options.DisplayFilterValue && session.Options.SearchMode == PanelSearchMode.ListLength;
+            bool listLengthCopy = result.BranchStats == null && path == null && (action == PanelRowAction.CopyValues || includeColumns) && session.Options.DisplayFilterValue && session.Options.SearchMode == PanelSearchMode.ListLength;
             bool branchSet = path == null && (action == PanelRowAction.CopyValues || includeColumns) && result.DisplaySet?.IsBranchSet == true;
             IReadOnlyList<int> ordered;
             if (path != null || columnBranch != null || action == PanelRowAction.CopyPaths && RowSelection.Count > 0) ordered = positions;
@@ -256,7 +256,7 @@ namespace BetterGhPanel
             var columnMeasurements = (includeColumns ? TableColumns : tableColumn != null ? new[] { tableColumn } : Array.Empty<PanelTableColumn>())
                 .Select(value => (Column: value, Snapshot: value.Snapshot, Queue: value.Geometry,
                     Items: ColumnCopyItems(value, result, ordered, columnBranch != null ? new[] { columnBranch } : branches))).ToArray();
-            bool measured = addressOnly || tableColumn != null || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, copyToken);
+            bool measured = statsTable || addressOnly || tableColumn != null || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, copyToken);
             if (!addressOnly)
                 foreach (var request in columnMeasurements)
                     if (request.Snapshot != null && request.Queue != null)
@@ -366,7 +366,6 @@ namespace BetterGhPanel
             status = Format(result);
             return result.Success;
         }
-
 
         internal bool SelectionHasGeometry(IReadOnlyList<int> positions)
         {

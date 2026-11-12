@@ -2,8 +2,9 @@
 
 ## Unreleased
 
-- **Branch stats (Σ).** A tree tool beside Create set replaces each branch’s rows and D output with chosen Count, Sum, Avg, Median, Min, Max, Range and population Std dev. It uses filtered, presented numbers and geometry metrics; Flatten gives whole-tree stats. Picks save with the file and support Undo.
-- Skipped inputs and mixed metrics are explained in branch headings. Empty or mixed branches keep aligned null slots (Count 0). Min/Max select their first source item; preview and value dots retain the inputs. Table columns compute their own stats, and table copy matches the rows.
+- **Branch stats (Σ).** A tree tool beside Create set replaces each branch’s rows and D output with chosen Count, Sum, Avg, Median, Min, Max, Range and population Std dev. It aggregates filtered inputs at their displayed precision, including Automatic; Flatten gives whole-tree stats. Picks save with the file and support Undo.
+- Skipped inputs and mixed metrics are explained in branch headings. Empty or mixed branches keep aligned null slots (Count 0). Min/Max select their first source item; preview and value dots retain the inputs. Each table column computes stats with its own primary metric and measures only partners of filtered D items, after D is ready. Table copy matches the stats rows even when List length was retained.
+- Stat rows omit repeated numeric type labels; the two-line footer shows its count once. Only D’s Min/Max cells select source items. Σ keeps F’s usual Results scope.
 - Removed the footer Stats button and its statistics/unique-values popup. Create set and Σ are mutually exclusive; Reset all turns Σ off.
 
 ## 0.4.1-beta
