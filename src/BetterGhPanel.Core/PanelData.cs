@@ -474,7 +474,12 @@ namespace BetterGhPanel.Core
     {
         public PanelTableIndex? TableIndex { get; internal set; }
         public IReadOnlyDictionary<string, PanelBranchStats>? BranchStats { get; internal set; }
-        internal IReadOnlyList<int> StatSources { get; set; } = Array.Empty<int>();
+        internal HashSet<int> StatSources { get; set; } = new HashSet<int>();
+        internal string StatHeaderSuffix { get; set; } = "";
+        internal Dictionary<Guid, string> ColumnStatHeaderSuffixes { get; } = new Dictionary<Guid, string>();
+        public IReadOnlyList<PanelStatKinds> StatRows { get; internal set; } = Array.Empty<PanelStatKinds>();
+        public PanelStatKinds StatKinds { get; internal set; } = PanelBranchStats.Default;
+        public int StatDecimals { get; internal set; } = PanelUnits.AutomaticDecimals;
         internal Dictionary<Guid, IReadOnlyDictionary<string, PanelBranchStats>> ColumnBranchStats { get; } = new Dictionary<Guid, IReadOnlyDictionary<string, PanelBranchStats>>();
         internal Dictionary<Guid, PanelTableColumnSummary> TableSummaries { get; } = new Dictionary<Guid, PanelTableColumnSummary>();
         private readonly PanelResultPositionIndex _viewIndices;

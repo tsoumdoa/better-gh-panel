@@ -183,12 +183,13 @@ namespace BetterGhPanel
             units = new RectangleF(footer.Right - unitsWidth, footer.Bottom - 20, unitsWidth, 20);
             // Reset all sits beside Units, which it also resets, 8 units clear of the six tree tools.
             reset = new RectangleF(units.Left - 23, units.Y, 20, units.Height);
-            trim = new RectangleF(reset.Left - 138, units.Y, 20, units.Height);
-            simplify = new RectangleF(trim.Right + 2, trim.Y, 20, 20);
-            flatten = new RectangleF(simplify.Right + 2, trim.Y, 20, 20);
-            reverse = new RectangleF(flatten.Right + 2, trim.Y, 20, 20);
-            createSet = new RectangleF(reverse.Right + 2, trim.Y, 20, 20);
-            branchStats = new RectangleF(createSet.Right + 2, trim.Y, 20, 20);
+            float toolWidth = ShowingStats && panel.Width < 340 ? 18 : 20;
+            trim = new RectangleF(reset.Left - (6 * toolWidth + 18), units.Y, toolWidth, units.Height);
+            simplify = new RectangleF(trim.Right + 2, trim.Y, toolWidth, 20);
+            flatten = new RectangleF(simplify.Right + 2, trim.Y, toolWidth, 20);
+            reverse = new RectangleF(flatten.Right + 2, trim.Y, toolWidth, 20);
+            createSet = new RectangleF(reverse.Right + 2, trim.Y, toolWidth, 20);
+            branchStats = new RectangleF(createSet.Right + 2, trim.Y, toolWidth, 20);
             if (_singleLineFooter)
             {
                 selectAll = new RectangleF(trim.Left - 62, units.Y + 2, 58, 16);
@@ -198,7 +199,7 @@ namespace BetterGhPanel
                 selectAll = new RectangleF(footer.Right - 58, footer.Y, 58, 16);
             }
             outLabel = outItems = outValues = RectangleF.Empty;
-            if (PanelOwner.CanOutputValues && !PanelOwner.BranchStatsTree)
+            if (ShowOutputControl)
             {
                 float outputLeft = selectAll.Left - 4 - OutputControlWidth;
                 float outputTop = selectAll.Y;

@@ -74,7 +74,7 @@ namespace BetterGhPanel
             new ControlEntry("Search", layout => layout.Search, ClickSearch, TooltipSearch, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("BranchClear", layout => layout.BranchClear, ClickBranchClear, TooltipBranchClear, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, visible: path => BranchClearVisible),
             new ControlEntry("Type", layout => layout.Type, ClickType, TooltipQuery, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
-            new ControlEntry("Sort", layout => layout.Sort, ClickSort, TooltipQuery, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("Sort", layout => layout.Sort, ClickSort, TooltipQuery, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, visible: path => path != ControlPath.Hover || !ShowingStats),
             new ControlEntry("Branch", layout => layout.Branch, ClickBranch, TooltipQuery, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("SelectAll", layout => layout.SelectAll, ClickSelectAll, TooltipSelectAll, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Trim", layout => layout.Trim, ClickTrim, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
@@ -251,7 +251,7 @@ namespace BetterGhPanel
 
         private GH_ObjectResponse? ClickSort(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
-            OpenMenu(CanvasMenuKind.Sort, sender); return GH_ObjectResponse.Handled;
+            if (!ShowingStats) OpenMenu(CanvasMenuKind.Sort, sender); return GH_ObjectResponse.Handled;
         }
 
         private GH_ObjectResponse? ClickBranch(GH_Canvas sender, GH_CanvasMouseEvent e)
@@ -279,13 +279,14 @@ namespace BetterGhPanel
         private void ShowJumpEditor(GH_Canvas sender)
         {
             var jumpResult = PanelOwner.Session.Result;
+            bool statView = jumpResult.BranchStats != null;
             bool branchView = DisplayListLengths;
-            int firstItem = branchView ? _offset : ViewItemAtOrAfter(jumpResult, _offset);
+            int itemCount = statView ? StatViewCount(jumpResult) : branchView ? jumpResult.BranchPaths.Count : jumpResult.RowPositions.Count;
+            int firstItem = statView || branchView ? _offset : ViewItemAtOrAfter(jumpResult, _offset);
             var anchor = _jumpBounds.IsEmpty ? new RectangleF(_layout.Footer.X, _layout.Units.Y, 60, _layout.Units.Height) : _jumpBounds;
-            CanvasTextInput.Show(sender, PanelOwner, anchor, (Math.Min(firstItem, Math.Max(0, (branchView ? jumpResult.BranchPaths.Count : jumpResult.RowPositions.Count) - 1)) + 1).ToString(), text =>
+            CanvasTextInput.Show(sender, PanelOwner, anchor, (Math.Min(firstItem, Math.Max(0, itemCount - 1)) + 1).ToString(), text =>
             {
                 if (!ResultIsCurrent(jumpResult) || DisplayListLengths != branchView) return;
-                int itemCount = branchView ? jumpResult.BranchPaths.Count : jumpResult.RowPositions.Count;
                 if (!int.TryParse(text.Trim(), out var row))
                 {
                     ShowNotice(sender, System.FormattableString.Invariant($"Enter a row number from 1 to {Math.Max(1, itemCount):N0}"));
@@ -294,7 +295,7 @@ namespace BetterGhPanel
                 // Put the requested item first; grouped branch headings can change
                 // page capacity, so previous-page size must not hide the final item.
                 int index = Math.Max(0, Math.Min(Math.Max(0, itemCount - 1), row <= 1 ? 0 : row - 1));
-                int offset = itemCount == 0 ? 0 : branchView ? index : ViewOffset(jumpResult, index);
+                int offset = itemCount == 0 ? 0 : statView || branchView ? index : ViewOffset(jumpResult, index);
                 bool changed = _offset != offset;
                 _offset = offset;
                 if (itemCount > 0 && (row < 1 || row > itemCount))
@@ -327,7 +328,7 @@ namespace BetterGhPanel
 
         private void TooltipSelectAll(PointF point, GH_TooltipDisplayEventArgs e)
         {
-            if (PanelOwner.BranchStatsTree) { e.Title = "Select Min / Max sources"; e.Description = "Selects source items for the visible Min and Max stats, including offscreen branches."; return; }
+            if (ShowingStats) { e.Title = "Select Min / Max sources"; e.Description = "Selects source items for the visible Min and Max stats, including offscreen branches."; return; }
             e.Title = "Select all rows";
             e.Text = !PanelOwner.Locked && PanelOwner.Session.HasCurrentResult
                 ? System.FormattableString.Invariant($"{PanelOwner.Session.Result.RowPositions.Count:N0} results")
@@ -397,6 +398,7 @@ namespace BetterGhPanel
 
         private void TooltipQuery(PointF point, GH_TooltipDisplayEventArgs e)
         {
+            if (ShowingStats && _layout.Sort.Contains(point)) { e.Title = "Sorting disabled"; e.Description = "Stats stay in their fixed order."; return; }
             var options = PanelOwner.Session.Options;
             e.Title = _layout.Type.Contains(point) ? "Filter by type" : _layout.Sort.Contains(point) ? "Sort this view" : "Filter by branch";
             e.Text = _layout.Type.Contains(point) ? PanelOwner.Session.HasCurrentResult ? CanvasMenu.TypeHint(PanelOwner.Session.Result, options) : "Types" :

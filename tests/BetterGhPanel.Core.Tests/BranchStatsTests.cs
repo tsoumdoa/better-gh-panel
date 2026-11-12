@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 using System.Linq;
 using System.Threading;
 using BetterGhPanel.Core;
-using BetterGhPanel.UI;
 using Xunit;
 
 public class BranchStatsTests
@@ -13,7 +11,7 @@ public class BranchStatsTests
         new PanelRow(index, "{0}", "Number", "", value)).ToArray(), new[] { new PanelBranch("{0}", values.Length) });
     private static PanelQueryResult Stats(PanelSnapshot snapshot, PanelQueryOptions? options = null)
     {
-        options ??= new PanelQueryOptions(); options.BranchStats = true;
+        options ??= new PanelQueryOptions { StatKinds = PanelBranchStats.All }; options.BranchStats = true;
         return PanelQueryEngine.Execute(snapshot, options);
     }
 
@@ -48,7 +46,7 @@ public class BranchStatsTests
         Assert.Equal(new[] { "{0}", "{1}", "{2}" }, result.BranchPaths);
         var stats = result.BranchStats!["{0}"];
         Assert.Equal(4, stats.Skipped);
-        foreach (string reason in new[] { "1 text", "1 null", "1 invalid", "1 unverified" }) Assert.Contains(reason, stats.Details);
+        foreach (string reason in new[] { "1 not numbers", "1 null", "1 invalid", "1 unverified" }) Assert.Contains(reason, stats.Details);
         Assert.Equal(3, stats.Value(PanelStatKinds.Sum));
         foreach (string path in result.BranchPaths)
         {
@@ -74,7 +72,7 @@ public class BranchStatsTests
         var mixed = Stats(snapshot).BranchStats!["{0}"];
         Assert.True(mixed.Mixed);
         Assert.Equal("mixed L / A", mixed.MixedLabel);
-        Assert.Contains("Pick Length, Area or Volume", mixed.Details);
+        Assert.Contains("Length, Area or Volume", mixed.Details);
         Assert.Equal(0, mixed.Value(PanelStatKinds.Count));
         Assert.Null(mixed.Value(PanelStatKinds.Sum));
         Assert.Equal(-1, mixed.Source(PanelStatKinds.Min));
@@ -99,17 +97,14 @@ public class BranchStatsTests
     }
 
     [Fact]
-    public void FlattenAggregatesAllInputsAndFiltersKeepBranchShape()
+    public void FilteredStatsKeepAllBranchPaths()
     {
-        // The host's Flatten transform supplies one {0} branch before query execution.
         var separate = new PanelSnapshot(new[] { new PanelRow(0, "{0;0}", "Number", "", 1), new PanelRow(0, "{0;1}", "Number", "", 3) },
             new[] { new PanelBranch("{0;0}", 1), new PanelBranch("{0;1}", 1), new PanelBranch("{0;2}", 0) });
         var result = Stats(separate, new PanelQueryOptions { Search = "> 2" });
         Assert.Equal(3, result.BranchStats!.Count);
         Assert.Null(result.BranchStats["{0;0}"].Value(PanelStatKinds.Sum));
         Assert.Equal(3, result.BranchStats["{0;1}"].Value(PanelStatKinds.Sum));
-        var flat = Stats(Numbers(1, 3)).BranchStats!["{0}"];
-        Assert.Equal(4, flat.Value(PanelStatKinds.Sum)); Assert.Equal(2, flat.Value(PanelStatKinds.Avg));
     }
 
     [Fact]
@@ -170,18 +165,18 @@ public class BranchStatsTests
     }
 
     [Fact]
-    public void StatsMeasureMainMetricWhenAPropertyValueIsAlreadyShown()
+    public void StatsUseCapturedPropertyWithoutMeasuringPrimaryMetric()
     {
         var pending = new PanelGeometryInfo("NURBS curve", canMeasure: true).WithProperties(
             new Dictionary<PanelSearchMode, PanelPropertyValue?> { [PanelSearchMode.Degree] = PanelPropertyValue.Numeric(3) });
         var row = new PanelRow(0, "{0}", "Curve", "", null, geometryInfo: pending);
         var snapshot = new PanelSnapshot(new[] { row }, new[] { new PanelBranch("{0}", 1) });
         var options = new PanelQueryOptions { BranchStats = true, SearchMode = PanelSearchMode.Degree, DisplayFilterValue = true };
-        Assert.Equal(new[] { 0 }, PanelQueryEngine.GeometryCandidates(snapshot, options));
+        Assert.Empty(PanelQueryEngine.GeometryCandidates(snapshot, options));
         var result = PanelQueryEngine.Execute(snapshot, options, measuredGeometry:
             new Dictionary<int, PanelGeometryInfo> { [0] = new PanelGeometryInfo("NURBS curve", 12).WithProperties(pending.Properties) });
         Assert.False(result.BranchStats!["{0}"].Measuring);
-        Assert.Equal(12, result.BranchStats["{0}"].Value(PanelStatKinds.Sum));
+        Assert.Equal(3, result.BranchStats["{0}"].Value(PanelStatKinds.Sum));
     }
 
     [Fact]
@@ -236,19 +231,74 @@ public class BranchStatsTests
     }
 
     [Fact]
-    public void PickerHasFixedOrderAndMutedGuidance()
+    public void PlainNumbersAndGeometryAreDifferentKinds()
     {
-        var menu = new CanvasMenu(); var options = new PanelQueryOptions { BranchStats = true };
-        menu.Toggle(CanvasMenuKind.BranchStats, Numbers(1), options);
-        var anchor = new RectangleF(250, 400, 20, 20);
-        menu.Layout(new RectangleF(0, 0, 470, 440), default, default, default, branchStats: anchor);
-        Assert.Equal(11, menu.Count); Assert.True(menu.Bounds.Bottom < anchor.Top);
-        Assert.Equal("Turn off", menu.Label(0));
-        Assert.Equal("Rows per branch, in this order", menu.Label(1));
-        Assert.False(menu.RowEnabled(1, false, false, PanelValuePalette.Off));
-        Assert.Equal(new[] { "Count", "Sum", "Avg", "Median", "Min", "Max", "Range", "Std dev" }, Enumerable.Range(2, 8).Select(index => menu.Label(index)));
-        Assert.True(menu.IsSelected(3, options, PanelUnitConversion.None, -1));
-        Assert.False(menu.IsSelected(2, options, PanelUnitConversion.None, -1));
-        Assert.Equal(PanelBranchStats.Default, PanelBranchStats.Normalize(0));
+        var snapshot = new PanelSnapshot(new[] { new PanelRow(0, "{0}", "Number", "5", 5), Geometry(1, "{0}", 1, 10) }, new[] { new PanelBranch("{0}", 2) });
+        var stats = Stats(snapshot).BranchStats!["{0}"];
+        Assert.Equal("mixed N / L", stats.MixedLabel);
+        Assert.Null(stats.Value(PanelStatKinds.Sum));
+        Assert.Equal(0, stats.Value(PanelStatKinds.Count));
+    }
+
+    [Fact]
+    public void ShownCoordinatesAndNonnumericPropertiesDoNotMeasureGeometry()
+    {
+        var pending = new PanelGeometryInfo("Curve", canMeasure: true).WithProperties(new Dictionary<PanelSearchMode, PanelPropertyValue?> {
+            [PanelSearchMode.Closed] = null, [PanelSearchMode.Degree] = PanelPropertyValue.Integer(3) });
+        var snapshot = new PanelSnapshot(new[] { new PanelRow(0, "{0}", "Point", "", null, PanelValidity.VerifiedValid,
+            components: new PanelComponents(2500, 0, 0, "mm"), geometryInfo: pending) }, new[] { new PanelBranch("{0}", 1) }, PanelUnitConversion.MillimetersToMeters);
+        var options = new PanelQueryOptions { SearchMode = PanelSearchMode.X, DisplayFilterValue = true, BranchStats = true };
+        Assert.Empty(PanelQueryEngine.GeometryCandidates(snapshot, options));
+        var x = Stats(snapshot, options).BranchStats!["{0}"];
+        Assert.Equal(2.5, x.Value(PanelStatKinds.Sum)); Assert.Equal("2.5 m", x.Format(PanelStatKinds.Sum, -1));
+        options.SearchMode = PanelSearchMode.Closed;
+        Assert.Empty(PanelQueryEngine.GeometryCandidates(snapshot, options));
+        var boolean = Stats(snapshot, options).BranchStats!["{0}"];
+        Assert.False(boolean.Measuring); Assert.Equal(1, boolean.Skipped);
+        Assert.Contains("not numbers", boolean.Details); Assert.DoesNotContain("unavailable measurements", boolean.Details);
+        var noMetric = new PanelSnapshot(new[] { new PanelRow(0, "{0}", "Point", "", null,
+            geometryInfo: new PanelGeometryInfo("Point", 0, metricName: "", metricLabel: "")) }, new[] { new PanelBranch("{0}", 1) });
+        var skipped = Stats(noMetric).BranchStats!["{0}"];
+        Assert.Equal(1, skipped.Skipped); Assert.Contains("not numbers", skipped.Details); Assert.DoesNotContain("unavailable measurements", skipped.Details);
+    }
+
+    [Fact]
+    public void ScalarFiltersExcludeGeometryFromStatsDemand()
+    {
+        var snapshot = new PanelSnapshot(new[] { new PanelRow(0, "{0}", "Number", "1", 1), Geometry(1, "{0}", 1, null, true) }, new[] { new PanelBranch("{0}", 2) });
+        foreach (var mode in new[] { PanelSearchMode.Value, PanelSearchMode.Text })
+            Assert.Empty(PanelQueryEngine.GeometryCandidates(snapshot, new PanelQueryOptions { BranchStats = true, SearchMode = mode, Search = "> 0" }));
+    }
+
+    [Fact]
+    public void SelectionIsTrimmedWhenAResultChangesTheExtremumOrPicks()
+    {
+        var snapshot = Numbers(1, 2, 3);
+        var options = new PanelQueryOptions { StatKinds = PanelStatKinds.Max };
+        var first = Stats(snapshot, options);
+        var selection = new PanelRowSelection(); selection.Select(first, 2);
+        Assert.True(selection.Contains(2));
+        PanelFormula.TryCompile("-x", out var negative, out _); options.Formula = negative;
+        var changed = Stats(snapshot, options);
+        Assert.Empty(selection.OrderedPositions(changed)); Assert.Equal(0, changed.BranchStats!["{0}"].Source(PanelStatKinds.Max));
+        selection.SelectIndices(changed, new[] { 1 }); Assert.Empty(selection.OrderedPositions(changed));
+        selection.Select(changed, 0); options.StatKinds = PanelStatKinds.Sum;
+        Assert.Empty(selection.OrderedPositions(Stats(snapshot, options)));
+    }
+
+    [Fact]
+    public void OnlyMedianRetainsValuesAndCompletionHonoursCancellation()
+    {
+        var snapshot = Numbers(1, 2, 3); var query = new PanelQueryOptions { StatKinds = PanelStatKinds.Sum };
+        var stats = new PanelBranchStats(query.StatKinds);
+        for (int i = 0; i < 3; i++) stats.Add(snapshot, snapshot.Rows[i], i, query, null);
+        var field = typeof(PanelBranchStats).GetField("_median", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        Assert.Null(field.GetValue(stats)); stats.Complete(query);
+        Assert.Equal(6, stats.Value(PanelStatKinds.Sum)); Assert.Null(stats.Value(PanelStatKinds.Avg)); Assert.Null(stats.Value(PanelStatKinds.StdDev));
+        query.StatKinds = PanelStatKinds.Median; stats = new PanelBranchStats(query.StatKinds);
+        for (int i = 0; i < 3; i++) stats.Add(snapshot, snapshot.Rows[i], i, query, null);
+        Assert.NotNull(field.GetValue(stats));
+        using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
+        Assert.Throws<OperationCanceledException>(() => stats.Complete(query, cancellation.Token));
     }
 }

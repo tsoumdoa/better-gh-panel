@@ -148,19 +148,37 @@ namespace BetterGhPanel
             positions.SelectMany(position => column.CellItems(result, position))
                 .Concat(branches.SelectMany(path => column.BranchItems(result, path))).Distinct().ToArray();
 
+        internal string StatsTsv(PanelQueryResult result, bool includeColumns)
+        {
+            if (includeColumns) RequireTableSummaries(result);
+            var columns = includeColumns ? TableColumns.ToArray() : Array.Empty<PanelTableColumn>();
+            bool countOnly = result.StatRows.All(kind => kind == PanelStatKinds.Count);
+            var titles = new[] { TableHeaderTitle(0) + (countOnly ? "" : result.StatHeaderSuffix) }.Concat(columns.Select((column, index) =>
+                TableHeaderTitle(index + 1) + (countOnly ? "" : result.ColumnBranchStats.TryGetValue(column.Input.InstanceGuid, out var branches)
+                    ? PanelBranchStats.CommonHeaderSuffix(branches.Values) : "")));
+            var text = new System.Text.StringBuilder("Path\tStat\t" + string.Join("\t", titles.Select(PanelTableTsv.Escape)) + Environment.NewLine);
+            foreach (string path in result.BranchPaths)
+                foreach (var kind in result.StatRows)
+                {
+                    IReadOnlyList<string> cells = new[] { path, PanelBranchStats.Name(kind), result.BranchStats![path].Format(kind, result.StatDecimals, false) }
+                        .Concat(columns.Select(column => result.ColumnBranchStats.TryGetValue(column.Input.InstanceGuid, out var branches)
+                            ? branches[path].Format(kind, result.StatDecimals, false) : "—")).ToArray();
+                    text.AppendLine(string.Join("\t", cells.Select(PanelTableTsv.Escape)));
+                }
+            return text.ToString();
+        }
+
+        internal string SelectedStatText(PanelQueryResult result, IReadOnlyList<int> positions)
+        {
+            var selected = new HashSet<int>(positions);
+            return string.Join(Environment.NewLine, result.BranchPaths.SelectMany(path => result.StatRows
+                .Where(kind => result.BranchStats![path].Source(kind) >= 0 && selected.Contains(result.BranchStats[path].Source(kind)))
+                .Select(kind => result.BranchStats![path].Format(kind, result.StatDecimals))));
+        }
+
         internal string TableTsv(PanelQueryResult result, IReadOnlyList<int> positions)
         {
-            if (result.BranchStats != null)
-            {
-                RequireTableSummaries(result);
-                var statTitles = new[] { TableHeaderTitle(0) }.Concat(TableColumns.Select((column, index) => TableHeaderTitle(index + 1)));
-                return PanelTableTsv.Build(statTitles, result.BranchPaths.SelectMany(path => PanelBranchStats.Picks(StatKinds).Select((kind, index) =>
-                {
-                    IReadOnlyList<string> cells = new[] { result.BranchStats[path].Format(kind, DecimalPlaces, false) }.Concat(TableColumns.Select(column =>
-                        result.ColumnBranchStats.TryGetValue(column.Input.InstanceGuid, out var branches) ? branches[path].Format(kind, DecimalPlaces, false) : "—")).ToArray();
-                    return (path, index, cells);
-                })));
-            }
+            if (result.BranchStats != null) return StatsTsv(result, includeColumns: true);
             RequireTableSummaries(result);
             foreach (var column in TableColumns)
                 column.RequireMeasurements(ColumnCopyItems(column, result, positions,

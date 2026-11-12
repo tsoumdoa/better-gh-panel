@@ -34,6 +34,7 @@ namespace BetterGhPanel
         {
             if (!ReferenceEquals(snapshot, Session.Snapshot) || position < 0 || position >= snapshot.Rows.Count)
                 throw new InvalidOperationException("The selected data has changed. Select the rows again.");
+            if (Session.Result.BranchStats != null) return SelectedStatText(Session.Result, new[] { position });
             var row = snapshot.Rows[position];
             if (Session.Result.DisplaySet?.Values.TryGetValue(position, out var projected) == true) return projected.CopyText;
             var options = Session.Options;
@@ -230,7 +231,8 @@ namespace BetterGhPanel
             var session = Session;
             var result = session.Result;
             if ((includeColumns || tableColumn != null) && !SummariesCurrent(result)) return "Column summaries are recomputing. Try copying again.";
-            bool statsTable = includeColumns && result.BranchStats != null;
+            bool statsCopy = result.BranchStats != null && path == null && (action == PanelRowAction.CopyValues || action == PanelRowAction.CopyTable);
+            bool statsTable = statsCopy && (includeColumns || positions.Count == 0 || action == PanelRowAction.CopyTable);
             bool listLengthCopy = result.BranchStats == null && path == null && (action == PanelRowAction.CopyValues || includeColumns) && session.Options.DisplayFilterValue && session.Options.SearchMode == PanelSearchMode.ListLength;
             bool branchSet = path == null && (action == PanelRowAction.CopyValues || includeColumns) && result.DisplaySet?.IsBranchSet == true;
             IReadOnlyList<int> ordered;
@@ -248,15 +250,15 @@ namespace BetterGhPanel
             long selectionVersion = RowSelection.Version;
             var cancellation = new CancellationTokenSource();
             _copyCancellation = cancellation;
-            var measurementPositions = session.Options.DisplayFilterValue && PanelProperties.IsProperty(session.Options.SearchMode)
+            var measurementPositions = statsCopy ? Array.Empty<int>() : session.Options.DisplayFilterValue && PanelProperties.IsProperty(session.Options.SearchMode)
                 ? ordered.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
                     session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray() : ordered;
             bool addressOnly = action != PanelRowAction.CopyValues && action != PanelRowAction.CopyTable;
             var copyToken = cancellation.Token;
-            var columnMeasurements = (includeColumns ? TableColumns : tableColumn != null ? new[] { tableColumn } : Array.Empty<PanelTableColumn>())
+            var columnMeasurements = (statsCopy ? Array.Empty<PanelTableColumn>() : includeColumns ? TableColumns : tableColumn != null ? new[] { tableColumn } : Array.Empty<PanelTableColumn>())
                 .Select(value => (Column: value, Snapshot: value.Snapshot, Queue: value.Geometry,
                     Items: ColumnCopyItems(value, result, ordered, columnBranch != null ? new[] { columnBranch } : branches))).ToArray();
-            bool measured = statsTable || addressOnly || tableColumn != null || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, copyToken);
+            bool measured = statsCopy || addressOnly || tableColumn != null || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, copyToken);
             if (!addressOnly)
                 foreach (var request in columnMeasurements)
                     if (request.Snapshot != null && request.Queue != null)
@@ -293,7 +295,8 @@ namespace BetterGhPanel
                         if (!includeColumns)
                             foreach (var request in columnMeasurements) request.Column.RequireMeasurements(request.Items);
                         string text;
-                        if (includeColumns) text = TableTsv(result, ordered);
+                        if (statsCopy) text = statsTable ? StatsTsv(result, includeColumns) : SelectedStatText(result, ordered);
+                        else if (includeColumns) text = TableTsv(result, ordered);
                         else if (tableColumn != null && action == PanelRowAction.CopyValues)
                             text = columnBranch != null ? tableColumn.BranchCellText(result, columnBranch, UnitConversion, DecimalPlaces, RoundUpFactor, HeaderTitleForInput(tableColumn.Input)) :
                                 string.Join(Environment.NewLine, ordered.Select(position => tableColumn.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor)));

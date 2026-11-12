@@ -79,13 +79,13 @@ internal static class Program
 
     internal static int Run(string[] args)
     {
-        if (!((args.Length == 1 || args.Length == 2) && args[0] == "--tree-only") &&
+        if (!((args.Length == 1 || args.Length == 2) && (args[0] == "--tree-only" || args[0] == "--branch-stats-headless")) &&
             !((args.Length == 2 || args.Length == 3) && (args[0] == "--fixture" || args[0] == "--identity-only")))
         {
             Console.Error.WriteLine("Usage: --tree-only [plugin path], --fixture <fixture> [plugin path], or --identity-only <fixture> [plugin path]. Use run.ps1 for all isolated fixtures.");
             return 2;
         }
-        bool treeOnly = args[0] == "--tree-only";
+        bool treeOnly = (args[0] == "--tree-only" || args[0] == "--branch-stats-headless");
         _fixture = treeOnly ? string.Empty : args[1];
         try
         {
@@ -120,6 +120,7 @@ internal static class Program
             if (!string.Equals(Path.GetFullPath(_loadedPlugin.Location), _plugin, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(Path.GetFullPath(_loadedCore.Location), Path.GetFullPath(corePath), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("The loaded plugin or Core assembly is not from the requested payload: plugin=" + _loadedPlugin.Location + ", Core=" + _loadedCore.Location + ", expected Core=" + corePath);
+            if (treeOnly && args[0] == "--branch-stats-headless") return BranchStatsHeadlessChecks.Run(_loadedPlugin);
             if (treeOnly)
             {
                 CaptureSafetyChecks.VerifyManaged(_loadedPlugin);

@@ -77,21 +77,24 @@ namespace BetterGhPanel
         private PointF _dragStart;
         private float _startWidth, _startHeight, _thumbGrab;
         private BetterPanelComponent PanelOwner => (BetterPanelComponent)Owner;
-        private bool DisplayListLengths => !PanelOwner.BranchStatsTree && PanelOwner.Session.Options.DisplayFilterValue && PanelOwner.Session.Options.SearchMode == PanelSearchMode.ListLength;
-        private int Count => PanelOwner.Session.HasCurrentResult ? PanelOwner.BranchStatsTree ? StatViewCount(PanelOwner.Session.Result) : DisplayListLengths ? PanelOwner.Session.Result.BranchPaths.Count : ViewCount(PanelOwner.Session.Result) : 0;
+        private PanelQueryResult DisplayResult => PanelOwner.Session.IsBusy && _lastResult?.BranchStats != null ? _lastResult : PanelOwner.Session.Result;
+        private bool ShowingStats => DisplayResult.BranchStats != null;
+        private bool ShowOutputControl => PanelOwner.CanOutputValues && !ShowingStats;
+        private bool DisplayListLengths => !ShowingStats && PanelOwner.Session.Options.DisplayFilterValue && PanelOwner.Session.Options.SearchMode == PanelSearchMode.ListLength;
+        private int Count => PanelOwner.Session.HasCurrentResult || PanelOwner.Session.IsBusy && ShowingStats ? ShowingStats ? StatViewCount(DisplayResult) : DisplayListLengths ? DisplayResult.BranchPaths.Count : ViewCount(DisplayResult) : 0;
         private int MaximumOffset
         {
             get
             {
                 int count = Count;
                 if (count == 0) return 0;
-                if (PanelOwner.BranchStatsTree) return Math.Max(0, count - Math.Max(1, (int)(_list.Height / RowHeight)));
+                if (ShowingStats) return Math.Max(0, count - Math.Max(1, (int)(_list.Height / RowHeight)));
                 if (DisplayListLengths)
                 {
                     float header = !TableVisible && _list.Height >= BranchHeight + RowHeight ? BranchHeight : 0;
                     return Math.Max(0, count - Math.Max(1, (int)((_list.Height - header) / RowHeight)));
                 }
-                var result = PanelOwner.Session.Result;
+                var result = DisplayResult;
                 bool grouped = _list.Height >= BranchHeight + RowHeight;
                 float used = 0;
                 string? followingPath = null;
@@ -251,13 +254,14 @@ namespace BetterGhPanel
                 var options = session.Options;
                 var sort = (options.SortMode, options.SortColumn);
                 bool resorted = _lastResult != null && ReferenceEquals(_lastResult.Snapshot, result.Snapshot) && !sort.Equals(_lastSort);
+                bool keepStatsScroll = _lastResult?.BranchStats != null && result.BranchStats != null;
                 _lastSort = sort;
                 InvalidatePaintedHits();
                 InvalidateCopyStatus();
                 _selection.Synchronize(result);
                 _keyboardCursor = -1;
                 _lastResult = result;
-                _offset = 0;
+                _offset = keepStatsScroll ? Math.Min(_offset, MaximumOffset) : 0;
                 if (_menu.Kind != CanvasMenuKind.BranchStats) _menu.Close();
                 ClearHover();
                 RestoreView(result);
@@ -396,9 +400,9 @@ namespace BetterGhPanel
                 // One line holds the summary and output part left of Select all, tools, Reset and Units.
                 bool singleLine = PanelOwner.PanelSplit && _layout.Panel.Height < 140 || _layout.Panel.Width >= 500 &&
                     TightWidth(graphics, CanvasStatistics.Summary(result) + " · ", small) + OutputPartWidth(graphics, result, small) <=
-                        _layout.Panel.Width - 313 - UnitsWidth(_layout.Panel.Width) - (PanelOwner.CanOutputValues ? OutputControlWidth + 4 : 0);
+                        _layout.Panel.Width - 313 - UnitsWidth(_layout.Panel.Width) - (ShowOutputControl ? OutputControlWidth + 4 : 0);
                 if (_formulaDraft != null) singleLine = _singleLineFooter;
-                if (resized || singleLine != _singleLineFooter || PanelOwner.CanOutputValues == _layout.OutLabel.IsEmpty ||
+                if (resized || singleLine != _singleLineFooter || ShowOutputControl == _layout.OutLabel.IsEmpty ||
                     _warningsHeight != WarningStripHeight(FormulaFooterHeight(singleLine ? 20 : 36)))
                 {
                     _singleLineFooter = singleLine;
@@ -428,7 +432,8 @@ namespace BetterGhPanel
                     string typeHint = session.HasCurrentResult ? CanvasMenu.TypeHint(result, options) : "Types";
                     DropdownControl(graphics, _layout.Type, typeHint, small, trim, options.TypeName != null || options.OnlyInvalid,
                         warning: PanelQueryPolicy.InputDiagnostic(session.Snapshot, options).Length > 0);
-                    DropdownControl(graphics, _layout.Sort, SortChipLabel(options), small, trim, options.SortMode != PanelSortMode.SourceOrder);
+                    DropdownControl(graphics, _layout.Sort, ShowingStats ? "Sort" : SortChipLabel(options), small, trim,
+                        !ShowingStats && options.SortMode != PanelSortMode.SourceOrder, enabled: !ShowingStats);
                     // Only an active path is a path; the placeholder reads like Types and Sort.
                     DropdownControl(graphics, _layout.Branch, Short(options.BranchPath ?? "Paths", 80), options.BranchPath != null ? mono : small, trim, options.BranchPath != null, branchClear ? _layout.BranchClear.Width : 0);
                     if (branchClear) DrawClear(graphics, _layout.BranchClear);
@@ -570,7 +575,7 @@ namespace BetterGhPanel
             }
             if (PanelOwner.Session.IsBusy)
             {
-                if (PanelOwner.BranchStatsTree) { RenderMeasuringStats(g, small, mono, trim); return; }
+                if (DisplayResult.BranchStats != null) { RenderBranchStats(g, DisplayResult, font, small, mono, trim, interactive: false); return; }
                 // Clear both rows and their hit regions while the current view is
                 // being computed; never mix old statistics/values with new input.
                 float busyY = list.Y + Math.Max(0, (list.Height - 22) / 2);
@@ -766,7 +771,7 @@ namespace BetterGhPanel
         // What D sends, in one "D …" vocabulary shared by both footer modes.
         private string OutputLabel(PanelQueryResult result)
         {
-            if (PanelOwner.BranchStatsTree) return "D: stats";
+            if (result.BranchStats != null) return "D: stats";
             int filters = ActiveFilterCount();
             if (filters > 0) return filters == 1 ? "D: 1 filter" : "D: " + filters + " filters";
             if (result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count)
@@ -780,7 +785,7 @@ namespace BetterGhPanel
         private string OutputPartLabel(PanelQueryResult result)
         {
             var options = PanelOwner.Session.Options;
-            if (PanelOwner.BranchStatsTree) return "D: stats";
+            if (result.BranchStats != null) return "D: stats";
             if (!BetterPanelComponent.HasFilters(options)) return OutputLabel(result);
             if (ActiveFilterCount() > 0) return OutputLabel(result) +
                 (options.SortMode != PanelSortMode.SourceOrder && SortedColumnName(options) != null ? " · " + SortChipLabel(options) : "");
@@ -792,7 +797,7 @@ namespace BetterGhPanel
 
         // With filters to clear, the output part is a chip: 3 units of padding, the label, then the ×.
         private float OutputPartWidth(Graphics g, PanelQueryResult result, Font small) =>
-            TightWidth(g, OutputPartLabel(result), small) + ((PanelOwner.BranchStatsTree || BetterPanelComponent.HasFilters(PanelOwner.Session.Options)) ? 3 + ChipClearWidth : 0);
+            TightWidth(g, OutputPartLabel(result), small) + ((ShowingStats || BetterPanelComponent.HasFilters(PanelOwner.Session.Options)) ? 3 + ChipClearWidth : 0);
 
         private void RenderFooter(Graphics g, PanelQueryResult result, Font small, StringFormat trim)
         {
@@ -839,9 +844,9 @@ namespace BetterGhPanel
         {
             jump = chip = RectangleF.Empty;
             string range = FooterRange(result, _singleLineFooter), output = OutputPartLabel(result);
-            bool clearable = PanelOwner.BranchStatsTree || BetterPanelComponent.HasFilters(PanelOwner.Session.Options);
+            bool clearable = result.BranchStats != null || BetterPanelComponent.HasFilters(PanelOwner.Session.Options);
             float rangeWidth = TightWidth(g, range, small), separator = TightWidth(g, " · ", small), width = OutputPartWidth(g, result, small);
-            bool both = (!PanelOwner.BranchStatsTree || _singleLineFooter) && rangeWidth + separator + width <= status.Width;
+            bool both = (result.BranchStats == null || _singleLineFooter) && rangeWidth + separator + width <= status.Width;
             float x = status.X, y = status.Y + 2;
             if (both || !clearable)
             {
@@ -922,6 +927,7 @@ namespace BetterGhPanel
 
         private string FooterRange(PanelQueryResult result, bool singleLine) =>
             singleLine ? CanvasStatistics.Summary(result) :
+            result.BranchStats != null ? $"{_offset + 1}–{Math.Min(Count, _offset + _shown)}/{Count} rows" :
             DisplayListLengths ? System.FormattableString.Invariant($"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} branches") :
             _firstShownItem < 0 ? System.FormattableString.Invariant($"{result.RowPositions.Count:N0} items") :
             System.FormattableString.Invariant($"{_firstShownItem + 1:N0}–{_lastShownItem + 1:N0}/{result.RowPositions.Count:N0}");
@@ -946,8 +952,12 @@ namespace BetterGhPanel
         }
 
         // Every layout uses the region of the latest paint, so a menu cannot flip between frames.
-        private void LayoutMenu() => _menu.Layout(_layout.Panel, _layout.Type, _menu.Kind == CanvasMenuKind.HeaderSort ? _headerMenuAnchor : _layout.Sort, _layout.Branch, _layout.Units, _layout.Search, _layout.Preview, _layout.BranchStats,
+        private void LayoutMenu()
+        {
+            _menu.Flattened = PanelOwner.FlattenTree;
+            _menu.Layout(_layout.Panel, _layout.Type, _menu.Kind == CanvasMenuKind.HeaderSort ? _headerMenuAnchor : _layout.Sort, _layout.Branch, _layout.Units, _layout.Search, _layout.Preview, _layout.BranchStats,
             _renderVisibleRegion);
+        }
 
         // Menus paint in the overlay pass, after every object, so later components and the
         // panel's own border, focus ring and grip never cut across them. They follow this
@@ -1821,7 +1831,7 @@ namespace BetterGhPanel
             Text(g, value, font, active ? Accent : Muted, new RectangleF(bounds.X + 3, bounds.Y, bounds.Width - 6, bounds.Height), trim);
         }
         private static void DropdownControl(Graphics g, RectangleF bounds, string value, Font font, StringFormat trim, bool active,
-            float reserve = 0, bool warning = false)
+            float reserve = 0, bool warning = false, bool enabled = true)
         {
             Control(g, bounds, "", font, trim, active);
             float inset = 4;
@@ -1831,8 +1841,8 @@ namespace BetterGhPanel
                 DrawWarningTriangle(g, new PointF(bounds.X + 4, bounds.Y + bounds.Height / 2));
                 inset += 12;
             }
-            Text(g, value, font, active ? Accent : Muted, new RectangleF(bounds.X + inset, bounds.Y, bounds.Width - 13 - inset - reserve, bounds.Height), trim);
-            DrawChevron(g, bounds, active ? Accent : Muted);
+            Text(g, value, font, !enabled ? PanelTheme.Disabled : active ? Accent : Muted, new RectangleF(bounds.X + inset, bounds.Y, bounds.Width - 13 - inset - reserve, bounds.Height), trim);
+            DrawChevron(g, bounds, !enabled ? PanelTheme.Disabled : active ? Accent : Muted);
         }
 
         private static void DrawChevron(Graphics g, RectangleF bounds, Color color)

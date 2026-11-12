@@ -144,7 +144,7 @@ namespace BetterGhPanel
                 var ghPath = new GH_Path();
                 if (!ghPath.FromString(path)) throw new InvalidOperationException("Invalid captured branch path.");
                 if (!selected) tree.EnsurePath(ghPath);
-                foreach (var stat in stats.Output(StatKinds, selection))
+                foreach (var stat in stats.Output(query.StatKinds, selection))
                 {
                     var kind = stat.Kind;
                     var value = stat.Number;

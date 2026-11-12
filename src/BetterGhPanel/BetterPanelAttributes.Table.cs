@@ -100,6 +100,15 @@ namespace BetterGhPanel
         private string ColumnTitle(int index)
         {
             string title = PanelOwner.TableHeaderTitle(index);
+            var statsResult = DisplayResult;
+            if (statsResult.BranchStats != null)
+            {
+                if (index == 0 && statsResult.HasFormulaValues) title += " ƒ";
+                if (statsResult.StatRows.Any(kind => kind != PanelStatKinds.Count))
+                    title += index == 0 ? statsResult.StatHeaderSuffix :
+                        statsResult.ColumnStatHeaderSuffixes.TryGetValue(ColumnId(index), out string suffix) ? suffix : "";
+                return title;
+            }
             if (index == 0 && DataHasFormula()) title += " ƒ";
             bool numeric = index > 0 && PanelOwner.TableColumns[index - 1].Snapshot?.TypeCounts.Keys.Any(type => type == "Number" || type == "Integer") == true;
             string units = index == 0 ? DataHeaderUnit() : PanelOwner.TableColumns[index - 1].HasGeometry
@@ -173,8 +182,8 @@ namespace BetterGhPanel
             for (int index = 0; index < widths.Length; index++) widths[index] = Math.Max(PanelTableText.MinimumColumnWidth, TightWidth(g, ColumnTitle(index), headerFont) + 24);
             if (result.BranchStats != null)
             {
-                foreach (string path in result.BranchPaths.Skip(_offset / 2).Take(16))
-                    foreach (var kind in PanelBranchStats.Picks(PanelOwner.StatKinds))
+                foreach (string path in result.BranchPaths.Skip(_offset / (result.StatRows.Count + 1)).Take(16))
+                    foreach (var kind in result.StatRows)
                     {
                         widths[0] = Math.Max(widths[0], Measure(result.BranchStats[path].Format(kind, PanelOwner.DecimalPlaces), true) + 100);
                         for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
@@ -617,8 +626,8 @@ namespace BetterGhPanel
         internal float DColumnWidthLimit => Math.Max(PanelTableText.MinimumColumnWidth,
             (_list.Width > 0 ? _list.Width : PanelOwner.DisplayWidth - 33) - PanelTableText.MinimumColumnWidth -
             (_columnRects.Count > 0 ? _frozenWidth - _columnRects[0].Width : 24));
-        private bool HeaderCanSort(int index) => index == 0 || index > 0 && index <= PanelOwner.TableColumns.Count &&
-            PanelOwner.TableColumns[index - 1].Present && PanelOwner.TableColumns[index - 1].Pair != null;
+        private bool HeaderCanSort(int index) => !ShowingStats && (index == 0 || index > 0 && index <= PanelOwner.TableColumns.Count &&
+            PanelOwner.TableColumns[index - 1].Present && PanelOwner.TableColumns[index - 1].Pair != null);
         private bool HeaderSortEnabled
         {
             get
@@ -676,6 +685,7 @@ namespace BetterGhPanel
             int index = HeaderColumnAt(point);
             if (_paintedCanvas == null || !HeaderTargetPainted(_paintedCanvas, index)) return;
             e.Title = ColumnTitle(index); e.Text = "";
+            if (ShowingStats) { e.Description = "Stats stay in their fixed order. Sorting is disabled. Drag a border to resize."; return; }
             e.Description = "Click to sort ascending, descending, then tree order. Drag a border to resize; double-click it to auto-fit.";
             if (index > 0)
             {

@@ -37,7 +37,7 @@ internal static class Bootstrap
             }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         }
-        bool treeOnly = args.Length is 1 or 2 && args[0] == "--tree-only";
+        bool treeOnly = args.Length is 1 or 2 && (args[0] == "--tree-only" || args[0] == "--branch-stats-headless");
         bool fixture = args.Length is 2 or 3 && (args[0] == "--fixture" || args[0] == "--identity-only");
         if (!treeOnly && !fixture)
         {

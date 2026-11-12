@@ -624,6 +624,28 @@ namespace BetterGhPanel
             return success;
         }
 
+        // Also usable without Grasshopper's parameter/plugin loader.
+        internal bool ReadTreeTools(GH_IReader reader)
+        {
+            int trimDepth = 0;
+            bool flatten = false, reverse = false, simplify = false, createSet = false;
+            reader.TryGetInt32("PanelTrimDepth", ref trimDepth);
+            reader.TryGetBoolean("PanelFlatten", ref flatten);
+            reader.TryGetBoolean("PanelReverse", ref reverse);
+            reader.TryGetBoolean("PanelSimplify", ref simplify);
+            reader.TryGetBoolean("PanelCreateSet", ref createSet);
+            bool branchStats = false; int statKinds = (int)PanelBranchStats.Default;
+            reader.TryGetBoolean("PanelBranchStats", ref branchStats);
+            reader.TryGetInt32("PanelStatKinds", ref statKinds);
+            BranchStatsTree = branchStats; StatKinds = PanelBranchStats.Normalize((PanelStatKinds)statKinds);
+            TrimDepth = Math.Max(0, trimDepth);
+            FlattenTree = flatten;
+            ReverseTree = reverse;
+            SimplifyTree = simplify;
+            CreateSetTree = createSet && !BranchStatsTree;
+            return createSet;
+        }
+
         public override bool Read(GH_IReader reader)
         {
             ReadHeaderInput(reader);
@@ -708,22 +730,7 @@ namespace BetterGhPanel
             ShowValues = showValues; ReversePalette = reversePalette;
             DotPlacement = Enum.IsDefined(typeof(PanelDotPlacement), dotPlacement) ? (PanelDotPlacement)dotPlacement : PanelDotPlacement.Centre;
             ValuePalette = Enum.IsDefined(typeof(PanelValuePalette), valuePalette) ? (PanelValuePalette)valuePalette : PanelValuePalette.Off;
-            int trimDepth = 0;
-            bool flatten = false, reverse = false, simplify = false, createSet = false;
-            reader.TryGetInt32("PanelTrimDepth", ref trimDepth);
-            reader.TryGetBoolean("PanelFlatten", ref flatten);
-            reader.TryGetBoolean("PanelReverse", ref reverse);
-            reader.TryGetBoolean("PanelSimplify", ref simplify);
-            reader.TryGetBoolean("PanelCreateSet", ref createSet);
-            bool branchStats = false; int statKinds = (int)PanelBranchStats.Default;
-            reader.TryGetBoolean("PanelBranchStats", ref branchStats);
-            reader.TryGetInt32("PanelStatKinds", ref statKinds);
-            BranchStatsTree = branchStats; StatKinds = PanelBranchStats.Normalize((PanelStatKinds)statKinds);
-            TrimDepth = Math.Max(0, trimDepth);
-            FlattenTree = flatten;
-            ReverseTree = reverse;
-            SimplifyTree = simplify;
-            CreateSetTree = createSet && !BranchStatsTree;
+            bool createSet = ReadTreeTools(reader);
             int outputValues = createSet ? (int)PanelOutputValues.Values : (int)PanelOutputValues.Items;
             reader.TryGetInt32("PanelOutputValues", ref outputValues);
             OutputValues = Enum.IsDefined(typeof(PanelOutputValues), outputValues) ? (PanelOutputValues)outputValues : PanelOutputValues.Items;

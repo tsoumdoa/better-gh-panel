@@ -10,43 +10,25 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
-        private int StatViewCount(PanelQueryResult result) => result.BranchPaths.Count * (PanelBranchStats.Picks(PanelOwner.StatKinds).Count() + 1);
+        private int StatViewCount(PanelQueryResult result) => result.BranchPaths.Count * (result.StatRows.Count + 1);
 
-        private void RenderMeasuringStats(Graphics g, Font small, Font mono, StringFormat trim)
-        {
-            float y = _list.Y;
-            foreach (var branch in PanelOwner.Session.Snapshot.Branches)
-            {
-                if (y + RowHeight > _list.Bottom) break;
-                var bounds = new RectangleF(_list.X, y, _list.Width, RowHeight);
-                Fill(g, PanelTheme.Rgb(236, 241, 235), bounds);
-                Text(g, branch.Path, mono, Accent, new RectangleF(bounds.X + 6, y, bounds.Width - 12, RowHeight), trim);
-                y += RowHeight;
-                foreach (var kind in PanelBranchStats.Picks(PanelOwner.StatKinds))
-                {
-                    if (y + RowHeight > _list.Bottom) break;
-                    DrawStatCell(g, new RectangleF(_list.X + 28, y, _list.Width - 28, RowHeight), null, kind, small, mono, trim, measuring: true);
-                    y += RowHeight;
-                }
-            }
-            if (y == _list.Y) Text(g, "measuring…", small, Muted, _list, trim);
-        }
-
-        private void DrawStatCell(Graphics g, RectangleF cell, PanelBranchStats? stats, PanelStatKinds kind, Font small, Font mono, StringFormat trim, bool showName = true, bool measuring = false)
+        private void DrawStatCell(Graphics g, RectangleF cell, PanelBranchStats? stats, PanelStatKinds kind, Font small, Font mono, StringFormat trim, int decimals, bool showName = true, bool measuring = false)
         {
             float label = showName ? 48 : 0;
             if (showName) Text(g, PanelBranchStats.Name(kind), small, Muted, new RectangleF(cell.X + 4, cell.Y, label, cell.Height), trim);
             using var right = new StringFormat(trim) { Alignment = StringAlignment.Far };
-            string value = stats?.Format(kind, PanelOwner.DecimalPlaces) ?? (measuring ? "measuring…" : "—");
+            string value = stats?.Format(kind, decimals) ?? (measuring ? "measuring…" : "—");
             Text(g, value, mono, stats == null || stats.Measuring || !stats.Value(kind).HasValue ? PanelTheme.Disabled : Ink,
                 new RectangleF(cell.X + label + 4, cell.Y, Math.Max(0, cell.Width - label - 12), cell.Height), right);
         }
 
-        private void RenderBranchStats(Graphics g, PanelQueryResult result, Font font, Font small, Font mono, StringFormat trim)
+        private void RenderBranchStats(Graphics g, PanelQueryResult result, Font font, Font small, Font mono, StringFormat trim, bool interactive = true)
         {
             _setDetails.Close();
-            var picks = PanelBranchStats.Picks(PanelOwner.StatKinds).ToArray();
-            using var renderer = new CanvasRowRenderer(g, picks.Length, false);
+            var picks = result.StatRows;
+            int total = StatViewCount(result);
+            if (interactive && TableVisible) PanelOwner.Session.EnsureBranchStatColumns(result);
+            using var renderer = new CanvasRowRenderer(g, picks.Count, false);
             float gutter = renderer.GutterWidth;
             if (TableVisible)
             {
@@ -58,9 +40,9 @@ namespace BetterGhPanel
             try
             {
                 float y = _list.Y;
-                int perBranch = picks.Length + 1;
+                int perBranch = picks.Count + 1;
                 _offset = Math.Max(0, Math.Min(MaximumOffset, _offset));
-                for (int offset = _offset; offset < StatViewCount(result) && y + RowHeight <= _list.Bottom; offset++)
+                for (int offset = _offset; offset < total && y + RowHeight <= _list.Bottom; offset++)
                 {
                     string path = result.BranchPaths[offset / perBranch];
                     var stats = result.BranchStats![path];
@@ -93,20 +75,21 @@ namespace BetterGhPanel
                         renderer.DrawAddress(g, bounds, index + 1, index, false, selected);
                         if (TableVisible)
                         {
-                            PaintColumn(g, 0, y, RowHeight, cell => DrawStatCell(g, cell, stats, kind, small, mono, trim));
+                            PaintColumn(g, 0, y, RowHeight, cell => DrawStatCell(g, cell, stats, kind, small, mono, trim, result.StatDecimals));
                             for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
                             {
                                 result.ColumnBranchStats.TryGetValue(PanelOwner.TableColumns[column].Input.InstanceGuid, out var branches);
                                 PanelBranchStats? cellStats = null;
                                 branches?.TryGetValue(path, out cellStats);
-                                PaintColumn(g, column + 1, y, RowHeight, cell => DrawStatCell(g, cell, cellStats, kind, small, mono, trim, showName: false,
+                                PaintColumn(g, column + 1, y, RowHeight, cell => DrawStatCell(g, cell, cellStats, kind, small, mono, trim, result.StatDecimals, showName: false,
                                     measuring: branches == null && PanelOwner.TableColumns[column].Snapshot != null && PanelOwner.TableColumns[column].Pair != null));
                             }
                         }
-                        else DrawStatCell(g, new RectangleF(bounds.X + gutter, y, bounds.Width - gutter, RowHeight), stats, kind, small, mono, trim);
+                        else DrawStatCell(g, new RectangleF(bounds.X + gutter, y, bounds.Width - gutter, RowHeight), stats, kind, small, mono, trim, result.StatDecimals);
                         var hitBounds = TableVisible ? RectangleF.Intersect(bounds, ColumnClip(0, y, RowHeight)) : bounds;
-                        if (source >= 0 && TargetPainted(g, hitBounds) && result.TryGetViewIndex(source, out int viewIndex))
-                            _rowHits.Add(new RowHit(hitBounds, source, viewIndex + 1));
+                        if (interactive && source >= 0 && TargetPainted(g, hitBounds) && result.TryGetViewIndex(source, out int viewIndex))
+                            if (!_rowHits.Any(hit => hit.Bounds == hitBounds && hit.SourcePosition == source))
+                                _rowHits.Add(new RowHit(hitBounds, source, viewIndex + 1));
                     }
                     _shown++; y += RowHeight;
                 }

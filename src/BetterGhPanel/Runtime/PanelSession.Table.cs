@@ -58,53 +58,75 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        // D is already published. Column stats have their own completion and never hold its output open.
+        private PanelQueryResult? _statColumnsRunning;
+        internal void EnsureBranchStatColumns(PanelQueryResult result)
+        {
+            if (HasCurrentResult && ReferenceEquals(Result, result) && _queryCancellation != null)
+                StartBranchStatColumns(result, _request, _queryCancellation.Token);
+        }
+
+        // D is already published. Visible paints retry columns whose queue was cancelled offscreen.
         private void StartBranchStatColumns(PanelQueryResult result, long request, CancellationToken token)
         {
-            if (_tableSource == null) return;
+            if (_tableSource == null || ReferenceEquals(_statColumnsRunning, result)) return;
             var options = _options.Clone();
-            var columns = _columns.Where(column => column.Snapshot != null && column.Pair != null)
+            var columns = _columns.Where(column => column.Snapshot != null && column.Pair != null && !result.ColumnBranchStats.ContainsKey(column.Input.InstanceGuid))
                 .Select(column => (Column: column, Snapshot: column.Snapshot!, Queue: column.Geometry, Pair: column.Pair!)).ToArray();
             if (columns.Length == 0) return;
+            _statColumnsRunning = result;
             _ = Task.Run(async () =>
             {
-                foreach (var column in columns)
+                try
                 {
-                    var items = PanelBranchStats.ColumnItems(result, column.Pair.ItemAt);
-                    IReadOnlyDictionary<string, PanelBranchStats> stats;
-                    try
+                    foreach (var column in columns)
                     {
-                        token.ThrowIfCancellationRequested();
-                        IReadOnlyDictionary<int, PanelGeometryInfo?>? measurements = null;
-                        if (column.Snapshot.HasMeasurableGeometry && column.Queue != null)
+                        if (token.IsCancellationRequested) break;
+                        IReadOnlyDictionary<string, PanelBranchStats> stats;
+                        try
                         {
-                            if (!await column.Queue.MeasureAsync(column.Snapshot, items, token).ConfigureAwait(false)) return;
-                            measurements = await column.Queue.CaptureCompletedAsync(column.Snapshot, column.Snapshot.Rows.Count, token).ConfigureAwait(false);
-                            if (measurements == null) return;
+                            var items = PanelBranchStats.ColumnItems(result, column.Pair.ItemAt);
+                            IReadOnlyDictionary<int, PanelGeometryInfo?>? measurements = null;
+                            if (column.Snapshot.HasMeasurableGeometry && column.Queue != null)
+                            {
+                                if (!await column.Queue.MeasureAsync(column.Snapshot, items, token).ConfigureAwait(false)) continue;
+                                measurements = await column.Queue.CaptureCompletedAsync(column.Snapshot, column.Snapshot.Rows.Count, token).ConfigureAwait(false);
+                                if (measurements == null) continue;
+                            }
+                            stats = PanelBranchStats.Column(result, column.Snapshot, column.Pair.ItemAt, options, measurements, token);
                         }
-                        stats = PanelBranchStats.Column(result, column.Snapshot, column.Pair.ItemAt, options, measurements, token);
+                        catch (OperationCanceledException) { continue; }
+                        catch (Exception)
+                        {
+                            // A failed column is complete and unavailable. Never run another failing/cancelled scan in the fallback.
+                            stats = result.BranchPaths.ToDictionary(path => path, _ => new PanelBranchStats(options.StatKinds), StringComparer.Ordinal);
+                        }
+                        Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
+                        {
+                            if (!CanPublish(result.Snapshot, request, token) || !ReferenceEquals(Result, result) ||
+                                !ReferenceEquals(column.Column.Snapshot, column.Snapshot) ||
+                                column.Queue != null && !column.Queue.SourcesCurrent(column.Snapshot)) return;
+                            result.ColumnBranchStats[column.Column.Input.InstanceGuid] = stats;
+                            result.ColumnStatHeaderSuffixes[column.Column.Input.InstanceGuid] = PanelBranchStats.CommonHeaderSuffix(stats.Values);
+                            Notify();
+                        }));
                     }
-                    catch (OperationCanceledException) { return; }
-                    catch (Exception)
-                    {
-                        // Failed column measurements are unavailable, without failing D's completed result.
-                        stats = PanelBranchStats.Column(result, column.Snapshot, column.Pair.ItemAt, options,
-                            items.ToDictionary(item => item, _ => (PanelGeometryInfo?)null), token);
-                    }
+                }
+                catch (OperationCanceledException) { }
+                finally
+                {
                     Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
                     {
-                        if (!CanPublish(result.Snapshot, request, token) || !ReferenceEquals(Result, result) ||
-                            !ReferenceEquals(column.Column.Snapshot, column.Snapshot) ||
-                            column.Queue != null && !column.Queue.SourcesCurrent(column.Snapshot)) return;
-                        result.ColumnBranchStats[column.Column.Input.InstanceGuid] = stats;
-                        Notify();
+                        if (!ReferenceEquals(_statColumnsRunning, result)) return;
+                        _statColumnsRunning = null;
+                        if (CanPublish(result.Snapshot, request, token)) Notify();
                     }));
                 }
-            }, token);
+            });
         }
 
         private void ClearColumnGeometry()
         {
+            _statColumnsRunning = null;
             ++_columnGeneration;
             CancelVisibleColumnMeasurements();
             var retired = _columns.Select(column => column.Geometry).ToArray();
