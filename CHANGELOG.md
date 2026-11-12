@@ -2,14 +2,10 @@
 
 ## Unreleased
 
-- **Shown numbers throughout Σ.** Numeric Show value/property modes (including coordinates, Degree and counts) aggregate that shown number and its units. Captured values do not request a primary geometry measurement; nonnumeric values are skipped. Plain numbers and geometry retain distinct kinds, including **mixed N / L**.
-- **Stat copy and selection.** Copy uses stat text; Ctrl+C with no selection copies all stats as TSV. Headers retain metrics/units, with unitless Count. Recomputing trims selection to current Min/Max sources and retains the previous rows and scroll position while pending.
-- **Bounded stats work.** Only picked statistics are computed; only Median retains input values. Cancelled table columns resume when visible, and cannot hold back D. Sort is disabled under Σ; the picker hides its Flatten hint when Flatten is on.
-
-- **Branch stats (Σ).** A tree tool beside Create set replaces each branch’s rows and D output with chosen Count, Sum, Avg, Median, Min, Max, Range and population Std dev. It aggregates filtered inputs at their displayed precision, including Automatic; Flatten gives whole-tree stats. Picks save with the file and support Undo.
-- Skipped inputs and mixed metrics are explained in branch headings. Empty or mixed branches keep aligned null slots (Count 0). Min/Max select their first source item; preview and value dots retain the inputs. Each table column computes stats with its own primary metric and measures only partners of filtered D items, after D is ready. Table copy matches the stats rows even when List length was retained.
-- Stat rows omit repeated numeric type labels; the two-line footer shows its count once. Only D’s Min/Max cells select source items. Σ keeps F’s usual Results scope.
-- Removed the footer Stats button and its statistics/unique-values popup. Create set and Σ are mutually exclusive; Reset all turns Σ off.
+- **Branch stats (Σ).** A new tree tool beside Create set. Each branch's rows become its stats (Count, Sum, Avg, Median, Min, Max, Range, Std dev; you tick which), and D sends exactly those numbers per branch. Add Flatten for stats across all branches.
+- Stats use the numbers the rows show, after filters, units, formula and rounding. Skipped items and mixed metrics are explained in the branch heading; branches without numbers keep null slots so every branch has the same length.
+- Click Min or Max to select the item it came from. Table columns show the same stats for their own numbers, and Ctrl+C copies the stats.
+- **Removed:** the footer Stats button and its popup. Create set covers unique values with counts, and the Check line covers null and invalid counts.
 
 ## 0.4.1-beta
 
