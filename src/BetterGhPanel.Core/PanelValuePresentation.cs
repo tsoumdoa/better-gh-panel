@@ -13,7 +13,6 @@ namespace BetterGhPanel.Core
             PanelGeometryInfo? measuredGeometry = null, double roundUpFactor = 0, PanelFormula? formula = null)
         {
             if (row == null) throw new ArgumentNullException(nameof(row));
-            if (IsTransformedUnavailable(row)) return new PanelText("unavailable");
             if (row.Validity == PanelValidity.VerifiedInvalid) return row.GroupSummary != null
                 ? new PanelText(row.GroupSummary, true) : new PanelText("Invalid · " + (row.NumericSummary?.Format(decimals) ?? row.DisplayValue));
             if (row.NumericSummary != null) return new PanelText(row.NumericSummary.Format(decimals));
@@ -21,13 +20,14 @@ namespace BetterGhPanel.Core
             if (geometry != null) return new PanelText(geometry.FormatCompact(conversion, decimals, roundUpFactor, formula) +
                 (geometry.MeasurementUnavailable ? " · measurement unavailable" : ""));
             if (!row.IsNull && row.NumericValue.HasValue)
-                return new PanelText(PanelUnits.Format(row.NumericValue.Value, conversion, decimals));
+                return new PanelText(PanelUnits.Format(PresentedNumber(row, decimals, roundUpFactor, formula), conversion, decimals));
             return row.GroupSummary != null ? new PanelText(row.GroupSummary, false) : new PanelText(row.DisplayValue);
         }
 
-        internal static bool IsTransformedUnavailable(PanelRow row) => row.RawNumericValue.HasValue &&
-            !double.IsNaN(row.RawNumericValue.Value) && !double.IsInfinity(row.RawNumericValue.Value) && row.NumericValue.HasValue &&
-            (double.IsNaN(row.NumericValue.Value) || double.IsInfinity(row.NumericValue.Value));
+        // Captured scalar input is already converted, but never rounded or
+        // formula-adjusted. Queries can preview another formula on that input.
+        public static double PresentedNumber(PanelRow row, int decimals, double roundUpFactor = 0, PanelFormula? formula = null) =>
+            PanelUnits.Transform(row.RawNumericValue ?? double.NaN, PanelUnitConversion.None, roundUpFactor, decimals, formula);
 
         /// <summary>Visual indicator only; search, copy and set keys use the unmodified semantic value.</summary>
         public static string Visualize(string semanticValue) => semanticValue.Length == 0 ? "<empty>" : semanticValue;

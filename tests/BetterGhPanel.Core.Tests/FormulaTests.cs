@@ -46,6 +46,96 @@ public sealed class FormulaTests
     }
 
     [Theory]
+    [InlineData("x-2e-3", "x−2e-3")]
+    [InlineData("-x^2+2E-3", "−x^2+2E-3")]
+    [InlineData("x^-2-1e+3", "x^−2−1e+3")]
+    public void PrettyPreservesExponentSigns(string input, string pretty) => Assert.Equal(pretty, Formula(input).Pretty);
+
+    [Theory]
+    [InlineData("x-50")]
+    [InlineData("x/0")]
+    public void ScalarQueriesPreviewFromConvertedInputWithoutChangingCapture(string committed)
+    {
+        var row = new PanelRow(0, "{0}", "Number", "", PanelUnits.Transform(1.2405, PanelUnitConversion.None, .25, 1, Formula(committed)),
+            PanelValidity.VerifiedValid, rawNumericValue: 1.2405);
+        var snapshot = new PanelSnapshot(new[] { row }, new[] { new PanelBranch("{0}", 1) }, PanelUnitConversion.MillimetersToMeters);
+        double? captured = row.NumericValue;
+        var draft = Formula("x*2-1");
+        var options = new PanelQueryOptions { Formula = draft, RoundUpFactor = .25, DecimalPlaces = 1,
+            DisplayFilterValue = true, SearchMode = PanelSearchMode.Value, OutputValues = true };
+        var result = PanelQueryEngine.Execute(snapshot, options);
+        Assert.Same(snapshot, result.Snapshot);
+        Assert.Equal("1.5 m", PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, 1, roundUpFactor: .25, formula: draft));
+        Assert.Equal(1.5, result.Statistics.Minimum);
+        Assert.Equal(1.5, result.OutputValues![0]!.Number);
+        options.DisplayFilterValue = false; options.Search = "> 1.4";
+        Assert.Single(PanelQueryEngine.Execute(snapshot, options).RowPositions);
+        options.Search = ""; options.CreateSet = true;
+        Assert.Equal("1.5 m", PanelQueryEngine.Execute(snapshot, options).DisplaySet!.Values[0].Text);
+        Assert.Equal(captured, row.NumericValue);
+        Assert.Equal(1.2405, row.RawNumericValue);
+        Assert.Equal("1.3 m", PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, 1, roundUpFactor: .25));
+    }
+
+    [Theory]
+    [InlineData(PanelSortMode.ValueAscending)]
+    [InlineData(PanelSortMode.ValueDescending)]
+    public void ScalarSortingUsesTheQueryFormula(PanelSortMode sort)
+    {
+        var snapshot = new PanelSnapshot(new[] { 10d, 30 }.Select((n, i) =>
+            new PanelRow(i, "{0}", "Number", "", n)).ToArray(), new[] { new PanelBranch("{0}", 2) });
+        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Formula = Formula("-x"), SortMode = sort });
+        Assert.Equal(sort == PanelSortMode.ValueAscending ? new[] { 1, 0 } : new[] { 0, 1 }, result.RowPositions);
+    }
+
+    [Fact]
+    public void UnavailableScalarKeepsTypeCapabilitiesAndCanPreviewAnotherFormula()
+    {
+        var row = new PanelRow(0, "{0}", "Number", "unavailable", double.PositiveInfinity,
+            PanelValidity.VerifiedValid, rawNumericValue: 30);
+        var snapshot = new PanelSnapshot(new[] { row }, new[] { new PanelBranch("{0}", 1) });
+        var options = new PanelQueryOptions { TypeName = "Number", Formula = Formula("x/0"),
+            SearchMode = PanelSearchMode.Value, DisplayFilterValue = true, OutputValues = true };
+        var result = PanelQueryEngine.Execute(snapshot, options);
+        Assert.Equal(new[] { 0 }, result.RowPositions);
+        Assert.Equal("Number", result.Snapshot.Rows[0].TypeName);
+        Assert.True(row.TypeIdentityAvailable);
+        Assert.Equal(PanelSearchCapabilities.Value, row.SearchCapabilities);
+        Assert.False(row.IsNull);
+        Assert.Equal("unavailable", PanelFilterValue.Format(snapshot, row, PanelSearchMode.Value, -1, formula: options.Formula));
+        Assert.Null(result.OutputValues![0]);
+        Assert.Equal(0, result.Statistics.NumericCount);
+        options.DisplayFilterValue = false; options.Search = "> -1";
+        Assert.Empty(PanelQueryEngine.Execute(snapshot, options).RowPositions);
+        options.Formula = Formula("x*2");
+        Assert.Single(PanelQueryEngine.Execute(snapshot, options).RowPositions);
+        Assert.Equal("60", PanelValuePresentation.FormatDisplay(row, PanelUnitConversion.None, -1, formula: options.Formula));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void CancelledFormulaPreviewPreservesCommittedSelectionAndSetMembers(bool createSet)
+    {
+        var snapshot = new PanelSnapshot(new[] { 10d, 10, 30, 30 }.Select((n, i) =>
+            new PanelRow(i, "{0}", "Number", "", n)).ToArray(), new[] { new PanelBranch("{0}", 4) });
+        var options = new PanelQueryOptions { CreateSet = createSet, SearchMode = PanelSearchMode.Value, Search = "< 20" };
+        var opening = PanelQueryEngine.Execute(snapshot, options);
+        var committed = new PanelRowSelection(); committed.Select(opening, 0);
+        var selected = committed.OrderedPositions(opening).ToArray();
+        var members = opening.DisplaySet?.ExpandMembers(snapshot, selected) ?? selected;
+        var previewSelection = committed.CopyForPreview();
+        var draft = options.Clone(); draft.Formula = Formula("x*2");
+        var preview = PanelQueryEngine.Execute(snapshot, draft);
+        previewSelection.Synchronize(preview);
+        Assert.Empty(previewSelection.OrderedPositions(preview));
+        var restored = PanelQueryEngine.Execute(snapshot, options);
+        Assert.Equal(selected, committed.OrderedPositions(restored));
+        Assert.Equal(members, restored.DisplaySet?.ExpandMembers(snapshot, committed.OrderedPositions(restored)) ?? committed.OrderedPositions(restored));
+        Assert.Equal(createSet ? new[] { 0, 1 } : new[] { 0 }, members);
+    }
+
+    [Theory]
     [InlineData("", "Use x for the shown number, e.g. x*2")]
     [InlineData("2*pi", "Use x for the shown number, e.g. x*2")]
     [InlineData("x+y", "Unknown name 'y'. Use x")]

@@ -10,6 +10,26 @@ namespace BetterGhPanel.Runtime
         internal static GH_Structure<IGH_Goo> Apply(GH_Structure<IGH_Goo> source, PanelUnitConversion conversion)
             => conversion == PanelUnitConversion.None ? source : ApplyCaptured(source, conversion, CapturedScalar.Capture(source));
 
+        // Keep numeric holders (and their identity) in capture. Only the wire
+        // representation replaces failed transforms by null.
+        internal static GH_Structure<IGH_Goo> OutputItems(GH_Structure<IGH_Goo> source, CapturedScalar[] presented)
+        {
+            bool Unavailable(int position) => presented[position].IsNumeric && presented[position].IsValid &&
+                (double.IsNaN(presented[position].NumericValue) || double.IsInfinity(presented[position].NumericValue));
+            bool any = false;
+            for (int i = 0; i < presented.Length; i++) if (Unavailable(i)) { any = true; break; }
+            if (!any) return source;
+            var result = new GH_Structure<IGH_Goo>();
+            int position = 0;
+            for (int b = 0; b < source.PathCount; b++)
+            {
+                var path = new GH_Path(source.Paths[b]);
+                result.EnsurePath(path);
+                foreach (var item in source.Branches[b]) result.Append(Unavailable(position++) ? null! : item, path);
+            }
+            return result;
+        }
+
         internal static GH_Structure<IGH_Goo> ApplyCaptured(GH_Structure<IGH_Goo> source, PanelUnitConversion conversion,
             CapturedScalar[] captured, double roundUpFactor = 0, int decimals = PanelUnits.AutomaticDecimals, CapturedScalar[]? presented = null, PanelFormula? formula = null)
         {
@@ -33,7 +53,7 @@ namespace BetterGhPanel.Runtime
                         !(value.IsInteger && conversion == PanelUnitConversion.None && roundUpFactor == 0 && formula == null))
                     {
                         double number = shown.NumericValue;
-                        converted = double.IsNaN(number) || double.IsInfinity(number) ? null! : new GH_Number(number);
+                        converted = new GH_Number(number);
                     }
                     result.Append(converted, path);
                 }
@@ -74,7 +94,6 @@ namespace BetterGhPanel.Runtime
                         var number = (GH_Number)original;
                         if (!number.IsValid) { if (!ReferenceEquals(original, result)) return false; continue; }
                         double expected = shown.NumericValue;
-                        if (double.IsNaN(expected) || double.IsInfinity(expected)) { if (result != null) return false; continue; }
                         if (result?.GetType() != typeof(GH_Number) ||
                             BitConverter.DoubleToInt64Bits(((GH_Number)result).Value) != BitConverter.DoubleToInt64Bits(expected)) return false;
                     }
@@ -84,8 +103,6 @@ namespace BetterGhPanel.Runtime
                         { if (!ReferenceEquals(original, result)) return false; continue; }
                         var integer = (GH_Integer)original;
                         if (!integer.IsValid) { if (!ReferenceEquals(original, result)) return false; continue; }
-                        if (double.IsNaN(shown.NumericValue) || double.IsInfinity(shown.NumericValue))
-                        { if (result != null) return false; continue; }
                         if (result?.GetType() != typeof(GH_Number) ||
                             BitConverter.DoubleToInt64Bits(((GH_Number)result).Value) != BitConverter.DoubleToInt64Bits(shown.NumericValue)) return false;
                     }

@@ -20,7 +20,7 @@ namespace BetterGhPanel.Core
             bool available = mode == PanelSearchMode.Value || mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z
                 ? TryScalarValue(row, mode, snapshot.UnitConversion, out double value)
                 : TryGeometryValue(row, mode, snapshot.UnitConversion, measured, out value);
-            return available ? Presented(value, mode == PanelSearchMode.Value ? 0 : roundUpFactor, decimals, mode == PanelSearchMode.Value ? null : formula) : null;
+            return available ? Presented(value, roundUpFactor, decimals, formula) : null;
         }
 
         private static PanelPropertyValue? Presented(double value, double factor, int decimals, PanelFormula? formula)
@@ -39,7 +39,10 @@ namespace BetterGhPanel.Core
                 if (!PanelProperties.TryGet(row, mode, measured, out property) || property == null) return "";
             }
             else if (mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z)
+            {
+                if (row.TypeName.IndexOf("Vector", StringComparison.OrdinalIgnoreCase) >= 0) return "";
                 property = PanelPropertyValue.Numeric(1, 1, row.Components?.Units ?? "");
+            }
             else
             {
                 var geometry = measured ?? row.GeometryInfo;
@@ -64,13 +67,14 @@ namespace BetterGhPanel.Core
             {
                 var components = row.Components;
                 if (components == null) return false;
-                value = PanelUnits.ConvertGeometry(mode == PanelSearchMode.X ? components.X : mode == PanelSearchMode.Y ? components.Y : components.Z,
-                    1, components.Units, conversion);
+                value = mode == PanelSearchMode.X ? components.X : mode == PanelSearchMode.Y ? components.Y : components.Z;
+                if (row.TypeName.IndexOf("Vector", StringComparison.OrdinalIgnoreCase) < 0)
+                    value = PanelUnits.ConvertGeometry(value, 1, components.Units, conversion);
             }
             else
             {
                 if (!row.NumericValue.HasValue) return false;
-                value = row.NumericValue.Value;
+                value = row.RawNumericValue!.Value;
             }
             return IsFinite(value);
         }
@@ -105,13 +109,12 @@ namespace BetterGhPanel.Core
                     return property?.Format(snapshot.UnitConversion, decimals, includeUnits, roundUpFactor, formula) ?? ((measured ?? row.GeometryInfo)?.MeasurementUnavailable == true ? "unavailable" : "measuring…");
                 if (row.IsValid && !row.IsNull) return "n/a";
             }
-            if (PanelValuePresentation.IsTransformedUnavailable(row)) return "unavailable";
             if (row.IsNull) return "null";
             if (row.Validity == PanelValidity.Unverified) return "unverified";
             if (row.Validity == PanelValidity.VerifiedInvalid) return "invalid";
             if (mode == PanelSearchMode.Value)
-                return row.NumericValue.HasValue && IsFinite(row.NumericValue.Value)
-                    ? PanelUnits.Format(row.NumericValue.Value, includeUnits ? snapshot.UnitConversion : PanelUnitConversion.None,
+                return row.NumericValue.HasValue
+                    ? PanelUnits.Format(PanelValuePresentation.PresentedNumber(row, decimals, roundUpFactor, formula), includeUnits ? snapshot.UnitConversion : PanelUnitConversion.None,
                         decimals) : "n/a";
             if (mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z)
                 return TryScalarValue(row, mode, snapshot.UnitConversion, out double component)

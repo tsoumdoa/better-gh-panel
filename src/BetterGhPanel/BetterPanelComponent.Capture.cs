@@ -113,7 +113,7 @@ namespace BetterGhPanel
             }
             bool UnitsCurrent()
             {
-                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count, RoundUpFactor, DecimalPlaces, _scalarInputs, _presentedScalars, Formula);
+                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count, RoundUpFactor, DecimalPlaces, _scalarInputs, _presentedScalars);
                 visits += count; return result;
             }
             bool StructuresCurrent()
@@ -193,10 +193,9 @@ namespace BetterGhPanel
                     var preConversionTree = tree;
                     var conversion = UnitConversion;
                     var roundUpFactor = RoundUpFactor;
-                    var formula = Formula;
                     var scalarInputs = CapturedScalar.Capture(preConversionTree);
-                    var queryScalars = CapturedScalar.Convert(scalarInputs, conversion, roundUpFactor, DecimalPlaces, formula);
-                    var queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.ApplyCaptured(preConversionTree, conversion, scalarInputs, roundUpFactor, DecimalPlaces, queryScalars, formula));
+                    var queryScalars = CapturedScalar.Convert(scalarInputs, conversion, roundUpFactor, DecimalPlaces);
+                    var queryTree = PanelTreeOperations.CopyStructure(PanelUnitOperations.ApplyCaptured(preConversionTree, conversion, scalarInputs, roundUpFactor, DecimalPlaces, queryScalars));
                     var inputSeed = SnapshotCapture.PrepareInputs(queryTree);
                     CapturePairedInput(da, inputTree, retainedSources, out var pairedTree, out var pairedError,
                         out var livePairedTree, out var capturedPairedTree, out bool pairedPresent);
@@ -209,7 +208,7 @@ namespace BetterGhPanel
                     if (!Current()) return;
                     bool hasGeometry = HasGeometry(snapshot) || tableColumns.Exists(column => column.HasGeometry);
                     if (!SnapshotCapture.MeasurementSourcesCurrent(sources, measurementSources) || !SnapshotCapture.GraphSourcesCurrent(graphs) ||
-                        !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor, DecimalPlaces, scalarInputs, queryScalars, formula) ||
+                        !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor, DecimalPlaces, scalarInputs, queryScalars) ||
                         !ColumnsCurrent(tableColumns, out _) ||
                         !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) ||
                         (hasGeometry && !GeometryContextCurrent(context)))
@@ -221,7 +220,9 @@ namespace BetterGhPanel
                     // All callback-bearing inspection has completed. Commit these
                     // locals together only while this solve still owns the component.
                     _scalarInputs = scalarInputs; _presentedScalars = queryScalars;
-                    _inputTree = inputTree; _preConversionTree = preConversionTree; _queryTree = queryTree; _retainedSources = retainedSources;
+                    _inputTree = inputTree; _preConversionTree = preConversionTree; _queryTree = queryTree;
+                    RefreshFormulaItems();
+                    _retainedSources = retainedSources;
                     _liveInputTree = liveInputTree;
                     _pairedError = pairedError;
                     PairedData = pairedTree;

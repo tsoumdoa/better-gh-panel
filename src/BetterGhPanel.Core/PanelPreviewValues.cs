@@ -108,14 +108,7 @@ namespace BetterGhPanel.Core
             // Vectors are dimensionless even in a document with model units.
             bool axis = mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z;
             bool vector = axis && row.TypeName.IndexOf("Vector", StringComparison.OrdinalIgnoreCase) >= 0;
-            if (vector && row.Components != null)
-            {
-                var components = row.Components;
-                var scalar = PanelPropertyValue.Numeric(mode == PanelSearchMode.X ? components.X : mode == PanelSearchMode.Y ? components.Y : components.Z);
-                double number = scalar.Presented(PanelUnitConversion.None, decimals, 0);
-                if (double.IsNaN(number) || double.IsInfinity(number)) return default;
-                return new PanelPreviewValue("Vector " + metric, "", number, scalar.Format(PanelUnitConversion.None, decimals, true));
-            }
+            if (vector) metric = "Vector " + metric;
             var value = PanelFilterValue.OutputValue(snapshot, row, mode, geometry, decimals, factor, formula);
             string text = PanelFilterValue.Format(snapshot, row, mode, decimals, geometry, roundUpFactor: factor, formula: formula);
             if (value?.Kind == PanelPropertyKind.Number && !double.IsNaN(value.Number) && !double.IsInfinity(value.Number))

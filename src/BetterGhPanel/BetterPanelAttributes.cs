@@ -123,7 +123,7 @@ namespace BetterGhPanel
             if (!keepViewRestore) { _viewRestore = null; _selectionRestore = null; _savedSelection = null; }
             ClearHover();
             _keyboardCursor = -1;
-            if (!PanelOwner.RefreshingFormula) CanvasTextInput.CloseActive(PanelOwner);
+            CanvasTextInput.CloseActive(PanelOwner);
             CancelQueryEditor();
             _setDetails.Close();
             InvalidatePaintedHits();
@@ -881,7 +881,7 @@ namespace BetterGhPanel
         private string UnitsLabel()
         {
             var parts = PrecisionParts().ToList();
-            if (PanelOwner.CommittedFormula != null) parts.Insert(0, "ƒ " + Short(PanelOwner.CommittedFormula.Pretty, 12));
+            if (PanelOwner.Formula != null) parts.Insert(0, "ƒ " + Short(PanelOwner.Formula.Pretty, 12));
             if (PanelOwner.UnitConversion != PanelUnitConversion.None) parts.Insert(0, "→" + PanelUnits.Symbol(PanelOwner.UnitConversion));
             return parts.Count == 0 ? "Units" : string.Join(" ", parts);
         }
@@ -1768,7 +1768,7 @@ namespace BetterGhPanel
                         details = value + "\n" + (string.IsNullOrWhiteSpace(row.InvalidReason) ? "Validity could not be verified." : row.InvalidReason);
                     else if (geometry != null)
                     {
-                        details = geometry.FormatDetails(snapshot.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor, PanelOwner.Formula);
+                        details = geometry.FormatDetails(snapshot.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor, PanelOwner.PresentedFormula);
                         if (PanelOwner.Session.IsGeometryPending(snapshot, hit.SourcePosition)) details += "\nCalculating measurement…";
                         else if (PanelOwner.Session.HasGeometryMeasurement(snapshot, hit.SourcePosition) && !geometry.Value.HasValue)
                             details += "\nMeasurement unavailable.";
@@ -1779,7 +1779,7 @@ namespace BetterGhPanel
                     // the labeled geometry details without repeating its compact summaries.
                     if (PanelOwner.Session.Options.DisplayFilterValue && !(rounding.Length > 0 && geometry != null))
                         details = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode) + ": " + value + "\n" +
-                            PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, PanelOwner.DecimalPlaces, geometry, roundUpFactor: PanelOwner.RoundUpFactor, formula: PanelOwner.Formula) + "\n" + details;
+                            PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, PanelOwner.DecimalPlaces, geometry, roundUpFactor: PanelOwner.RoundUpFactor, formula: PanelOwner.PresentedFormula) + "\n" + details;
                     if (rounding.Length > 0) details = rounding + "\n" + details;
                     if (setOccurrences != null)
                     {

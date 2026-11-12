@@ -13,14 +13,15 @@ namespace BetterGhPanel.Runtime
     internal readonly struct CapturedScalar
     {
         private const byte None = 0, Number = 1, Integer = 2, Text = 3, Boolean = 4;
-        private readonly byte _kind;
+        private readonly byte _kind, _sourceKind;
         private readonly double _number;
         private readonly double? _rawNumber;
         private readonly string? _text;
         private readonly bool _valid;
-        private CapturedScalar(byte kind, double number, string? text, bool valid, double? rawNumber = null)
-        { _rawNumber = rawNumber; _kind = kind; _number = number; _text = text; _valid = valid; }
+        private CapturedScalar(byte kind, double number, string? text, bool valid, double? rawNumber = null, byte sourceKind = None)
+        { _sourceKind = sourceKind == None ? kind : sourceKind; _rawNumber = rawNumber; _kind = kind; _number = number; _text = text; _valid = valid; }
         internal bool Available => _kind != None;
+        internal string NumericTypeName => _sourceKind == Integer ? "Integer" : "Number";
         internal bool IsInteger => _kind == Integer;
         internal bool IsNumeric => _kind == Number || _kind == Integer;
         internal bool IsValid => _valid;
@@ -63,11 +64,8 @@ namespace BetterGhPanel.Runtime
                 var value = source[i];
                 if (!value.IsNumeric || !value.IsValid) continue;
                 double converted = PanelUnits.Transform(value._number, conversion, roundUpFactor, decimals, formula);
-                // An overflowing conversion has no finite display-unit raw value.
-                // Retain the finite source as the witness of transformed unavailability.
                 double raw = PanelUnits.Convert(value._number, conversion);
-                if (double.IsNaN(raw) || double.IsInfinity(raw)) raw = value._number;
-                result[i] = new CapturedScalar(value.IsInteger && conversion == PanelUnitConversion.None && roundUpFactor == 0 && formula == null ? Integer : Number, converted, null, value.IsValid, raw);
+                result[i] = new CapturedScalar(value.IsInteger && conversion == PanelUnitConversion.None && roundUpFactor == 0 && formula == null ? Integer : Number, converted, null, value.IsValid, raw, value._sourceKind);
             }
             return result;
         }

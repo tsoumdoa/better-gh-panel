@@ -32,13 +32,13 @@ namespace BetterGhPanel.Core
             {
                 text = PanelValuePresentation.DisplayText(row, snapshot.UnitConversion, query.DecimalPlaces, measured, query.RoundUpFactor, query.Formula);
                 numeric = !row.IsNull && row.IsValid && row.NumericValue.HasValue;
-                copy = numeric ? new PanelText(PanelUnits.Format(row.NumericValue!.Value, PanelUnitConversion.None,
+                copy = numeric ? new PanelText(PanelUnits.Format(PanelValuePresentation.PresentedNumber(row, query.DecimalPlaces, query.RoundUpFactor, query.Formula), PanelUnitConversion.None,
                     query.DecimalPlaces)) : text;
             }
             var presented = query.DisplayFilterValue
                 ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor, query.Formula)
-                : numeric ? PanelFilterValue.OutputValue(snapshot, row, PanelSearchMode.Value, measured, query.DecimalPlaces) : null;
-            bool unavailable = numeric && presented == null || PanelValuePresentation.IsTransformedUnavailable(row);
+                : numeric ? PanelFilterValue.OutputValue(snapshot, row, PanelSearchMode.Value, measured, query.DecimalPlaces, query.RoundUpFactor, query.Formula) : null;
+            bool unavailable = numeric && presented == null;
             if (!query.DisplayFilterValue && !numeric && query.Formula != null &&
                 PanelFilterValue.TryFormulaInput(snapshot, row, query, measured, out double input, out _))
             {

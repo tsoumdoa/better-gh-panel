@@ -232,6 +232,65 @@ internal static class UxInteractionChecks
                 "Returning to the original query and pressing Enter preserves redo and selection as a no-op");
         }
 
+        string[] WireImages() => fixture.Sinks.Select(sink =>
+        {
+            var chunk = new GH_IO.Serialization.GH_LooseChunk("Wire");
+            ((GH_Structure<IGH_Goo>)sink.VolatileData).Write(chunk);
+            return Convert.ToBase64String(chunk.Serialize_Binary());
+        }).ToArray();
+        foreach (bool sets in new[] { false, true })
+        foreach (bool cancelButton in new[] { false, true })
+        {
+            Call(component, "ResetAll");
+            Call(component, "SetTreeOperations", 0, false, false, false, sets);
+            fixture.Query(new PanelQueryOptions { SearchMode = PanelSearchMode.Value, Search = sets ? "" : "< 20" });
+            await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == (sets ? 80 : 20));
+            fixture.Select(10);
+            await fixture.Ready(() => fixture.Sinks[1].VolatileData.DataCount == 1 &&
+                FieldValue<long>(component, "_publishedSelectionVersion") == FieldValue<long>(component, "_selectionVersion"));
+            var wires = WireImages();
+            int solutions = fixture.Solutions;
+            fixture.Document.UndoServer.Clear(); fixture.Document.IsModified = false;
+            Call(attributes, "EditFormula", canvas);
+            var editor = CanvasEditorAdapter.Active(assembly);
+            editor.Type("x*2");
+            await fixture.Ready(() => Options(fixture).Formula?.Text == "x*2" && fixture.Result.RowPositions.Count == (sets ? 80 : 10));
+            Check(fixture.Solutions == solutions && !fixture.Document.IsModified && fixture.Document.UndoServer.UndoCount == 0 &&
+                WireImages().SequenceEqual(wires), "Formula previews leave every wire, saved state and downstream solution untouched");
+            var saved = new GH_IO.Serialization.GH_LooseChunk("Panel");
+            Check(component.Write(saved) && saved.GetString("PanelFormula") == "", "Saving a formula preview keeps the committed formula");
+            if (cancelButton) editor.ClickCancel(); else editor.Cancel();
+            await fixture.Ready(() => Options(fixture).Formula == null && fixture.Result.RowPositions.Count == (sets ? 80 : 20) && fixture.SelectedCount == 1);
+            Check(PanelTestAdapter.SelectedPosition(component) == 10 && WireImages().SequenceEqual(wires) &&
+                fixture.Solutions == solutions && !fixture.Document.IsModified && fixture.Document.UndoServer.UndoCount == 0,
+                "Formula Esc/Cancel restores the opening selection and S/B/F exactly, including sets and excluded rows");
+        }
+        foreach (bool blur in new[] { false, true })
+        {
+            Call(component, "ResetAll");
+            await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 80);
+            fixture.Document.UndoServer.Clear(); fixture.Document.IsModified = false;
+            int solutions = fixture.Solutions;
+            Call(attributes, "EditFormula", canvas);
+            var editor = CanvasEditorAdapter.Active(assembly);
+            editor.Type("x*2");
+            await fixture.Ready(() => Options(fixture).Formula?.Text == "x*2");
+            if (blur) editor.Blur(); else editor.Submit("x*2");
+            await fixture.Ready(() => fixture.Values(0).Split(',').Last() == "158");
+            Check(fixture.Solutions == solutions + 1 && fixture.Document.IsModified && fixture.Document.UndoServer.UndoCount == 1,
+                "Formula Enter/blur commits one undo record, marks the document modified and solves once");
+        }
+        Call(component, "ResetAll");
+        await fixture.Ready(() => fixture.Sinks[0].VolatileData.DataCount == 80);
+        Call(attributes, "EditFormula", canvas);
+        CanvasEditorAdapter.Active(assembly).Submit("x/0");
+        fixture.Query(new PanelQueryOptions { TypeName = "Number" });
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 80 && fixture.Sinks[0].VolatileData.DataCount == 80);
+        Check(fixture.Result.Snapshot.Rows.All(row => row.TypeName == "Number" && !row.IsNull &&
+            (row.SearchCapabilities & PanelSearchCapabilities.Value) != 0) && fixture.Sinks[0].VolatileData.AllData(false).All(item => item == null),
+            "Non-finite transforms keep numeric capture identity and capabilities; numeric Items sends null at the wire boundary");
+        Call(component, "ResetAll");
+
         fixture.Query(new PanelQueryOptions());
         await fixture.Ready(() => fixture.Result.RowPositions.Count == 80);
         fixture.Select(0);

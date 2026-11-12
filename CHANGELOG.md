@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Formula previews now leave wire outputs, selection, Undo and saved document state untouched until applied. Vector value dots share the formula result, unavailable numeric rows keep their type, and exponent signs stay readable.
+
 - **Value formula.** Units → Formula… applies a formula such as `x*2` or `x-50` after unit conversion and before rounding. Rows update while typing, with an example or a clear error above the footer; Esc restores. Saved with the component, with Undo.
 - Rows, Stats, comparisons, sorting, sets, numeric outputs, copy and viewport values share the result. Negative results work; unavailable results send null on Values. Table formulas apply to D only, marked ƒ; other columns retain units and rounding.
 

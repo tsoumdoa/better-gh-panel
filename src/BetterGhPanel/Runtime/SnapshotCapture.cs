@@ -129,6 +129,7 @@ namespace BetterGhPanel.Runtime
                         IGH_Goo? inspected = item == null ? null : managed.Available ? managed.Copy : graph?.ManagedCopy(item) ?? item;
                         if (scalar.Available)
                         {
+                            if (scalar.IsNumeric) { type = scalar.NumericTypeName; typeAvailable = true; }
                             validity = scalar.Validity;
                             reason = scalar.IsValid ? "" : "The value is invalid.";
                             display = scalar.Format(out number, out stringValue);

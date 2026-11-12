@@ -14,6 +14,7 @@ namespace BetterGhPanel
         private string _formulaError = "";
         private PanelFormula? _draftFormula;
         private float _formulaEditorHeight;
+        private int _formulaOffset;
 
         private float FormulaFooterHeight(float height) => _formulaDraft == null ? height : Math.Max(height, _formulaEditorHeight);
 
@@ -21,6 +22,7 @@ namespace BetterGhPanel
         {
             CanvasTextInput.CloseActive(PanelOwner);
             CanvasTextInput.CompletePending();
+            _formulaOffset = _offset;
             PanelOwner.BeginFormulaEdit();
             _formulaDraft = PanelOwner.Formula?.Text ?? "x";
             // The native overlay has a minimum screen height and a two-pixel
@@ -50,6 +52,7 @@ namespace BetterGhPanel
             _draftFormula = null;
             _formulaError = "";
             _formulaEditorHeight = 0;
+            if (!commit) _viewRestore = new ViewRestore(PanelOwner.Session.Snapshot, _formulaOffset, DisplayListLengths);
             PanelOwner.EndFormulaEdit(formula, commit);
             Layout();
             Grasshopper.Instances.ActiveCanvas?.Invalidate();
@@ -80,7 +83,7 @@ namespace BetterGhPanel
                     break;
                 }
             }
-            string keys = valid ? "Enter applies · Esc restores" : PanelOwner.Formula != null ? "rows keep ƒ " + PanelOwner.Formula.Pretty : "rows unchanged";
+            string keys = valid ? "Enter applies · Esc restores" : PanelOwner.PresentedFormula != null ? "rows keep ƒ " + PanelOwner.PresentedFormula.Pretty : "rows unchanged";
             float keyWidth = Math.Min(bounds.Width * .46f, TightWidth(g, keys, small));
             var keyBounds = new RectangleF(bounds.Right - keyWidth - 4, bounds.Y, keyWidth, bounds.Height);
             using var right = new StringFormat(Tight) { Alignment = StringAlignment.Far };

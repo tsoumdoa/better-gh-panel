@@ -23,8 +23,8 @@ namespace BetterGhPanel
                     ? row.GeometryInfo?.WithUnavailableMeasurement() : row.GeometryInfo;
             var options = Session.Options;
             if (options.DisplayFilterValue)
-                return PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor, formula: Formula);
-            var display = PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor, formula: Formula);
+                return PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor, formula: PresentedFormula);
+            var display = PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor, formula: PresentedFormula);
             if (row.IsValid && geometry != null)
                 return display + (Session.IsGeometryPending(snapshot, sourcePosition) ? " · measuring…" : "");
             return display;
@@ -41,7 +41,7 @@ namespace BetterGhPanel
             {
                 var metric = Session.GetGeometryDetails(snapshot, position);
                 if (metric == null && Session.HasGeometryMeasurement(snapshot, position)) metric = row.GeometryInfo?.WithUnavailableMeasurement();
-                var value = PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, metric, includeUnits: false, roundUpFactor: RoundUpFactor, formula: Formula);
+                var value = PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, metric, includeUnits: false, roundUpFactor: RoundUpFactor, formula: PresentedFormula);
                 bool literalProperty = PanelProperties.IsProperty(options.SearchMode) &&
                     PanelProperties.TryGet(row, options.SearchMode, metric, out var property) && property != null && property.Kind != PanelPropertyKind.Number;
                 if (!literalProperty && (value == "measuring…" || value == "unavailable")) throw new InvalidOperationException("A selected measurement is unavailable.");
@@ -50,18 +50,18 @@ namespace BetterGhPanel
             if (!row.IsValid)
                 return PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces);
             if (row.NumericValue.HasValue)
-                return PanelUnits.Format(row.NumericValue.Value, PanelUnitConversion.None, DecimalPlaces);
+                return PanelUnits.Format(PanelValuePresentation.PresentedNumber(row, DecimalPlaces, RoundUpFactor, PresentedFormula), PanelUnitConversion.None, DecimalPlaces);
             var geometry = Session.GetGeometryDetails(snapshot, position) ?? row.GeometryInfo;
             if (row.IsValid && geometry?.Value != null)
             {
                 var value = PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units,
-                    snapshot.UnitConversion, DecimalPlaces, includeUnits: false, roundUpFactor: RoundUpFactor, formula: Formula);
+                    snapshot.UnitConversion, DecimalPlaces, includeUnits: false, roundUpFactor: RoundUpFactor, formula: PresentedFormula);
                 if (value == "unavailable") throw new InvalidOperationException("A selected measurement is unavailable.");
                 return value;
             }
             if (row.IsValid && geometry?.CanMeasure == true)
                 throw new InvalidOperationException("A selected measurement is unavailable.");
-            return PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor, formula: Formula);
+            return PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor, formula: PresentedFormula);
         }
 
         internal void CancelPendingCopy()
@@ -150,7 +150,7 @@ namespace BetterGhPanel
             {
                 var geometry = session.GetGeometryDetails(snapshot, position);
                 if (geometry == null && session.HasGeometryMeasurement(snapshot, position)) geometry = snapshot.Rows[position].GeometryInfo?.WithUnavailableMeasurement();
-                return PanelPreviewValues.Sample(snapshot, snapshot.Rows[position], options.SearchMode, geometry, DecimalPlaces, RoundUpFactor, Formula);
+                return PanelPreviewValues.Sample(snapshot, snapshot.Rows[position], options.SearchMode, geometry, DecimalPlaces, RoundUpFactor, PresentedFormula);
             }
             _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, ValuePalette, ReversePalette,
                 options.SearchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current);

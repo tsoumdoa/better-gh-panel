@@ -19,7 +19,7 @@ namespace BetterGhPanel
         // Tree tools and Reset change what each address holds; their recompute
         // starts at the top instead of keeping the scroll position.
         private bool _discardViewRestore;
-        // A live search edit previews the view only. Wire outputs, document
+        // A live query edit previews the view only. Wire outputs, document
         // modification and downstream solutions wait for Enter.
         internal bool QueryPreviewActive { get; private set; }
         private PanelQueryOptions? _queryPreviewOptions;
@@ -113,52 +113,54 @@ namespace BetterGhPanel
         internal double RoundUpFactor { get; private set; }
         internal PanelFormula? Formula { get; private set; }
         internal bool FormulaEditing { get; private set; }
-        internal bool RefreshingFormula { get; private set; }
-        private PanelFormula? _formulaBefore;
-        internal PanelFormula? CommittedFormula => FormulaEditing ? _formulaBefore : Formula;
+        private PanelFormula? _formulaPreview;
+        internal PanelFormula? PresentedFormula => FormulaEditing ? _formulaPreview : Formula;
 
         internal void BeginFormulaEdit()
         {
-            _formulaBefore = Formula;
+            _formulaPreview = Formula;
             FormulaEditing = true;
+            BeginQueryPreview();
         }
 
-        internal void PreviewFormula(PanelFormula formula) => ApplyFormula(formula);
+        internal void PreviewFormula(PanelFormula formula)
+        {
+            if (!FormulaEditing) return;
+            _formulaPreview = formula;
+            var options = Session.Options;
+            options.Formula = formula;
+            Session.UpdateQuery(options);
+        }
 
         internal void EndFormulaEdit(PanelFormula? accepted, bool commit)
         {
             if (!FormulaEditing) return;
-            var before = _formulaBefore;
+            var original = _queryPreviewOptions!;
+            bool changed = commit && Formula?.Text != accepted?.Text;
+            if (changed) RecordUndoEvent("Panel+ formula");
             FormulaEditing = false;
-            _formulaBefore = null;
-            if (commit && before?.Text != accepted?.Text)
+            _formulaPreview = null;
+            if (changed)
             {
-                RecordUndoEvent("Panel+ formula", new PanelUndo<PanelFormula?>(InstanceGuid, before, accepted,
-                    (component, value) => { CanvasTextInput.CloseActive(component); CanvasTextInput.CompletePending(); component.ApplyFormula(value); component.OnPingDocument()?.Modified(); }));
-                OnPingDocument()?.Modified();
+                Formula = accepted;
+                CancelPendingCopy();
+                RefreshFormulaItems();
+                var options = Session.Options;
+                options.Formula = Formula;
+                Session.UpdateQuery(options);
             }
-            ApplyFormula(commit ? accepted : before);
+            else Session.UpdateQuery(original);
+            // Keep the guard through query restoration/update, then publish a
+            // changed setting once, through the same path as a search commit.
+            EndQueryPreview(committed: changed);
             Attributes.ExpireLayout();
         }
 
         internal void SetFormula(PanelFormula? formula)
         {
             if (Formula?.Text == formula?.Text) return;
-            RecordUndoEvent("Panel+ formula");
-            ApplyFormula(formula);
-            OnPingDocument()?.Modified();
-        }
-
-        private void ApplyFormula(PanelFormula? formula)
-        {
-            if (Formula?.Text == formula?.Text) return;
-            Formula = formula;
-            CancelPendingCopy();
-            _retainGeometryMeasurements = true;
-            RefreshingFormula = true;
-            try { if (!_completingInClearData) ExpireSolution(true); }
-            finally { RefreshingFormula = false; _retainGeometryMeasurements = false; }
-            Instances.ActiveCanvas?.Invalidate();
+            BeginFormulaEdit();
+            EndFormulaEdit(formula, commit: true);
         }
 
         internal static bool HasFilters(PanelQueryOptions options) =>
@@ -263,8 +265,11 @@ namespace BetterGhPanel
             if (committed && !CanOutputValues) OutputValues = PanelOutputValues.Items;
             (Attributes as BetterPanelAttributes)?.UseRowSelection(RowSelection);
             (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
-            if (committed) OnPingDocument()?.Modified();
-            ScheduleOutput();
+            if (committed)
+            {
+                OnPingDocument()?.Modified();
+                if (!Session.IsBusy) ScheduleOutput();
+            }
         }
 
         internal bool ResetAll()
@@ -576,7 +581,7 @@ namespace BetterGhPanel
             writer.SetInt32("PanelUnitConversion", (int)UnitConversion);
             writer.SetInt32("PanelDecimalPlaces", DecimalPlaces);
             writer.SetDouble("PanelRoundUpFactor", RoundUpFactor);
-            writer.SetString("PanelFormula", CommittedFormula?.Text ?? "");
+            writer.SetString("PanelFormula", Formula?.Text ?? "");
             writer.SetInt32("PanelOutputScope", (int)OutputScope);
             writer.SetInt32("PanelOutputValues", (int)OutputValues);
             writer.SetInt32("PanelOutputSchema", 1);
@@ -607,10 +612,7 @@ namespace BetterGhPanel
             _session?.InvalidateInput(false, suspended: Locked);
             CancelPendingCopy();
             ClearHighlight();
-            bool completing = _completingInClearData;
-            _completingInClearData = true;
-            try { (Attributes as BetterPanelAttributes)?.ResetViewState(); }
-            finally { _completingInClearData = completing; }
+            (Attributes as BetterPanelAttributes)?.ResetViewState();
             RowSelection.Clear();
             var search = ""; var type = ""; var branch = "";
             var prefix = false; var invalid = false; var sort = 0; var size = 1; var searchMode = 0;
@@ -707,7 +709,7 @@ namespace BetterGhPanel
             PanelFormula.TryCompile(formulaText, out var formula, out _);
             Formula = formula;
             FormulaEditing = false;
-            _formulaBefore = null;
+            _formulaPreview = null;
             int outputScope = 0;
             reader.TryGetInt32("PanelOutputScope", ref outputScope);
             OutputScope = Enum.IsDefined(typeof(PanelOutputScope), outputScope) ? (PanelOutputScope)outputScope : PanelOutputScope.Filtered;

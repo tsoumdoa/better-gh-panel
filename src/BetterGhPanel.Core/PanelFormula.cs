@@ -10,7 +10,16 @@ namespace BetterGhPanel.Core
         private readonly Func<double, double> _evaluate;
         private PanelFormula(string text, Func<double, double> evaluate) { Text = text; _evaluate = evaluate; }
         public string Text { get; }
-        public string Pretty => Text.Replace('-', '−');
+        public string Pretty
+        {
+            get
+            {
+                var text = Text.ToCharArray();
+                for (int i = 0; i < text.Length; i++)
+                    if (text[i] == '-' && (i == 0 || text[i - 1] != 'e' && text[i - 1] != 'E')) text[i] = '−';
+                return new string(text);
+            }
+        }
         public double Evaluate(double x) => double.IsNaN(x) || double.IsInfinity(x) ? double.NaN : _evaluate(x);
 
         public static bool TryCompile(string? text, out PanelFormula? formula, out string error)
