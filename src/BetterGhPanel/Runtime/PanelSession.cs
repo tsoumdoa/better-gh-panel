@@ -23,6 +23,8 @@ namespace BetterGhPanel.Runtime
         private Func<double>? _roundUpFactorResolver;
         private Func<PanelFormula?>? _formulaResolver;
         private Func<bool>? _createSetResolver;
+        private Func<bool>? _branchStatsResolver;
+        private Func<PanelStatKinds>? _statKindsResolver;
         private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryPreparationResolver;
         private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryRetentionResolver;
         private Func<PanelSnapshot, int, bool>? _geometrySourceCurrent;
@@ -165,6 +167,8 @@ namespace BetterGhPanel.Runtime
         internal void SetFormulaResolver(Func<PanelFormula?> resolver) => _formulaResolver = resolver;
         internal void SetRoundUpFactorResolver(Func<double> resolver) => _roundUpFactorResolver = resolver;
         internal void SetCreateSetResolver(Func<bool> resolver) => _createSetResolver = resolver;
+        internal void SetBranchStatsResolver(Func<bool> enabled, Func<PanelStatKinds> picks)
+        { _branchStatsResolver = enabled; _statKindsResolver = picks; }
         private Func<bool>? _outputValuesResolver;
         internal void SetOutputValuesResolver(Func<bool> resolver) => _outputValuesResolver = resolver;
 
@@ -250,6 +254,8 @@ namespace BetterGhPanel.Runtime
             if (_decimalPlacesResolver != null) next.DecimalPlaces = _decimalPlacesResolver();
             if (_roundUpFactorResolver != null) next.RoundUpFactor = _roundUpFactorResolver();
             if (_formulaResolver != null) next.Formula = _formulaResolver();
+            if (_branchStatsResolver != null) next.BranchStats = _branchStatsResolver();
+            if (_statKindsResolver != null) next.StatKinds = _statKindsResolver();
             if (_createSetResolver != null) next.CreateSet = _createSetResolver();
             if (_outputValuesResolver != null) next.OutputValues = _outputValuesResolver() && (next.DisplayFilterValue || next.CreateSet);
             next.DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, next.DecimalPlaces));
@@ -278,7 +284,7 @@ namespace BetterGhPanel.Runtime
             var snapshot = Snapshot;
             var options = _options.Clone();
             bool measureGeometry = snapshot.HasMeasurableGeometry && PanelQueryEngine.RequiresGeometryMeasurements(options);
-            var sortColumn = options.SortMode == PanelSortMode.SourceOrder ? null :
+            var sortColumn = options.BranchStats || options.SortMode == PanelSortMode.SourceOrder ? null :
                 _columns.Find(column => column.Input.InstanceGuid == options.SortColumn && column.Snapshot?.HasMeasurableGeometry == true);
             var sortSnapshot = sortColumn?.Snapshot;
             var sortQueue = sortColumn?.Geometry;
@@ -388,6 +394,8 @@ namespace BetterGhPanel.Runtime
             _busyAnimation?.Stop();
             ResultChanged?.Invoke(this, EventArgs.Empty);
             Notify();
+            if (result?.BranchStats != null && ReferenceEquals(Result, result) && HasCurrentResult && _queryCancellation != null)
+                StartBranchStatColumns(result, _request, _queryCancellation.Token);
         }
 
         private Task<IReadOnlyDictionary<int, PanelGeometryInfo>?> CaptureGeometryMeasurements(

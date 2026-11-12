@@ -395,6 +395,8 @@ namespace BetterGhPanel.Core
         public bool DisplayFilterValue { get; set; }
         /// <summary>Create a set of the current formatted values after filtering.</summary>
         public bool CreateSet { get; set; }
+        public bool BranchStats { get; set; }
+        public PanelStatKinds StatKinds { get; set; } = PanelBranchStats.Default;
         /// <summary>Prepare typed displayed values for D/S, including offscreen measurements.</summary>
         public bool OutputValues { get; set; }
         /// <summary>Geometry/property rounding; captured scalars already carry this transform.</summary>
@@ -420,6 +422,7 @@ namespace BetterGhPanel.Core
             SearchMode = SearchMode,
             DisplayFilterValue = DisplayFilterValue,
             CreateSet = CreateSet,
+            BranchStats = BranchStats, StatKinds = StatKinds,
             OutputValues = OutputValues,
             DecimalPlaces = DecimalPlaces,
             RoundUpFactor = RoundUpFactor,
@@ -435,83 +438,49 @@ namespace BetterGhPanel.Core
         };
     }
 
-    /// <summary>One exact numeric or string value, ordered by its first occurrence in the source.</summary>
-    public sealed class PanelValueFrequency
-    {
-        private readonly PanelText? _stringValue;
-        internal PanelValueFrequency(double? numericValue, PanelText? stringValue, int count, string? presentedText = null, int distinctCount = 1, string units = "", int precision = 12, int decimals = -1)
-        {
-            DistinctCount = distinctCount;
-            _presentedText = presentedText;
-            _units = units; _precision = precision; _decimals = decimals;
-            NumericValue = numericValue;
-            _stringValue = stringValue;
-            Count = count;
-        }
-
-        public int DistinctCount { get; }
-        private string? _presentedText;
-        private readonly string _units;
-        private readonly int _precision, _decimals;
-        public string? PresentedText => _presentedText ?? (_presentedText = NumericValue.HasValue
-            ? PanelUnits.Format(NumericValue.Value, PanelUnitConversion.None, _decimals, _precision == 6 ? "G6" : "G12") + (_units.Length == 0 ? "" : " " + _units) : null);
-        public double? NumericValue { get; }
-        public string? StringValue => _stringValue?.ToString();
-        public int Count { get; }
-    }
-
     public sealed class PanelStatistics
     {
-        internal PanelStatistics(int itemCount, int branchCount, int numericCount, int nullCount,
-            int invalidCount, double? minimum, double? maximum, double? mean,
+        internal PanelStatistics(int itemCount, int branchCount, int nullCount,
+            int invalidCount,
             IReadOnlyDictionary<string, int> typeCounts, IReadOnlyDictionary<string, int> branchItemCounts,
-            IReadOnlyList<PanelValueFrequency> uniqueValues, int scalarCount, int unverifiedCount,
-            PanelSourceStatusCounts filteredSourceStatuses, string numericUnits = "", string automaticFormat = "G12")
+            int unverifiedCount,
+            PanelSourceStatusCounts filteredSourceStatuses)
         {
-            AutomaticFormat = automaticFormat;
-            NumericUnits = numericUnits;
             ItemCount = itemCount;
             BranchCount = branchCount;
-            NumericCount = numericCount;
             NullCount = nullCount;
             InvalidCount = invalidCount;
             UnverifiedCount = unverifiedCount;
             FilteredSourceStatuses = filteredSourceStatuses;
-            Minimum = minimum;
-            Maximum = maximum;
-            Mean = mean;
             TypeCounts = typeCounts;
             BranchItemCounts = branchItemCounts;
-            UniqueValues = uniqueValues;
-            ScalarCount = scalarCount;
         }
 
         public int ItemCount { get; }
         public int BranchCount { get; }
-        public int NumericCount { get; }
         public int NullCount { get; }
         public int InvalidCount { get; }
         /// <summary>Unverified projected rows, separate from verified invalid rows.</summary>
         public int UnverifiedCount { get; }
         /// <summary>Filtered input occurrences before Create set, independent of representatives.</summary>
         public PanelSourceStatusCounts FilteredSourceStatuses { get; }
-        public string AutomaticFormat { get; }
-        public string NumericUnits { get; }
-        public double? Minimum { get; }
-        public double? Maximum { get; }
-        public double? Mean { get; }
         public IReadOnlyDictionary<string, int> TypeCounts { get; }
         /// <summary>Counts in this filtered result, including retained empty branches.</summary>
         public IReadOnlyDictionary<string, int> BranchItemCounts { get; }
-        /// <summary>Valid finite numbers and exact captured strings; these kinds never compare equal.</summary>
-        public IReadOnlyList<PanelValueFrequency> UniqueValues { get; }
-        public int ScalarCount { get; }
-        public int UniqueExcludedCount => ItemCount - ScalarCount;
+
     }
 
     public sealed class PanelQueryResult
     {
         public PanelTableIndex? TableIndex { get; internal set; }
+        public IReadOnlyDictionary<string, PanelBranchStats>? BranchStats { get; internal set; }
+        internal HashSet<int> StatSources { get; set; } = new HashSet<int>();
+        internal string StatHeaderSuffix { get; set; } = "";
+        internal Dictionary<Guid, string> ColumnStatHeaderSuffixes { get; } = new Dictionary<Guid, string>();
+        public IReadOnlyList<PanelStatKinds> StatRows { get; internal set; } = Array.Empty<PanelStatKinds>();
+        public PanelStatKinds StatKinds { get; internal set; } = PanelBranchStats.Default;
+        public int StatDecimals { get; internal set; } = PanelUnits.AutomaticDecimals;
+        internal Dictionary<Guid, IReadOnlyDictionary<string, PanelBranchStats>> ColumnBranchStats { get; } = new Dictionary<Guid, IReadOnlyDictionary<string, PanelBranchStats>>();
         internal Dictionary<Guid, PanelTableColumnSummary> TableSummaries { get; } = new Dictionary<Guid, PanelTableColumnSummary>();
         private readonly PanelResultPositionIndex _viewIndices;
         private readonly HashSet<string> _branchPaths;

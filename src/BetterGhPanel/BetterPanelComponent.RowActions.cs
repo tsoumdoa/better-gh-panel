@@ -34,6 +34,7 @@ namespace BetterGhPanel
         {
             if (!ReferenceEquals(snapshot, Session.Snapshot) || position < 0 || position >= snapshot.Rows.Count)
                 throw new InvalidOperationException("The selected data has changed. Select the rows again.");
+            if (Session.Result.BranchStats != null) return SelectedStatText(Session.Result, new[] { position });
             var row = snapshot.Rows[position];
             if (Session.Result.DisplaySet?.Values.TryGetValue(position, out var projected) == true) return projected.CopyText;
             var options = Session.Options;
@@ -230,11 +231,13 @@ namespace BetterGhPanel
             var session = Session;
             var result = session.Result;
             if ((includeColumns || tableColumn != null) && !SummariesCurrent(result)) return "Column summaries are recomputing. Try copying again.";
-            bool listLengthCopy = path == null && (action == PanelRowAction.CopyValues || includeColumns) && session.Options.DisplayFilterValue && session.Options.SearchMode == PanelSearchMode.ListLength;
+            bool statsCopy = result.BranchStats != null && path == null && (action == PanelRowAction.CopyValues || action == PanelRowAction.CopyTable);
+            bool statsTable = statsCopy && (includeColumns || positions.Count == 0 || action == PanelRowAction.CopyTable);
+            bool listLengthCopy = result.BranchStats == null && path == null && (action == PanelRowAction.CopyValues || includeColumns) && session.Options.DisplayFilterValue && session.Options.SearchMode == PanelSearchMode.ListLength;
             bool branchSet = path == null && (action == PanelRowAction.CopyValues || includeColumns) && result.DisplaySet?.IsBranchSet == true;
             IReadOnlyList<int> ordered;
             if (path != null || columnBranch != null || action == PanelRowAction.CopyPaths && RowSelection.Count > 0) ordered = positions;
-            else if (branchSet || listLengthCopy) ordered = Array.Empty<int>();
+            else if (branchSet || listLengthCopy || statsTable) ordered = Array.Empty<int>();
             else if (!TryGetActionPositions(snapshot, positions, out ordered)) return "Data changed; select rows again";
             string? pathText = path == null ? null : action == PanelRowAction.CopyPathBare ? path.Trim('{', '}') : path;
             var branchSelection = branchSet || listLengthCopy ? new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal) : null;
@@ -247,15 +250,15 @@ namespace BetterGhPanel
             long selectionVersion = RowSelection.Version;
             var cancellation = new CancellationTokenSource();
             _copyCancellation = cancellation;
-            var measurementPositions = session.Options.DisplayFilterValue && PanelProperties.IsProperty(session.Options.SearchMode)
+            var measurementPositions = statsCopy ? Array.Empty<int>() : session.Options.DisplayFilterValue && PanelProperties.IsProperty(session.Options.SearchMode)
                 ? ordered.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
                     session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray() : ordered;
             bool addressOnly = action != PanelRowAction.CopyValues && action != PanelRowAction.CopyTable;
             var copyToken = cancellation.Token;
-            var columnMeasurements = (includeColumns ? TableColumns : tableColumn != null ? new[] { tableColumn } : Array.Empty<PanelTableColumn>())
+            var columnMeasurements = (statsCopy ? Array.Empty<PanelTableColumn>() : includeColumns ? TableColumns : tableColumn != null ? new[] { tableColumn } : Array.Empty<PanelTableColumn>())
                 .Select(value => (Column: value, Snapshot: value.Snapshot, Queue: value.Geometry,
                     Items: ColumnCopyItems(value, result, ordered, columnBranch != null ? new[] { columnBranch } : branches))).ToArray();
-            bool measured = addressOnly || tableColumn != null || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, copyToken);
+            bool measured = statsCopy || addressOnly || tableColumn != null || listLengthCopy || await session.MeasureGeometryAsync(snapshot, measurementPositions, copyToken);
             if (!addressOnly)
                 foreach (var request in columnMeasurements)
                     if (request.Snapshot != null && request.Queue != null)
@@ -269,7 +272,7 @@ namespace BetterGhPanel
                         outcome == PanelCommitOutcome.Committed && !ClipboardGeneration.IsCurrent(clipboardGeneration)
                             ? "Copy context changed during clipboard publication; clipboard state is uncertain." :
                         outcome != PanelCommitOutcome.Committed ? "Copy cancelled" :
-                        path != null ? "Copied " + pathText : addressOnly ? "Addresses copied" : action == PanelRowAction.CopyTable ? "Table copied" :
+                        path != null ? "Copied " + pathText : addressOnly ? "Addresses copied" : action == PanelRowAction.CopyTable ? "Table copied" : statsTable ? "Stats copied" :
                         tableColumn != null ? ordered.Count <= 1 ? "Value copied" : ordered.Count + " values copied" :
                         branchSet || listLengthCopy ? branches.Length + (branches.Length == 1 ? " count copied" : " counts copied") :
                         ordered.Count == 1 ? "Value copied" : ordered.Count + " values copied";
@@ -283,7 +286,7 @@ namespace BetterGhPanel
                         (action != PanelRowAction.CopyTable || includeColumns == EffectiveTableVisible) &&
                         (tableColumn == null || EffectiveTableVisible && TableColumns.Contains(tableColumn)) &&
                         (!(includeColumns || tableColumn != null) || SummariesCurrent(result)) &&
-                        (path != null || columnBranch != null || action == PanelRowAction.CopyPaths || branchSet || listLengthCopy
+                        (path != null || columnBranch != null || action == PanelRowAction.CopyPaths || branchSet || listLengthCopy || statsTable
                             ? RowSelection.Version == selectionVersion && (path == null || result.ContainsBranchPath(path)) && (columnBranch == null || result.ContainsBranchPath(columnBranch))
                             : PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion));
                     if (!measured || !SelectionCurrent()) Finish(PanelCommitOutcome.Stale);
@@ -292,7 +295,8 @@ namespace BetterGhPanel
                         if (!includeColumns)
                             foreach (var request in columnMeasurements) request.Column.RequireMeasurements(request.Items);
                         string text;
-                        if (includeColumns) text = TableTsv(result, ordered);
+                        if (statsCopy) text = statsTable ? StatsTsv(result, includeColumns) : SelectedStatText(result, ordered);
+                        else if (includeColumns) text = TableTsv(result, ordered);
                         else if (tableColumn != null && action == PanelRowAction.CopyValues)
                             text = columnBranch != null ? tableColumn.BranchCellText(result, columnBranch, UnitConversion, DecimalPlaces, RoundUpFactor, HeaderTitleForInput(tableColumn.Input)) :
                                 string.Join(Environment.NewLine, ordered.Select(position => tableColumn.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor)));
@@ -365,7 +369,6 @@ namespace BetterGhPanel
             status = Format(result);
             return result.Success;
         }
-
 
         internal bool SelectionHasGeometry(IReadOnlyList<int> positions)
         {

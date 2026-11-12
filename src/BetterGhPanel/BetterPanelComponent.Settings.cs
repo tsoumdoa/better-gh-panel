@@ -107,7 +107,9 @@ namespace BetterGhPanel
         internal bool ReverseTree { get; private set; }
         internal bool SimplifyTree { get; private set; }
         internal bool CreateSetTree { get; private set; }
-        internal bool HasTreeOperations => TrimDepth > 0 || FlattenTree || ReverseTree || SimplifyTree || CreateSetTree;
+        internal bool BranchStatsTree { get; private set; }
+        internal PanelStatKinds StatKinds { get; private set; } = PanelBranchStats.Default;
+        internal bool HasTreeOperations => BranchStatsTree || TrimDepth > 0 || FlattenTree || ReverseTree || SimplifyTree || CreateSetTree;
         internal PanelUnitConversion UnitConversion { get; private set; }
         internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
         internal double RoundUpFactor { get; private set; }
@@ -292,7 +294,7 @@ namespace BetterGhPanel
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
             if (settingsChanged) RecordUndoEvent("Panel+ reset all");
             TrimDepth = 0;
-            FlattenTree = ReverseTree = SimplifyTree = CreateSetTree = false;
+            FlattenTree = ReverseTree = SimplifyTree = CreateSetTree = BranchStatsTree = false;
             UnitConversion = PanelUnitConversion.None;
             RoundUpFactor = 0;
             Formula = null;
@@ -339,6 +341,7 @@ namespace BetterGhPanel
             ReverseTree = reverse;
             SimplifyTree = simplify;
             CreateSetTree = createSet;
+            if (createSet) BranchStatsTree = false;
             if (!CanOutputValues) OutputValues = PanelOutputValues.Items;
             if (pathsChanged)
             {
@@ -353,6 +356,21 @@ namespace BetterGhPanel
             _discardViewRestore = true;
             try { if (!_completingInClearData) ExpireSolution(true); }
             finally { _discardViewRestore = false; }
+            Instances.ActiveCanvas?.Invalidate();
+        }
+
+        internal void SetBranchStats(bool enabled, PanelStatKinds? picks = null)
+        {
+            var kinds = PanelBranchStats.Normalize(picks ?? StatKinds);
+            if (enabled == BranchStatsTree && kinds == StatKinds) return;
+            RecordUndoEvent("Panel+ branch stats");
+            BranchStatsTree = enabled;
+            StatKinds = kinds;
+            if (enabled) CreateSetTree = false;
+            RowSelection.Clear();
+            Session.UpdateQuery(Session.Options);
+            OnPingDocument()?.Modified();
+            if (!Session.IsBusy) ScheduleOutput();
             Instances.ActiveCanvas?.Invalidate();
         }
 
@@ -586,6 +604,8 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelReverse", ReverseTree);
             writer.SetBoolean("PanelSimplify", SimplifyTree);
             writer.SetBoolean("PanelCreateSet", CreateSetTree);
+            writer.SetBoolean("PanelBranchStats", BranchStatsTree);
+            writer.SetInt32("PanelStatKinds", (int)StatKinds);
             writer.SetInt32("PanelUnitConversion", (int)UnitConversion);
             writer.SetInt32("PanelDecimalPlaces", DecimalPlaces);
             writer.SetDouble("PanelRoundUpFactor", RoundUpFactor);
@@ -602,6 +622,28 @@ namespace BetterGhPanel
             for (int i = 0; i < Math.Min(4, Params.Output.Count); i++)
                 success &= Params.Output[i].Write(writer.CreateChunk("param_output", i));
             return success;
+        }
+
+        // Also usable without Grasshopper's parameter/plugin loader.
+        internal bool ReadTreeTools(GH_IReader reader)
+        {
+            int trimDepth = 0;
+            bool flatten = false, reverse = false, simplify = false, createSet = false;
+            reader.TryGetInt32("PanelTrimDepth", ref trimDepth);
+            reader.TryGetBoolean("PanelFlatten", ref flatten);
+            reader.TryGetBoolean("PanelReverse", ref reverse);
+            reader.TryGetBoolean("PanelSimplify", ref simplify);
+            reader.TryGetBoolean("PanelCreateSet", ref createSet);
+            bool branchStats = false; int statKinds = (int)PanelBranchStats.Default;
+            reader.TryGetBoolean("PanelBranchStats", ref branchStats);
+            reader.TryGetInt32("PanelStatKinds", ref statKinds);
+            BranchStatsTree = branchStats; StatKinds = PanelBranchStats.Normalize((PanelStatKinds)statKinds);
+            TrimDepth = Math.Max(0, trimDepth);
+            FlattenTree = flatten;
+            ReverseTree = reverse;
+            SimplifyTree = simplify;
+            CreateSetTree = createSet && !BranchStatsTree;
+            return createSet;
         }
 
         public override bool Read(GH_IReader reader)
@@ -688,18 +730,7 @@ namespace BetterGhPanel
             ShowValues = showValues; ReversePalette = reversePalette;
             DotPlacement = Enum.IsDefined(typeof(PanelDotPlacement), dotPlacement) ? (PanelDotPlacement)dotPlacement : PanelDotPlacement.Centre;
             ValuePalette = Enum.IsDefined(typeof(PanelValuePalette), valuePalette) ? (PanelValuePalette)valuePalette : PanelValuePalette.Off;
-            int trimDepth = 0;
-            bool flatten = false, reverse = false, simplify = false, createSet = false;
-            reader.TryGetInt32("PanelTrimDepth", ref trimDepth);
-            reader.TryGetBoolean("PanelFlatten", ref flatten);
-            reader.TryGetBoolean("PanelReverse", ref reverse);
-            reader.TryGetBoolean("PanelSimplify", ref simplify);
-            reader.TryGetBoolean("PanelCreateSet", ref createSet);
-            TrimDepth = Math.Max(0, trimDepth);
-            FlattenTree = flatten;
-            ReverseTree = reverse;
-            SimplifyTree = simplify;
-            CreateSetTree = createSet;
+            bool createSet = ReadTreeTools(reader);
             int outputValues = createSet ? (int)PanelOutputValues.Values : (int)PanelOutputValues.Items;
             reader.TryGetInt32("PanelOutputValues", ref outputValues);
             OutputValues = Enum.IsDefined(typeof(PanelOutputValues), outputValues) ? (PanelOutputValues)outputValues : PanelOutputValues.Items;

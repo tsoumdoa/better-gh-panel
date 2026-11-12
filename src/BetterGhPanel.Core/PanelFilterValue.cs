@@ -180,7 +180,7 @@ namespace BetterGhPanel.Core
 
         /// <summary>The converted, unrounded input for a formula example or row tooltip.</summary>
         public static bool TryFormulaInput(PanelSnapshot snapshot, PanelRow row, PanelQueryOptions options,
-            PanelGeometryInfo? measured, out double number, out string unit)
+            PanelGeometryInfo? measured, out double number, out string unit, PanelUnitConversion? conversionOverride = null)
         {
             number = 0;
             unit = "";
@@ -201,8 +201,8 @@ namespace BetterGhPanel.Core
             {
                 var geometry = measured ?? row.GeometryInfo;
                 if (geometry?.Value == null || geometry.Value < 0) return false;
-                number = PanelUnits.ConvertGeometry(geometry.Value.Value, geometry.Power, geometry.Units, snapshot.UnitConversion);
-                unit = PanelPropertyValue.Numeric(1, geometry.Power, geometry.Units).UnitSymbol(snapshot.UnitConversion);
+                number = PanelUnits.ConvertGeometry(geometry.Value.Value, geometry.Power, geometry.Units, conversionOverride ?? snapshot.UnitConversion);
+                unit = PanelPropertyValue.Numeric(1, geometry.Power, geometry.Units).UnitSymbol(conversionOverride ?? snapshot.UnitConversion);
             }
             return IsFinite(number);
         }

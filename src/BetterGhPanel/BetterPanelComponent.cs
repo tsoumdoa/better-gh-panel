@@ -122,6 +122,7 @@ namespace BetterGhPanel
                     _session.SetRoundUpFactorResolver(() => RoundUpFactor);
                     _session.SetFormulaResolver(() => PresentedFormula);
                     _session.SetCreateSetResolver(() => CreateSetTree);
+                    _session.SetBranchStatsResolver(() => BranchStatsTree, () => StatKinds);
                     _session.SetOutputValuesResolver(() => OutputValues == PanelOutputValues.Values);
                     if (Locked) _session.InvalidateInput(false, suspended: true);
                     _session.SetGeometryPreparationResolver(PrepareCapturedGeometry);
@@ -144,7 +145,6 @@ namespace BetterGhPanel
                         }
                         if (!_restoringView && !QueryPreviewActive && !CanOutputValues) OutputValues = PanelOutputValues.Items;
                         (Attributes as BetterPanelAttributes)?.OnQueryStarted();
-                        (Attributes as BetterPanelAttributes)?.InvalidateStatistics();
                         CancelPendingCopy();
                         ClearHighlightCore(keepValues: true);
                         if (!_restoringView && !QueryPreviewActive)
@@ -205,8 +205,8 @@ namespace BetterGhPanel
 
         protected override void RegisterOutputParams(GH_OutputParamManager p)
         {
-            p.AddGenericParameter("Data", "D", "Matching Items or displayed Values after tree tools, units, formula and filters. Set Items: all members in {path;k} ({k} when flattened); list-length sets use {k;path}. Set Values: unique values at displayed precision. Values use the shown rounding; unavailable values are null. Sorting changes only the view.", GH_ParamAccess.tree);
-            p.AddGenericParameter("Selected data", "S", "Selected Items or Values in tree order. Set Items include every member and keep the same group paths as D. Empty when no rows are selected.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Data", "D", "Matching Items or displayed Values after tree tools, units, formula and filters. Stats: chosen per-branch numbers, with nulls for unavailable stats. Set Items: all members in {path;k} ({k} when flattened); list-length sets use {k;path}. Set Values: unique values at displayed precision. Values use the shown rounding; unavailable values are null. Sorting changes only the view.", GH_ParamAccess.tree);
+            p.AddGenericParameter("Selected data", "S", "Selected Items or Values in tree order. Stats: selected Min/Max values at their branch paths. Set Items include every member and keep the same group paths as D. Empty when no rows are selected.", GH_ParamAccess.tree);
             p.AddBooleanParameter("Membership mask", "B", MaskDescription, GH_ParamAccess.tree);
             p.AddGenericParameter("Paired results", "F", PairedDescription, GH_ParamAccess.tree);
         }
@@ -340,9 +340,12 @@ namespace BetterGhPanel
             Menu_AppendItem(menu, PanelMinimized ? "Restore panel" : "Minimize to capsule", (_, __) => SetPanelMinimized(!PanelMinimized));
             Menu_AppendItem(menu, "Reset all", (_, __) => ResetAll());
             Menu_AppendItem(menu, "Clear filters", (_, __) => ClearFilters());
-            var valuesMenu = Menu_AppendItem(menu, "Output: " + (OutputsValues ? "Values" : "Items"));
-            Menu_AppendItem(valuesMenu.DropDown, "Items", (_, __) => SetOutputValues(PanelOutputValues.Items), true, !OutputsValues);
-            Menu_AppendItem(valuesMenu.DropDown, "Values", (_, __) => SetOutputValues(PanelOutputValues.Values), CanOutputValues, OutputsValues);
+            if (!BranchStatsTree)
+            {
+                var valuesMenu = Menu_AppendItem(menu, "Output: " + (OutputsValues ? "Values" : "Items"));
+                Menu_AppendItem(valuesMenu.DropDown, "Items", (_, __) => SetOutputValues(PanelOutputValues.Items), true, !OutputsValues);
+                Menu_AppendItem(valuesMenu.DropDown, "Values", (_, __) => SetOutputValues(PanelOutputValues.Values), CanOutputValues, OutputsValues);
+            }
             var outputMenu = Menu_AppendItem(menu, "B + F follow: " + (OutputScope == PanelOutputScope.Filtered ? "Results" : "Selection"));
             Menu_AppendItem(outputMenu.DropDown, "Results", (_, __) => SetOutputScope(PanelOutputScope.Filtered), true, OutputScope == PanelOutputScope.Filtered);
             Menu_AppendItem(outputMenu.DropDown, "Selection", (_, __) => SetOutputScope(PanelOutputScope.Selected), true, OutputScope == PanelOutputScope.Selected);

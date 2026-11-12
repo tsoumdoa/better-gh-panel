@@ -7,15 +7,12 @@ using Xunit;
 public sealed class PresentedNumberTests
 {
     [Fact]
-    public void AutomaticGeometryStatisticsMatchRows()
+    public void AutomaticGeometryFormatting()
     {
         var row = new PanelRow(0, "{0}", "Curve", "Curve", null,
             geometryInfo: new PanelGeometryInfo("Curve", 1.23456789, units: "mm"));
         var snapshot = new PanelSnapshot(new[] { row }, new[] { new PanelBranch("{0}", 1) });
-        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { DisplayFilterValue = true, SearchMode = PanelSearchMode.Length });
         Assert.Equal("1.23457 mm", PanelFilterValue.Format(snapshot, row, PanelSearchMode.Length, -1));
-        Assert.Equal("1×  Number: 1.23457 mm", CanvasStatistics.Label(result, 9, -1));
-        Assert.Equal("Numbers: 1 · Min: 1.23457 mm", CanvasStatistics.Label(result, 2, -1));
     }
 
     [Fact]
@@ -124,39 +121,6 @@ public sealed class PresentedNumberTests
         }
     }
 
-    [Fact]
-    public void StatisticsGroupConvertedCoordinatesAndProperties()
-    {
-        var rows = new[] {
-            new PanelRow(0, "{0}", "Point", "", null, PanelValidity.VerifiedValid, components: new PanelComponents(1000, 0, 0, "mm")),
-            new PanelRow(1, "{0}", "Point", "", null, PanelValidity.VerifiedValid, components: new PanelComponents(1000, 0, 0, "mm"))
-        };
-        var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", 2) }, unitConversion: PanelUnitConversion.MillimetersToMeters);
-        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { DisplayFilterValue = true, SearchMode = PanelSearchMode.X, DecimalPlaces = 2 });
-        Assert.Single(result.Statistics.UniqueValues);
-        Assert.Equal(2, result.Statistics.UniqueValues[0].Count);
-        Assert.Equal("1.00 m", result.Statistics.UniqueValues[0].PresentedText);
-    }
-
-    [Fact]
-    public void StatisticsKeepPropertyUnitSymbolsSeparate()
-    {
-        var rows = new[] {
-            new PanelRow(0, "{0}", "Example", "", null, PanelValidity.VerifiedValid,
-                properties: new Dictionary<PanelSearchMode, PanelPropertyValue?> { [PanelSearchMode.Radius] = PanelPropertyValue.Numeric(1000, 1, "mm") }),
-            new PanelRow(1, "{0}", "Example", "", null, PanelValidity.VerifiedValid,
-                properties: new Dictionary<PanelSearchMode, PanelPropertyValue?> { [PanelSearchMode.Radius] = PanelPropertyValue.Numeric(1, 1, "ft") })
-        };
-        var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", 2) }, unitConversion: PanelUnitConversion.MillimetersToMeters);
-        foreach (int decimals in new[] { -1, 2 })
-        {
-            var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { DisplayFilterValue = true, SearchMode = PanelSearchMode.Radius, DecimalPlaces = decimals });
-            Assert.Equal(2, result.Statistics.UniqueValues.Count);
-            Assert.Contains("m", result.Statistics.UniqueValues[0].PresentedText!);
-            Assert.Contains("ft", result.Statistics.UniqueValues[1].PresentedText!);
-        }
-    }
-
     [Theory]
     [InlineData(-4111711901664.5996, .3, 1)]
     [InlineData(2611424723924.8003, .1, 3)]
@@ -216,11 +180,7 @@ public sealed class PresentedNumberTests
         var options = new PanelQueryOptions { SearchMode = PanelSearchMode.Length, DisplayFilterValue = true, OutputValues = true, DecimalPlaces = 2 };
         var result = PanelQueryEngine.Execute(snapshot, options);
         Assert.Equal(4.5, result.OutputValues![0]!.Number);
-        Assert.Equal(4.5, result.Statistics.Minimum);
-        Assert.Equal(4.5, result.Statistics.Maximum);
-        Assert.Equal(4.5, result.Statistics.Mean);
-        Assert.Single(result.Statistics.UniqueValues);
-        Assert.Equal(2, result.Statistics.UniqueValues[0].Count);
+
         Assert.Equal("4.50 mm", PanelFilterValue.Format(snapshot, rows[0], options.SearchMode, 2));
     }
 
@@ -263,7 +223,6 @@ public sealed class PresentedNumberTests
         var snapshot = new PanelSnapshot(new[] { scalar }, new[] { new PanelBranch("{0}", 1) });
         options.SearchMode = PanelSearchMode.Value;
         Assert.Single(PanelQueryEngine.Execute(snapshot, options).RowPositions);
-        Assert.Equal(4.5, PanelQueryEngine.Execute(snapshot, options).Statistics.Minimum);
     }
 
     [Fact]
@@ -289,31 +248,6 @@ public sealed class PresentedNumberTests
         Assert.Contains("2 decimal places", PanelFilterValue.RoundingDescription(snapshot, scalar, options));
         options.DecimalPlaces = -1;
         Assert.Equal("", PanelFilterValue.RoundingDescription(snapshot, scalar, options));
-    }
-
-    [Fact]
-    public void GeometryStatisticsRetainUnconvertedSourceUnits()
-    {
-        var options = new PanelQueryOptions { DisplayFilterValue = false, OutputValues = true, DecimalPlaces = 2, Search = "= 4.5" };
-        var feet = new PanelRow(0, "{0}", "Curve", "", null, geometryInfo: new PanelGeometryInfo("Curve", 12.345, units: "ft"));
-        var snapshot = new PanelSnapshot(new[] { feet }, new[] { new PanelBranch("{0}", 1) }, PanelUnitConversion.MillimetersToMeters);
-        options.SearchMode = PanelSearchMode.Length; options.Search = ""; options.DisplayFilterValue = true; options.DecimalPlaces = 2;
-        var result = PanelQueryEngine.Execute(snapshot, options);
-        Assert.Equal("ft", result.Statistics.NumericUnits);
-        Assert.Contains("12.35 ft", BetterGhPanel.Core.CanvasStatistics.Label(result, 2, 2));
-    }
-
-    [Fact]
-    public void ItemIndexStatisticsHaveNoLengthUnits()
-    {
-        var options = new PanelQueryOptions { DisplayFilterValue = false, OutputValues = true, DecimalPlaces = 2, Search = "= 4.5" };
-        var feet = new PanelRow(0, "{0}", "Curve", "", null, geometryInfo: new PanelGeometryInfo("Curve", 12.345, units: "ft"));
-        var snapshot = new PanelSnapshot(new[] { feet }, new[] { new PanelBranch("{0}", 1) }, PanelUnitConversion.MillimetersToMeters);
-        options.SearchMode = PanelSearchMode.Length; options.Search = ""; options.DisplayFilterValue = true; options.DecimalPlaces = 2;
-        options.SearchMode = PanelSearchMode.ItemIndex;
-        var result = PanelQueryEngine.Execute(snapshot, options);
-        Assert.Equal("", result.Statistics.NumericUnits);
-        Assert.DoesNotContain(" m", BetterGhPanel.Core.CanvasStatistics.Label(result, 2, 2));
     }
 
     [Fact]

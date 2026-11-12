@@ -92,6 +92,11 @@ namespace BetterGhPanel.Core
             _result = result;
             if (_anchor >= 0 && !result.TryGetViewIndex(_anchor, out _)) _anchor = -1;
             _positions.RemoveWhere(position => !result.TryGetViewIndex(position, out _));
+            if (result.BranchStats != null)
+            {
+                _positions.RemoveWhere(position => !result.StatSources.Contains(position));
+                if (!result.StatSources.Contains(_anchor)) _anchor = -1;
+            }
             if (result.DisplaySet?.IsBranchSet == true)
                 _emptyBranches.RemoveWhere(path => !result.ContainsBranchPath(path));
             else _emptyBranches.Clear();
@@ -127,6 +132,11 @@ namespace BetterGhPanel.Core
                     if (!result.TryGetViewIndex(_anchor, out _)) _anchor = -1;
                 }
             }
+            if (result.BranchStats != null)
+            {
+                _positions.RemoveWhere(position => !result.StatSources.Contains(position));
+                if (!result.StatSources.Contains(_anchor)) _anchor = -1;
+            }
             if (result.DisplaySet?.IsBranchSet == true)
                 _emptyBranches.RemoveWhere(path => !result.ContainsBranchPath(path));
             else _emptyBranches.Clear();
@@ -161,6 +171,7 @@ namespace BetterGhPanel.Core
 
         private void SelectAtIndex(PanelQueryResult result, int position, int index, bool toggle, bool range, bool preserveSelected)
         {
+            if (result.BranchStats != null && !result.StatSources.Contains(position)) return;
             int anchorIndex = -1;
             if (range && _anchor >= 0)
             {
@@ -248,6 +259,13 @@ namespace BetterGhPanel.Core
                 }).Distinct().OrderBy(index => index).ToArray();
         }
 
+        internal void SelectPositions(PanelQueryResult result, IEnumerable<int> positions)
+        {
+            Synchronize(result);
+            var next = new HashSet<int>(positions.Where(position => result.TryGetViewIndex(position, out _)));
+            Replace(next, next.Count == 0 ? -1 : next.Min());
+        }
+
         internal void SelectIndices(PanelQueryResult result, IEnumerable<int> indices)
         {
             Synchronize(result);
@@ -296,6 +314,11 @@ namespace BetterGhPanel.Core
 
         private void Replace(HashSet<int> next, int anchor, HashSet<string>? emptyBranches = null)
         {
+            if (_result?.BranchStats != null)
+            {
+                next.RemoveWhere(position => !_result.StatSources.Contains(position));
+                if (!_result.StatSources.Contains(anchor)) anchor = -1;
+            }
             bool samePositions = _positions.Count == next.Count;
             if (samePositions)
                 foreach (int position in next)

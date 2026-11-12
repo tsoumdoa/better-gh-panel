@@ -30,7 +30,8 @@ if (process.platform !== 'win32') {
   const smoke = 'tests/BetterGhPanel.RhinoSmoke/BetterGhPanel.RhinoSmoke.csproj';
   checks.push(['dotnet', ['build', smoke, '-c', 'Release', '--nologo']],
     ['dotnet', ['format', 'style', smoke, '--verify-no-changes', '--no-restore',
-      '--diagnostics', 'IDE0005', 'IDE0051', 'IDE0052', 'IDE0059', 'IDE0060', '--severity', 'info']]);
+      '--diagnostics', 'IDE0005', 'IDE0051', 'IDE0052', 'IDE0059', 'IDE0060', '--severity', 'info']],
+    ['dotnet', ['tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmoke.dll', '--branch-stats-headless']]);
 }
 
 for (const [command, args] of checks) {

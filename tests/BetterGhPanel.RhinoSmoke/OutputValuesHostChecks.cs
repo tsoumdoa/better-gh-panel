@@ -167,7 +167,7 @@ internal static class OutputValuesHostChecks
             PanelTestAdapter.Resize(component, width, 220);
             Call(component, "SetCanvasDisplay", Enum.Parse(typeof(BetterGhPanel.Core.PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.CanvasPanelDisplay", true)!, "Full"));
             await Query(PanelSearchMode.Text);
-            string[] controls = { "Trim", "Simplify", "Flatten", "Reverse", "CreateSet", "Units", "SelectAll", "Statistics" };
+            string[] controls = { "Trim", "Simplify", "Flatten", "Reverse", "CreateSet", "Units", "SelectAll", "BranchStats" };
             var before = controls.Select(Bounds).ToArray();
             await Query(PanelSearchMode.Length);
             Check(controls.Select(Bounds).SequenceEqual(before), "Showing Out keeps existing footer controls fixed at width " + width);

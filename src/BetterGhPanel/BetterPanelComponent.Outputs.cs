@@ -15,8 +15,8 @@ namespace BetterGhPanel
         private PanelRowSelection? _queryPreviewSelection;
         internal PanelRowSelection CommittedSelection => _committedSelection;
         internal PanelRowSelection RowSelection => _queryPreviewSelection ?? _committedSelection;
-        internal static bool CanOutputValuesFor(bool createSet, PanelQueryOptions options) => createSet || options.DisplayFilterValue;
-        internal bool CanOutputValues => CanOutputValuesFor(CreateSetTree, Session.Options);
+        internal static bool CanOutputValuesFor(bool createSet, PanelQueryOptions options) => !options.BranchStats && (createSet || options.DisplayFilterValue);
+        internal bool CanOutputValues => !BranchStatsTree && CanOutputValuesFor(CreateSetTree, Session.Options);
         internal bool OutputsValues => CanOutputValues && OutputValues == PanelOutputValues.Values;
         private GH_Structure<IGH_Goo>? _inputTree, _preConversionTree;
         private GH_Structure<IGH_Goo>? _liveInputTree, _itemOutputTree;
@@ -134,10 +134,31 @@ namespace BetterGhPanel
             _publishedValues = OutputValues;
         }
 
+        private GH_Structure<IGH_Goo> StatsOutput(PanelQueryResult query, IReadOnlyList<int> positions, bool selected)
+        {
+            var tree = new GH_Structure<IGH_Goo>();
+            var selection = selected ? new HashSet<int>(positions) : null;
+            foreach (string path in query.BranchPaths)
+            {
+                var stats = query.BranchStats![path];
+                var ghPath = new GH_Path();
+                if (!ghPath.FromString(path)) throw new InvalidOperationException("Invalid captured branch path.");
+                if (!selected) tree.EnsurePath(ghPath);
+                foreach (var stat in stats.Output(query.StatKinds, selection))
+                {
+                    var kind = stat.Kind;
+                    var value = stat.Number;
+                    tree.EnsurePath(ghPath).Add(!value.HasValue ? null! : kind == PanelStatKinds.Count ? (IGH_Goo)new GH_Integer((int)value.Value) : new GH_Number(value.Value));
+                }
+            }
+            return tree;
+        }
+
         private GH_Structure<IGH_Goo> BuildDataOutput(GH_Structure<IGH_Goo> source, PanelQueryResult query,
             IReadOnlyList<int> positions, IReadOnlyList<string> branches, bool selected)
         {
             if (selected && positions.Count == 0 && branches.Count == 0) return new GH_Structure<IGH_Goo>();
+            if (query.BranchStats != null) return StatsOutput(query, positions, selected);
             if (query.DisplaySet != null) return OutputsValues
                 ? PanelOutputOperations.DisplaySet(source, query, positions, branches, CountOutputVisits)
                 : PanelOutputOperations.SetItems(source, query, positions, branches, FlattenTree, CountOutputVisits);

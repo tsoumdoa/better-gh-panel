@@ -47,7 +47,7 @@ public sealed class StockTypeTests
             var result = PanelQueryEngine.Execute(sample.Item1, query);
             Assert.Single(result.RowPositions);
             Assert.Equal(sample.Item3, result.OutputValues![0]!.Number);
-            Assert.Equal(sample.Item3, result.Statistics.Mean);
+
         }
         Assert.Equal(PanelPropertyValue.Numeric(Math.PI / 2, -1).Format(PanelUnitConversion.DegreesToRadians, 2, true),
             angle.FormatCompact(PanelUnitConversion.DegreesToRadians, 2));

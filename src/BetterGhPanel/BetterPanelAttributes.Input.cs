@@ -153,7 +153,7 @@ namespace BetterGhPanel
                     return true;
                 case Keys.C when control:
                     // With no rows selected, Ctrl+C keeps copying Grasshopper objects.
-                    if (!current || _selection.Count == 0) return false;
+                    if (!current || _selection.Count == 0 && result.BranchStats == null) return false;
                     // A visible table copies all its columns with their titles.
                     CopySelectedValues(result, canvas, action: EffectiveTableVisible ? PanelRowAction.CopyTable : PanelRowAction.CopyValues);
                     return true;
@@ -228,7 +228,7 @@ namespace BetterGhPanel
 
         private void MoveKeyboardCursor(GH_Canvas canvas, PanelQueryResult result, int step, bool extend)
         {
-            if (DisplayListLengths) { SetPaneOffset(canvas, _offset + step); return; }
+            if (DisplayListLengths || ShowingStats) { SetPaneOffset(canvas, _offset + step); return; }
             int count = result.RowPositions.Count;
             if (count == 0) return;
             int index;
@@ -251,7 +251,8 @@ namespace BetterGhPanel
         private void SelectAllRows(GH_Canvas canvas, PanelQueryResult result)
         {
             InvalidateCopyStatus();
-            _selection.SelectAll(result, includeEmptyBranches: DisplayListLengths);
+            if (result.BranchStats != null) _selection.SelectPositions(result, result.StatSources);
+            else _selection.SelectAll(result, includeEmptyBranches: DisplayListLengths);
             PanelOwner.HighlightRows(result.Snapshot, _selection.OrderedPositions(result));
             TrackSelectionCanvas(canvas);
             canvas.Invalidate();

@@ -64,7 +64,9 @@ namespace BetterGhPanel
         }
         internal bool EffectiveTableVisible => (Attributes as BetterPanelAttributes)?.EffectiveTableVisible == true;
         internal bool TableSummariesCurrent => !PanelSplit || SummariesCurrent(Session.Result);
-        private bool SummariesCurrent(PanelQueryResult result) => !(result.DisplaySet != null || Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength) ||
+        private bool SummariesCurrent(PanelQueryResult result) => result.BranchStats != null
+            ? TableColumns.All(column => column.Snapshot == null || column.Pair == null || result.ColumnBranchStats.ContainsKey(column.Input.InstanceGuid))
+            : !(result.DisplaySet != null || Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength) ||
             TableColumns.All(column => column.SummaryCurrent(result));
         private void RequireTableSummaries(PanelQueryResult result)
         {
@@ -146,8 +148,40 @@ namespace BetterGhPanel
             positions.SelectMany(position => column.CellItems(result, position))
                 .Concat(branches.SelectMany(path => column.BranchItems(result, path))).Distinct().ToArray();
 
+        internal string StatsTsv(PanelQueryResult result, bool includeColumns)
+        {
+            if (includeColumns) RequireTableSummaries(result);
+            var columns = includeColumns ? TableColumns.ToArray() : Array.Empty<PanelTableColumn>();
+            bool countOnly = result.StatRows.All(kind => kind == PanelStatKinds.Count);
+            // A column without one shared metric/unit keeps the unit in each cell.
+            var suffixes = new[] { result.StatHeaderSuffix }.Concat(columns.Select(column => result.ColumnBranchStats.TryGetValue(column.Input.InstanceGuid, out var branches)
+                ? PanelBranchStats.CommonHeaderSuffix(branches.Values) : "")).ToArray();
+            var titles = suffixes.Select((suffix, index) => TableHeaderTitle(index) + (countOnly ? "" : suffix));
+            var text = new System.Text.StringBuilder("Path\tStat\t" + string.Join("\t", titles.Select(PanelTableTsv.Escape)) + Environment.NewLine);
+            foreach (string path in result.BranchPaths)
+                foreach (var kind in result.StatRows)
+                {
+                    IReadOnlyList<string> cells = new[] { path, PanelBranchStats.Name(kind), result.BranchStats![path].Format(kind, result.StatDecimals, suffixes[0].Length == 0) }
+                        .Concat(columns.Select((column, index) => result.ColumnBranchStats.TryGetValue(column.Input.InstanceGuid, out var branches)
+                            ? branches[path].Format(kind, result.StatDecimals, suffixes[index + 1].Length == 0) : "—")).ToArray();
+                    text.AppendLine(string.Join("\t", cells.Select(PanelTableTsv.Escape)));
+                }
+            return text.ToString();
+        }
+
+        internal string SelectedStatText(PanelQueryResult result, IReadOnlyList<int> positions)
+        {
+            var selected = new HashSet<int>(positions);
+            var lines = result.BranchPaths.SelectMany(path => result.StatRows
+                .Where(kind => result.BranchStats![path].Source(kind) >= 0 && selected.Contains(result.BranchStats[path].Source(kind)))
+                .Select(kind => (Kind: kind, Text: result.BranchStats![path].Format(kind, result.StatDecimals)))).ToArray();
+            // One value copies bare; several (for example Min and Max of one item) carry their stat name.
+            return lines.Length == 1 ? lines[0].Text : string.Join(Environment.NewLine, lines.Select(line => PanelBranchStats.Name(line.Kind) + "	" + line.Text));
+        }
+
         internal string TableTsv(PanelQueryResult result, IReadOnlyList<int> positions)
         {
+            if (result.BranchStats != null) return StatsTsv(result, includeColumns: true);
             RequireTableSummaries(result);
             foreach (var column in TableColumns)
                 column.RequireMeasurements(ColumnCopyItems(column, result, positions,
