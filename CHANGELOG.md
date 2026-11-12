@@ -4,8 +4,8 @@
 
 - **Value formula.** Units → Formula… applies a formula such as `x*2` or `x-50` after unit conversion and before rounding. Rows update while typing, with an example or a clear error above the footer; Esc restores. Saved with the component, with Undo.
 - Rows, Stats, comparisons, sorting, sets, numeric outputs, copy and viewport values share the result. Negative results work; unavailable results send null on Values. Table formulas apply to D only, marked ƒ; other columns retain units and rounding.
-- **Units menu order.** Formula sits between conversions and Round up by factor. Decimal controls now follow rounding, matching the order used for numbers.
-- **Vector value dots match rows.** X/Y/Z dots and Colour by value now include unit conversion, formula and rounding, like rows, Values and Stats.
+- **Units menu order.** Formula sits between conversions and Round up by factor. Decimal controls now follow rounding, matching the order they apply.
+- **Vector value dots match rows.** Vector X/Y/Z dots and Colour by value now include unit conversion, formula and rounding, like rows, Values and Stats.
 
 ## 0.4.0-beta
 

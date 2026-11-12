@@ -265,8 +265,8 @@ namespace BetterGhPanel
         }
 
         // Ends a live edit. A committed edit publishes like any other query change;
-        // an abandoned one already restored the original query, so outputs and the
-        // document never changed.
+        // an abandoned one restores the original query without marking the document.
+        // Either can publish an output that was already pending before the preview.
         internal void EndQueryPreview(bool committed)
         {
             if (!QueryPreviewActive) return;

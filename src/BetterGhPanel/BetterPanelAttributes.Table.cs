@@ -24,11 +24,9 @@ namespace BetterGhPanel
         private float _horizontalGrab;
         private int _activeTableColumn = -1;
         private Guid _headerSortColumn;
-        private PanelQueryResult? _formulaHeaderResult;
-        private bool _formulaHeaderApplies;
         private readonly Dictionary<Guid, float> _autoWidths = new Dictionary<Guid, float>();
         private PanelQueryResult? _autoWidthResult;
-        internal void ClearTableWidths() { _autoWidths.Clear(); _autoWidthResult = null; _setCountResult = null; _formulaHeaderResult = null; }
+        internal void ClearTableWidths() { _autoWidths.Clear(); _autoWidthResult = null; _setCountResult = null; }
         private RectangleF HeaderTarget(int index, bool border)
         {
             var rect = _columnRects[index];
@@ -125,16 +123,9 @@ namespace BetterGhPanel
         {
             if (PanelOwner.Formula == null || DisplayListLengths) return false;
             // Use the opening rows for the whole edit so a draft cannot change
-            // D's heading or width. Cache completed results, including text-only D.
+            // D's heading or width. Applicability is captured by the query pass.
             var result = _formulaOpeningResult ?? PanelOwner.Session.Result;
-            if (ReferenceEquals(_formulaHeaderResult, result)) return _formulaHeaderApplies;
-            var options = PanelOwner.Session.Options;
-            bool applies = result.RowPositions.Any(position =>
-                PanelFilterValue.TryFormulaInput(result.Snapshot, result.Snapshot.Rows[position], options,
-                    PanelOwner.Session.GetGeometryDetails(result.Snapshot, position), out _, out _));
-            if (applies || !result.Snapshot.HasMeasurableGeometry)
-            { _formulaHeaderResult = result; _formulaHeaderApplies = applies; }
-            return applies;
+            return result.HasFormulaValues;
         }
 
         private string DataHeaderUnit()

@@ -69,7 +69,7 @@ namespace BetterGhPanel.Core
                 if (char.IsLetter(Peek))
                 {
                     string name = Name(), key = name.ToLowerInvariant();
-                    throw Error(key == "x" || key == "pi" || Arity(key) > 0 ? "Use * between numbers and x (2*x)" :
+                    throw Error(key == "x" || key == "pi" || Arity(key) > 0 ? "Use * to multiply (2*x)" :
                         "Leave out units like '" + name + "'. x is already in the shown unit");
                 }
                 if (Peek != '\0') throw Error("Unexpected '" + Peek + "'");

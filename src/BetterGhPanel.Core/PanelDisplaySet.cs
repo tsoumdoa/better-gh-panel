@@ -28,6 +28,7 @@ namespace BetterGhPanel.Core
                 text = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, roundUpFactor: query.RoundUpFactor, formula: query.Formula));
                 copy = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false, roundUpFactor: query.RoundUpFactor, formula: query.Formula));
                 numeric = !PanelProperties.IsProperty(query.SearchMode) || PanelProperties.Kind(query.SearchMode) == PanelPropertyKind.Number;
+                numeric &= PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, -1, 0, null)?.Kind == PanelPropertyKind.Number;
             }
             else
             {

@@ -146,7 +146,7 @@ F sends the F items paired with the D items that B + F follow, at D's transforme
 
 ### Outputs
 
-The formula applies to plain numbers, geometry measurements, X/Y/Z and dimensional properties, including angles. Rows, Stats, comparisons, sorting, sets, D/S Values and numeric Items, copy and viewport values share the result. Geometry Items, text, counts, indices, dates, colour channels, plane axes, matrix entries and list lengths ignore the formula. Unavailable Values are null.
+The formula and Round up by factor apply to plain numbers, geometry measurements, X/Y/Z and dimensional properties, including angles; counts, indices, dates, colour channels, axis components, matrix entries and list lengths ignore both; integer properties stay integers. Rows, Stats, comparisons, sorting, sets, D/S Values and numeric Items, copy and viewport values share the result. Geometry Items and text ignore both. Unavailable Values are null.
 
 | Port | Output |
 | --- | --- |

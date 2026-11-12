@@ -86,7 +86,8 @@ namespace BetterGhPanel
                     break;
                 }
             }
-            string keys = valid ? "Enter applies · Esc restores" : PanelOwner.PresentedFormula != null ? "rows keep ƒ " + PanelOwner.PresentedFormula.Pretty : "rows unchanged";
+            string keys = valid ? "Enter applies · Esc restores" : PanelOwner.PresentedFormula != null ? "rows keep ƒ " + PanelOwner.PresentedFormula.Pretty :
+                PanelOwner.Formula != null ? "rows show no formula" : "rows unchanged";
             float keyWidth = Math.Min(bounds.Width * .46f, TightWidth(g, keys, small));
             var keyBounds = new RectangleF(bounds.Right - keyWidth - 4, bounds.Y, keyWidth, bounds.Height);
             using var right = new StringFormat(Tight) { Alignment = StringAlignment.Far };

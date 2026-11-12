@@ -98,10 +98,10 @@ public sealed class FormulaTests
     [InlineData("2*pi", "Use x for the shown number, e.g. x*2")]
     [InlineData("x+y", "Unknown name 'y'. Use x")]
     [InlineData("x+1,5", "Use . for decimals (1.5, not 1,5)")]
-    [InlineData("2x", "Use * between numbers and x (2*x)")]
-    [InlineData("2pi", "Use * between numbers and x (2*x)")]
-    [InlineData("2sqrt(x)", "Use * between numbers and x (2*x)")]
-    [InlineData("x abs(x)", "Use * between numbers and x (2*x)")]
+    [InlineData("2x", "Use * to multiply (2*x)")]
+    [InlineData("2pi", "Use * to multiply (2*x)")]
+    [InlineData("2sqrt(x)", "Use * to multiply (2*x)")]
+    [InlineData("x abs(x)", "Use * to multiply (2*x)")]
     [InlineData("x-50mm", "Leave out units like 'mm'. x is already in the shown unit")]
     [InlineData("(x+2", "Missing )")]
     [InlineData("x+2)", "Extra )")]
@@ -204,19 +204,54 @@ public sealed class FormulaTests
     [InlineData(true)]
     public void CreateSetUnavailableNumbersKeepTheirNumericKind(bool displayValue)
     {
-        var snapshot = new PanelSnapshot(new[] { 10d, 20 }.Select((n, i) =>
-            new PanelRow(i, "{0}", "Number", "", n)).ToArray(), new[] { new PanelBranch("{0}", 2) });
+        var rows = new[] { new PanelRow(0, "{0}", "Number", "10", 10), new PanelRow(1, "{0}", "Number", "20", 20),
+            new PanelRow(2, "{0}", "Text", "a", null, stringValue: "a"), new PanelRow(3, "{0}", "Null", "null", null, isNull: true) };
+        var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", rows.Length) });
         var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { Formula = Formula("x/0"),
-            CreateSet = true, TypeName = "Number", SearchMode = PanelSearchMode.Value, DisplayFilterValue = displayValue, OutputValues = true });
-        Assert.Single(result.RowPositions);
+            CreateSet = true, SearchMode = PanelSearchMode.Value, DisplayFilterValue = displayValue, OutputValues = true });
+        Assert.Equal(3, result.RowPositions.Count);
         var value = result.DisplaySet!.Values[result.RowPositions[0]];
         Assert.True(value.IsNumeric);
         Assert.True(value.Unavailable);
         Assert.Null(value.Number);
         Assert.Equal("unavailable", value.Text);
         Assert.Equal(1, result.Statistics.TypeCounts["Number"]);
-        Assert.False(result.Statistics.TypeCounts.ContainsKey("Text"));
+        Assert.Equal(2, result.Statistics.TypeCounts["Text"]);
         Assert.Equal(0, result.Statistics.NumericCount);
+        foreach (int position in new[] { 2, 3 })
+        {
+            var other = result.DisplaySet.Values[position];
+            Assert.False(other.IsNumeric);
+            Assert.False(other.Unavailable);
+            Assert.Null(other.Number);
+        }
+        Assert.Equal(displayValue ? "n/a" : "a", result.DisplaySet.Values[2].Text);
+        Assert.Equal("null", result.DisplaySet.Values[3].Text);
+    }
+
+    [Fact]
+    public void FormulaApplicabilityIsCapturedForMatchingRowsIncludingPendingMetrics()
+    {
+        var rows = new[] { new PanelRow(0, "{0}", "Text", "label", null, stringValue: "label"),
+            new PanelRow(1, "{1}", "Curve", "", null, geometryInfo: new PanelGeometryInfo("Curve", canMeasure: true)),
+            new PanelRow(2, "{2}", "Number", "10", 10) };
+        var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", 1), new PanelBranch("{1}", 1), new PanelBranch("{2}", 1) });
+        var query = new PanelQueryOptions { BranchPath = "{0}" };
+        Assert.False(PanelQueryEngine.Execute(snapshot, query).HasFormulaValues);
+        query.BranchPath = "{1}";
+        Assert.True(PanelQueryEngine.Execute(snapshot, query).HasFormulaValues);
+        query.DisplayFilterValue = true;
+        query.SearchMode = PanelSearchMode.Length;
+        Assert.True(PanelQueryEngine.Execute(snapshot, query).HasFormulaValues);
+        query.SearchMode = PanelSearchMode.Value;
+        Assert.False(PanelQueryEngine.Execute(snapshot, query).HasFormulaValues);
+        query.BranchPath = "{2}";
+        query.Formula = Formula("x/0");
+        var unavailable = PanelQueryEngine.Execute(snapshot, query);
+        Assert.Equal(0, unavailable.Statistics.NumericCount);
+        Assert.True(unavailable.HasFormulaValues);
+        query.SearchMode = PanelSearchMode.ListLength;
+        Assert.False(PanelQueryEngine.Execute(snapshot, query).HasFormulaValues);
     }
 
     [Fact]

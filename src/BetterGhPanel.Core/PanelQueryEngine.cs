@@ -104,6 +104,7 @@ namespace BetterGhPanel.Core
 
             string? numericUnits = null;
             var numericCount = 0;
+            var hasFormulaValues = false;
             var nullCount = 0;
             var invalidCount = 0;
             var unverifiedCount = 0;
@@ -125,6 +126,18 @@ namespace BetterGhPanel.Core
                 if (!search.Matches(row, snapshot.UnitConversion, measured, cancellationToken)) continue;
                 filteredSourceStatuses = filteredSourceStatuses.Add(row.Validity);
                 if (set != null && !set.IncludeRow(i, measured)) continue;
+
+                if (!hasFormulaValues && row.IsValid && !row.IsNull)
+                {
+                    hasFormulaValues = PanelFilterValue.TryFormulaInput(snapshot, row, query, measured, out _, out _);
+                    var geometry = measured ?? row.GeometryInfo;
+                    // Pending measurements cannot change whether a metric accepts a
+                    // formula. Capture that fact here, never by scanning rows in paint.
+                    if (!hasFormulaValues && geometry?.CanMeasure == true)
+                        hasFormulaValues = query.DisplayFilterValue
+                            ? !PanelProperties.IsProperty(query.SearchMode) && PanelFilterValue.MatchesGeometry(query.SearchMode, geometry)
+                            : geometry.MetricName.Length > 0;
+                }
 
                 rowPositions.Add(i);
                 if (columnSortRows != null && set == null) columnSortRows.Add(i, query.ColumnSortKeys!.RowAt(i));
@@ -318,7 +331,7 @@ namespace BetterGhPanel.Core
                 viewIndices.Add(positions[index], index);
             }
             cancellationToken.ThrowIfCancellationRequested();
-            var result = new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings);
+            var result = new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings, hasFormulaValues);
             if (query.TableSource?.Extras != null && displaySet == null && !(query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
                 foreach (var index in PanelTableIndex.Build(result, query.TableSource.Columns,
                     query.TableSource.Extras(result, rowPositions, !HasItemFilter(query)), work, cancellationToken))
