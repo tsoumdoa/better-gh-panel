@@ -49,7 +49,8 @@ namespace BetterGhPanel.Core
             cancellationToken.ThrowIfCancellationRequested();
             var search = new PanelSearchFilter(query);
             var scope = new PanelQueryScope(snapshot, query, search);
-            var set = query.CreateSet ? new PanelDisplaySet(snapshot, query) : null;
+            var statBranches = query.BranchStats ? new Dictionary<string, PanelBranchStats>(StringComparer.Ordinal) : null;
+            var set = query.CreateSet && !query.BranchStats ? new PanelDisplaySet(snapshot, query) : null;
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
@@ -64,10 +65,6 @@ namespace BetterGhPanel.Core
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var branchCounts = new Dictionary<string, int>(StringComparer.Ordinal);
-            var numericValues = new Dictionary<(double, string), ValueCount>();
-            var stringValues = new Dictionary<PanelText, ValueCount>(new PanelTextComparer());
-            var uniqueValues = new List<ValueCount>();
-            var scalarCount = 0;
             var warnings = new PanelDataWarnings();
             var lengths = new Dictionary<int, int>();
             for (int i = 0; i < snapshot.Branches.Count; i++)
@@ -87,7 +84,7 @@ namespace BetterGhPanel.Core
             }
 
             // Empty branches remain visible when browsing the tree, but not in item-filter results.
-            if (!scope.HasItemFilter)
+            if (!scope.HasItemFilter || query.BranchStats)
             {
                 for (var i = 0; i < snapshot.Branches.Count; i++)
                 {
@@ -97,6 +94,7 @@ namespace BetterGhPanel.Core
                     if (scope.MatchesBranch(branch) && (set == null || set.IncludeBranch(branch.Path)))
                     {
                         branches.Add(branch.Path);
+                        if (statBranches != null) statBranches[branch.Path] = new PanelBranchStats();
                         branchCounts[branch.Path] = 0;
                     }
                 }
@@ -139,6 +137,11 @@ namespace BetterGhPanel.Core
                             : geometry.MetricName.Length > 0;
                 }
 
+                if (statBranches != null)
+                {
+                    if (!statBranches.TryGetValue(row.Path, out var stats)) statBranches.Add(row.Path, stats = new PanelBranchStats());
+                    stats.Add(snapshot, row, i, query, measured);
+                }
                 rowPositions.Add(i);
                 if (columnSortRows != null && set == null) columnSortRows.Add(i, query.ColumnSortKeys!.RowAt(i));
                 var metric = set == null && query.DisplayFilterValue
@@ -157,47 +160,10 @@ namespace BetterGhPanel.Core
                         ? metric?.Kind == PanelPropertyKind.Number ? metric.Number : (double?)null
                         : !row.IsNull && row.IsValid && row.NumericValue.HasValue ? PanelValuePresentation.PresentedNumber(row, query.DecimalPlaces, query.RoundUpFactor, query.Formula) : (double?)null;
                 if (numeric.HasValue && (double.IsNaN(numeric.Value) || double.IsInfinity(numeric.Value))) numeric = null;
-                PanelText? text = projected != null ? projected.IsNumeric || projected.Unavailable ? (PanelText?)null : projected.SemanticText :
-                    row.StringValue != null ? new PanelText(row.StringValue) : (PanelText?)null;
                 Increment(typeCounts, projected == null ? row.TypeName : projected.IsNumeric ? "Number" : "Text");
                 if (projected == null && row.IsNull) nullCount++;
                 if (projected == null && row.Validity == PanelValidity.VerifiedInvalid) invalidCount++;
                 if (projected == null && row.Validity == PanelValidity.Unverified) unverifiedCount++;
-                if (projected != null || !row.IsNull && row.IsValid)
-                {
-                    if (numeric.HasValue)
-                    {
-                        // Numeric equality deliberately unifies integer/number values and signed zero.
-                        var number = numeric.Value == 0 ? 0 : numeric.Value;
-                        string unitsKey = query.DisplayFilterValue ? PanelFilterValue.UnitSymbol(snapshot, row, query.SearchMode, measured) : PanelUnits.Symbol(snapshot.UnitConversion);
-                        int precision = query.DisplayFilterValue && query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume ? 6 : 12;
-                        var groupKey = (query.DecimalPlaces < 0 ? PanelNumber.GeneralKey(number, precision) : number, unitsKey);
-                        if (!numericValues.TryGetValue(groupKey, out var frequency))
-                        {
-                            frequency = new ValueCount(number, null) { Units = unitsKey, Precision = precision };
-                            numericValues.Add(groupKey, frequency);
-                            uniqueValues.Add(frequency);
-                        }
-                        else if (frequency.Number != number)
-                        {
-                            if (frequency.DistinctNumbers == null) frequency.DistinctNumbers = new HashSet<double> { frequency.Number!.Value };
-                            if (frequency.DistinctNumbers.Add(number)) frequency.DistinctCount++;
-                        }
-                        frequency.Count++;
-                        scalarCount++;
-                    }
-                    else if (text.HasValue)
-                    {
-                        if (!stringValues.TryGetValue(text.Value, out var frequency))
-                        {
-                            frequency = new ValueCount(null, text);
-                            stringValues.Add(text.Value, frequency);
-                            uniqueValues.Add(frequency);
-                        }
-                        frequency.Count++;
-                        scalarCount++;
-                    }
-                }
                 if (!numeric.HasValue || double.IsNaN(numeric.Value) || double.IsInfinity(numeric.Value)) continue;
                 string units = query.DisplayFilterValue ? PanelFilterValue.UnitSymbol(snapshot, row, query.SearchMode, measured) : PanelUnits.Symbol(snapshot.UnitConversion);
                 numericUnits = numericUnits == null ? units : numericUnits == units ? units : "";
@@ -233,7 +199,7 @@ namespace BetterGhPanel.Core
                         snapshot.Rows[position].Path, "Text", PanelTableText.Summary(preview, count), null));
                 }
             var columnKeys = columnSortRows == null ? null : new PanelColumnSortKeys(columnSortRows);
-            if (query.SortMode != PanelSortMode.SourceOrder && set?.IsBranchSet != true)
+            if (!query.BranchStats && query.SortMode != PanelSortMode.SourceOrder && set?.IsBranchSet != true)
                 foreach (var step in SortBranches(positions, snapshot, branchCounts, sortText!,
                     query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work, set?.Values ?? propertySortValues, columnKeys))
                     yield return step;
@@ -292,30 +258,19 @@ namespace BetterGhPanel.Core
                     double count = snapshot.BranchItemCounts[path];
                     branchCounts[path] = 1;
                     numericCount++;
-                    scalarCount++;
                     minimum = Math.Min(minimum, count);
                     maximum = Math.Max(maximum, count);
                     mean += (count - mean) / numericCount;
-                    uniqueValues.Add(new ValueCount(count, null) { Count = 1 });
                 }
                 if (numericCount > 0) typeCounts.Add("Integer", numericCount);
             }
             if (work.ShouldYield()) yield return null;
             cancellationToken.ThrowIfCancellationRequested();
-            var frequencies = new PanelValueFrequency[uniqueValues.Count];
-            for (int index = 0; index < frequencies.Length; index++)
-            {
-                if (work.ShouldYield()) yield return null;
-                CheckCancellation(index, cancellationToken);
-                var value = uniqueValues[index];
-                frequencies[index] = new PanelValueFrequency(value.Number, value.Text, value.Count, null, value.DistinctCount, value.Units, value.Precision, query.DecimalPlaces);
-            }
-            cancellationToken.ThrowIfCancellationRequested();
             var statistics = new PanelStatistics(set?.IsBranchSet == true ? branches.Count : positions.Length, branches.Count, numericCount, nullCount,
                 invalidCount, numericCount == 0 ? (double?)null : minimum,
                 numericCount == 0 ? (double?)null : maximum, numericCount == 0 ? (double?)null : mean,
                 new ReadOnlyDictionary<string, int>(typeCounts), new ReadOnlyDictionary<string, int>(branchCounts),
-                Array.AsReadOnly(frequencies), scalarCount, unverifiedCount, filteredSourceStatuses, numericUnits ?? "", query.DisplayFilterValue && query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume ? "G6" : "G12");
+                unverifiedCount, filteredSourceStatuses, numericUnits ?? "");
             PanelDisplaySetResult? displaySet = null;
             if (set != null)
                 foreach (var step in set.Complete(work, cancellationToken))
@@ -332,7 +287,7 @@ namespace BetterGhPanel.Core
             }
             cancellationToken.ThrowIfCancellationRequested();
             var result = new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings, hasFormulaValues);
-            if (query.TableSource?.Extras != null && displaySet == null && !(query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
+            if (!query.BranchStats && query.TableSource?.Extras != null && displaySet == null && !(query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
                 foreach (var index in PanelTableIndex.Build(result, query.TableSource.Columns,
                     query.TableSource.Extras(result, rowPositions, !HasItemFilter(query)), work, cancellationToken))
                     if (index == null) yield return null;
@@ -340,6 +295,20 @@ namespace BetterGhPanel.Core
             if (query.TableSource != null && (displaySet != null || query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
                 foreach (var step in PanelTableSummaries.Build(result, rowPositions, query.TableSource, !HasItemFilter(query), work, cancellationToken))
                     if (step) yield return null;
+            if (statBranches != null)
+            {
+                var sources = new HashSet<int>();
+                foreach (var stats in statBranches.Values)
+                {
+                    if (work.ShouldYield()) yield return null;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    stats.Complete(query);
+                    foreach (var kind in PanelBranchStats.Picks(query.StatKinds))
+                        if (stats.Source(kind) >= 0) sources.Add(stats.Source(kind));
+                }
+                result.BranchStats = new ReadOnlyDictionary<string, PanelBranchStats>(statBranches);
+                result.StatSources = new List<int>(sources).AsReadOnly();
+            }
             yield return result;
         }
 
@@ -385,7 +354,7 @@ namespace BetterGhPanel.Core
             {
                 CheckCancellation(index, cancellationToken);
                 var row = snapshot.Rows[index];
-                bool forSet = setGeometry && (!query.DisplayFilterValue || row.GeometryInfo != null && PanelFilterValue.MatchesGeometry(query.SearchMode, row.GeometryInfo));
+                bool forSet = setGeometry && (query.BranchStats || !query.DisplayFilterValue || row.GeometryInfo != null && PanelFilterValue.MatchesGeometry(query.SearchMode, row.GeometryInfo));
                 bool propertySummary = PanelProperties.IsProperty(query.SearchMode) && !query.DisplayFilterValue && (sorting || forSet);
                 if (!scope.MatchesRow(row) || !filter.CanMeasure(row, sorting || forSet, propertySummary)) continue;
                 candidates.Add(index);
@@ -394,8 +363,8 @@ namespace BetterGhPanel.Core
             return candidates.AsReadOnly();
         }
 
-        private static bool PresentationNeedsGeometry(PanelQueryOptions query) => (query.CreateSet || query.OutputValues && query.DisplayFilterValue) &&
-            (!query.DisplayFilterValue || query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(query.SearchMode));
+        private static bool PresentationNeedsGeometry(PanelQueryOptions query) => (query.BranchStats || query.CreateSet || query.OutputValues && query.DisplayFilterValue) &&
+            (query.BranchStats || !query.DisplayFilterValue || query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(query.SearchMode));
 
         /// <summary>Accepts a semicolon-separated path with or without braces. Blank means all branches.</summary>
         public static string? NormalizeBranchPath(string? path)
@@ -440,18 +409,6 @@ namespace BetterGhPanel.Core
             internal double? Number { get; }
             internal string? Metric { get; }
             internal double Value { get; }
-        }
-
-        private sealed class ValueCount
-        {
-            internal HashSet<double>? DistinctNumbers;
-            internal int DistinctCount = 1;
-            internal string Units = "";
-            internal int Precision = 12;
-            internal ValueCount(double? number, PanelText? text) { Number = number; Text = text; }
-            internal double? Number { get; }
-            internal PanelText? Text { get; }
-            internal int Count { get; set; }
         }
 
         private static void CheckCancellation(int index, CancellationToken token)

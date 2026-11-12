@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Branch stats (Σ).** A tree tool beside Create set replaces each branch’s rows and D output with chosen Count, Sum, Avg, Median, Min, Max, Range and population Std dev. It uses filtered, presented numbers and geometry metrics; Flatten gives whole-tree stats. Picks save with the file and support Undo.
+- Skipped inputs and mixed metrics are explained in branch headings. Empty or mixed branches keep aligned null slots (Count 0). Min/Max select their first source item; preview and value dots retain the inputs. Table columns compute their own stats, and table copy matches the rows.
+- Removed the footer Stats button and its statistics/unique-values popup. Create set and Σ are mutually exclusive; Reset all turns Σ off.
+
 ## 0.4.1-beta
 
 - **Value formula.** Units → Formula… applies a formula such as `x*2` or `x-50` after unit conversion and before rounding. Rows update while typing, with an example or a clear error above the footer; Esc restores. Saved with the component, with Undo.

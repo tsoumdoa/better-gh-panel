@@ -37,8 +37,6 @@ public class InvalidNumberTests
         Assert.Equal<double?>(10, all.Statistics.Minimum);
         Assert.Equal<double?>(10, all.Statistics.Maximum);
         Assert.Equal<double?>(10, all.Statistics.Mean);
-        Assert.Equal(1, all.Statistics.ScalarCount);
-        Assert.Equal(2, all.Statistics.UniqueExcludedCount);
     }
 
     [Theory]

@@ -75,7 +75,7 @@ namespace BetterGhPanel.Runtime
         internal static PanelBranch[] Shape(GH_Structure<IGH_Goo> tree) =>
             Enumerable.Range(0, tree.PathCount).Select(b => new PanelBranch(tree.Paths[b].ToString(), tree.Branches[b].Count)).ToArray();
         internal PairHeading Heading(string path, bool includeEmpty) => (includeEmpty ? Headings : _headingsWithoutEmpty)[path];
-        internal static bool EmptyPartnersInScope(PanelQueryOptions options) => !options.CreateSet && !PanelQueryEngine.HasItemFilter(options);
+        internal static bool EmptyPartnersInScope(PanelQueryOptions options) => !options.BranchStats && !options.CreateSet && !PanelQueryEngine.HasItemFilter(options);
         internal PanelBranchPair BranchAt(int position) => Pairs[_sourcePairs[position]];
         internal PanelBranchPair PairAtPaired(int item) => Pairs[_pairedPairs[item]];
         internal int DataPositionAt(int item) => _dataPositions[item];

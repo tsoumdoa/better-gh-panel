@@ -107,7 +107,6 @@ public sealed class GroupSummaryTests
         Assert.Equal(count, set.SetOccurrencesAt(0)!.Count);
         Assert.Equal(group.Format(), set.DisplaySet!.Values[0].Text);
         Assert.Equal(group.Format(), set.DisplaySet.Values[0].CopyText);
-        Assert.Equal(group.Format(), set.Statistics.UniqueValues.Single().StringValue);
     }
 
     [Fact]

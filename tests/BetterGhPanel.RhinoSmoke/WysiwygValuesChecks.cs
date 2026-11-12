@@ -204,7 +204,7 @@ internal static class WysiwygValuesChecks
         Call(component, "SetTreeOperations", 0, false, false, false, true);
         Call(component, "SetOutputValues", PanelOutputValues.Values);
         await fixture.Ready(() => fixture.Result.DisplaySet != null && fixture.Sinks[0].VolatileData.DataCount == 1 && fixture.Sinks[0].VolatileData.AllData(false).Single() == null);
-        Check(fixture.Result.DisplaySet!.Values[0].Unavailable && fixture.Result.Statistics.ScalarCount == 0,
+        Check(fixture.Result.DisplaySet!.Values[0].Unavailable,
             "Final conversion overflow remains a null slot through Create set Values");
         Call(component, "SetOutputValues", PanelOutputValues.Items);
         Call(component, "SetTreeOperations", 0, false, false, false, false);

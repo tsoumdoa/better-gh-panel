@@ -160,7 +160,7 @@ public sealed class DeterministicNumberTests
         Assert.Null(unavailable.OutputValues![0]); Assert.Equal(0, unavailable.Statistics.NumericCount);
         options.CreateSet = true;
         var set = PanelQueryEngine.Execute(input, options);
-        Assert.True(set.DisplaySet!.Values[0].Unavailable); Assert.Equal(0, set.Statistics.ScalarCount);
+        Assert.True(set.DisplaySet!.Values[0].Unavailable);
         options.CreateSet = false; options.DisplayFilterValue = false; options.Search = "> 0";
         Assert.Empty(PanelQueryEngine.Execute(input, options).RowPositions);
     }
@@ -221,7 +221,6 @@ public sealed class DeterministicNumberTests
             Assert.Equal(first, result.DisplaySet!.Values[0].Number);
             Assert.Equal(second, result.DisplaySet.Values[1].Number);
             Assert.Equal(first, result.Statistics.Minimum);
-            Assert.Equal(2, result.Statistics.UniqueValues.Count);
             Assert.Equal("", PanelFilterValue.RoundingDescription(snapshot, snapshot.Rows[0], options));
             options.DisplayFilterValue = false;
             options.Search = "= 1.23456789012E-25";
@@ -237,31 +236,19 @@ public sealed class DeterministicNumberTests
     [InlineData(1.23456789012e-25, "1.23456789012E-25")]
     [InlineData(double.MaxValue, "1.7976931348623157E+308")]
     [InlineData(double.Epsilon, "4.94065645841247E-324")]
-    public void AutomaticUniqueTextMatchesRowsAndTooltipRoundTrips(double value, string expected)
+    public void AutomaticRoundTripNumbers(double value, string expected)
     {
         Assert.Equal(expected, PanelUnits.FormatRoundTrip(value));
         Assert.True(PanelUnits.TryParseOperand(expected, out double parsed));
         Assert.Equal(BitConverter.DoubleToInt64Bits(value), BitConverter.DoubleToInt64Bits(parsed));
-        var snapshot = new PanelSnapshot(new[] { new PanelRow(0, "{0}", "Number", "", value) }, new[] { new PanelBranch("{0}", 1) });
-        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
-        string compact = PanelUnits.Format(value, PanelUnitConversion.None, -1);
-        Assert.Equal("Numbers: 1 · Min: " + compact, CanvasStatistics.Label(result, 2, -1));
-        Assert.Equal("Max: " + compact, CanvasStatistics.Label(result, 3, -1));
-        Assert.Equal("Average: " + compact, CanvasStatistics.Label(result, 4, -1));
-        Assert.Equal("1×  Number: " + compact, CanvasStatistics.Label(result, CanvasStatistics.OverviewRows, -1));
     }
 
     [Fact]
-    public void AutomaticStatisticsDistinguishAdjacentValuesAndSetAddressesMatchD()
+    public void SetAddressesMatchD()
     {
         var snapshot = new PanelSnapshot(new[] { new PanelRow(0, "{0;2}", "Number", "", .3),
             new PanelRow(1, "{0;2}", "Number", "", .1 + .2) }, new[] { new PanelBranch("{0;2}", 2) });
-        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
-        Assert.Single(result.Statistics.UniqueValues);
-        Assert.Equal(2, result.Statistics.UniqueValues[0].Count);
-        Assert.Contains("Merged from 2 distinct values", CanvasStatistics.Label(result, 9, -1, full: true));
-        Assert.Equal("2×  Number: 0.3", CanvasStatistics.Label(result, 9, -1));
-        result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { CreateSet = true, DecimalPlaces = 2 });
+        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { CreateSet = true, DecimalPlaces = 2 });
         Assert.Equal("{0;2;0}", PanelItemOrder.Address(result, 0, true, false));
         Assert.Equal("{0}", PanelItemOrder.Address(result, 0, true, true));
         Assert.Equal("{0;2}(0)", PanelItemOrder.Address(result, 0, false, false));

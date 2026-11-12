@@ -60,7 +60,7 @@ namespace BetterGhPanel
             _menuRouter = new MenuRouter(this, canvas);
         }
 
-        // Menus answer their own tooltips: Preview's item order, Stats rows and
+        // Menus answer their own tooltips: Preview's item order and
         // row actions. Other menu rows stay silent rather than show the panel's.
         private void MenuTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
@@ -74,18 +74,7 @@ namespace BetterGhPanel
                 e.Text = PanelOwner.ShowItemOrder ? "On" : "Off";
                 e.Description = CanvasMenu.ItemOrderDescription;
             }
-            else if (_menu.Kind == CanvasMenuKind.Statistics)
-            {
-                if (!StatisticsAreCurrent()) { InvalidateStatistics(); return; }
-                e.Title = "Tree statistics";
-                if (row < _menu.Visible && index < _menu.Count)
-                {
-                    e.Text = _menu.StatisticsDetails(index, PanelOwner.DecimalPlaces);
-                    e.Description = index == CanvasStatistics.UniqueRow || index == 7 || index >= CanvasStatistics.OverviewRows ? CanvasStatistics.UniqueScope :
-                        index == 8 ? "Source counts after filters are measured before Create set removes duplicate occurrences. Valid, invalid and unverified are distinct." : CanvasStatistics.Scope;
-                }
-                else e.Description = "Use Previous and Next to inspect all values.";
-            }
+
         }
 
         // Modal while a menu is open: input on the menu goes to the panel, and any

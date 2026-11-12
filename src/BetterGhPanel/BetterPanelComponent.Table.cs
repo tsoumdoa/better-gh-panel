@@ -148,6 +148,16 @@ namespace BetterGhPanel
 
         internal string TableTsv(PanelQueryResult result, IReadOnlyList<int> positions)
         {
+            if (result.BranchStats != null)
+            {
+                var statTitles = new[] { TableHeaderTitle(0) }.Concat(TableColumns.Select((column, index) => TableHeaderTitle(index + 1)));
+                return PanelTableTsv.Build(statTitles, result.BranchPaths.SelectMany(path => PanelBranchStats.Picks(StatKinds).Select((kind, index) =>
+                {
+                    IReadOnlyList<string> cells = new[] { result.BranchStats[path].Format(kind, DecimalPlaces, false) }.Concat(TableColumns.Select(column =>
+                        result.ColumnBranchStats.TryGetValue(column.Input.InstanceGuid, out var branches) ? branches[path].Format(kind, DecimalPlaces, false) : "—")).ToArray();
+                    return (path, index, cells);
+                })));
+            }
             RequireTableSummaries(result);
             foreach (var column in TableColumns)
                 column.RequireMeasurements(ColumnCopyItems(column, result, positions,

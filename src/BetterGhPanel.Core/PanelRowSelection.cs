@@ -248,6 +248,13 @@ namespace BetterGhPanel.Core
                 }).Distinct().OrderBy(index => index).ToArray();
         }
 
+        internal void SelectPositions(PanelQueryResult result, IEnumerable<int> positions)
+        {
+            Synchronize(result);
+            var next = new HashSet<int>(positions.Where(position => result.TryGetViewIndex(position, out _)));
+            Replace(next, next.Count == 0 ? -1 : next.Min());
+        }
+
         internal void SelectIndices(PanelQueryResult result, IEnumerable<int> indices)
         {
             Synchronize(result);

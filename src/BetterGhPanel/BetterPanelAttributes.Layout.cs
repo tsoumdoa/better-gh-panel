@@ -29,7 +29,7 @@ namespace BetterGhPanel
             internal RectangleF Display { get; }
             internal RectangleF Preview { get; }
             internal RectangleF Move { get; }
-            internal RectangleF Statistics { get; }
+            internal RectangleF BranchStats { get; }
             internal RectangleF SelectAll { get; }
             internal RectangleF Close { get; }
             internal RectangleF Restore { get; }
@@ -59,7 +59,7 @@ namespace BetterGhPanel
                 RectangleF display = default,
                 RectangleF preview = default,
                 RectangleF move = default,
-                RectangleF statistics = default,
+                RectangleF branchStats = default,
                 RectangleF selectAll = default,
                 RectangleF close = default,
                 RectangleF restore = default,
@@ -88,7 +88,7 @@ namespace BetterGhPanel
                 Display = display;
                 Preview = preview;
                 Move = move;
-                Statistics = statistics;
+                BranchStats = branchStats;
                 SelectAll = selectAll;
                 Close = close;
                 Restore = restore;
@@ -139,7 +139,7 @@ namespace BetterGhPanel
             RectangleF display;
             RectangleF preview;
             RectangleF move;
-            RectangleF statistics;
+            RectangleF branchStats;
             RectangleF selectAll;
             RectangleF close;
             RectangleF restore;
@@ -172,7 +172,7 @@ namespace BetterGhPanel
             split = PanelOwner.PanelSplit || PanelOwner.TableInputPresent ? new RectangleF(preview.Left - 42, preview.Y, 38, 18) : RectangleF.Empty;
             move = new RectangleF(panel.X + 14, panel.Y + 1, (split.IsEmpty ? preview.Left : split.Left) - panel.X - 18, 23);
             // Reserve the corner for resizing rather than overlaying footer controls.
-            // Wide panels fit status, selection, statistics, tools and Units on one line.
+            // Wide panels fit status, selection, tools and Units on one line.
             _singleLineFooter &= panel.Width >= 500;
             float footerHeight = FormulaFooterHeight(_singleLineFooter ? 20 : 36);
             // The footer starts at the rows' inset so its clickable status stays clear of the grips.
@@ -181,25 +181,24 @@ namespace BetterGhPanel
             // Active Units widens leftward, shifting Reset and the tree tools with it.
             float unitsWidth = UnitsWidth(panel.Width);
             units = new RectangleF(footer.Right - unitsWidth, footer.Bottom - 20, unitsWidth, 20);
-            // Reset all sits beside Units, which it also resets, 8 units clear of the five tree tools.
+            // Reset all sits beside Units, which it also resets, 8 units clear of the six tree tools.
             reset = new RectangleF(units.Left - 23, units.Y, 20, units.Height);
-            trim = new RectangleF(reset.Left - 126, units.Y, 22, units.Height);
-            simplify = new RectangleF(trim.Right + 2, trim.Y, 22, 20);
-            flatten = new RectangleF(simplify.Right + 2, trim.Y, 22, 20);
-            reverse = new RectangleF(flatten.Right + 2, trim.Y, 22, 20);
-            createSet = new RectangleF(reverse.Right + 2, trim.Y, 22, 20);
+            trim = new RectangleF(reset.Left - 138, units.Y, 20, units.Height);
+            simplify = new RectangleF(trim.Right + 2, trim.Y, 20, 20);
+            flatten = new RectangleF(simplify.Right + 2, trim.Y, 20, 20);
+            reverse = new RectangleF(flatten.Right + 2, trim.Y, 20, 20);
+            createSet = new RectangleF(reverse.Right + 2, trim.Y, 20, 20);
+            branchStats = new RectangleF(createSet.Right + 2, trim.Y, 20, 20);
             if (_singleLineFooter)
             {
-                statistics = new RectangleF(trim.Left - 54, units.Y + 2, 46, 16);
-                selectAll = new RectangleF(statistics.Left - 62, statistics.Y, 58, 16);
+                selectAll = new RectangleF(trim.Left - 62, units.Y + 2, 58, 16);
             }
             else
             {
-                statistics = new RectangleF(footer.Right - 46, footer.Y, 46, 16);
-                selectAll = new RectangleF(statistics.Left - 62, footer.Y, 58, 16);
+                selectAll = new RectangleF(footer.Right - 58, footer.Y, 58, 16);
             }
             outLabel = outItems = outValues = RectangleF.Empty;
-            if (PanelOwner.CanOutputValues)
+            if (PanelOwner.CanOutputValues && !PanelOwner.BranchStatsTree)
             {
                 float outputLeft = selectAll.Left - 4 - OutputControlWidth;
                 float outputTop = selectAll.Y;
@@ -215,7 +214,7 @@ namespace BetterGhPanel
             _trackHit = new RectangleF(panel.Right - 21, _list.Y, 8, _list.Height);
             LayoutTable();
             resize = new RectangleF(panel.Right - 24, panel.Bottom - 24, 24, 24);
-            return new PanelLayout(panel, search, filter, type, sort, branch, reset, resize, footer, trim, simplify, flatten, reverse, createSet, units, outLabel, outItems, outValues, display, preview, move, statistics, selectAll, close, restore, searchClear, branchClear, split);
+            return new PanelLayout(panel, search, filter, type, sort, branch, reset, resize, footer, trim, simplify, flatten, reverse, createSet, units, outLabel, outItems, outValues, display, preview, move, branchStats, selectAll, close, restore, searchClear, branchClear, split);
         }
     }
 }

@@ -17,7 +17,7 @@ namespace BetterGhPanel
         private enum ControlStep
         {
             None, Header, BeforeDetails, BeforeTrack, Main, AfterStaleList,
-            Capsule, BeforeStatisticsMenu, BeforeRowActions
+            Capsule, BeforeMenu, BeforeRowActions
         }
 
         private sealed class ControlEntry
@@ -62,7 +62,7 @@ namespace BetterGhPanel
         {
             new ControlEntry("TableHeader", _ => _tableHeader, ClickTableHeader, TooltipTableHeader, click: ControlStep.BeforeDetails, hover: ControlStep.Main, tooltip: ControlStep.Main,
                 visible: _ => TableVisible && PanelOwner.Session.HasCurrentResult, hoverRects: HeaderHoverRects),
-            new ControlEntry("Close", layout => layout.Close, ClickClose, TooltipClose, click: ControlStep.Header, hover: ControlStep.Header, tooltip: ControlStep.BeforeStatisticsMenu),
+            new ControlEntry("Close", layout => layout.Close, ClickClose, TooltipClose, click: ControlStep.Header, hover: ControlStep.Header, tooltip: ControlStep.BeforeMenu),
             new ControlEntry("Display", layout => layout.Display, ClickDisplay, TooltipDisplay, click: ControlStep.Header, hover: ControlStep.Header, tooltip: ControlStep.Main),
             new ControlEntry("Resize", layout => layout.Resize, ClickResize, TooltipResize, click: ControlStep.BeforeTrack, tooltip: ControlStep.Main, cursor: Cursors.SizeNWSE),
             new ControlEntry("Move", layout => layout.Move, ClickMove, TooltipMove, click: ControlStep.Main, tooltip: ControlStep.BeforeRowActions, cursor: Cursors.SizeAll),
@@ -77,11 +77,11 @@ namespace BetterGhPanel
             new ControlEntry("Sort", layout => layout.Sort, ClickSort, TooltipQuery, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Branch", layout => layout.Branch, ClickBranch, TooltipQuery, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("SelectAll", layout => layout.SelectAll, ClickSelectAll, TooltipSelectAll, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
-            new ControlEntry("Statistics", layout => layout.Statistics, ClickStatistics, TooltipStatistics, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main, tooltipHit: point => _layout.Statistics.Contains(point) || _layout.Footer.Contains(point) && point.Y < _layout.Units.Y && !_layout.OutLabel.Contains(point) && !_layout.OutItems.Contains(point) && !_layout.OutValues.Contains(point)),
             new ControlEntry("Trim", layout => layout.Trim, ClickTrim, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Simplify", layout => layout.Simplify, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Flatten", layout => layout.Flatten, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Reverse", layout => layout.Reverse, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("BranchStats", layout => layout.BranchStats, ClickBranchStats, TooltipBranchStats, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("CreateSet", layout => layout.CreateSet, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Units", layout => layout.Units, ClickUnits, TooltipUnits, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("OutLabel", layout => layout.OutLabel, null, TooltipOutput, tooltip: ControlStep.Main),
@@ -212,9 +212,11 @@ namespace BetterGhPanel
             OpenMenu(CanvasMenuKind.Preview, sender); return GH_ObjectResponse.Handled;
         }
 
-        private GH_ObjectResponse? ClickStatistics(GH_Canvas sender, GH_CanvasMouseEvent e)
+        private GH_ObjectResponse? ClickBranchStats(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
-            OpenMenu(CanvasMenuKind.Statistics, sender); return GH_ObjectResponse.Handled;
+            if (!PanelOwner.BranchStatsTree) PanelOwner.SetBranchStats(true);
+            OpenMenu(CanvasMenuKind.BranchStats, sender);
+            return GH_ObjectResponse.Handled;
         }
 
         private GH_ObjectResponse? ClickSearchClear(GH_Canvas sender, GH_CanvasMouseEvent e)
@@ -259,6 +261,7 @@ namespace BetterGhPanel
 
         private GH_ObjectResponse? ClickClearFilters(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
+            if (PanelOwner.BranchStatsTree) { PanelOwner.SetBranchStats(false); SuppressTrailingDoubleClick(); return GH_ObjectResponse.Handled; }
             PanelOwner.ClearFilters();
             // The chip disappears and the footer reflows; swallow the second press.
             SuppressTrailingDoubleClick();
@@ -324,6 +327,7 @@ namespace BetterGhPanel
 
         private void TooltipSelectAll(PointF point, GH_TooltipDisplayEventArgs e)
         {
+            if (PanelOwner.BranchStatsTree) { e.Title = "Select Min / Max sources"; e.Description = "Selects source items for the visible Min and Max stats, including offscreen branches."; return; }
             e.Title = "Select all rows";
             e.Text = !PanelOwner.Locked && PanelOwner.Session.HasCurrentResult
                 ? System.FormattableString.Invariant($"{PanelOwner.Session.Result.RowPositions.Count:N0} results")
@@ -331,13 +335,11 @@ namespace BetterGhPanel
             e.Description = "Select every result, including offscreen rows. Shortcut while focused: Ctrl+A.";
         }
 
-        private void TooltipStatistics(PointF point, GH_TooltipDisplayEventArgs e)
+        private void TooltipBranchStats(PointF point, GH_TooltipDisplayEventArgs e)
         {
-            e.Title = "Tree statistics";
-            e.Text = !PanelOwner.Locked && PanelOwner.Session.HasCurrentResult
-                ? CanvasStatistics.Summary(PanelOwner.Session.Result)
-                : PanelOwner.Locked ? "Disabled" : PanelOwner.Session.IsBusy ? "Recomputing…" : "Statistics unavailable";
-            e.Description = "Minimum, maximum, average, counts and every unique value with its frequency.";
+            e.Title = "Stats per branch";
+            e.Text = PanelOwner.BranchStatsTree ? string.Join(" · ", PanelBranchStats.Picks(PanelOwner.StatKinds).Select(PanelBranchStats.Name)) : "Off · Changes output";
+            e.Description = "Each branch's rows become its stats, and D sends them. Flatten for stats across all branches. Create set and Stats are either/or.";
         }
 
         private void TooltipSearchClear(PointF point, GH_TooltipDisplayEventArgs e)
@@ -385,7 +387,7 @@ namespace BetterGhPanel
         private void TooltipTree(PointF point, GH_TooltipDisplayEventArgs e)
         {
             e.Title = _layout.Trim.Contains(point) ? "Trim tree" : _layout.Simplify.Contains(point) ? "Simplify tree" : _layout.Flatten.Contains(point) ? "Flatten tree" : _layout.Reverse.Contains(point) ? "Reverse tree" : "Create set";
-            e.Text = (_layout.Trim.Contains(point) ? "Depth: " + PanelOwner.TrimDepth + " · " : "") + "Changes output · Tree tools → Units → Filters → Create set";
+            e.Text = (_layout.Trim.Contains(point) ? "Depth: " + PanelOwner.TrimDepth + " · " : "") + "Changes output · Tree tools → Units → Filters → Create set / Stats";
             e.Description = _layout.Trim.Contains(point) ? "Remove this many trailing path levels. Matching branches merge. 0 turns Trim off." :
                 _layout.Simplify.Contains(point) ? "Toggle removal of path indices shared by all branches." :
                 _layout.Flatten.Contains(point) ? "Toggle merging all branches into {0}." :
@@ -455,6 +457,7 @@ namespace BetterGhPanel
 
         private void TooltipClearFilters(PointF point, GH_TooltipDisplayEventArgs e)
         {
+            if (PanelOwner.BranchStatsTree) { e.Title = "Turn off branch stats"; e.Description = "Keeps your stat picks, filters and other tree tools. Undo restores Stats."; return; }
             e.Title = "Clear filters";
             e.Text = "Undo restores them";
             e.Description = "Clears search, mode, type, path, invalid-only, sorting, selection and scroll. Tree tools, units and decimals stay. " +

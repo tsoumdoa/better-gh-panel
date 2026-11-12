@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading;
+using System.Linq;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
 using Rhino;
@@ -23,6 +24,8 @@ namespace BetterGhPanel.Runtime
         private Func<double>? _roundUpFactorResolver;
         private Func<PanelFormula?>? _formulaResolver;
         private Func<bool>? _createSetResolver;
+        private Func<bool>? _branchStatsResolver;
+        private Func<PanelStatKinds>? _statKindsResolver;
         private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryPreparationResolver;
         private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryRetentionResolver;
         private Func<PanelSnapshot, int, bool>? _geometrySourceCurrent;
@@ -165,6 +168,8 @@ namespace BetterGhPanel.Runtime
         internal void SetFormulaResolver(Func<PanelFormula?> resolver) => _formulaResolver = resolver;
         internal void SetRoundUpFactorResolver(Func<double> resolver) => _roundUpFactorResolver = resolver;
         internal void SetCreateSetResolver(Func<bool> resolver) => _createSetResolver = resolver;
+        internal void SetBranchStatsResolver(Func<bool> enabled, Func<PanelStatKinds> picks)
+        { _branchStatsResolver = enabled; _statKindsResolver = picks; }
         private Func<bool>? _outputValuesResolver;
         internal void SetOutputValuesResolver(Func<bool> resolver) => _outputValuesResolver = resolver;
 
@@ -250,6 +255,8 @@ namespace BetterGhPanel.Runtime
             if (_decimalPlacesResolver != null) next.DecimalPlaces = _decimalPlacesResolver();
             if (_roundUpFactorResolver != null) next.RoundUpFactor = _roundUpFactorResolver();
             if (_formulaResolver != null) next.Formula = _formulaResolver();
+            if (_branchStatsResolver != null) next.BranchStats = _branchStatsResolver();
+            if (_statKindsResolver != null) next.StatKinds = _statKindsResolver();
             if (_createSetResolver != null) next.CreateSet = _createSetResolver();
             if (_outputValuesResolver != null) next.OutputValues = _outputValuesResolver() && (next.DisplayFilterValue || next.CreateSet);
             next.DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, next.DecimalPlaces));
@@ -280,6 +287,8 @@ namespace BetterGhPanel.Runtime
             bool measureGeometry = snapshot.HasMeasurableGeometry && PanelQueryEngine.RequiresGeometryMeasurements(options);
             var sortColumn = options.SortMode == PanelSortMode.SourceOrder ? null :
                 _columns.Find(column => column.Input.InstanceGuid == options.SortColumn && column.Snapshot?.HasMeasurableGeometry == true);
+            var statColumns = options.BranchStats ? _columns.Where(column => column.Snapshot != null && column.Pair != null)
+                .Select(column => (Column: column, Snapshot: column.Snapshot!, Queue: column.Geometry, Pair: column.Pair!)).ToArray() : null;
             var sortSnapshot = sortColumn?.Snapshot;
             var sortQueue = sortColumn?.Geometry;
             CancelVisibleColumnMeasurements();
@@ -291,7 +300,7 @@ namespace BetterGhPanel.Runtime
             PanelQueryWork? work = null;
             // Regex and native calls cannot yield midway through one operation.
             // All other queries get the same time budget regardless of tree size.
-            if (options.SearchMode != PanelSearchMode.Regex && !measureGeometry && sortColumn == null)
+            if (options.SearchMode != PanelSearchMode.Regex && !measureGeometry && sortColumn == null && (statColumns == null || statColumns.Length == 0))
             {
                 try
                 {
@@ -347,15 +356,37 @@ namespace BetterGhPanel.Runtime
                         }));
                         if (!await completion.Task.ConfigureAwait(false)) return;
                     }
+                    var columnMeasurements = new Dictionary<Guid, IReadOnlyDictionary<int, PanelGeometryInfo?>?>();
+                    if (statColumns != null)
+                        foreach (var column in statColumns)
+                        {
+                            IReadOnlyDictionary<int, PanelGeometryInfo?>? values = null;
+                            if (column.Snapshot.HasMeasurableGeometry && column.Queue != null)
+                            {
+                                if (!await column.Queue.MeasureAllAsync(column.Snapshot, column.Snapshot.Rows.Count, token).ConfigureAwait(false)) return;
+                                values = await column.Queue.CaptureCompletedAsync(column.Snapshot, column.Snapshot.Rows.Count, token).ConfigureAwait(false);
+                                if (values == null) return;
+                            }
+                            // Rebuilt against D's filtered members below; only immutable values cross to the worker.
+                            columnMeasurements[column.Column.Input.InstanceGuid] = values;
+                        }
                     // Resume the same scan, statistics and sort state. Work already
                     // performed within the UI budget is never restarted.
                     var result = work?.Complete() ?? PanelQueryEngine.Execute(snapshot, options, token, measurements);
+                    if (statColumns != null)
+                        foreach (var column in statColumns)
+                        {
+                            result.ColumnBranchStats.Add(column.Column.Input.InstanceGuid, PanelBranchStats.Column(result, column.Snapshot,
+                                column.Pair.ItemAt, options, columnMeasurements[column.Column.Input.InstanceGuid], token));
+                        }
                     RhinoApp.InvokeOnUiThread((Action)(() =>
                     {
                         if (!CanPublish(snapshot, request, token)) return;
                         if (measureGeometry && !_geometry.SourcesCurrent(snapshot)) return;
                         if (sortColumn != null && (sortSnapshot == null || sortQueue == null ||
                             !ReferenceEquals(sortColumn.Snapshot, sortSnapshot) || !sortQueue.SourcesCurrent(sortSnapshot))) return;
+                        if (statColumns != null && statColumns.Any(column => !ReferenceEquals(column.Column.Snapshot, column.Snapshot) ||
+                            column.Queue != null && !column.Queue.SourcesCurrent(column.Snapshot))) return;
                         if (!CanPublish(snapshot, request, token)) return;
                         PublishQuery(result, null);
                     }));

@@ -230,11 +230,12 @@ namespace BetterGhPanel
             var session = Session;
             var result = session.Result;
             if ((includeColumns || tableColumn != null) && !SummariesCurrent(result)) return "Column summaries are recomputing. Try copying again.";
+            bool statsTable = includeColumns && result.BranchStats != null;
             bool listLengthCopy = path == null && (action == PanelRowAction.CopyValues || includeColumns) && session.Options.DisplayFilterValue && session.Options.SearchMode == PanelSearchMode.ListLength;
             bool branchSet = path == null && (action == PanelRowAction.CopyValues || includeColumns) && result.DisplaySet?.IsBranchSet == true;
             IReadOnlyList<int> ordered;
             if (path != null || columnBranch != null || action == PanelRowAction.CopyPaths && RowSelection.Count > 0) ordered = positions;
-            else if (branchSet || listLengthCopy) ordered = Array.Empty<int>();
+            else if (branchSet || listLengthCopy || statsTable) ordered = Array.Empty<int>();
             else if (!TryGetActionPositions(snapshot, positions, out ordered)) return "Data changed; select rows again";
             string? pathText = path == null ? null : action == PanelRowAction.CopyPathBare ? path.Trim('{', '}') : path;
             var branchSelection = branchSet || listLengthCopy ? new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal) : null;
@@ -283,7 +284,7 @@ namespace BetterGhPanel
                         (action != PanelRowAction.CopyTable || includeColumns == EffectiveTableVisible) &&
                         (tableColumn == null || EffectiveTableVisible && TableColumns.Contains(tableColumn)) &&
                         (!(includeColumns || tableColumn != null) || SummariesCurrent(result)) &&
-                        (path != null || columnBranch != null || action == PanelRowAction.CopyPaths || branchSet || listLengthCopy
+                        (path != null || columnBranch != null || action == PanelRowAction.CopyPaths || branchSet || listLengthCopy || statsTable
                             ? RowSelection.Version == selectionVersion && (path == null || result.ContainsBranchPath(path)) && (columnBranch == null || result.ContainsBranchPath(columnBranch))
                             : PanelActionPositions.IsCurrent(result, source.Length, RowSelection, ordered, selectionVersion));
                     if (!measured || !SelectionCurrent()) Finish(PanelCommitOutcome.Stale);

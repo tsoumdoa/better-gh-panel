@@ -171,7 +171,18 @@ namespace BetterGhPanel
             using var headerFont = new Font(font, FontStyle.Bold);
             var widths = new float[PanelOwner.TableColumns.Count + 1];
             for (int index = 0; index < widths.Length; index++) widths[index] = Math.Max(PanelTableText.MinimumColumnWidth, TightWidth(g, ColumnTitle(index), headerFont) + 24);
-            if (DisplayListLengths)
+            if (result.BranchStats != null)
+            {
+                foreach (string path in result.BranchPaths.Skip(_offset / 2).Take(16))
+                    foreach (var kind in PanelBranchStats.Picks(PanelOwner.StatKinds))
+                    {
+                        widths[0] = Math.Max(widths[0], Measure(result.BranchStats[path].Format(kind, PanelOwner.DecimalPlaces), true) + 100);
+                        for (int column = 0; column < PanelOwner.TableColumns.Count; column++)
+                            if (result.ColumnBranchStats.TryGetValue(PanelOwner.TableColumns[column].Input.InstanceGuid, out var branches))
+                                widths[column + 1] = Math.Max(widths[column + 1], Measure(branches[path].Format(kind, PanelOwner.DecimalPlaces), true) + 100);
+                    }
+            }
+            else if (DisplayListLengths)
             {
                 int end = Math.Min(result.BranchPaths.Count, _offset + (int)(_list.Height / RowHeight));
                 for (int offset = _offset; offset < end; offset++)
