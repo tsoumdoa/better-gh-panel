@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.6.0-beta
 
 - **Crowded viewport dots stay visible.** As dots crowd, their text shrinks and they then become small colour dots instead of disappearing. Nearby dots with the same value share one label; selected items keep their text longest and keep their selection ring.
 - **Dot size and Preview limit** (Preview menu). Dot size: Small / Medium / Large. Preview limit: 1,000 / 5,000 / 20,000 items (default 5,000; previously fixed at 1,024). Both save with the file and support Undo.
+- **Validation.** The automated Rhino fixtures could not run for this release, and the new dot layout has not yet been tried in a live Rhino session. Core tests cover the layout, grouping and settings.
 
 ## 0.5.0-beta
 
