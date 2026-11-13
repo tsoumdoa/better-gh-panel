@@ -25,10 +25,14 @@ namespace BetterGhPanel
                 if (index == CanvasPreviewRows.ItemOrder) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
                 if (index == CanvasPreviewRows.Values) PanelOwner.SetShowValues(!PanelOwner.ShowValues);
                 if (index == CanvasPreviewRows.Placement) next = CanvasMenuKind.DotPlacement;
+                if (index == CanvasPreviewRows.Size) next = CanvasMenuKind.DotSize;
+                if (index == CanvasPreviewRows.Limit) next = CanvasMenuKind.PreviewLimit;
                 if (index == CanvasPreviewRows.Colour) next = CanvasMenuKind.ValuePalette;
             }
             else if (index == CanvasPreviewRows.Back) next = CanvasMenuKind.Preview;
             else if (page == CanvasMenuKind.DotPlacement) { PanelOwner.SetDotPlacement((PanelDotPlacement)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
+            else if (page == CanvasMenuKind.DotSize) { PanelOwner.SetDotSize((PanelDotSize)(index - 1)); next = CanvasMenuKind.Preview; }
+            else if (page == CanvasMenuKind.PreviewLimit) { PanelOwner.SetPreviewLimit(PanelDotSettings.LimitAt(index - 1)); next = CanvasMenuKind.Preview; }
             else if (index == CanvasPreviewRows.Reverse) PanelOwner.SetReversePalette(!PanelOwner.ReversePalette);
             else PanelOwner.SetValuePalette((PanelValuePalette)(index - CanvasPreviewRows.FirstChoice));
             if (next != page)

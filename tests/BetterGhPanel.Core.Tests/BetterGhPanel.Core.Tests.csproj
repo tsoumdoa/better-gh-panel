@@ -16,6 +16,5 @@
     <!-- Drawing policy can be checked on Windows and Mac without loading Rhino. -->
     <Compile Include="../../src/BetterGhPanel/UI/CanvasMenu.cs" Link="CanvasMenu.cs" />
     <Compile Include="../../src/BetterGhPanel/UI/CanvasSetDetails.cs" Link="CanvasSetDetails.cs" />
-    <Compile Include="../../src/BetterGhPanel/UI/LabelCollisionGrid.cs" Link="LabelCollisionGrid.cs" />
   </ItemGroup>
 </Project>

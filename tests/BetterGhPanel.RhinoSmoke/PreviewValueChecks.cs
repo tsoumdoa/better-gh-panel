@@ -20,6 +20,14 @@ internal static partial class PreviewSafetyChecks
     {
         using var fixture = new PanelHostFixture.Fixture(assembly);
         var component = fixture.Component;
+        Check(PropertyValue<PanelDotSize>(component, "DotSize") == PanelDotSize.Medium && PropertyValue<int>(component, "PreviewLimit") == 5000,
+            "New panels default to Medium dots and a 5,000 item preview limit");
+        var oldArchive = new GH_IO.Serialization.GH_LooseChunk("Panel");
+        component.Write(oldArchive); oldArchive.RemoveItem("PanelDotSize"); oldArchive.RemoveItem("PanelPreviewLimit");
+        var legacy = (GH_Component)Activator.CreateInstance(component.GetType())!;
+        legacy.CreateAttributes();
+        Check(legacy.Read(oldArchive) && PropertyValue<PanelDotSize>(legacy, "DotSize") == PanelDotSize.Medium &&
+            PropertyValue<int>(legacy, "PreviewLimit") == 5000, "Old files default to Medium dots and a 5,000 item preview limit");
         fixture.Source.Hidden = fixture.Paired.Hidden = true;
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         var path = new GH_Path(0);
@@ -68,17 +76,29 @@ internal static partial class PreviewSafetyChecks
             Call(component, "SetDotPlacement", PanelDotPlacement.BoxTop);
             SaveViewport("value-dots-box-top.png");
 
+            Call(component, "SetDotSize", PanelDotSize.Large);
+            fixture.Document.UndoServer.PerformUndo();
+            Check(PropertyValue<PanelDotSize>(component, "DotSize") == PanelDotSize.Medium, "Dot size supports Undo");
+            fixture.Document.UndoServer.PerformRedo();
+            Check(PropertyValue<PanelDotSize>(component, "DotSize") == PanelDotSize.Large, "Dot size supports Redo");
+            Call(component, "SetPreviewLimit", 20000);
+            fixture.Document.UndoServer.PerformUndo();
+            Check(PropertyValue<int>(component, "PreviewLimit") == 5000, "Preview limit supports Undo");
+            fixture.Document.UndoServer.PerformRedo();
+            Check(PropertyValue<int>(component, "PreviewLimit") == 20000, "Preview limit supports Redo");
             var archive = new GH_IO.Serialization.GH_Archive();
             Check(archive.AppendObject(component, "Panel"), "Value-preview settings serialize through the component archive");
             var restored = (Grasshopper.Kernel.GH_Component)Activator.CreateInstance(component.GetType())!;
             restored.CreateAttributes();
             Check(archive.ExtractObject(restored, "Panel") && PropertyValue<bool>(restored, "ShowValues") &&
                 PropertyValue<PanelValuePalette>(restored, "ValuePalette") == PanelValuePalette.Viridis &&
-                PropertyValue<PanelDotPlacement>(restored, "DotPlacement") == PanelDotPlacement.BoxTop,
+                PropertyValue<PanelDotPlacement>(restored, "DotPlacement") == PanelDotPlacement.BoxTop &&
+                PropertyValue<PanelDotSize>(restored, "DotSize") == PanelDotSize.Large && PropertyValue<int>(restored, "PreviewLimit") == 20000,
                 "Value-preview settings round trip with the file");
             Call(component, "ResetAll");
             Check(PropertyValue<bool>(component, "ShowValues") && PropertyValue<PanelValuePalette>(component, "ValuePalette") == PanelValuePalette.Viridis &&
-                PropertyValue<PanelDotPlacement>(component, "DotPlacement") == PanelDotPlacement.BoxTop, "Reset all keeps preview-value settings");
+                PropertyValue<PanelDotPlacement>(component, "DotPlacement") == PanelDotPlacement.BoxTop &&
+                PropertyValue<PanelDotSize>(component, "DotSize") == PanelDotSize.Large && PropertyValue<int>(component, "PreviewLimit") == 20000, "Reset all keeps preview-value settings");
             if (!string.IsNullOrWhiteSpace(directory))
             {
                 using var canvas = new GH_Canvas { Document = fixture.Document, Size = new Size(1100, 850) };
@@ -96,6 +116,8 @@ internal static partial class PreviewSafetyChecks
                 }
                 SaveMenu("Preview", "value-dots-preview-menu.png");
                 SaveMenu("ValuePalette", "value-dots-palette-list.png");
+                SaveMenu("DotSize", "value-dots-size-list.png");
+                SaveMenu("PreviewLimit", "value-dots-limit-list.png");
             }
             PreviewMode(component, "Off");
             Check(PropertyValue<int>(highlight, "PreviewCount") == 0, "Preview Off clears value dots and the legend owner");

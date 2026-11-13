@@ -5,7 +5,6 @@ using System.Diagnostics;
 using System.Linq;
 using System.Windows.Forms;
 using BetterGhPanel.Core;
-using BetterGhPanel.UI;
 using Grasshopper.Kernel;
 using Rhino.Display;
 using Rhino.Geometry;
@@ -21,7 +20,14 @@ namespace BetterGhPanel.Runtime
         private Guid _viewport;
         private Transform _model;
         private Color _selectedColor;
-        private TextDot? _haloDot;
+        private TextDot? _haloDot, _textDot;
+        internal PanelDotSize DotSize { get; set; } = PanelDotSize.Medium;
+        private readonly PanelDotLayout _layout = new PanelDotLayout();
+        private readonly List<PanelDotInput> _dots = new List<PanelDotInput>();
+        private readonly List<Label> _visibleLabels = new List<Label>();
+        private readonly List<Point3d> _worldAnchors = new List<Point3d>();
+        private readonly List<Point3d> _swatchBatch = new List<Point3d>();
+        private static readonly Color PlainFill = Color.FromArgb(245, 247, 244), Border = Color.FromArgb(39, 49, 43);
 
         private PanelQueryResult? _valueResult;
         private bool _dirty;
@@ -112,9 +118,11 @@ namespace BetterGhPanel.Runtime
             var sample = _sample;
             var result = _valueResult;
             var positions = _valuePositions;
-            int end = Math.Min(positions.Count, _cursor + 256);
+            int begin = _cursor, end = Math.Min(positions.Count, _cursor + 256);
+            long started = Stopwatch.GetTimestamp();
             for (; _cursor < end; _cursor++)
             {
+                if (_cursor > begin && (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency >= 4) break;
                 int position = positions[_cursor]; var value = sample(position);
                 if (generation != _valueGeneration || current?.Invoke() != true || !ReferenceEquals(result, _valueResult)) return;
                 if (_values.TryGetValue(position, out var previous)) value = value.RetainNumber(previous);
@@ -144,7 +152,7 @@ namespace BetterGhPanel.Runtime
         }
 
         private PanelPreviewValue Value(int position) => !_settings.Values && !Gradient ? default :
-            _values.TryGetValue(position, out var value) ? value : _sample?.Invoke(position) ?? default;
+            _values.TryGetValue(position, out var value) ? value : new PanelPreviewValue("", "", null, "", pending: true);
 
         private void Place(Label label)
         {
@@ -211,6 +219,8 @@ namespace BetterGhPanel.Runtime
             ClearEntries(); SetResult(null);
             _values.Clear(); _ranges.Clear(); _legend = Array.Empty<LegendRow>(); _lastPublish = -PublishInterval;
             _haloDot?.Dispose(); _haloDot = null;
+            _textDot?.Dispose(); _textDot = null;
+            _dots.Clear(); _visibleLabels.Clear(); _worldAnchors.Clear(); _swatchBatch.Clear();
             UpdateEnabled();
         }
 
@@ -255,61 +265,105 @@ namespace BetterGhPanel.Runtime
         {
             if (!_armed || _viewport != e.Viewport.Id) return;
             _armed = false;
-            var occupied = new LabelCollisionGrid();
             float scale = (float)e.Display.DpiScale;
             if (scale <= 0 || float.IsNaN(scale) || float.IsInfinity(scale)) scale = 1;
-            // Selected labels win collisions. Each list retains current view order; hidden
-            // labels keep their original numbers and can reappear as the view separates them.
-            if (Gradient)
-            {
-                // Halo TextDots use world coordinates; the top dots use screen coordinates.
-                e.Display.PushModelTransform(Transform.Identity);
-                try { DrawLabels(e, occupied, scale, _selectedColor, true); }
-                finally { e.Display.PopModelTransform(); }
-            }
-            else DrawLabels(e, occupied, scale, _selectedColor, true);
-            DrawLabels(e, occupied, scale, Color.FromArgb(245, 247, 244), false);
+            DrawLabels(e, scale);
             DrawLegend(e, scale);
         }
 
-        private void DrawLabels(DrawEventArgs args, LabelCollisionGrid occupied, float scale, Color fill, bool selected)
+        private void DrawLabels(DrawEventArgs args, float dpi)
         {
-            var foreground = fill.GetBrightness() < 0.45f ? Color.White : Color.FromArgb(35, 41, 37);
-            var cameraX = Gradient && selected ? args.Viewport.CameraX : Vector3d.Zero;
-            var cameraY = Gradient && selected ? args.Viewport.CameraY : Vector3d.Zero;
-            foreach (var label in _labels.Values)
+            _dots.Clear(); _visibleLabels.Clear(); _worldAnchors.Clear();
+            double size = PanelDotSettings.Scale(DotSize), scale = dpi * size;
+            foreach (var pair in _labels)
             {
-                if (label.Text.Length == 0 || _membership.Contains(label.Position) != selected) continue;
-                if (!TryProject(args.Viewport, _model, label.Anchor, out var screen)) continue;
-                // Native dots choose their own font. Reserve a conservative constant-pixel
-                // footprint including padding, instead of measuring or allocating text per frame.
-                float width = (_settings.Values ? label.Text.Length * 8 + 12 : label.Text.Length * 9 + 14) * scale, height = 24 * scale;
-                var bounds = new RectangleF((float)screen.X - width / 2, (float)screen.Y - height / 2, width, height);
-                if (!occupied.TryAdd(bounds)) continue;
-                if (Gradient && selected) DrawDotHalo(args, label, scale, cameraX, cameraY);
-                args.Display.DrawDot((float)screen.X, (float)screen.Y, label.Text,
-                    Gradient ? _colours[label.ColourId] : fill, Gradient ? _textColours[label.ColourId] : foreground);
+                var label = pair.Value;
+                if (label.Text.Length == 0 || !TryProject(args.Viewport, _model, label.Anchor, out var screen)) continue;
+                double width = (_settings.Values ? label.Text.Length * 8 + 12 : label.Text.Length * 9 + 14) * scale;
+                _dots.Add(new PanelDotInput(screen.X, screen.Y, width, 24 * scale, label.Text, _membership.Contains(label.Position), pair.Key));
+                _visibleLabels.Add(label);
+                var anchor = label.Anchor; anchor.Transform(_model); _worldAnchors.Add(anchor);
+            }
+            _layout.Calculate(_dots, size, dpi);
+            args.Display.PushModelTransform(Transform.Identity);
+            args.Display.PushDepthTesting(false);
+            args.Display.PushDepthWriting(false);
+            try
+            {
+                DrawSwatches(args.Display, dpi, members: true);
+                DrawSwatches(args.Display, dpi, members: false);
+                _textDot ??= new TextDot("", Point3d.Origin) { FontFace = "Arial" };
+                for (int k = _dots.Count - 1; k >= 0; k--)
+                {
+                    int i = _layout.PriorityIndex(k); var output = _layout.Results[i];
+                    if (output.Tier != PanelDotTier.Text && output.Tier != PanelDotTier.Full) continue;
+                    var label = _visibleLabels[i]; var anchor = _worldAnchors[output.LabelAnchor];
+                    int height = Math.Max(1, (int)Math.Round(12 * size * output.TextScale));
+                    _textDot.Text = label.Text; _textDot.Point = anchor; _textDot.FontHeight = height;
+                    if (_dots[i].Selected) DrawDotHalo(args, anchor, label.Text, height, dpi);
+                    var fill = Gradient ? _colours[label.ColourId] : PlainFill;
+                    args.Display.DrawDot(_textDot, fill, Gradient ? _textColours[label.ColourId] : Border, Border);
+                }
+            }
+            finally
+            {
+                args.Display.PopDepthWriting(); args.Display.PopDepthTesting(); args.Display.PopModelTransform();
             }
         }
 
-        private void DrawDotHalo(DrawEventArgs args, Label label, float scale, Vector3d cameraX, Vector3d cameraY)
+        private void DrawSwatches(DisplayPipeline display, float dpi, bool members)
         {
-            var anchor = label.Anchor; anchor.Transform(_model);
+            // Batch contiguous equal styles, preserving exact priority even when tiny
+            // floor-radius swatches overlap. Reuse the point buffer and quantise radii.
+            _swatchBatch.Clear(); int previousColour = -1; float previousRadius = 0; bool previousSelected = false;
+            for (int k = _dots.Count - 1; k >= 0; k--)
+            {
+                int i = _layout.PriorityIndex(k); var output = _layout.Results[i];
+                var rep = _layout.Results[output.Representative];
+                bool text = rep.Tier == PanelDotTier.Text || rep.Tier == PanelDotTier.Full;
+                if (members)
+                {
+                    if (output.GroupCount < 2 || text && output.LabelAnchor == i || !text && output.Representative == i) continue;
+                }
+                else if (output.Tier != PanelDotTier.Swatch) continue;
+                float radius = (float)(Math.Floor((members ? output.GroupSwatchRadius : output.SwatchRadius) * 4) / 4);
+                radius = Math.Max(1.5f * dpi, radius);
+                int colour = Gradient ? _visibleLabels[i].ColourId : 0;
+                bool selected = _dots[i].Selected;
+                if (colour != previousColour || radius != previousRadius || selected != previousSelected)
+                {
+                    FlushSwatches(display, previousColour, previousRadius, previousSelected, dpi);
+                    previousColour = colour; previousRadius = radius; previousSelected = selected;
+                }
+                _swatchBatch.Add(_worldAnchors[i]);
+            }
+            FlushSwatches(display, previousColour, previousRadius, previousSelected, dpi);
+        }
+
+        private void FlushSwatches(DisplayPipeline display, int colour, float radius, bool selected, float dpi)
+        {
+            if (_swatchBatch.Count == 0) return;
+            if (selected) display.DrawPoints(_swatchBatch, PointStyle.RoundSimple, _selectedColor, _selectedColor,
+                radius + 2.5f * dpi, 0, 0, 0, true, false);
+            var fill = Gradient ? _colours[colour] : PlainFill;
+            display.DrawPoints(_swatchBatch, PointStyle.RoundSimple, Border, fill, radius,
+                radius >= 2.5f * dpi ? .8f * dpi : 0, 0, 0, true, false);
+            _swatchBatch.Clear();
+        }
+
+        private void DrawDotHalo(DrawEventArgs args, Point3d anchor, string text, int height, float scale)
+        {
             if (!args.Viewport.GetWorldToScreenScale(anchor, out double pixelsPerUnit) ||
                 pixelsPerUnit <= 0 || double.IsNaN(pixelsPerUnit) || double.IsInfinity(pixelsPerUnit)) return;
-            _haloDot ??= new TextDot("", Point3d.Origin);
-            _haloDot.Text = label.Text;
+            _haloDot ??= new TextDot("", Point3d.Origin) { FontFace = "Arial" };
+            _haloDot.Text = text; _haloDot.FontHeight = height;
             double radius = 3 * scale / pixelsPerUnit;
-            var x = cameraX * radius; var y = cameraY * radius;
+            var x = args.Viewport.CameraX * radius; var y = args.Viewport.CameraY * radius;
             var diagonalUp = (x + y) * 0.70710678; var diagonalDown = (x - y) * 0.70710678;
-            DrawHaloDot(args.Display, anchor - x);
-            DrawHaloDot(args.Display, anchor + x);
-            DrawHaloDot(args.Display, anchor - y);
-            DrawHaloDot(args.Display, anchor + y);
-            DrawHaloDot(args.Display, anchor - diagonalUp);
-            DrawHaloDot(args.Display, anchor + diagonalUp);
-            DrawHaloDot(args.Display, anchor - diagonalDown);
-            DrawHaloDot(args.Display, anchor + diagonalDown);
+            DrawHaloDot(args.Display, anchor - x); DrawHaloDot(args.Display, anchor + x);
+            DrawHaloDot(args.Display, anchor - y); DrawHaloDot(args.Display, anchor + y);
+            DrawHaloDot(args.Display, anchor - diagonalUp); DrawHaloDot(args.Display, anchor + diagonalUp);
+            DrawHaloDot(args.Display, anchor - diagonalDown); DrawHaloDot(args.Display, anchor + diagonalDown);
         }
 
         private void DrawHaloDot(DisplayPipeline display, Point3d point)

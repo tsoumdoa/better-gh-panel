@@ -141,10 +141,10 @@ namespace BetterGhPanel
             var expectedResult = session.Result;
             var mode = PreviewMode;
             bool showOrder = ShowItemOrder, showValues = ShowValues, reverse = ReversePalette;
-            var placement = DotPlacement; var palette = ValuePalette;
+            var placement = DotPlacement; var palette = ValuePalette; var dotSize = DotSize; int limit = PreviewLimit;
             var stamp = new ActionStamp(this, session, snapshot, expectedResult, source, _selectionVersion);
             bool Current() => !_previewSuspended && !Locked && PreviewMode == mode &&
-                ShowItemOrder == showOrder && ShowValues == showValues && ReversePalette == reverse && DotPlacement == placement && ValuePalette == palette &&
+                ShowItemOrder == showOrder && ShowValues == showValues && ReversePalette == reverse && DotPlacement == placement && ValuePalette == palette && DotSize == dotSize && PreviewLimit == limit &&
                 stamp.IsCurrent();
             var options = session.Options;
             PanelPreviewValue Sample(int position)
@@ -153,6 +153,9 @@ namespace BetterGhPanel
                 if (geometry == null && session.HasGeometryMeasurement(snapshot, position)) geometry = snapshot.Rows[position].GeometryInfo?.WithUnavailableMeasurement();
                 return PanelPreviewValues.Sample(snapshot, snapshot.Rows[position], options.SearchMode, geometry, DecimalPlaces, RoundUpFactor, PresentedFormula);
             }
+            _highlight.SetPreviewLimit(PreviewLimit);
+            if (!Current()) return;
+            _highlight.DotSize = DotSize;
             _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, ValuePalette, ReversePalette,
                 options.SearchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current);
             if (!Current()) return;

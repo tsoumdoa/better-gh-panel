@@ -84,7 +84,7 @@ public class FilterCanvasTests
         menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
         menu.Layout(panel, default, default, default, preview: anchor);
         menu.MarkPainted();
-        Assert.True(menu.Count == 7 && menu.Visible == menu.Count, "Preview controls fit on one page without a paging row");
+        Assert.True(menu.Count == 9 && menu.Visible == menu.Count, "Preview controls fit on one page without a paging row");
         foreach (PanelPreviewMode mode in Enum.GetValues(typeof(PanelPreviewMode)))
         {
             int index = (int)mode;

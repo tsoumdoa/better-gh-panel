@@ -14,7 +14,17 @@ namespace BetterGhPanel.Runtime
     // independent third-party preview is borrowed (the GH best-effort contract).
     internal sealed class PanelGeometryHighlight
     {
-        internal const int MaxEntries = 1024;
+        internal int PreviewLimit { get; private set; } = 5000;
+        internal PanelDotSize DotSize { get => _orderLabels.DotSize; set => _orderLabels.DotSize = value; }
+        internal void SetPreviewLimit(int limit)
+        {
+            if (!PanelDotSettings.ValidLimit(limit) || PreviewLimit == limit) return;
+            PreviewLimit = limit;
+            // Rebuild the scope on the next SetScopeChecked, including recovery and
+            // attempted roots. Deferred native resource retirement remains guarded.
+            _generation++;
+            ClearGeometry();
+        }
         internal const int MaxBuildRows = 20000;
         internal const int MaxUpdateRows = 128;
         internal const long MaxRetainedBytes = 64L * 1024 * 1024;
@@ -133,10 +143,11 @@ namespace BetterGhPanel.Runtime
         internal BoundingBox ClippingBox => _bounds.Box;
         internal string Status => _displayFlushFailed ? "Preview partial: display flush failed; drawn resources retained." :
             _partial || _recovery.Pending || _filteredRecovery.Pending || _unavailable > 0 || _meshFailures > 0
-            ? "Preview partial: " + (_partialReason ?? (_recovery.Pending ? "selected geometry is awaiting admission" :
+            ? "Preview partial: " + (_entries.Count >= PreviewLimit ? EntryLimitReason : _partialReason ?? (_recovery.Pending ? "selected geometry is awaiting admission" :
                 _filteredRecovery.Pending ? "results are awaiting preview capacity" :
                 "some geometry is unsupported or exceeds safety limits")) + "."
             : string.Empty;
+        private string EntryLimitReason => PreviewLimit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " item limit";
 
         internal void SetOrderResult(PanelQueryResult? result)
         {
@@ -194,7 +205,7 @@ namespace BetterGhPanel.Runtime
                 if (positions.Count > end) _partial = true;
                 for (int index = 0; index < end; index++)
                 {
-                    if (budget.Remaining <= 0 || _entries.Count >= MaxEntries)
+                    if (budget.Remaining <= 0 || _entries.Count >= PreviewLimit)
                     { _partial = true; break; }
                     if (RetainedBytes >= MaxRetainedBytes)
                     {
@@ -224,7 +235,7 @@ namespace BetterGhPanel.Runtime
                 position =>
                 {
                     if (budget.Remaining <= 0 || !Current(generation, current) ||
-                        (_entries.Count >= MaxEntries && _unselected.Count == 0)) return PanelPreviewRecovery.Admission.Blocked;
+                        (_entries.Count >= PreviewLimit && _unselected.Count == 0)) return PanelPreviewRecovery.Admission.Blocked;
                     LastVisitedRows++;
                     if (_result == null || !_result.TryGetPreviewIndex(position, out int order)) return PanelPreviewRecovery.Admission.Complete;
                     TryAdmit(position, order, budget, true, generation, current);
@@ -250,9 +261,9 @@ namespace BetterGhPanel.Runtime
                 {
                     if (!Current(generation, current)) return PanelPreviewRecovery.Admission.Blocked;
                     if (budget.Remaining <= 0) { budgetBlocked = true; return PanelPreviewRecovery.Admission.Blocked; }
-                    if (_entries.Count >= MaxEntries || RetainedBytes >= MaxRetainedBytes)
+                    if (_entries.Count >= PreviewLimit || RetainedBytes >= MaxRetainedBytes)
                     {
-                        if (_entries.Count >= MaxEntries || RetiringBytes == 0)
+                        if (_entries.Count >= PreviewLimit || RetiringBytes == 0)
                         { _partial = true; _filteredRecovery.Clear(); }
                         return PanelPreviewRecovery.Admission.Blocked;
                     }
@@ -321,7 +332,7 @@ namespace BetterGhPanel.Runtime
             var budget = new PanelGeometrySources.OperationBudget();
             for (int i = 0; i < previewPositions.Count; i++)
             {
-                if (i >= MaxBuildRows || budget.Remaining <= 0 || _entries.Count >= MaxEntries) { _partial = true; break; }
+                if (i >= MaxBuildRows || budget.Remaining <= 0 || _entries.Count >= PreviewLimit) { _partial = true; break; }
                 LastVisitedRows++;
                 TryAdmit(previewPositions[i], i, budget, false, generation, () => true);
                 if (generation != _generation) return;
@@ -414,9 +425,9 @@ namespace BetterGhPanel.Runtime
                 scans.Add(scan);
             }
             if (mayEvict && !MakeAdmissionRoom(estimate, needsEntry: true, generation, current)) return;
-            if (_entries.Count >= MaxEntries || !CanAdmitBytes(estimate))
+            if (_entries.Count >= PreviewLimit || !CanAdmitBytes(estimate))
             {
-                if (!_admissionBlockedByRetirement) { _partial = true; _partialReason ??= "preview memory or entry limit"; }
+                if (!_admissionBlockedByRetirement) { _partial = true; _partialReason ??= "preview memory or " + PreviewLimit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " item limit"; }
                 return;
             }
             // Reserve the whole staged group before native construction. A
@@ -512,9 +523,9 @@ namespace BetterGhPanel.Runtime
             if (!Current(generation, current)) return true;
             if (source[position]?.GetType() != typeof(GH_Point) || ((GH_Point)source[position]!).ReferenceID != Guid.Empty) return false;
             if (!_orderLabels.CanAddWithoutEnabling) return false;
-            if (_entries.Count >= MaxEntries || !CanAdmitBytes(estimate))
+            if (_entries.Count >= PreviewLimit || !CanAdmitBytes(estimate))
             {
-                if (!_admissionBlockedByRetirement) { _partial = true; _partialReason ??= "preview memory or entry limit"; }
+                if (!_admissionBlockedByRetirement) { _partial = true; _partialReason ??= "preview memory or " + PreviewLimit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " item limit"; }
                 return true;
             }
             using var inspected = PanelGeometrySources.Inspect(source[position], budget, true);
@@ -591,7 +602,7 @@ namespace BetterGhPanel.Runtime
 
         private bool MakeAdmissionRoom(long bytes, bool needsEntry, long generation, Func<bool> current)
         {
-            while (_unselected.Count > 0 && (needsEntry && _entries.Count >= MaxEntries ||
+            while (_unselected.Count > 0 && (needsEntry && _entries.Count >= PreviewLimit ||
                 _displayMemory.RequiredRelease(bytes, RetiringBytes) > 0))
             {
                 Remove(_entries[_unselected.Max]);

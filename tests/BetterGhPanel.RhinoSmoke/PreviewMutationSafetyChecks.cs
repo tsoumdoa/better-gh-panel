@@ -81,6 +81,7 @@ internal static partial class PreviewSafetyChecks
 
     private static void VerifyBudgets(object highlight)
     {
+        Call(highlight, "SetPreviewLimit", 1000);
         const int total = 1100;
         var values = Enumerable.Range(0, total).Select(i => (IGH_Goo?)new GH_Point(new Point3d(i, 0, 0))).ToArray();
         var snapshot = new PanelSnapshot(Enumerable.Range(0, total).Select(i => new PanelRow(i, "{0}", "Point", "", null)).ToArray(),
@@ -91,9 +92,9 @@ internal static partial class PreviewSafetyChecks
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
             Method(highlight, "SetOrderResult").Invoke(highlight, new object?[] { labels ? result : null });
             Scope(highlight, values, result, Array.Empty<int>());
-            Check(Count(highlight) == 1024 && Status(highlight).Contains("partial") && PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024,
+            Check(Count(highlight) == 1000 && Status(highlight).Contains("partial") && PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024,
                 "filtered preview enforces bounded admission and reports partial results");
-            for (int i = 1024; i < total; i++)
+            for (int i = 1000; i < total; i++)
             {
                 Scope(highlight, values, result, new[] { i });
                 Check(Box(highlight).Contains(new Point3d(i, 0, 0)) && PropertyValue<int>(highlight, "LastVisitedRows") <= 1 &&
@@ -123,6 +124,7 @@ internal static partial class PreviewSafetyChecks
         Check(Count(highlight) == 0 && PropertyValue<long>(highlight, "RetainedBytes") == 0 && Status(highlight).Contains("partial"),
             "geometry beyond the compatibility provider limit is rejected before constructing a preview copy");
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
+        Call(highlight, "SetPreviewLimit", 5000);
     }
 
     private static void VerifyStagedAdmission(object highlight)

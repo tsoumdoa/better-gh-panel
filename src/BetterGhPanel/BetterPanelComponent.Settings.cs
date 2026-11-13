@@ -34,8 +34,14 @@ namespace BetterGhPanel
         internal bool ShowValues { get; private set; }
         internal PanelDotPlacement DotPlacement { get; private set; }
         internal PanelValuePalette ValuePalette { get; private set; }
+        internal PanelDotSize DotSize { get; private set; } = PanelDotSize.Medium;
+        internal int PreviewLimit { get; private set; } = 5000;
         internal bool ReversePalette { get; private set; }
 
+        internal void SetDotSize(PanelDotSize value)
+        { if (Enum.IsDefined(typeof(PanelDotSize), value)) SetPreviewSetting("dot size", DotSize, value, (c, v) => c.DotSize = v); }
+        internal void SetPreviewLimit(int value)
+        { if (PanelDotSettings.ValidLimit(value)) SetPreviewSetting("preview limit", PreviewLimit, value, (c, v) => c.PreviewLimit = v); }
         internal void SetShowValues(bool value) => SetPreviewSetting("values", ShowValues, value, (c, v) => c.ShowValues = v);
         internal void SetDotPlacement(PanelDotPlacement value)
         { if (Enum.IsDefined(typeof(PanelDotPlacement), value)) SetPreviewSetting("dot placement", DotPlacement, value, (c, v) => c.DotPlacement = v); }
@@ -597,6 +603,8 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelShowItemOrder", ShowItemOrder);
             writer.SetBoolean("PanelShowValues", ShowValues);
             writer.SetInt32("PanelDotPlacement", (int)DotPlacement);
+            writer.SetInt32("PanelDotSize", (int)DotSize);
+            writer.SetInt32("PanelPreviewLimit", PreviewLimit);
             writer.SetInt32("PanelValuePalette", (int)ValuePalette);
             writer.SetBoolean("PanelReversePalette", ReversePalette);
             writer.SetInt32("PanelTrimDepth", TrimDepth);
@@ -722,7 +730,11 @@ namespace BetterGhPanel
             reader.TryGetBoolean("PanelShowItemOrder", ref showOrder);
             ShowItemOrder = showOrder;
             bool showValues = false, reversePalette = false;
-            int dotPlacement = 0, valuePalette = 0;
+            int dotPlacement = 0, valuePalette = 0, dotSize = (int)PanelDotSize.Medium, previewLimit = 5000;
+            reader.TryGetInt32("PanelDotSize", ref dotSize);
+            reader.TryGetInt32("PanelPreviewLimit", ref previewLimit);
+            DotSize = Enum.IsDefined(typeof(PanelDotSize), dotSize) ? (PanelDotSize)dotSize : PanelDotSize.Medium;
+            PreviewLimit = PanelDotSettings.ValidLimit(previewLimit) ? previewLimit : 5000;
             reader.TryGetBoolean("PanelShowValues", ref showValues);
             reader.TryGetBoolean("PanelReversePalette", ref reversePalette);
             reader.TryGetInt32("PanelDotPlacement", ref dotPlacement);
