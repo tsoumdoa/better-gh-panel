@@ -54,6 +54,7 @@ internal static partial class PreviewSafetyChecks
             Check(PropertyValue<bool>(component, "ShowValues"), "Value dots are enabled through the real component setting");
             view.ActiveViewport.SetProjection(DefinedViewportProjection.Perspective, "Value dots", true);
             view.ActiveViewport.ZoomBoundingBox(new BoundingBox(P(-9, -2, -1), P(8, 11, 5)));
+            VerifyDotProjectionAndTextCache(assembly, view.ActiveViewport, origin);
             string? directory = Environment.GetEnvironmentVariable("PANEL_UX_SCREENSHOTS");
             void SaveViewport(string name)
             {
@@ -123,6 +124,40 @@ internal static partial class PreviewSafetyChecks
             Check(PropertyValue<int>(highlight, "PreviewCount") == 0, "Preview Off clears value dots and the legend owner");
         }
         finally { if (previousView != null) rhino.Views.ActiveView = previousView; view.Close(); }
+    }
+
+    private static void VerifyDotProjectionAndTextCache(Assembly assembly, RhinoViewport viewport, Point3d origin)
+    {
+        var labelsType = assembly.GetType("BetterGhPanel.Runtime.PanelOrderLabels", true)!;
+        var cached = labelsType.GetMethod("TryProjectCached", AnyStatic)!;
+        var clip = viewport.GetTransform(Rhino.DocObjects.CoordinateSystem.World, Rhino.DocObjects.CoordinateSystem.Clip);
+        var screen = viewport.GetTransform(Rhino.DocObjects.CoordinateSystem.World, Rhino.DocObjects.CoordinateSystem.Screen);
+        var model = Transform.Translation(new Vector3d(1, 2, 0));
+        foreach (var point in new[] { origin, origin + new Vector3d(4, 3, 0), origin + new Vector3d(100000, 0, 0),
+            viewport.CameraLocation + viewport.CameraDirection * -10 })
+        {
+            var world = model * point;
+            var expected = viewport.WorldToClient(world);
+            bool visible = viewport.IsVisible(world) && expected.X >= 0 && expected.Y >= 0 &&
+                expected.X < viewport.Size.Width && expected.Y < viewport.Size.Height;
+            object?[] args = { clip * model, screen * model, point, viewport.Size, null };
+            bool actual = (bool)cached.Invoke(null, args)!;
+            Check(actual == visible, "cached clip projection keeps native viewport visibility including points behind the camera");
+            if (actual) Check(((Point2d)args[4]!).DistanceTo(expected) < 1e-7,
+                "one-per-frame projection matrices match native WorldToClient with a model transform");
+        }
+        var cacheType = assembly.GetType("BetterGhPanel.Runtime.PanelTextDotCache", true)!;
+        var cache = Activator.CreateInstance(cacheType, AnyInstance, null, new object[] { 2 }, null)!;
+        try
+        {
+            var a = (TextDot)Call(cache, "Get", "a", 14)!;
+            var b = (TextDot)Call(cache, "Get", "b", 14)!;
+            Check(ReferenceEquals(a, Call(cache, "Get", "a", 14)), "cached native dots reuse text/font and promote recent entries");
+            var c = (TextDot)Call(cache, "Get", "c", 10)!;
+            Check(b.Disposed && !a.Disposed && !c.Disposed && PropertyValue<int>(cache, "Count") == 2,
+                "the bounded native dot cache evicts and disposes its least recently used entry");
+        }
+        finally { Call(cache, "Clear"); }
     }
 
     // Component callbacks normally run before foreground labels. The older preview

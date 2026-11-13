@@ -7,6 +7,8 @@ using System.Windows.Forms;
 using BetterGhPanel.Core;
 using Grasshopper.Kernel;
 using Rhino.Display;
+using Rhino.Collections;
+using Rhino.DocObjects;
 using Rhino.Geometry;
 
 namespace BetterGhPanel.Runtime
@@ -20,13 +22,14 @@ namespace BetterGhPanel.Runtime
         private Guid _viewport;
         private Transform _model;
         private Color _selectedColor;
-        private TextDot? _haloDot, _textDot;
         internal PanelDotSize DotSize { get; set; } = PanelDotSize.Medium;
-        private readonly PanelDotLayout _layout = new PanelDotLayout();
-        private readonly List<PanelDotInput> _dots = new List<PanelDotInput>();
-        private readonly List<Label> _visibleLabels = new List<Label>();
-        private readonly List<Point3d> _worldAnchors = new List<Point3d>();
-        private readonly List<Point3d> _swatchBatch = new List<Point3d>();
+        private readonly Dictionary<Guid, ViewportFrame> _frames = new Dictionary<Guid, ViewportFrame>();
+        private readonly Dictionary<string, int> _textIds = new Dictionary<string, int>(StringComparer.Ordinal);
+        private readonly List<Label> _orderedLabels = new List<Label>();
+        private readonly PanelTextDotCache _textDots = new PanelTextDotCache(2000);
+        private long _labelRevision, _frameUse;
+        private bool _labelListDirty = true;
+        internal int LayoutBuilds { get; private set; }
         private static readonly Color PlainFill = Color.FromArgb(245, 247, 244), Border = Color.FromArgb(39, 49, 43);
 
         private PanelQueryResult? _valueResult;
@@ -164,9 +167,16 @@ namespace BetterGhPanel.Runtime
         private void UpdateLabel(Label label)
         {
             var value = Value(label.Position);
+            string before = label.Text; int colour = label.ColourId; var anchor = label.Anchor;
             label.Text = value.Label((_settings.Order || _valueResult == null) && PanelItemOrder.TryGetNumber(_result, label.Position, out int number) ? number : (int?)null, _settings.Values);
             label.ColourId = ColourId(label.Position);
             Place(label);
+            if (before != label.Text)
+            {
+                if (!_textIds.TryGetValue(label.Text, out int id)) { id = _textIds.Count + 1; _textIds.Add(label.Text, id); }
+                label.TextId = id;
+            }
+            if (before != label.Text || colour != label.ColourId || anchor != label.Anchor) _labelRevision++;
         }
 
         private void RebuildLabels()
@@ -201,7 +211,8 @@ namespace BetterGhPanel.Runtime
         internal void ClearEntries()
         {
             _armed = false;
-            _labels.Clear();
+            _labels.Clear(); _orderedLabels.Clear(); _textIds.Clear(); _frames.Clear();
+            _labelListDirty = true; _labelRevision++;
             UpdateEnabled();
         }
         internal void SuspendValues()
@@ -218,9 +229,7 @@ namespace BetterGhPanel.Runtime
             SuspendValues();
             ClearEntries(); SetResult(null);
             _values.Clear(); _ranges.Clear(); _legend = Array.Empty<LegendRow>(); _lastPublish = -PublishInterval;
-            _haloDot?.Dispose(); _haloDot = null;
-            _textDot?.Dispose(); _textDot = null;
-            _dots.Clear(); _visibleLabels.Clear(); _worldAnchors.Clear(); _swatchBatch.Clear();
+            _textDots.Clear();
             UpdateEnabled();
         }
 
@@ -231,15 +240,15 @@ namespace BetterGhPanel.Runtime
         internal void Add(int viewIndex, int sourcePosition, Point3d anchor, BoundingBox bounds = default)
         {
             if (!anchor.IsValid || _result == null) return;
-            var label = new Label(sourcePosition, "", anchor, bounds);
+            var label = new Label(viewIndex, sourcePosition, "", anchor, bounds);
             UpdateLabel(label);
-            _labels[viewIndex] = label;
+            _labels[viewIndex] = label; _labelListDirty = true; _labelRevision++;
             if (!Enabled) Enabled = true;
         }
 
         internal void Remove(int viewIndex)
         {
-            _labels.Remove(viewIndex);
+            if (_labels.Remove(viewIndex)) { _labelListDirty = true; _labelRevision++; }
             UpdateEnabled();
         }
 
@@ -271,38 +280,87 @@ namespace BetterGhPanel.Runtime
             DrawLegend(e, scale);
         }
 
+        private ViewportFrame LayoutFrame(DrawEventArgs args, float dpi)
+        {
+            Guid id = args.Viewport.Id;
+            if (!_frames.TryGetValue(id, out var frame))
+            {
+                if (_frames.Count >= 4)
+                {
+                    Guid oldest = Guid.Empty; long use = long.MaxValue;
+                    foreach (var pair in _frames) if (pair.Value.LastUse < use) { oldest = pair.Key; use = pair.Value.LastUse; }
+                    _frames.Remove(oldest);
+                }
+                frame = new ViewportFrame(); _frames.Add(id, frame);
+            }
+            frame.LastUse = ++_frameUse;
+            var clip = args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
+            var screen = args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Screen);
+            var dimensions = args.Viewport.Size;
+            if (frame.Valid && frame.Clip == clip && frame.Screen == screen && frame.Model == _model && frame.Dpi == dpi &&
+                frame.Size == dimensions && frame.LabelRevision == _labelRevision && frame.SelectionRevision == _membership.Revision &&
+                frame.DotSize == DotSize && frame.Gradient == Gradient && frame.Values == _settings.Values && frame.SelectedColour == _selectedColor) return frame;
+            if (_labelListDirty)
+            {
+                _orderedLabels.Clear(); foreach (var label in _labels.Values) _orderedLabels.Add(label);
+                _labelListDirty = false;
+            }
+            frame.Ensure(_orderedLabels.Count); frame.Count = 0;
+            double size = PanelDotSettings.Scale(DotSize), scale = dpi * size;
+            var modelClip = clip * _model; var modelScreen = screen * _model;
+            for (int k = 0; k < _orderedLabels.Count; k++)
+            {
+                var label = _orderedLabels[k];
+                if (label.Text.Length == 0 || !TryProjectCached(modelClip, modelScreen, label.Anchor, dimensions, out var point)) continue;
+                int i = frame.Count++;
+                double width = (_settings.Values ? label.Text.Length * 8 + 12 : label.Text.Length * 9 + 14) * scale;
+                frame.Dots[i] = new PanelDotInput(point.X, point.Y, width, 24 * scale, label.TextId, _membership.Contains(label.Position), label.Order);
+                frame.Labels[i] = label;
+                frame.WorldAnchors[i] = _model * label.Anchor;
+            }
+            frame.Layout.Calculate(frame.Dots, frame.Count, size, dpi);
+            LayoutBuilds++;
+            if (frame.Dpi != dpi) { frame.ActiveBuckets.Clear(); frame.Buckets.Clear(); }
+            BuildSwatches(frame, dpi);
+            frame.Clip = clip; frame.Screen = screen; frame.Model = _model; frame.Size = dimensions; frame.Dpi = dpi;
+            frame.LabelRevision = _labelRevision; frame.SelectionRevision = _membership.Revision;
+            frame.DotSize = DotSize; frame.Gradient = Gradient; frame.Values = _settings.Values; frame.SelectedColour = _selectedColor; frame.Valid = true;
+            return frame;
+        }
+
         private void DrawLabels(DrawEventArgs args, float dpi)
         {
-            _dots.Clear(); _visibleLabels.Clear(); _worldAnchors.Clear();
-            double size = PanelDotSettings.Scale(DotSize), scale = dpi * size;
-            foreach (var pair in _labels)
-            {
-                var label = pair.Value;
-                if (label.Text.Length == 0 || !TryProject(args.Viewport, _model, label.Anchor, out var screen)) continue;
-                double width = (_settings.Values ? label.Text.Length * 8 + 12 : label.Text.Length * 9 + 14) * scale;
-                _dots.Add(new PanelDotInput(screen.X, screen.Y, width, 24 * scale, label.Text, _membership.Contains(label.Position), pair.Key));
-                _visibleLabels.Add(label);
-                var anchor = label.Anchor; anchor.Transform(_model); _worldAnchors.Add(anchor);
-            }
-            _layout.Calculate(_dots, size, dpi);
+            var frame = LayoutFrame(args, dpi);
+            double size = PanelDotSettings.Scale(DotSize);
             args.Display.PushModelTransform(Transform.Identity);
             args.Display.PushDepthTesting(false);
             args.Display.PushDepthWriting(false);
             try
             {
-                DrawSwatches(args.Display, dpi, members: true);
-                DrawSwatches(args.Display, dpi, members: false);
-                _textDot ??= new TextDot("", Point3d.Origin) { FontFace = "Arial" };
-                for (int k = _dots.Count - 1; k >= 0; k--)
+                DrawSwatches(args.Display, frame, dpi);
+                for (int k = frame.Count - 1; k >= 0; k--)
                 {
-                    int i = _layout.PriorityIndex(k); var output = _layout.Results[i];
+                    int i = frame.Layout.PriorityIndex(k); var output = frame.Layout.Results[i];
                     if (output.Tier != PanelDotTier.Text && output.Tier != PanelDotTier.Full) continue;
-                    var label = _visibleLabels[i]; var anchor = _worldAnchors[output.LabelAnchor];
-                    int height = Math.Max(1, (int)Math.Round(12 * size * output.TextScale));
-                    _textDot.Text = label.Text; _textDot.Point = anchor; _textDot.FontHeight = height;
-                    if (_dots[i].Selected) DrawDotHalo(args, anchor, label.Text, height, dpi);
+                    var label = frame.Labels[i]; var anchor = frame.WorldAnchors[output.LabelAnchor];
+                    // FontHeight maps to ON_TextDot.HeightInPoints, not physical
+                    // pixels. Rhino applies DPI; multiplying by dpi here doubles it.
+                    int height = Math.Max(1, (int)Math.Round(14 * size * output.TextScale));
+                    var dot = _textDots.Get(label.Text, height);
+                    if (frame.Dots[i].Selected) DrawDotHalo(args, anchor, dot, dpi);
                     var fill = Gradient ? _colours[label.ColourId] : PlainFill;
-                    args.Display.DrawDot(_textDot, fill, Gradient ? _textColours[label.ColourId] : Border, Border);
+                    if (output.Tier == PanelDotTier.Full && DotSize == PanelDotSize.Medium)
+                    {
+                        // Keep the original full-size appearance at every display DPI.
+                        int a = output.LabelAnchor;
+                        args.Display.DrawDot((float)frame.Dots[a].X, (float)frame.Dots[a].Y, label.Text, fill,
+                            Gradient ? _textColours[label.ColourId] : Border);
+                    }
+                    else
+                    {
+                        dot.Point = anchor;
+                        args.Display.DrawDot(dot, fill, Gradient ? _textColours[label.ColourId] : Border, Border);
+                    }
                 }
             }
             finally
@@ -311,65 +369,119 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        private void DrawSwatches(DisplayPipeline display, float dpi, bool members)
+        private void BuildSwatches(ViewportFrame frame, float dpi)
         {
-            // Batch contiguous equal styles, preserving exact priority even when tiny
-            // floor-radius swatches overlap. Reuse the point buffer and quantise radii.
-            _swatchBatch.Clear(); int previousColour = -1; float previousRadius = 0; bool previousSelected = false;
-            for (int k = _dots.Count - 1; k >= 0; k--)
+            foreach (var bucket in frame.ActiveBuckets) bucket.Points.Clear();
+            frame.ActiveBuckets.Clear();
+            for (int i = 0; i < frame.Count; i++)
             {
-                int i = _layout.PriorityIndex(k); var output = _layout.Results[i];
-                var rep = _layout.Results[output.Representative];
+                var output = frame.Layout.Results[i]; var rep = frame.Layout.Results[output.Representative];
                 bool text = rep.Tier == PanelDotTier.Text || rep.Tier == PanelDotTier.Full;
-                if (members)
-                {
-                    if (output.GroupCount < 2 || text && output.LabelAnchor == i || !text && output.Representative == i) continue;
-                }
-                else if (output.Tier != PanelDotTier.Swatch) continue;
-                float radius = (float)(Math.Floor((members ? output.GroupSwatchRadius : output.SwatchRadius) * 4) / 4);
-                radius = Math.Max(1.5f * dpi, radius);
-                int colour = Gradient ? _visibleLabels[i].ColourId : 0;
-                bool selected = _dots[i].Selected;
-                if (colour != previousColour || radius != previousRadius || selected != previousSelected)
-                {
-                    FlushSwatches(display, previousColour, previousRadius, previousSelected, dpi);
-                    previousColour = colour; previousRadius = radius; previousSelected = selected;
-                }
-                _swatchBatch.Add(_worldAnchors[i]);
+                if (output.GroupCount > 1 && !(text && output.LabelAnchor == i) && !(!text && output.Representative == i))
+                    AddSwatch(frame, i, output.GroupSwatchRadius, dpi);
+                if (output.Tier == PanelDotTier.Swatch) AddSwatch(frame, i, output.SwatchRadius, dpi);
             }
-            FlushSwatches(display, previousColour, previousRadius, previousSelected, dpi);
         }
 
-        private void FlushSwatches(DisplayPipeline display, int colour, float radius, bool selected, float dpi)
+        private void AddSwatch(ViewportFrame frame, int i, double radius, float dpi)
         {
-            if (_swatchBatch.Count == 0) return;
-            if (selected) display.DrawPoints(_swatchBatch, PointStyle.RoundSimple, _selectedColor, _selectedColor,
-                radius + 2.5f * dpi, 0, 0, 0, true, false);
-            var fill = Gradient ? _colours[colour] : PlainFill;
-            display.DrawPoints(_swatchBatch, PointStyle.RoundSimple, Border, fill, radius,
-                radius >= 2.5f * dpi ? .8f * dpi : 0, 0, 0, true, false);
-            _swatchBatch.Clear();
+            int quarterPixels = (int)Math.Floor(radius * 4);
+            int colour = Gradient ? frame.Labels[i].ColourId : 0;
+            bool selected = frame.Dots[i].Selected;
+            int key = (selected ? int.MinValue : 0) | colour << 16 | quarterPixels;
+            if (!frame.Buckets.TryGetValue(key, out var bucket))
+            {
+                bucket = new SwatchBucket(colour, Math.Max(1.5f * dpi, quarterPixels / 4f), selected);
+                frame.Buckets.Add(key, bucket);
+            }
+            if (bucket.Points.Count == 0) frame.ActiveBuckets.Add(bucket);
+            bucket.Points.Add(frame.WorldAnchors[i]);
         }
 
-        private void DrawDotHalo(DrawEventArgs args, Point3d anchor, string text, int height, float scale)
+        private void DrawSwatches(DisplayPipeline display, ViewportFrame frame, float dpi)
+        {
+            // RhinoListHelpers.GetConstArray returns RhinoList's backing array:
+            // no IEnumerable copy, and submissions depend on styles, not dot count.
+            foreach (var bucket in frame.ActiveBuckets) if (!bucket.Selected) DrawSwatchBucket(display, bucket, dpi);
+            foreach (var bucket in frame.ActiveBuckets) if (bucket.Selected)
+                display.DrawPoints(bucket.Points, PointStyle.RoundSimple, _selectedColor, _selectedColor,
+                    bucket.Radius + 2.5f * dpi, 0, 0, 0, true, false);
+            foreach (var bucket in frame.ActiveBuckets) if (bucket.Selected) DrawSwatchBucket(display, bucket, dpi);
+        }
+
+        private void DrawSwatchBucket(DisplayPipeline display, SwatchBucket bucket, float dpi)
+        {
+            var fill = Gradient ? _colours[bucket.Colour] : PlainFill;
+            display.DrawPoints(bucket.Points, PointStyle.RoundSimple, Border, fill, bucket.Radius,
+                bucket.Radius >= 2.5f * dpi ? .8f * dpi : 0, 0, 0, true, false);
+        }
+
+        private void DrawDotHalo(DrawEventArgs args, Point3d anchor, TextDot dot, float scale)
         {
             if (!args.Viewport.GetWorldToScreenScale(anchor, out double pixelsPerUnit) ||
                 pixelsPerUnit <= 0 || double.IsNaN(pixelsPerUnit) || double.IsInfinity(pixelsPerUnit)) return;
-            _haloDot ??= new TextDot("", Point3d.Origin) { FontFace = "Arial" };
-            _haloDot.Text = text; _haloDot.FontHeight = height;
             double radius = 3 * scale / pixelsPerUnit;
             var x = args.Viewport.CameraX * radius; var y = args.Viewport.CameraY * radius;
             var diagonalUp = (x + y) * 0.70710678; var diagonalDown = (x - y) * 0.70710678;
-            DrawHaloDot(args.Display, anchor - x); DrawHaloDot(args.Display, anchor + x);
-            DrawHaloDot(args.Display, anchor - y); DrawHaloDot(args.Display, anchor + y);
-            DrawHaloDot(args.Display, anchor - diagonalUp); DrawHaloDot(args.Display, anchor + diagonalUp);
-            DrawHaloDot(args.Display, anchor - diagonalDown); DrawHaloDot(args.Display, anchor + diagonalDown);
+            DrawHaloDot(args.Display, dot, anchor - x); DrawHaloDot(args.Display, dot, anchor + x);
+            DrawHaloDot(args.Display, dot, anchor - y); DrawHaloDot(args.Display, dot, anchor + y);
+            DrawHaloDot(args.Display, dot, anchor - diagonalUp); DrawHaloDot(args.Display, dot, anchor + diagonalUp);
+            DrawHaloDot(args.Display, dot, anchor - diagonalDown); DrawHaloDot(args.Display, dot, anchor + diagonalDown);
         }
 
-        private void DrawHaloDot(DisplayPipeline display, Point3d point)
+        private void DrawHaloDot(DisplayPipeline display, TextDot dot, Point3d point)
         {
-            _haloDot!.Point = point;
-            display.DrawDot(_haloDot, _selectedColor, _selectedColor, _selectedColor);
+            dot.Point = point;
+            display.DrawDot(dot, _selectedColor, _selectedColor, _selectedColor);
+        }
+
+        internal static bool TryProjectCached(Transform clip, Transform screen, Point3d point, Size dimensions, out Point2d projected)
+        {
+            projected = Point2d.Unset;
+            double w = clip.M30 * point.X + clip.M31 * point.Y + clip.M32 * point.Z + clip.M33;
+            if (!(w > 0)) return false;
+            double x = clip.M00 * point.X + clip.M01 * point.Y + clip.M02 * point.Z + clip.M03;
+            double y = clip.M10 * point.X + clip.M11 * point.Y + clip.M12 * point.Z + clip.M13;
+            double z = clip.M20 * point.X + clip.M21 * point.Y + clip.M22 * point.Z + clip.M23;
+            if (x < -w || x > w || y < -w || y > w || z < -w || z > w) return false;
+            double sw = screen.M30 * point.X + screen.M31 * point.Y + screen.M32 * point.Z + screen.M33;
+            x = (screen.M00 * point.X + screen.M01 * point.Y + screen.M02 * point.Z + screen.M03) / sw;
+            y = (screen.M10 * point.X + screen.M11 * point.Y + screen.M12 * point.Z + screen.M13) / sw;
+            if (!(x >= 0 && y >= 0 && x < dimensions.Width && y < dimensions.Height)) return false;
+            projected = new Point2d(x, y); return true;
+        }
+
+        private sealed class SwatchBucket
+        {
+            internal SwatchBucket(int colour, float radius, bool selected) { Colour = colour; Radius = radius; Selected = selected; }
+            internal readonly int Colour;
+            internal readonly float Radius;
+            internal readonly bool Selected;
+            internal readonly RhinoList<Point3d> Points = new RhinoList<Point3d>();
+        }
+
+        private sealed class ViewportFrame
+        {
+            internal readonly PanelDotLayout Layout = new PanelDotLayout();
+            internal PanelDotInput[] Dots = Array.Empty<PanelDotInput>();
+            internal Label[] Labels = Array.Empty<Label>();
+            internal Point3d[] WorldAnchors = Array.Empty<Point3d>();
+            internal int Count;
+            internal bool Valid, Gradient, Values;
+            internal long LabelRevision, SelectionRevision, LastUse;
+            internal Transform Clip, Screen, Model;
+            internal Size Size;
+            internal float Dpi;
+            internal PanelDotSize DotSize;
+            internal Color SelectedColour;
+            internal readonly Dictionary<int, SwatchBucket> Buckets = new Dictionary<int, SwatchBucket>();
+            internal readonly List<SwatchBucket> ActiveBuckets = new List<SwatchBucket>();
+            internal void Ensure(int count)
+            {
+                if (Dots.Length >= count) return;
+                int capacity = Math.Max(count, Dots.Length * 2);
+                Dots = new PanelDotInput[capacity]; Labels = new Label[capacity]; WorldAnchors = new Point3d[capacity];
+            }
         }
 
         internal static bool TryProject(RhinoViewport viewport, Transform model, Point3d anchor, out Point2d screen)
@@ -460,14 +572,14 @@ namespace BetterGhPanel.Runtime
 
         private sealed class Label
         {
-            internal Label(int position, string text, Point3d anchor, BoundingBox bounds)
-            { Position = position; Centre = Anchor = anchor; Text = text; Bounds = bounds; }
-            internal readonly int Position;
+            internal Label(int order, int position, string text, Point3d anchor, BoundingBox bounds)
+            { Order = order; Position = position; Centre = Anchor = anchor; Text = text; Bounds = bounds; }
+            internal readonly int Order, Position;
             internal readonly Point3d Centre;
             internal readonly BoundingBox Bounds;
             internal Point3d Anchor;
             internal string Text;
-            internal int ColourId;
+            internal int ColourId, TextId;
         }
     }
 }

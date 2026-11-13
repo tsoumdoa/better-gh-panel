@@ -15,6 +15,7 @@ namespace BetterGhPanel.Core
         internal PanelPreviewMembership(Action? visit = null) { _visit = visit; }
         internal bool Contains(int position) => _selected.Contains(position);
         internal int Count => _selected.Count;
+        internal long Revision { get; private set; }
 
         internal void Update(IReadOnlyList<int> positions, Action<int, bool>? changed = null)
         {
@@ -24,12 +25,12 @@ namespace BetterGhPanel.Core
             foreach (int position in _selected)
             {
                 _visit?.Invoke();
-                if (!next.Contains(position)) changed?.Invoke(position, false);
+                if (!next.Contains(position)) { Revision++; changed?.Invoke(position, false); }
             }
             foreach (int position in next)
             {
                 _visit?.Invoke();
-                if (!_selected.Contains(position)) changed?.Invoke(position, true);
+                if (!_selected.Contains(position)) { Revision++; changed?.Invoke(position, true); }
             }
             _selected.Clear();
             _selected.UnionWith(next);
@@ -48,7 +49,7 @@ namespace BetterGhPanel.Core
                         _visit?.Invoke();
                         if (_selected.Contains(position) != selected)
                         {
-                            changed?.Invoke(position, selected);
+                            Revision++; changed?.Invoke(position, selected);
                             if (selected) _selected.Add(position); else _selected.Remove(position);
                         }
                         _version = selection.Version;
@@ -71,6 +72,6 @@ namespace BetterGhPanel.Core
         }
 
         internal void DetachResult() { _selection = null; _result = null; }
-        internal void Clear() { _selected.Clear(); DetachResult(); }
+        internal void Clear() { if (_selected.Count > 0) Revision++; _selected.Clear(); DetachResult(); }
     }
 }

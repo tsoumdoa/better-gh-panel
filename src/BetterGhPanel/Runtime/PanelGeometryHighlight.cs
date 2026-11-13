@@ -205,8 +205,9 @@ namespace BetterGhPanel.Runtime
                 if (positions.Count > end) _partial = true;
                 for (int index = 0; index < end; index++)
                 {
-                    if (budget.Remaining <= 0 || _entries.Count >= PreviewLimit)
-                    { _partial = true; break; }
+                    if (_entries.Count >= PreviewLimit) { _partial = true; break; }
+                    if (budget.Remaining <= 0)
+                    { _filteredRecovery.Reset(positions, index, end); break; }
                     if (RetainedBytes >= MaxRetainedBytes)
                     {
                         if (RetiringBytes > 0) _filteredRecovery.Reset(positions, index, end);
@@ -216,9 +217,18 @@ namespace BetterGhPanel.Runtime
                     int position = positions[index];
                     LastVisitedRows++;
                     if (_byPosition.ContainsKey(position) || _attempted.Contains(position)) continue;
+                    int visits = budget.Visits;
+                    bool partial = _partial; string? reason = _partialReason;
                     if (result.TryGetPreviewIndex(position, out int order))
                         TryAdmit(position, order, budget, false, generation, current);
                     if (!Current(generation, current)) return;
+                    if (!_byPosition.ContainsKey(position) && !_attempted.Contains(position) && budget.Limited && visits > 0)
+                    {
+                        // Preparation can consume the last node before committing this
+                        // row. Retry the current row as well as the unvisited suffix.
+                        _partial = partial; _partialReason = reason;
+                        _filteredRecovery.Reset(positions, index, end); break;
+                    }
                     if (_admissionBlockedByRetirement)
                     { _filteredRecovery.Reset(positions, index, end); break; }
                 }

@@ -56,8 +56,10 @@ namespace BetterGhPanel.UI
     internal sealed class CanvasMenu
     {
         private const int MaximumRows = 12;
-        internal const string ItemOrderDescription = "Shows each item's zero-based index, starting at 0 in each branch and keeping its number through filters, sorting and selection. " +
-            "Crowded dots shrink to colour swatches; selected dots keep their text longest.";
+        internal const string ItemOrderDescription = "Shows each item's zero-based index, starting at 0 in each branch. Filters, sorting and selection keep these numbers. " +
+            "Dots follow Preview and stay on when minimized. Curves label a point on the curve; closed solids and meshes keep their centre, while open surfaces stay on the material. " +
+            "Choose Box top or Box bottom to move dots above or below their geometry. Crowded dots shrink, then become colour dots; selected items keep their text longest. " +
+            "Show values uses the chosen numeric Search value or the row's usual measurement; circles show radius in other Search modes.";
         private static readonly CanvasChoice<PanelSortMode>[] SortChoices =
         {
             new CanvasChoice<PanelSortMode>(PanelSortMode.SourceOrder, "Source order"),

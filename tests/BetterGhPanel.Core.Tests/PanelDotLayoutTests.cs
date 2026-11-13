@@ -119,4 +119,34 @@ public class PanelDotLayoutTests
             if (tier == PanelDotTier.Text) Assert.Equal(Math.Floor(fit * 20) / 20, layout.Results[i].TextScale, 8);
         }
     }
+
+    [Fact]
+    public void IntegerTextIdsAndOrderedFastPathMatchStringInputs()
+    {
+        var random = new Random(51);
+        var dots = Enumerable.Range(0, 600).Select(i => Dot(random.NextDouble() * 1500, random.NextDouble() * 900,
+            (i % 9).ToString(), i, i % 41 == 0)).ToArray();
+        var numeric = dots.Select((d, i) => new PanelDotInput(d.X, d.Y, d.Width, d.Height, i % 9, d.Selected, d.Priority)).ToArray();
+        var a = new PanelDotLayout(); var b = new PanelDotLayout(); a.Calculate(dots); b.Calculate(numeric, numeric.Length);
+        for (int i = 0; i < dots.Length; i++)
+        {
+            Assert.Equal(a.Results[i].Representative, b.Results[i].Representative);
+            Assert.Equal(a.Results[i].LabelAnchor, b.Results[i].LabelAnchor);
+            Assert.Equal(a.Results[i].Tier, b.Results[i].Tier);
+            Assert.Equal(a.Results[i].TextScale, b.Results[i].TextScale);
+            Assert.Equal(a.Results[i].SwatchRadius, b.Results[i].SwatchRadius);
+        }
+    }
+
+    [Fact]
+    public void GroupSwatchesKeepTheSameHalfPixelGapAtEveryDpi()
+    {
+        var layout = new PanelDotLayout();
+        foreach (double dpi in new[] { 1.0, 1.5, 2.0 })
+        {
+            layout.Calculate(new[] { Dot(0), Dot(6 * dpi, priority: 1) }, dpi: dpi);
+            Assert.Equal(2.5 * dpi, layout.Results[0].GroupSwatchRadius, 8);
+            Assert.Equal(2.5 * dpi, layout.Results[1].SwatchRadius, 8);
+        }
+    }
 }

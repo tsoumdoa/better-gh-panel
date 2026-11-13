@@ -16,12 +16,15 @@ namespace BetterGhPanel.Core
     public readonly struct PanelDotInput
     {
         public PanelDotInput(double x, double y, double width, double height, string text, bool selected, int priority)
-        { X = x; Y = y; Width = width; Height = height; Text = text; Selected = selected; Priority = priority; }
+        { X = x; Y = y; Width = width; Height = height; Text = text; TextId = 0; Selected = selected; Priority = priority; }
+        public PanelDotInput(double x, double y, double width, double height, int textId, bool selected, int priority)
+        { X = x; Y = y; Width = width; Height = height; Text = null; TextId = textId; Selected = selected; Priority = priority; }
         public double X { get; }
         public double Y { get; }
         public double Width { get; }
         public double Height { get; }
-        public string Text { get; }
+        public string? Text { get; }
+        public int TextId { get; }
         public bool Selected { get; }
         // Lower values draw on top. Priorities must uniquely identify view order.
         public int Priority { get; }
@@ -46,6 +49,9 @@ namespace BetterGhPanel.Core
         public const double MinimumTextScale = 8.0 / 12;
         private const double Group = 1.5;
         private int[] _order = Array.Empty<int>(), _scratch = Array.Empty<int>();
+        private PanelDotInput[] _input = Array.Empty<PanelDotInput>();
+        private int[] _textIds = Array.Empty<int>();
+        private readonly Dictionary<string, int> _strings = new Dictionary<string, int>(StringComparer.Ordinal);
         private int[] _count = Array.Empty<int>(), _anchor = Array.Empty<int>();
         private double[] _sumX = Array.Empty<double>(), _sumY = Array.Empty<double>(), _best = Array.Empty<double>();
         private readonly int[] _digits = new int[256];
@@ -55,20 +61,38 @@ namespace BetterGhPanel.Core
         public long CandidateVisits { get; private set; }
         public int PriorityIndex(int index) => _order[index];
 
+        // Convenience path for callers without pre-interned text and a contiguous array.
         public void Calculate(IReadOnlyList<PanelDotInput> dots, double size = 1, double dpi = 1)
         {
-            int n = Count = dots.Count;
-            Ensure(n); CandidateVisits = 0;
+            Ensure(dots.Count);
+            if (_input.Length < dots.Count) _input = new PanelDotInput[Results.Length];
+            for (int i = 0; i < dots.Count; i++) _input[i] = dots[i];
+            Calculate(_input, dots.Count, size, dpi);
+        }
+
+        public void Calculate(PanelDotInput[] dots, int count, double size = 1, double dpi = 1)
+        {
+            int n = Count = count;
+            Ensure(n); CandidateVisits = 0; _strings.Clear();
             double maxWidth = 1, maxHeight = 1;
+            bool ordered = true;
             for (int i = 0; i < n; i++)
             {
+                ref readonly var d = ref dots[i];
                 _order[i] = i; _count[i] = 0; _sumX[i] = _sumY[i] = 0; _best[i] = double.PositiveInfinity;
                 _anchor[i] = i;
-                maxWidth = Math.Max(maxWidth, dots[i].Width); maxHeight = Math.Max(maxHeight, dots[i].Height);
+                maxWidth = Math.Max(maxWidth, d.Width); maxHeight = Math.Max(maxHeight, d.Height);
+                ordered &= i == 0 || dots[i - 1].Priority <= d.Priority;
+                if (d.Text == null) _textIds[i] = d.TextId;
+                else
+                {
+                    if (!_strings.TryGetValue(d.Text, out int id)) { id = _strings.Count + 1; _strings.Add(d.Text, id); }
+                    _textIds[i] = id;
+                }
             }
-            // Four stable radix passes plus selection partition: O(n), independent
-            // of the caller's enumeration order (including negative priorities).
-            for (int shift = 0; shift < 32; shift += 8)
+            // Native labels already arrive in view order. Keep the radix fallback
+            // for order-independent callers, then only partition selection first.
+            if (!ordered) for (int shift = 0; shift < 32; shift += 8)
             {
                 Array.Clear(_digits, 0, 256);
                 for (int k = 0; k < n; k++) _digits[(int)(((uint)dots[_order[k]].Priority ^ 0x80000000u) >> shift) & 255]++;
@@ -87,23 +111,23 @@ namespace BetterGhPanel.Core
             _all.Reset((10 * size + 1) * dpi, (10 * size + 1) * dpi, n);
             for (int k = 0; k < n; k++)
             {
-                int i = _order[k]; var d = dots[i]; int home = -1, rank = int.MaxValue;
+                int i = _order[k]; ref readonly var d = ref dots[i]; int home = -1, rank = int.MaxValue;
                 // The approved mock uses combined half-width in both grouping axes.
                 if (!d.Selected)
                 {
-                    var cell = _groups.Cell(d.X, d.Y, d.Text);
+                    int cellX = _groups.X(d.X), cellY = _groups.Y(d.Y);
                     // Match the mock's cell traversal and insertion order. Linked
                     // buckets run backwards, so choose their earliest eligible rep.
                     for (int x = -1; x <= 1 && home < 0; x++) for (int y = -1; y <= 1 && home < 0; y++)
-                        for (int r = _groups.Head(cell.Offset(x, y)); r >= 0; r = _groups.Next[r])
+                        for (int r = _groups.Head(cellX + x, cellY + y, _textIds[i]); r >= 0; r = _groups.Next[r])
                         {
-                            CandidateVisits++; var other = dots[r];
+                            CandidateVisits++; ref readonly var other = ref dots[r];
                             if ((home < 0 || other.Priority < rank) && Math.Abs(other.X - d.X) < Group * (other.Width + d.Width) / 2 &&
                                 Math.Abs(other.Y - d.Y) < Group * (other.Width + d.Width) / 2)
                             { home = r; rank = other.Priority; }
                         }
                 }
-                if (home < 0) { home = i; if (!d.Selected) _groups.Add(i, d.X, d.Y, d.Text); }
+                if (home < 0) { home = i; if (!d.Selected) _groups.Add(i, d.X, d.Y, _textIds[i]); }
                 Results[i] = new PanelDotOutput { Representative = home, LabelAnchor = i, Tier = PanelDotTier.GroupMember };
                 _count[home]++; _sumX[home] += d.X; _sumY[home] += d.Y;
                 _all.Add(i, d.X, d.Y);
@@ -119,23 +143,23 @@ namespace BetterGhPanel.Core
             for (int k = 0; k < n; k++)
             {
                 int i = _order[k]; if (Results[i].Representative != i) continue;
-                var a = dots[_anchor[i]]; _fits.Add(i, a.X, a.Y);
+                ref readonly var a = ref dots[_anchor[i]]; _fits.Add(i, a.X, a.Y);
             }
             for (int k = 0; k < n; k++)
             {
-                int i = _order[k], r = Results[i].Representative; var d = dots[i];
+                int i = _order[k], r = Results[i].Representative; ref readonly var d = ref dots[i];
                 Results[i].LabelAnchor = _anchor[r]; Results[i].GroupCount = _count[r];
-                if (_count[r] > 1) Results[i].GroupSwatchRadius = Radius(i, dots, 3 * size * dpi, floor, 0);
+                if (_count[r] > 1) Results[i].GroupSwatchRadius = Radius(i, dots, 3 * size * dpi, floor, .5 * dpi);
                 if (r != i) { Results[i].SwatchRadius = Results[i].GroupSwatchRadius; continue; }
-                var a = dots[_anchor[r]];
+                ref readonly var a = ref dots[_anchor[r]];
                 double fit = 1, threshold = MinimumTextScale / (d.Selected ? 1.4 : 1);
-                var cell = _fits.Cell(a.X, a.Y);
+                int cellX = _fits.X(a.X), cellY = _fits.Y(a.Y);
                 bool swatch = false;
                 for (int x = 0; x < 3 && !swatch; x++) for (int y = 0; y < 3 && !swatch; y++)
-                    for (int j = _fits.Head(cell.Offset(Neighbour(x), Neighbour(y))); j >= 0; j = _fits.Next[j])
+                    for (int j = _fits.Head(cellX + Neighbour(x), cellY + Neighbour(y)); j >= 0; j = _fits.Next[j])
                     {
                         if (i == j) continue;
-                        CandidateVisits++; var b = dots[_anchor[j]];
+                        CandidateVisits++; ref readonly var b = ref dots[_anchor[j]];
                         fit = Math.Min(fit, Math.Max(Math.Abs(a.X - b.X) * 2 / (d.Width + dots[j].Width),
                             Math.Abs(a.Y - b.Y) * 2 / (d.Height + dots[j].Height)));
                         // Below the tier threshold, the precise fit cannot affect output.
@@ -148,13 +172,13 @@ namespace BetterGhPanel.Core
             }
         }
 
-        private double Radius(int i, IReadOnlyList<PanelDotInput> dots, double cap, double floor, double gap)
+        private double Radius(int i, PanelDotInput[] dots, double cap, double floor, double gap)
         {
-            var d = dots[i]; double nearest = 2 * (cap + gap), squared = nearest * nearest;
+            ref readonly var d = ref dots[i]; double nearest = 2 * (cap + gap), squared = nearest * nearest;
             double stop = 2 * (floor + gap); stop *= stop;
-            var cell = _all.Cell(d.X, d.Y);
+            int cellX = _all.X(d.X), cellY = _all.Y(d.Y);
             for (int x = 0; x < 3; x++) for (int y = 0; y < 3; y++)
-                for (int j = _all.Head(cell.Offset(Neighbour(x), Neighbour(y))); j >= 0; j = _all.Next[j])
+                for (int j = _all.Head(cellX + Neighbour(x), cellY + Neighbour(y)); j >= 0; j = _all.Next[j])
                 {
                     if (i == j) continue;
                     CandidateVisits++; double dx = dots[j].X - d.X, dy = dots[j].Y - d.Y;
@@ -170,31 +194,52 @@ namespace BetterGhPanel.Core
         {
             if (Results.Length >= n) return;
             int capacity = Math.Max(n, Math.Max(16, Results.Length * 2));
+            _textIds = new int[capacity];
             Results = new PanelDotOutput[capacity]; _order = new int[capacity]; _scratch = new int[capacity];
             _count = new int[capacity]; _anchor = new int[capacity];
             _sumX = new double[capacity]; _sumY = new double[capacity]; _best = new double[capacity];
         }
 
-        private readonly struct CellKey : IEquatable<CellKey>
-        {
-            private readonly int _x, _y;
-            private readonly string? _text;
-            internal CellKey(int x, int y, string? text) { _x = x; _y = y; _text = text; }
-            internal CellKey Offset(int x, int y) => new CellKey(_x + x, _y + y, _text);
-            public bool Equals(CellKey other) => _x == other._x && _y == other._y && string.Equals(_text, other._text, StringComparison.Ordinal);
-            public override bool Equals(object? obj) => obj is CellKey other && Equals(other);
-            public override int GetHashCode() => unchecked((_x * 100003 ^ _y) * 397 ^ (_text?.GetHashCode() ?? 0));
-        }
-
+        // Open-addressed integer cell table. Epochs make clearing O(1); all
+        // storage survives camera changes, without Dictionary or per-cell lists.
         private sealed class Grid
         {
-            private readonly Dictionary<CellKey, int> _heads = new Dictionary<CellKey, int>();
-            private double _width, _height;
+            private int[] _x = Array.Empty<int>(), _y = Array.Empty<int>(), _text = Array.Empty<int>(),
+                _head = Array.Empty<int>(), _stamp = Array.Empty<int>();
+            private int _mask, _epoch;
+            private double _inverseWidth, _inverseHeight;
             internal int[] Next = Array.Empty<int>();
-            internal void Reset(double width, double height, int count) { _heads.Clear(); _width = width; _height = height; if (Next.Length < count) Next = new int[Math.Max(count, Next.Length * 2)]; }
-            internal CellKey Cell(double x, double y, string? text = null) => new CellKey((int)Math.Floor(x / _width), (int)Math.Floor(y / _height), text);
-            internal int Head(CellKey key) => _heads.TryGetValue(key, out int head) ? head : -1;
-            internal void Add(int i, double x, double y, string? text = null) { var key = Cell(x, y, text); Next[i] = Head(key); _heads[key] = i; }
+            internal void Reset(double width, double height, int count)
+            {
+                int capacity = 16;
+                while (capacity < count * 2) capacity *= 2;
+                if (_head.Length < capacity)
+                {
+                    _x = new int[capacity]; _y = new int[capacity]; _text = new int[capacity];
+                    _head = new int[capacity]; _stamp = new int[capacity]; _mask = capacity - 1; _epoch = 0;
+                }
+                if (++_epoch == int.MaxValue) { Array.Clear(_stamp, 0, _stamp.Length); _epoch = 1; }
+                _inverseWidth = 1 / width; _inverseHeight = 1 / height;
+                if (Next.Length < count) Next = new int[Math.Max(count, Next.Length * 2)];
+            }
+            internal int X(double x) => (int)Math.Floor(x * _inverseWidth);
+            internal int Y(double y) => (int)Math.Floor(y * _inverseHeight);
+            private int Slot(int x, int y, int text)
+            {
+                uint hash = unchecked((uint)x * 0x9e3779b1u ^ (uint)y * 0x85ebca77u ^ (uint)text * 0xc2b2ae3du);
+                hash ^= hash >> 16;
+                int slot = (int)hash & _mask;
+                while (_stamp[slot] == _epoch && (_x[slot] != x || _y[slot] != y || _text[slot] != text)) slot = (slot + 1) & _mask;
+                return slot;
+            }
+            internal int Head(int x, int y, int text = 0)
+            { int slot = Slot(x, y, text); return _stamp[slot] == _epoch ? _head[slot] : -1; }
+            internal void Add(int i, double x, double y, int text = 0)
+            {
+                int cx = X(x), cy = Y(y), slot = Slot(cx, cy, text);
+                Next[i] = _stamp[slot] == _epoch ? _head[slot] : -1;
+                _x[slot] = cx; _y[slot] = cy; _text[slot] = text; _head[slot] = i; _stamp[slot] = _epoch;
+            }
         }
     }
 }

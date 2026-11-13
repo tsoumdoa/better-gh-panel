@@ -35,6 +35,7 @@ internal static partial class PreviewSafetyChecks
             VerifyInvalidNativeAdmission(loaded, highlight, rhino);
             VerifySelectedRecovery(highlight);
             VerifyPreviewLimits(highlight);
+            VerifyLineBudgetRecovery(highlight);
             foreach (bool copy in new[] { false, true })
             foreach (bool set in new[] { false, true }) await VerifySemanticAction(loaded, copy, set, rhino);
         }
@@ -194,6 +195,38 @@ internal static partial class PreviewSafetyChecks
                 "all instance limits retain the 64 MB preview resource cap");
         }
         Call(highlight, "Clear");
+    }
+
+    private static void VerifyLineBudgetRecovery(object highlight)
+    {
+        const int total = 20000;
+        foreach (bool partlyPreparedRow in new[] { false, true })
+        {
+            var source = Enumerable.Range(0, total).Select(i => (IGH_Goo?)new GH_Line(
+                new Line(new Point3d(i, 0, 0), new Point3d(i, 1, 0)))).ToArray();
+            // Once the first line has enabled labels, one point uses the fast
+            // path's odd node cost, leaving a line only its first inspection.
+            if (partlyPreparedRow) source[1] = new GH_Point(new Point3d(1, 0, 0));
+            var snapshot = new PanelSnapshot(Enumerable.Range(0, total).Select(i => new PanelRow(i, "{0}", "Line", "", null)).ToArray(),
+                new[] { new PanelBranch("{0}", total) });
+            var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
+            Call(highlight, "SetPreviewLimit", total); Call(highlight, "SetOrderResult", result);
+            Scope(highlight, source, result, Array.Empty<int>());
+            Check(Count(highlight) < total && FieldValue<bool>(highlight, "_recoveryScheduled"),
+                "ordinary Results lines retain an idle continuation when the initial node budget runs out");
+            for (int turn = 0; turn < 160 && FieldValue<bool>(highlight, "_recoveryScheduled"); turn++)
+            {
+                Call(highlight, "RecoverOnIdle", null, EventArgs.Empty);
+                Check(PropertyValue<int>(highlight, "LastVisitedRows") <= 128 && PropertyValue<int>(highlight, "LastVisitedNodes") <= 20000,
+                    "line continuation obeys the per-turn row and node budgets");
+            }
+            Check(Count(highlight) == total && !FieldValue<bool>(highlight, "_recoveryScheduled") && Status(highlight) == string.Empty,
+                "idle recovery reaches the chosen 20,000 limit, including a partly prepared current line");
+            Check(PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024,
+                "line continuation keeps the existing resource cap");
+            Call(highlight, "Clear");
+        }
+        Call(highlight, "SetPreviewLimit", 5000);
     }
 
     private static void VerifySelectedRecovery(object highlight)
