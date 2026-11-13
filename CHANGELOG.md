@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- **Crowded viewport dots stay visible.** As dots crowd, their text shrinks and they then become small colour dots instead of disappearing. Nearby dots with the same value share one label; selected items keep their text longest and keep their selection ring.
+- **Dot size and Preview limit** (Preview menu). Dot size: Small / Medium / Large. Preview limit: 1,000 / 5,000 / 20,000 items (default 5,000; previously fixed at 1,024). Both save with the file and support Undo.
+
 ## 0.5.0-beta
 
 - **Branch stats (Σ).** A new tree tool beside Create set. Each branch's rows become its stats (Count, Sum, Avg, Median, Min, Max, Range, Std dev; you tick which), and D sends exactly those numbers per branch. Add Flatten for stats across all branches.

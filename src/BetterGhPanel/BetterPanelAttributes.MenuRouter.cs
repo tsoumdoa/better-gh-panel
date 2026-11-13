@@ -25,10 +25,14 @@ namespace BetterGhPanel
                 if (index == CanvasPreviewRows.ItemOrder) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
                 if (index == CanvasPreviewRows.Values) PanelOwner.SetShowValues(!PanelOwner.ShowValues);
                 if (index == CanvasPreviewRows.Placement) next = CanvasMenuKind.DotPlacement;
+                if (index == CanvasPreviewRows.Size) next = CanvasMenuKind.DotSize;
+                if (index == CanvasPreviewRows.Limit) next = CanvasMenuKind.PreviewLimit;
                 if (index == CanvasPreviewRows.Colour) next = CanvasMenuKind.ValuePalette;
             }
             else if (index == CanvasPreviewRows.Back) next = CanvasMenuKind.Preview;
             else if (page == CanvasMenuKind.DotPlacement) { PanelOwner.SetDotPlacement((PanelDotPlacement)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
+            else if (page == CanvasMenuKind.DotSize) { PanelOwner.SetDotSize((PanelDotSize)(index - 1)); next = CanvasMenuKind.Preview; }
+            else if (page == CanvasMenuKind.PreviewLimit) { PanelOwner.SetPreviewLimit(PanelDotSettings.LimitAt(index - 1)); next = CanvasMenuKind.Preview; }
             else if (index == CanvasPreviewRows.Reverse) PanelOwner.SetReversePalette(!PanelOwner.ReversePalette);
             else PanelOwner.SetValuePalette((PanelValuePalette)(index - CanvasPreviewRows.FirstChoice));
             if (next != page)
@@ -68,7 +72,12 @@ namespace BetterGhPanel
             if (!PaintedViewIsCurrent() || !_menu.IsPaintedAt(point)) return;
             int row = (int)((point.Y - _menu.Bounds.Y) / 20);
             int index = _menu.Offset + row;
-            if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index < _menu.Count && _menu.PreviewChoiceAt(index).IsItemOrder)
+            if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index == CanvasPreviewRows.Limit)
+            {
+                e.Title = "Preview limit";
+                e.Description = "Most items previewed and labelled. Higher limits can slow the viewport; the 64 MB memory cap still applies.";
+            }
+            else if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index < _menu.Count && _menu.PreviewChoiceAt(index).IsItemOrder)
             {
                 e.Title = "Show item order";
                 e.Text = PanelOwner.ShowItemOrder ? "On" : "Off";
