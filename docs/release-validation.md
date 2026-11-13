@@ -1,5 +1,17 @@
 # Release validation records
 
+## 0.6.0-beta
+
+Crowded viewport value dots no longer disappear: their text shrinks, then they become small colour dots, and nearby dots with the same shown text share one label. Preview gains Dot size (Small / Medium / Large) and Preview limit (1,000 / 5,000 / 20,000 items, default 5,000; previously fixed at 1,024). Built in #76 from an approved mock, with a Sol first review, Sol and Opus adversarial rounds and an Opus re-check.
+
+`npm run check` passed on the release branch: 459 managed tests on each of net48 and net8.0, 17 coordinator tests, one packaging test, 12 headless branch-stats assertions, both runtime builds, source encoding/style checks and the native smoke host compile. Layout timing for 20,000 labels on net48 Release: 4.26 ms median when dense, 3.44 ms when zoomed far out. The extracted assemblies report `0.6.0-beta+f70fc5a7cdb8c680126eded2fa6c9943a2259909`.
+
+**Automated native fixtures did not run.** The user's Windows session was disconnected. The updated preview admission, value and mutation-safety native checks have compiled but never run.
+
+**Not exercised in a live Rhino:** viewport text size and halo at 150% DPI, orbit frame time in Results mode with 5,000 and 20,000 real curves and meshes, value text appearing while the rest of the scope loads, the Dot size and Preview limit menus with Undo and save/reopen, Mac and the Windows .NET Framework host.
+
+Artifact source commit: `f70fc5a7cdb8c680126eded2fa6c9943a2259909`. Archive: `panel-plus-0.6.0-beta-rh8_0-any.yak`. SHA-256: `e167aaed4fd7cdc81ab4a4e46408a4f60444c92aa244c8ff20958460ab125684`. GitHub prerelease and public Yak publication succeeded. Yak search lists `0.6.0-beta`, and a fresh GitHub asset download matches the archive SHA-256.
+
 ## 0.5.0-beta
 
 The footer Stats popup is replaced by the Σ tree tool: each branch's rows become the ticked stats (Count, Sum, Avg, Median, Min, Max, Range, Std dev), D sends exactly those numbers per branch, and Flatten gives stats across all branches. Table columns show the same stats for their own numbers. Built in #73 with a Sol first review, then Sol and Opus adversarial rounds and re-checks.
