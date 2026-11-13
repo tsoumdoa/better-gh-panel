@@ -33,7 +33,7 @@ namespace BetterGhPanel.Runtime
         private static readonly Color PlainFill = Color.FromArgb(245, 247, 244), Border = Color.FromArgb(39, 49, 43);
 
         private PanelQueryResult? _valueResult;
-        private bool _dirty;
+        private bool _dirty, _sentPartialPending;
         private (bool Order, bool Values, PanelDotPlacement Placement, PanelValuePalette Palette, bool Reverse,
             PanelSearchMode Search, int Decimals, double Factor) _settings;
         private readonly Stopwatch _publishClock = Stopwatch.StartNew();
@@ -100,7 +100,7 @@ namespace BetterGhPanel.Runtime
         private void ClearBuild()
         {
             _buildingValues = null; _buildingRanges = null; _buildingPending = null;
-            _prioritySamples.Clear(); _queuedSamples.Clear();
+            _prioritySamples.Clear(); _queuedSamples.Clear(); _sentPartialPending = false;
         }
 
         internal void InvalidateValues()
@@ -146,7 +146,8 @@ namespace BetterGhPanel.Runtime
                 // cannot leave an old extremum in its completed colour snapshot.
                 if (priority || _queuedSamples.Contains(position)) _values[position] = value;
                 if (value.Pending) _buildingPending!.Add(position); else _buildingPending!.Remove(position);
-                if (captured) { _dirty = true; continue; }
+                // Rescan only when the range sample is actually stale.
+                if (captured) { if (!Same(_buildingValues[position], value)) _dirty = true; continue; }
                 _buildingValues[position] = value;
                 if (!value.Number.HasValue) continue;
                 if (_buildingRanges!.TryGetValue(value.Key, out var range)) range.Add(value.Number.Value, value.Text);
@@ -165,12 +166,21 @@ namespace BetterGhPanel.Runtime
                     .ThenBy(range => range.Unit, StringComparer.Ordinal).Select(range => new LegendRow(range)).ToArray();
                 _legendScale = 0;
             }
-            PendingChanged?.Invoke(result, _buildingPending!.ToArray());
-            if (generation != _valueGeneration || current?.Invoke() != true) return;
+            // Request measurements once early for the admitted labels, then once with
+            // the full scope; every changed request restarts the measurement batch.
+            if (complete || !_sentPartialPending)
+            {
+                _sentPartialPending = true;
+                PendingChanged?.Invoke(result, _buildingPending!.ToArray());
+                if (generation != _valueGeneration || current?.Invoke() != true) return;
+            }
             if (complete) ClearBuild();
             RebuildLabels(); UpdateEnabled(); ValuesChanged?.Invoke();
             if (generation == _valueGeneration && current?.Invoke() == true && complete && !_dirty) _refresh?.Stop();
         }
+
+        private static bool Same(PanelPreviewValue a, PanelPreviewValue b) =>
+            a.Pending == b.Pending && a.Number == b.Number && a.Text == b.Text && a.Key == b.Key;
 
         private PanelPreviewValue Value(int position) => !_settings.Values && !Gradient ? default :
             _values.TryGetValue(position, out var value) || _colourValues.TryGetValue(position, out value) ? value : new PanelPreviewValue("", "", null, "", pending: true);

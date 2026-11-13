@@ -141,7 +141,7 @@ namespace BetterGhPanel.Runtime
         internal int IdleReleases { get; private set; }
         internal bool RetirementPending => _releaseScheduled;
         internal BoundingBox ClippingBox => _bounds.Box;
-        internal string Status => _displayFlushFailed ? "Preview partial: display flush failed; drawn resources retained." :
+        internal string Status => _displayFlushFailed ? "Preview partial: display flush failed; drawn resources retained" :
             _partial || _recovery.Pending || _filteredRecovery.Pending || _unavailable > 0 || _meshFailures > 0
             ? "Preview partial: " + (_entries.Count >= PreviewLimit ? "memory or " + EntryLimitReason : _partialReason ?? (_recovery.Pending ? "selected geometry is awaiting admission" :
                 _filteredRecovery.Pending ? "results are awaiting capacity" :
