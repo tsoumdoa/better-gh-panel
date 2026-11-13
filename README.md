@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.5.0-beta
+yak install panel-plus 0.6.0-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -28,13 +28,11 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
-**[`0.5.0-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.5.0-beta)**
+**[`0.6.0-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.6.0-beta)**
 
-- **Branch stats (Σ).** A new tree tool beside Create set. Each branch's rows become its stats (Count, Sum, Avg, Median, Min, Max, Range, Std dev; you tick which), and D sends exactly those numbers per branch. Add Flatten for stats across all branches.
-- Stats use the numbers the rows show, after filters, units, formula and rounding. Skipped items and mixed metrics are explained in the branch heading; branches without numbers keep null slots so every branch has the same length.
-- Click Min or Max to select the item it came from. Table columns show the same stats for their own numbers, and Ctrl+C copies the stats.
-- **Removed:** the footer Stats button and its popup. Create set covers unique values with counts, and the Check line covers null and invalid counts.
-- **Validation.** The automated Rhino fixtures could not run for this release, and Σ has not yet been tried in a live Rhino session. Core tests cover the stats, the D output and the table columns.
+- **Crowded viewport dots stay visible.** As dots crowd, their text shrinks and they then become small colour dots instead of disappearing. Nearby dots with the same value share one label; selected items keep their text longest and keep their selection ring.
+- **Dot size and Preview limit** (Preview menu). Dot size: Small / Medium / Large. Preview limit: 1,000 / 5,000 / 20,000 items (default 5,000; previously fixed at 1,024). Both save with the file and support Undo.
+- **Validation.** The automated Rhino fixtures could not run for this release, and the new dot layout has not yet been tried in a live Rhino session. Core tests cover the layout, grouping and settings.
 
 See [CHANGELOG](CHANGELOG.md) for earlier releases.
 
