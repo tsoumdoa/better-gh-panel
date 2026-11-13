@@ -72,7 +72,12 @@ namespace BetterGhPanel
             if (!PaintedViewIsCurrent() || !_menu.IsPaintedAt(point)) return;
             int row = (int)((point.Y - _menu.Bounds.Y) / 20);
             int index = _menu.Offset + row;
-            if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index < _menu.Count && _menu.PreviewChoiceAt(index).IsItemOrder)
+            if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index == CanvasPreviewRows.Limit)
+            {
+                e.Title = "Preview limit";
+                e.Description = "Most items previewed and labelled. Higher limits can slow the viewport; the 64 MB memory cap still applies.";
+            }
+            else if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index < _menu.Count && _menu.PreviewChoiceAt(index).IsItemOrder)
             {
                 e.Title = "Show item order";
                 e.Text = PanelOwner.ShowItemOrder ? "On" : "Off";

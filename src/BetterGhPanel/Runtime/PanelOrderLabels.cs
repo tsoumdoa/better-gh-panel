@@ -26,7 +26,7 @@ namespace BetterGhPanel.Runtime
         private readonly Dictionary<Guid, ViewportFrame> _frames = new Dictionary<Guid, ViewportFrame>();
         private readonly Dictionary<string, int> _textIds = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly List<Label> _orderedLabels = new List<Label>();
-        private readonly PanelTextDotCache _textDots = new PanelTextDotCache(2000);
+        private readonly Dictionary<int, TextDot> _textDots = new Dictionary<int, TextDot>();
         private long _labelRevision, _frameUse;
         private bool _labelListDirty = true;
         internal int LayoutBuilds { get; private set; }
@@ -45,12 +45,14 @@ namespace BetterGhPanel.Runtime
         private Timer? _refresh;
         private int _cursor;
         private long _valueGeneration;
-        private Dictionary<int, PanelPreviewValue> _values = new Dictionary<int, PanelPreviewValue>();
+        private readonly Dictionary<int, PanelPreviewValue> _values = new Dictionary<int, PanelPreviewValue>();
+        private Dictionary<int, PanelPreviewValue> _colourValues = new Dictionary<int, PanelPreviewValue>();
+        private readonly Queue<int> _prioritySamples = new Queue<int>();
+        private readonly HashSet<int> _queuedSamples = new HashSet<int>();
         private Dictionary<string, PanelPreviewRange> _ranges = new Dictionary<string, PanelPreviewRange>();
         private Dictionary<int, PanelPreviewValue>? _buildingValues;
         private Dictionary<string, PanelPreviewRange>? _buildingRanges;
-        private List<int>? _buildingPending;
-        private bool _buildComplete;
+        private HashSet<int>? _buildingPending;
         private LegendRow[] _legend = Array.Empty<LegendRow>();
         private float _legendWidth, _legendNameWidth, _legendMinWidth, _legendScale, _legendRowHeight;
         private int _legendFontHeight;
@@ -65,7 +67,7 @@ namespace BetterGhPanel.Runtime
         internal Color Colour(int id) => _colours[id];
         internal int ColourId(int position)
         {
-            if (!Gradient || !_values.TryGetValue(position, out var value) || !value.Number.HasValue || !_ranges.TryGetValue(value.Key, out var range)) return 0;
+            if (!Gradient || !_colourValues.TryGetValue(position, out var value) || !value.Number.HasValue || !_ranges.TryGetValue(value.Key, out var range)) return 0;
             int bucket = range.Bucket(value.Number.Value);
             if (_settings.Reverse) bucket = PanelPreviewValues.Buckets - 1 - bucket;
             return 1 + ((int)_settings.Palette - 1) * PanelPreviewValues.Buckets + bucket;
@@ -88,7 +90,7 @@ namespace BetterGhPanel.Runtime
             if (!values && !Gradient)
             {
                 _refresh?.Stop();
-                _values.Clear(); _ranges.Clear(); _legend = Array.Empty<LegendRow>();
+                _values.Clear(); _colourValues.Clear(); _ranges.Clear(); _legend = Array.Empty<LegendRow>();
             }
             else InvalidateValues();
             if (changed) { RebuildLabels(); UpdateEnabled(); }
@@ -97,16 +99,22 @@ namespace BetterGhPanel.Runtime
 
         private void ClearBuild()
         {
-            _buildingValues = null; _buildingRanges = null; _buildingPending = null; _buildComplete = false;
+            _buildingValues = null; _buildingRanges = null; _buildingPending = null;
+            _prioritySamples.Clear(); _queuedSamples.Clear();
         }
 
         internal void InvalidateValues()
         {
             if ((!_settings.Values && !Gradient) || _valueResult == null) return;
             _dirty = true;
+            foreach (var label in _labels.Values)
+                if (_buildingValues == null || !_values.TryGetValue(label.Position, out var value) || value.Pending) Prioritise(label.Position);
             if (_refresh == null) { _refresh = new Timer { Interval = 16 }; _refresh.Tick += RefreshValues; }
             _refresh.Start();
         }
+
+        private void Prioritise(int position)
+        { if (_queuedSamples.Add(position)) _prioritySamples.Enqueue(position); }
 
         private void RefreshValues(object? sender, EventArgs args)
         {
@@ -114,48 +122,58 @@ namespace BetterGhPanel.Runtime
             if (_buildingValues == null)
             {
                 _buildingValues = new Dictionary<int, PanelPreviewValue>(); _buildingRanges = new Dictionary<string, PanelPreviewRange>();
-                _buildingPending = new List<int>(); _cursor = 0; _dirty = false;
+                _buildingPending = new HashSet<int>(); _cursor = 0; _dirty = false;
+                foreach (var label in _labels.Values) Prioritise(label.Position);
             }
             long generation = _valueGeneration;
-            var current = _current;
-            var sample = _sample;
-            var result = _valueResult;
-            var positions = _valuePositions;
-            int begin = _cursor, end = Math.Min(positions.Count, _cursor + 256);
-            long started = Stopwatch.GetTimestamp();
-            for (; _cursor < end; _cursor++)
+            var current = _current; var sample = _sample; var result = _valueResult; var positions = _valuePositions;
+            long started = Stopwatch.GetTimestamp(); int sampled = 0, prioritised = 0, visited = 0;
+            while (sampled < 256 && (_prioritySamples.Count > 0 || _cursor < positions.Count))
             {
-                if (_cursor > begin && (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency >= 4) break;
-                int position = positions[_cursor]; var value = sample(position);
+                if (visited++ > 0 && (Stopwatch.GetTimestamp() - started) * 1000.0 / Stopwatch.Frequency >= 4) break;
+                // Start each slice with admitted labels; reserve scope work too so
+                // repeated geometry completions cannot starve the stable range scan.
+                bool priority = _prioritySamples.Count > 0 && (prioritised < 128 || _cursor >= positions.Count);
+                int position = priority ? _prioritySamples.Dequeue() : positions[_cursor++];
+                if (priority && !_queuedSamples.Remove(position)) continue;
+                bool captured = _buildingValues.ContainsKey(position);
+                if (captured && (!priority || _values.TryGetValue(position, out var shown) && !shown.Pending)) continue;
+                var value = sample(position); sampled++; if (priority) prioritised++;
                 if (generation != _valueGeneration || current?.Invoke() != true || !ReferenceEquals(result, _valueResult)) return;
-                if (_values.TryGetValue(position, out var previous)) value = value.RetainNumber(previous);
+                if (_values.TryGetValue(position, out var previous) || _colourValues.TryGetValue(position, out previous)) value = value.RetainNumber(previous);
+                // Only admitted positions need the live text cache. Keep each
+                // range sample immutable, so a pending label's later text refresh
+                // cannot leave an old extremum in its completed colour snapshot.
+                if (priority || _queuedSamples.Contains(position)) _values[position] = value;
+                if (value.Pending) _buildingPending!.Add(position); else _buildingPending!.Remove(position);
+                if (captured) { _dirty = true; continue; }
                 _buildingValues[position] = value;
-                if (value.Pending) _buildingPending!.Add(position);
                 if (!value.Number.HasValue) continue;
                 if (_buildingRanges!.TryGetValue(value.Key, out var range)) range.Add(value.Number.Value, value.Text);
                 else _buildingRanges.Add(value.Key, new PanelPreviewRange(value));
             }
-            if (_cursor < positions.Count) return;
-            if (!_buildComplete)
-            {
-                _buildComplete = true;
-                PendingChanged?.Invoke(result, _buildingPending!.ToArray());
-                if (generation != _valueGeneration || current?.Invoke() != true) return;
-            }
             if (_publishClock.ElapsedMilliseconds - _lastPublish < PublishInterval) return;
             _lastPublish = _publishClock.ElapsedMilliseconds;
-            _values = _buildingValues; _ranges = _buildingRanges!;
-            ClearBuild();
-            static int Order(string metric) => metric == "Length" ? 0 : metric == "Area" ? 1 : metric == "Volume" ? 2 : 3;
-            _legend = _ranges.Values.OrderBy(range => Order(range.Metric)).ThenBy(range => range.Metric, StringComparer.Ordinal)
-                .ThenBy(range => range.Unit, StringComparer.Ordinal).Select(range => new LegendRow(range)).ToArray();
-            _legendScale = 0;
+            // Text is useful immediately. Colour values and ranges stay paired with
+            // the previous complete scan until the whole scope has been sampled.
+            bool complete = _cursor >= positions.Count && _prioritySamples.Count == 0;
+            if (complete)
+            {
+                _colourValues = _buildingValues; _ranges = _buildingRanges!;
+                static int Order(string metric) => metric == "Length" ? 0 : metric == "Area" ? 1 : metric == "Volume" ? 2 : 3;
+                _legend = _ranges.Values.OrderBy(range => Order(range.Metric)).ThenBy(range => range.Metric, StringComparer.Ordinal)
+                    .ThenBy(range => range.Unit, StringComparer.Ordinal).Select(range => new LegendRow(range)).ToArray();
+                _legendScale = 0;
+            }
+            PendingChanged?.Invoke(result, _buildingPending!.ToArray());
+            if (generation != _valueGeneration || current?.Invoke() != true) return;
+            if (complete) ClearBuild();
             RebuildLabels(); UpdateEnabled(); ValuesChanged?.Invoke();
-            if (!_dirty) _refresh?.Stop();
+            if (generation == _valueGeneration && current?.Invoke() == true && complete && !_dirty) _refresh?.Stop();
         }
 
         private PanelPreviewValue Value(int position) => !_settings.Values && !Gradient ? default :
-            _values.TryGetValue(position, out var value) ? value : new PanelPreviewValue("", "", null, "", pending: true);
+            _values.TryGetValue(position, out var value) || _colourValues.TryGetValue(position, out value) ? value : new PanelPreviewValue("", "", null, "", pending: true);
 
         private void Place(Label label)
         {
@@ -171,12 +189,14 @@ namespace BetterGhPanel.Runtime
             label.Text = value.Label((_settings.Order || _valueResult == null) && PanelItemOrder.TryGetNumber(_result, label.Position, out int number) ? number : (int?)null, _settings.Values);
             label.ColourId = ColourId(label.Position);
             Place(label);
-            if (before != label.Text)
+            int group = label.GroupKey;
+            if (_settings.Order || _valueResult == null || value.Pending) label.GroupKey = ~label.Order;
+            else
             {
                 if (!_textIds.TryGetValue(label.Text, out int id)) { id = _textIds.Count + 1; _textIds.Add(label.Text, id); }
-                label.TextId = id;
+                label.GroupKey = id;
             }
-            if (before != label.Text || colour != label.ColourId || anchor != label.Anchor) _labelRevision++;
+            if (before != label.Text || colour != label.ColourId || anchor != label.Anchor || group != label.GroupKey) _labelRevision++;
         }
 
         private void RebuildLabels()
@@ -211,7 +231,8 @@ namespace BetterGhPanel.Runtime
         internal void ClearEntries()
         {
             _armed = false;
-            _labels.Clear(); _orderedLabels.Clear(); _textIds.Clear(); _frames.Clear();
+            _labels.Clear(); _orderedLabels.Clear(); _textIds.Clear(); _frames.Clear(); _values.Clear();
+            _prioritySamples.Clear(); _queuedSamples.Clear();
             _labelListDirty = true; _labelRevision++;
             UpdateEnabled();
         }
@@ -228,7 +249,8 @@ namespace BetterGhPanel.Runtime
         {
             SuspendValues();
             ClearEntries(); SetResult(null);
-            _values.Clear(); _ranges.Clear(); _legend = Array.Empty<LegendRow>(); _lastPublish = -PublishInterval;
+            _values.Clear(); _colourValues.Clear(); _ranges.Clear(); _legend = Array.Empty<LegendRow>(); _lastPublish = -PublishInterval;
+            foreach (var dot in _textDots.Values) dot.Dispose();
             _textDots.Clear();
             UpdateEnabled();
         }
@@ -243,12 +265,19 @@ namespace BetterGhPanel.Runtime
             var label = new Label(viewIndex, sourcePosition, "", anchor, bounds);
             UpdateLabel(label);
             _labels[viewIndex] = label; _labelListDirty = true; _labelRevision++;
+            if ((_settings.Values || Gradient) && (_refresh?.Enabled == true ||
+                !_colourValues.TryGetValue(sourcePosition, out var cached) || cached.Pending))
+            { Prioritise(sourcePosition); _refresh?.Start(); }
             if (!Enabled) Enabled = true;
         }
 
         internal void Remove(int viewIndex)
         {
-            if (_labels.Remove(viewIndex)) { _labelListDirty = true; _labelRevision++; }
+            if (_labels.TryGetValue(viewIndex, out var label))
+            {
+                _values.Remove(label.Position); _queuedSamples.Remove(label.Position);
+                _labels.Remove(viewIndex); _labelListDirty = true; _labelRevision++;
+            }
             UpdateEnabled();
         }
 
@@ -314,7 +343,7 @@ namespace BetterGhPanel.Runtime
                 if (label.Text.Length == 0 || !TryProjectCached(modelClip, modelScreen, label.Anchor, dimensions, out var point)) continue;
                 int i = frame.Count++;
                 double width = (_settings.Values ? label.Text.Length * 8 + 12 : label.Text.Length * 9 + 14) * scale;
-                frame.Dots[i] = new PanelDotInput(point.X, point.Y, width, 24 * scale, label.TextId, _membership.Contains(label.Position), label.Order);
+                frame.Dots[i] = new PanelDotInput(point.X, point.Y, width, 24 * scale, label.GroupKey, _membership.Contains(label.Position), label.Order);
                 frame.Labels[i] = label;
                 frame.WorldAnchors[i] = _model * label.Anchor;
             }
@@ -346,21 +375,14 @@ namespace BetterGhPanel.Runtime
                     // FontHeight maps to ON_TextDot.HeightInPoints, not physical
                     // pixels. Rhino applies DPI; multiplying by dpi here doubles it.
                     int height = Math.Max(1, (int)Math.Round(14 * size * output.TextScale));
-                    var dot = _textDots.Get(label.Text, height);
+                    if (!_textDots.TryGetValue(height, out var dot))
+                    { dot = new TextDot("", Point3d.Origin) { FontHeight = height }; _textDots.Add(height, dot); }
+                    dot.Text = label.Text;
                     if (frame.Dots[i].Selected) DrawDotHalo(args, anchor, dot, dpi);
-                    var fill = Gradient ? _colours[label.ColourId] : PlainFill;
-                    if (output.Tier == PanelDotTier.Full && DotSize == PanelDotSize.Medium)
-                    {
-                        // Keep the original full-size appearance at every display DPI.
-                        int a = output.LabelAnchor;
-                        args.Display.DrawDot((float)frame.Dots[a].X, (float)frame.Dots[a].Y, label.Text, fill,
-                            Gradient ? _textColours[label.ColourId] : Border);
-                    }
-                    else
-                    {
-                        dot.Point = anchor;
-                        args.Display.DrawDot(dot, fill, Gradient ? _textColours[label.ColourId] : Border, Border);
-                    }
+                    var anchorLabel = frame.Labels[output.LabelAnchor];
+                    var fill = Gradient ? _colours[anchorLabel.ColourId] : PlainFill;
+                    dot.Point = anchor;
+                    args.Display.DrawDot(dot, fill, Gradient ? _textColours[anchorLabel.ColourId] : Border, Border);
                 }
             }
             finally
@@ -484,16 +506,6 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        internal static bool TryProject(RhinoViewport viewport, Transform model, Point3d anchor, out Point2d screen)
-        {
-            screen = Point2d.Unset;
-            anchor.Transform(model);
-            // Frustum testing rejects points outside the view and behind perspective cameras.
-            if (!anchor.IsValid || !viewport.IsVisible(anchor)) return false;
-            screen = viewport.WorldToClient(anchor);
-            return screen.IsValid && screen.X >= 0 && screen.Y >= 0 && screen.X < viewport.Size.Width && screen.Y < viewport.Size.Height;
-        }
-
         // Use the renderer's own rectangles and cache them until content or DPI changes.
         private void LayoutLegend(DisplayPipeline display, float scale)
         {
@@ -579,7 +591,7 @@ namespace BetterGhPanel.Runtime
             internal readonly BoundingBox Bounds;
             internal Point3d Anchor;
             internal string Text;
-            internal int ColourId, TextId;
+            internal int ColourId, GroupKey;
         }
     }
 }

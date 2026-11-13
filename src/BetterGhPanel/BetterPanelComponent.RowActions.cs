@@ -141,10 +141,10 @@ namespace BetterGhPanel
             var expectedResult = session.Result;
             var mode = PreviewMode;
             bool showOrder = ShowItemOrder, showValues = ShowValues, reverse = ReversePalette;
-            var placement = DotPlacement; var palette = ValuePalette; var dotSize = DotSize; int limit = PreviewLimit;
+            var placement = DotPlacement; var palette = ValuePalette; int limit = PreviewLimit;
             var stamp = new ActionStamp(this, session, snapshot, expectedResult, source, _selectionVersion);
             bool Current() => !_previewSuspended && !Locked && PreviewMode == mode &&
-                ShowItemOrder == showOrder && ShowValues == showValues && ReversePalette == reverse && DotPlacement == placement && ValuePalette == palette && DotSize == dotSize && PreviewLimit == limit &&
+                ShowItemOrder == showOrder && ShowValues == showValues && ReversePalette == reverse && DotPlacement == placement && ValuePalette == palette && PreviewLimit == limit &&
                 stamp.IsCurrent();
             var options = session.Options;
             PanelPreviewValue Sample(int position)

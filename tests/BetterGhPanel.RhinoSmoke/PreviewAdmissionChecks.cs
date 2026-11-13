@@ -186,7 +186,7 @@ internal static partial class PreviewSafetyChecks
             Scope(highlight, source, result, Array.Empty<int>());
             Check(PropertyValue<int>(highlight, "PreviewCount") == limit && Status(highlight).Contains("partial"),
                 "changing the instance preview limit trims or re-admits the same result");
-            Check(Status(highlight).Contains(limit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " item limit"),
+            Check(Status(highlight).Contains(limit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + "-item limit"),
                 "partial preview messages name the panel's selected limit");
             var labels = FieldValue<object>(FieldValue<object>(highlight, "_orderLabels"), "_labels");
             Check((int)labels.GetType().GetProperty("Count")!.GetValue(labels)! == limit,

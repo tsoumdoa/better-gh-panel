@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- **Crowded viewport dots stay visible.** Dots shrink their text, then become colour swatches as space runs out. Nearby identical values share a label near their centre; selected items keep their text longest and retain a selection ring.
-- **Dot size and Preview limit.** Preview offers Small / Medium / Large dots and 1,000 / 5,000 / 20,000 items. Both settings save with the panel and support Undo; older files use Medium and 5,000, with the 64 MB preview memory cap unchanged.
+- **Crowded viewport dots stay visible.** As dots crowd, their text shrinks and they then become small colour dots instead of disappearing. Nearby dots with the same value share one label; selected items keep their text longest and keep their selection ring.
+- **Dot size and Preview limit** (Preview menu). Dot size: Small / Medium / Large. Preview limit: 1,000 / 5,000 / 20,000 items (default 5,000; previously fixed at 1,024). Both save with the file and support Undo.
 
 ## 0.5.0-beta
 

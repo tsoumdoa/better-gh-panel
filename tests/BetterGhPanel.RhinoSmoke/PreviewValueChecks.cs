@@ -3,6 +3,8 @@ using static SmokeAssertions;
 using System;
 using System.Drawing;
 using System.IO;
+using System.Linq;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
@@ -19,6 +21,7 @@ internal static partial class PreviewSafetyChecks
     private static async Task VerifyValueDots(Assembly assembly, RhinoDoc rhino)
     {
         using var fixture = new PanelHostFixture.Fixture(assembly);
+        VerifyProgressiveDotValues(assembly);
         var component = fixture.Component;
         Check(PropertyValue<PanelDotSize>(component, "DotSize") == PanelDotSize.Medium && PropertyValue<int>(component, "PreviewLimit") == 5000,
             "New panels default to Medium dots and a 5,000 item preview limit");
@@ -54,7 +57,7 @@ internal static partial class PreviewSafetyChecks
             Check(PropertyValue<bool>(component, "ShowValues"), "Value dots are enabled through the real component setting");
             view.ActiveViewport.SetProjection(DefinedViewportProjection.Perspective, "Value dots", true);
             view.ActiveViewport.ZoomBoundingBox(new BoundingBox(P(-9, -2, -1), P(8, 11, 5)));
-            VerifyDotProjectionAndTextCache(assembly, view.ActiveViewport, origin);
+            VerifyDotProjection(assembly, view.ActiveViewport, origin);
             string? directory = Environment.GetEnvironmentVariable("PANEL_UX_SCREENSHOTS");
             void SaveViewport(string name)
             {
@@ -126,7 +129,67 @@ internal static partial class PreviewSafetyChecks
         finally { if (previousView != null) rhino.Views.ActiveView = previousView; view.Close(); }
     }
 
-    private static void VerifyDotProjectionAndTextCache(Assembly assembly, RhinoViewport viewport, Point3d origin)
+    private static void VerifyProgressiveDotValues(Assembly assembly)
+    {
+        const int half = 5000, total = half * 2;
+        var snapshot = new PanelSnapshot(Enumerable.Range(0, total).Select(i =>
+            new PanelRow(i, i < half ? "{0}" : "{1}", "Number", "42", 42)).ToArray(),
+            new[] { new PanelBranch("{0}", half), new PanelBranch("{1}", half) });
+        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions());
+        var membershipType = typeof(PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelPreviewMembership", true)!;
+        var membership = Activator.CreateInstance(membershipType, AnyInstance, null, new object?[] { null }, null)!;
+        var type = assembly.GetType("BetterGhPanel.Runtime.PanelOrderLabels", true)!;
+        var labels = Activator.CreateInstance(type, AnyInstance, null, new[] { membership }, null)!;
+        var sampled = new List<int>(); bool changed = false;
+        PanelPreviewValue Sample(int position)
+        {
+            sampled.Add(position); double number = changed ? position == half ? 84 : 0 : 42;
+            return new PanelPreviewValue("Length", "m", number, number + " m");
+        }
+        void Configure(bool order, int decimals)
+        {
+            Call(labels, "Configure", result, order, true, PanelDotPlacement.Centre,
+                PanelValuePalette.Viridis, false, PanelSearchMode.Value, decimals, 0d, new[] { 0, half },
+                (Func<int, PanelPreviewValue>)Sample, (Func<bool>)(() => true));
+            // This probe advances ticks explicitly; native reentry must not also
+            // advance the sampling timer while the fixture checks intermediate state.
+            var timer = FieldValue<System.Windows.Forms.Timer>(labels, "_refresh");
+            timer.Stop(); timer.Dispose(); type.GetField("_refresh", AnyInstance)!.SetValue(labels, null);
+        }
+        void Tick()
+        {
+            type.GetField("_lastPublish", AnyInstance)!.SetValue(labels, -250L);
+            Call(labels, "RefreshValues", null, EventArgs.Empty);
+        }
+        var dots = FieldValue<System.Collections.IDictionary>(labels, "_labels");
+        try
+        {
+            Configure(false, 2);
+            Call(labels, "Add", 0, 0, Point3d.Origin, BoundingBox.Empty);
+            Call(labels, "Add", half, half, new Point3d(1, 0, 0), BoundingBox.Empty);
+            Check(FieldValue<string>(dots[0]!, "Text") == "…" && FieldValue<string>(dots[half]!, "Text") == "…" &&
+                FieldValue<int>(dots[0]!, "GroupKey") != FieldValue<int>(dots[half]!, "GroupKey"), "pending value dots never share a group key");
+            for (int tick = 0; tick < 4 && FieldValue<string>(dots[half]!, "Text") == "…"; tick++) Tick();
+            Check(sampled.Take(2).SequenceEqual(new[] { 0, half }) && FieldValue<int>(labels, "_cursor") < total &&
+                FieldValue<string>(dots[half]!, "Text") == "42 m", "admitted labels sample and publish before the all-Results colour scan completes");
+            Check(FieldValue<System.Collections.IDictionary>(labels, "_ranges").Count == 0, "partial text publication does not publish partial colour ranges");
+            Configure(true, 2);
+            Check(FieldValue<string>(dots[0]!, "Text") == FieldValue<string>(dots[half]!, "Text") &&
+                FieldValue<int>(dots[0]!, "GroupKey") != FieldValue<int>(dots[half]!, "GroupKey"), "equal item-order strings from different branches never group");
+            Configure(false, 2);
+            for (int tick = 0; tick < 1000; tick++)
+            { Tick(); if (FieldValue<object?>(labels, "_buildingValues") == null) break; }
+            var ranges = FieldValue<object>(labels, "_ranges"); int colour = (int)Call(labels, "ColourId", half)!;
+            Check(FieldValue<object?>(labels, "_buildingValues") == null && colour > 0, "a full scan publishes the paired colour snapshot");
+            changed = true; Configure(false, 3);
+            for (int tick = 0; tick < 4 && FieldValue<string>(dots[half]!, "Text") != "84 m"; tick++) Tick();
+            Check(FieldValue<string>(dots[half]!, "Text") == "84 m" && ReferenceEquals(ranges, FieldValue<object>(labels, "_ranges")) &&
+                (int)Call(labels, "ColourId", half)! == colour, "early text refresh retains the last complete colour values and range");
+        }
+        finally { Call(labels, "Clear"); }
+    }
+
+    private static void VerifyDotProjection(Assembly assembly, RhinoViewport viewport, Point3d origin)
     {
         var labelsType = assembly.GetType("BetterGhPanel.Runtime.PanelOrderLabels", true)!;
         var cached = labelsType.GetMethod("TryProjectCached", AnyStatic)!;
@@ -146,18 +209,7 @@ internal static partial class PreviewSafetyChecks
             if (actual) Check(((Point2d)args[4]!).DistanceTo(expected) < 1e-7,
                 "one-per-frame projection matrices match native WorldToClient with a model transform");
         }
-        var cacheType = assembly.GetType("BetterGhPanel.Runtime.PanelTextDotCache", true)!;
-        var cache = Activator.CreateInstance(cacheType, AnyInstance, null, new object[] { 2 }, null)!;
-        try
-        {
-            var a = (TextDot)Call(cache, "Get", "a", 14)!;
-            var b = (TextDot)Call(cache, "Get", "b", 14)!;
-            Check(ReferenceEquals(a, Call(cache, "Get", "a", 14)), "cached native dots reuse text/font and promote recent entries");
-            var c = (TextDot)Call(cache, "Get", "c", 10)!;
-            Check(b.Disposed && !a.Disposed && !c.Disposed && PropertyValue<int>(cache, "Count") == 2,
-                "the bounded native dot cache evicts and disposes its least recently used entry");
-        }
-        finally { Call(cache, "Clear"); }
+
     }
 
     // Component callbacks normally run before foreground labels. The older preview

@@ -143,11 +143,11 @@ namespace BetterGhPanel.Runtime
         internal BoundingBox ClippingBox => _bounds.Box;
         internal string Status => _displayFlushFailed ? "Preview partial: display flush failed; drawn resources retained." :
             _partial || _recovery.Pending || _filteredRecovery.Pending || _unavailable > 0 || _meshFailures > 0
-            ? "Preview partial: " + (_entries.Count >= PreviewLimit ? EntryLimitReason : _partialReason ?? (_recovery.Pending ? "selected geometry is awaiting admission" :
-                _filteredRecovery.Pending ? "results are awaiting preview capacity" :
-                "some geometry is unsupported or exceeds safety limits")) + "."
+            ? "Preview partial: " + (_entries.Count >= PreviewLimit ? "memory or " + EntryLimitReason : _partialReason ?? (_recovery.Pending ? "selected geometry is awaiting admission" :
+                _filteredRecovery.Pending ? "results are awaiting capacity" :
+                "some geometry is unsupported or exceeds safety limits"))
             : string.Empty;
-        private string EntryLimitReason => PreviewLimit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " item limit";
+        private string EntryLimitReason => PreviewLimit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + "-item limit";
 
         internal void SetOrderResult(PanelQueryResult? result)
         {
@@ -437,7 +437,7 @@ namespace BetterGhPanel.Runtime
             if (mayEvict && !MakeAdmissionRoom(estimate, needsEntry: true, generation, current)) return;
             if (_entries.Count >= PreviewLimit || !CanAdmitBytes(estimate))
             {
-                if (!_admissionBlockedByRetirement) { _partial = true; _partialReason ??= "preview memory or " + PreviewLimit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " item limit"; }
+                if (!_admissionBlockedByRetirement) { _partial = true; _partialReason ??= "memory or " + EntryLimitReason; }
                 return;
             }
             // Reserve the whole staged group before native construction. A
@@ -461,7 +461,7 @@ namespace BetterGhPanel.Runtime
                     {
                         if (Current(generation, current))
                         {
-                            _partialReason ??= budget.Reason ?? "native preview preparation failed";
+                            _partialReason ??= budget.Reason ?? "native preparation failed";
                             if (budget.Limited) _partial = true; else RememberUnavailable(position);
                         }
                         return;
@@ -535,7 +535,7 @@ namespace BetterGhPanel.Runtime
             if (!_orderLabels.CanAddWithoutEnabling) return false;
             if (_entries.Count >= PreviewLimit || !CanAdmitBytes(estimate))
             {
-                if (!_admissionBlockedByRetirement) { _partial = true; _partialReason ??= "preview memory or " + PreviewLimit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " item limit"; }
+                if (!_admissionBlockedByRetirement) { _partial = true; _partialReason ??= "memory or " + EntryLimitReason; }
                 return true;
             }
             using var inspected = PanelGeometrySources.Inspect(source[position], budget, true);
