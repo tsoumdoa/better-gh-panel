@@ -23,14 +23,16 @@ internal static partial class PreviewSafetyChecks
         using var fixture = new PanelHostFixture.Fixture(assembly);
         VerifyProgressiveDotValues(assembly);
         var component = fixture.Component;
-        Check(PropertyValue<PanelDotSize>(component, "DotSize") == PanelDotSize.Medium && PropertyValue<int>(component, "PreviewLimit") == 5000,
-            "New panels default to Medium dots and a 5,000 item preview limit");
+        Check(PropertyValue<PanelDotSize>(component, "DotSize") == PanelDotSize.Medium && PropertyValue<int>(component, "PreviewLimit") == 5000 &&
+            PropertyValue<bool>(component, "HideOccludedDots"), "New panels default to Medium dots, a 5,000 item preview limit and occlusion");
         var oldArchive = new GH_IO.Serialization.GH_LooseChunk("Panel");
         component.Write(oldArchive); oldArchive.RemoveItem("PanelDotSize"); oldArchive.RemoveItem("PanelPreviewLimit");
+        oldArchive.RemoveItem("PanelHideOccludedDots");
         var legacy = (GH_Component)Activator.CreateInstance(component.GetType())!;
         legacy.CreateAttributes();
         Check(legacy.Read(oldArchive) && PropertyValue<PanelDotSize>(legacy, "DotSize") == PanelDotSize.Medium &&
-            PropertyValue<int>(legacy, "PreviewLimit") == 5000, "Old files default to Medium dots and a 5,000 item preview limit");
+            PropertyValue<int>(legacy, "PreviewLimit") == 5000 && PropertyValue<bool>(legacy, "HideOccludedDots"),
+            "Old files default to Medium dots, a 5,000 item preview limit and occlusion");
         fixture.Source.Hidden = fixture.Paired.Hidden = true;
         fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
         var path = new GH_Path(0);
@@ -90,6 +92,10 @@ internal static partial class PreviewSafetyChecks
             Check(PropertyValue<int>(component, "PreviewLimit") == 5000, "Preview limit supports Undo");
             fixture.Document.UndoServer.PerformRedo();
             Check(PropertyValue<int>(component, "PreviewLimit") == 20000, "Preview limit supports Redo");
+            Call(component, "SetHideOccludedDots", false);
+            fixture.Document.UndoServer.PerformUndo();
+            Check(PropertyValue<bool>(component, "HideOccludedDots"), "Hiding occluded dots supports Undo");
+            fixture.Document.UndoServer.PerformRedo();
             var archive = new GH_IO.Serialization.GH_Archive();
             Check(archive.AppendObject(component, "Panel"), "Value-preview settings serialize through the component archive");
             var restored = (Grasshopper.Kernel.GH_Component)Activator.CreateInstance(component.GetType())!;
@@ -97,12 +103,14 @@ internal static partial class PreviewSafetyChecks
             Check(archive.ExtractObject(restored, "Panel") && PropertyValue<bool>(restored, "ShowValues") &&
                 PropertyValue<PanelValuePalette>(restored, "ValuePalette") == PanelValuePalette.Viridis &&
                 PropertyValue<PanelDotPlacement>(restored, "DotPlacement") == PanelDotPlacement.BoxTop &&
-                PropertyValue<PanelDotSize>(restored, "DotSize") == PanelDotSize.Large && PropertyValue<int>(restored, "PreviewLimit") == 20000,
+                PropertyValue<PanelDotSize>(restored, "DotSize") == PanelDotSize.Large && PropertyValue<int>(restored, "PreviewLimit") == 20000 &&
+                !PropertyValue<bool>(restored, "HideOccludedDots"),
                 "Value-preview settings round trip with the file");
             Call(component, "ResetAll");
             Check(PropertyValue<bool>(component, "ShowValues") && PropertyValue<PanelValuePalette>(component, "ValuePalette") == PanelValuePalette.Viridis &&
                 PropertyValue<PanelDotPlacement>(component, "DotPlacement") == PanelDotPlacement.BoxTop &&
-                PropertyValue<PanelDotSize>(component, "DotSize") == PanelDotSize.Large && PropertyValue<int>(component, "PreviewLimit") == 20000, "Reset all keeps preview-value settings");
+                PropertyValue<PanelDotSize>(component, "DotSize") == PanelDotSize.Large && PropertyValue<int>(component, "PreviewLimit") == 20000 &&
+                !PropertyValue<bool>(component, "HideOccludedDots"), "Reset all keeps preview-value settings");
             if (!string.IsNullOrWhiteSpace(directory))
             {
                 using var canvas = new GH_Canvas { Document = fixture.Document, Size = new Size(1100, 850) };

@@ -35,11 +35,13 @@ namespace BetterGhPanel
         internal PanelDotPlacement DotPlacement { get; private set; }
         internal PanelValuePalette ValuePalette { get; private set; }
         internal PanelDotSize DotSize { get; private set; } = PanelDotSize.Medium;
+        internal bool HideOccludedDots { get; private set; } = true;
         internal int PreviewLimit { get; private set; } = 5000;
         internal bool ReversePalette { get; private set; }
 
         internal void SetDotSize(PanelDotSize value)
         { if (Enum.IsDefined(typeof(PanelDotSize), value)) SetPreviewSetting("dot size", DotSize, value, (c, v) => c.DotSize = v); }
+        internal void SetHideOccludedDots(bool value) => SetPreviewSetting("hide dots behind objects", HideOccludedDots, value, (c, v) => c.HideOccludedDots = v);
         internal void SetPreviewLimit(int value)
         { if (PanelDotSettings.ValidLimit(value)) SetPreviewSetting("preview limit", PreviewLimit, value, (c, v) => c.PreviewLimit = v); }
         internal void SetShowValues(bool value) => SetPreviewSetting("values", ShowValues, value, (c, v) => c.ShowValues = v);
@@ -604,6 +606,7 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelShowValues", ShowValues);
             writer.SetInt32("PanelDotPlacement", (int)DotPlacement);
             writer.SetInt32("PanelDotSize", (int)DotSize);
+            writer.SetBoolean("PanelHideOccludedDots", HideOccludedDots);
             writer.SetInt32("PanelPreviewLimit", PreviewLimit);
             writer.SetInt32("PanelValuePalette", (int)ValuePalette);
             writer.SetBoolean("PanelReversePalette", ReversePalette);
@@ -734,6 +737,9 @@ namespace BetterGhPanel
             reader.TryGetInt32("PanelDotSize", ref dotSize);
             reader.TryGetInt32("PanelPreviewLimit", ref previewLimit);
             DotSize = Enum.IsDefined(typeof(PanelDotSize), dotSize) ? (PanelDotSize)dotSize : PanelDotSize.Medium;
+            bool hideOccludedDots = true;
+            reader.TryGetBoolean("PanelHideOccludedDots", ref hideOccludedDots);
+            HideOccludedDots = hideOccludedDots;
             PreviewLimit = PanelDotSettings.ValidLimit(previewLimit) ? previewLimit : 5000;
             reader.TryGetBoolean("PanelShowValues", ref showValues);
             reader.TryGetBoolean("PanelReversePalette", ref reversePalette);

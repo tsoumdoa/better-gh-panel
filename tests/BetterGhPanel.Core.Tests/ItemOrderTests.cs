@@ -36,6 +36,10 @@ public class ItemOrderTests
         Assert.True(menu.RowEnabled(CanvasPreviewRows.Size, true, false, PanelValuePalette.Off));
         Assert.True(menu.RowEnabled(CanvasPreviewRows.Limit, false, false, PanelValuePalette.Off));
         Assert.Equal("Dot size", menu.Label(CanvasPreviewRows.Size));
+        int occlusion = CanvasPreviewRows.Size + 1;
+        Assert.Equal("Hide dots behind objects", menu.Label(occlusion));
+        Assert.True(menu.IsSelected(occlusion, options, PanelUnitConversion.None, -1));
+        Assert.False(menu.IsSelected(occlusion, options, PanelUnitConversion.None, -1, hideOccludedDots: false));
         Assert.Equal("Preview limit", menu.Label(CanvasPreviewRows.Limit));
         Assert.True(menu.TrySelect(new PointF(menu.Bounds.Left + 10, menu.Bounds.Top + CanvasPreviewRows.Limit * 20 + 10), out int index));
         Assert.Equal(CanvasPreviewRows.Limit, index);

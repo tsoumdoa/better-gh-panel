@@ -26,6 +26,7 @@ namespace BetterGhPanel
                 if (index == CanvasPreviewRows.Values) PanelOwner.SetShowValues(!PanelOwner.ShowValues);
                 if (index == CanvasPreviewRows.Placement) next = CanvasMenuKind.DotPlacement;
                 if (index == CanvasPreviewRows.Size) next = CanvasMenuKind.DotSize;
+                if (index == CanvasPreviewRows.HideOccludedDots) PanelOwner.SetHideOccludedDots(!PanelOwner.HideOccludedDots);
                 if (index == CanvasPreviewRows.Limit) next = CanvasMenuKind.PreviewLimit;
                 if (index == CanvasPreviewRows.Colour) next = CanvasMenuKind.ValuePalette;
             }
@@ -76,6 +77,11 @@ namespace BetterGhPanel
             {
                 e.Title = "Preview limit";
                 e.Description = "Most items previewed and labelled. Higher limits can slow the viewport; the 64 MB memory cap still applies.";
+            }
+            else if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index == CanvasPreviewRows.HideOccludedDots)
+            {
+                e.Title = "Hide dots behind objects";
+                e.Description = "Dots whose point is hidden by geometry in this view aren't drawn, so nearby visible dots have room for text.";
             }
             else if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index < _menu.Count && _menu.PreviewChoiceAt(index).IsItemOrder)
             {

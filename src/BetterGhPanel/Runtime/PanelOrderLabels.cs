@@ -22,6 +22,7 @@ namespace BetterGhPanel.Runtime
         private Guid _viewport;
         private Color _selectedColor;
         internal PanelDotSize DotSize { get; set; } = PanelDotSize.Medium;
+        internal bool HideOccludedDots { get; set; } = true;
         private readonly Dictionary<Guid, ViewportFrame> _frames = new Dictionary<Guid, ViewportFrame>();
         private readonly Dictionary<string, int> _textIds = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly List<Label> _orderedLabels = new List<Label>();
@@ -83,6 +84,7 @@ namespace BetterGhPanel.Runtime
             _sample = sample; _current = current;
             if (!changed && ReferenceEquals(positions, _valuePositions)) return false;
             if (!ReferenceEquals(result, _valueResult)) _lastPublish = -PublishInterval;
+            if (changed) _labelRevision++;
             _settings = settings; _valueResult = result; _valuePositions = positions;
             SetResult(order || values ? result : null);
             ClearBuild();
@@ -194,9 +196,15 @@ namespace BetterGhPanel.Runtime
         private void UpdateLabel(Label label)
         {
             var value = Value(label.Position);
-            string before = label.Text; int colour = label.ColourId; var anchor = label.Anchor;
-            label.Text = value.Label((_settings.Order || _valueResult == null) && PanelItemOrder.TryGetNumber(_result, label.Position, out int number) ? number : (int?)null, _settings.Values);
+            string before = label.Text; int colour = label.ColourId, band = label.Band; var anchor = label.Anchor;
+            double previousValue = label.Value;
+            int? itemNumber = (_settings.Order || _valueResult == null) && PanelItemOrder.TryGetNumber(_result, label.Position, out int number) ? number : (int?)null;
+            label.Text = value.Label(itemNumber, _settings.Values);
             label.ColourId = ColourId(label.Position);
+            label.Value = (_settings.Values ? value.Number ?? itemNumber : itemNumber) ?? double.NaN;
+            int bucket = label.ColourId > 0 ? (label.ColourId - 1) % PanelPreviewValues.Buckets :
+                value.Number.HasValue && _ranges.TryGetValue(value.Key, out var range) ? range.Bucket(value.Number.Value) : 0;
+            label.Band = bucket * PanelDotLayout.BandCount / PanelPreviewValues.Buckets;
             Place(label);
             int group = label.GroupKey;
             if (_settings.Order || _valueResult == null || value.Pending) label.GroupKey = ~label.Order;
@@ -205,7 +213,8 @@ namespace BetterGhPanel.Runtime
                 if (!_textIds.TryGetValue(label.Text, out int id)) { id = _textIds.Count + 1; _textIds.Add(label.Text, id); }
                 label.GroupKey = id;
             }
-            if (before != label.Text || colour != label.ColourId || anchor != label.Anchor || group != label.GroupKey) _labelRevision++;
+            if (before != label.Text || colour != label.ColourId || anchor != label.Anchor || group != label.GroupKey ||
+                band != label.Band || !previousValue.Equals(label.Value)) _labelRevision++;
         }
 
         private void RebuildLabels()
@@ -306,6 +315,7 @@ namespace BetterGhPanel.Runtime
         protected override void PreDrawObjects(DrawEventArgs e)
         {
             _armed = false;
+            if (HideOccludedDots) PanelSceneDepth.BeginFrame();
             if (LegendOffsets.Count > 64) LegendOffsets.Clear();
             LegendOffsets[e.Viewport.Id] = 0;
         }
@@ -336,34 +346,47 @@ namespace BetterGhPanel.Runtime
             frame.LastUse = ++_frameUse;
             var clip = DisplayClipTransform(args);
             var screen = args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Screen);
-            var dimensions = args.Viewport.Size;
-            if (frame.Valid && frame.Clip == clip && frame.Screen == screen && frame.Dpi == dpi &&
-                frame.Size == dimensions && frame.LabelRevision == _labelRevision && frame.SelectionRevision == _membership.Revision &&
-                frame.DotSize == DotSize && frame.Gradient == Gradient && frame.Values == _settings.Values && frame.SelectedColour == _selectedColor) return frame;
+            var dimensions = args.Viewport.GetScreenPort(out int left, out int right, out int bottom, out int top, out _, out _)
+                ? new Size(Math.Abs(right - left), Math.Abs(bottom - top)) : args.Viewport.Size;
+            bool sameLabels = frame.LabelRevision == _labelRevision && frame.DotSize == DotSize &&
+                frame.Dpi == dpi && frame.HideOccludedDots == HideOccludedDots;
+            bool sameLayout = frame.Valid && sameLabels && frame.Clip == clip && frame.Screen == screen &&
+                frame.Size == dimensions && frame.SelectionRevision == _membership.Revision;
+            var depth = HideOccludedDots && _labels.Count > 0 ? PanelSceneDepth.Capture(args.Display, args.Viewport, dimensions) : null;
+            if (sameLayout && depth == null && !frame.HadDepth) return frame;
+            if (!sameLabels) frame.Layout.ResetStability();
             if (_labelListDirty)
             {
                 _orderedLabels.Clear(); foreach (var label in _labels.Values) _orderedLabels.Add(label);
+                _orderedLabels.Sort((a, b) => a.Hash.CompareTo(b.Hash));
                 _labelListDirty = false;
             }
-            frame.Ensure(_orderedLabels.Count); frame.Count = 0;
+            frame.Ensure(_orderedLabels.Count);
             double size = PanelDotSettings.Scale(DotSize), scale = dpi * size;
+            int count = 0;
             for (int k = 0; k < _orderedLabels.Count; k++)
             {
                 var label = _orderedLabels[k];
-                if (label.Text.Length == 0 || !TryProjectCached(clip, screen, label.Anchor, dimensions, out var point)) continue;
-                int i = frame.Count++;
+                if (label.Text.Length == 0 || !TryProjectCached(clip, screen, label.Anchor, dimensions, out var point) ||
+                    depth != null && !depth.IsVisible(point, label.Anchor)) continue;
+                int i = count++;
+                if (sameLayout && i < frame.Count && ReferenceEquals(frame.Labels[i], label)) continue;
+                sameLayout = false;
                 double width = (_settings.Values ? label.Text.Length * 8 + 12 : label.Text.Length * 9 + 14) * scale;
-                frame.Dots[i] = new PanelDotInput(point.X, point.Y, width, 24 * scale, label.GroupKey, _membership.Contains(label.Position), label.Order);
+                frame.Dots[i] = new PanelDotInput(point.X, point.Y, width, 24 * scale, label.GroupKey,
+                    _membership.Contains(label.Position), label.Position, label.Value, label.Band);
                 frame.Labels[i] = label;
-                frame.WorldAnchors[i] = label.Anchor;
             }
+            frame.HadDepth = depth != null;
+            if (sameLayout && count == frame.Count) return frame;
+            frame.Count = count;
             frame.Layout.Calculate(frame.Dots, frame.Count, size, dpi);
             LayoutBuilds++;
             if (frame.Dpi != dpi) { frame.ActiveBuckets.Clear(); frame.Buckets.Clear(); }
             BuildSwatches(frame, dpi);
             frame.Clip = clip; frame.Screen = screen; frame.Size = dimensions; frame.Dpi = dpi;
             frame.LabelRevision = _labelRevision; frame.SelectionRevision = _membership.Revision;
-            frame.DotSize = DotSize; frame.Gradient = Gradient; frame.Values = _settings.Values; frame.SelectedColour = _selectedColor; frame.Valid = true;
+            frame.DotSize = DotSize; frame.HideOccludedDots = HideOccludedDots; frame.Valid = true;
             return frame;
         }
 
@@ -377,11 +400,14 @@ namespace BetterGhPanel.Runtime
             try
             {
                 DrawSwatches(args.Display, frame, dpi);
-                for (int k = frame.Count - 1; k >= 0; k--)
+                // Rhino queues batched points. Submit them before the immediate
+                // TextDots so swatches stay behind the labels they leave room for.
+                if (frame.ActiveBuckets.Count > 0 && frame.Layout.TextCount > 0) args.Display.Flush();
+                for (int k = frame.Layout.TextCount - 1; k >= 0; k--)
                 {
-                    int i = frame.Layout.PriorityIndex(k); var output = frame.Layout.Results[i];
-                    if (output.Tier != PanelDotTier.Text && output.Tier != PanelDotTier.Full) continue;
-                    var label = frame.Labels[i]; var anchor = frame.WorldAnchors[output.LabelAnchor];
+                    int i = frame.Layout.TextIndex(k); var output = frame.Layout.Results[i];
+                    var label = frame.Labels[i]; var anchorLabel = frame.Labels[output.LabelAnchor];
+                    var anchor = anchorLabel.Anchor;
                     // FontHeight maps to ON_TextDot.HeightInPoints, not physical
                     // pixels. Rhino applies DPI; multiplying by dpi here doubles it.
                     int height = Math.Max(1, (int)Math.Round(14 * size * output.TextScale));
@@ -389,7 +415,6 @@ namespace BetterGhPanel.Runtime
                     { dot = new TextDot("", Point3d.Origin) { FontHeight = height }; _textDots.Add(height, dot); }
                     dot.Text = label.Text;
                     if (frame.Dots[i].Selected) DrawDotHalo(args, anchor, dot, dpi);
-                    var anchorLabel = frame.Labels[output.LabelAnchor];
                     var fill = Gradient ? _colours[anchorLabel.ColourId] : PlainFill;
                     dot.Point = anchor;
                     args.Display.DrawDot(dot, fill, Gradient ? _textColours[anchorLabel.ColourId] : Border, Border);
@@ -407,11 +432,8 @@ namespace BetterGhPanel.Runtime
             frame.ActiveBuckets.Clear();
             for (int i = 0; i < frame.Count; i++)
             {
-                var output = frame.Layout.Results[i]; var rep = frame.Layout.Results[output.Representative];
-                bool text = rep.Tier == PanelDotTier.Text || rep.Tier == PanelDotTier.Full;
-                if (output.GroupCount > 1 && !(text && output.LabelAnchor == i) && !(!text && output.Representative == i))
-                    AddSwatch(frame, i, output.GroupSwatchRadius, dpi);
-                if (output.Tier == PanelDotTier.Swatch) AddSwatch(frame, i, output.SwatchRadius, dpi);
+                double radius = frame.Layout.Results[i].SwatchRadius;
+                if (radius > 0) AddSwatch(frame, i, radius, dpi);
             }
         }
 
@@ -427,7 +449,7 @@ namespace BetterGhPanel.Runtime
                 frame.Buckets.Add(key, bucket);
             }
             if (bucket.Points.Count == 0) frame.ActiveBuckets.Add(bucket);
-            bucket.Points.Add(frame.WorldAnchors[i]);
+            bucket.Points.Add(frame.Labels[i].Anchor);
         }
 
         private void DrawSwatches(DisplayPipeline display, ViewportFrame frame, float dpi)
@@ -516,22 +538,20 @@ namespace BetterGhPanel.Runtime
             internal readonly PanelDotLayout Layout = new PanelDotLayout();
             internal PanelDotInput[] Dots = Array.Empty<PanelDotInput>();
             internal Label[] Labels = Array.Empty<Label>();
-            internal Point3d[] WorldAnchors = Array.Empty<Point3d>();
             internal int Count;
-            internal bool Valid, Gradient, Values;
+            internal bool Valid, HideOccludedDots, HadDepth;
             internal long LabelRevision, SelectionRevision, LastUse;
             internal Transform Clip, Screen;
             internal Size Size;
             internal float Dpi;
             internal PanelDotSize DotSize;
-            internal Color SelectedColour;
             internal readonly Dictionary<int, SwatchBucket> Buckets = new Dictionary<int, SwatchBucket>();
             internal readonly List<SwatchBucket> ActiveBuckets = new List<SwatchBucket>();
             internal void Ensure(int count)
             {
                 if (Dots.Length >= count) return;
                 int capacity = Math.Max(count, Dots.Length * 2);
-                Dots = new PanelDotInput[capacity]; Labels = new Label[capacity]; WorldAnchors = new Point3d[capacity];
+                Dots = new PanelDotInput[capacity]; Labels = new Label[capacity];
             }
         }
 
@@ -614,13 +634,15 @@ namespace BetterGhPanel.Runtime
         private sealed class Label
         {
             internal Label(int order, int position, string text, Point3d anchor, BoundingBox bounds)
-            { Order = order; Position = position; Centre = Anchor = anchor; Text = text; Bounds = bounds; }
+            { Order = order; Position = position; Hash = PanelDotLayout.ItemHash(position); Centre = Anchor = anchor; Text = text; Bounds = bounds; }
             internal readonly int Order, Position;
+            internal readonly uint Hash;
             internal readonly Point3d Centre;
             internal readonly BoundingBox Bounds;
             internal Point3d Anchor;
             internal string Text;
-            internal int ColourId, GroupKey;
+            internal int ColourId, GroupKey, Band;
+            internal double Value = double.NaN;
         }
     }
 }

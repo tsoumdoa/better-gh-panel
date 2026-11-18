@@ -1,115 +1,111 @@
-using System;
-using System.Linq;
 using BetterGhPanel.Core;
+using System.Linq;
 using Xunit;
 
 public class PanelDotLayoutTests
 {
-    private static PanelDotInput Dot(double x, double y = 0, int text = 1, int priority = 0, bool selected = false,
-        double width = 100, double height = 20) => new PanelDotInput(x, y, width, height, text, selected, priority);
+    private static readonly int[] ItemIds = Enumerable.Range(0, 20).OrderBy(PanelDotLayout.ItemHash).ToArray();
+
+    private static PanelDotInput Dot(double x, int rank = 0, double y = 0, int text = -1, bool selected = false,
+        double value = double.NaN, int band = 0) =>
+        new PanelDotInput(x, y, 100, 20, text, selected, ItemIds[rank], value, band);
 
     [Fact]
-    public void GroupsMatchingKeysAtTheCentroidMember()
+    public void ARejectedSwatchLeavesRoomForFullSizeText()
     {
-        var dots = new[] { Dot(0), Dot(20, priority: 1), Dot(60, priority: 2), Dot(20, text: 2, priority: 3),
-            Dot(20, text: 3, priority: 4), Dot(20, text: 1, priority: 5, selected: true), Dot(400, priority: 6) };
-        var layout = new PanelDotLayout(); layout.Calculate(dots, dots.Length);
-        Assert.Equal(3, layout.Results[0].GroupCount);
-        Assert.Equal(1, layout.Results[0].LabelAnchor);
-        Assert.Equal(0, layout.Results[1].Representative);
-        Assert.Equal(0, layout.Results[2].Representative);
-        foreach (int i in new[] { 3, 4, 5, 6 }) Assert.Equal(i, layout.Results[i].Representative);
-        Assert.Equal(PanelDotTier.GroupMember, layout.Results[1].Tier);
-    }
-
-    [Fact]
-    public void GroupingMatchesMockNeighbourhoodAndStableEarlierPriority()
-    {
+        var dots = new[] { Dot(0), Dot(49, 1), Dot(90, 2) };
         var layout = new PanelDotLayout();
-        var dots = new[] { Dot(160, priority: 2), Dot(0, priority: 4), Dot(80, priority: 8), Dot(80, 151, priority: 10) };
         layout.Calculate(dots, dots.Length);
-        Assert.Equal(1, layout.Results[2].Representative);
-        Assert.Equal(3, layout.Results[3].Representative);
+        Assert.Equal(PanelDotTier.Full, layout.Results[0].Tier);
+        Assert.Equal(PanelDotTier.Swatch, layout.Results[1].Tier);
+        Assert.Equal(PanelDotTier.Full, layout.Results[2].Tier);
+        Assert.Equal(5, layout.Results[1].SwatchRadius);
     }
 
     [Theory]
-    [InlineData(100, PanelDotTier.Full, 1)]
-    [InlineData(80, PanelDotTier.Text, .8)]
-    [InlineData(69, PanelDotTier.Text, .65)]
-    [InlineData(66.66666666666667, PanelDotTier.Text, .65)]
-    [InlineData(66, PanelDotTier.Swatch, 0)]
-    [InlineData(0, PanelDotTier.Swatch, 0)]
-    public void FitsSymmetricallyAndQuantisesText(double separation, PanelDotTier tier, double scale)
+    [InlineData(85, 1)]
+    [InlineData(84.99, .95)]
+    [InlineData(75, .70)]
+    [InlineData(73, 0)]
+    public void AllowsFifteenPercentOverlapThenTriesTheLargestFittingStep(double separation, double scale)
     {
-        var layout = new PanelDotLayout(); layout.Calculate(new[] { Dot(0, text: 1), Dot(separation, text: 2, priority: 1) }, 2);
-        for (int i = 0; i < 2; i++)
-        {
-            Assert.Equal(tier, layout.Results[i].Tier);
-            if (tier != PanelDotTier.Swatch) Assert.Equal(scale, layout.Results[i].TextScale, 8);
-        }
+        var layout = new PanelDotLayout();
+        layout.Calculate(new[] { Dot(0), Dot(separation, 1) }, 2);
+        Assert.Equal(scale, layout.Results[1].TextScale, 8);
     }
 
     [Fact]
-    public void SelectionStaysSeparateKeepsTextLongerAndDrawsLast()
+    public void UsesSharedAreaOfTheSmallerBox()
     {
         var layout = new PanelDotLayout();
-        layout.Calculate(new[] { Dot(0, priority: 0), Dot(50, priority: 20, selected: true) }, 2);
-        Assert.Equal(PanelDotTier.Swatch, layout.Results[0].Tier);
-        Assert.Equal(PanelDotTier.Text, layout.Results[1].Tier);
-        Assert.Equal(.7, layout.Results[1].TextScale, 8);
-        Assert.Equal(1, layout.PriorityIndex(0));
-        Assert.Equal(1, layout.Results[1].Representative);
-        layout.Calculate(new[] { Dot(0, text: 1), Dot(80, text: 2, priority: 1, selected: true) }, 2);
+        // Fifteen square pixels are shared with the smaller, 100-square-pixel box.
+        var dots = new[]
+        {
+            new PanelDotInput(0, 0, 10, 10, -1, false, 0),
+            new PanelDotInput(53.5, 0, 100, 20, -1, false, 1)
+        };
+        layout.Calculate(dots, dots.Length);
         Assert.Equal(PanelDotTier.Full, layout.Results[1].Tier);
     }
 
     [Fact]
-    public void SwatchesRespectNearestDistanceCapsSizeAndDpiWithoutHiding()
+    public void PicksSelectionAndExtremesThenRotatesBandsInHashOrder()
     {
-        var layout = new PanelDotLayout();
-        layout.Calculate(new[] { Dot(0, text: 1), Dot(6, text: 2, priority: 1) }, 2);
-        Assert.Equal(2.5, layout.Results[0].SwatchRadius);
-        layout.Calculate(new[] { Dot(0, text: 1), Dot(60, text: 2, priority: 1) }, 2, size: 1.25, dpi: 2);
-        Assert.Equal(12.5, layout.Results[0].SwatchRadius);
-        var dense = Enumerable.Range(0, 20000).Select(i => Dot(0, text: i, priority: i, selected: i == 19999)).ToArray();
-        layout.Calculate(dense, dense.Length, dpi: 2);
-        Assert.Equal(dense.Length, layout.Count);
-        for (int i = 0; i < dense.Length; i++)
+        var dots = new[]
         {
-            Assert.Equal(PanelDotTier.Swatch, layout.Results[i].Tier);
-            Assert.Equal(3, layout.Results[i].SwatchRadius);
-        }
+            Dot(300, 0, value: 20), Dot(600, 1, value: 21), Dot(0, 2, value: 3),
+            Dot(1000, 3, value: 80), Dot(600, 4, value: 30, band: 1),
+            Dot(0, 5, value: 1), Dot(1000, 6, value: 100), Dot(300, 7, selected: true, value: 50),
+            Dot(800, 8, value: 60, band: 2)
+        };
+        var layout = new PanelDotLayout();
+        layout.Calculate(dots, dots.Length);
+        Assert.Equal(new[] { 7, 5, 6, 4, 8 }, Enumerable.Range(0, layout.TextCount).Select(layout.TextIndex));
     }
 
     [Fact]
-    public void VariableBoxFitsMatchAllPairsReference()
+    public void RetainsTextByItemAcrossACameraMove()
     {
-        var random = new Random(23);
-        var dots = Enumerable.Range(0, 400).Select(i => Dot(random.NextDouble() * 5000, random.NextDouble() * 5000,
-            text: i, priority: i, selected: i % 7 == 0, width: random.Next(20, 200), height: random.Next(10, 50))).ToArray();
-        var layout = new PanelDotLayout(); layout.Calculate(dots, dots.Length);
-        for (int i = 0; i < dots.Length; i++)
-        {
-            double fit = 1;
-            for (int j = 0; j < dots.Length; j++) if (i != j)
-                fit = Math.Min(fit, Math.Max(Math.Abs(dots[i].X - dots[j].X) * 2 / (dots[i].Width + dots[j].Width),
-                    Math.Abs(dots[i].Y - dots[j].Y) * 2 / (dots[i].Height + dots[j].Height)));
-            if (dots[i].Selected) fit = Math.Max(fit, Math.Min(1, fit * 1.4));
-            var tier = fit >= 1 ? PanelDotTier.Full : fit >= PanelDotLayout.MinimumTextScale ? PanelDotTier.Text : PanelDotTier.Swatch;
-            Assert.Equal(tier, layout.Results[i].Tier);
-            if (tier == PanelDotTier.Text) Assert.Equal(Math.Floor(fit * 20) / 20, layout.Results[i].TextScale, 8);
-        }
+        var layout = new PanelDotLayout();
+        layout.Calculate(new[] { Dot(300, 1), Dot(302, 2) }, 2);
+        var moved = new[] { Dot(301), Dot(304, 1), Dot(306, 2) };
+        layout.Calculate(moved, moved.Length);
+        Assert.Equal(1, layout.TextIndex(0));
+        layout.ResetStability();
+        layout.Calculate(moved, moved.Length);
+        Assert.Equal(0, layout.TextIndex(0));
     }
 
     [Fact]
-    public void GroupSwatchesKeepTheSameHalfPixelGapAtEveryDpi()
+    public void OmittingOccludedInputsFreesSpaceForVisibleText()
     {
         var layout = new PanelDotLayout();
+        var front = Dot(3, 1);
+        layout.Calculate(new[] { Dot(0, selected: true), front }, 2);
+        Assert.Equal(PanelDotTier.Swatch, layout.Results[1].Tier);
+        layout.Calculate(new[] { front }, 1);
+        Assert.Equal(PanelDotTier.Full, layout.Results[0].Tier);
+    }
+
+    [Fact]
+    public void GroupsMatchingTextAtTheCentroidAndKeepsSelectionSeparate()
+    {
         foreach (double dpi in new[] { 1.0, 1.5, 2.0 })
         {
-            layout.Calculate(new[] { Dot(0), Dot(6 * dpi, priority: 1) }, 2, dpi: dpi);
-            Assert.Equal(2.5 * dpi, layout.Results[0].GroupSwatchRadius, 8);
-            Assert.Equal(2.5 * dpi, layout.Results[1].SwatchRadius, 8);
+            var layout = new PanelDotLayout();
+            var dots = new[]
+            {
+                Dot(0, text: 1), Dot(6 * dpi, 1, text: 1), Dot(30 * dpi, 2, text: 1),
+                Dot(400 * dpi, 3, text: 1, selected: true), Dot(408 * dpi, 4, text: 1)
+            };
+            layout.Calculate(dots, dots.Length, dpi: dpi);
+            Assert.Equal(3, layout.Results[0].GroupCount);
+            Assert.Equal(1, layout.Results[0].LabelAnchor);
+            Assert.Equal(2.5 * dpi, layout.Results[0].SwatchRadius, 8);
+            Assert.Equal(0, layout.Results[1].SwatchRadius);
+            Assert.Equal(3 * dpi, layout.Results[2].SwatchRadius, 8);
+            Assert.Equal(4, layout.Results[4].Representative);
+            Assert.Equal(3.5 * dpi, layout.Results[4].SwatchRadius, 8);
         }
     }
 }
