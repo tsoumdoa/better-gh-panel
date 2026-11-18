@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- **Viewport dots spread their labels across visible values.** Selected items and the visible extremes get priority, while labels that still fit stay in place as the view moves. Text dots can overlap slightly or shrink, and small colour dots leave room for text.
+- **Viewport labels spread across the visible range.** The lowest and highest visible values and selected items get priority. Labels that still fit stay put as you navigate, and small colour dots leave room for labels.
 - **Hide dots behind objects** (Preview menu). On by default, saved with the panel and supported by Undo.
-- Fixed viewport dots disappearing when Rhino refits the perspective frustum during zoom.
+- Fixed viewport dots disappearing while zooming in a perspective view.
 
 ## 0.6.0-beta
 

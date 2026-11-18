@@ -74,6 +74,16 @@ internal static partial class PreviewSafetyChecks
             fixture.Select(0);
             Call(component, "HighlightRows", fixture.Result.Snapshot, new[] { 0 });
             await fixture.Ready(() => (int)Call(labels, "ColourId", 0)! > 0);
+            conduit.WireThickness = 24;
+            var capture = new ViewCapture { Width = 1000, Height = 720, ScaleScreenItems = true };
+            using (var image = capture.CaptureToBitmap(view))
+            {
+                var frame = FieldValue<System.Collections.IDictionary>(labels, "_frames")[view.ActiveViewport.Id];
+                Check(image != null && frame != null && FieldValue<Array>(frame, "Labels").Cast<object>()
+                    .Take(FieldValue<int>(frame, "Count")).Any(label => FieldValue<int>(label, "Position") == 0),
+                    "The selected curve keeps its own dot with occlusion on and a thick preview wire");
+            }
+            conduit.WireThickness = 3;
             int colour = (int)Call(labels, "ColourId", 0)!;
             fixture.Select(1);
             Call(component, "HighlightRows", fixture.Result.Snapshot, new[] { 1 });
@@ -173,8 +183,8 @@ internal static partial class PreviewSafetyChecks
         try
         {
             Configure(false, 2);
-            Call(labels, "Add", 0, 0, Point3d.Origin, BoundingBox.Empty);
-            Call(labels, "Add", half, half, new Point3d(1, 0, 0), BoundingBox.Empty);
+            Call(labels, "Add", 0, 0, Point3d.Origin, BoundingBox.Empty, false);
+            Call(labels, "Add", half, half, new Point3d(1, 0, 0), BoundingBox.Empty, false);
             Check(FieldValue<string>(dots[0]!, "Text") == "…" && FieldValue<string>(dots[half]!, "Text") == "…" &&
                 FieldValue<int>(dots[0]!, "GroupKey") != FieldValue<int>(dots[half]!, "GroupKey"), "pending value dots never share a group key");
             for (int tick = 0; tick < 4 && FieldValue<string>(dots[half]!, "Text") == "…"; tick++) Tick();
@@ -227,10 +237,11 @@ internal static partial class PreviewSafetyChecks
         private readonly GH_Component _component;
         private readonly GH_Document _document;
         private readonly DisplayMaterial _normal = new DisplayMaterial(Color.Red), _selected = new DisplayMaterial(Color.Lime);
+        internal int WireThickness { get; set; } = 3;
         internal ValuePreviewConduit(GH_Component component, GH_Document document) { _component = component; _document = document; }
         protected override void PostDrawObjects(DrawEventArgs e)
         {
-            var args = new ValuePreviewArguments(_document, e, _normal, _selected);
+            var args = new ValuePreviewArguments(_document, e, _normal, _selected, WireThickness);
             _component.DrawViewportMeshes(args);
             _component.DrawViewportWires(args);
         }
@@ -239,9 +250,9 @@ internal static partial class PreviewSafetyChecks
     private sealed class ValuePreviewArguments : IGH_PreviewArgs
     {
         private readonly DrawEventArgs _args;
-        internal ValuePreviewArguments(GH_Document document, DrawEventArgs args, DisplayMaterial normal, DisplayMaterial selected)
-        { Document = document; _args = args; ShadeMaterial = normal; ShadeMaterial_Selected = selected; }
-        public int DefaultCurveThickness => 3;
+        internal ValuePreviewArguments(GH_Document document, DrawEventArgs args, DisplayMaterial normal, DisplayMaterial selected, int thickness)
+        { Document = document; _args = args; ShadeMaterial = normal; ShadeMaterial_Selected = selected; DefaultCurveThickness = thickness; }
+        public int DefaultCurveThickness { get; }
         public Color WireColour => Color.Red;
         public Color WireColour_Selected => Color.Lime;
         public DisplayMaterial ShadeMaterial { get; }

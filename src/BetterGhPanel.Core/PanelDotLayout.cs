@@ -16,8 +16,8 @@ namespace BetterGhPanel.Core
     public readonly struct PanelDotInput
     {
         public PanelDotInput(double x, double y, double width, double height, int textId, bool selected,
-            int itemId, double value = double.NaN, int band = 0)
-        { X = x; Y = y; Width = width; Height = height; TextId = textId; Selected = selected; ItemId = itemId; Value = value; Band = band; }
+            int itemId, double value = double.NaN)
+        { X = x; Y = y; Width = width; Height = height; TextId = textId; Selected = selected; ItemId = itemId; Value = value; }
         public double X { get; }
         public double Y { get; }
         public double Width { get; }
@@ -26,7 +26,6 @@ namespace BetterGhPanel.Core
         public bool Selected { get; }
         public int ItemId { get; }
         public double Value { get; }
-        public int Band { get; }
     }
 
     public struct PanelDotOutput
@@ -45,12 +44,11 @@ namespace BetterGhPanel.Core
     public sealed class PanelDotLayout
     {
         public const int BandCount = 10;
-        private const double Group = 1.5, AllowedOverlap = .15, MinimumTextScale = 8.0 / 12;
-        private const int FirstShrinkStep = 19, LastShrinkStep = (int)(MinimumTextScale * 20 + 1);
-        private static readonly double[] TextScales = { .70, .75, .80, .85, .90, .95, 1 };
+        private const double Group = 1.5, AllowedOverlap = .15;
+        private static readonly double[] ShrinkScales = { .95, .90, .85, .80, .75, .70 };
         private int[] _order = Array.Empty<int>(), _nextBand = Array.Empty<int>();
-        private bool[] _retry = Array.Empty<bool>();
         private int[] _count = Array.Empty<int>(), _anchor = Array.Empty<int>();
+        private PlacedBox[] _boxes = Array.Empty<PlacedBox>();
         private double[] _sumX = Array.Empty<double>(), _sumY = Array.Empty<double>(), _best = Array.Empty<double>();
         private readonly int[] _bandHead = new int[BandCount], _bandTail = new int[BandCount];
         private readonly HashSet<int> _previousText = new HashSet<int>();
@@ -96,18 +94,21 @@ namespace BetterGhPanel.Core
             for (int k = 0; k < representatives; k++)
             {
                 int i = _order[k];
-                int step = Fit(dots, i, 20, 20);
-                _retry[i] = step == 0;
-                if (step > 0) Place(dots, i, step);
+                int blocker = -1;
+                if (Fits(dots, i, 1, ref blocker)) Place(dots, i, 1);
             }
             for (int k = 0; k < representatives; k++)
             {
                 int i = _order[k];
-                if (!_retry[i]) continue;
-                int step = Fit(dots, i, FirstShrinkStep, LastShrinkStep);
-                if (step != 0) Place(dots, i, step);
+                if (Results[i].TextScale != 0) continue;
+                int blocker = -1;
+                foreach (double scale in ShrinkScales)
+                    if (Fits(dots, i, scale, ref blocker))
+                    {
+                        Place(dots, i, scale);
+                        break;
+                    }
             }
-
             TextCount = 0;
             _previousText.Clear();
             for (int k = 0; k < representatives; k++)
@@ -206,13 +207,18 @@ namespace BetterGhPanel.Core
             }
             if (low >= 0 && !dots[low].Selected) _order[cursor++] = low;
             if (high >= 0 && high != low && !dots[high].Selected) _order[cursor++] = high;
+            double span = max - min;
+            if (double.IsPositiveInfinity(span)) { min *= .5; max *= .5; }
+            double range = max - min;
             for (int band = 0; band < BandCount; band++) _bandHead[band] = -1;
             for (int i = 0; i < count; i++)
             {
                 ref readonly var dot = ref dots[i];
                 if (Results[i].Representative != i || dot.Selected || i == low || i == high) continue;
                 if (_previousText.Contains(dot.ItemId)) { _order[cursor++] = i; continue; }
-                int band = dot.Band;
+                double value = double.IsPositiveInfinity(span) ? dot.Value * .5 : dot.Value;
+                int band = double.IsNaN(value) || !(range > 0) ? 0 :
+                    Math.Min(BandCount - 1, (int)((value - min) / range * BandCount));
                 if (_bandHead[band] < 0) _bandHead[band] = i;
                 else _nextBand[_bandTail[band]] = i;
                 _bandTail[band] = i;
@@ -230,65 +236,45 @@ namespace BetterGhPanel.Core
             return cursor;
         }
 
-        private int Fit(PanelDotInput[] dots, int i, int largest, int smallest)
+        private bool Fits(PanelDotInput[] dots, int i, double scale, ref int blocker)
         {
             ref readonly var dot = ref dots[i];
             ref readonly var anchor = ref dots[_anchor[i]];
-            double largestScale = TextScales[largest - LastShrinkStep], smallestScale = TextScales[smallest - LastShrinkStep];
-            double maxWidth = dot.Width * largestScale, maxHeight = dot.Height * largestScale;
-            double minWidth = dot.Width * smallestScale, minHeight = dot.Height * smallestScale;
-            double maxArea = maxWidth * maxHeight;
+            double width = dot.Width * scale, height = dot.Height * scale, area = width * height;
+            // The same placed label often blocks several successive sizes.
+            if (blocker >= 0 && _boxes[blocker].Conflicts(in anchor, width, height, area)) return false;
             int cellX = _placed.X(anchor.X), cellY = _placed.Y(anchor.Y);
-            // Each bit is a candidate size. Visit the neighbours once, testing
-            // their boxes against the sizes that still fit.
-            int sizes = (2 << (largest - smallest)) - 1;
             for (int x = 0; x < 3; x++) for (int y = 0; y < 3; y++)
                 for (int j = _placed.Head(cellX + Neighbour(x), cellY + Neighbour(y)); j >= 0; j = _placed.Next[j])
                 {
-                    ref readonly var other = ref dots[_anchor[j]];
-                    double dx = Math.Abs(anchor.X - other.X), dy = Math.Abs(anchor.Y - other.Y);
-                    double width = dots[j].Width * Results[j].TextScale, height = dots[j].Height * Results[j].TextScale;
-                    double xReach = width / 2 - dx, yReach = height / 2 - dy;
-                    if (xReach + maxWidth * .5 <= 0 || yReach + maxHeight * .5 <= 0) continue;
-                    double area = width * height;
-                    double allowance = AllowedOverlap * Math.Min(maxArea, area);
-                    if (smallest == largest)
-                    {
-                        if (!Overlaps(maxWidth, maxHeight, xReach, yReach, width, height, allowance)) continue;
-                        double minScale = TextScales[0];
-                        // A blocker already placed in the full-size pass stays
-                        // in place. Skip retries that it rules out at every size.
-                        return Overlaps(dot.Width * minScale, dot.Height * minScale, xReach, yReach, width, height, allowance) ? -1 : 0;
-                    }
-                    // If even the smallest box overlaps more than the largest
-                    // allowance, no candidate size can fit this neighbour.
-                    if (Overlaps(minWidth, minHeight, xReach, yReach, width, height, allowance)) return 0;
-                    for (int step = largest, bit = 1 << (largest - smallest); bit != 0; step--, bit >>= 1)
-                    {
-                        if ((sizes & bit) == 0) continue;
-                        double scale = TextScales[step - LastShrinkStep];
-                        double w = dot.Width * scale, h = dot.Height * scale;
-                        if (Overlaps(w, h, xReach, yReach, width, height, AllowedOverlap * Math.Min(w * h, area)))
-                            sizes &= ~bit;
-                    }
-                    if (sizes == 0) return 0;
+                    if (!_boxes[j].Conflicts(in anchor, width, height, area)) continue;
+                    blocker = j;
+                    return false;
                 }
-            for (int step = largest, bit = 1 << (largest - smallest); bit != 0; step--, bit >>= 1)
-                if ((sizes & bit) != 0) return step;
-            return 0;
+            return true;
         }
 
-        private static bool Overlaps(double width, double height, double xReach, double yReach, double otherWidth, double otherHeight, double allowance)
+        private readonly struct PlacedBox
         {
-            double sx = xReach + width * .5, sy = yReach + height * .5;
-            return sx > 0 && sy > 0 && Math.Min(sx, Math.Min(width, otherWidth)) * Math.Min(sy, Math.Min(height, otherHeight)) > allowance;
+            private readonly double _x, _y, _width, _height, _area;
+            internal PlacedBox(double x, double y, double width, double height)
+            { _x = x; _y = y; _width = width; _height = height; _area = width * height; }
+            internal bool Conflicts(in PanelDotInput anchor, double width, double height, double area)
+            {
+                double sx = (width + _width) * .5 - Math.Abs(anchor.X - _x);
+                if (sx <= 0) return false;
+                double sy = (height + _height) * .5 - Math.Abs(anchor.Y - _y);
+                return sy > 0 && Math.Min(sx, Math.Min(width, _width)) * Math.Min(sy, Math.Min(height, _height)) >
+                    AllowedOverlap * Math.Min(area, _area);
+            }
         }
 
-        private void Place(PanelDotInput[] dots, int i, int step)
+        private void Place(PanelDotInput[] dots, int i, double scale)
         {
             ref readonly var anchor = ref dots[_anchor[i]];
-            Results[i].TextScale = TextScales[step - LastShrinkStep];
-            Results[i].Tier = step == 20 ? PanelDotTier.Full : PanelDotTier.Text;
+            Results[i].TextScale = scale;
+            Results[i].Tier = scale == 1 ? PanelDotTier.Full : PanelDotTier.Text;
+            _boxes[i] = new PlacedBox(anchor.X, anchor.Y, dots[i].Width * scale, dots[i].Height * scale);
             _placed.Add(i, anchor.X, anchor.Y);
         }
         private double Radius(int i, PanelDotInput[] dots, double cap, double floor, double gap)
@@ -320,8 +306,8 @@ namespace BetterGhPanel.Core
             if (Results.Length >= n) return;
             int capacity = Math.Max(n, Math.Max(16, Results.Length * 2));
             Results = new PanelDotOutput[capacity]; _order = new int[capacity]; _nextBand = new int[capacity];
-            _retry = new bool[capacity];
             _count = new int[capacity]; _anchor = new int[capacity];
+            _boxes = new PlacedBox[capacity];
             _sumX = new double[capacity]; _sumY = new double[capacity]; _best = new double[capacity];
         }
 
@@ -355,10 +341,8 @@ namespace BetterGhPanel.Core
             }
             internal int X(double x) => (int)Math.Floor(x * _inverseWidth);
             internal int Y(double y) => (int)Math.Floor(y * _inverseHeight);
-            private int Slot(int x, int y, int text)
+            private int HashSlot(int x, int y, int text)
             {
-                // Non-grouped grids can address compact screen regions directly.
-                if (_stride > 0) return (y - _bottom) * _stride + x - _left;
                 uint hash = unchecked((uint)x * 0x9e3779b1u ^ (uint)y * 0x85ebca77u ^ (uint)text * 0xc2b2ae3du);
                 hash ^= hash >> 16;
                 int slot = (int)hash & _mask;
@@ -366,10 +350,14 @@ namespace BetterGhPanel.Core
                 return slot;
             }
             internal int Head(int x, int y, int text = 0)
-            { int slot = Slot(x, y, text); return _stamp[slot] == _epoch ? _head[slot] : -1; }
+            {
+                int slot = _stride > 0 ? (y - _bottom) * _stride + x - _left : HashSlot(x, y, text);
+                return _stamp[slot] == _epoch ? _head[slot] : -1;
+            }
             internal void Add(int i, double x, double y, int text = 0)
             {
-                int cx = X(x), cy = Y(y), slot = Slot(cx, cy, text);
+                int cx = X(x), cy = Y(y);
+                int slot = _stride > 0 ? (cy - _bottom) * _stride + cx - _left : HashSlot(cx, cy, text);
                 Next[i] = _stamp[slot] == _epoch ? _head[slot] : -1;
                 _x[slot] = cx; _y[slot] = cy; _text[slot] = text; _head[slot] = i; _stamp[slot] = _epoch;
             }

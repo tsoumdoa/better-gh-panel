@@ -58,7 +58,7 @@ namespace BetterGhPanel.UI
         private const int MaximumRows = 12;
         internal const string ItemOrderDescription = "Shows each item's zero-based index, starting at 0 in each branch. Filters, sorting and selection keep these numbers. " +
             "Dots follow Preview and stay on when minimized. Curves label a point on the curve; closed solids and meshes keep their centre, while open surfaces stay on the material. " +
-            "Choose Box top or Box bottom to move dots above or below their geometry. Crowded dots can overlap a little, shrink their text, or become small colour dots that leave room for other labels; text favours selected items and spreads across visible values, and nearby dots with the same value share one label. " +
+            "Choose Box top or Box bottom to move dots above or below their geometry. Crowded dots can overlap slightly, shrink their text, or become small colour dots that leave room for other labels. Text favours selected items and spreads across visible values. Nearby dots with the same value share one label when Show item order is off. " +
             "Show values uses the chosen numeric Search value or the row's usual measurement; circles show radius in other Search modes.";
         private static readonly CanvasChoice<PanelSortMode>[] SortChoices =
         {
@@ -336,7 +336,8 @@ namespace BetterGhPanel.UI
         internal bool IsPreviewPage => Kind == CanvasMenuKind.Preview || Kind == CanvasMenuKind.DotPlacement || Kind == CanvasMenuKind.ValuePalette || Kind == CanvasMenuKind.DotSize || Kind == CanvasMenuKind.PreviewLimit;
         internal bool RowEnabled(int index, bool order, bool values, PanelValuePalette palette) =>
             !(Kind == CanvasMenuKind.BranchStats && (index == 1 || index == 10)) &&
-            !(Kind == CanvasMenuKind.Preview && (index == CanvasPreviewRows.Placement || index == CanvasPreviewRows.Size) && !order && !values) &&
+            !(Kind == CanvasMenuKind.Preview && (index == CanvasPreviewRows.Placement || index == CanvasPreviewRows.Size ||
+                index == CanvasPreviewRows.HideOccludedDots) && !order && !values) &&
             !(Kind == CanvasMenuKind.ValuePalette && index == CanvasPreviewRows.Reverse && palette == PanelValuePalette.Off);
         internal string Trailing(int index, PanelDotPlacement placement, PanelValuePalette palette, PanelDotSize size = PanelDotSize.Medium, int limit = 5000) => Kind == CanvasMenuKind.BranchStats ? index == 8 ? "max − min" : index == 9 ? "population" : "" : Kind == CanvasMenuKind.Preview ?
             index == CanvasPreviewRows.Size ? size.ToString() + "…" : index == CanvasPreviewRows.Limit ? limit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + "…" : index == CanvasPreviewRows.Placement ? PanelPreviewValues.PlacementLabel(placement) + "…" : index == CanvasPreviewRows.Colour ? PanelPreviewValues.PaletteLabel(palette) + "…" : "" : "";

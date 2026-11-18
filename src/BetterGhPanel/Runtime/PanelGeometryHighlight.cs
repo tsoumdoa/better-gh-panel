@@ -93,7 +93,8 @@ namespace BetterGhPanel.Runtime
             entry.ColourId = _orderLabels.ColourId(entry.Position);
             if (_orderResult == null) return;
             var anchor = entry.Leaves.Count == 1 ? entry.Leaves[0].Anchor(current) : entry.Bounds.Center;
-            if (current()) _orderLabels.Add(entry.Order, entry.Position, anchor, entry.Bounds);
+            if (current()) _orderLabels.Add(entry.Order, entry.Position, anchor, entry.Bounds,
+                entry.Leaves.Count == 1 && entry.Leaves[0].HasWireAnchor);
         }
         private readonly BoundsIndex _bounds = new BoundsIndex();
         private Action<int, object>? _admissionObserver;
@@ -884,11 +885,13 @@ namespace BetterGhPanel.Runtime
         }
 
         private static void PushPreviewDepthBias(IGH_PreviewArgs args)
+            => args.Display.PushModelTransform(WireDepthBias(args.Viewport) * args.Display.ModelTransform);
+
+        internal static Transform WireDepthBias(Rhino.Display.RhinoViewport viewport)
         {
             var clipBias = Transform.Identity; clipBias.M22 = 0.995; clipBias.M23 = 0.01;
-            var bias = args.Viewport.GetTransform(CoordinateSystem.Clip, CoordinateSystem.World) * clipBias *
-                args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
-            args.Display.PushModelTransform(bias * args.Display.ModelTransform);
+            return viewport.GetTransform(CoordinateSystem.Clip, CoordinateSystem.World) * clipBias *
+                viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
         }
 
         private const double GradientDepthOffset = 1e-3;

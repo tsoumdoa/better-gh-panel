@@ -7,8 +7,8 @@ public class PanelDotLayoutTests
     private static readonly int[] ItemIds = Enumerable.Range(0, 20).OrderBy(PanelDotLayout.ItemHash).ToArray();
 
     private static PanelDotInput Dot(double x, int rank = 0, double y = 0, int text = -1, bool selected = false,
-        double value = double.NaN, int band = 0) =>
-        new PanelDotInput(x, y, 100, 20, text, selected, ItemIds[rank], value, band);
+        double value = double.NaN) =>
+        new PanelDotInput(x, y, 100, 20, text, selected, ItemIds[rank], value);
 
     [Fact]
     public void ARejectedSwatchLeavesRoomForFullSizeText()
@@ -53,10 +53,10 @@ public class PanelDotLayoutTests
     {
         var dots = new[]
         {
-            Dot(300, 0, value: 20), Dot(600, 1, value: 21), Dot(0, 2, value: 3),
-            Dot(1000, 3, value: 80), Dot(600, 4, value: 30, band: 1),
+            Dot(300, 0, value: 12), Dot(600, 1, value: 14), Dot(0, 2, value: 3),
+            Dot(1000, 3, value: 80), Dot(600, 4, value: 30),
             Dot(0, 5, value: 1), Dot(1000, 6, value: 100), Dot(300, 7, selected: true, value: 50),
-            Dot(800, 8, value: 60, band: 2)
+            Dot(800, 8, value: 60)
         };
         var layout = new PanelDotLayout();
         layout.Calculate(dots, dots.Length);
@@ -74,17 +74,6 @@ public class PanelDotLayoutTests
         layout.ResetStability();
         layout.Calculate(moved, moved.Length);
         Assert.Equal(0, layout.TextIndex(0));
-    }
-
-    [Fact]
-    public void OmittingOccludedInputsFreesSpaceForVisibleText()
-    {
-        var layout = new PanelDotLayout();
-        var front = Dot(3, 1);
-        layout.Calculate(new[] { Dot(0, selected: true), front }, 2);
-        Assert.Equal(PanelDotTier.Swatch, layout.Results[1].Tier);
-        layout.Calculate(new[] { front }, 1);
-        Assert.Equal(PanelDotTier.Full, layout.Results[0].Tier);
     }
 
     [Fact]

@@ -1,109 +1,122 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Runtime.InteropServices;
+using Rhino;
 using Rhino.Display;
 using Rhino.Geometry;
 
 namespace BetterGhPanel.Runtime
 {
-    // Read the live scene once, after Grasshopper's preview callbacks and before
-    // the foreground overlays. ZBufferCapture would start another display pass.
-    internal sealed class PanelSceneDepth
+    // One borrowed CPU snapshot belongs to the foreground pass that requested it.
+    internal sealed class PanelSceneDepth : IDisposable
     {
-        [ThreadStatic] private static PanelSceneDepth? _frame;
-        private DisplayPipeline? _pipeline;
-        private Guid _viewport;
-        private bool _valid;
-        private float[] _pixels = Array.Empty<float>();
-        private readonly int[] _port = new int[4];
-        private readonly double[] _range = new double[2];
-        private int _width, _height;
-        private double _scaleX, _scaleY, _z, _w, _zOffset, _wOffset, _clear;
-        private bool _reversed;
-        private Point3d _camera;
-        private Vector3d _direction;
+        private float[] _pixels;
+        [ThreadStatic] private static float[]? _spare;
+        private readonly Size _viewport;
+        private readonly Rectangle _region;
+        private readonly double _scaleX, _scaleY, _z, _w, _zOffset, _wOffset, _clear, _depthStart, _depthSpan;
+        private readonly bool _reversed;
+        private readonly Point3d _camera;
+        private readonly Vector3d _direction;
 
-        internal static void BeginFrame()
+        private PanelSceneDepth(float[] pixels, Size viewport, Rectangle region, Size screen,
+            float[] projection, double[] range, double clear, Point3d camera, Vector3d direction)
         {
-            if (_frame != null) _frame._pipeline = null;
-        }
-
-        internal static PanelSceneDepth? Capture(DisplayPipeline pipeline, RhinoViewport viewport, Size screenSize)
-        {
-            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || !pipeline.IsOpenGL) return null;
-            var frame = _frame ??= new PanelSceneDepth();
-            if (!ReferenceEquals(frame._pipeline, pipeline) || frame._viewport != viewport.Id)
-            {
-                frame._pipeline = pipeline;
-                frame._viewport = viewport.Id;
-                frame._valid = frame.Read(pipeline, viewport, screenSize);
-            }
-            return frame._valid ? frame : null;
-        }
-
-        private bool Read(DisplayPipeline pipeline, RhinoViewport viewport, Size screenSize)
-        {
-            if (wglGetCurrentContext() == IntPtr.Zero) return false;
-            pipeline.Flush();
-            glGetIntegerv(0x0BA2 /* GL_VIEWPORT */, _port);
-            _width = _port[2]; _height = _port[3];
-            if (_width <= 0 || _height <= 0 || screenSize.Width <= 0 || screenSize.Height <= 0) return false;
-            _scaleX = (double)_width / screenSize.Width;
-            _scaleY = (double)_height / screenSize.Height;
-            int count = checked(_width * _height);
-            if (_pixels.Length < count) _pixels = new float[count];
-
-            glGetInteger(0x8CA6 /* GL_DRAW_FRAMEBUFFER_BINDING */, out int draw);
-            glGetInteger(0x8CAA /* GL_READ_FRAMEBUFFER_BINDING */, out int read);
-            glGetInteger(0x80A9 /* GL_SAMPLES */, out int samples);
-            _pixels[0] = float.NaN;
-            if (draw != read || draw != 0 && samples > 0)
-            {
-                var framebuffers = Framebuffers.Get();
-                if (framebuffers == null) return false;
-                framebuffers.Read(draw, read, samples, _port, _pixels);
-            }
-            else glReadPixels(_port[0], _port[1], _width, _height, DepthComponent, Float, _pixels);
-            if (float.IsNaN(_pixels[0])) return false;
-
-            // OpenGL's projection is column-major, with forward camera depth
-            // along negative Z. Compare in the same depth range the GPU wrote.
-            var projection = pipeline.GetOpenGLCameraToClip();
-            glGetDoublev(0x0B70 /* GL_DEPTH_RANGE */, _range);
-            glGetDouble(0x0B73 /* GL_DEPTH_CLEAR_VALUE */, out _clear);
+            _pixels = pixels; _viewport = viewport; _region = region;
+            _scaleX = (double)viewport.Width / screen.Width;
+            _scaleY = (double)viewport.Height / screen.Height;
             _z = -projection[10]; _w = -projection[11];
             _zOffset = projection[14]; _wOffset = projection[15];
-            _reversed = (_z * _wOffset - _w * _zOffset) * (_range[1] - _range[0]) < 0;
-            _camera = viewport.CameraLocation;
-            _direction = viewport.CameraDirection;
-            return _direction.Unitize() && (_w != 0 || _wOffset != 0);
+            _depthStart = range[0]; _depthSpan = range[1] - range[0];
+            _reversed = (_z * _wOffset - _w * _zOffset) * _depthSpan < 0;
+            _clear = clear; _camera = camera; _direction = direction;
         }
 
-        internal bool IsVisible(Point2d screen, Point3d anchor)
+        internal static PanelSceneDepth? Capture(DisplayPipeline pipeline, RhinoViewport viewport, Size screen, Rectangle anchors)
         {
-            // Move the comparison point forward by the depth tolerance. This
-            // keeps the test in camera units even with non-linear perspective Z.
-            double depth = ((anchor - _camera) * _direction - .05) / 1.01;
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || !pipeline.IsOpenGL ||
+                screen.Width <= 0 || screen.Height <= 0) return null;
+            pipeline.Flush();
+            var gl = Framebuffers.Current();
+            if (gl == null) return null;
+
+            var port = new int[4];
+            glGetIntegerv(0x0BA2 /* GL_VIEWPORT */, port);
+            var size = new Size(port[2], port[3]);
+            if (size.Width <= 0 || size.Height <= 0) return null;
+            double sx = (double)size.Width / screen.Width, sy = (double)size.Height / screen.Height;
+            // Screen coordinates are viewport-local and Y-down. Convert once
+            // to local GL pixels and allow one physical pixel for each neighbour.
+            var region = Rectangle.FromLTRB(
+                Math.Max(0, (int)(anchors.Left * sx) - 1),
+                Math.Max(0, size.Height - (int)Math.Ceiling(anchors.Bottom * sy) - 1),
+                Math.Min(size.Width, (int)Math.Ceiling(anchors.Right * sx) + 1),
+                Math.Min(size.Height, size.Height - (int)(anchors.Top * sy) + 1));
+            if (region.IsEmpty) return null;
+
+            var direction = viewport.CameraDirection;
+            var projection = pipeline.GetOpenGLCameraToClip();
+            if (!direction.Unitize() || projection[11] == 0 && projection[15] == 0) return null;
+            var range = new double[2];
+            glGetDoublev(0x0B70 /* GL_DEPTH_RANGE */, range);
+            glGetDouble(0x0B73 /* GL_DEPTH_CLEAR_VALUE */, out double clear);
+
+            int count = checked(region.Width * region.Height);
+            var pixels = _spare;
+            _spare = null;
+            if (pixels == null || pixels.Length < count) pixels = new float[count];
+            bool read = false;
+            try
+            {
+                var source = region;
+                source.Offset(port[0], port[1]);
+                read = gl.Read(source, size, pixels);
+                return read ? new PanelSceneDepth(pixels, size, region, screen, projection, range, clear, viewport.CameraLocation, direction) : null;
+            }
+            finally { if (!read) ReturnPixels(pixels); }
+        }
+
+        public void Dispose()
+        {
+            ReturnPixels(_pixels);
+            _pixels = Array.Empty<float>();
+        }
+
+        private static void ReturnPixels(float[] pixels)
+        {
+            if (_spare == null || _spare.Length < pixels.Length) _spare = pixels;
+        }
+
+        internal bool IsVisible(Point2d screen, Point3d anchor, Point3d wireAnchor)
+        {
+            double depth = (anchor - _camera) * _direction;
+            if (wireAnchor != anchor) depth = Math.Min(depth, (wireAnchor - _camera) * _direction);
+            // Apply the tolerance in camera units before projecting to the
+            // non-linear perspective Z buffer.
+            depth = (depth - .05) / 1.01;
             if (depth <= 0) return true;
             double clip = (_z * depth + _zOffset) / (_w * depth + _wOffset);
-            double cutoff = _range[0] + (clip + 1) * .5 * (_range[1] - _range[0]);
-            int x = Math.Min(_width - 1, (int)(screen.X * _scaleX));
-            int y = Math.Max(0, _height - 1 - (int)(screen.Y * _scaleY));
-            // A clear or farther pixel in the 3x3 neighbourhood keeps the dot
-            // visible, including anchors on silhouettes and sloped surfaces.
-            int right = Math.Min(_width - 1, x + 1), top = Math.Min(_height - 1, y + 1);
+            double cutoff = _depthStart + (clip + 1) * .5 * _depthSpan;
+            int x = Math.Min(_viewport.Width - 1, (int)(screen.X * _scaleX)) - _region.Left;
+            int y = Math.Max(0, _viewport.Height - 1 - (int)(screen.Y * _scaleY)) - _region.Top;
+            if (x < 0 || x >= _region.Width || y < 0 || y >= _region.Height) return true;
+            int right = Math.Min(_region.Width - 1, x + 1), top = Math.Min(_region.Height - 1, y + 1);
             for (int row = Math.Max(0, y - 1); row <= top; row++)
                 for (int col = Math.Max(0, x - 1); col <= right; col++)
                 {
-                    float pixel = _pixels[row * _width + col];
+                    float pixel = _pixels[row * _region.Width + col];
                     if (pixel == _clear || (_reversed ? pixel <= cutoff : pixel >= cutoff)) return true;
                 }
             return false;
         }
 
-        private const uint DepthComponent = 0x1902, Float = 0x1406;
+        private const uint DepthComponent = 0x1902, Float = 0x1406, ScissorTest = 0x0C11;
         [DllImport("opengl32.dll")] private static extern IntPtr wglGetCurrentContext();
+        [DllImport("opengl32.dll")] private static extern IntPtr wglGetCurrentDC();
+        [DllImport("opengl32.dll")] private static extern bool wglMakeCurrent(IntPtr dc, IntPtr context);
         [DllImport("opengl32.dll")] private static extern IntPtr wglGetProcAddress(string name);
+        [DllImport("gdi32.dll")] private static extern int GetPixelFormat(IntPtr dc);
         [DllImport("opengl32.dll")] private static extern void glGetIntegerv(uint name, [Out] int[] values);
         [DllImport("opengl32.dll", EntryPoint = "glGetIntegerv")] private static extern void glGetInteger(uint name, out int value);
         [DllImport("opengl32.dll")] private static extern void glGetDoublev(uint name, [Out] double[] values);
@@ -111,16 +124,24 @@ namespace BetterGhPanel.Runtime
         [DllImport("opengl32.dll")] private static extern void glReadPixels(int x, int y, int width, int height, uint format, uint type, [Out] float[] pixels);
         [DllImport("opengl32.dll")] private static extern void glReadBuffer(uint mode);
         [DllImport("opengl32.dll")] private static extern void glDrawBuffer(uint mode);
+        [DllImport("opengl32.dll")] private static extern void glPixelStorei(uint name, int value);
+        [DllImport("opengl32.dll")] private static extern byte glIsEnabled(uint name);
+        [DllImport("opengl32.dll")] private static extern void glDisable(uint name);
+        [DllImport("opengl32.dll")] private static extern void glEnable(uint name);
+        [DllImport("opengl32.dll")] private static extern uint glGetError();
 
         private sealed class Framebuffers
         {
-            // GL forbids glReadPixels on multisampled FBOs. Resolve the depth
-            // attachment into a temporary, same-format, single-sample target.
-            private const uint Draw = 0x8CA9, ReadTarget = 0x8CA8, Renderbuffer = 0x8D41;
+            private const uint Draw = 0x8CA9, ReadTarget = 0x8CA8, Renderbuffer = 0x8D41, PixelPackBuffer = 0x88EB;
             private const uint DepthAttachment = 0x8D00, DepthStencilAttachment = 0x821A;
+            private static readonly uint[] PackSettings =
+                { 0x0D05 /* ALIGNMENT */, 0x0D02 /* ROW_LENGTH */, 0x0D03 /* SKIP_ROWS */, 0x0D04 /* SKIP_PIXELS */,
+                  0x806B /* SKIP_IMAGES */, 0x806C /* IMAGE_HEIGHT */, 0x0D00 /* SWAP_BYTES */ };
+
             private delegate void Bind(uint target, int name);
             private delegate void Create(int count, out int name);
             private delegate void Delete(int count, ref int name);
+            private delegate byte IsFramebuffer(int name);
             private delegate void Storage(uint target, uint format, int width, int height);
             private delegate void Attach(uint target, uint attachment, uint renderbufferTarget, int name);
             private delegate uint Status(uint target);
@@ -128,16 +149,37 @@ namespace BetterGhPanel.Runtime
             private delegate void Blit(int x0, int y0, int x1, int y1, int dx0, int dy0, int dx1, int dy1, uint mask, uint filter);
             private readonly Bind _bindFramebuffer = Load<Bind>("glBindFramebuffer");
             private readonly Bind _bindRenderbuffer = Load<Bind>("glBindRenderbuffer");
+            private readonly Bind _bindBuffer = Load<Bind>("glBindBuffer");
             private readonly Create _genFramebuffers = Load<Create>("glGenFramebuffers");
             private readonly Create _genRenderbuffers = Load<Create>("glGenRenderbuffers");
             private readonly Delete _deleteFramebuffers = Load<Delete>("glDeleteFramebuffers");
             private readonly Delete _deleteRenderbuffers = Load<Delete>("glDeleteRenderbuffers");
+            private readonly IsFramebuffer _isFramebuffer = Load<IsFramebuffer>("glIsFramebuffer");
             private readonly Storage _storage = Load<Storage>("glRenderbufferStorage");
             private readonly Attach _attach = Load<Attach>("glFramebufferRenderbuffer");
             private readonly Status _status = Load<Status>("glCheckFramebufferStatus");
             private readonly AttachmentParameter _attachment = Load<AttachmentParameter>("glGetFramebufferAttachmentParameteriv");
             private readonly Blit _blit = Load<Blit>("glBlitFramebuffer");
-            private static Framebuffers? _instance;
+            private readonly int[] _pack = new int[PackSettings.Length];
+            private readonly IntPtr _context;
+            private readonly int _pixelFormat;
+            private IntPtr _dc;
+            private int _framebuffer, _buffer;
+            private Size _size;
+            private uint _format;
+            [ThreadStatic] private static List<Framebuffers>? _contexts;
+
+            static Framebuffers()
+            {
+                RhinoApp.Closing += (_, __) =>
+                {
+                    if (_contexts == null) return;
+                    foreach (var entry in _contexts) entry.Release();
+                    _contexts.Clear();
+                };
+            }
+            private Framebuffers(IntPtr context, IntPtr dc, int pixelFormat)
+            { _context = context; _dc = dc; _pixelFormat = pixelFormat; }
 
             private static T Load<T>(string name) where T : Delegate
             {
@@ -146,59 +188,134 @@ namespace BetterGhPanel.Runtime
                 return Marshal.GetDelegateForFunctionPointer<T>(address);
             }
 
-            internal static Framebuffers? Get()
+            internal static Framebuffers? Current()
             {
-                try { return _instance ??= new Framebuffers(); }
+                var context = wglGetCurrentContext();
+                if (context == IntPtr.Zero) return null;
+                var dc = wglGetCurrentDC();
+                int pixelFormat = GetPixelFormat(dc);
+                var contexts = _contexts ??= new List<Framebuffers>();
+                for (int i = contexts.Count - 1; i >= 0; i--)
+                {
+                    var entry = contexts[i];
+                    if (entry._context != context) continue;
+                    contexts.RemoveAt(i);
+                    // A recycled handle with a different pixel format belongs
+                    // to a new context, with its own GL names and delegates.
+                    if (entry._pixelFormat != pixelFormat) break;
+                    entry._dc = dc;
+                    contexts.Add(entry);
+                    return entry;
+                }
+                if (contexts.Count == 8)
+                {
+                    contexts[0].Release();
+                    contexts.RemoveAt(0);
+                    if (wglGetCurrentContext() != context) return null;
+                }
+                try
+                {
+                    var entry = new Framebuffers(context, dc, pixelFormat);
+                    contexts.Add(entry);
+                    return entry;
+                }
                 catch (NotSupportedException) { return null; }
             }
 
-            internal void Read(int draw, int read, int samples, int[] port, float[] pixels)
+            private void Release()
             {
-                int x = port[0], y = port[1], width = port[2], height = port[3];
-                int framebuffer = 0, buffer = 0;
-                glGetInteger(0x8CA7 /* GL_RENDERBUFFER_BINDING */, out int previousBuffer);
+                if (_framebuffer == 0) return;
+                var context = wglGetCurrentContext();
+                var dc = wglGetCurrentDC();
+                // A destroyed context already released its objects. Only use
+                // GL names and delegates with their owning context current.
+                if (context != _context && !wglMakeCurrent(_dc, _context)) return;
+                try { if (GetPixelFormat(wglGetCurrentDC()) == _pixelFormat && _isFramebuffer(_framebuffer) != 0) DeleteTarget(); }
+                finally { if (context != _context) wglMakeCurrent(dc, context); }
+            }
+
+            internal bool Read(Rectangle source, Size size, float[] pixels)
+            {
+                if (glGetError() != 0) return false;
+                glGetInteger(0x8CA6 /* GL_DRAW_FRAMEBUFFER_BINDING */, out int draw);
+                glGetInteger(0x8CAA /* GL_READ_FRAMEBUFFER_BINDING */, out int read);
+                glGetInteger(0x80A9 /* GL_SAMPLES */, out int samples);
+                glGetInteger(0x88ED /* GL_PIXEL_PACK_BUFFER_BINDING */, out int packBuffer);
+                for (int i = 0; i < PackSettings.Length; i++) glGetInteger(PackSettings[i], out _pack[i]);
+                bool scissor = glIsEnabled(ScissorTest) != 0;
                 try
                 {
+                    for (int i = 0; i < PackSettings.Length; i++) glPixelStorei(PackSettings[i], i == 0 ? 4 : 0);
+                    if (packBuffer != 0) _bindBuffer(PixelPackBuffer, 0);
+                    if (scissor) glDisable(ScissorTest);
                     _bindFramebuffer(ReadTarget, draw);
                     if (draw != 0 && samples > 0)
                     {
-                        glGetInteger(0x0D56 /* GL_DEPTH_BITS */, out int bits);
-                        glGetInteger(0x0D57 /* GL_STENCIL_BITS */, out int stencil);
-                        if (bits == 0) return;
-                        _attachment(Draw, DepthAttachment, 0x8211 /* GL_FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE */, out int type);
-                        uint format = stencil > 0 ? (type == Float ? 0x8CADu : 0x88F0u) :
-                            type == Float ? 0x8CACu : bits == 16 ? 0x81A5u : bits == 24 ? 0x81A6u : 0x81A7u;
-                        _genFramebuffers(1, out framebuffer);
-                        _genRenderbuffers(1, out buffer);
-                        _bindRenderbuffer(Renderbuffer, buffer);
-                        _storage(Renderbuffer, format, width, height);
-                        _bindFramebuffer(Draw, framebuffer);
-                        _bindFramebuffer(ReadTarget, framebuffer);
-                        _attach(Draw, stencil > 0 ? DepthStencilAttachment : DepthAttachment, Renderbuffer, buffer);
-                        glDrawBuffer(0 /* GL_NONE */);
-                        glReadBuffer(0 /* GL_NONE */);
-                        if (_status(Draw) != 0x8CD5 /* GL_FRAMEBUFFER_COMPLETE */) return;
-                        _bindFramebuffer(ReadTarget, draw);
-                        _blit(x, y, x + width, y + height, 0, 0, width, height, 0x0100 /* GL_DEPTH_BUFFER_BIT */, 0x2600 /* GL_NEAREST */);
-                        _bindFramebuffer(ReadTarget, framebuffer);
-                        x = y = 0;
+                        if (!EnsureTarget(size)) return false;
+                        _bindFramebuffer(Draw, _framebuffer);
+                        _blit(source.Left, source.Top, source.Right, source.Bottom, 0, 0, source.Width, source.Height,
+                            0x0100 /* GL_DEPTH_BUFFER_BIT */, 0x2600 /* GL_NEAREST */);
+                        if (glGetError() != 0) return false;
+                        _bindFramebuffer(ReadTarget, _framebuffer);
+                        source.Location = System.Drawing.Point.Empty;
                     }
-                    glReadPixels(x, y, width, height, DepthComponent, Float, pixels);
+                    glReadPixels(source.X, source.Y, source.Width, source.Height, DepthComponent, Float, pixels);
+                    return glGetError() == 0;
                 }
                 finally
                 {
+                    _bindFramebuffer(Draw, draw);
                     _bindFramebuffer(ReadTarget, read);
-                    if (framebuffer != 0)
-                    {
-                        _bindFramebuffer(Draw, draw);
-                        _deleteFramebuffers(1, ref framebuffer);
-                    }
-                    if (buffer != 0)
-                    {
-                        _bindRenderbuffer(Renderbuffer, previousBuffer);
-                        _deleteRenderbuffers(1, ref buffer);
-                    }
+                    if (packBuffer != 0) _bindBuffer(PixelPackBuffer, packBuffer);
+                    if (scissor) glEnable(ScissorTest);
+                    for (int i = 0; i < PackSettings.Length; i++) glPixelStorei(PackSettings[i], _pack[i]);
                 }
+            }
+
+            private bool EnsureTarget(Size size)
+            {
+                glGetInteger(0x0D56 /* GL_DEPTH_BITS */, out int bits);
+                glGetInteger(0x0D57 /* GL_STENCIL_BITS */, out int stencil);
+                if (bits == 0) return false;
+                _attachment(Draw, DepthAttachment, 0x8211 /* GL_FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE */, out int type);
+                uint format = stencil > 0 ? (type == Float ? 0x8CADu : 0x88F0u) :
+                    type == Float ? 0x8CACu : bits == 16 ? 0x81A5u : bits == 24 ? 0x81A6u : 0x81A7u;
+                if (_framebuffer != 0 && _isFramebuffer(_framebuffer) == 0) _framebuffer = _buffer = 0;
+                if (_framebuffer != 0 && _size == size && _format == format) return true;
+                DeleteTarget();
+
+                glGetInteger(0x8CA7 /* GL_RENDERBUFFER_BINDING */, out int previousBuffer);
+                glGetInteger(0x8CA6 /* GL_DRAW_FRAMEBUFFER_BINDING */, out int previousDraw);
+                glGetInteger(0x8CAA /* GL_READ_FRAMEBUFFER_BINDING */, out int previousRead);
+                try
+                {
+                    _genFramebuffers(1, out _framebuffer);
+                    _genRenderbuffers(1, out _buffer);
+                    _bindRenderbuffer(Renderbuffer, _buffer);
+                    _storage(Renderbuffer, format, size.Width, size.Height);
+                    _bindFramebuffer(Draw, _framebuffer);
+                    _bindFramebuffer(ReadTarget, _framebuffer);
+                    _attach(Draw, stencil > 0 ? DepthStencilAttachment : DepthAttachment, Renderbuffer, _buffer);
+                    glDrawBuffer(0 /* GL_NONE */);
+                    glReadBuffer(0 /* GL_NONE */);
+                    if (_status(Draw) != 0x8CD5 /* GL_FRAMEBUFFER_COMPLETE */ || glGetError() != 0)
+                    { DeleteTarget(); return false; }
+                    _format = format; _size = size;
+                    return true;
+                }
+                finally
+                {
+                    _bindRenderbuffer(Renderbuffer, previousBuffer);
+                    _bindFramebuffer(Draw, previousDraw);
+                    _bindFramebuffer(ReadTarget, previousRead);
+                }
+            }
+
+            private void DeleteTarget()
+            {
+                if (_framebuffer != 0) _deleteFramebuffers(1, ref _framebuffer);
+                if (_buffer != 0) _deleteRenderbuffers(1, ref _buffer);
+                _framebuffer = _buffer = 0;
             }
         }
     }
