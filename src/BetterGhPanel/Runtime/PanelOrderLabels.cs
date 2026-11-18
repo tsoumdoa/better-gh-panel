@@ -20,7 +20,6 @@ namespace BetterGhPanel.Runtime
         private readonly PanelPreviewMembership _membership;
         private bool _armed;
         private Guid _viewport;
-        private Transform _model;
         private Color _selectedColor;
         internal PanelDotSize DotSize { get; set; } = PanelDotSize.Medium;
         private readonly Dictionary<Guid, ViewportFrame> _frames = new Dictionary<Guid, ViewportFrame>();
@@ -297,7 +296,9 @@ namespace BetterGhPanel.Runtime
         {
             if (args.Display == null || !Enabled) return;
             _viewport = args.Viewport.Id;
-            _model = args.Display.ModelTransform;
+            // Grasshopper biases selected components toward the camera in clip space.
+            // Labels are foreground overlays at world anchors. Inheriting that bias
+            // can push every anchor of a flat preview past the near plane when zooming.
             _selectedColor = Color.FromArgb(255, args.WireColour_Selected);
             _armed = true;
         }
@@ -333,10 +334,10 @@ namespace BetterGhPanel.Runtime
                 frame = new ViewportFrame(); _frames.Add(id, frame);
             }
             frame.LastUse = ++_frameUse;
-            var clip = args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
+            var clip = DisplayClipTransform(args);
             var screen = args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Screen);
             var dimensions = args.Viewport.Size;
-            if (frame.Valid && frame.Clip == clip && frame.Screen == screen && frame.Model == _model && frame.Dpi == dpi &&
+            if (frame.Valid && frame.Clip == clip && frame.Screen == screen && frame.Dpi == dpi &&
                 frame.Size == dimensions && frame.LabelRevision == _labelRevision && frame.SelectionRevision == _membership.Revision &&
                 frame.DotSize == DotSize && frame.Gradient == Gradient && frame.Values == _settings.Values && frame.SelectedColour == _selectedColor) return frame;
             if (_labelListDirty)
@@ -346,22 +347,21 @@ namespace BetterGhPanel.Runtime
             }
             frame.Ensure(_orderedLabels.Count); frame.Count = 0;
             double size = PanelDotSettings.Scale(DotSize), scale = dpi * size;
-            var modelClip = clip * _model; var modelScreen = screen * _model;
             for (int k = 0; k < _orderedLabels.Count; k++)
             {
                 var label = _orderedLabels[k];
-                if (label.Text.Length == 0 || !TryProjectCached(modelClip, modelScreen, label.Anchor, dimensions, out var point)) continue;
+                if (label.Text.Length == 0 || !TryProjectCached(clip, screen, label.Anchor, dimensions, out var point)) continue;
                 int i = frame.Count++;
                 double width = (_settings.Values ? label.Text.Length * 8 + 12 : label.Text.Length * 9 + 14) * scale;
                 frame.Dots[i] = new PanelDotInput(point.X, point.Y, width, 24 * scale, label.GroupKey, _membership.Contains(label.Position), label.Order);
                 frame.Labels[i] = label;
-                frame.WorldAnchors[i] = _model * label.Anchor;
+                frame.WorldAnchors[i] = label.Anchor;
             }
             frame.Layout.Calculate(frame.Dots, frame.Count, size, dpi);
             LayoutBuilds++;
             if (frame.Dpi != dpi) { frame.ActiveBuckets.Clear(); frame.Buckets.Clear(); }
             BuildSwatches(frame, dpi);
-            frame.Clip = clip; frame.Screen = screen; frame.Model = _model; frame.Size = dimensions; frame.Dpi = dpi;
+            frame.Clip = clip; frame.Screen = screen; frame.Size = dimensions; frame.Dpi = dpi;
             frame.LabelRevision = _labelRevision; frame.SelectionRevision = _membership.Revision;
             frame.DotSize = DotSize; frame.Gradient = Gradient; frame.Values = _settings.Values; frame.SelectedColour = _selectedColor; frame.Valid = true;
             return frame;
@@ -467,6 +467,25 @@ namespace BetterGhPanel.Runtime
             display.DrawDot(dot, _selectedColor, _selectedColor, _selectedColor);
         }
 
+        private static Transform DisplayClipTransform(DrawEventArgs args)
+        {
+            if (args.Display.IsOpenGL)
+            {
+                // The display pipeline can refit near/far for the current draw
+                // while the viewport still reports the previous depth interval.
+                var m = args.Display.GetOpenGLWorldToClip(false);
+                if (m[3] != 0 || m[7] != 0 || m[11] != 0 || m[15] != 0)
+                    return new Transform
+                    {
+                        M00 = m[0], M01 = m[4], M02 = m[8], M03 = m[12],
+                        M10 = m[1], M11 = m[5], M12 = m[9], M13 = m[13],
+                        M20 = m[2], M21 = m[6], M22 = m[10], M23 = m[14],
+                        M30 = m[3], M31 = m[7], M32 = m[11], M33 = m[15]
+                    };
+            }
+            return args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
+        }
+
         internal static bool TryProjectCached(Transform clip, Transform screen, Point3d point, Size dimensions, out Point2d projected)
         {
             projected = Point2d.Unset;
@@ -501,7 +520,7 @@ namespace BetterGhPanel.Runtime
             internal int Count;
             internal bool Valid, Gradient, Values;
             internal long LabelRevision, SelectionRevision, LastUse;
-            internal Transform Clip, Screen, Model;
+            internal Transform Clip, Screen;
             internal Size Size;
             internal float Dpi;
             internal PanelDotSize DotSize;
