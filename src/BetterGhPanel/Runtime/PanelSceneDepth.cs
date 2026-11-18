@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using Rhino.Display;
@@ -7,33 +8,44 @@ using Rhino.Geometry;
 namespace BetterGhPanel.Runtime
 {
     // A borrowed CPU snapshot belongs to the foreground pass that requested it.
-    internal sealed class PanelSceneDepth : IDisposable
+    internal readonly struct PanelSceneDepth : IDisposable
     {
-        private float[] _pixels;
+        private const int MaxSparePixels = 4 * 1024 * 1024;
+        private const double PointDepthBias = 1.0 / 65536;
+        private readonly float[] _pixels;
         [ThreadStatic] private static float[]? _spare;
+        [ThreadStatic] private static CaptureScratch? _scratch;
         private static volatile bool _depthUnavailable;
         private readonly Size _viewport;
         private readonly Rectangle _region;
-        private readonly double _scaleX, _scaleY, _z, _w, _zOffset, _wOffset, _depthStart, _depthSpan, _modelTolerance;
+        private readonly double _scaleX, _scaleY, _z, _w, _zOffset, _wOffset, _depthStart, _depthSpan, _modelTolerance, _precisionFloor;
         private readonly bool _reversed;
 
         private PanelSceneDepth(float[] pixels, Size viewport, Rectangle region, Size screen,
-            float[] projection, double[] range, double modelTolerance)
+            Transform clip, double[] range, double modelTolerance, int depthBits)
         {
             _pixels = pixels; _viewport = viewport; _region = region;
             _scaleX = (double)viewport.Width / screen.Width;
             _scaleY = (double)viewport.Height / screen.Height;
-            _z = projection[10]; _w = projection[11];
-            _zOffset = projection[14]; _wOffset = projection[15];
+            _z = clip.M22; _w = clip.M32;
+            _zOffset = clip.M23; _wOffset = clip.M33;
             _depthStart = range[0]; _depthSpan = range[1] - range[0];
             _reversed = (_w * _zOffset - _z * _wOffset) * _depthSpan < 0;
             _modelTolerance = modelTolerance;
+            // Allow four steps at the coarser of attachment or float readback precision.
+            _precisionFloor = 4.0 / (1L << Math.Min(depthBits, 24));
         }
 
-        internal static PanelSceneDepth? Capture(DisplayPipeline pipeline, RhinoViewport viewport, Size screen, Rectangle anchors)
+        private sealed class CaptureScratch
+        {
+            internal readonly int[] Bounds = new int[4];
+            internal readonly double[] DepthRange = new double[2];
+        }
+
+        internal static PanelSceneDepth? Capture(DisplayPipeline pipeline, RhinoViewport viewport, Size screen, Rectangle anchors, Transform clip)
         {
             if (_depthUnavailable || !RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || screen.Width <= 0 || screen.Height <= 0) return null;
-            try { return pipeline.IsOpenGL ? CaptureOpenGl(pipeline, viewport, screen, anchors) : null; }
+            try { return pipeline.IsOpenGL ? CaptureOpenGl(pipeline, viewport, screen, anchors, clip) : null; }
             catch (Exception)
             {
                 // Missing entry points and unexpected host errors must leave
@@ -43,18 +55,24 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        private static PanelSceneDepth? CaptureOpenGl(DisplayPipeline pipeline, RhinoViewport viewport, Size screen, Rectangle anchors)
+        private static PanelSceneDepth? CaptureOpenGl(DisplayPipeline pipeline, RhinoViewport viewport, Size screen, Rectangle anchors, Transform clip)
         {
+            if (clip.M32 == 0 && clip.M33 == 0) return null;
             pipeline.Flush();
             var gl = Framebuffers.Current();
-            if (gl == null || glGetError() != 0) return null;
-            glGetInteger(0x935D /* GL_CLIP_DEPTH_MODE */, out int clipDepth);
-            uint clipError = glGetError();
-            // Before GL 4.5 the query can be unavailable and the depth mode is fixed.
-            if (clipDepth == 0x935F /* GL_ZERO_TO_ONE */ || clipError != 0 && clipError != 0x0500 /* GL_INVALID_ENUM */) return null;
+            if (gl == null) return null;
+            // Avoid draining Rhino's error queue at entry. The checks after our
+            // GL operations conservatively reject a capture on any error seen there.
+            if (gl.HasClipControl)
+            {
+                glGetInteger(0x935D /* GL_CLIP_DEPTH_MODE */, out int clipDepth);
+                if (glGetError() != 0 || clipDepth != 0x935E /* GL_NEGATIVE_ONE_TO_ONE */) return null;
+            }
 
-            var port = new int[4];
+            var scratch = _scratch ??= new CaptureScratch();
+            var port = scratch.Bounds;
             glGetIntegerv(0x0BA2 /* GL_VIEWPORT */, port);
+            int originX = port[0], originY = port[1];
             var size = new Size(port[2], port[3]);
             if (size.Width <= 0 || size.Height <= 0) return null;
             double sx = (double)size.Width / screen.Width, sy = (double)size.Height / screen.Height;
@@ -65,58 +83,67 @@ namespace BetterGhPanel.Runtime
                 Math.Max(0, size.Height - (int)Math.Ceiling(anchors.Bottom * sy) - 1),
                 Math.Min(size.Width, (int)Math.Ceiling(anchors.Right * sx) + 1),
                 Math.Min(size.Height, size.Height - (int)(anchors.Top * sy) + 1));
-            source.Offset(port[0], port[1]);
+            source.Offset(originX, originY);
             glGetInteger(0x8CA6 /* GL_DRAW_FRAMEBUFFER_BINDING */, out int draw);
             glGetInteger(0x80A9 /* GL_SAMPLES */, out int samples);
-            if (!gl.ClipSource(ref source, draw, pipeline.FrameSize, draw != 0 && samples > 0, out uint resolveFormat)) return null;
+            if (!gl.ClipSource(ref source, draw, pipeline.FrameSize, draw != 0 && samples > 0, port,
+                out uint resolveFormat, out int depthBits)) return null;
 
-            var projection = pipeline.GetOpenGLCameraToClip();
-            if (projection[11] == 0 && projection[15] == 0) return null;
-            var range = new double[2];
+            var range = scratch.DepthRange;
             glGetDoublev(0x0B70 /* GL_DEPTH_RANGE */, range);
             double modelTolerance = Math.Max(1e-6, Math.Min(.01, viewport.ParentView?.Document?.ModelAbsoluteTolerance ?? .001));
 
             int count = checked(source.Width * source.Height);
             var pixels = _spare;
-            _spare = null;
-            if (pixels == null || pixels.Length < count) pixels = new float[count];
+            if (pixels != null && pixels.Length >= count) _spare = null;
+#if NET7_0_OR_GREATER
+            else pixels = GC.AllocateUninitializedArray<float>(count);
+#else
+            else pixels = new float[count];
+#endif
             bool read = false;
             try
             {
                 read = gl.Read(source, draw, resolveFormat, pixels);
                 if (!read) return null;
-                source.Offset(-port[0], -port[1]);
-                return new PanelSceneDepth(pixels, size, source, screen, projection, range, modelTolerance);
+                source.Offset(-originX, -originY);
+                return new PanelSceneDepth(pixels, size, source, screen, clip, range, modelTolerance, depthBits);
             }
             finally { if (!read) ReturnPixels(pixels); }
         }
 
-        public void Dispose()
-        {
-            ReturnPixels(_pixels);
-            _pixels = Array.Empty<float>();
-        }
+        public void Dispose() => ReturnPixels(_pixels);
 
         private static void ReturnPixels(float[] pixels)
         {
-            if (_spare == null || _spare.Length < pixels.Length) _spare = pixels;
+            if (pixels.Length <= MaxSparePixels && (_spare == null || _spare.Length < pixels.Length)) _spare = pixels;
         }
 
-        internal static void ForgetResolveTarget() => Framebuffers.Forget();
+        internal static void ReleaseIdleResources()
+        {
+            _spare = null;
+            Framebuffers.ReleaseCurrentTarget();
+        }
 
         private double WindowDepth(double cameraZ) =>
             _depthStart + ((_z * cameraZ + _zOffset) / (_w * cameraZ + _wOffset) + 1) * .5 * _depthSpan;
 
-        internal bool IsVisible(Point2d screen, double cameraZ)
+        internal bool IsVisible(Point2d screen, double cameraZ, bool point)
         {
             if (_w * cameraZ + _wOffset <= 0) return true;
             double depth = WindowDepth(cameraZ);
-            double towardCamera = WindowDepth(cameraZ + _modelTolerance);
-            // Allow precision error in window depth, bounded by a tiny model
-            // distance. Parallel projection uses the same bound at any range.
-            double epsilon = Math.Min(2e-6, Math.Abs(towardCamera - depth));
-            float cutoff = (float)(depth + (_reversed ? epsilon : -epsilon));
-            if (float.IsNaN(cutoff)) return true;
+            // Rhino can round camera coordinates in its float draw transforms.
+            // Allow for that error in model units, in addition to depth quantization.
+            double allowance = Math.Min(.01, Math.Max(_modelTolerance, Math.Abs(cameraZ) / (1 << 22)));
+            double towardCamera = WindowDepth(cameraZ + allowance);
+            // With 24-bit depth the floor reaches one model unit at a parallel
+            // span of 4,194,304 units with the standard 0–1 depth range.
+            double epsilon = Math.Max(_precisionFloor, Math.Abs(towardCamera - depth));
+            double cutoff = depth + (_reversed ? epsilon : -epsilon);
+            // Rhino biases point sprites toward the camera. Match that depth
+            // within the same epsilon without widening the tolerance for walls.
+            double spriteDepth = depth + (_reversed ? PointDepthBias : -PointDepthBias);
+            if (double.IsNaN(cutoff)) return true;
             int x = Math.Min(_viewport.Width - 1, (int)(screen.X * _scaleX)) - _region.Left;
             int y = Math.Max(0, _viewport.Height - 1 - (int)(screen.Y * _scaleY)) - _region.Top;
             if (x < 0 || x >= _region.Width || y < 0 || y >= _region.Height) return true;
@@ -125,16 +152,15 @@ namespace BetterGhPanel.Runtime
                 for (int col = Math.Max(0, x - 1); col <= right; col++)
                 {
                     float pixel = _pixels[row * _region.Width + col];
-                    if (_reversed ? pixel <= cutoff : pixel >= cutoff) return true;
+                    if ((_reversed ? pixel <= cutoff : pixel >= cutoff) ||
+                        point && Math.Abs(pixel - spriteDepth) <= epsilon) return true;
                 }
             return false;
         }
 
         private const uint DepthComponent = 0x1902, Float = 0x1406, ScissorTest = 0x0C11;
         [DllImport("opengl32.dll")] private static extern IntPtr wglGetCurrentContext();
-        [DllImport("opengl32.dll")] private static extern IntPtr wglGetCurrentDC();
         [DllImport("opengl32.dll")] private static extern IntPtr wglGetProcAddress(string name);
-        [DllImport("gdi32.dll")] private static extern int GetPixelFormat(IntPtr dc);
         [DllImport("opengl32.dll")] private static extern void glGetIntegerv(uint name, [Out] int[] values);
         [DllImport("opengl32.dll", EntryPoint = "glGetIntegerv")] private static extern void glGetInteger(uint name, out int value);
         [DllImport("opengl32.dll")] private static extern void glGetDoublev(uint name, [Out] double[] values);
@@ -146,6 +172,7 @@ namespace BetterGhPanel.Runtime
 
         private sealed class Framebuffers
         {
+            private const int MaxContexts = 16;
             private const uint Draw = 0x8CA9, ReadTarget = 0x8CA8, Renderbuffer = 0x8D41, PixelPackBuffer = 0x88EB;
             private const uint DepthAttachment = 0x8D00, DepthStencilAttachment = 0x821A;
             private const int LargeResolvePixels = 4 * 1024 * 1024;
@@ -156,6 +183,7 @@ namespace BetterGhPanel.Runtime
             private delegate void Bind(uint target, int name);
             private delegate void Create(int count, out int name);
             private delegate void Delete(int count, ref int name);
+            private delegate byte IsFramebuffer(int name);
             private delegate void Storage(uint target, uint format, int width, int height);
             private delegate void Attach(uint target, uint attachment, uint renderbufferTarget, int name);
             private delegate uint Status(uint target);
@@ -165,6 +193,7 @@ namespace BetterGhPanel.Runtime
             private delegate void Blit(int x0, int y0, int x1, int y1, int dx0, int dy0, int dx1, int dy1, uint mask, uint filter);
             private delegate byte IsEnabledIndexed(uint capability, uint index);
             private delegate void SetEnabledIndexed(uint capability, uint index);
+            private delegate IntPtr GetStringIndexed(uint name, uint index);
 
             private readonly Bind _bindFramebuffer = Load<Bind>("glBindFramebuffer");
             private readonly Bind _bindRenderbuffer = Load<Bind>("glBindRenderbuffer");
@@ -173,6 +202,7 @@ namespace BetterGhPanel.Runtime
             private readonly Create _genRenderbuffers = Load<Create>("glGenRenderbuffers");
             private readonly Delete _deleteFramebuffers = Load<Delete>("glDeleteFramebuffers");
             private readonly Delete _deleteRenderbuffers = Load<Delete>("glDeleteRenderbuffers");
+            private readonly IsFramebuffer _isFramebuffer = Load<IsFramebuffer>("glIsFramebuffer");
             private readonly Storage _storage = Load<Storage>("glRenderbufferStorage");
             private readonly Attach _attach = Load<Attach>("glFramebufferRenderbuffer");
             private readonly Status _status = Load<Status>("glCheckFramebufferStatus");
@@ -184,13 +214,14 @@ namespace BetterGhPanel.Runtime
             private readonly SetEnabledIndexed _enable = Load<SetEnabledIndexed>("glEnablei");
             private readonly SetEnabledIndexed _disable = Load<SetEnabledIndexed>("glDisablei");
             private readonly int[] _pack = new int[PackSettings.Length];
-            private readonly (IntPtr Context, IntPtr Dc, int PixelFormat) _key;
+            internal readonly bool HasClipControl = SupportsClipControl();
             private int _targetFramebuffer, _targetBuffer;
             private Size _targetSize;
             private uint _targetFormat;
-            [ThreadStatic] private static Framebuffers? _current;
-
-            private Framebuffers((IntPtr, IntPtr, int) key) { _key = key; }
+            private long _lastUse;
+            private static readonly object ContextLock = new object();
+            private static Dictionary<IntPtr, Framebuffers>? _contexts;
+            private static long _use;
 
             private static T Load<T>(string name) where T : Delegate => TryLoad<T>(name) ?? throw new NotSupportedException(name);
 
@@ -201,23 +232,54 @@ namespace BetterGhPanel.Runtime
                 return Marshal.GetDelegateForFunctionPointer<T>(address);
             }
 
+            private static bool SupportsClipControl()
+            {
+                glGetInteger(0x821B /* GL_MAJOR_VERSION */, out int major);
+                glGetInteger(0x821C /* GL_MINOR_VERSION */, out int minor);
+                if (major > 4 || major == 4 && minor >= 5) return true;
+                var getString = TryLoad<GetStringIndexed>("glGetStringi");
+                if (getString == null) return false;
+                glGetInteger(0x821D /* GL_NUM_EXTENSIONS */, out int count);
+                for (uint i = 0; i < count; i++)
+                    if (Marshal.PtrToStringAnsi(getString(0x1F03 /* GL_EXTENSIONS */, i)) == "GL_ARB_clip_control") return true;
+                return false;
+            }
+
             internal static Framebuffers? Current()
             {
                 var context = wglGetCurrentContext();
                 if (context == IntPtr.Zero) return null;
-                var dc = wglGetCurrentDC();
-                var key = (context, dc, GetPixelFormat(dc));
-                // Never make another context current to dispose an old target.
-                // On a context change we forget its names and the driver owns their lifetime.
-                return _current?._key == key ? _current : _current = new Framebuffers(key);
+                lock (ContextLock)
+                {
+                    var contexts = _contexts ??= new Dictionary<IntPtr, Framebuffers>();
+                    if (!contexts.TryGetValue(context, out var gl))
+                    {
+                        if (contexts.Count == MaxContexts)
+                        {
+                            IntPtr oldest = IntPtr.Zero;
+                            long lastUse = long.MaxValue;
+                            foreach (var item in contexts)
+                                if (item.Value._lastUse < lastUse)
+                                { oldest = item.Key; lastUse = item.Value._lastUse; }
+                            // Never delete names belonging to another context.
+                            contexts.Remove(oldest);
+                        }
+                        gl = new Framebuffers();
+                        contexts.Add(context, gl);
+                    }
+                    gl._lastUse = ++_use;
+                    return gl;
+                }
             }
 
-            internal static void Forget()
+            internal static void ReleaseCurrentTarget()
             {
-                var current = _current;
-                _current = null;
-                if (current != null && wglGetCurrentContext() == current._key.Context &&
-                    wglGetCurrentDC() == current._key.Dc) current.DeleteTarget();
+                // Idle often has no current context. Keep the other entries so
+                // the next draw can safely reuse their targets.
+                Framebuffers? gl;
+                lock (ContextLock)
+                    if (_contexts == null || !_contexts.TryGetValue(wglGetCurrentContext(), out gl)) return;
+                if (gl.ValidateTarget(out _)) gl.DeleteTarget();
             }
 
             private void DeleteTarget()
@@ -227,16 +289,60 @@ namespace BetterGhPanel.Runtime
                 _targetFramebuffer = _targetBuffer = 0;
             }
 
-            internal bool ClipSource(ref Rectangle source, int draw, Size frameSize, bool resolve, out uint format)
+            private bool ValidateTarget(out bool error)
+            {
+                error = false;
+                if (_targetFramebuffer == 0) return false;
+                bool valid = false;
+                if (_isFramebuffer(_targetFramebuffer) != 0)
+                {
+                    glGetInteger(0x8CA6 /* GL_DRAW_FRAMEBUFFER_BINDING */, out int previousDraw);
+                    glGetInteger(0x8CA7 /* GL_RENDERBUFFER_BINDING */, out int previousBuffer);
+                    try
+                    {
+                        _bindFramebuffer(Draw, _targetFramebuffer);
+                        _attachment(Draw, DepthAttachment, 0x8CD0 /* OBJECT_TYPE */, out int kind);
+                        if (kind == Renderbuffer)
+                        {
+                            _attachment(Draw, DepthAttachment, 0x8CD1 /* OBJECT_NAME */, out int name);
+                            if (name == _targetBuffer)
+                            {
+                                _bindRenderbuffer(Renderbuffer, name);
+                                _renderbuffer(Renderbuffer, 0x8D42 /* WIDTH */, out int width);
+                                _renderbuffer(Renderbuffer, 0x8D43 /* HEIGHT */, out int height);
+                                _renderbuffer(Renderbuffer, 0x8D44 /* INTERNAL_FORMAT */, out int format);
+                                valid = width == _targetSize.Width && height == _targetSize.Height && format == _targetFormat;
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        _bindRenderbuffer(Renderbuffer, previousBuffer);
+                        _bindFramebuffer(Draw, previousDraw);
+                    }
+                }
+                error = glGetError() != 0;
+                if (valid) return !error;
+                // A recycled HGLRC can refer to unrelated names. Never delete
+                // a target once its identity checks fail.
+                _targetFramebuffer = _targetBuffer = 0;
+                return false;
+            }
+
+            internal bool ClipSource(ref Rectangle source, int draw, Size frameSize, bool resolve, int[] tile,
+                out uint format, out int depth)
             {
                 int width = frameSize.Width, height = frameSize.Height;
                 format = 0;
+                uint attachment = draw == 0 ? 0x1801 /* GL_DEPTH */ : DepthAttachment;
+                _attachment(Draw, attachment, 0x8216 /* DEPTH_SIZE */, out depth);
+                bool valid = depth > 0;
                 if (draw != 0)
                 {
                     _attachment(Draw, DepthAttachment, 0x8CD0 /* OBJECT_TYPE */, out int kind);
-                    _attachment(Draw, DepthAttachment, 0x8CD1 /* OBJECT_NAME */, out int name);
                     if (kind == Renderbuffer)
                     {
+                        _attachment(Draw, DepthAttachment, 0x8CD1 /* OBJECT_NAME */, out int name);
                         glGetInteger(0x8CA7 /* GL_RENDERBUFFER_BINDING */, out int previous);
                         _bindRenderbuffer(Renderbuffer, name);
                         try
@@ -248,15 +354,15 @@ namespace BetterGhPanel.Runtime
                     }
                     else if (kind == 0x1702 /* GL_TEXTURE */ && _texture != null)
                     {
+                        _attachment(Draw, DepthAttachment, 0x8CD1 /* OBJECT_NAME */, out int name);
                         _attachment(Draw, DepthAttachment, 0x8CD2 /* TEXTURE_LEVEL */, out int level);
                         _texture(name, level, 0x1000 /* WIDTH */, out width);
                         _texture(name, level, 0x1001 /* HEIGHT */, out height);
                     }
-                    else return false;
+                    else valid = false;
 
-                    if (resolve)
+                    if (resolve && valid)
                     {
-                        _attachment(Draw, DepthAttachment, 0x8216 /* DEPTH_SIZE */, out int depth);
                         _attachment(Draw, DepthAttachment, 0x8217 /* STENCIL_SIZE */, out int stencil);
                         _attachment(Draw, DepthAttachment, 0x8211 /* COMPONENT_TYPE */, out int type);
                         format = (depth, stencil, type) switch
@@ -269,7 +375,7 @@ namespace BetterGhPanel.Runtime
                             (32, 8, (int)Float) => 0x8CAD,
                             _ => 0
                         };
-                        if (format == 0) return false;
+                        valid = format != 0;
                     }
                 }
 
@@ -277,11 +383,11 @@ namespace BetterGhPanel.Runtime
                 // A detail or capture tile can constrain rendering further.
                 if (_enabled(ScissorTest, 0) != 0)
                 {
-                    var tile = new int[4];
                     glGetIntegerv(0x0C10 /* GL_SCISSOR_BOX, index zero */, tile);
                     source.Intersect(new Rectangle(tile[0], tile[1], tile[2], tile[3]));
                 }
-                return glGetError() == 0 && source.Width > 0 && source.Height > 0;
+                uint error = glGetError();
+                return error == 0 && valid && source.Width > 0 && source.Height > 0;
             }
 
             internal bool Read(Rectangle source, int draw, uint resolveFormat, float[] pixels)
@@ -310,21 +416,31 @@ namespace BetterGhPanel.Runtime
             {
                 glGetInteger(0x8CA7 /* GL_RENDERBUFFER_BINDING */, out int previousBuffer);
                 int framebuffer = 0, buffer = 0;
-                bool retained = _targetFramebuffer != 0 && _targetFormat == format &&
-                    source.Width <= _targetSize.Width && source.Height <= _targetSize.Height;
                 bool scissor = _enabled(ScissorTest, 0) != 0;
+                bool large = (long)source.Width * source.Height >= LargeResolvePixels;
+                bool retained = _targetFormat == format && source.Width <= _targetSize.Width && source.Height <= _targetSize.Height;
+                bool validTarget = false;
                 try
                 {
+                    if (large || retained)
+                    {
+                        validTarget = ValidateTarget(out bool error);
+                        if (error) return false;
+                    }
+                    retained &= validTarget;
                     if (retained) framebuffer = _targetFramebuffer;
                     else
                     {
                         // Allocating a full 4K resolve cost over 3 ms. Only
                         // retain a target for reads large enough to benefit.
-                        bool large = (long)source.Width * source.Height >= LargeResolvePixels;
-                        if (large) DeleteTarget();
+                        if (large && validTarget) DeleteTarget();
                         _genFramebuffers(1, out framebuffer);
                         _genRenderbuffers(1, out buffer);
-                        if (framebuffer == 0 || buffer == 0) return false;
+                        if (framebuffer == 0 || buffer == 0)
+                        {
+                            glGetError();
+                            return false;
+                        }
                         _bindRenderbuffer(Renderbuffer, buffer);
                         _storage(Renderbuffer, format, source.Width, source.Height);
                         _bindFramebuffer(Draw, framebuffer);
@@ -332,7 +448,9 @@ namespace BetterGhPanel.Runtime
                         _attach(Draw, format == 0x88F0 || format == 0x8CAD ? DepthStencilAttachment : DepthAttachment, Renderbuffer, buffer);
                         glDrawBuffer(0 /* GL_NONE */);
                         glReadBuffer(0 /* GL_NONE */);
-                        if (_status(Draw) != 0x8CD5 /* GL_FRAMEBUFFER_COMPLETE */ || glGetError() != 0) return false;
+                        uint status = _status(Draw);
+                        uint error = glGetError();
+                        if (status != 0x8CD5 /* GL_FRAMEBUFFER_COMPLETE */ || error != 0) return false;
                         if (large)
                         {
                             _targetFramebuffer = framebuffer; _targetBuffer = buffer;

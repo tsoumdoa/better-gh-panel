@@ -29,7 +29,6 @@ namespace BetterGhPanel.Runtime
         private readonly Dictionary<int, TextDot> _textDots = new Dictionary<int, TextDot>();
         private long _labelRevision, _identityRevision, _frameUse;
         private bool _labelListDirty = true;
-        internal int LayoutBuilds { get; private set; }
         private static readonly Color PlainFill = Color.FromArgb(245, 247, 244), Border = Color.FromArgb(39, 49, 43);
 
         private PanelQueryResult? _valueResult;
@@ -356,7 +355,7 @@ namespace BetterGhPanel.Runtime
                 if (_registeredCount == 0)
                 {
                     Enabled = false;
-                    PanelSceneDepth.ForgetResolveTarget();
+                    PanelSceneDepth.ReleaseIdleResources();
                 }
             }
             private sealed class Pass
@@ -441,7 +440,7 @@ namespace BetterGhPanel.Runtime
                         if (labels.HideOccludedDots && panel.Frame.ProjectedCount != 0)
                             bounds = bounds.IsEmpty ? panel.Frame.Bounds : Rectangle.Union(bounds, panel.Frame.Bounds);
                     }
-                    using var depth = bounds.IsEmpty ? null : PanelSceneDepth.Capture(e.Display, e.Viewport, dimensions, bounds);
+                    using var depth = bounds.IsEmpty ? null : PanelSceneDepth.Capture(e.Display, e.Viewport, dimensions, bounds, clip);
                     foreach (var panel in pass.Panels)
                     {
                         if (panel.Frame == null || !panel.Labels.Visible) continue;
@@ -592,26 +591,28 @@ namespace BetterGhPanel.Runtime
 
         private void FinishFrame(ViewportFrame frame, PanelSceneDepth? depth)
         {
-            if (frame.Valid && depth == null && !frame.HadDepth) return;
+            bool hadDepth = depth.HasValue;
+            if (frame.Valid && !hadDepth && !frame.HadDepth) return;
+            var scene = depth.GetValueOrDefault();
             bool same = frame.Valid;
             int count = 0;
             for (int i = 0; i < frame.ProjectedCount; i++)
             {
                 ref readonly var dot = ref frame.ProjectedDots[i];
                 var label = frame.ProjectedLabels[i];
-                if (depth != null && !depth.IsVisible(new Point2d(dot.X, dot.Y), frame.ProjectedDepth[i])) continue;
+                if (hadDepth &&
+                    !scene.IsVisible(new Point2d(dot.X, dot.Y), frame.ProjectedDepth[i], label.Bounds.Min == label.Bounds.Max)) continue;
                 int slot = count++;
                 if (same && slot < frame.Count && ReferenceEquals(frame.Labels[slot], label)) continue;
                 same = false;
                 frame.Dots[slot] = dot;
                 frame.Labels[slot] = label;
             }
-            frame.HadDepth = depth != null;
+            frame.HadDepth = hadDepth;
             if (same && count == frame.Count) return;
             frame.Count = count;
             double size = PanelDotSettings.Scale(frame.DotSize);
             frame.Layout.Calculate(frame.Dots, count, size, frame.Dpi, 14 * size);
-            LayoutBuilds++;
             BuildSwatches(frame, frame.Dpi);
             frame.Valid = true;
         }

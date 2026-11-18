@@ -136,6 +136,7 @@ internal static partial class PreviewSafetyChecks
         }
         finally { if (previousView != null) rhino.Views.ActiveView = previousView; view.Close(); }
         await VerifySolidDotOcclusion(assembly, rhino);
+        await VerifyDotDepthPrecision(assembly, rhino);
     }
 
     private static async Task VerifySolidDotOcclusion(Assembly assembly, RhinoDoc rhino)
@@ -175,27 +176,7 @@ internal static partial class PreviewSafetyChecks
             var shaded = DisplayModeDescription.FindByName("Shaded");
             viewport.DisplayMode = shaded;
             string? directory = Environment.GetEnvironmentVariable("PANEL_UX_SCREENSHOTS");
-            int[] Capture(string name, bool expectDepth)
-            {
-                int before = PropertyValue<int>(labels, "LayoutBuilds");
-                var cache = FieldValue<System.Collections.IDictionary>(labels, "_frames");
-                cache.Remove((viewport.Id, true));
-                cache.Remove((viewport.Id, false));
-                using var image = view.CaptureToBitmap(new Size(1000, 720), shaded);
-                var frame = cache[(viewport.Id, true)] ?? cache[(viewport.Id, false)];
-                int builds = PropertyValue<int>(labels, "LayoutBuilds") - before;
-                bool? hadDepth = frame == null ? null : FieldValue<bool>(frame, "HadDepth");
-                int projected = frame == null ? 0 : FieldValue<int>(frame, "ProjectedCount");
-                Check(image != null && frame != null && builds > 0 && hadDepth == expectDepth,
-                    $"A fresh shaded capture uses the expected depth path (bitmap={image != null}, builds={builds}, projected={projected}, depth={hadDepth}, expected={expectDepth})");
-                if (!string.IsNullOrWhiteSpace(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                    image!.Save(Path.Combine(directory, name));
-                }
-                return FieldValue<Array>(frame!, "Labels").Cast<object>().Take(FieldValue<int>(frame!, "Count"))
-                    .Select(label => FieldValue<int>(label, "Position")).ToArray();
-            }
+            int[] Capture(string name, bool expectDepth) => CaptureDotFrame(view, shaded, labels, expectDepth, directory, name);
 
             var centre = Capture("solid-centre.png", true);
             Check(centre.Contains(0) && !centre.Contains(1), "Depth excludes a covered GH point and retains the selected thick wire's own dot");
@@ -211,6 +192,96 @@ internal static partial class PreviewSafetyChecks
         finally
         {
             rhino.Objects.Delete(coverId, true);
+            if (previous != null) rhino.Views.ActiveView = previous;
+            view.Close();
+        }
+    }
+
+    private static int[] CaptureDotFrame(RhinoView view, DisplayModeDescription mode, object labels,
+        bool expectDepth, string? directory = null, string? name = null)
+    {
+        var id = view.ActiveViewport.Id;
+        var cache = FieldValue<System.Collections.IDictionary>(labels, "_frames");
+        cache.Remove((id, true));
+        cache.Remove((id, false));
+        using var image = view.CaptureToBitmap(new Size(1000, 720), mode);
+        var frame = cache[(id, true)] ?? cache[(id, false)];
+        int projected = frame == null ? 0 : FieldValue<int>(frame, "ProjectedCount");
+        bool? hadDepth = frame == null ? null : FieldValue<bool>(frame, "HadDepth");
+        Check(image != null && frame != null && projected > 0 && hadDepth == expectDepth,
+            $"A fresh shaded capture projects dots and uses the expected depth path (projected={projected}, depth={hadDepth}, expected={expectDepth})");
+        if (!string.IsNullOrWhiteSpace(directory) && name != null)
+        {
+            Directory.CreateDirectory(directory);
+            image!.Save(Path.Combine(directory, name));
+        }
+        return FieldValue<Array>(frame!, "Labels").Cast<object>().Take(FieldValue<int>(frame!, "Count"))
+            .Select(label => FieldValue<int>(label, "Position")).ToArray();
+    }
+
+    private static async Task VerifyDotDepthPrecision(Assembly assembly, RhinoDoc rhino)
+    {
+        using var fixture = new PanelHostFixture.Fixture(assembly);
+        fixture.Document.PreviewMode = GH_PreviewMode.Shaded;
+        fixture.Source.Hidden = fixture.Paired.Hidden = true;
+        fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
+        var path = new GH_Path(0);
+        var plane = new Plane(new Point3d(10, 0, .5678), Vector3d.ZAxis);
+        using var surface = Mesh.CreateFromPlane(plane, new Interval(-4, 4), new Interval(-4, 4), 2, 2);
+        fixture.Source.PersistentData.Append(new GH_Point(new Point3d(-10, 0, .1234)), path);
+        fixture.Source.PersistentData.Append(new GH_Mesh(surface), path);
+        fixture.Source.PersistentData.Append(new GH_Point(plane.Origin - Vector3d.ZAxis), path);
+        fixture.Solve();
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 3);
+
+        var previous = rhino.Views.ActiveView;
+        var units = rhino.ModelUnitSystem;
+        double tolerance = rhino.ModelAbsoluteTolerance;
+        var view = rhino.Views.Add("Panel+ dot precision", DefinedViewportProjection.Top, new Rectangle(0, 0, 1000, 720), false);
+        try
+        {
+            rhino.ModelUnitSystem = UnitSystem.Millimeters;
+            rhino.ModelAbsoluteTolerance = .001;
+            rhino.Views.ActiveView = view;
+            var bounds = new BoundingBox(new Point3d(-15, -5, -2), new Point3d(15, 5, 2));
+            using var conduit = new ValuePreviewConduit(fixture.Component, fixture.Document) { Enabled = true, Bounds = bounds };
+            PreviewMode(fixture.Component, "FilteredResults");
+            ShowItemOrder(fixture.Component, true);
+            var viewport = view.ActiveViewport;
+            var shaded = DisplayModeDescription.FindByName("Shaded");
+            viewport.DisplayMode = shaded;
+            viewport.ZoomBoundingBox(bounds);
+            var labels = FieldValue<object>(FieldValue<object>(fixture.Component, "_highlight"), "_orderLabels");
+            await fixture.Ready(() => FieldValue<System.Collections.IDictionary>(labels, "_labels").Count == 3);
+            var wide = new BoundingBox(new Point3d(-15, -5, -25000), new Point3d(15, 5, 25000));
+            foreach (var depthBounds in new[] { bounds, wide })
+            {
+                conduit.Bounds = depthBounds;
+                foreach (double z in new[] { 48000.123, 49600.638, 50000.312, 52100.714 })
+                {
+                    viewport.SetCameraLocations(Point3d.Origin, new Point3d(0, 0, z));
+                    var visible = CaptureDotFrame(view, shaded, labels, true);
+                    Check(visible.Contains(0) && visible.Contains(1) && !visible.Contains(2),
+                        $"The unselected point and Top-facing plane retain their dots at camera depth {z} and bounds {depthBounds.Diagonal.Z}; the point one unit behind stays hidden (visible: {string.Join(", ", visible)})");
+                }
+            }
+
+            var survey = new Point3d(1e9, -1e9, 1e9);
+            fixture.Source.PersistentData.Clear();
+            fixture.Source.PersistentData.Append(new GH_Point(survey), path);
+            fixture.Solve();
+            await fixture.Ready(() => FieldValue<System.Collections.IDictionary>(labels, "_labels").Count == 1);
+            var padding = new Vector3d(10, 10, 10);
+            conduit.Bounds = new BoundingBox(survey - padding, survey + padding);
+            viewport.SetProjection(DefinedViewportProjection.Perspective, "Survey", true);
+            viewport.SetCameraLocations(survey, survey + new Vector3d(15, -30, 65));
+            Check(CaptureDotFrame(view, shaded, labels, true).Contains(0),
+                "The real viewport projects and retains the GH point at billion-unit coordinates with depth enabled");
+        }
+        finally
+        {
+            rhino.ModelUnitSystem = units;
+            rhino.ModelAbsoluteTolerance = tolerance;
             if (previous != null) rhino.Views.ActiveView = previous;
             view.Close();
         }
@@ -288,7 +359,6 @@ internal static partial class PreviewSafetyChecks
             object?[] parameters = { clip, view * point, viewport.Size, null };
             return (bool)cached.Invoke(null, parameters)! ? (Point2d)parameters[3]! : null;
         }
-
         var model = Transform.Translation(new Vector3d(1, 2, 0));
         foreach (var point in new[] { origin, origin + new Vector3d(4, 3, 0), origin + new Vector3d(100000, 0, 0),
             viewport.CameraLocation + viewport.CameraDirection * -10 })
@@ -303,12 +373,6 @@ internal static partial class PreviewSafetyChecks
                 "camera-space projection matches native WorldToClient");
         }
 
-        var offset = new Vector3d(1e9, -1e9, 1e9);
-        var relocated = camera * Transform.Translation(-offset);
-        var local = Project(camera, origin);
-        var distant = Project(relocated, origin + offset);
-        Check(local.HasValue && distant.HasValue && local.Value.DistanceTo(distant.Value) < 1e-3,
-            "A camera and anchor translated by one billion units retain the same projected position");
     }
 
     // Component callbacks normally run before foreground labels. The older preview
