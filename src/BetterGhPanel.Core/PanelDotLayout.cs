@@ -43,19 +43,24 @@ namespace BetterGhPanel.Core
         private const int BandCount = 10;
         private const double Group = 1.5, AllowedOverlap = .15;
         private static readonly double[] ShrinkScales = { .95, .90, .85, .80, .75, .70 };
-        private int[] _order = Array.Empty<int>(), _nextBand = Array.Empty<int>();
+        private int[] _order = Array.Empty<int>(), _nextBand = Array.Empty<int>(), _blocker = Array.Empty<int>();
         private int[] _count = Array.Empty<int>(), _anchor = Array.Empty<int>(), _representative = Array.Empty<int>();
         private readonly double[] _roundedScales = new double[ShrinkScales.Length];
         private PlacedBox[] _boxes = Array.Empty<PlacedBox>();
         private double[] _sumX = Array.Empty<double>(), _sumY = Array.Empty<double>(), _best = Array.Empty<double>();
         private readonly int[] _bandHead = new int[BandCount], _bandTail = new int[BandCount];
-        private readonly HashSet<int> _previousText = new HashSet<int>();
+        private bool[] _previousText = Array.Empty<bool>();
+        private readonly HashSet<int> _previousSparseText = new HashSet<int>();
         private readonly Dictionary<int, int> _firstText = new Dictionary<int, int>();
         private readonly Grid _groups = new Grid(), _placed = new Grid(), _all = new Grid();
         public PanelDotOutput[] Results { get; private set; } = Array.Empty<PanelDotOutput>();
         public int TextCount { get; private set; }
         public int TextIndex(int index) => _order[index];
-        public void ResetStability() => _previousText.Clear();
+        public void ResetStability()
+        {
+            Array.Clear(_previousText, 0, _previousText.Length);
+            _previousSparseText.Clear();
+        }
 
         public static int ValueBand(double value, double min, double max)
         {
@@ -99,7 +104,9 @@ namespace BetterGhPanel.Core
             }
             _groups.Reset(maxWidth * Group, maxWidth * Group, count);
             _placed.Reset(maxWidth * fullScale, maxHeight * fullScale, count, left, right, bottom, top);
-            double swatchCellSize = 2 * (10 * size + 1) * dpi;
+            double groupCap = 3 * size * dpi, cap = 5 * size * dpi;
+            double floor = 1.5 * dpi, gap = .5 * dpi;
+            double swatchCellSize = 2 * (cap + gap);
             _all.Reset(swatchCellSize, swatchCellSize, count, left, right, bottom, top);
             GroupDots(dots, count);
             int representatives = OrderRepresentatives(dots, count);
@@ -109,12 +116,18 @@ namespace BetterGhPanel.Core
                 int i = _order[k];
                 int blocker = -1;
                 if (Fits(dots, i, fullScale, ref blocker)) Place(dots, i, fullScale);
+                else _blocker[i] = blocker;
             }
-            for (int k = 0; k < representatives; k++)
+            for (int k = 0; k < representatives && shrinkCount != 0; k++)
             {
                 int i = _order[k];
                 if (Results[i].TextScale != 0) continue;
-                int blocker = -1;
+                int blocker = _blocker[i];
+                double smallest = _roundedScales[shrinkCount - 1];
+                // The smallest overlap can rule out all larger boxes if it
+                // exceeds even the largest candidate's allowed overlap.
+                if (!Fits(dots, i, smallest, ref blocker, _roundedScales[0])) continue;
+                if (shrinkCount == 1) { Place(dots, i, smallest); continue; }
                 for (int step = 0; step < shrinkCount; step++)
                 {
                     double scale = _roundedScales[step];
@@ -126,21 +139,24 @@ namespace BetterGhPanel.Core
                 }
             }
             TextCount = 0;
-            _previousText.Clear();
+            ResetStability();
             for (int k = 0; k < representatives; k++)
             {
                 int i = _order[k];
                 if (Results[i].TextScale == 0) continue;
                 _order[TextCount++] = i;
-                _previousText.Add(dots[i].ItemId);
+                int id = dots[i].ItemId;
+                if ((uint)id < (uint)_previousText.Length) _previousText[id] = true;
+                else _previousSparseText.Add(id);
             }
+            double stop = 2 * (floor + gap); stop *= stop;
             for (int i = 0; i < count; i++)
             {
                 ref var result = ref Results[i];
                 int representative = _representative[i];
                 result.LabelAnchor = _anchor[representative];
                 if (i != result.LabelAnchor || Results[representative].TextScale == 0)
-                    result.SwatchRadius = Radius(i, dots, (_count[representative] > 1 ? 3 : 5) * size * dpi, 1.5 * dpi, .5 * dpi);
+                    result.SwatchRadius = Radius(i, dots, _count[representative] > 1 ? groupCap : cap, floor, gap, stop);
             }
         }
 
@@ -184,7 +200,9 @@ namespace BetterGhPanel.Core
             {
                 int r = _representative[i];
                 if (_count[r] == 1) continue;
-                double dx = dots[i].X - _sumX[r] / _count[r], dy = dots[i].Y - _sumY[r] / _count[r];
+                // The representative precedes its members in input order.
+                if (r == i) { _sumX[r] /= _count[r]; _sumY[r] /= _count[r]; }
+                double dx = dots[i].X - _sumX[r], dy = dots[i].Y - _sumY[r];
                 double distance = dx * dx + dy * dy;
                 if (distance < _best[r]) { _best[r] = distance; _anchor[r] = i; }
             }
@@ -228,7 +246,9 @@ namespace BetterGhPanel.Core
             {
                 ref readonly var dot = ref dots[i];
                 if (_representative[i] != i || dot.Selected || i == low || i == high) continue;
-                if (_previousText.Contains(dot.ItemId)) { _order[cursor++] = i; continue; }
+                int id = dot.ItemId;
+                if (((uint)id < (uint)_previousText.Length && _previousText[id]) ||
+                    (_previousSparseText.Count != 0 && _previousSparseText.Contains(id))) { _order[cursor++] = i; continue; }
                 int band = dot.Band;
                 if (_bandHead[band] < 0) _bandHead[band] = i;
                 else _nextBand[_bandTail[band]] = i;
@@ -247,11 +267,12 @@ namespace BetterGhPanel.Core
             return cursor;
         }
 
-        private bool Fits(PanelDotInput[] dots, int i, double scale, ref int blocker)
+        private bool Fits(PanelDotInput[] dots, int i, double scale, ref int blocker, double allowanceScale = 0)
         {
             ref readonly var dot = ref dots[i];
             ref readonly var anchor = ref dots[_anchor[i]];
-            double width = dot.Width * scale, height = dot.Height * scale, area = width * height;
+            double width = dot.Width * scale, height = dot.Height * scale;
+            double area = allowanceScale > scale ? (dot.Width * allowanceScale) * (dot.Height * allowanceScale) : width * height;
             // The same placed label often blocks several successive sizes.
             if (blocker >= 0 && _boxes[blocker].Conflicts(in anchor, width, height, area)) return false;
             int cellX = _placed.X(anchor.X), cellY = _placed.Y(anchor.Y);
@@ -289,26 +310,39 @@ namespace BetterGhPanel.Core
         }
 
         private static double RoundedScale(double scale, double fontHeight) => Math.Max(1, Math.Round(scale * fontHeight)) / fontHeight;
-        private double Radius(int i, PanelDotInput[] dots, double cap, double floor, double gap)
+        private double Radius(int i, PanelDotInput[] dots, double cap, double floor, double gap, double stop)
         {
-            ref readonly var d = ref dots[i]; double nearest = 2 * (cap + gap), squared = nearest * nearest;
-            double stop = 2 * (floor + gap); stop *= stop;
-            int left = _all.X(d.X - nearest), right = _all.X(d.X + nearest);
-            int bottom = _all.Y(d.Y - nearest), top = _all.Y(d.Y + nearest);
+            ref readonly var d = ref dots[i];
             int cellX = _all.X(d.X), cellY = _all.Y(d.Y);
-            for (int cx = 0; cx <= right - left; cx++) for (int cy = 0; cy <= top - bottom; cy++)
-            {
-                int x = cx <= cellX - left ? cellX - cx : left + cx;
-                int y = cy <= cellY - bottom ? cellY - cy : bottom + cy;
-                for (int j = _all.Head(x, y); j >= 0; j = _all.Next[j])
+            double reach = 2 * (cap + gap);
+            double squared = NearestInCell(cellX, cellY, i, dots, in d, reach * reach, stop);
+            if (squared <= stop) return floor;
+
+            // The home cell usually finds a close neighbour. Search only cells
+            // that could improve on that distance.
+            double nearest = Math.Sqrt(squared);
+            int left = Math.Max(cellX - 1, _all.X(d.X - nearest)), right = Math.Min(cellX + 1, _all.X(d.X + nearest));
+            int bottom = Math.Max(cellY - 1, _all.Y(d.Y - nearest)), top = Math.Min(cellY + 1, _all.Y(d.Y + nearest));
+            for (int y = bottom; y <= top; y++) for (int x = left; x <= right; x++)
+                if (x != cellX || y != cellY)
                 {
-                    if (i == j) continue;
-                    double dx = dots[j].X - d.X, dy = dots[j].Y - d.Y;
-                    squared = Math.Min(squared, dx * dx + dy * dy);
+                    squared = NearestInCell(x, y, i, dots, in d, squared, stop);
                     if (squared <= stop) return floor;
                 }
-            }
             return Math.Max(floor, Math.Min(cap, Math.Sqrt(squared) / 2 - gap));
+        }
+
+        private double NearestInCell(int x, int y, int i, PanelDotInput[] dots, in PanelDotInput dot, double squared, double stop)
+        {
+            for (int j = _all.Head(x, y); j >= 0; j = _all.Next[j])
+            {
+                if (i == j) continue;
+                double dx = dots[j].X - dot.X, dy = dots[j].Y - dot.Y;
+                double distance = dx * dx + dy * dy;
+                if (distance <= stop) return distance;
+                if (distance < squared) squared = distance;
+            }
+            return squared;
         }
 
         private static int Neighbour(int index) => index == 0 ? 0 : index == 1 ? -1 : 1;
@@ -317,10 +351,11 @@ namespace BetterGhPanel.Core
         {
             if (Results.Length >= n) return;
             int capacity = Math.Max(n, Math.Max(16, Results.Length * 2));
-            Results = new PanelDotOutput[capacity]; _order = new int[capacity]; _nextBand = new int[capacity];
+            Results = new PanelDotOutput[capacity]; _order = new int[capacity]; _nextBand = new int[capacity]; _blocker = new int[capacity];
             _count = new int[capacity]; _anchor = new int[capacity]; _representative = new int[capacity];
             _boxes = new PlacedBox[capacity];
             _sumX = new double[capacity]; _sumY = new double[capacity]; _best = new double[capacity];
+            Array.Resize(ref _previousText, capacity);
         }
 
         // Open-addressed integer cell table. Epochs make clearing O(1); all

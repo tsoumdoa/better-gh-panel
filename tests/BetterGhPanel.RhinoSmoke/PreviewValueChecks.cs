@@ -265,6 +265,14 @@ internal static partial class PreviewSafetyChecks
                         $"The unselected point and Top-facing plane retain their dots at camera depth {z} and bounds {depthBounds.Diagonal.Z}; the point one unit behind stays hidden (visible: {string.Join(", ", visible)})");
                 }
             }
+            conduit.Bounds = bounds;
+            foreach (double z in new[] { 999999.714, 1000000.123, 1000000.638 })
+            {
+                viewport.SetCameraLocations(Point3d.Origin, new Point3d(0, 0, z));
+                var visible = CaptureDotFrame(view, shaded, labels, true);
+                Check(visible.Contains(0) && visible.Contains(1) && !visible.Contains(2),
+                    $"The point and Top-facing plane retain their dots at camera depth {z} (visible: {string.Join(", ", visible)})");
+            }
 
             var survey = new Point3d(1e9, -1e9, 1e9);
             fixture.Source.PersistentData.Clear();

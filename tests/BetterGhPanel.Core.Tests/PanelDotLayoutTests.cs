@@ -59,6 +59,20 @@ public class PanelDotLayoutTests
     }
 
     [Fact]
+    public void SmallestOverlapDoesNotRejectALargerFittingScale()
+    {
+        var dots = new[]
+        {
+            new PanelDotInput(79, 6, 160, 17, -1, true, ItemIds[0]),
+            new PanelDotInput(-2, 40, 20, 20, -1, true, ItemIds[1]),
+            new PanelDotInput(0, 0, 30, 70, -1, false, ItemIds[2])
+        };
+        var layout = new PanelDotLayout();
+        layout.Calculate(dots, dots.Length, fontHeight: 14);
+        Assert.Equal(13d / 14, layout.Results[2].TextScale);
+    }
+
+    [Fact]
     public void PicksSelectionAndExtremesThenRotatesBandsInHashOrder()
     {
         var dots = new[]

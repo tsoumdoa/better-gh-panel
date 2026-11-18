@@ -94,11 +94,15 @@ namespace BetterGhPanel.Runtime
             double modelTolerance = Math.Max(1e-6, Math.Min(.01, viewport.ParentView?.Document?.ModelAbsoluteTolerance ?? .001));
 
             int count = checked(source.Width * source.Height);
-            // Interactive passes reuse even full 4K buffers until idle; one-off
-            // view captures must not pin a large buffer afterwards.
+            // Interactive passes keep their buffer even when a view capture
+            // borrows it. Limit only new allocations made for view captures.
             bool keepLarge = !pipeline.IsInViewCapture;
             var pixels = _spare;
-            if (pixels != null && pixels.Length >= count) _spare = null;
+            if (pixels != null && pixels.Length >= count)
+            {
+                _spare = null;
+                keepLarge = true;
+            }
 #if NET7_0_OR_GREATER
             else pixels = GC.AllocateUninitializedArray<float>(count);
 #else
@@ -124,6 +128,9 @@ namespace BetterGhPanel.Runtime
 
         internal static void ReleaseIdleResources()
         {
+            // Buffers and resolve targets are kept until the last dots conduit
+            // is disabled. A non-current GPU target stays with its context
+            // until that context is destroyed.
             _spare = null;
             Framebuffers.ReleaseCurrentTarget();
         }
@@ -137,14 +144,15 @@ namespace BetterGhPanel.Runtime
             double depth = WindowDepth(cameraZ);
             // Rhino can round camera coordinates in its float draw transforms.
             // Allow for that error in model units, in addition to depth quantization.
-            double allowance = Math.Min(.01, Math.Max(_modelTolerance, Math.Abs(cameraZ) / (1 << 22)));
+            double allowance = Math.Max(_modelTolerance, Math.Abs(cameraZ) / (1 << 22));
             double towardCamera = WindowDepth(cameraZ + allowance);
             // With 24-bit depth the floor reaches one model unit at a parallel
             // span of 4,194,304 units with the standard 0–1 depth range.
             double epsilon = Math.Max(_precisionFloor, Math.Abs(towardCamera - depth));
             double cutoff = depth + (_reversed ? epsilon : -epsilon);
-            // Rhino biases point sprites toward the camera. Match that depth
-            // within the same epsilon without widening the tolerance for walls.
+            // In a parallel view of span S, a wall about S/65536 in front of
+            // a GH point matches Rhino's sprite bias and leaves the dot visible
+            // within the same epsilon (at least four depth steps).
             double spriteDepth = depth + (_reversed ? PointDepthBias : -PointDepthBias);
             if (double.IsNaN(cutoff)) return true;
             int x = Math.Min(_viewport.Width - 1, (int)(screen.X * _scaleX)) - _region.Left;
