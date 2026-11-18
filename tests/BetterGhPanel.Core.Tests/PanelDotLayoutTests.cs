@@ -8,7 +8,7 @@ public class PanelDotLayoutTests
 
     private static PanelDotInput Dot(double x, int rank = 0, double y = 0, int text = -1, bool selected = false,
         double value = double.NaN) =>
-        new PanelDotInput(x, y, 100, 20, text, selected, ItemIds[rank], value);
+        new PanelDotInput(x, y, 100, 20, text, selected, ItemIds[rank], value, PanelDotLayout.ValueBand(value, 1, 100));
 
     [Fact]
     public void ARejectedSwatchLeavesRoomForFullSizeText()
@@ -16,9 +16,9 @@ public class PanelDotLayoutTests
         var dots = new[] { Dot(0), Dot(49, 1), Dot(90, 2) };
         var layout = new PanelDotLayout();
         layout.Calculate(dots, dots.Length);
-        Assert.Equal(PanelDotTier.Full, layout.Results[0].Tier);
-        Assert.Equal(PanelDotTier.Swatch, layout.Results[1].Tier);
-        Assert.Equal(PanelDotTier.Full, layout.Results[2].Tier);
+        Assert.Equal(1, layout.Results[0].TextScale);
+        Assert.Equal(0, layout.Results[1].TextScale);
+        Assert.Equal(1, layout.Results[2].TextScale);
         Assert.Equal(5, layout.Results[1].SwatchRadius);
     }
 
@@ -45,7 +45,17 @@ public class PanelDotLayoutTests
             new PanelDotInput(53.5, 0, 100, 20, -1, false, 1)
         };
         layout.Calculate(dots, dots.Length);
-        Assert.Equal(PanelDotTier.Full, layout.Results[1].Tier);
+        Assert.Equal(1, layout.Results[1].TextScale);
+    }
+
+    [Theory]
+    [InlineData(84.9, 13)]
+    [InlineData(82.2, 12)]
+    public void TestsOverlapAtTheRoundedDrawingHeight(double separation, int fontHeight)
+    {
+        var layout = new PanelDotLayout();
+        layout.Calculate(new[] { Dot(0), Dot(separation, 1) }, 2, fontHeight: 14);
+        Assert.Equal(fontHeight / 14d, layout.Results[1].TextScale);
     }
 
     [Fact]
@@ -88,12 +98,12 @@ public class PanelDotLayoutTests
                 Dot(400 * dpi, 3, text: 1, selected: true), Dot(408 * dpi, 4, text: 1)
             };
             layout.Calculate(dots, dots.Length, dpi: dpi);
-            Assert.Equal(3, layout.Results[0].GroupCount);
+            Assert.Equal(2, layout.TextCount);
             Assert.Equal(1, layout.Results[0].LabelAnchor);
             Assert.Equal(2.5 * dpi, layout.Results[0].SwatchRadius, 8);
             Assert.Equal(0, layout.Results[1].SwatchRadius);
             Assert.Equal(3 * dpi, layout.Results[2].SwatchRadius, 8);
-            Assert.Equal(4, layout.Results[4].Representative);
+            Assert.Equal(0, layout.Results[4].TextScale);
             Assert.Equal(3.5 * dpi, layout.Results[4].SwatchRadius, 8);
         }
     }

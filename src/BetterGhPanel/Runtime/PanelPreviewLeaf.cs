@@ -57,8 +57,6 @@ namespace BetterGhPanel.Runtime
             var fixedMesh = boxMesh ?? value as Mesh;
             if (fixedMesh != null) _fixedFaces = FaceIndices(fixedMesh); }
         private Point3d? _anchor;
-        internal bool HasWireAnchor => _value is Line || _value is Arc || _value is Circle ||
-            _value is Rectangle3d || _value is Curve || _value is Point3d;
         internal Point3d Anchor(Func<bool> current)
         {
             if (_anchor.HasValue) return _anchor.Value;

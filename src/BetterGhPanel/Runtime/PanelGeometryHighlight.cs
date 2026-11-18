@@ -93,8 +93,7 @@ namespace BetterGhPanel.Runtime
             entry.ColourId = _orderLabels.ColourId(entry.Position);
             if (_orderResult == null) return;
             var anchor = entry.Leaves.Count == 1 ? entry.Leaves[0].Anchor(current) : entry.Bounds.Center;
-            if (current()) _orderLabels.Add(entry.Order, entry.Position, anchor, entry.Bounds,
-                entry.Leaves.Count == 1 && entry.Leaves[0].HasWireAnchor);
+            if (current()) _orderLabels.Add(entry.Order, entry.Position, anchor, entry.Bounds);
         }
         private readonly BoundsIndex _bounds = new BoundsIndex();
         private Action<int, object>? _admissionObserver;

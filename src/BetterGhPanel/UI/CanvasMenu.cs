@@ -334,10 +334,11 @@ namespace BetterGhPanel.UI
         }
 
         internal bool IsPreviewPage => Kind == CanvasMenuKind.Preview || Kind == CanvasMenuKind.DotPlacement || Kind == CanvasMenuKind.ValuePalette || Kind == CanvasMenuKind.DotSize || Kind == CanvasMenuKind.PreviewLimit;
-        internal bool RowEnabled(int index, bool order, bool values, PanelValuePalette palette) =>
+        internal bool RowEnabled(int index, bool order, bool values, PanelValuePalette palette, PanelPreviewMode preview = PanelPreviewMode.Selected) =>
             !(Kind == CanvasMenuKind.BranchStats && (index == 1 || index == 10)) &&
             !(Kind == CanvasMenuKind.Preview && (index == CanvasPreviewRows.Placement || index == CanvasPreviewRows.Size ||
                 index == CanvasPreviewRows.HideOccludedDots) && !order && !values) &&
+            !(Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.HideOccludedDots && preview == PanelPreviewMode.Off) &&
             !(Kind == CanvasMenuKind.ValuePalette && index == CanvasPreviewRows.Reverse && palette == PanelValuePalette.Off);
         internal string Trailing(int index, PanelDotPlacement placement, PanelValuePalette palette, PanelDotSize size = PanelDotSize.Medium, int limit = 5000) => Kind == CanvasMenuKind.BranchStats ? index == 8 ? "max − min" : index == 9 ? "population" : "" : Kind == CanvasMenuKind.Preview ?
             index == CanvasPreviewRows.Size ? size.ToString() + "…" : index == CanvasPreviewRows.Limit ? limit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + "…" : index == CanvasPreviewRows.Placement ? PanelPreviewValues.PlacementLabel(placement) + "…" : index == CanvasPreviewRows.Colour ? PanelPreviewValues.PaletteLabel(palette) + "…" : "" : "";

@@ -2,8 +2,8 @@
 
 ## Unreleased
 
-- **Viewport labels spread across the visible range.** The lowest and highest visible values and selected items get priority. Labels that still fit stay put as you navigate, and small colour dots leave room for labels.
-- **Hide dots behind objects** (Preview menu). On by default, saved with the panel and supported by Undo.
+- **Viewport labels spread across the visible range.** Selected items, then the lowest and highest visible values, get priority. Labels that still fit stay put as you navigate, and small colour dots leave room for labels.
+- **Hide dots behind objects** (Windows, OpenGL display modes). On by default in the Preview menu, saved with the panel and supported by Undo.
 - Fixed viewport dots disappearing while zooming in a perspective view.
 
 ## 0.6.0-beta

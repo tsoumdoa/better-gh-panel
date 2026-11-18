@@ -40,6 +40,7 @@ public class ItemOrderTests
         Assert.Equal("Hide dots behind objects", menu.Label(occlusion));
         Assert.False(menu.RowEnabled(occlusion, false, false, PanelValuePalette.Viridis));
         Assert.True(menu.RowEnabled(occlusion, false, true, PanelValuePalette.Off));
+        Assert.False(menu.RowEnabled(occlusion, true, true, PanelValuePalette.Off, PanelPreviewMode.Off));
         Assert.True(menu.IsSelected(occlusion, options, PanelUnitConversion.None, -1));
         Assert.False(menu.IsSelected(occlusion, options, PanelUnitConversion.None, -1, hideOccludedDots: false));
         Assert.Equal("Preview limit", menu.Label(CanvasPreviewRows.Limit));

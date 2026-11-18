@@ -12,7 +12,7 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
-        private bool PreviewMenuRowEnabled(int index) => _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette);
+        private bool PreviewMenuRowEnabled(int index) => _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette, PanelOwner.PreviewMode);
 
         private void ChoosePreviewMenu(int index, GH_Canvas canvas)
         {

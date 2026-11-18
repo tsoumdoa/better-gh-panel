@@ -74,16 +74,6 @@ internal static partial class PreviewSafetyChecks
             fixture.Select(0);
             Call(component, "HighlightRows", fixture.Result.Snapshot, new[] { 0 });
             await fixture.Ready(() => (int)Call(labels, "ColourId", 0)! > 0);
-            conduit.WireThickness = 24;
-            var capture = new ViewCapture { Width = 1000, Height = 720, ScaleScreenItems = true };
-            using (var image = capture.CaptureToBitmap(view))
-            {
-                var frame = FieldValue<System.Collections.IDictionary>(labels, "_frames")[view.ActiveViewport.Id];
-                Check(image != null && frame != null && FieldValue<Array>(frame, "Labels").Cast<object>()
-                    .Take(FieldValue<int>(frame, "Count")).Any(label => FieldValue<int>(label, "Position") == 0),
-                    "The selected curve keeps its own dot with occlusion on and a thick preview wire");
-            }
-            conduit.WireThickness = 3;
             int colour = (int)Call(labels, "ColourId", 0)!;
             fixture.Select(1);
             Call(component, "HighlightRows", fixture.Result.Snapshot, new[] { 1 });
@@ -145,6 +135,85 @@ internal static partial class PreviewSafetyChecks
             Check(PropertyValue<int>(highlight, "PreviewCount") == 0, "Preview Off clears value dots and the legend owner");
         }
         finally { if (previousView != null) rhino.Views.ActiveView = previousView; view.Close(); }
+        await VerifySolidDotOcclusion(assembly, rhino);
+    }
+
+    private static async Task VerifySolidDotOcclusion(Assembly assembly, RhinoDoc rhino)
+    {
+        using var fixture = new PanelHostFixture.Fixture(assembly);
+        var component = fixture.Component;
+        fixture.Document.PreviewMode = GH_PreviewMode.Shaded;
+        fixture.Source.Hidden = fixture.Paired.Hidden = true;
+        fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
+        var path = new GH_Path(0);
+        fixture.Source.PersistentData.Append(new GH_Line(new Line(new Point3d(-15, -5, 0), new Point3d(-7, -5, 0))), path);
+        fixture.Source.PersistentData.Append(new GH_Point(new Point3d(8, 0, 0)), path);
+        fixture.Source.PersistentData.Append(new GH_Box(new Box(new BoundingBox(new Point3d(-9, -2, -2), new Point3d(-4, 3, 2)))), path);
+        fixture.Source.PersistentData.Append(new GH_Box(new Box(new BoundingBox(new Point3d(6, -2, -2), new Point3d(10, 2, 1)))), path);
+        fixture.Solve();
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 4);
+
+        var previous = rhino.Views.ActiveView;
+        var view = rhino.Views.Add("Panel+ solid dot occlusion", DefinedViewportProjection.Perspective, new Rectangle(0, 0, 1000, 720), false);
+        using var cover = Mesh.CreateFromBox(new BoundingBox(new Point3d(4, -6, 4), new Point3d(12, 6, 8)), 1, 1, 1);
+        var coverId = rhino.Objects.AddMesh(cover);
+        try
+        {
+            rhino.Views.ActiveView = view;
+            var bounds = new BoundingBox(new Point3d(-16, -8, -2), new Point3d(13, 8, 8));
+            using var conduit = new ValuePreviewConduit(component, fixture.Document) { Enabled = true, WireThickness = 8, Bounds = bounds };
+            PreviewMode(component, "FilteredResults");
+            ShowItemOrder(component, true);
+            fixture.Select(0);
+            Call(component, "HighlightRows", fixture.Result.Snapshot, new[] { 0 });
+            var labels = FieldValue<object>(FieldValue<object>(component, "_highlight"), "_orderLabels");
+            await fixture.Ready(() => FieldValue<System.Collections.IDictionary>(labels, "_labels").Count == 4);
+
+            var viewport = view.ActiveViewport;
+            viewport.SetCameraLocations(Point3d.Origin, new Point3d(0, -14, 60));
+            viewport.ZoomBoundingBox(bounds);
+            var shaded = DisplayModeDescription.FindByName("Shaded");
+            viewport.DisplayMode = shaded;
+            string? directory = Environment.GetEnvironmentVariable("PANEL_UX_SCREENSHOTS");
+            int[] Capture(string name, bool expectDepth)
+            {
+                int before = PropertyValue<int>(labels, "LayoutBuilds");
+                var cache = FieldValue<System.Collections.IDictionary>(labels, "_frames");
+                cache.Remove((viewport.Id, true));
+                cache.Remove((viewport.Id, false));
+                using var image = view.CaptureToBitmap(new Size(1000, 720), shaded);
+                var frame = cache[(viewport.Id, true)] ?? cache[(viewport.Id, false)];
+                int builds = PropertyValue<int>(labels, "LayoutBuilds") - before;
+                bool? hadDepth = frame == null ? null : FieldValue<bool>(frame, "HadDepth");
+                int projected = frame == null ? 0 : FieldValue<int>(frame, "ProjectedCount");
+                Check(image != null && frame != null && builds > 0 && hadDepth == expectDepth,
+                    $"A fresh shaded capture uses the expected depth path (bitmap={image != null}, builds={builds}, projected={projected}, depth={hadDepth}, expected={expectDepth})");
+                if (!string.IsNullOrWhiteSpace(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                    image!.Save(Path.Combine(directory, name));
+                }
+                return FieldValue<Array>(frame!, "Labels").Cast<object>().Take(FieldValue<int>(frame!, "Count"))
+                    .Select(label => FieldValue<int>(label, "Position")).ToArray();
+            }
+
+            var centre = Capture("solid-centre.png", true);
+            Check(centre.Contains(0) && !centre.Contains(1), "Depth excludes a covered GH point and retains the selected thick wire's own dot");
+            Check(centre.Contains(2) && !centre.Contains(3),
+                $"A shaded GH box retains its centre dot while a covered box loses its dot (visible positions {string.Join(", ", centre)})");
+            Call(component, "SetDotPlacement", PanelDotPlacement.BoxBottom);
+            var bottom = Capture("solid-bottom.png", true);
+            Check(bottom.Contains(2) && !bottom.Contains(3), "The visible box retains its Box bottom dot");
+            Call(component, "SetHideOccludedDots", false);
+            var through = Capture("solid-behind-box-hide-off.png", false);
+            Check(through.Contains(1) && through.Contains(3), "The covered GH point and box reappear with occlusion off");
+        }
+        finally
+        {
+            rhino.Objects.Delete(coverId, true);
+            if (previous != null) rhino.Views.ActiveView = previous;
+            view.Close();
+        }
     }
 
     private static void VerifyProgressiveDotValues(Assembly assembly)
@@ -183,8 +252,8 @@ internal static partial class PreviewSafetyChecks
         try
         {
             Configure(false, 2);
-            Call(labels, "Add", 0, 0, Point3d.Origin, BoundingBox.Empty, false);
-            Call(labels, "Add", half, half, new Point3d(1, 0, 0), BoundingBox.Empty, false);
+            Call(labels, "Add", 0, 0, Point3d.Origin, BoundingBox.Empty);
+            Call(labels, "Add", half, half, new Point3d(1, 0, 0), BoundingBox.Empty);
             Check(FieldValue<string>(dots[0]!, "Text") == "…" && FieldValue<string>(dots[half]!, "Text") == "…" &&
                 FieldValue<int>(dots[0]!, "GroupKey") != FieldValue<int>(dots[half]!, "GroupKey"), "pending value dots never share a group key");
             for (int tick = 0; tick < 4 && FieldValue<string>(dots[half]!, "Text") == "…"; tick++) Tick();
@@ -211,8 +280,15 @@ internal static partial class PreviewSafetyChecks
     {
         var labelsType = assembly.GetType("BetterGhPanel.Runtime.PanelOrderLabels", true)!;
         var cached = labelsType.GetMethod("TryProjectCached", AnyStatic)!;
-        var clip = viewport.GetTransform(Rhino.DocObjects.CoordinateSystem.World, Rhino.DocObjects.CoordinateSystem.Clip);
-        var screen = viewport.GetTransform(Rhino.DocObjects.CoordinateSystem.World, Rhino.DocObjects.CoordinateSystem.Screen);
+        var clip = viewport.GetTransform(Rhino.DocObjects.CoordinateSystem.Camera, Rhino.DocObjects.CoordinateSystem.Clip);
+        var camera = viewport.GetTransform(Rhino.DocObjects.CoordinateSystem.World, Rhino.DocObjects.CoordinateSystem.Camera);
+
+        Point2d? Project(Transform view, Point3d point)
+        {
+            object?[] parameters = { clip, view * point, viewport.Size, null };
+            return (bool)cached.Invoke(null, parameters)! ? (Point2d)parameters[3]! : null;
+        }
+
         var model = Transform.Translation(new Vector3d(1, 2, 0));
         foreach (var point in new[] { origin, origin + new Vector3d(4, 3, 0), origin + new Vector3d(100000, 0, 0),
             viewport.CameraLocation + viewport.CameraDirection * -10 })
@@ -221,13 +297,18 @@ internal static partial class PreviewSafetyChecks
             var expected = viewport.WorldToClient(world);
             bool visible = viewport.IsVisible(world) && expected.X >= 0 && expected.Y >= 0 &&
                 expected.X < viewport.Size.Width && expected.Y < viewport.Size.Height;
-            object?[] args = { clip * model, screen * model, point, viewport.Size, null };
-            bool actual = (bool)cached.Invoke(null, args)!;
-            Check(actual == visible, "cached clip projection keeps native viewport visibility including points behind the camera");
-            if (actual) Check(((Point2d)args[4]!).DistanceTo(expected) < 1e-7,
-                "one-per-frame projection matrices match native WorldToClient with a model transform");
+            var actual = Project(camera, world);
+            Check(actual.HasValue == visible, "camera-space clip projection agrees with native viewport visibility");
+            if (actual.HasValue) Check(actual.Value.DistanceTo(expected) < 1e-7,
+                "camera-space projection matches native WorldToClient");
         }
 
+        var offset = new Vector3d(1e9, -1e9, 1e9);
+        var relocated = camera * Transform.Translation(-offset);
+        var local = Project(camera, origin);
+        var distant = Project(relocated, origin + offset);
+        Check(local.HasValue && distant.HasValue && local.Value.DistanceTo(distant.Value) < 1e-3,
+            "A camera and anchor translated by one billion units retain the same projected position");
     }
 
     // Component callbacks normally run before foreground labels. The older preview
@@ -238,7 +319,12 @@ internal static partial class PreviewSafetyChecks
         private readonly GH_Document _document;
         private readonly DisplayMaterial _normal = new DisplayMaterial(Color.Red), _selected = new DisplayMaterial(Color.Lime);
         internal int WireThickness { get; set; } = 3;
+        internal BoundingBox Bounds { get; set; } = BoundingBox.Empty;
         internal ValuePreviewConduit(GH_Component component, GH_Document document) { _component = component; _document = document; }
+        protected override void CalculateBoundingBox(CalculateBoundingBoxEventArgs e)
+        {
+            if (Bounds.IsValid) e.IncludeBoundingBox(Bounds);
+        }
         protected override void PostDrawObjects(DrawEventArgs e)
         {
             var args = new ValuePreviewArguments(_document, e, _normal, _selected, WireThickness);
