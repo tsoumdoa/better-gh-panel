@@ -19,12 +19,12 @@ namespace BetterGhPanel.Runtime
         private readonly Size _viewport;
         private readonly Rectangle _region;
         private readonly double _scaleX, _scaleY, _z, _w, _zOffset, _wOffset, _depthStart, _depthSpan, _modelTolerance, _precisionFloor;
-        private readonly bool _reversed;
+        private readonly bool _reversed, _keepLarge;
 
         private PanelSceneDepth(float[] pixels, Size viewport, Rectangle region, Size screen,
-            Transform clip, double[] range, double modelTolerance, int depthBits)
+            Transform clip, double[] range, double modelTolerance, int depthBits, bool keepLarge)
         {
-            _pixels = pixels; _viewport = viewport; _region = region;
+            _pixels = pixels; _keepLarge = keepLarge; _viewport = viewport; _region = region;
             _scaleX = (double)viewport.Width / screen.Width;
             _scaleY = (double)viewport.Height / screen.Height;
             _z = clip.M22; _w = clip.M32;
@@ -94,6 +94,9 @@ namespace BetterGhPanel.Runtime
             double modelTolerance = Math.Max(1e-6, Math.Min(.01, viewport.ParentView?.Document?.ModelAbsoluteTolerance ?? .001));
 
             int count = checked(source.Width * source.Height);
+            // Interactive passes reuse even full 4K buffers until idle; one-off
+            // view captures must not pin a large buffer afterwards.
+            bool keepLarge = !pipeline.IsInViewCapture;
             var pixels = _spare;
             if (pixels != null && pixels.Length >= count) _spare = null;
 #if NET7_0_OR_GREATER
@@ -107,16 +110,16 @@ namespace BetterGhPanel.Runtime
                 read = gl.Read(source, draw, resolveFormat, pixels);
                 if (!read) return null;
                 source.Offset(-originX, -originY);
-                return new PanelSceneDepth(pixels, size, source, screen, clip, range, modelTolerance, depthBits);
+                return new PanelSceneDepth(pixels, size, source, screen, clip, range, modelTolerance, depthBits, keepLarge);
             }
-            finally { if (!read) ReturnPixels(pixels); }
+            finally { if (!read) ReturnPixels(pixels, keepLarge); }
         }
 
-        public void Dispose() => ReturnPixels(_pixels);
+        public void Dispose() => ReturnPixels(_pixels, _keepLarge);
 
-        private static void ReturnPixels(float[] pixels)
+        private static void ReturnPixels(float[] pixels, bool keepLarge)
         {
-            if (pixels.Length <= MaxSparePixels && (_spare == null || _spare.Length < pixels.Length)) _spare = pixels;
+            if ((keepLarge || pixels.Length <= MaxSparePixels) && (_spare == null || _spare.Length < pixels.Length)) _spare = pixels;
         }
 
         internal static void ReleaseIdleResources()
