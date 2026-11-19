@@ -16,6 +16,7 @@ namespace BetterGhPanel.Runtime
     {
         internal int PreviewLimit { get; private set; } = 5000;
         internal PanelDotSize DotSize { get => _orderLabels.DotSize; set => _orderLabels.DotSize = value; }
+        internal bool HideOccludedDots { get => _orderLabels.HideOccludedDots; set => _orderLabels.HideOccludedDots = value; }
         internal void SetPreviewLimit(int limit)
         {
             if (!PanelDotSettings.ValidLimit(limit) || PreviewLimit == limit) return;
@@ -883,11 +884,13 @@ namespace BetterGhPanel.Runtime
         }
 
         private static void PushPreviewDepthBias(IGH_PreviewArgs args)
+            => args.Display.PushModelTransform(WireDepthBias(args.Viewport) * args.Display.ModelTransform);
+
+        internal static Transform WireDepthBias(Rhino.Display.RhinoViewport viewport)
         {
             var clipBias = Transform.Identity; clipBias.M22 = 0.995; clipBias.M23 = 0.01;
-            var bias = args.Viewport.GetTransform(CoordinateSystem.Clip, CoordinateSystem.World) * clipBias *
-                args.Viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
-            args.Display.PushModelTransform(bias * args.Display.ModelTransform);
+            return viewport.GetTransform(CoordinateSystem.Clip, CoordinateSystem.World) * clipBias *
+                viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
         }
 
         private const double GradientDepthOffset = 1e-3;

@@ -156,6 +156,7 @@ namespace BetterGhPanel
             _highlight.SetPreviewLimit(PreviewLimit);
             if (!Current()) return;
             _highlight.DotSize = DotSize;
+            _highlight.HideOccludedDots = HideOccludedDots;
             _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, ValuePalette, ReversePalette,
                 options.SearchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current);
             if (!Current()) return;
