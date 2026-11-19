@@ -1,5 +1,19 @@
 # Release validation records
 
+## 0.6.1-beta
+
+Viewport value labels now spread across the visible range (selected items, then the lowest and highest visible values, then an even spread over value bands, with labels that still fit kept stable while navigating). Text dots conflict only when they share more than 15% of the smaller dot's area, and colour dots no longer block text. New Preview option "Hide dots behind objects" (on by default; Windows, OpenGL display modes) reads the viewport depth buffer and skips dots hidden by any drawn geometry. Also fixes all dots vanishing during perspective mouse-wheel zoom (stale near/far planes). Built in #79 from an approved mock, with a Sol first review, Sol and Opus adversarial rounds and two Opus re-checks.
+
+`npm run check` passed on the release branch: 459 managed tests on each of net48 and net8.0, 17 coordinator tests, one packaging test, 12 headless branch-stats assertions, both runtime builds, source encoding/style checks and the native smoke host compile. Layout timing for 20,000 labels on net48 Release, pinned to one core, back to back with 0.6.0: 3.09 ms vs 4.59 ms when every value differs, 3.61 ms vs 2.52 ms when neighbours share values. Depth readback at 4K: 1.9 ms full, 0.4 ms cropped. The extracted assemblies report `0.6.1-beta+7f987d887fa1c17cda7899297e43dea11ba11142`.
+
+**Targeted native checks passed** on the #79 branch in a desktop Rhino 8 session: 32 assertions covering dot layout, the zoom fix, depth precision near 1e6 and at 1e9 coordinates, solids and planar surfaces not hiding their own dots, and dots behind objects hidden.
+
+**The full native fixture inventory did not run.** Another Rhino instance was open in the user's session, so the hidden test host could not start; the user chose to release without it.
+
+**Not exercised in a live Rhino:** the new layout and hiding while navigating real models, 150% DPI, orbit frame time with 5,000 and 20,000 real curves and meshes, non-OpenGL display modes, Mac and the Windows .NET Framework host.
+
+Artifact source commit: `7f987d887fa1c17cda7899297e43dea11ba11142`. Archive: `panel-plus-0.6.1-beta-rh8_0-any.yak`. SHA-256: `f54dd78225e9c7577c8241685f3297fed3fbbfe1577c0189077c8e5872a14aaf`. GitHub prerelease and public Yak publication succeeded. Yak search lists `0.6.1-beta`, and a fresh GitHub asset download matches the archive SHA-256.
+
 ## 0.6.0-beta
 
 Crowded viewport value dots no longer disappear: their text shrinks, then they become small colour dots, and nearby dots with the same shown text share one label. Preview gains Dot size (Small / Medium / Large) and Preview limit (1,000 / 5,000 / 20,000 items, default 5,000; previously fixed at 1,024). Built in #76 from an approved mock, with a Sol first review, Sol and Opus adversarial rounds and an Opus re-check.
