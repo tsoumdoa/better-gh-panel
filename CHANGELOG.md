@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.6.1-beta
 
 - **Viewport labels spread across the visible range.** Selected items, then the lowest and highest visible values, get priority. Labels that still fit stay put as you navigate, and small colour dots leave room for labels.
 - **Hide dots behind objects** (Windows, OpenGL display modes). On by default in the Preview menu, saved with the panel and supported by Undo.
 - Fixed viewport dots disappearing while zooming in a perspective view.
+- **Validation.** Targeted Rhino checks for the new layout, the zoom fix and hidden dots passed. The full automated Rhino fixture suite could not run, and these changes have not yet been tried in a live Rhino session.
 
 ## 0.6.0-beta
 
