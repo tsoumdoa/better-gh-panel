@@ -3,8 +3,8 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
-    <Version>0.6.1-beta</Version>
-    <Company>AECTooling</Company>
+    <Version>0.6.2-beta</Version>
+    <Company>AEC Tooling</Company>
     <Authors>aectooling by tomoS</Authors>
     <RepositoryUrl>https://github.com/tsoumdoa/better-gh-panel</RepositoryUrl>
     <Deterministic>true</Deterministic>
