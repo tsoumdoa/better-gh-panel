@@ -316,7 +316,7 @@ namespace BetterGhPanel.Runtime
             // GH preview model transforms are assumed to be identity. Only
             // the selected-row wire bias contributes to the item's depth bound.
             var selected = _membership.Count > 0 ? PanelGeometryHighlight.WireDepthBias(args.Viewport) : Transform.Identity;
-            Foreground.Arm(args.Viewport, args.Display, this, Color.FromArgb(255, args.WireColour_Selected), selected, args.Document);
+            Foreground.Arm(args.Viewport, args.Display, this, Color.FromArgb(255, args.WireColour_Selected), selected);
         }
         // One conduit owns each draw pass, and its Pass object is the frame
         // epoch for that viewport. Removing it from the pending
@@ -376,10 +376,9 @@ namespace BetterGhPanel.Runtime
 
             internal sealed class Participant
             {
-                internal Participant(PanelOrderLabels labels, Color colour, Transform selected, GH_Document? document)
-                { Labels = labels; Colour = colour; Selected = selected; Document = document; }
+                internal Participant(PanelOrderLabels labels, Color colour, Transform selected)
+                { Labels = labels; Colour = colour; Selected = selected; }
                 internal readonly PanelOrderLabels Labels;
-                internal readonly GH_Document? Document;
                 internal readonly Color Colour;
                 internal readonly Transform Selected;
                 internal ViewportFrame? Frame;
@@ -402,14 +401,14 @@ namespace BetterGhPanel.Runtime
                 return -1;
             }
 
-            internal void Arm(RhinoViewport viewport, DisplayPipeline display, PanelOrderLabels labels, Color colour, Transform selected, GH_Document? document)
+            internal void Arm(RhinoViewport viewport, DisplayPipeline display, PanelOrderLabels labels, Color colour, Transform selected)
             {
                 int index = FindPass(viewport.Id, display);
                 if (index < 0) return;
                 var panels = _pending![index].Panels;
                 for (int i = 0; i < panels.Count; i++)
                     if (ReferenceEquals(panels[i].Labels, labels)) return;
-                panels.Add(new Participant(labels, colour, selected, document));
+                panels.Add(new Participant(labels, colour, selected));
             }
 
             protected override void DrawForeground(DrawEventArgs e)
@@ -441,7 +440,7 @@ namespace BetterGhPanel.Runtime
                         if (labels.HideOccludedDots && panel.Frame.ProjectedCount != 0)
                             bounds = bounds.IsEmpty ? panel.Frame.Bounds : Rectangle.Union(bounds, panel.Frame.Bounds);
                     }
-                    using var depth = bounds.IsEmpty ? null : PanelSceneDepth.Capture(e.Display, e.Viewport, dimensions, bounds, clip, PreviewOccluders(e, pass.Panels));
+                    using var depth = bounds.IsEmpty ? null : PanelSceneDepth.Capture(e.Display, e.Viewport, dimensions, bounds, clip);
                     foreach (var panel in pass.Panels)
                     {
                         if (panel.Frame == null || !panel.Labels.Visible) continue;
@@ -455,55 +454,6 @@ namespace BetterGhPanel.Runtime
                         if (panel.Frame != null) panel.Labels._drawing = false;
                 }
             }
-        }
-
-        // Grasshopper's default preview material is transparent, so its meshes
-        // never reach the depth buffer. Redraw them opaque for the depth capture,
-        // following the document's preview mode and filter like Grasshopper does.
-        private static Action? PreviewOccluders(DrawEventArgs args, List<ForegroundConduit.Participant> panels)
-        {
-            List<GH_Document>? documents = null;
-            foreach (var panel in panels)
-            {
-                var document = panel.Document;
-                if (panel.Frame == null || !panel.Labels.HideOccludedDots || document?.PreviewMode != GH_PreviewMode.Shaded) continue;
-                documents ??= new List<GH_Document>();
-                if (!documents.Contains(document)) documents.Add(document);
-            }
-            if (documents == null) return null;
-            return () =>
-            {
-                foreach (var document in documents)
-                {
-                    var preview = new DepthPreviewArgs(document, args);
-                    bool selectedOnly = document.PreviewFilter == GH_PreviewFilter.Selected;
-                    foreach (var item in document.Objects)
-                    {
-                        if (!(item is IGH_PreviewObject owner) || owner.Hidden || !owner.IsPreviewCapable ||
-                            selectedOnly && !item.Attributes.Selected) continue;
-                        try { owner.DrawViewportMeshes(preview); } catch (Exception) { }
-                    }
-                }
-            };
-        }
-
-        private sealed class DepthPreviewArgs : IGH_PreviewArgs
-        {
-            private static readonly DisplayMaterial Opaque = new DisplayMaterial(Color.Black);
-            internal DepthPreviewArgs(GH_Document document, DrawEventArgs args)
-            {
-                Document = document; Viewport = args.Viewport; Display = args.Display;
-                MeshingParameters = document.PreviewCurrentMeshParameters();
-            }
-            public GH_Document Document { get; }
-            public RhinoViewport Viewport { get; }
-            public DisplayPipeline Display { get; }
-            public MeshingParameters MeshingParameters { get; }
-            public int DefaultCurveThickness => 1;
-            public Color WireColour => Color.Black;
-            public Color WireColour_Selected => Color.Black;
-            public DisplayMaterial ShadeMaterial => Opaque;
-            public DisplayMaterial ShadeMaterial_Selected => Opaque;
         }
 
         private static void DrawPanels(DrawEventArgs args, float dpi, List<ForegroundConduit.Participant> panels)

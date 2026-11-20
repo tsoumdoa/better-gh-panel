@@ -2,7 +2,6 @@
 
 ## Unreleased
 
-- Fixed **Hide dots behind objects** ignoring Grasshopper previews; dots now also hide behind shaded GH preview geometry.
 - Fixed crowded dots giving way before they actually touched: the overlap check now uses the size Rhino draws.
 
 ## 0.6.1-beta
