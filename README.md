@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.6.1-beta
+yak install panel-plus 0.6.3-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -28,12 +28,10 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
-**[`0.6.1-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.6.1-beta)**
+**[`0.6.3-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.6.3-beta)**
 
-- **Viewport labels spread across the visible range.** Selected items, then the lowest and highest visible values, get priority. Labels that still fit stay put as you navigate, and small colour dots leave room for labels.
-- **Hide dots behind objects** (Windows, OpenGL display modes). On by default in the Preview menu, saved with the panel and supported by Undo.
-- Fixed viewport dots disappearing while zooming in a perspective view.
-- **Validation.** Targeted Rhino checks for the new layout, the zoom fix and hidden dots passed. The full automated Rhino fixture suite could not run, and these changes have not yet been tried in a live Rhino session.
+- Fixed crowded viewport dots giving way before they actually touched. The overlap check now uses the size Rhino draws, so more labels keep their text.
+- **Validation.** Before/after captures in a live Rhino 8 session confirmed the fix. The full automated Rhino fixture suite could not run.
 
 See [CHANGELOG](CHANGELOG.md) for earlier releases.
 

@@ -1,8 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.6.3-beta
 
-- Fixed crowded dots giving way before they actually touched: the overlap check now uses the size Rhino draws.
+- Fixed crowded viewport dots giving way before they actually touched. The overlap check now uses the size Rhino draws, so more labels keep their text.
+- **Validation.** Before/after captures in a live Rhino 8 session confirmed the fix. The full automated Rhino fixture suite could not run.
+
+## 0.6.2-beta
+
+- Package and Grasshopper author set to aectooling by tomoS, and the Grasshopper library label to Panel+. The Yak manifest now carries the library GUID for Package Restore.
 
 ## 0.6.1-beta
 
