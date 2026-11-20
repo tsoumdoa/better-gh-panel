@@ -559,8 +559,10 @@ namespace BetterGhPanel.Runtime
                     }
                 }
                 frame.ProjectedDepth[count] = nearest;
-                double width = (_settings.Values ? label.Text.Length * 8 + 12 : label.Text.Length * 9 + 14) * scale;
-                frame.ProjectedDots[count] = new PanelDotInput(point.X, point.Y, width, 24 * scale, label.GroupKey,
+                // Rhino draws a 14 pt "43.5" dot 41 × 18 px at 100% scale. An
+                // oversized box made the overlap allowance hide dots with visible gaps.
+                double width = (label.Text.Length * 7.5 + 11) * scale;
+                frame.ProjectedDots[count] = new PanelDotInput(point.X, point.Y, width, 18 * scale, label.GroupKey,
                     isSelected, label.Position, label.Value, label.Band);
                 frame.ProjectedLabels[count++] = label;
                 left = Math.Min(left, (int)point.X); right = Math.Max(right, (int)point.X + 1);

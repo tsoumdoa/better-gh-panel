@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Fixed crowded dots giving way before they actually touched: the overlap check now uses the size Rhino draws.
+
 ## 0.6.1-beta
 
 - **Viewport labels spread across the visible range.** Selected items, then the lowest and highest visible values, get priority. Labels that still fit stay put as you navigate, and small colour dots leave room for labels.
