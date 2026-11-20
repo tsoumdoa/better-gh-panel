@@ -1,5 +1,19 @@
 # Release validation records
 
+## 0.6.3-beta
+
+Fixes crowded viewport dots giving way before they actually touched (#83). The layout box was 24 px tall, but Rhino draws a 14 pt text dot 18 px tall: a 4-character Medium dot is 41 × 18 px at 100% scale. Two stacked dots with a visible gap therefore exceeded the 15% overlap allowance. The box is now `(characters × 7.5 + 11) × 18` px, scaled by DPI and Dot size.
+
+`npm run check` passed on the release branch: 459 managed tests on each of net48 and net8.0, 17 coordinator tests, one packaging test, 12 headless branch-stats assertions, both runtime builds, source encoding/style checks and the native smoke host compile. The extracted assemblies report `0.6.3-beta+51e926cead9b8b6b071724f27881a73cac8de0af`.
+
+**Live Rhino captures.** These used a desktop Rhino 8.36 session with a 3,136-point terrain of value dots and a real Grasshopper document drawing its own default (alpha 100) box previews. They compared 0.6.1-beta, the #83 branch and the plugin extracted from the final archive. With hiding off, the fixed builds keep many more labels at full size, and neighbours touch without covering each other. The archive build matches the branch build exactly. The same captures showed that "Hide dots behind objects" already hides dots behind Grasshopper's semi-transparent previews in Shaded, Rendered, Arctic, Technical, Ghosted, Pen, Monochrome and Raytraced, so no occlusion change was made.
+
+**The full native fixture inventory did not run.** The inactive-desktop test host timed out at Rhino startup, and the hidden host crashed in `CaptureToBitmap`.
+
+**Not exercised:** 150% DPI, Small and Large dot sizes, Mac and the Windows .NET Framework host.
+
+Artifact source commit: `51e926cead9b8b6b071724f27881a73cac8de0af`. Archive: `panel-plus-0.6.3-beta-rh8_0-any.yak`. SHA-256: `1b37d1fb495bd2f67cd171a4b0cd5a295eb5d2685c18c6c4ab77d1b595b2646d`. GitHub prerelease and public Yak publication succeeded. Yak search lists `0.6.3-beta`, and a fresh GitHub asset download matches the archive SHA-256.
+
 ## 0.6.1-beta
 
 Viewport value labels now spread across the visible range (selected items, then the lowest and highest visible values, then an even spread over value bands, with labels that still fit kept stable while navigating). Text dots conflict only when they share more than 15% of the smaller dot's area, and colour dots no longer block text. New Preview option "Hide dots behind objects" (on by default; Windows, OpenGL display modes) reads the viewport depth buffer and skips dots hidden by any drawn geometry. Also fixes all dots vanishing during perspective mouse-wheel zoom (stale near/far planes). Built in #79 from an approved mock, with a Sol first review, Sol and Opus adversarial rounds and two Opus re-checks.
