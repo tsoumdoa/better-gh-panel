@@ -42,10 +42,13 @@ namespace BetterGhPanel.Runtime
             internal readonly double[] DepthRange = new double[2];
         }
 
-        internal static PanelSceneDepth? Capture(DisplayPipeline pipeline, RhinoViewport viewport, Size screen, Rectangle anchors, Transform clip)
+        // Occluders draw extra depth-only geometry for this capture. The
+        // captured depth region is restored afterwards, so later draws are unaffected.
+        internal static PanelSceneDepth? Capture(DisplayPipeline pipeline, RhinoViewport viewport, Size screen, Rectangle anchors, Transform clip,
+            Action? occluders = null)
         {
             if (_depthUnavailable || !RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || screen.Width <= 0 || screen.Height <= 0) return null;
-            try { return pipeline.IsOpenGL ? CaptureOpenGl(pipeline, viewport, screen, anchors, clip) : null; }
+            try { return pipeline.IsOpenGL ? CaptureOpenGl(pipeline, viewport, screen, anchors, clip, occluders) : null; }
             catch (Exception)
             {
                 // Missing entry points and unexpected host errors must leave
@@ -55,7 +58,8 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        private static PanelSceneDepth? CaptureOpenGl(DisplayPipeline pipeline, RhinoViewport viewport, Size screen, Rectangle anchors, Transform clip)
+        private static PanelSceneDepth? CaptureOpenGl(DisplayPipeline pipeline, RhinoViewport viewport, Size screen, Rectangle anchors, Transform clip,
+            Action? occluders)
         {
             if (clip.M32 == 0 && clip.M33 == 0) return null;
             pipeline.Flush();
@@ -89,34 +93,41 @@ namespace BetterGhPanel.Runtime
             if (!gl.ClipSource(ref source, draw, pipeline.FrameSize, draw != 0 && samples > 0, port,
                 out uint resolveFormat, out int depthBits)) return null;
 
-            var range = scratch.DepthRange;
-            glGetDoublev(0x0B70 /* GL_DEPTH_RANGE */, range);
-            double modelTolerance = Math.Max(1e-6, Math.Min(.01, viewport.ParentView?.Document?.ModelAbsoluteTolerance ?? .001));
-
-            int count = checked(source.Width * source.Height);
-            // Interactive passes keep their buffer even when a view capture
-            // borrows it. Limit only new allocations made for view captures.
-            bool keepLarge = !pipeline.IsInViewCapture;
-            var pixels = _spare;
-            if (pixels != null && pixels.Length >= count)
-            {
-                _spare = null;
-                keepLarge = true;
-            }
-#if NET7_0_OR_GREATER
-            else pixels = GC.AllocateUninitializedArray<float>(count);
-#else
-            else pixels = new float[count];
-#endif
-            bool read = false;
+            // Grasshopper draws its default previews transparent, without depth.
+            // Draw them depth-only into the scene before reading it back.
+            var saved = occluders == null ? null : gl.DrawOccluders(pipeline, source, draw, port, occluders);
             try
             {
-                read = gl.Read(source, draw, resolveFormat, pixels);
-                if (!read) return null;
-                source.Offset(-originX, -originY);
-                return new PanelSceneDepth(pixels, size, source, screen, clip, range, modelTolerance, depthBits, keepLarge);
+                var range = scratch.DepthRange;
+                glGetDoublev(0x0B70 /* GL_DEPTH_RANGE */, range);
+                double modelTolerance = Math.Max(1e-6, Math.Min(.01, viewport.ParentView?.Document?.ModelAbsoluteTolerance ?? .001));
+
+                int count = checked(source.Width * source.Height);
+                // Interactive passes keep their buffer even when a view capture
+                // borrows it. Limit only new allocations made for view captures.
+                bool keepLarge = !pipeline.IsInViewCapture;
+                var pixels = _spare;
+                if (pixels != null && pixels.Length >= count)
+                {
+                    _spare = null;
+                    keepLarge = true;
+                }
+#if NET7_0_OR_GREATER
+                else pixels = GC.AllocateUninitializedArray<float>(count);
+#else
+                else pixels = new float[count];
+#endif
+                bool read = false;
+                try
+                {
+                    read = gl.Read(source, draw, resolveFormat, pixels);
+                    if (!read) return null;
+                    source.Offset(-originX, -originY);
+                    return new PanelSceneDepth(pixels, size, source, screen, clip, range, modelTolerance, depthBits, keepLarge);
+                }
+                finally { if (!read) ReturnPixels(pixels, keepLarge); }
             }
-            finally { if (!read) ReturnPixels(pixels, keepLarge); }
+            finally { saved?.Restore(); }
         }
 
         public void Dispose() => ReturnPixels(_pixels, _keepLarge);
@@ -180,6 +191,8 @@ namespace BetterGhPanel.Runtime
         [DllImport("opengl32.dll")] private static extern void glDrawBuffer(uint mode);
         [DllImport("opengl32.dll")] private static extern void glPixelStorei(uint name, int value);
         [DllImport("opengl32.dll")] private static extern uint glGetError();
+        [DllImport("opengl32.dll")] private static extern void glGetBooleanv(uint name, [Out] byte[] values);
+        [DllImport("opengl32.dll")] private static extern void glColorMask(byte red, byte green, byte blue, byte alpha);
 
         private sealed class Framebuffers
         {
@@ -376,16 +389,7 @@ namespace BetterGhPanel.Runtime
                     {
                         _attachment(Draw, DepthAttachment, 0x8217 /* STENCIL_SIZE */, out int stencil);
                         _attachment(Draw, DepthAttachment, 0x8211 /* COMPONENT_TYPE */, out int type);
-                        format = (depth, stencil, type) switch
-                        {
-                            (16, 0, 0x8C17) => 0x81A5, // GL_UNSIGNED_NORMALIZED
-                            (24, 0, 0x8C17) => 0x81A6,
-                            (32, 0, 0x8C17) => 0x81A7,
-                            (32, 0, (int)Float) => 0x8CAC,
-                            (24, 8, 0x8C17) => 0x88F0,
-                            (32, 8, (int)Float) => 0x8CAD,
-                            _ => 0
-                        };
+                        format = Format(depth, stencil, type);
                         valid = format != 0;
                     }
                 }
@@ -399,6 +403,128 @@ namespace BetterGhPanel.Runtime
                 }
                 uint error = glGetError();
                 return error == 0 && valid && source.Width > 0 && source.Height > 0;
+            }
+
+            internal SavedDepth? DrawOccluders(DisplayPipeline pipeline, Rectangle source, int draw, int[] port, Action occluders)
+            {
+                uint format = DepthFormat(draw);
+                if (format == 0) return null;
+                var saved = SaveDepth(source, draw, format);
+                if (saved == null) return null;
+                var mask = new byte[4];
+                glGetBooleanv(0x0C23 /* GL_COLOR_WRITEMASK */, mask);
+                int x = port[0], y = port[1], width = port[2], height = port[3];
+                bool ok = false;
+                try
+                {
+                    glColorMask(0, 0, 0, 0);
+                    pipeline.PushDepthTesting(true);
+                    pipeline.PushDepthWriting(true);
+                    try { occluders(); pipeline.Flush(); }
+                    finally { pipeline.PopDepthWriting(); pipeline.PopDepthTesting(); }
+                    glGetInteger(0x8CA6 /* GL_DRAW_FRAMEBUFFER_BINDING */, out int after);
+                    glGetIntegerv(0x0BA2 /* GL_VIEWPORT */, port);
+                    ok = after == draw && port[0] == x && port[1] == y && port[2] == width && port[3] == height && glGetError() == 0;
+                }
+                catch (Exception) { }
+                finally { glColorMask(mask[0], mask[1], mask[2], mask[3]); }
+                if (ok) return saved;
+                // Never read a depth buffer left in an unknown state.
+                saved.Restore();
+                return null;
+            }
+
+            private uint DepthFormat(int draw)
+            {
+                uint attachment = draw == 0 ? 0x1801 /* GL_DEPTH */ : DepthAttachment;
+                _attachment(Draw, attachment, 0x8216 /* DEPTH_SIZE */, out int depth);
+                _attachment(Draw, draw == 0 ? 0x1802 /* GL_STENCIL */ : DepthAttachment, 0x8217 /* STENCIL_SIZE */, out int stencil);
+                _attachment(Draw, attachment, 0x8211 /* COMPONENT_TYPE */, out int type);
+                return glGetError() == 0 ? Format(depth, stencil, type) : 0;
+            }
+
+            private static uint Format(int depth, int stencil, int type) => (depth, stencil, type) switch
+            {
+                (16, 0, 0x8C17) => 0x81A5, // GL_UNSIGNED_NORMALIZED
+                (24, 0, 0x8C17) => 0x81A6,
+                (32, 0, 0x8C17) => 0x81A7,
+                (32, 0, (int)Float) => 0x8CAC,
+                (24, 8, 0x8C17) => 0x88F0,
+                (32, 8, (int)Float) => 0x8CAD,
+                _ => 0
+            };
+
+            private SavedDepth? SaveDepth(Rectangle source, int draw, uint format)
+            {
+                var saved = new SavedDepth(this, source, draw);
+                glGetInteger(0x8CA7 /* GL_RENDERBUFFER_BINDING */, out int previousBuffer);
+                bool ok = false;
+                try
+                {
+                    _genFramebuffers(1, out saved.Framebuffer);
+                    _genRenderbuffers(1, out saved.Buffer);
+                    if (saved.Framebuffer == 0 || saved.Buffer == 0) return null;
+                    _bindRenderbuffer(Renderbuffer, saved.Buffer);
+                    _storage(Renderbuffer, format, source.Width, source.Height);
+                    _bindFramebuffer(Draw, saved.Framebuffer);
+                    _attach(Draw, format == 0x88F0 || format == 0x8CAD ? DepthStencilAttachment : DepthAttachment, Renderbuffer, saved.Buffer);
+                    if (_status(Draw) != 0x8CD5 /* GL_FRAMEBUFFER_COMPLETE */) return null;
+                    ok = saved.Copy(toScene: false);
+                    return ok ? saved : null;
+                }
+                finally
+                {
+                    _bindFramebuffer(Draw, draw);
+                    _bindRenderbuffer(Renderbuffer, previousBuffer);
+                    if (!ok) { glGetError(); saved.Delete(); }
+                }
+            }
+
+            // A depth region copied out before occluders draw, and blitted back after the read.
+            internal sealed class SavedDepth
+            {
+                private readonly Framebuffers _gl;
+                private readonly Rectangle _source;
+                private readonly int _draw;
+                internal int Framebuffer, Buffer;
+                internal SavedDepth(Framebuffers gl, Rectangle source, int draw) { _gl = gl; _source = source; _draw = draw; }
+
+                internal bool Copy(bool toScene)
+                {
+                    var gl = _gl;
+                    glGetInteger(0x8CAA /* GL_READ_FRAMEBUFFER_BINDING */, out int previousRead);
+                    bool scissor = gl._enabled(ScissorTest, 0) != 0;
+                    try
+                    {
+                        if (scissor) gl._disable(ScissorTest, 0);
+                        gl._bindFramebuffer(ReadTarget, toScene ? Framebuffer : _draw);
+                        gl._bindFramebuffer(Draw, toScene ? _draw : Framebuffer);
+                        var s = _source;
+                        // A single-sample source is replicated into every sample of a multisampled scene.
+                        if (toScene) gl._blit(0, 0, s.Width, s.Height, s.Left, s.Top, s.Right, s.Bottom, 0x0100 /* GL_DEPTH_BUFFER_BIT */, 0x2600 /* GL_NEAREST */);
+                        else gl._blit(s.Left, s.Top, s.Right, s.Bottom, 0, 0, s.Width, s.Height, 0x0100, 0x2600);
+                        return glGetError() == 0;
+                    }
+                    finally
+                    {
+                        gl._bindFramebuffer(Draw, _draw);
+                        gl._bindFramebuffer(ReadTarget, previousRead);
+                        if (scissor) gl._enable(ScissorTest, 0);
+                    }
+                }
+
+                internal void Restore()
+                {
+                    Copy(toScene: true);
+                    Delete();
+                }
+
+                internal void Delete()
+                {
+                    if (Framebuffer != 0) _gl._deleteFramebuffers(1, ref Framebuffer);
+                    if (Buffer != 0) _gl._deleteRenderbuffers(1, ref Buffer);
+                    Framebuffer = Buffer = 0;
+                }
             }
 
             internal bool Read(Rectangle source, int draw, uint resolveFormat, float[] pixels)
