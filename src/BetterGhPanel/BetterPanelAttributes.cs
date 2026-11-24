@@ -622,6 +622,8 @@ namespace BetterGhPanel
                 (showTypes ? TypeColumnWidth + CellGap : 12) - 40 - setWidth));
             float valueStart = rowRenderer.GutterWidth + pathWidth;
             var measurements = new List<int>();
+            var options = PanelOwner.Session.Options;
+            var pairedMeasurements = options.SearchPaired && options.DisplayFilterValue ? new List<int>() : null;
             offset = Math.Max(0, Math.Min(Math.Max(0, Count - 1), offset));
             var clip = g.Save();
             try
@@ -675,13 +677,15 @@ namespace BetterGhPanel
 
                     var address = RowAddress(result, sourcePosition);
                     if (address.Index >= 0) rowRenderer.DrawAddress(g, bounds, i + 1, address.Index, address.Sorted, selected);
-                    DrawDataCell(g, rowRenderer, result, sourcePosition, i + 1, bounds, valueStart, setWidth, font, small, mono, grouped, pathWidth);
+                    DrawDataCell(g, rowRenderer, result, sourcePosition, i + 1, bounds, valueStart, setWidth, font, small, mono,
+                        grouped, pathWidth, showPairedSuffix: pairedMeasurements != null);
                     if (TargetPainted(g, bounds) && !_rowHits.Any(hit => hit.Bounds == bounds && hit.SourcePosition == sourcePosition))
                         _rowHits.Add(new RowHit(bounds, sourcePosition, i + 1));
                     if (bounds.IntersectsWith(visibleRegion))
                     {
                         if (result.DisplaySet?.IsPaired == true) measurements.AddRange(result.DisplaySet.Members[sourcePosition].Take(4));
                         else measurements.Add(sourcePosition);
+                        pairedMeasurements?.Add(sourcePosition);
                     }
                     if (firstShownItem < 0) firstShownItem = i;
                     lastShownItem = i;
@@ -698,7 +702,7 @@ namespace BetterGhPanel
 
             _firstShownItem = firstShownItem;
             _lastShownItem = lastShownItem;
-            PanelOwner.Session.RequestListGeometryMeasurements(result.Snapshot, measurements, PanelOwner.ShowsPairedValueInDataList(result));
+            PanelOwner.Session.RequestListGeometryMeasurements(result.Snapshot, measurements, pairedMeasurements);
 
             if (Count > shown && !track.IsEmpty)
             {
@@ -711,19 +715,19 @@ namespace BetterGhPanel
             ? $"All {PanelOwner.CleanedEmptyBranches} branches are empty" : "Connect a tree to start exploring.";
 
         private bool ShowDataTypes(PanelQueryResult result) => PanelOwner.Session.Options.DisplaysDataFilterValue ||
-            PanelOwner.ShowsPairedValueInDataList(result) || result.DisplaySet != null ||
+            result.DisplaySet != null ||
             result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
 
         private void DrawDataCell(Graphics g, CanvasRowRenderer renderer, PanelQueryResult result, int position, int viewNumber,
-            RectangleF bounds, float valueStart, float setWidth, Font font, Font small, Font mono, bool grouped = true, float pathWidth = 0)
+            RectangleF bounds, float valueStart, float setWidth, Font font, Font small, Font mono, bool grouped = true, float pathWidth = 0,
+            bool showPairedSuffix = false)
         {
             var row = result.Snapshot.Rows[position];
             var dataRow = row;
             bool selected = _selection.Contains(position);
             float y = bounds.Y;
             bool pairedSet = result.DisplaySet?.IsPaired == true;
-            bool pairedValue = PanelOwner.ShowsPairedValueInDataList(result);
-            bool displayMetric = !pairedSet && (pairedValue || PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null);
+            bool displayMetric = !pairedSet && (PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null);
             bool numericMetric = displayMetric && (!PanelProperties.IsProperty(PanelOwner.Session.Options.SearchMode) ||
                 PanelProperties.Kind(PanelOwner.Session.Options.SearchMode) == PanelPropertyKind.Number);
             bool showTypes = ShowDataTypes(result);
@@ -740,8 +744,9 @@ namespace BetterGhPanel
             // Analytic summaries name their type. Native metadata summaries
             // (for example dot text/location) use the catalog's separate label.
             bool showRowType = showTypes && (displayMetric || row.GeometryInfo == null || StockTypeLabels.SeparateLabel(row.TypeName));
-            float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
-            var projectedType = result.DisplaySet != null && !pairedSet && !pairedValue ? result.DisplaySet.Values[position] : null;
+            float typeRight = bounds.Right - setWidth;
+            float typeSpace = showRowType ? TypeColumnWidth + CellGap : 12;
+            var projectedType = result.DisplaySet != null && !pairedSet ? result.DisplaySet.Values[position] : null;
             // A glyph as well as the colour bar, so validity never relies on colour alone.
             float marker = 0;
             if (sourceStatuses.VerifiedInvalid > 0 || sourceStatuses.Unverified > 0)
@@ -750,13 +755,22 @@ namespace BetterGhPanel
                     sourceStatuses.VerifiedInvalid > 0 ? "!" : "?", sourceStatuses.VerifiedInvalid > 0 ? PanelTheme.Warning : PanelTheme.Unverified, small);
                 marker = 12;
             }
+            float valueLeft = bounds.X + valueStart + 3 + marker;
+            if (showPairedSuffix)
+            {
+                string value = PanelOwner.PairedComparisonValue(position);
+                string suffix = "F " + (value == "measuring…" ? "…" : PanelValuePresentation.Visualize(value));
+                float width = Math.Min(Math.Max(0, typeRight - typeSpace - valueLeft), renderer.MeasureCell(g, suffix, small) + 2);
+                renderer.DrawCell(g, suffix, small, Muted, new RectangleF(typeRight - 12 - width, y, width, RowHeight), true);
+                typeRight -= width + 8;
+            }
             renderer.DrawValue(g, PanelValuePresentation.Visualize(PanelOwner.DisplayValue(result.Snapshot, row, position)), font, Ink,
-                new RectangleF(bounds.X + valueStart + 3 + marker, y, Math.Max(0, valueRight - bounds.X - valueStart - 3 - marker), RowHeight),
+                new RectangleF(valueLeft, y, Math.Max(0, typeRight - typeSpace - valueLeft), RowHeight),
                 projectedType != null ? projectedType.IsNumeric : !pairedSet && (numericMetric || !displayMetric && row.NumericValue.HasValue));
             if (showRowType)
                 renderer.DrawCell(g, projectedType != null
                         ? projectedType.IsNumeric ? "Num" : "Text" : CanvasMenu.ShortTypeName(row.TypeName), small, Muted,
-                    new RectangleF(bounds.Right - setWidth - TypeColumnWidth, y, TypeColumnWidth - CellGap, RowHeight), true);
+                    new RectangleF(typeRight - TypeColumnWidth, y, TypeColumnWidth - CellGap, RowHeight), true);
             if (!pairedSet || !TableVisible) DrawSetCount(g, renderer, bounds, position, viewNumber, small);
         }
 

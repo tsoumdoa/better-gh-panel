@@ -68,14 +68,19 @@ namespace BetterGhPanel.UI
             DrawCell(graphics, value, _number, color, bounds, rightAligned);
 
         internal float MeasureNumber(Graphics graphics, string value) =>
-            (float)Math.Ceiling(graphics.MeasureString(value, _number, PointF.Empty, _format).Width);
+            MeasureCell(graphics, value, _number);
+
+        internal float MeasureCell(Graphics graphics, string value, Font font) =>
+            (float)Math.Ceiling(graphics.MeasureString(CellText(value), font, PointF.Empty, _format).Width);
+
+        private static string CellText(string value) =>
+            (value.Length > 256 ? value.Substring(0, 253) + "…" : value).Replace('\r', ' ').Replace('\n', ' ');
 
         internal void DrawCell(Graphics graphics, string value, Font font, Color color, RectangleF bounds,
             bool rightAligned = false, float baselineOffset = 0)
         {
             if (bounds.Width <= 0) return;
-            if (value.Length > 256) value = value.Substring(0, 253) + "…";
-            value = value.Replace('\r', ' ').Replace('\n', ' ');
+            value = CellText(value);
             float ascent = font.Size * font.FontFamily.GetCellAscent(font.Style) / font.FontFamily.GetEmHeight(font.Style);
             float top = bounds.Y + Baseline + baselineOffset - ascent;
             _format.Alignment = rightAligned ? StringAlignment.Far : StringAlignment.Near;
