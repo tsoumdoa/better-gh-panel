@@ -32,7 +32,10 @@ public class ItemOrderTests
         menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
         menu.Layout(panel, default, default, default, preview: anchor); menu.MarkPainted();
         Assert.Equal(new[] { "Selection", "Results", "Off", "Show all dots", "Preview limit" }, new[] { menu.Label(0), menu.Label(1), menu.Label(2), menu.Label(3), menu.Label(4) });
-        Assert.True(menu.RowEnabled(CanvasPreviewRows.ShowAllDots, false, false, PanelValuePalette.Off));
+        Assert.False(menu.RowEnabled(CanvasPreviewRows.ShowAllDots, false, false, PanelValuePalette.Off));
+        Assert.True(menu.RowEnabled(CanvasPreviewRows.ShowAllDots, true, false, PanelValuePalette.Off));
+        Assert.False(menu.RowEnabled(CanvasPreviewRows.ShowAllDots, true, false, PanelValuePalette.Off, PanelPreviewMode.Off));
+        Assert.True(menu.IsSectionStart(CanvasPreviewRows.ShowAllDots));
         Assert.False(menu.IsSelected(CanvasPreviewRows.ShowAllDots, options, PanelUnitConversion.None, -1));
         Assert.True(menu.IsSelected(CanvasPreviewRows.ShowAllDots, options, PanelUnitConversion.None, -1, showAllDots: true));
         Assert.False(menu.RowEnabled(CanvasPreviewRows.Size, false, false, PanelValuePalette.Viridis));
