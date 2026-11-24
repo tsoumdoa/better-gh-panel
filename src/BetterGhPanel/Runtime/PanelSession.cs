@@ -80,27 +80,33 @@ namespace BetterGhPanel.Runtime
         internal event EventHandler? PreviewMeasurementsChanged;
         private CancellationTokenSource? _previewMeasurements;
         private PanelQueryResult? _previewMeasurementResult;
-        private HashSet<int>? _previewMeasurementPositions;
+        private HashSet<int>? _previewMeasurementPositions, _previewPairedPositions;
         private bool _previewMeasureData, _previewMeasurePaired;
-        internal void RequestPreviewMeasurements(PanelQueryResult? result, IReadOnlyList<int>? positions, bool data = true, bool paired = false)
+        internal void RequestPreviewMeasurements(PanelQueryResult? result, IReadOnlyList<int>? positions, bool data = true, bool paired = false,
+            Func<int, bool>? previewAdmits = null)
         {
+            var column = paired ? _pairedColumn : null;
+            var pairedSnapshot = column?.Snapshot;
+            var partners = positions != null && pairedSnapshot != null && column?.Pair is PanelPairedData map
+                ? positions.Where(position => previewAdmits?.Invoke(position) == true)
+                    .Select(map.ItemAt).Where(item => item.HasValue).Select(item => item!.Value).ToArray()
+                : Array.Empty<int>();
             if (ReferenceEquals(result, _previewMeasurementResult) &&
                 _previewMeasureData == data && _previewMeasurePaired == paired &&
-                (positions == null ? _previewMeasurementPositions == null : _previewMeasurementPositions?.SetEquals(positions) == true)) return;
+                (positions == null ? _previewMeasurementPositions == null : _previewMeasurementPositions?.SetEquals(positions) == true) &&
+                (_previewPairedPositions?.SetEquals(partners) ?? partners.Length == 0)) return;
             var old = _previewMeasurements; _previewMeasurements = null;
             var pending = positions == null ? null : new HashSet<int>(positions);
             _previewMeasurementResult = result; _previewMeasurementPositions = pending;
+            _previewPairedPositions = partners.Length > 0 ? new HashSet<int>(partners) : null;
             _previewMeasureData = data; _previewMeasurePaired = paired;
             old?.Cancel(); old?.Dispose();
             if (result == null || positions == null || positions.Count == 0 || !HasCurrentResult ||
                 !ReferenceEquals(result, Result) || !ReferenceEquals(_previewMeasurementPositions, pending)) return;
             var cancellation = _previewMeasurements = new CancellationTokenSource();
             if (data) _ = _geometry.MeasureAsync(result.Snapshot, positions, cancellation.Token, background: true);
-            if (paired && _pairedColumn?.Snapshot is PanelSnapshot snapshot && _pairedColumn.Pair is PanelPairedData map)
-            {
-                var partners = positions.Select(map.ItemAt).Where(item => item.HasValue).Select(item => item!.Value).ToArray();
-                if (partners.Length > 0) _ = _pairedColumn.Geometry?.MeasureAsync(snapshot, partners, cancellation.Token, background: true);
-            }
+            if (partners.Length > 0)
+                _ = column?.Geometry?.MeasureAsync(pairedSnapshot!, partners, cancellation.Token, background: true);
         }
 
         // Capture stages these immutable providers immediately before attaching their

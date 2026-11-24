@@ -74,7 +74,7 @@ namespace BetterGhPanel
         {
             _highlight.PendingMeasurements = (result, positions) => _session?.RequestPreviewMeasurements(result, positions,
                 LabelSource == PanelLabelSource.Data || LabelSource == PanelLabelSource.PairedAndData || !ColourByPaired && ValuePalette != PanelValuePalette.Off,
-                UsesPairedPreviewValues);
+                UsesPairedPreviewValues, _highlight.IsAdmitted);
             _highlight.PreviewChanged = () =>
             {
                 InvalidatePreviewCaches();

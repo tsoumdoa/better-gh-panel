@@ -50,7 +50,7 @@ namespace BetterGhPanel.Runtime
         private readonly Queue<DisplayMaterial> _retiredMaterials = new Queue<DisplayMaterial>();
         internal void ConfigureValues(PanelQueryResult result, bool order, bool values, PanelDotPlacement placement,
             PanelValuePalette palette, bool reverse, PanelSearchMode search, int decimals, double factor,
-            IReadOnlyList<int> scope, Func<int, PanelPreviewValue> sample, Func<bool> current,
+            IReadOnlyList<int> scope, Func<int, bool, PanelPreviewValue> sample, Func<bool> current,
             PanelLabelSource labelSource = PanelLabelSource.Off, bool colourByPaired = false, bool passFail = false)
         {
             _activeDraws++;
@@ -94,7 +94,6 @@ namespace BetterGhPanel.Runtime
         internal void InvalidateValues() => _orderLabels.InvalidateValues();
         private void AddLabel(Entry entry, Func<bool> current)
         {
-            _orderLabels.PreviewAdmissionChanged();
             entry.ColourId = _orderLabels.ColourId(entry.Position);
             if (_orderResult == null) return;
             var anchor = entry.Leaves.Count == 1 ? entry.Leaves[0].Anchor(current) : entry.Bounds.Center;
@@ -133,12 +132,13 @@ namespace BetterGhPanel.Runtime
             _admissionObserver = admissionObserver;
             _displayMemory = new PanelPreviewMemory(MaxRetainedBytes, () => SourceAndMaterialBytes);
             _orderLabels = new PanelOrderLabels(_membership);
-            _orderLabels.IsAdmitted = _byPosition.ContainsKey;
+            _orderLabels.IsAdmitted = IsAdmitted;
             _orderLabels.ValuesChanged = ValuesChanged;
             _orderLabels.PendingChanged = (result, positions) => PendingMeasurements?.Invoke(result, positions);
         }
         internal int Count => _selectedCount;
         internal int PreviewCount => _entries.Count;
+        internal bool IsAdmitted(int position) => _byPosition.ContainsKey(position);
         private long SourceAndMaterialBytes => _bytes + _retiredBytes + _stagedBytes + ((_valueMaterials?.Length ?? 0) + _retiredMaterials.Count) * 512L;
         internal long RetainedBytes => SourceAndMaterialBytes + _displayMemory.UsedBytes;
         internal int LastVisitedRows { get; private set; }
@@ -505,6 +505,7 @@ namespace BetterGhPanel.Runtime
                 }
                 var entry = new Entry(position, order, bounds, estimate, leaves);
                 _entries.Add(order, entry); _byPosition.Add(position, entry);
+                _orderLabels.PreviewAdmissionChanged();
                 _bytes += estimate; _stagedBytes -= estimate; reserved = false; admitted = true;
                 _bounds.Add(bounds);
                 if (_membership.Contains(position))
@@ -568,6 +569,7 @@ namespace BetterGhPanel.Runtime
             if (leaf == null) { RememberUnavailable(position); return true; }
             var entry = new Entry(position, order, leaf.Bounds, estimate, new List<PanelPreviewLeaf> { leaf });
             _entries.Add(order, entry); _byPosition.Add(position, entry);
+            _orderLabels.PreviewAdmissionChanged();
             _bytes += estimate; _bounds.Add(entry.Bounds);
             if (_membership.Contains(position))
             { _selectedCount++; RequestMeshPriority(); }

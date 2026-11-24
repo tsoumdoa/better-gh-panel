@@ -200,19 +200,22 @@ namespace BetterGhPanel
             {
                 return pairedColumn?.Snapshot != null && pairedColumn.Pair?.ItemAt(position) is int item
                     ? pairedColumn.PreviewValue(item, UnitConversion, DecimalPlaces, RoundUpFactor, pairedMode, pairedTitle)
-                    : default;
+                    : default(PanelPreviewValue).WithLabel("—", false);
             }
-            PanelPreviewValue Sample(int position)
+            PanelPreviewValue Sample(int position, bool admitted)
             {
-                bool dataLabels = labelSource == PanelLabelSource.Data || labelSource == PanelLabelSource.PairedAndData;
+                bool dataLabels = admitted && (labelSource == PanelLabelSource.Data || labelSource == PanelLabelSource.PairedAndData);
+                bool pairedLabels = admitted && labelSource >= PanelLabelSource.Paired;
                 var d = dataLabels || !colourByPaired && palette != PanelValuePalette.Off ? SampleData(position) : default;
-                var f = labelSource >= PanelLabelSource.Paired || colourByPaired && palette != PanelValuePalette.Off ? SamplePaired(position) : default;
+                var f = pairedLabels || colourByPaired && palette != PanelValuePalette.Off ? SamplePaired(position) : default;
                 var colour = colourByPaired ? f : d;
+                // Offscreen F contributes only already-available colour samples.
+                if (!admitted) return colourByPaired && colour.Pending ? default : colour;
                 if (!showValues) return colour;
                 string label = labelSource == PanelLabelSource.Data ? d.ValueText : f.ValueText;
-                if (labelSource == PanelLabelSource.PairedAndData && d.ValueText.Length > 0)
-                    label = label.Length == 0 ? d.ValueText : label + " · " + d.ValueText;
-                return colour.WithLabel(label, (dataLabels && d.Pending) || (labelSource >= PanelLabelSource.Paired && f.Pending));
+                if (labelSource == PanelLabelSource.PairedAndData)
+                    label += " · " + (d.ValueText.Length > 0 ? d.ValueText : "—");
+                return colour.WithLabel(label, (dataLabels && d.Pending) || (pairedLabels && f.Pending));
             }
             _highlight.SetPreviewLimit(PreviewLimit);
             if (!Current()) return;
