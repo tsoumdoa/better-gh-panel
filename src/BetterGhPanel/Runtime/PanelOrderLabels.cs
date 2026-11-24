@@ -343,7 +343,7 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        private bool Visible => _labels.Count > 0 || _passFailLegend != null || Gradient && _legend.Length > 0;
+        internal bool Visible => _labels.Count > 0 || _passFailLegend != null || Gradient && _legend.Length > 0;
         private void UpdateEnabled()
         {
             bool visible = Visible;

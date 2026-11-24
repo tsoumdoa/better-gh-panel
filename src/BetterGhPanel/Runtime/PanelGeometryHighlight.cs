@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Rhino.Display;
 using BetterGhPanel.Core;
 using Grasshopper;
@@ -138,6 +139,7 @@ namespace BetterGhPanel.Runtime
         }
         internal int Count => _selectedCount;
         internal int PreviewCount => _entries.Count;
+        internal bool HasVisiblePreview => PreviewCount > 0 || _orderLabels.Visible;
         internal bool IsAdmitted(int position) => _byPosition.ContainsKey(position);
         private long SourceAndMaterialBytes => _bytes + _retiredBytes + _stagedBytes + ((_valueMaterials?.Length ?? 0) + _retiredMaterials.Count) * 512L;
         internal long RetainedBytes => SourceAndMaterialBytes + _displayMemory.UsedBytes;
@@ -761,11 +763,12 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        internal void Clear() => ClearForQuery(false);
-        internal bool ClearForQuery(bool keepValues)
+        internal void Clear() => ClearForQuery(false, PanelPreviewMode.Off, PreviewLimit);
+        internal bool ClearForQuery(bool keepValues, PanelPreviewMode mode, int limit)
         {
             _generation++;
-            if (keepValues && (_orderLabels.HasValuePreview || _passFail))
+            var activeMode = _passFail ? PanelPreviewMode.PassFail : _filtered ? PanelPreviewMode.FilteredResults : PanelPreviewMode.Selected;
+            if (keepValues && mode == activeMode && (_orderLabels.HasValuePreview || _passFail))
             {
                 // Keep the owned preview visible until SetScopeChecked replaces it.
                 // No callback tied to the expired input may clear this retained generation.
@@ -774,6 +777,7 @@ namespace BetterGhPanel.Runtime
                 { _source = null; _result = null; _orderResult = null; _legacyPositions = null; }
                 _membership.DetachResult();
                 _orderLabels.SuspendValues();
+                TrimRetainedPreview(limit);
                 return true;
             }
             _orderLabels.Clear(); _orderResult = null; ClearGeometry();
@@ -785,6 +789,21 @@ namespace BetterGhPanel.Runtime
             }
             return false;
         }
+
+        private void TrimRetainedPreview(int limit)
+        {
+            if (_entries.Count <= limit) return;
+            // The next result rebuilds the scope. Until then, keep the earliest
+            // entries and give selected rows priority over unselected rows.
+            _result = null;
+            _filteredRecovery.Clear();
+            void Drop(Entry entry) { Remove(entry, dispose: false); Retire(entry); }
+            while (_entries.Count > limit && _unselected.Count > 0) Drop(_entries[_unselected.Max]);
+            if (_entries.Count > limit)
+                foreach (var entry in _entries.Values.Reverse().Take(_entries.Count - limit).ToArray()) Drop(entry);
+            FlushRetired();
+        }
+
         private void CancelRecovery(bool keepFiltered = false)
         {
             if (_recoveryScheduled) Rhino.RhinoApp.Idle -= RecoverOnIdle;

@@ -243,13 +243,15 @@ namespace BetterGhPanel
         internal void ClearHighlightCore(bool keepValues)
         {
             _session?.RequestPreviewMeasurements(null, null);
-            bool visible = _highlight.PreviewCount > 0;
+            bool visible = _highlight.HasVisiblePreview;
+            int count = _highlight.PreviewCount;
             bool retained = _highlight.ClearForQuery(keepValues: keepValues &&
                 (ShowValues || ActiveValuePalette != PanelValuePalette.Off || PreviewMode == PanelPreviewMode.PassFail) &&
-                PreviewMode != PanelPreviewMode.Off && !Hidden && !Locked && !_previewSuspended);
+                PreviewMode != PanelPreviewMode.Off && !Hidden && !Locked && !_previewSuspended, PreviewMode, PreviewLimit);
             if (retained) WatchRetainedPreviewSolution();
             else StopRetainedPreviewCheck();
-            if (visible && !retained) { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
+            if (visible && (!retained || count != _highlight.PreviewCount))
+            { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
         }
 
         private GH_Document? _retainedPreviewDocument;
