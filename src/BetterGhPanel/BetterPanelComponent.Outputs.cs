@@ -25,7 +25,8 @@ namespace BetterGhPanel
         internal PanelPairedData? PairedData { get; private set; }
         internal string? PairedError => _pairedError;
         internal string? PairedUnavailableReason => PairedData != null ? null :
-            !PairedInputPresent() ? "F is not wired." : PairedError ?? "F is waiting for paired data.";
+            !PairedInputPresent() ? "F is not wired." : PairedError is string error
+                ? error + " Pairing uses the input branch counts before Clean." : "F is waiting for paired data.";
         internal bool CanSplit => TableColumns.Any(column => column.Present && column.Pair != null) && Session.HasCurrentResult;
         private long _selectionVersion, _publishedSelectionVersion;
         private PanelOutputScope _publishedScope;

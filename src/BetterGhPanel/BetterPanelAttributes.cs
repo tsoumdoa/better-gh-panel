@@ -707,7 +707,8 @@ namespace BetterGhPanel
             }
         }
 
-        private string EmptyTreeMessage() => PanelOwner.CleanedEmptyBranches > 0 ? "Clean removed all empty branches." : "Connect a tree to start exploring.";
+        private string EmptyTreeMessage() => PanelOwner.CleanedEmptyBranches > 0
+            ? $"All {PanelOwner.CleanedEmptyBranches} branches are empty" : "Connect a tree to start exploring.";
 
         private bool ShowDataTypes(PanelQueryResult result) => PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null ||
             result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;

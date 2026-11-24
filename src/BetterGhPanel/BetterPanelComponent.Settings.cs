@@ -364,7 +364,7 @@ namespace BetterGhPanel
             trimDepth = Math.Max(0, trimDepth);
             bool groupByPaired = byPaired ?? (createSet || BranchStatsTree) && GroupByPaired;
             if (TrimDepth == trimDepth && FlattenTree == flatten && ReverseTree == reverse && SimplifyTree == simplify && CreateSetTree == createSet && CleanTree == clean && GroupByPaired == groupByPaired) return;
-            bool pathsChanged = TrimDepth != trimDepth || FlattenTree != flatten || SimplifyTree != simplify || CleanTree != clean && simplify;
+            bool pathsChanged = TrimDepth != trimDepth || FlattenTree != flatten || SimplifyTree != simplify || CleanTree != clean;
             RecordUndoEvent("Panel+ tree tools");
             TrimDepth = trimDepth;
             FlattenTree = flatten;

@@ -76,16 +76,21 @@ namespace BetterGhPanel.Runtime
             int trimDepth, bool simplify, bool flatten, bool reverse, out IReadOnlyList<PanelSourceAddress> retainedSources, bool clean = false)
         {
             var retained = new List<PanelSourceAddress>(source.DataCount);
-            if (trimDepth == 0 && !simplify && !flatten && !reverse && !clean)
+            if (trimDepth == 0 && !simplify && !flatten && !reverse)
             {
+                var filtered = clean ? new GH_Structure<IGH_Goo>() : source;
                 for (int b = 0; b < source.PathCount; b++)
                 {
-                    var pathText = source.Paths[b].ToString();
-                    for (int i = 0; i < source.Branches[b].Count; i++)
+                    var branch = source.Branches[b];
+                    if (branch.Count == 0) continue;
+                    var path = source.Paths[b];
+                    if (clean) filtered.EnsurePath(new GH_Path(path)).AddRange(branch);
+                    var pathText = path.ToString();
+                    for (int i = 0; i < branch.Count; i++)
                         retained.Add(new PanelSourceAddress(pathText, i));
                 }
                 retainedSources = retained.AsReadOnly();
-                return source;
+                return filtered;
             }
             // Transform positions so typed input and original addresses stay aligned.
             // Create set belongs to the displayed-value query, after filters and units.
