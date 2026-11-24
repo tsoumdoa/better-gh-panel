@@ -15,6 +15,8 @@ namespace BetterGhPanel
     {
         internal string DisplayValue(PanelSnapshot snapshot, PanelRow row, int sourcePosition = -1)
         {
+            if (sourcePosition >= 0 && ReferenceEquals(snapshot, Session.Result.Snapshot) && ShowsPairedValueInDataList(Session.Result))
+                return PairedComparisonValue(PairedColumn, sourcePosition);
             if (ReferenceEquals(snapshot, Session.Result.Snapshot) && Session.Result.DisplaySet?.Values.TryGetValue(sourcePosition, out var projected) == true)
             {
                 var set = Session.Result.DisplaySet;

@@ -698,7 +698,7 @@ namespace BetterGhPanel
 
             _firstShownItem = firstShownItem;
             _lastShownItem = lastShownItem;
-            PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, measurements);
+            PanelOwner.Session.RequestListGeometryMeasurements(result.Snapshot, measurements, PanelOwner.ShowsPairedValueInDataList(result));
 
             if (Count > shown && !track.IsEmpty)
             {
@@ -710,7 +710,8 @@ namespace BetterGhPanel
         private string EmptyTreeMessage() => PanelOwner.CleanedEmptyBranches > 0
             ? $"All {PanelOwner.CleanedEmptyBranches} branches are empty" : "Connect a tree to start exploring.";
 
-        private bool ShowDataTypes(PanelQueryResult result) => PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null ||
+        private bool ShowDataTypes(PanelQueryResult result) => PanelOwner.Session.Options.DisplaysDataFilterValue ||
+            PanelOwner.ShowsPairedValueInDataList(result) || result.DisplaySet != null ||
             result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
 
         private void DrawDataCell(Graphics g, CanvasRowRenderer renderer, PanelQueryResult result, int position, int viewNumber,
@@ -721,7 +722,8 @@ namespace BetterGhPanel
             bool selected = _selection.Contains(position);
             float y = bounds.Y;
             bool pairedSet = result.DisplaySet?.IsPaired == true;
-            bool displayMetric = !pairedSet && (PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null);
+            bool pairedValue = PanelOwner.ShowsPairedValueInDataList(result);
+            bool displayMetric = !pairedSet && (pairedValue || PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null);
             bool numericMetric = displayMetric && (!PanelProperties.IsProperty(PanelOwner.Session.Options.SearchMode) ||
                 PanelProperties.Kind(PanelOwner.Session.Options.SearchMode) == PanelPropertyKind.Number);
             bool showTypes = ShowDataTypes(result);
@@ -739,7 +741,7 @@ namespace BetterGhPanel
             // (for example dot text/location) use the catalog's separate label.
             bool showRowType = showTypes && (displayMetric || row.GeometryInfo == null || StockTypeLabels.SeparateLabel(row.TypeName));
             float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
-            var projectedType = result.DisplaySet != null && !pairedSet ? result.DisplaySet.Values[position] : null;
+            var projectedType = result.DisplaySet != null && !pairedSet && !pairedValue ? result.DisplaySet.Values[position] : null;
             // A glyph as well as the colour bar, so validity never relies on colour alone.
             float marker = 0;
             if (sourceStatuses.VerifiedInvalid > 0 || sourceStatuses.Unverified > 0)

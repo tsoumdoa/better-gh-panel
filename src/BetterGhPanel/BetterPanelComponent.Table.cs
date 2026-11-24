@@ -60,13 +60,22 @@ namespace BetterGhPanel
             return column == PairedColumn && options.SearchPaired && options.DisplayFilterValue;
         }
 
+        internal bool ShowsPairedValueInDataList(PanelQueryResult result)
+        {
+            var options = Session.Options;
+            return !EffectiveTableVisible && options.SearchPaired && options.DisplayFilterValue && result.DisplaySet?.IsPaired != true;
+        }
+
+        private string PairedComparisonValue(PanelTableColumn? column, int position) =>
+            column?.Snapshot != null && column.Pair?.ItemAt(position) is int item
+                ? column.ItemValue(item, UnitConversion, DecimalPlaces, RoundUpFactor, Session.Options.SearchMode) : "—";
+
         internal string ResultColumnCell(PanelTableColumn column, PanelQueryResult result, int position)
         {
             if (column == PairedColumn)
             {
                 if (result.DisplaySet?.IsPaired == true) return result.DisplaySet.Values[position].Text;
-                if (ShowsPairedComparison(column) && column.Snapshot != null && column.Pair?.ItemAt(position) is int item)
-                    return column.ItemValue(item, UnitConversion, DecimalPlaces, RoundUpFactor, Session.Options.SearchMode);
+                if (ShowsPairedComparison(column)) return PairedComparisonValue(column, position);
             }
             return column.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor);
         }

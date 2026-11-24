@@ -229,16 +229,24 @@ namespace BetterGhPanel.Runtime
         internal long GeometrySourceScansForTesting => _geometry.SourceScansForTesting;
         internal int GeometryEntryCountForTesting => _geometry.EntryCountForTesting;
         internal void ResetGeometryDiagnosticsForTesting() => _geometry.ResetDiagnosticsForTesting();
-        internal void RequestGeometryMeasurements(PanelSnapshot snapshot, IEnumerable<int> visiblePositions)
+        internal void RequestGeometryMeasurements(PanelSnapshot snapshot, IEnumerable<int> visiblePositions) =>
+            RequestListGeometryMeasurements(snapshot, visiblePositions, showPaired: false);
+
+        internal void RequestListGeometryMeasurements(PanelSnapshot snapshot, IEnumerable<int> visiblePositions, bool showPaired)
         {
             CancelVisibleColumnMeasurements();
             // The ordinary D renderer also signals hidden/offscreen/compact tables.
             // Explicit copy demand must not keep an inactive column measuring.
             foreach (var column in _columns.ToArray())
-                if ((_options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != _options.SortColumn) &&
+                if (showPaired && column == _pairedColumn) continue;
+                else if ((_options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != _options.SortColumn) &&
                     (!_previewMeasurePaired || column != _pairedColumn))
                     column.Geometry?.CancelRequests(preserveQuery: true);
-            _geometry.RequestVisible(snapshot, visiblePositions);
+            if (_pairedColumn?.Snapshot is PanelSnapshot pairedSnapshot && _pairedColumn.Pair is PanelPairedData pair)
+                _pairedColumn.Geometry?.RequestVisible(pairedSnapshot, showPaired && ReferenceEquals(snapshot, Snapshot)
+                    ? visiblePositions.Select(pair.ItemAt).Where(item => item.HasValue).Select(item => item!.Value)
+                    : Array.Empty<int>());
+            _geometry.RequestVisible(snapshot, showPaired ? Array.Empty<int>() : visiblePositions);
         }
         internal Task<bool> MeasureGeometryAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken cancellationToken) =>
             _geometry.MeasureAsync(snapshot, positions, cancellationToken);
