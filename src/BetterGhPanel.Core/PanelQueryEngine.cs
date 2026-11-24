@@ -154,12 +154,12 @@ namespace BetterGhPanel.Core
                     stats.Add(snapshot, row, i, query, measured);
                 }
                 rowPositions.Add(i);
-                if (columnSortRows != null && set == null) columnSortRows.Add(i, query.ColumnSortKeys!.RowAt(i));
+                if (columnSortRows != null && (set == null || set.IsPaired)) columnSortRows.Add(i, query.ColumnSortKeys!.RowAt(i));
                 outputValues?.Add(i, PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured,
                     query.DecimalPlaces, query.RoundUpFactor, query.Formula));
                 if (propertySortValues != null) propertySortValues.Add(i, PanelDisplayedValue.Capture(snapshot, row, query, measured));
                 if (sortText != null && !row.IsNull)
-                    sortText.Add(i, new RowSortKey(row, measured, snapshot.UnitConversion, query));
+                    sortText.Add(i, new RowSortKey(row, measured, snapshot.UnitConversion, query, set?.IsPaired == true));
                 branches.Add(row.Path);
                 Increment(branchCounts, row.Path);
                 if (set?.IsBranchSet == true) continue;
@@ -174,7 +174,7 @@ namespace BetterGhPanel.Core
             if (work.ShouldYield()) yield return null;
             cancellationToken.ThrowIfCancellationRequested();
             var positions = rowPositions.ToArray();
-            if (columnSortRows != null && set != null && !set.IsBranchSet)
+            if (columnSortRows != null && set != null && !set.IsBranchSet && !set.IsPaired)
                 foreach (int position in positions)
                 {
                     var preview = new List<string>(4);
@@ -426,15 +426,17 @@ namespace BetterGhPanel.Core
         // Non-scalar rows sort by their measurement when they have one, so 9 precedes 10.
         private readonly struct RowSortKey
         {
-            internal RowSortKey(PanelRow row, PanelGeometryInfo? measured, PanelUnitConversion conversion, PanelQueryOptions query)
+            internal RowSortKey(PanelRow row, PanelGeometryInfo? measured, PanelUnitConversion conversion, PanelQueryOptions query, bool shownPrecision)
             {
                 var geometry = row.IsValid ? measured ?? row.GeometryInfo : null;
                 double scalar = row.IsValid && row.NumericValue.HasValue ? PanelValuePresentation.PresentedNumber(row, query.DecimalPlaces, query.RoundUpFactor, query.Formula) : double.NaN;
+                bool compact = shownPrecision && query.DecimalPlaces == PanelUnits.AutomaticDecimals;
+                if (compact && !double.IsNaN(scalar) && !double.IsInfinity(scalar)) scalar = PanelNumber.GeneralValue(scalar, 12);
                 Number = !double.IsNaN(scalar) && !double.IsInfinity(scalar) ? scalar : (double?)null;
                 Text = Number.HasValue ? default : PanelValuePresentation.DisplayText(row, conversion, query.DecimalPlaces, measured, query.RoundUpFactor, query.Formula);
                 double value = geometry?.Value is double raw && raw >= 0 ? PanelUnits.Transform(PanelUnits.ConvertGeometry(raw, geometry.Power, geometry.Units, conversion), PanelUnitConversion.None, query.RoundUpFactor, query.DecimalPlaces, query.Formula) : double.NaN;
                 Metric = !double.IsNaN(value) && !double.IsInfinity(value) ? geometry!.MetricName : null;
-                Value = value;
+                Value = compact && Metric != null ? PanelNumber.GeneralValue(value, 6) : value;
             }
             internal PanelText Text { get; }
             internal double? Number { get; }
