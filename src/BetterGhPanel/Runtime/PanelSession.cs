@@ -302,7 +302,9 @@ namespace BetterGhPanel.Runtime
             else Notify(); // View resets can clear transient state even when options are unchanged.
         }
 
-        private void QueueQuery()
+        private const int MeasurementRetryLimit = 3;
+
+        private void QueueQuery(int retriesRemaining = MeasurementRetryLimit)
         {
             _queryCancellation?.Cancel();
             _queryCancellation?.Dispose();
@@ -415,7 +417,7 @@ namespace BetterGhPanel.Runtime
                 finally
                 {
                     work?.Dispose();
-                    if (result == null && error == null && !token.IsCancellationRequested)
+                    if (retriesRemaining > 0 && result == null && error == null && !token.IsCancellationRequested)
                         await Task.Delay(60).ConfigureAwait(false);
                     RhinoApp.InvokeOnUiThread((Action)(() =>
                     {
@@ -429,7 +431,10 @@ namespace BetterGhPanel.Runtime
                         if (!CanPublish(snapshot, request, token)) return;
                         // The same capture can retry an interrupted measurement. A newer
                         // query or a source recapture takes over through CanPublish.
-                        if (result == null && error == null) QueueQuery();
+                        if (result == null && error == null && retriesRemaining > 0)
+                            QueueQuery(retriesRemaining - 1);
+                        else if (result == null && error == null)
+                            PublishQuery(null, "Measurements were interrupted. Edit the query to try again.");
                         else PublishQuery(result, error);
                     }));
                 }
