@@ -12,6 +12,8 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
+        private bool ShowValuesHasSourceMenu => PanelOwner.PairedInputPresent() || PanelOwner.LabelSource >= PanelLabelSource.Paired;
+
         private bool MenuRowEnabled(int index) =>
             _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ActiveValuePalette, PanelOwner.PreviewMode) &&
             PairedSourceUnavailableReason(index) == null;
@@ -36,7 +38,7 @@ namespace BetterGhPanel
                 if (index == CanvasPreviewRows.ItemOrder) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
                 if (index == CanvasPreviewRows.Values)
                 {
-                    if (PanelOwner.PairedUnavailableReason == null) next = CanvasMenuKind.ShowValues;
+                    if (ShowValuesHasSourceMenu) next = CanvasMenuKind.ShowValues;
                     else PanelOwner.SetShowValues(!PanelOwner.ShowValues);
                 }
                 if (index == CanvasPreviewRows.Placement) next = CanvasMenuKind.DotPlacement;

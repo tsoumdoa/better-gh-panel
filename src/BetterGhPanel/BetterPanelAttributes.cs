@@ -1036,7 +1036,7 @@ namespace BetterGhPanel
                         g.DrawLines(check, new[] { new PointF(row.X + 7, row.Y + 10), new PointF(row.X + 10, row.Y + 13), new PointF(row.X + 16, row.Y + 7) });
                 float inset = _menu.Kind == CanvasMenuKind.BranchStats && !_menu.StatsSourceRow(index) && (_menu.StatsIndex(index) == 1 || _menu.StatsIndex(index) == 10) ? 7 : 23;
                 string tail = _menu.Trailing(index, PanelOwner.DotPlacement, palette, PanelOwner.DotSize, PanelOwner.PreviewLimit);
-                if (_menu.Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.Values && PanelOwner.PairedUnavailableReason == null)
+                if (_menu.Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.Values && ShowValuesHasSourceMenu)
                     tail = (PanelOwner.LabelSource == PanelLabelSource.Paired ? "F value" : PanelOwner.LabelSource == PanelLabelSource.PairedAndData ? "F · D" :
                         PanelOwner.LabelSource == PanelLabelSource.Data ? "D value" : "Off") + "…";
                 if (tail.Length > 0)
@@ -1080,7 +1080,7 @@ namespace BetterGhPanel
             bool pairedPresent = PanelOwner.PairedInputPresent();
             _menu.SearchTargetRows = pairedPresent || session.Options.SearchPaired ? 1 : 0;
             _menu.CategoricalColours = PanelOwner.PairedColourIsCategorical;
-            _menu.GroupingChoices = pairedPresent || (kind switch
+            _menu.GroupingChoices = kind == CanvasMenuKind.ShowValues ? ShowValuesHasSourceMenu : pairedPresent || (kind switch
             {
                 CanvasMenuKind.ValuePalette => PanelOwner.ColourByPaired,
                 CanvasMenuKind.BranchStats => PanelOwner.BranchStatsTree && PanelOwner.GroupByPaired,
