@@ -13,7 +13,7 @@ namespace BetterGhPanel
     internal sealed partial class BetterPanelAttributes
     {
         private bool MenuRowEnabled(int index) =>
-            _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette, PanelOwner.PreviewMode) &&
+            _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ActiveValuePalette, PanelOwner.PreviewMode) &&
             (!_menu.PairedSourceRow(index) || PanelOwner.PairedUnavailableReason == null);
 
         private void ChoosePreviewMenu(int index, GH_Canvas canvas)
@@ -37,7 +37,14 @@ namespace BetterGhPanel
             else if (page == CanvasMenuKind.DotPlacement) { PanelOwner.SetDotPlacement((PanelDotPlacement)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.DotSize) { PanelOwner.SetDotSize((PanelDotSize)(index - 1)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.PreviewLimit) { PanelOwner.SetPreviewLimit(PanelDotSettings.LimitAt(index - 1)); next = CanvasMenuKind.Preview; }
-            else if (_menu.IsPaletteSource(index)) PanelOwner.SetColourByPaired(index == 2);
+            else if (_menu.IsPaletteSource(index))
+            {
+                PanelOwner.SetColourByPaired(index == 2);
+                _menu.Close();
+                OpenMenu(page, canvas);
+                return;
+            }
+            else if (_menu.CategoricalColours) PanelOwner.SetPairedCategoriesEnabled(_menu.PaletteIndex(index) == CanvasPreviewRows.PaletteFirst);
             else if (_menu.PaletteIndex(index) == CanvasPreviewRows.Reverse) PanelOwner.SetReversePalette(!PanelOwner.ReversePalette);
             else PanelOwner.SetValuePalette((PanelValuePalette)(_menu.PaletteIndex(index) - CanvasPreviewRows.FirstChoice));
             if (next != page)

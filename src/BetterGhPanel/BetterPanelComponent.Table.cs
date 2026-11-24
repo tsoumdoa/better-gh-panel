@@ -16,8 +16,25 @@ namespace BetterGhPanel
         internal int InputBranchCount => _inputTree?.PathCount ?? 0;
         internal IReadOnlyList<PanelTableColumn> TableColumns => _tableColumns;
         internal PanelTableColumn? PairedColumn => _tableColumns.Count > 0 && _tableColumns[0].Input == Params.Input[1] ? _tableColumns[0] : null;
-        private bool KeepPairedPresentation(PanelQueryOptions options) => options.SearchPaired || GroupByPaired || UsesPairedPreviewValues;
-        private bool UsesPairedPreviewValues => LabelSource >= PanelLabelSource.Paired || ColourByPaired && ValuePalette != PanelValuePalette.Off;
+        // The colour menu needs F's captured type even while colour is off.
+        private bool KeepPairedPresentation(PanelQueryOptions options) => options.SearchPaired || GroupByPaired ||
+            LabelSource >= PanelLabelSource.Paired || ColourByPaired;
+        private bool UsesPairedPreviewValues => LabelSource >= PanelLabelSource.Paired || ColourByPaired && ActiveValuePalette != PanelValuePalette.Off;
+
+        internal bool PairedColourIsCategorical
+        {
+            get
+            {
+                if (!ColourByPaired || PairedColumn?.Snapshot is not PanelSnapshot snapshot) return false;
+                if (PairedComparisonMode(Session.Options, Session.Result) is PanelSearchMode mode)
+                    return PanelProperties.IsProperty(mode) && PanelProperties.Kind(mode) != PanelPropertyKind.Number;
+                return !snapshot.HasGeometryMetrics && !snapshot.SupportsSearchMode(PanelSearchMode.Value) &&
+                    snapshot.TypeCounts.Keys.Any(type => type == "Text" || type == "String");
+            }
+        }
+
+        private static PanelSearchMode? PairedComparisonMode(PanelQueryOptions options, PanelQueryResult result) =>
+            options.SearchPaired && options.DisplayFilterValue && result.DisplaySet == null ? options.SearchMode : (PanelSearchMode?)null;
 
         private void RefreshPairedPreviewSource()
         {

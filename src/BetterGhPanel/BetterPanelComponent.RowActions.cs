@@ -177,16 +177,18 @@ namespace BetterGhPanel
             var labelSource = LabelSource;
             bool colourByPaired = ColourByPaired;
             var pairedColumn = PairedColumn;
-            var placement = DotPlacement; var palette = ValuePalette; int limit = PreviewLimit;
+            var savedPalette = ValuePalette;
+            var categorySetting = _pairedCategoriesEnabled;
+            var placement = DotPlacement; var palette = ActiveValuePalette; int limit = PreviewLimit;
             var stamp = new ActionStamp(this, session, snapshot, expectedResult, source, _selectionVersion);
             bool Current() => !_previewSuspended && !Locked && PreviewMode == mode &&
                 ShowItemOrder == showOrder && LabelSource == labelSource && ColourByPaired == colourByPaired && ReversePalette == reverse &&
-                DotPlacement == placement && ValuePalette == palette && PreviewLimit == limit && ReferenceEquals(pairedColumn, PairedColumn) &&
+                DotPlacement == placement && ValuePalette == savedPalette && _pairedCategoriesEnabled == categorySetting &&
+                PreviewLimit == limit && ReferenceEquals(pairedColumn, PairedColumn) &&
                 stamp.IsCurrent();
             var options = session.Options;
             var searchMode = options.SearchPaired ? PanelSearchMode.Text : options.SearchMode;
-            PanelSearchMode? pairedMode = options.SearchPaired && options.DisplayFilterValue && expectedResult.DisplaySet == null
-                ? options.SearchMode : (PanelSearchMode?)null;
+            PanelSearchMode? pairedMode = PairedComparisonMode(options, expectedResult);
             string pairedTitle = HeaderTitleForInput(Params.Input[1]);
             PanelPreviewValue SampleData(int position)
             {
@@ -216,12 +218,12 @@ namespace BetterGhPanel
             if (!Current()) return;
             _highlight.DotSize = DotSize;
             _highlight.HideOccludedDots = HideOccludedDots;
-            _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, ValuePalette, ReversePalette,
+            _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, palette, ReversePalette,
                 searchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current, labelSource, colourByPaired, mode == PanelPreviewMode.PassFail);
             if (!Current()) return;
             _highlight.SetScopeChecked(source, expectedResult, mode != PanelPreviewMode.Selected, ordered, Current, RowSelection, mode == PanelPreviewMode.PassFail);
             if (!Current()) return;
-            if (!ShowValues && ValuePalette == PanelValuePalette.Off) session.RequestPreviewMeasurements(null, null);
+            if (!ShowValues && palette == PanelValuePalette.Off) session.RequestPreviewMeasurements(null, null);
             StopRetainedPreviewCheck();
             InvalidatePreviewCaches();
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
@@ -236,7 +238,7 @@ namespace BetterGhPanel
         {
             _session?.RequestPreviewMeasurements(null, null);
             bool visible = _highlight.PreviewCount > 0;
-            bool retained = _highlight.ClearForQuery(keepValues: keepValues && (ShowValues || ValuePalette != PanelValuePalette.Off) &&
+            bool retained = _highlight.ClearForQuery(keepValues: keepValues && (ShowValues || ActiveValuePalette != PanelValuePalette.Off) &&
                 PreviewMode != PanelPreviewMode.Off && !Hidden && !Locked && !_previewSuspended);
             if (retained) WatchRetainedPreviewSolution();
             else StopRetainedPreviewCheck();

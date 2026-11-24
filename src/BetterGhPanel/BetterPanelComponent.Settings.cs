@@ -36,6 +36,11 @@ namespace BetterGhPanel
         internal bool ColourByPaired { get; private set; }
         internal PanelDotPlacement DotPlacement { get; private set; }
         internal PanelValuePalette ValuePalette { get; private set; }
+        private bool? _pairedCategoriesEnabled;
+        private bool PairedCategoriesEnabled => _pairedCategoriesEnabled ?? (ValuePalette != PanelValuePalette.Off);
+        internal PanelValuePalette ActiveValuePalette => PairedColourIsCategorical
+            ? PairedCategoriesEnabled ? PanelValuePalette.Viridis : PanelValuePalette.Off
+            : ValuePalette;
         internal PanelDotSize DotSize { get; private set; } = PanelDotSize.Medium;
         internal bool HideOccludedDots { get; private set; } = true;
         internal int PreviewLimit { get; private set; } = 5000;
@@ -53,6 +58,11 @@ namespace BetterGhPanel
         { if (Enum.IsDefined(typeof(PanelDotPlacement), value)) SetPreviewSetting("dot placement", DotPlacement, value, (c, v) => c.DotPlacement = v); }
         internal void SetValuePalette(PanelValuePalette value)
         { if (Enum.IsDefined(typeof(PanelValuePalette), value)) SetPreviewSetting("colour by value", ValuePalette, value, (c, v) => { c.ValuePalette = v; c.RefreshPairedPreviewSource(); }); }
+        internal void SetPairedCategoriesEnabled(bool enabled)
+        {
+            if (enabled != PairedCategoriesEnabled)
+                SetPreviewSetting<bool?>("colour categories", _pairedCategoriesEnabled, enabled, (c, v) => c._pairedCategoriesEnabled = v);
+        }
         internal void SetReversePalette(bool value) => SetPreviewSetting("reverse palette", ReversePalette, value, (c, v) => c.ReversePalette = v);
         private void SetPreviewSetting<T>(string name, T before, T after, Action<BetterPanelComponent, T> apply)
         {
@@ -625,6 +635,7 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelShowValues", ShowValues);
             if (LabelSource >= PanelLabelSource.Paired) writer.SetInt32("PanelLabelSource", (int)LabelSource);
             if (ColourByPaired) writer.SetBoolean("PanelColourByPaired", true);
+            if (_pairedCategoriesEnabled.HasValue) writer.SetBoolean("PanelPairedCategoriesEnabled", _pairedCategoriesEnabled.Value);
             writer.SetInt32("PanelDotPlacement", (int)DotPlacement);
             writer.SetInt32("PanelDotSize", (int)DotSize);
             writer.SetBoolean("PanelHideOccludedDots", HideOccludedDots);
@@ -783,6 +794,8 @@ namespace BetterGhPanel
             bool colourByPaired = false;
             reader.TryGetBoolean("PanelColourByPaired", ref colourByPaired);
             ColourByPaired = colourByPaired;
+            bool categoriesEnabled = false;
+            _pairedCategoriesEnabled = reader.TryGetBoolean("PanelPairedCategoriesEnabled", ref categoriesEnabled) ? (bool?)categoriesEnabled : null;
             ReversePalette = reversePalette;
             DotPlacement = Enum.IsDefined(typeof(PanelDotPlacement), dotPlacement) ? (PanelDotPlacement)dotPlacement : PanelDotPlacement.Centre;
             ValuePalette = Enum.IsDefined(typeof(PanelValuePalette), valuePalette) ? (PanelValuePalette)valuePalette : PanelValuePalette.Off;

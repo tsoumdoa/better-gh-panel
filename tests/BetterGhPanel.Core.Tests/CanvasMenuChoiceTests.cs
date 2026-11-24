@@ -8,6 +8,23 @@ using BetterGhPanel.UI;
 
 public class CanvasMenuChoiceTests
 {
+    [Fact]
+    public void CategoricalColourMenuOffersOnlyOffAndCategoriesAfterTheSources()
+    {
+        var options = new PanelQueryOptions();
+        var menu = new CanvasMenu { GroupingChoices = true, CategoricalColours = true };
+        menu.Toggle(CanvasMenuKind.ValuePalette, PanelSnapshot.Empty, options);
+        Assert.Equal(new[] { "‹ Preview", "Source · D value", "Source · F value", "Off", "Categories" },
+            Enumerable.Range(0, menu.Count).Select(index => menu.Label(index)));
+        Assert.Equal(PanelValuePalette.Off, menu.Swatch(4));
+        Assert.True(menu.IsSelected(3, options, PanelUnitConversion.None, -1, palette: PanelValuePalette.Off));
+        Assert.True(menu.IsSelected(4, options, PanelUnitConversion.None, -1, palette: PanelValuePalette.Viridis));
+        menu.CategoricalColours = false;
+        Assert.Equal("Heat", menu.Label(5));
+        Assert.Equal("Reverse", menu.Label(menu.Count - 1));
+        Assert.True(menu.IsSelected(5, options, PanelUnitConversion.None, -1, palette: PanelValuePalette.Heat));
+    }
+
 
 
     [Fact]
