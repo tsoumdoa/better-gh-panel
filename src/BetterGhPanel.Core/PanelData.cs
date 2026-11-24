@@ -207,6 +207,8 @@ namespace BetterGhPanel.Core
             var rowCopy = new PanelRow[rows.Count];
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             bool hasMeasurableGeometry = false, hasGeometryMetrics = false;
+            PanelGeometryInfo? commonMetric = null;
+            bool mixedMetrics = false;
             var capabilities = PanelSearchCapabilities.None;
             int unverifiedCount = 0, unavailableTypeIdentityCount = 0;
             for (var i = 0; i < rowCopy.Length; i++)
@@ -217,6 +219,12 @@ namespace BetterGhPanel.Core
                 typeCounts[row.TypeName] = count + 1;
                 if (row.IsValid && !row.IsNull && row.GeometryInfo?.CanMeasure == true) hasMeasurableGeometry = true;
                 hasGeometryMetrics |= PanelTableText.HasGeometryMetric(row.GeometryInfo);
+                if (!mixedMetrics && row.IsValid && !row.IsNull && row.GeometryInfo is PanelGeometryInfo metric &&
+                    (metric.CanMeasure || metric.Value.HasValue))
+                {
+                    if (commonMetric == null) commonMetric = metric;
+                    else mixedMetrics = !PanelTableText.SameGeometryMetric(commonMetric, metric);
+                }
                 capabilities |= row.SearchCapabilities;
                 foreach (var mode in row.Properties.Keys) _properties.Add(mode);
                 if (row.GeometryInfo != null) foreach (var mode in row.GeometryInfo.Properties.Keys) _properties.Add(mode);
@@ -237,6 +245,7 @@ namespace BetterGhPanel.Core
             CachedGroupSummaryCount = cachedGroupSummaryCount;
             HasMeasurableGeometry = hasMeasurableGeometry;
             HasGeometryMetrics = hasGeometryMetrics;
+            CommonGeometryMetric = mixedMetrics ? null : commonMetric;
             SearchCapabilities = capabilities;
             UnverifiedCount = unverifiedCount;
             UnavailableTypeIdentityCount = unavailableTypeIdentityCount;
@@ -250,6 +259,7 @@ namespace BetterGhPanel.Core
         /// <summary>Whether any valid captured row can require a deferred geometry measurement.</summary>
         public bool HasMeasurableGeometry { get; }
         internal bool HasGeometryMetrics { get; }
+        internal PanelGeometryInfo? CommonGeometryMetric { get; }
         /// <summary>Union captured from transformed, unfiltered primary D; it does not change the saved query.</summary>
         public PanelSearchCapabilities SearchCapabilities { get; }
         /// <summary>Input-level diagnostics before any query filter or set projection.</summary>

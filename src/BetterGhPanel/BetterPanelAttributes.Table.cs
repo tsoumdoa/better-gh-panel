@@ -110,10 +110,12 @@ namespace BetterGhPanel
                 return title;
             }
             if (index == 0 && DataHasFormula()) title += " ƒ";
+            string groupedMetric = index == 0 ? PanelOwner.PairedSetDHeaderSuffix(statsResult) : "";
             bool numeric = index > 0 && PanelOwner.TableColumns[index - 1].Snapshot?.TypeCounts.Keys.Any(type => type == "Number" || type == "Integer") == true;
             string units = index == 0 ? DataHeaderUnit() : PanelOwner.TableColumns[index - 1].HasGeometry
                 ? PanelOwner.TableColumns[index - 1].HeaderUnit(PanelOwner.UnitConversion) : numeric ? PanelUnits.Symbol(PanelOwner.UnitConversion) : "";
-            if (index > 0 && PanelOwner.TableColumns[index - 1].HomogeneousMetric)
+            if (groupedMetric.Length > 0) title += groupedMetric;
+            else if (index > 0 && PanelOwner.TableColumns[index - 1].HomogeneousMetric)
                 title += PanelOwner.TableColumns[index - 1].HeaderSuffix(PanelOwner.UnitConversion);
             else if (units.Length > 0) title += " \u00b7 " + units;
             var options = PanelOwner.Session.Options;

@@ -366,19 +366,10 @@ namespace BetterGhPanel.Core
                 : default(PanelPreviewValue).WithLabel(text, false);
         }
 
-        internal static PanelGeometryInfo? CommonGeometryMetric(PanelSnapshot snapshot)
-        {
-            PanelGeometryInfo? first = null;
-            foreach (var row in snapshot.Rows)
-            {
-                var geometry = row.GeometryInfo;
-                if (!row.IsValid || row.IsNull || geometry == null || (!geometry.CanMeasure && !geometry.Value.HasValue)) continue;
-                if (first != null && (first.Power != geometry.Power || first.MetricName != geometry.MetricName ||
-                    first.MetricLabel != geometry.MetricLabel || first.Units != geometry.Units)) return null;
-                first = geometry;
-            }
-            return first;
-        }
+        internal static PanelGeometryInfo? CommonGeometryMetric(PanelSnapshot snapshot) => snapshot.CommonGeometryMetric;
+        internal static bool SameGeometryMetric(PanelGeometryInfo first, PanelGeometryInfo second) =>
+            first.Power == second.Power && first.MetricName == second.MetricName &&
+            first.MetricLabel == second.MetricLabel && first.Units == second.Units;
         internal static string GeometryHeaderUnit(PanelGeometryInfo? metric, PanelUnitConversion conversion) =>
             metric != null && metric.Power > 0 ? GeometryUnit(metric, conversion) : "";
         private static string GeometryUnit(PanelGeometryInfo metric, PanelUnitConversion conversion)

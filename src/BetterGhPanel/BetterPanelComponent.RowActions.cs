@@ -25,8 +25,26 @@ namespace BetterGhPanel
             return DisplaySourceValue(snapshot, row, sourcePosition);
         }
 
-        private string PairedSetMemberSummary(PanelSnapshot snapshot, IReadOnlyList<int> members) =>
-            PanelTableText.Summary(members.Take(4).Select(position => PanelValuePresentation.Visualize(DisplaySourceValue(snapshot, snapshot.Rows[position], position))).ToArray(), members.Count);
+        internal string PairedSetDHeaderSuffix(PanelQueryResult result) => result.DisplaySet?.IsPaired == true
+            ? PanelTableText.GeometryHeaderSuffix(PairedSetDataMetric(result.Snapshot), UnitConversion) : "";
+
+        private PanelGeometryInfo? PairedSetDataMetric(PanelSnapshot snapshot) => PanelSplit && !Session.Options.DisplaysDataFilterValue &&
+            PanelTableText.CommonGeometryMetric(snapshot) is { MetricLabel.Length: > 0 } metric ? metric : null;
+
+        private string PairedSetMemberSummary(PanelSnapshot snapshot, IReadOnlyList<int> members)
+        {
+            bool homogeneous = PairedSetDataMetric(snapshot) != null;
+            string Member(int position)
+            {
+                var row = snapshot.Rows[position];
+                if (!homogeneous || row.GeometryInfo == null) return DisplaySourceValue(snapshot, row, position);
+                var geometry = Session.GetGeometryDetails(snapshot, position) ?? row.GeometryInfo;
+                bool measuring = geometry.CanMeasure && !geometry.Value.HasValue && !Session.HasGeometryMeasurement(snapshot, position);
+                return PanelTableText.GeometryCell(row, geometry, true, measuring,
+                    snapshot.UnitConversion, DecimalPlaces, RoundUpFactor, PresentedFormula);
+            }
+            return PanelTableText.Summary(members.Take(4).Select(Member).ToArray(), members.Count);
+        }
 
         private string DisplaySourceValue(PanelSnapshot snapshot, PanelRow row, int sourcePosition)
         {

@@ -230,7 +230,8 @@ namespace BetterGhPanel
                 column.RequireMeasurements(ColumnCopyItems(column, result, positions,
                     Session.Options.DisplaysDataFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength
                         ? RowSelection.BranchPaths(result).ToArray() : Array.Empty<string>()));
-            var titles = new[] { TableHeaderTitle(0) }.Concat(TableColumns.Select((column, index) => TableHeaderTitle(index + 1) + column.HeaderSuffix(UnitConversion)));
+            var titles = new[] { TableHeaderTitle(0) + PairedSetDHeaderSuffix(result) }
+                .Concat(TableColumns.Select((column, index) => TableHeaderTitle(index + 1) + column.HeaderSuffix(UnitConversion)));
             if (result.DisplaySet?.IsPaired != true && Session.Options.DisplaysDataFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength)
             {
                 var selected = new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal);
