@@ -309,6 +309,7 @@ namespace BetterGhPanel.Runtime
         {
             long generation = _valueGeneration;
             var current = _current;
+            if (BoundPairedValues) _textIds.Clear();
             foreach (var label in _labels.Values)
             {
                 UpdateLabel(label);

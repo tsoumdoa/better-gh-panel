@@ -359,7 +359,7 @@ namespace BetterGhPanel.Core
                 digits = GeometryNumber(metric, conversion, decimals, factor, includeUnits: false);
             }
             else if (row.NumericValue.HasValue) digits = text;
-            else return PanelPreviewValue.FromCategory(text);
+            else return metric == null ? PanelPreviewValue.FromCategory(text) : default(PanelPreviewValue).WithLabel(text, false);
 
             return PanelUnits.TryParseOperand(digits, out double shown)
                 ? new PanelPreviewValue(name, unit, shown, digits).WithLabel(text, false)

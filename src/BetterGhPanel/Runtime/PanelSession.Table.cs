@@ -135,6 +135,7 @@ namespace BetterGhPanel.Runtime
             var retired = _columns.Select(column => column.Geometry).ToArray();
             foreach (var column in _columns) column.Geometry = null;
             _columns.Clear();
+            _pairedColumn = null;
             foreach (var queue in retired) queue?.Dispose();
         }
 

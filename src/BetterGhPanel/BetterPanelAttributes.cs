@@ -1022,6 +1022,9 @@ namespace BetterGhPanel
                 if (_menu.Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.Values)
                     tail = (PanelOwner.LabelSource == PanelLabelSource.Paired ? "F value" : PanelOwner.LabelSource == PanelLabelSource.PairedAndData ? "F · D" :
                         PanelOwner.LabelSource == PanelLabelSource.Data ? "D value" : "Off") + "…";
+                if (_menu.IsPaletteSource(index) && _menu.PairedSourceRow(index) &&
+                    PanelOwner.PairedColumn?.Snapshot is PanelSnapshot paired && paired.TypeCounts.Keys.Any(type => type == "Text" || type == "String") &&
+                    !paired.HasGeometryMetrics && !paired.SupportsSearchMode(PanelSearchMode.Value)) tail = "Categories";
                 if (tail.Length > 0)
                 {
                     using var trailing = new StringFormat(trim) { Alignment = StringAlignment.Far };
