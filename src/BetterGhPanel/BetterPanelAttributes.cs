@@ -1339,12 +1339,12 @@ namespace BetterGhPanel
 
         private void ChooseMenu(int index, GH_Canvas canvas)
         {
-            if (index < 0 || index >= _menu.Count || _menu.Kind == CanvasMenuKind.HeaderSort && !HeaderSortEnabled) return;
+            if (index < 0 || index >= _menu.Count || !MenuRowEnabled(index) ||
+                _menu.Kind == CanvasMenuKind.HeaderSort && !HeaderSortEnabled) return;
             var kind = _menu.Kind;
             if (_menu.IsPreviewPage) { ChoosePreviewMenu(index, canvas); return; }
             if (kind == CanvasMenuKind.CreateSet)
             {
-                if (!MenuRowEnabled(index)) return;
                 _menu.Close();
                 PanelOwner.SetTreeTools(PanelOwner.TrimDepth, PanelOwner.FlattenTree, PanelOwner.ReverseTree,
                     PanelOwner.SimplifyTree, index > 0, PanelOwner.CleanTree, index == 2);
@@ -1354,7 +1354,6 @@ namespace BetterGhPanel
             {
                 if (_menu.StatsSourceRow(index))
                 {
-                    if (!MenuRowEnabled(index)) return;
                     PanelOwner.SetStatsGrouping(true, null, index == 2);
                     canvas.Invalidate(); return;
                 }

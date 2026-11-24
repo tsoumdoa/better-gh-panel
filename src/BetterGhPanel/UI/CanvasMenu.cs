@@ -354,6 +354,7 @@ namespace BetterGhPanel.UI
 
         internal bool IsPreviewPage => Kind == CanvasMenuKind.Preview || Kind == CanvasMenuKind.DotPlacement || Kind == CanvasMenuKind.ValuePalette || Kind == CanvasMenuKind.DotSize || Kind == CanvasMenuKind.PreviewLimit || Kind == CanvasMenuKind.ShowValues;
         internal bool RowEnabled(int index, bool order, bool values, PanelValuePalette palette, PanelPreviewMode preview = PanelPreviewMode.Selected) =>
+            !(Kind == CanvasMenuKind.SearchMode && index < SearchTargetRows) &&
             !(Kind == CanvasMenuKind.BranchStats && !StatsSourceRow(index) && (StatsIndex(index) == 1 || StatsIndex(index) == 10)) &&
             !(Kind == CanvasMenuKind.Preview && (index == CanvasPreviewRows.Placement || index == CanvasPreviewRows.Size ||
                 index == CanvasPreviewRows.HideOccludedDots) && !order && !values) &&
@@ -552,7 +553,7 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.CreateSet) return index == 0 ? "Turn off" : index == 1 ? "Group by · D value" : "Group by · F value";
             if (Kind == CanvasMenuKind.BranchStats)
             {
-                if (StatsSourceRow(index)) return index == 1 ? "Stats per · Branch" : "Stats per · F value";
+                if (StatsSourceRow(index)) return index == 1 ? Flattened ? "Stats per · All items" : "Stats per · Branch" : "Stats per · F value";
                 index = StatsIndex(index);
                 return index == 0 ? "Turn off" : index == 1 ? GroupingChoices ? "Rows in this order" : "Rows per branch, in this order" :
                     index == 10 ? "Flatten for stats across all branches" : PanelBranchStats.Name(StatAt(index));
