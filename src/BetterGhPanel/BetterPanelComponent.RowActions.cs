@@ -150,7 +150,8 @@ namespace BetterGhPanel
                 return;
             }
             ordered = ExpandSetMembers(ordered);
-            var previewPositions = PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.DisplaySet?.AllMembers ?? session.Result.RowPositions : ordered;
+            var previewPositions = PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.DisplaySet?.AllMembers ?? session.Result.RowPositions :
+                PreviewMode == PanelPreviewMode.PassFail ? Array.Empty<int>() : ordered;
             var source = _sourceItems;
             var expectedResult = session.Result;
             var mode = PreviewMode;
@@ -204,9 +205,9 @@ namespace BetterGhPanel
             _highlight.DotSize = DotSize;
             _highlight.HideOccludedDots = HideOccludedDots;
             _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, ValuePalette, ReversePalette,
-                searchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current, labelSource, colourByPaired);
+                searchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current, labelSource, colourByPaired, mode == PanelPreviewMode.PassFail);
             if (!Current()) return;
-            _highlight.SetScopeChecked(source, expectedResult, mode == PanelPreviewMode.FilteredResults, ordered, Current, RowSelection);
+            _highlight.SetScopeChecked(source, expectedResult, mode != PanelPreviewMode.Selected, ordered, Current, RowSelection, mode == PanelPreviewMode.PassFail);
             if (!Current()) return;
             if (!ShowValues && ValuePalette == PanelValuePalette.Off) session.RequestPreviewMeasurements(null, null);
             StopRetainedPreviewCheck();

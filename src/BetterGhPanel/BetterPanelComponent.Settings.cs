@@ -347,9 +347,9 @@ namespace BetterGhPanel
         }
 
         internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet) =>
-            SetTreeOperations(trimDepth, flatten, reverse, simplify, createSet, CleanTree);
+            SetTreeTools(trimDepth, flatten, reverse, simplify, createSet, CleanTree);
 
-        internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet, bool clean, bool? byPaired = null)
+        internal void SetTreeTools(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet, bool clean, bool? byPaired = null)
         {
             trimDepth = Math.Max(0, trimDepth);
             bool groupByPaired = byPaired ?? (createSet || BranchStatsTree) && GroupByPaired;
@@ -381,9 +381,9 @@ namespace BetterGhPanel
             Instances.ActiveCanvas?.Invalidate();
         }
 
-        internal void SetBranchStats(bool enabled, PanelStatKinds? picks = null) => SetBranchStats(enabled, picks, BranchStatsTree && GroupByPaired);
+        internal void SetBranchStats(bool enabled, PanelStatKinds? picks = null) => SetStatsGrouping(enabled, picks, BranchStatsTree && GroupByPaired);
 
-        internal void SetBranchStats(bool enabled, PanelStatKinds? picks, bool byPaired)
+        internal void SetStatsGrouping(bool enabled, PanelStatKinds? picks, bool byPaired)
         {
             var kinds = PanelBranchStats.Normalize(picks ?? StatKinds);
             byPaired &= enabled;

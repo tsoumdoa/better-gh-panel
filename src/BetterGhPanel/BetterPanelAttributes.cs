@@ -1334,7 +1334,7 @@ namespace BetterGhPanel
             {
                 if (index == 2 && !CanSearchPaired) return;
                 _menu.Close();
-                PanelOwner.SetTreeOperations(PanelOwner.TrimDepth, PanelOwner.FlattenTree, PanelOwner.ReverseTree,
+                PanelOwner.SetTreeTools(PanelOwner.TrimDepth, PanelOwner.FlattenTree, PanelOwner.ReverseTree,
                     PanelOwner.SimplifyTree, index > 0, PanelOwner.CleanTree, index == 2);
                 canvas.Invalidate(); return;
             }
@@ -1343,7 +1343,7 @@ namespace BetterGhPanel
                 if (_menu.StatsSourceRow(index))
                 {
                     if (index == 2 && !CanSearchPaired) return;
-                    PanelOwner.SetBranchStats(true, null, index == 2);
+                    PanelOwner.SetStatsGrouping(true, null, index == 2);
                     canvas.Invalidate(); return;
                 }
                 index = _menu.StatsIndex(index);

@@ -12,7 +12,7 @@ namespace BetterGhPanel.UI
     internal enum CanvasPreviewSetting { None, ItemOrder, Values, Placement, Colour, Size, Limit, HideOccludedDots }
     internal static class CanvasPreviewRows
     {
-        internal const int ScopeCount = 3, Limit = 3, ItemOrder = 4, Values = 5, Placement = 6, Colour = 7, Size = 8, HideOccludedDots = 9;
+        internal const int ScopeCount = 4, Limit = 4, ItemOrder = 5, Values = 6, Placement = 7, Colour = 8, Size = 9, HideOccludedDots = 10;
         internal const int Back = 0, FirstChoice = 1, PaletteFirst = 2, PaletteLast = 4, Reverse = 5;
         internal const int PlacementCount = 4, PaletteCount = 6;
     }
@@ -70,6 +70,7 @@ namespace BetterGhPanel.UI
         {
             new CanvasPreviewChoice(PanelPreviewMode.Selected, "Selection"),
             new CanvasPreviewChoice(PanelPreviewMode.FilteredResults, "Results"),
+            new CanvasPreviewChoice(PanelPreviewMode.PassFail, "Pass / Fail"),
             new CanvasPreviewChoice(PanelPreviewMode.Off, "Off"),
             new CanvasPreviewChoice(null, "Preview limit", CanvasPreviewSetting.Limit),
             new CanvasPreviewChoice(null, "Show item order", CanvasPreviewSetting.ItemOrder),

@@ -24,7 +24,7 @@ namespace BetterGhPanel.Runtime
         internal PanelDotSize DotSize { get; set; } = PanelDotSize.Medium;
         internal bool HideOccludedDots { get; set; } = true;
         private readonly Dictionary<(Guid Viewport, bool Capture), ViewportFrame> _frames = new Dictionary<(Guid Viewport, bool Capture), ViewportFrame>();
-        private readonly Dictionary<string, int> _textIds = new Dictionary<string, int>(StringComparer.Ordinal);
+        private readonly Dictionary<(string Text, bool Failed), int> _textIds = new Dictionary<(string, bool), int>();
         private readonly List<Label> _orderedLabels = new List<Label>();
         private readonly Dictionary<int, TextDot> _textDots = new Dictionary<int, TextDot>();
         private long _labelRevision, _identityRevision, _frameUse;
@@ -36,7 +36,7 @@ namespace BetterGhPanel.Runtime
         private (double Min, double Max) _orderRange;
         private bool _dirty, _sentPartialPending;
         private (bool Order, bool Values, PanelDotPlacement Placement, PanelValuePalette Palette, bool Reverse,
-            PanelSearchMode Search, int Decimals, double Factor, PanelLabelSource LabelSource, bool ColourByPaired) _settings;
+            PanelSearchMode Search, int Decimals, double Factor, PanelLabelSource LabelSource, bool ColourByPaired, bool PassFail) _settings;
         private readonly Stopwatch _publishClock = Stopwatch.StartNew();
         private long _lastPublish = -PublishInterval;
         private const int PublishInterval = 250;
@@ -56,6 +56,7 @@ namespace BetterGhPanel.Runtime
         private Dictionary<string, PanelPreviewRange>? _buildingRanges;
         private HashSet<int>? _buildingPending;
         private LegendRow[] _legend = Array.Empty<LegendRow>();
+        private LegendRow? _passFailLegend;
         private float _legendWidth, _legendNameWidth, _legendMinWidth, _legendScale, _legendRowHeight;
         private int _legendFontHeight;
         private const float LegendPadding = 7, LegendGap = 8, LegendBarWidth = 90;
@@ -64,37 +65,48 @@ namespace BetterGhPanel.Runtime
         internal Action? ValuesChanged { get; set; }
         internal Action<PanelQueryResult, IReadOnlyList<int>>? PendingChanged { get; set; }
         internal bool Gradient => _settings.Palette != PanelValuePalette.Off;
+        internal bool ColourGeometry => Gradient || _settings.PassFail;
         internal bool HasValuePreview => _settings.Values || Gradient;
         internal Color Colour(int id) => _colours[id];
         internal int ColourId(int position)
         {
-            if (!Gradient || !_colourValues.TryGetValue(position, out var value)) return 0;
+            if (Failed(position)) return PanelPreviewValues.FailedColour;
+            if (!Gradient) return _settings.PassFail ? PanelPreviewValues.PassedColour : 0;
+            if (!_colourValues.TryGetValue(position, out var value)) return 0;
             if (_settings.ColourByPaired && value.Category && _categories.TryGetValue(value.Text, out int id)) return id;
             if (!value.Number.HasValue || !_ranges.TryGetValue(value.Key, out var range)) return 0;
             int bucket = range.Bucket(value.Number.Value);
             if (_settings.Reverse) bucket = PanelPreviewValues.Buckets - 1 - bucket;
             return 1 + ((int)_settings.Palette - 1) * PanelPreviewValues.Buckets + bucket;
         }
+        private bool Failed(int position) => _settings.PassFail && _valueResult != null && !_valueResult.TryGetPreviewIndex(position, out _);
 
         internal bool Configure(PanelQueryResult result, bool order, bool values, PanelDotPlacement placement,
             PanelValuePalette palette, bool reverse, PanelSearchMode search, int decimals, double factor,
             IReadOnlyList<int> scope, Func<int, PanelPreviewValue> sample, Func<bool> current,
-            PanelLabelSource labelSource, bool colourByPaired)
+            PanelLabelSource labelSource, bool colourByPaired, bool passFail)
         {
             _valueGeneration++;
-            var settings = (order, values, placement, palette, reverse, search, decimals, factor, labelSource, colourByPaired);
+            var settings = (order, values, placement, palette, reverse, search, decimals, factor, labelSource, colourByPaired, passFail);
             var positions = palette != PanelValuePalette.Off ? result.DisplaySet?.AllMembers ?? result.RowPositions : values ? scope : Array.Empty<int>();
             bool changed = !_settings.Equals(settings) || !ReferenceEquals(result, _valueResult);
             _sample = sample; _current = current;
             if (!changed && ReferenceEquals(positions, _valuePositions)) return false;
             if (!ReferenceEquals(result, _valueResult)) _lastPublish = -PublishInterval;
+            if (_settings.PassFail != passFail || !ReferenceEquals(result, _valueResult))
+            {
+                int passes = (result.DisplaySet?.AllMembers ?? result.RowPositions).Count;
+                _passFailLegend = passFail ? new LegendRow(System.FormattableString.Invariant($"✓ {passes:N0} pass · ✗ {result.Snapshot.Rows.Count - passes:N0} fail")) : null;
+                _legendScale = 0;
+            }
             if (_settings.ColourByPaired != colourByPaired || _settings.LabelSource != labelSource)
             {
                 _values.Clear(); _colourValues.Clear(); _ranges.Clear(); _categories.Clear(); _legend = Array.Empty<LegendRow>();
             }
             if (changed) _labelRevision++;
             if (!ReferenceEquals(result, _valueResult) || _settings.Order != order || _settings.Values != values ||
-                _settings.Placement != placement || _settings.Search != search || _settings.Decimals != decimals || _settings.Factor != factor || _settings.LabelSource != labelSource)
+                _settings.Placement != placement || _settings.Search != search || _settings.Decimals != decimals || _settings.Factor != factor ||
+                _settings.LabelSource != labelSource || _settings.PassFail != passFail)
             { _identityRevision++; _labelListDirty = true; }
             _settings = settings; _valueResult = result; _valuePositions = positions;
             SetResult(order || values ? result : null);
@@ -161,7 +173,7 @@ namespace BetterGhPanel.Runtime
                 // Rescan only when the range sample is actually stale.
                 if (captured) { if (!Same(_buildingValues[position], value)) _dirty = true; continue; }
                 _buildingValues[position] = value;
-                if (!value.Number.HasValue) continue;
+                if (!value.Number.HasValue || Failed(position)) continue;
                 if (_buildingRanges!.TryGetValue(value.Key, out var range)) range.Add(value.Number.Value, value.Text);
                 else _buildingRanges.Add(value.Key, new PanelPreviewRange(value));
             }
@@ -235,7 +247,12 @@ namespace BetterGhPanel.Runtime
             var value = Value(label.Position);
             string before = label.Text; int colour = label.ColourId, band = label.Band; var anchor = label.Anchor;
             double previousValue = label.Value;
-            int? itemNumber = (_settings.Order || _valueResult == null) && PanelItemOrder.TryGetNumber(_result, label.Position, out int number) ? number : (int?)null;
+            int? itemNumber = null;
+            if (_settings.Order || _valueResult == null)
+            {
+                if (PanelItemOrder.TryGetNumber(_result, label.Position, out int number)) itemNumber = number;
+                else if (_settings.PassFail && _result != null) itemNumber = _result.Snapshot.Rows[label.Position].OriginalIndex;
+            }
             label.Text = value.Label(itemNumber, _settings.Values);
             label.ColourId = ColourId(label.Position);
             label.Value = (_settings.Values ? value.Number : itemNumber) ?? double.NaN;
@@ -247,7 +264,8 @@ namespace BetterGhPanel.Runtime
             if (_settings.Order || _valueResult == null || value.Pending) label.GroupKey = ~label.Order;
             else
             {
-                if (!_textIds.TryGetValue(label.Text, out int id)) { id = _textIds.Count + 1; _textIds.Add(label.Text, id); }
+                var identity = (label.Text, label.ColourId == PanelPreviewValues.FailedColour);
+                if (!_textIds.TryGetValue(identity, out int id)) { id = _textIds.Count + 1; _textIds.Add(identity, id); }
                 label.GroupKey = id;
             }
             if (before != label.Text || colour != label.ColourId || anchor != label.Anchor || group != label.GroupKey ||
@@ -265,7 +283,7 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        private bool Visible => _labels.Count > 0 || Gradient && _legend.Length > 0;
+        private bool Visible => _labels.Count > 0 || _passFailLegend != null || Gradient && _legend.Length > 0;
         private void UpdateEnabled()
         {
             bool visible = Visible;
@@ -310,6 +328,7 @@ namespace BetterGhPanel.Runtime
         internal void Clear()
         {
             SuspendValues();
+            _passFailLegend = null;
             ClearEntries(); SetResult(null);
             _values.Clear(); _colourValues.Clear(); _ranges.Clear(); _categories.Clear(); _legend = Array.Empty<LegendRow>(); _lastPublish = -PublishInterval;
             foreach (var dot in _textDots.Values) dot.Dispose();
@@ -668,9 +687,11 @@ namespace BetterGhPanel.Runtime
                 { dot = new TextDot("", Point3d.Origin) { FontHeight = height }; _textDots.Add(height, dot); }
                 dot.Text = label.Text;
                 if (frame.Dots[i].Selected) DrawDotHalo(args, anchor, dot, dpi);
-                var fill = Gradient ? _colours[anchorLabel.ColourId] : PlainFill;
+                bool failed = anchorLabel.ColourId == PanelPreviewValues.FailedColour;
+                var fill = failed ? Color.FromArgb(253, 230, 227) : Gradient ? _colours[anchorLabel.ColourId] : PlainFill;
                 dot.Point = anchor;
-                args.Display.DrawDot(dot, fill, Gradient ? _textColours[anchorLabel.ColourId] : Border, Border);
+                args.Display.DrawDot(dot, fill, failed ? Color.FromArgb(122, 29, 22) : Gradient ? _textColours[anchorLabel.ColourId] : Border,
+                    failed ? _colours[PanelPreviewValues.FailedColour] : Border);
             }
         }
 
@@ -688,7 +709,7 @@ namespace BetterGhPanel.Runtime
         private void AddSwatch(ViewportFrame frame, int i, double radius, float dpi)
         {
             int quarterPixels = (int)Math.Floor(radius * 4);
-            int colour = Gradient ? frame.Labels[i].ColourId : 0;
+            int colour = ColourGeometry ? frame.Labels[i].ColourId : 0;
             bool selected = frame.Dots[i].Selected;
             int key = (selected ? int.MinValue : 0) | colour << 16 | quarterPixels;
             if (!frame.Buckets.TryGetValue(key, out var bucket))
@@ -710,8 +731,9 @@ namespace BetterGhPanel.Runtime
 
         private void DrawSwatchBucket(DisplayPipeline display, SwatchBucket bucket, float dpi)
         {
-            var fill = Gradient ? _colours[bucket.Colour] : PlainFill;
-            display.DrawPoints(bucket.Points, PointStyle.RoundSimple, Border, fill, bucket.Radius,
+            bool failed = bucket.Colour == PanelPreviewValues.FailedColour;
+            var fill = failed ? Color.FromArgb(253, 230, 227) : Gradient ? _colours[bucket.Colour] : PlainFill;
+            display.DrawPoints(bucket.Points, PointStyle.RoundSimple, failed ? _colours[PanelPreviewValues.FailedColour] : Border, fill, bucket.Radius,
                 bucket.Radius >= 2.5f * dpi ? .8f * dpi : 0, 0, 0, true, false);
         }
 
@@ -824,6 +846,11 @@ namespace BetterGhPanel.Runtime
             }
             _legendWidth = (2 * LegendPadding + 2 * LegendGap) * scale + _legendNameWidth + _legendMinWidth +
                 (hasRange ? (LegendBarWidth + LegendGap) * scale + maxWidth : 16 * scale);
+            if (_passFailLegend is LegendRow status)
+            {
+                status.NameBounds = display.Measure2dText(status.Name, Point2d.Origin, false, 0, _legendFontHeight, "Arial");
+                _legendWidth = Math.Max(_legendWidth, status.NameBounds.Width + 2 * LegendPadding * scale);
+            }
         }
 
         private void DrawLegendText(DrawEventArgs args, string text, Rectangle bounds, float left, float top)
@@ -835,18 +862,21 @@ namespace BetterGhPanel.Runtime
 
         private void DrawLegend(DrawEventArgs args, float scale, ref int offset)
         {
-            if (!Gradient || _legend.Length == 0) return;
+            if (_passFailLegend == null && (!Gradient || _legend.Length == 0)) return;
             if (_legendScale != scale) LayoutLegend(args.Display, scale);
             int width = (int)Math.Ceiling(_legendWidth);
-            int height = (int)Math.Ceiling(_legend.Length * _legendRowHeight + 2 * LegendPadding * scale);
+            int statusRows = _passFailLegend == null ? 0 : 1;
+            int height = (int)Math.Ceiling((_legend.Length + statusRows) * _legendRowHeight + 2 * LegendPadding * scale);
             int x = Math.Max(4, args.Viewport.Size.Width - width - (int)(16 * scale));
             int top = args.Viewport.Size.Height - (int)(16 * scale) - offset - height;
             args.Display.Draw2dRectangle(new Rectangle(x, top, width, height), Color.FromArgb(170, 180, 170), 1, Color.FromArgb(238, 245, 247, 244));
+            if (_passFailLegend is LegendRow status)
+                DrawLegendText(args, status.Name, status.NameBounds, x + LegendPadding * scale, top + LegendPadding * scale);
             float minRight = x + (LegendPadding + LegendGap) * scale + _legendNameWidth + _legendMinWidth;
             for (int index = 0; index < _legend.Length; index++)
             {
                 var row = _legend[index];
-                float y = top + LegendPadding * scale + index * _legendRowHeight;
+                float y = top + LegendPadding * scale + (index + statusRows) * _legendRowHeight;
                 DrawLegendText(args, row.Name, row.NameBounds, x + LegendPadding * scale, y);
                 DrawLegendText(args, row.Min, row.MinBounds, minRight - row.MinBounds.Width, y);
                 int barX = (int)(minRight + LegendGap * scale), barY = (int)(y + (_legendRowHeight - 10 * scale) / 2);
@@ -876,6 +906,7 @@ namespace BetterGhPanel.Runtime
             }
             internal LegendRow(string name, int count, int colour)
             { Name = name; Min = System.FormattableString.Invariant($"{count:N0}"); Max = ""; Single = true; ColourId = colour; }
+            internal LegendRow(string name) { Name = name; Min = Max = ""; Single = true; }
             internal readonly string Name, Min, Max;
             internal Rectangle NameBounds, MinBounds, MaxBounds;
             internal readonly bool Single;

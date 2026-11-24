@@ -244,7 +244,7 @@ internal static partial class PreviewSafetyChecks
             void Update()
             {
                 var ordered = (IReadOnlyList<int>)Method(selection, "OrderedPositions").Invoke(selection, new object[] { result })!;
-                Method(highlight, "SetScopeChecked").Invoke(highlight, new object[] { source, result, false, ordered, (Func<bool>)(() => true), selection });
+                Method(highlight, "SetScopeChecked").Invoke(highlight, new object[] { source, result, false, ordered, (Func<bool>)(() => true), selection, false });
             }
             bool Pending() => PropertyValue<bool>(FieldValue<object>(highlight, "_recovery"), "Pending");
             void Drain()

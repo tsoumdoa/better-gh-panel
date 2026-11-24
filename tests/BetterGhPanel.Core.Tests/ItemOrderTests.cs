@@ -19,7 +19,7 @@ public class ItemOrderTests
         Assert.True(menu.TrySelect(new PointF(menu.Bounds.Right - 8, menu.Bounds.Top + CanvasPreviewRows.ItemOrder * 20 + 10), out int selected) && selected == CanvasPreviewRows.ItemOrder &&
             menu.Label(CanvasPreviewRows.ItemOrder) == "Show item order", "The additional item-order toggle is directly reachable in minimum Half mode");
         Assert.True(menu.IsSelected(CanvasPreviewRows.ItemOrder, options, PanelUnitConversion.None, -1, PanelPreviewMode.Off, true) &&
-            menu.IsSelected(2, options, PanelUnitConversion.None, -1, PanelPreviewMode.Off, true) &&
+            menu.IsSelected(3, options, PanelUnitConversion.None, -1, PanelPreviewMode.Off, true) &&
             !menu.IsSelected(CanvasPreviewRows.ItemOrder, options, PanelUnitConversion.None, -1, PanelPreviewMode.FilteredResults, false),
             "The saved order-label checkbox is independent from the mutually exclusive preview scope");
     }
@@ -31,7 +31,8 @@ public class ItemOrderTests
         var panel = new RectangleF(50, 100, 300, 110); var anchor = new RectangleF(110, 102, 112, 18);
         menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
         menu.Layout(panel, default, default, default, preview: anchor); menu.MarkPainted();
-        Assert.Equal(new[] { "Selection", "Results", "Off", "Preview limit" }, new[] { menu.Label(0), menu.Label(1), menu.Label(2), menu.Label(3) });
+        Assert.Equal(new[] { "Selection", "Results", "Pass / Fail", "Off", "Preview limit" },
+            new[] { menu.Label(0), menu.Label(1), menu.Label(2), menu.Label(3), menu.Label(CanvasPreviewRows.Limit) });
         Assert.False(menu.RowEnabled(CanvasPreviewRows.Size, false, false, PanelValuePalette.Viridis));
         Assert.True(menu.RowEnabled(CanvasPreviewRows.Size, true, false, PanelValuePalette.Off));
         Assert.True(menu.RowEnabled(CanvasPreviewRows.Limit, false, false, PanelValuePalette.Off));

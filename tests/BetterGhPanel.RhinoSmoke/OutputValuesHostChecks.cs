@@ -119,7 +119,8 @@ internal static class OutputValuesHostChecks
                 Action<long> counter = value => visits = value;
                 object[] args = operation == "SetItems"
                     ? new object[] { tree, query, positions, paths, false, counter }
-                    : new object[] { tree, operation == "Values" ? values : query, positions, paths, counter };
+                    : operation == "DisplaySet" ? new object[] { tree, query, positions, paths, counter, false }
+                    : new object[] { tree, values, positions, paths, counter };
                 var method = operations.GetMethod(operation, BindingFlags.Static | BindingFlags.NonPublic)!;
                 method.Invoke(null, args); // Warm the reflection and publication paths.
                 long allocated = GC.GetAllocatedBytesForCurrentThread();

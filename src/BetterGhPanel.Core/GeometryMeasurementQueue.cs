@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections;
 using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -372,15 +371,6 @@ namespace BetterGhPanel.Core
             }
             _postUi(Step);
             return completion.Task;
-        }
-
-        private sealed class SequentialPositions : IReadOnlyList<int>
-        {
-            internal SequentialPositions(int count) { Count = count; }
-            public int Count { get; }
-            public int this[int index] => index;
-            public IEnumerator<int> GetEnumerator() { for (int i = 0; i < Count; i++) yield return i; }
-            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
         }
 
         private bool CanStart(TSnapshot snapshot, int position) =>

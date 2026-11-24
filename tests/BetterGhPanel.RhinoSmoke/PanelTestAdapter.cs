@@ -130,7 +130,7 @@ internal static class PanelTestAdapter
     {
         var operations = assembly.GetType("BetterGhPanel.Runtime.PanelOutputOperations", true)!;
         var pair = operations.GetMethod("Pair", BindingFlags.Static | BindingFlags.NonPublic)!
-            .Invoke(null, new object?[] { data, paired, sources, 0, false, false, false, null })!;
+            .Invoke(null, new object?[] { data, paired, sources, 0, false, false, false, null, false })!;
         return (Grasshopper.Kernel.Data.GH_Structure<Grasshopper.Kernel.Types.IGH_Goo>)pair.GetType()
             .GetMethod("Output", NonPublicInstance)!.Invoke(pair, new object?[] { query, query.RowPositions, query.BranchPaths, false, false, null, false })!;
     }

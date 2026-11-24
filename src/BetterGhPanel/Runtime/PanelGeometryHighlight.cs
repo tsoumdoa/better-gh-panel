@@ -51,7 +51,7 @@ namespace BetterGhPanel.Runtime
         internal void ConfigureValues(PanelQueryResult result, bool order, bool values, PanelDotPlacement placement,
             PanelValuePalette palette, bool reverse, PanelSearchMode search, int decimals, double factor,
             IReadOnlyList<int> scope, Func<int, PanelPreviewValue> sample, Func<bool> current,
-            PanelLabelSource labelSource = PanelLabelSource.Off, bool colourByPaired = false)
+            PanelLabelSource labelSource = PanelLabelSource.Off, bool colourByPaired = false, bool passFail = false)
         {
             _activeDraws++;
             try
@@ -61,9 +61,9 @@ namespace BetterGhPanel.Runtime
                 SetOrderResult(labelResult);
                 long generation = _generation;
                 if (!current()) return;
-                bool coloursChanged = _orderLabels.Configure(result, order, values, placement, palette, reverse, search, decimals, factor, scope, sample, current, labelSource, colourByPaired);
+                bool coloursChanged = _orderLabels.Configure(result, order, values, placement, palette, reverse, search, decimals, factor, scope, sample, current, labelSource, colourByPaired, passFail);
                 if (generation != _generation || !current()) return;
-                if (palette != PanelValuePalette.Off && _valueMaterials == null && !_displayFlushFailed)
+                if (_orderLabels.ColourGeometry && _valueMaterials == null && !_displayFlushFailed)
                 {
                     _valueMaterials = new DisplayMaterial[PanelPreviewValues.ColourCount];
                     for (int id = 0; id < _valueMaterials.Length; id++)
@@ -73,7 +73,7 @@ namespace BetterGhPanel.Runtime
                         _valueMaterials[id] = new DisplayMaterial(half) { Emission = half, Specular = System.Drawing.Color.Black, Shine = 0 };
                     }
                 }
-                if (attachLabels || coloursChanged && palette != PanelValuePalette.Off)
+                if (attachLabels || coloursChanged && _orderLabels.ColourGeometry)
                     foreach (var entry in _entries.Values)
                     {
                         if (attachLabels) AddLabel(entry, current);
@@ -101,7 +101,7 @@ namespace BetterGhPanel.Runtime
         private IReadOnlyList<IGH_Goo?>? _source;
         private IReadOnlyList<int>? _legacyPositions;
         private PanelQueryResult? _result, _orderResult;
-        private bool _filtered, _partial;
+        private bool _filtered, _passFail, _partial;
         private string? _partialReason;
         private long _generation;
         private object _scopeToken = new object();
@@ -164,15 +164,15 @@ namespace BetterGhPanel.Runtime
             => SetScopeChecked(sourceItems, result, filtered, selectedPositions, () => true);
 
         internal void SetScopeChecked(IReadOnlyList<IGH_Goo?> sourceItems, PanelQueryResult result, bool filtered,
-            IReadOnlyList<int> selectedPositions, Func<bool> current, PanelRowSelection? selection = null)
+            IReadOnlyList<int> selectedPositions, Func<bool> current, PanelRowSelection? selection = null, bool passFail = false)
         {
             long generation = ++_generation;
-            bool fresh = !ReferenceEquals(_source, sourceItems) || !ReferenceEquals(_result, result) || _filtered != filtered || _legacyPositions != null;
+            bool fresh = !ReferenceEquals(_source, sourceItems) || !ReferenceEquals(_result, result) || _filtered != filtered || _passFail != passFail || _legacyPositions != null;
             if (fresh)
             {
                 ClearGeometry();
                 if (!Current(generation, current)) return;
-                _source = sourceItems; _result = result; _filtered = filtered; _legacyPositions = null;
+                _source = sourceItems; _result = result; _filtered = filtered; _passFail = passFail; _legacyPositions = null;
             }
             if (!filtered) { _partial = false; _partialReason = null; }
             LastVisitedRows = LastVisitedNodes = 0;
@@ -194,7 +194,7 @@ namespace BetterGhPanel.Runtime
             else if (update.AddedPosition >= 0 && !_byPosition.ContainsKey(update.AddedPosition) && !_attempted.Contains(update.AddedPosition))
             {
                 LastVisitedRows++;
-                if (result.TryGetPreviewIndex(update.AddedPosition, out int order))
+                if (TryGetPreviewOrder(result, update.AddedPosition, out int order))
                     TryAdmit(update.AddedPosition, order, budget, true, generation, current);
                 if (!Current(generation, current)) return;
                 if (!_byPosition.ContainsKey(update.AddedPosition) && !_attempted.Contains(update.AddedPosition))
@@ -202,7 +202,7 @@ namespace BetterGhPanel.Runtime
             }
             if (fresh && filtered)
             {
-                var positions = result.DisplaySet?.AllMembers ?? result.RowPositions;
+                var positions = passFail ? new SequentialPositions(result.Snapshot.Rows.Count) : result.DisplaySet?.AllMembers ?? result.RowPositions;
                 int end = Math.Min(positions.Count, MaxBuildRows);
                 if (positions.Count > end) _partial = true;
                 for (int index = 0; index < end; index++)
@@ -221,7 +221,7 @@ namespace BetterGhPanel.Runtime
                     if (_byPosition.ContainsKey(position) || _attempted.Contains(position)) continue;
                     int visits = budget.Visits;
                     bool partial = _partial; string? reason = _partialReason;
-                    if (result.TryGetPreviewIndex(position, out int order))
+                    if (TryGetPreviewOrder(result, position, out int order))
                         TryAdmit(position, order, budget, false, generation, current);
                     if (!Current(generation, current)) return;
                     if (!_byPosition.ContainsKey(position) && !_attempted.Contains(position) && budget.Limited && visits > 0)
@@ -249,7 +249,7 @@ namespace BetterGhPanel.Runtime
                     if (budget.Remaining <= 0 || !Current(generation, current) ||
                         (_entries.Count >= PreviewLimit && _unselected.Count == 0)) return PanelPreviewRecovery.Admission.Blocked;
                     LastVisitedRows++;
-                    if (_result == null || !_result.TryGetPreviewIndex(position, out int order)) return PanelPreviewRecovery.Admission.Complete;
+                    if (_result == null || !TryGetPreviewOrder(_result, position, out int order)) return PanelPreviewRecovery.Admission.Complete;
                     TryAdmit(position, order, budget, true, generation, current);
                     if (!Current(generation, current)) return PanelPreviewRecovery.Admission.Blocked;
                     if (_byPosition.ContainsKey(position) || _attempted.Contains(position))
@@ -280,7 +280,7 @@ namespace BetterGhPanel.Runtime
                         return PanelPreviewRecovery.Admission.Blocked;
                     }
                     LastVisitedRows++;
-                    if (_result == null || !_result.TryGetPreviewIndex(position, out int order)) return PanelPreviewRecovery.Admission.Complete;
+                    if (_result == null || !TryGetPreviewOrder(_result, position, out int order)) return PanelPreviewRecovery.Admission.Complete;
                     int visits = budget.Visits;
                     bool partial = _partial;
                     string? reason = _partialReason;
@@ -296,6 +296,13 @@ namespace BetterGhPanel.Runtime
                     return PanelPreviewRecovery.Admission.Complete;
                 });
             return more || budgetBlocked && _filteredRecovery.Pending;
+        }
+
+        private bool TryGetPreviewOrder(PanelQueryResult result, int position, out int order)
+        {
+            if (!_passFail) return result.TryGetPreviewIndex(position, out order);
+            order = position;
+            return position >= 0 && position < result.Snapshot.Rows.Count;
         }
 
         private void ScheduleRecovery()
@@ -834,7 +841,7 @@ namespace BetterGhPanel.Runtime
             int thickness = args.DefaultCurveThickness + Math.Max(MinSelectionThickening, componentSelected ? 0 : CentralSettings.PreviewSelectionThickening);
             var selected = new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour_Selected, thickness);
             GH_PreviewWireArgs[]? colours = null;
-            if (_orderLabels.Gradient && _valueMaterials != null)
+            if (_orderLabels.ColourGeometry && _valueMaterials != null)
             {
                 colours = new GH_PreviewWireArgs[_valueMaterials.Length];
             }
@@ -926,12 +933,12 @@ namespace BetterGhPanel.Runtime
             if (generation != _generation) return;
             var normal = new GH_PreviewMeshArgs(args.Viewport, args.Display, args.ShadeMaterial, args.MeshingParameters);
             var selected = new GH_PreviewMeshArgs(args.Viewport, args.Display, args.ShadeMaterial_Selected, args.MeshingParameters);
-            var halo = _orderLabels.Gradient ? new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour_Selected,
+            var halo = _orderLabels.ColourGeometry ? new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour_Selected,
                 args.DefaultCurveThickness + Math.Max(MinSelectionThickening, CentralSettings.PreviewSelectionThickening)) : null;
             // Fixed meshes need no remeshing. Brep/Surface/SubD entries manage
             // their own bounded meshes and invalidate them on setting changes.
             GH_PreviewMeshArgs[]? colours = null;
-            if (_orderLabels.Gradient && _valueMaterials != null)
+            if (_orderLabels.ColourGeometry && _valueMaterials != null)
             {
                 colours = new GH_PreviewMeshArgs[_valueMaterials.Length];
             }

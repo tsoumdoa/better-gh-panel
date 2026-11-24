@@ -198,7 +198,7 @@ namespace BetterGhPanel
                 OpenMenu(CanvasMenuKind.CreateSet, sender);
                 return GH_ObjectResponse.Handled;
             }
-            PanelOwner.SetTreeOperations(PanelOwner.TrimDepth,
+            PanelOwner.SetTreeTools(PanelOwner.TrimDepth,
                 _layout.Flatten.Contains(point) ? !PanelOwner.FlattenTree : PanelOwner.FlattenTree,
                 _layout.Reverse.Contains(point) ? !PanelOwner.ReverseTree : PanelOwner.ReverseTree,
                 _layout.Simplify.Contains(point) ? !PanelOwner.SimplifyTree : PanelOwner.SimplifyTree,
