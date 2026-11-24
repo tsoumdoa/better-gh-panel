@@ -18,6 +18,24 @@ namespace BetterGhPanel.Core
         public double? Number { get; }
         internal PanelText SemanticText => _text;
 
+        internal static PanelDisplayedValue CapturePaired(PanelRow? row, PanelUnitConversion conversion,
+            PanelQueryOptions query, PanelGeometryInfo? measured)
+        {
+            if (row == null)
+            {
+                var missing = new PanelText("—");
+                return new PanelDisplayedValue(missing, missing, null, false, true);
+            }
+            if (row.IsValid && !row.IsNull && row.NumericValue is double raw)
+            {
+                double number = PanelUnits.Transform(raw, conversion, query.RoundUpFactor, query.DecimalPlaces);
+                var text = new PanelText(PanelTableText.Value(row, conversion, query.DecimalPlaces, query.RoundUpFactor));
+                return new PanelDisplayedValue(text, text, query.DecimalPlaces < 0 ? PanelNumber.GeneralValue(number, 12) : number, true);
+            }
+            var display = PanelValuePresentation.DisplayText(row, conversion, query.DecimalPlaces, measured, query.RoundUpFactor);
+            return new PanelDisplayedValue(display, display, null, false);
+        }
+
         internal static PanelDisplayedValue Capture(PanelSnapshot snapshot, PanelRow row, PanelQueryOptions query,
             PanelGeometryInfo? measured)
         {
@@ -56,9 +74,10 @@ namespace BetterGhPanel.Core
             Dictionary<string, IReadOnlyList<string>> branchOccurrences, Dictionary<string, PanelSourceStatusCounts> branchSourceStatuses, bool isBranchSet,
             Dictionary<int, IReadOnlyList<int>> members,
             Dictionary<string, IReadOnlyList<int>> branchMembers, Dictionary<string, int> branchIndices,
-            Dictionary<int, int> memberIndices, List<int> allMembers)
+            Dictionary<int, int> memberIndices, List<int> allMembers, bool isPaired = false)
         {
             IsBranchSet = isBranchSet;
+            IsPaired = isPaired;
             Values = new ReadOnlyDictionary<int, PanelDisplayedValue>(values);
             Occurrences = new ReadOnlyDictionary<int, PanelSetOccurrences>(occurrences);
             BranchOccurrences = new ReadOnlyDictionary<string, IReadOnlyList<string>>(branchOccurrences);
@@ -94,6 +113,7 @@ namespace BetterGhPanel.Core
         }
 
         public bool IsBranchSet { get; }
+        public bool IsPaired { get; }
         public IReadOnlyDictionary<int, PanelSetOccurrences> Occurrences { get; }
         /// <summary>One list-length occurrence per matching branch, including empty branches.</summary>
         public IReadOnlyDictionary<string, IReadOnlyList<string>> BranchOccurrences { get; }
@@ -106,6 +126,7 @@ namespace BetterGhPanel.Core
     {
         private readonly PanelSnapshot _snapshot;
         private readonly PanelQueryOptions _query;
+        private readonly PanelPairedGroups? _pairedGroups;
         private readonly PanelTextComparer _textComparer = new PanelTextComparer();
         private readonly Dictionary<string, Dictionary<PanelText, int>> _seen = new Dictionary<string, Dictionary<PanelText, int>>(StringComparer.Ordinal);
         private readonly Dictionary<int, PanelDisplayedValue> _values = new Dictionary<int, PanelDisplayedValue>();
@@ -122,8 +143,11 @@ namespace BetterGhPanel.Core
         private readonly Dictionary<string, PanelSourceStatusCounts> _branchStatuses = new Dictionary<string, PanelSourceStatusCounts>(StringComparer.Ordinal);
 
         internal PanelDisplaySet(PanelSnapshot snapshot, PanelQueryOptions query)
-        { _snapshot = snapshot; _query = query; }
-        internal bool IsBranchSet => _query.DisplaysDataFilterValue && _query.SearchMode == PanelSearchMode.ListLength;
+        {
+            _snapshot = snapshot; _query = query;
+            if (query.GroupByPaired) _pairedGroups = new PanelPairedGroups(snapshot, query);
+        }
+        internal bool IsBranchSet => _pairedGroups == null && _query.DisplaysDataFilterValue && _query.SearchMode == PanelSearchMode.ListLength;
         internal IReadOnlyDictionary<int, PanelDisplayedValue> Values => _values;
         internal IReadOnlyList<int> MembersAt(int position) => _members[position];
 
@@ -159,15 +183,24 @@ namespace BetterGhPanel.Core
                 _allMembers.Add(position);
                 return included;
             }
-            var value = PanelDisplayedValue.Capture(_snapshot, row, _query, measured);
-            if (!_seen.TryGetValue(row.Path, out var branch))
+            var group = _pairedGroups?.Add(position);
+            var value = group?.Key ?? PanelDisplayedValue.Capture(_snapshot, row, _query, measured);
+            int first, index;
+            if (group != null) { first = group.Representative; index = group.Index; }
+            else
             {
-                branch = new Dictionary<PanelText, int>(_textComparer);
-                _seen.Add(row.Path, branch);
+                if (!_seen.TryGetValue(row.Path, out var branch))
+                {
+                    branch = new Dictionary<PanelText, int>(_textComparer);
+                    _seen.Add(row.Path, branch);
+                }
+                index = branch.Count;
+                if (!branch.TryGetValue(value.SemanticText, out first))
+                { first = position; branch.Add(value.SemanticText, position); }
             }
             var address = _snapshot.SourceAddressAt(position);
             _allMembers.Add(position);
-            if (branch.TryGetValue(value.SemanticText, out int first))
+            if (first != position)
             {
                 _locations[first].Add(address);
                 _members[first].Add(position);
@@ -175,8 +208,7 @@ namespace BetterGhPanel.Core
                 _statuses[first] = _statuses[first].Add(row.Validity);
                 return false;
             }
-            _memberIndices.Add(position, branch.Count);
-            branch.Add(value.SemanticText, position);
+            _memberIndices.Add(position, index);
             _values.Add(position, value);
             _members.Add(position, new List<int> { position });
             _locations.Add(position, new List<PanelSourceAddress> { address });
@@ -205,7 +237,7 @@ namespace BetterGhPanel.Core
                 branchMembers.Add(pair.Key, _branchMembers[pair.Key].AsReadOnly());
             }
             yield return new PanelDisplaySetResult(_values, occurrences, branchOccurrences, _branchStatuses, IsBranchSet,
-                members, branchMembers, _branchIndices, _memberIndices, _allMembers);
+                members, branchMembers, _branchIndices, _memberIndices, _allMembers, _pairedGroups != null);
         }
     }
 }

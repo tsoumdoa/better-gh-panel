@@ -399,6 +399,8 @@ namespace BetterGhPanel.Core
         /// <summary>Create a set of the current formatted values after filtering.</summary>
         public bool CreateSet { get; set; }
         public bool BranchStats { get; set; }
+        public bool GroupByPaired { get; set; }
+        public bool Flattened { get; set; }
         public PanelStatKinds StatKinds { get; set; } = PanelBranchStats.Default;
         /// <summary>Prepare typed displayed values for D/S, including offscreen measurements.</summary>
         public bool OutputValues { get; set; }
@@ -427,7 +429,7 @@ namespace BetterGhPanel.Core
             PairedSource = PairedSource,
             DisplayFilterValue = DisplayFilterValue,
             CreateSet = CreateSet,
-            BranchStats = BranchStats, StatKinds = StatKinds,
+            BranchStats = BranchStats, StatKinds = StatKinds, GroupByPaired = GroupByPaired, Flattened = Flattened,
             OutputValues = OutputValues,
             DecimalPlaces = DecimalPlaces,
             RoundUpFactor = RoundUpFactor,
@@ -479,6 +481,11 @@ namespace BetterGhPanel.Core
     {
         public PanelTableIndex? TableIndex { get; internal set; }
         public IReadOnlyDictionary<string, PanelBranchStats>? BranchStats { get; internal set; }
+        internal IReadOnlyList<string>? GroupedStatPaths { get; set; }
+        internal IReadOnlyList<string> StatPaths => GroupedStatPaths ?? BranchPaths;
+        internal Dictionary<string, PanelPairedGroups.Group>? StatGroups { get; set; }
+        internal Dictionary<int, string>? StatGroupByPosition { get; set; }
+        internal string StatPathAt(int position) => StatGroupByPosition?.TryGetValue(position, out string path) == true ? path : Snapshot.Rows[position].Path;
         internal HashSet<int> StatSources { get; set; } = new HashSet<int>();
         internal string StatHeaderSuffix { get; set; } = "";
         internal Dictionary<Guid, string> ColumnStatHeaderSuffixes { get; } = new Dictionary<Guid, string>();

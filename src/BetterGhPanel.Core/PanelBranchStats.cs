@@ -86,7 +86,7 @@ namespace BetterGhPanel.Core
             Func<int, int?> partner, PanelQueryOptions options, IReadOnlyDictionary<int, PanelGeometryInfo?>? measurements, CancellationToken token)
         {
             var query = options.Clone(); query.Formula = null; query.SearchMode = PanelSearchMode.Text; query.DisplayFilterValue = false;
-            var stats = data.BranchPaths.ToDictionary(path => path, path => new PanelBranchStats(query.StatKinds), StringComparer.Ordinal);
+            var stats = data.StatPaths.ToDictionary(path => path, path => new PanelBranchStats(query.StatKinds), StringComparer.Ordinal);
             foreach (int position in data.RowPositions)
             {
                 token.ThrowIfCancellationRequested();
@@ -94,7 +94,7 @@ namespace BetterGhPanel.Core
                 var row = snapshot.Rows[item];
                 PanelGeometryInfo? measured = null;
                 if (measurements?.TryGetValue(item, out measured) == true && measured == null) measured = row.GeometryInfo?.WithUnavailableMeasurement();
-                stats[data.Snapshot.Rows[position].Path].Add(snapshot, row, item, query, measured, data.Snapshot.UnitConversion);
+                stats[data.StatPathAt(position)].Add(snapshot, row, item, query, measured, data.Snapshot.UnitConversion);
             }
             foreach (var branch in stats.Values) branch.Complete(query, token);
             return stats;

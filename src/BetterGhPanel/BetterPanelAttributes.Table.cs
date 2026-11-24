@@ -182,7 +182,7 @@ namespace BetterGhPanel
             for (int index = 0; index < widths.Length; index++) widths[index] = Math.Max(PanelTableText.MinimumColumnWidth, TightWidth(g, ColumnTitle(index), headerFont) + 24);
             if (result.BranchStats != null)
             {
-                foreach (string path in result.BranchPaths.Skip(_offset / (result.StatRows.Count + 1)).Take(16))
+                foreach (string path in result.StatPaths.Skip(_offset / (result.StatRows.Count + 1)).Take(16))
                     foreach (var kind in result.StatRows)
                     {
                         widths[0] = Math.Max(widths[0], Measure(result.BranchStats[path].Format(kind, result.StatDecimals), true) + 100);
@@ -258,16 +258,17 @@ namespace BetterGhPanel
                     bool numeric = result.DisplaySet != null ? result.DisplaySet.Values[position].IsNumeric :
                         metric ? !PanelProperties.IsProperty(PanelOwner.Session.Options.SearchMode) || PanelProperties.Kind(PanelOwner.Session.Options.SearchMode) == PanelPropertyKind.Number : dataRow.NumericValue.HasValue;
                     var statuses = CanvasStatistics.RowSourceStatuses(result, position);
-                    float reserved = (PanelOwner.CreateSetTree ? _setCountWidth : 0) + (showType ? TypeColumnWidth + CellGap : 12) + 6 +
+                    float reserved = (PanelOwner.CreateSetTree && result.DisplaySet?.IsPaired != true ? _setCountWidth : 0) + (showType ? TypeColumnWidth + CellGap : 12) + 6 +
                         (statuses.VerifiedInvalid > 0 || statuses.Unverified > 0 ? 12 : 0);
                     widths[0] = Math.Max(widths[0], Measure(PanelOwner.DisplayValue(result.Snapshot, dataRow, position), numeric) + reserved);
                     for (int index = 1; index < widths.Length; index++)
                     {
                         var column = PanelOwner.TableColumns[index - 1];
                         var cell = result.DisplaySet == null ? column.Row(position) : null;
-                        string text = column.Cell(result, position, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
+                        string text = ColumnCell(result, position, index - 1);
                         if (text == "measuring…") continue;
-                        widths[index] = Math.Max(widths[index], cell == null ? Measure(text) + column.CellPadding(cell) : CellWidth(column, cell, text));
+                        float badge = result.DisplaySet?.IsPaired == true && column == PanelOwner.PairedColumn ? _setCountWidth : 0;
+                        widths[index] = Math.Max(widths[index], badge + (cell == null ? Measure(text) + column.CellPadding(cell) : CellWidth(column, cell, text)));
                     }
                 }
             }
@@ -302,7 +303,9 @@ namespace BetterGhPanel
         }
 
         private string ColumnCell(PanelQueryResult result, int position, int column) =>
-            PanelOwner.TableColumns[column].Cell(result, position, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
+            result.DisplaySet?.IsPaired == true && PanelOwner.TableColumns[column] == PanelOwner.PairedColumn
+                ? result.DisplaySet.Values[position].Text
+                : PanelOwner.TableColumns[column].Cell(result, position, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
 
         private RectangleF ColumnClip(int index, float y, float height) => index == 0 ?
             new RectangleF(_list.X, y, _frozenWidth, height) : new RectangleF(_list.X + _frozenWidth, y, Math.Max(0, _list.Width - _frozenWidth), height);
@@ -405,7 +408,14 @@ namespace BetterGhPanel
                 PaintColumn(g, index + 1, bounds.Y, RowHeight, cell =>
                 {
                     var row = column.Row(position);
-                    if (row == null && result.DisplaySet == null)
+                    if (result.DisplaySet?.IsPaired == true && column == PanelOwner.PairedColumn)
+                    {
+                        var key = result.DisplaySet.Values[position];
+                        DrawTableCell(g, renderer, null, key.Text, new RectangleF(cell.X, cell.Y, Math.Max(0, cell.Width - _setCountWidth), cell.Height),
+                            font, small, numeric: key.IsNumeric, muted: key.Unavailable);
+                        DrawSetCount(g, renderer, cell, position, offset + 1, small);
+                    }
+                    else if (row == null && result.DisplaySet == null)
                     {
                         bool firstMissing = offset == _offset;
                         if (!firstMissing && offset > 0)
@@ -534,12 +544,16 @@ namespace BetterGhPanel
                     var frozen = new RectangleF(bounds.X, y, _frozenWidth, RowHeight);
                     var dataClip = g.Save(); g.SetClip(frozen, CombineMode.Intersect);
                     DrawDataCell(g, renderer, result, position, item + 1, frozen, renderer.GutterWidth,
-                        PanelOwner.CreateSetTree ? _setCountWidth : 0, font, small, mono);
+                        PanelOwner.CreateSetTree && result.DisplaySet?.IsPaired != true ? _setCountWidth : 0, font, small, mono);
                     g.Restore(dataClip);
                     using (var separator = new Pen(PanelTheme.Rgb(224, 229, 222))) g.DrawLine(separator, frozen.Right - 0.5f, y, frozen.Right - 0.5f, y + RowHeight);
                     DrawTableCells(g, renderer, result, position, offset, bounds, font, small);
                     if (TargetPainted(g, bounds) && !_rowHits.Any(hit => hit.Bounds == bounds && hit.SourcePosition == position)) _rowHits.Add(new RowHit(bounds, position, item + 1));
-                    if (bounds.IntersectsWith(visibleRegion)) measurements.Add(position);
+                    if (bounds.IntersectsWith(visibleRegion))
+                    {
+                        if (result.DisplaySet?.IsPaired == true) measurements.AddRange(result.DisplaySet.Members[position].Take(4));
+                        else measurements.Add(position);
+                    }
                     if (_firstShownItem < 0) _firstShownItem = item;
                     _lastShownItem = item;
                 }

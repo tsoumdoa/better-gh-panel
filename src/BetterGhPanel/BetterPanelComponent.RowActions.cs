@@ -16,7 +16,20 @@ namespace BetterGhPanel
         internal string DisplayValue(PanelSnapshot snapshot, PanelRow row, int sourcePosition = -1)
         {
             if (ReferenceEquals(snapshot, Session.Result.Snapshot) && Session.Result.DisplaySet?.Values.TryGetValue(sourcePosition, out var projected) == true)
-                return projected.Text;
+            {
+                var set = Session.Result.DisplaySet;
+                if (!set.IsPaired) return projected.Text;
+                string members = PairedSetMemberSummary(snapshot, set.Members[sourcePosition]);
+                return PanelSplit ? members : PanelValuePresentation.Visualize(projected.Text) + " · " + members;
+            }
+            return DisplaySourceValue(snapshot, row, sourcePosition);
+        }
+
+        private string PairedSetMemberSummary(PanelSnapshot snapshot, IReadOnlyList<int> members) =>
+            PanelTableText.Summary(members.Take(4).Select(position => PanelValuePresentation.Visualize(DisplaySourceValue(snapshot, snapshot.Rows[position], position))).ToArray(), members.Count);
+
+        private string DisplaySourceValue(PanelSnapshot snapshot, PanelRow row, int sourcePosition)
+        {
             var geometry = Session.GetGeometryDetails(snapshot, sourcePosition);
             if (geometry == null)
                 geometry = Session.HasGeometryMeasurement(snapshot, sourcePosition)
@@ -36,7 +49,8 @@ namespace BetterGhPanel
                 throw new InvalidOperationException("The selected data has changed. Select the rows again.");
             if (Session.Result.BranchStats != null) return SelectedStatText(Session.Result, new[] { position });
             var row = snapshot.Rows[position];
-            if (Session.Result.DisplaySet?.Values.TryGetValue(position, out var projected) == true) return projected.CopyText;
+            if (Session.Result.DisplaySet?.Values.TryGetValue(position, out var projected) == true)
+                return Session.Result.DisplaySet.IsPaired ? PairedSetMemberSummary(snapshot, Session.Result.DisplaySet.Members[position]) : projected.CopyText;
             var options = Session.Options;
             if (options.DisplaysDataFilterValue)
             {

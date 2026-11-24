@@ -6,7 +6,7 @@ using BetterGhPanel.Core;
 
 namespace BetterGhPanel.UI
 {
-    internal enum CanvasMenuKind { None, Type, Sort, HeaderSort, Branch, Units, SearchMode, Comparison, Preview, DotPlacement, ValuePalette, BranchStats, DotSize, PreviewLimit }
+    internal enum CanvasMenuKind { None, Type, Sort, HeaderSort, Branch, Units, SearchMode, Comparison, Preview, DotPlacement, ValuePalette, BranchStats, DotSize, PreviewLimit, CreateSet }
     internal enum CanvasComparison { GreaterThan, AtLeast, LessThan, AtMost, Equal, NotEqual }
     internal enum CanvasNumberSetting { Automatic, Custom, RoundingOff, RoundingFactor, FormulaOff, Formula }
     internal enum CanvasPreviewSetting { None, ItemOrder, Values, Placement, Colour, Size, Limit, HideOccludedDots }
@@ -139,6 +139,9 @@ namespace BetterGhPanel.UI
         internal bool Flattened { get; set; }
         internal Guid HeaderSortColumn { get; set; }
         internal int SearchTargetRows { get; set; }
+        internal bool GroupingChoices { get; set; }
+        internal bool StatsSourceRow(int index) => Kind == CanvasMenuKind.BranchStats && GroupingChoices && (index == 1 || index == 2);
+        internal int StatsIndex(int index) => GroupingChoices && index >= 3 ? index - 2 : index;
         internal CanvasMenuKind Kind { get; private set; }
         internal RectangleF Bounds { get; private set; }
         internal int Offset { get; private set; }
@@ -152,7 +155,7 @@ namespace BetterGhPanel.UI
             Kind == CanvasMenuKind.Units ? UnitChoices.Length :
             Kind == CanvasMenuKind.SearchMode ? _searchChoices.Length + SearchTargetRows : Kind == CanvasMenuKind.Comparison ? _comparisonChoices.Length :
             Kind == CanvasMenuKind.DotSize || Kind == CanvasMenuKind.PreviewLimit ? 4 : Kind == CanvasMenuKind.Preview ? PreviewChoices.Length : Kind == CanvasMenuKind.DotPlacement ? CanvasPreviewRows.PlacementCount : Kind == CanvasMenuKind.ValuePalette ? CanvasPreviewRows.PaletteCount :
-            Kind == CanvasMenuKind.BranchStats ? Flattened ? 10 : 11 : 0;
+            Kind == CanvasMenuKind.BranchStats ? (Flattened ? 10 : 11) + (GroupingChoices ? 2 : 0) : Kind == CanvasMenuKind.CreateSet ? 3 : 0;
         internal int Visible => Math.Min(Count, Math.Max(1, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
         internal bool HasPaintedTargets => Kind != CanvasMenuKind.None && _paintedKind == Kind &&
             _paintedBounds == Bounds && _paintedOffset == Offset && _paintedVisible == Visible &&
@@ -275,14 +278,15 @@ namespace BetterGhPanel.UI
             RectangleF viewport = default)
         {
             if (Kind == CanvasMenuKind.None) return;
-            var anchor = Kind == CanvasMenuKind.BranchStats ? branchStats : IsPreviewPage ? preview : Kind == CanvasMenuKind.Type ? type : (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) ? sort : Kind == CanvasMenuKind.Units ? units :
+            bool grouping = Kind == CanvasMenuKind.BranchStats || Kind == CanvasMenuKind.CreateSet;
+            var anchor = grouping ? branchStats : IsPreviewPage ? preview : Kind == CanvasMenuKind.Type ? type : (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) ? sort : Kind == CanvasMenuKind.Units ? units :
                 Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? search : branch;
             float width = Math.Min(panel.Width - 28, Kind == CanvasMenuKind.BranchStats ? 238 : (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) ? 138 :
                 Kind == CanvasMenuKind.Preview ? 280 : IsPreviewPage ? 246 : Kind == CanvasMenuKind.Units ? 156 : Kind == CanvasMenuKind.Type || Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? 180 : 235);
             // Menus may extend beyond the panel. Units and Σ prefer to open
             // upward, others downward; a menu that overflows the viewport flips
             // when the other side has more room, and pages the rows that do not fit.
-            bool rightAligned = Kind == CanvasMenuKind.Units || Kind == CanvasMenuKind.BranchStats;
+            bool rightAligned = Kind == CanvasMenuKind.Units || grouping;
             float below = viewport.IsEmpty ? float.MaxValue : viewport.Bottom - 4 - (anchor.Bottom + 2);
             float above = viewport.IsEmpty ? float.MaxValue : anchor.Top - 3 - (viewport.Top + 4);
             float preferred = rightAligned ? above : below, other = rightAligned ? below : above;
@@ -336,12 +340,12 @@ namespace BetterGhPanel.UI
 
         internal bool IsPreviewPage => Kind == CanvasMenuKind.Preview || Kind == CanvasMenuKind.DotPlacement || Kind == CanvasMenuKind.ValuePalette || Kind == CanvasMenuKind.DotSize || Kind == CanvasMenuKind.PreviewLimit;
         internal bool RowEnabled(int index, bool order, bool values, PanelValuePalette palette, PanelPreviewMode preview = PanelPreviewMode.Selected) =>
-            !(Kind == CanvasMenuKind.BranchStats && (index == 1 || index == 10)) &&
+            !(Kind == CanvasMenuKind.BranchStats && !StatsSourceRow(index) && (StatsIndex(index) == 1 || StatsIndex(index) == 10)) &&
             !(Kind == CanvasMenuKind.Preview && (index == CanvasPreviewRows.Placement || index == CanvasPreviewRows.Size ||
                 index == CanvasPreviewRows.HideOccludedDots) && !order && !values) &&
             !(Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.HideOccludedDots && preview == PanelPreviewMode.Off) &&
             !(Kind == CanvasMenuKind.ValuePalette && index == CanvasPreviewRows.Reverse && palette == PanelValuePalette.Off);
-        internal string Trailing(int index, PanelDotPlacement placement, PanelValuePalette palette, PanelDotSize size = PanelDotSize.Medium, int limit = 5000) => Kind == CanvasMenuKind.BranchStats ? index == 8 ? "max − min" : index == 9 ? "population" : "" : Kind == CanvasMenuKind.Preview ?
+        internal string Trailing(int index, PanelDotPlacement placement, PanelValuePalette palette, PanelDotSize size = PanelDotSize.Medium, int limit = 5000) => Kind == CanvasMenuKind.BranchStats ? StatsIndex(index) == 8 ? "max − min" : StatsIndex(index) == 9 ? "population" : "" : Kind == CanvasMenuKind.Preview ?
             index == CanvasPreviewRows.Size ? size.ToString() + "…" : index == CanvasPreviewRows.Limit ? limit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + "…" : index == CanvasPreviewRows.Placement ? PanelPreviewValues.PlacementLabel(placement) + "…" : index == CanvasPreviewRows.Colour ? PanelPreviewValues.PaletteLabel(palette) + "…" : "" : "";
         internal PanelValuePalette Swatch(int index) => Kind == CanvasMenuKind.ValuePalette && index >= CanvasPreviewRows.PaletteFirst && index <= CanvasPreviewRows.PaletteLast ? (PanelValuePalette)(index - CanvasPreviewRows.FirstChoice) : PanelValuePalette.Off;
 
@@ -353,7 +357,13 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.ValuePalette) return index == CanvasPreviewRows.Reverse ? reverse : index > CanvasPreviewRows.Back && (int)palette == index - CanvasPreviewRows.FirstChoice;
             if (Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.HideOccludedDots) return hideOccludedDots;
             if (Kind == CanvasMenuKind.Preview && index >= CanvasPreviewRows.Values) return index == CanvasPreviewRows.Values ? showValues : index == CanvasPreviewRows.Colour && palette != PanelValuePalette.Off;
-            if (Kind == CanvasMenuKind.BranchStats) return index >= 2 && index <= 9 && (options.StatKinds & StatAt(index)) != 0;
+            if (Kind == CanvasMenuKind.CreateSet) return options.CreateSet && index > 0 && (index == 2) == options.GroupByPaired;
+            if (Kind == CanvasMenuKind.BranchStats)
+            {
+                if (StatsSourceRow(index)) return options.BranchStats && (index == 2) == options.GroupByPaired;
+                index = StatsIndex(index);
+                return index >= 2 && index <= 9 && (options.StatKinds & StatAt(index)) != 0;
+            }
             if (Kind == CanvasMenuKind.Preview)
             {
                 var choice = PreviewChoiceAt(index);
@@ -457,7 +467,8 @@ namespace BetterGhPanel.UI
         internal CanvasComparisonChoice ComparisonChoiceAt(int index) => _comparisonChoices[index];
         internal bool IsSectionStart(int index) =>
             Kind == CanvasMenuKind.Units && (UnitChoiceAt(index).Setting == CanvasNumberSetting.FormulaOff || UnitChoiceAt(index).Setting == CanvasNumberSetting.Automatic || UnitChoiceAt(index).Setting == CanvasNumberSetting.RoundingOff) ||
-            Kind == CanvasMenuKind.BranchStats && index == 1 ||
+            Kind == CanvasMenuKind.BranchStats && (GroupingChoices ? index == 1 || index == 3 : index == 1) ||
+            Kind == CanvasMenuKind.CreateSet && index == 1 ||
             Kind == CanvasMenuKind.Preview && (index == CanvasPreviewRows.ItemOrder || index == CanvasPreviewRows.Placement) ||
             Kind == CanvasMenuKind.DotPlacement && index == CanvasPreviewRows.FirstChoice || Kind == CanvasMenuKind.ValuePalette && (index == CanvasPreviewRows.FirstChoice || index == CanvasPreviewRows.Reverse) ||
             Kind == CanvasMenuKind.Comparison && ComparisonChoiceAt(index).IsDisplayValue;
@@ -513,7 +524,13 @@ namespace BetterGhPanel.UI
 
         internal string Label(int index, int decimals = PanelUnits.AutomaticDecimals, double roundUpFactor = 0, PanelFormula? formula = null)
         {
-            if (Kind == CanvasMenuKind.BranchStats) return index == 0 ? "Turn off" : index == 1 ? "Rows per branch, in this order" : index == 10 ? "Flatten for stats across all branches" : PanelBranchStats.Name(StatAt(index));
+            if (Kind == CanvasMenuKind.CreateSet) return index == 0 ? "Turn off" : index == 1 ? "Group by · D value" : "Group by · F value";
+            if (Kind == CanvasMenuKind.BranchStats)
+            {
+                if (StatsSourceRow(index)) return index == 1 ? "Stats per · Branch" : "Stats per · F value";
+                index = StatsIndex(index);
+                return index == 0 ? "Turn off" : index == 1 ? "Rows in this order" : index == 10 ? "Flatten for stats across all branches" : PanelBranchStats.Name(StatAt(index));
+            }
             if (Kind == CanvasMenuKind.DotSize) return index == 0 ? "‹ Preview" : ((PanelDotSize)(index - 1)).ToString();
             if (Kind == CanvasMenuKind.PreviewLimit) return index == 0 ? "‹ Preview" : PanelDotSettings.LimitAt(index - 1).ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " items";
             if (Kind == CanvasMenuKind.DotPlacement) return index == CanvasPreviewRows.Back ? "‹ Preview" : PanelPreviewValues.PlacementLabel((PanelDotPlacement)(index - CanvasPreviewRows.FirstChoice));

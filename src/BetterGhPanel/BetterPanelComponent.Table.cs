@@ -16,7 +16,7 @@ namespace BetterGhPanel
         internal int InputBranchCount => _inputTree?.PathCount ?? 0;
         internal IReadOnlyList<PanelTableColumn> TableColumns => _tableColumns;
         internal PanelTableColumn? PairedColumn => _tableColumns.Count > 0 && _tableColumns[0].Input == Params.Input[1] ? _tableColumns[0] : null;
-        private bool KeepPairedPresentation(PanelQueryOptions options) => options.SearchPaired;
+        private bool KeepPairedPresentation(PanelQueryOptions options) => options.SearchPaired || GroupByPaired;
         internal PanelSnapshot SearchSnapshot(bool paired)
         {
             if (!paired) return Session.Snapshot;
@@ -74,7 +74,7 @@ namespace BetterGhPanel
         internal bool EffectiveTableVisible => (Attributes as BetterPanelAttributes)?.EffectiveTableVisible == true;
         internal bool TableSummariesCurrent => !PanelSplit || SummariesCurrent(Session.Result);
         private bool SummariesCurrent(PanelQueryResult result) => result.BranchStats != null
-            ? TableColumns.All(column => column.Snapshot == null || column.Pair == null || result.ColumnBranchStats.ContainsKey(column.Input.InstanceGuid))
+            ? TableColumns.All(column => result.StatGroups != null && column == PairedColumn || column.Snapshot == null || column.Pair == null || result.ColumnBranchStats.ContainsKey(column.Input.InstanceGuid))
             : !(result.DisplaySet != null || Session.Options.DisplaysDataFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength) ||
             TableColumns.All(column => column.SummaryCurrent(result));
         private void RequireTableSummaries(PanelQueryResult result)
@@ -168,11 +168,13 @@ namespace BetterGhPanel
             var suffixes = new[] { result.StatHeaderSuffix }.Concat(columns.Select(column => result.ColumnBranchStats.TryGetValue(column.Input.InstanceGuid, out var branches)
                 ? PanelBranchStats.CommonHeaderSuffix(branches.Values) : "")).ToArray();
             var titles = suffixes.Select((suffix, index) => TableHeaderTitle(index) + (countOnly ? "" : suffix));
-            var text = new System.Text.StringBuilder("Path\tStat\t" + string.Join("\t", titles.Select(PanelTableTsv.Escape)) + Environment.NewLine);
-            foreach (string path in result.BranchPaths)
+            string keyHeader = result.StatGroups == null ? "" : PanelTableTsv.Escape(HeaderTitleForInput(Params.Input[1])) + "\t";
+            var text = new System.Text.StringBuilder("Path\t" + keyHeader + "Stat\t" + string.Join("\t", titles.Select(PanelTableTsv.Escape)) + Environment.NewLine);
+            foreach (string path in result.StatPaths)
                 foreach (var kind in result.StatRows)
                 {
-                    IReadOnlyList<string> cells = new[] { path, PanelBranchStats.Name(kind), result.BranchStats![path].Format(kind, result.StatDecimals, suffixes[0].Length == 0) }
+                    var address = result.StatGroups == null ? new[] { path } : new[] { path, result.StatGroups[path].Key.Text };
+                    IReadOnlyList<string> cells = address.Concat(new[] { PanelBranchStats.Name(kind), result.BranchStats![path].Format(kind, result.StatDecimals, suffixes[0].Length == 0) })
                         .Concat(columns.Select((column, index) => result.ColumnBranchStats.TryGetValue(column.Input.InstanceGuid, out var branches)
                             ? branches[path].Format(kind, result.StatDecimals, suffixes[index + 1].Length == 0) : "—")).ToArray();
                     text.AppendLine(string.Join("\t", cells.Select(PanelTableTsv.Escape)));
@@ -183,7 +185,7 @@ namespace BetterGhPanel
         internal string SelectedStatText(PanelQueryResult result, IReadOnlyList<int> positions)
         {
             var selected = new HashSet<int>(positions);
-            var lines = result.BranchPaths.SelectMany(path => result.StatRows
+            var lines = result.StatPaths.SelectMany(path => result.StatRows
                 .Where(kind => result.BranchStats![path].Source(kind) >= 0 && selected.Contains(result.BranchStats[path].Source(kind)))
                 .Select(kind => (Kind: kind, Text: result.BranchStats![path].Format(kind, result.StatDecimals)))).ToArray();
             // One value copies bare; several (for example Min and Max of one item) carry their stat name.
@@ -199,7 +201,7 @@ namespace BetterGhPanel
                     Session.Options.DisplaysDataFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength
                         ? RowSelection.BranchPaths(result).ToArray() : Array.Empty<string>()));
             var titles = new[] { TableHeaderTitle(0) }.Concat(TableColumns.Select((column, index) => TableHeaderTitle(index + 1) + column.HeaderSuffix(UnitConversion)));
-            if (Session.Options.DisplaysDataFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength)
+            if (result.DisplaySet?.IsPaired != true && Session.Options.DisplaysDataFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength)
             {
                 var selected = new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal);
                 var numbers = result.BranchPaths.Select((path, index) => (path, index)).ToDictionary(value => value.path, value => value.index, StringComparer.Ordinal);
@@ -215,7 +217,8 @@ namespace BetterGhPanel
             {
                 PanelItemOrder.TryGetNumber(result, position, out int index);
                 IReadOnlyList<string> cells = new[] { DisplayValue(result.Snapshot, result.Snapshot.Rows[position], position) }
-                    .Concat(TableColumns.Select(column => column.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor))).ToArray();
+                    .Concat(TableColumns.Select(column => result.DisplaySet?.IsPaired == true && column == PairedColumn
+                        ? result.DisplaySet.Values[position].CopyText : column.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor))).ToArray();
                 return (result.Snapshot.Rows[position].Path, index, cells);
             }));
         }

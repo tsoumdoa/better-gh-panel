@@ -80,7 +80,8 @@ namespace BetterGhPanel
         private PanelQueryResult DisplayResult => PanelOwner.Session.IsBusy && _lastResult?.BranchStats != null ? _lastResult : PanelOwner.Session.Result;
         private bool ShowingStats => DisplayResult.BranchStats != null;
         private bool ShowOutputControl => PanelOwner.CanOutputValues && !ShowingStats;
-        private bool DisplayListLengths => !ShowingStats && PanelOwner.Session.Options.DisplaysDataFilterValue && PanelOwner.Session.Options.SearchMode == PanelSearchMode.ListLength;
+        private bool DisplayListLengths => !ShowingStats && DisplayResult.DisplaySet?.IsPaired != true &&
+            PanelOwner.Session.Options.DisplaysDataFilterValue && PanelOwner.Session.Options.SearchMode == PanelSearchMode.ListLength;
         private int Count => PanelOwner.Session.HasCurrentResult || PanelOwner.Session.IsBusy && ShowingStats ? ShowingStats ? StatViewCount(DisplayResult) : DisplayListLengths ? DisplayResult.BranchPaths.Count : ViewCount(DisplayResult) : 0;
         private int MaximumOffset
         {
@@ -677,7 +678,11 @@ namespace BetterGhPanel
                     DrawDataCell(g, rowRenderer, result, sourcePosition, i + 1, bounds, valueStart, setWidth, font, small, mono, grouped, pathWidth);
                     if (TargetPainted(g, bounds) && !_rowHits.Any(hit => hit.Bounds == bounds && hit.SourcePosition == sourcePosition))
                         _rowHits.Add(new RowHit(bounds, sourcePosition, i + 1));
-                    if (bounds.IntersectsWith(visibleRegion)) measurements.Add(sourcePosition);
+                    if (bounds.IntersectsWith(visibleRegion))
+                    {
+                        if (result.DisplaySet?.IsPaired == true) measurements.AddRange(result.DisplaySet.Members[sourcePosition].Take(4));
+                        else measurements.Add(sourcePosition);
+                    }
                     if (firstShownItem < 0) firstShownItem = i;
                     lastShownItem = i;
                     shown++;
@@ -712,7 +717,8 @@ namespace BetterGhPanel
             var dataRow = row;
             bool selected = _selection.Contains(position);
             float y = bounds.Y;
-            bool displayMetric = PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null;
+            bool pairedSet = result.DisplaySet?.IsPaired == true;
+            bool displayMetric = !pairedSet && (PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null);
             bool numericMetric = displayMetric && (!PanelProperties.IsProperty(PanelOwner.Session.Options.SearchMode) ||
                 PanelProperties.Kind(PanelOwner.Session.Options.SearchMode) == PanelPropertyKind.Number);
             bool showTypes = ShowDataTypes(result);
@@ -730,7 +736,7 @@ namespace BetterGhPanel
             // (for example dot text/location) use the catalog's separate label.
             bool showRowType = showTypes && (displayMetric || row.GeometryInfo == null || StockTypeLabels.SeparateLabel(row.TypeName));
             float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
-            var projectedType = result.DisplaySet != null ? result.DisplaySet.Values[position] : null;
+            var projectedType = result.DisplaySet != null && !pairedSet ? result.DisplaySet.Values[position] : null;
             // A glyph as well as the colour bar, so validity never relies on colour alone.
             float marker = 0;
             if (sourceStatuses.VerifiedInvalid > 0 || sourceStatuses.Unverified > 0)
@@ -741,12 +747,12 @@ namespace BetterGhPanel
             }
             renderer.DrawValue(g, PanelValuePresentation.Visualize(PanelOwner.DisplayValue(result.Snapshot, row, position)), font, Ink,
                 new RectangleF(bounds.X + valueStart + 3 + marker, y, Math.Max(0, valueRight - bounds.X - valueStart - 3 - marker), RowHeight),
-                projectedType != null ? projectedType.IsNumeric : (numericMetric || !displayMetric && row.NumericValue.HasValue));
+                projectedType != null ? projectedType.IsNumeric : !pairedSet && (numericMetric || !displayMetric && row.NumericValue.HasValue));
             if (showRowType)
                 renderer.DrawCell(g, projectedType != null
                         ? projectedType.IsNumeric ? "Num" : "Text" : CanvasMenu.ShortTypeName(row.TypeName), small, Muted,
                     new RectangleF(bounds.Right - setWidth - TypeColumnWidth, y, TypeColumnWidth - CellGap, RowHeight), true);
-            DrawSetCount(g, renderer, bounds, position, viewNumber, small);
+            if (!pairedSet || !TableVisible) DrawSetCount(g, renderer, bounds, position, viewNumber, small);
         }
 
         private static void DrawStatusBadge(Graphics g, PointF center, string glyph, Color color, Font font)
@@ -959,7 +965,8 @@ namespace BetterGhPanel
         private void LayoutMenu()
         {
             _menu.Flattened = PanelOwner.FlattenTree;
-            _menu.Layout(_layout.Panel, _layout.Type, _menu.Kind == CanvasMenuKind.HeaderSort ? _headerMenuAnchor : _layout.Sort, _layout.Branch, _layout.Units, _layout.Search, _layout.Preview, _layout.BranchStats,
+            _menu.Layout(_layout.Panel, _layout.Type, _menu.Kind == CanvasMenuKind.HeaderSort ? _headerMenuAnchor : _layout.Sort, _layout.Branch, _layout.Units, _layout.Search, _layout.Preview,
+            _menu.Kind == CanvasMenuKind.CreateSet ? _layout.CreateSet : _layout.BranchStats,
             _renderVisibleRegion);
         }
 
@@ -997,6 +1004,7 @@ namespace BetterGhPanel
                     continue;
                 }
                 bool enabled = (_menu.Kind != CanvasMenuKind.HeaderSort || HeaderSortEnabled) && _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette, PanelOwner.PreviewMode);
+                if ((_menu.Kind == CanvasMenuKind.CreateSet || _menu.StatsSourceRow(index)) && index == 2) enabled &= CanSearchPaired;
                 bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor, PanelOwner.ShowValues, PanelOwner.DotPlacement, PanelOwner.ValuePalette, PanelOwner.ReversePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit, PanelOwner.HideOccludedDots);
                 if (enabled && (index == _menu.HoveredIndex || selected))
                     Fill(g, index == _menu.HoveredIndex ? PanelTheme.Rgb(226, 236, 226) : PanelTheme.Rgb(242, 247, 241), row);
@@ -1006,7 +1014,7 @@ namespace BetterGhPanel
                 if (enabled && selected)
                     using (var check = new Pen(Accent, 1.3f))
                         g.DrawLines(check, new[] { new PointF(row.X + 7, row.Y + 10), new PointF(row.X + 10, row.Y + 13), new PointF(row.X + 16, row.Y + 7) });
-                float inset = _menu.Kind == CanvasMenuKind.BranchStats && (index == 1 || index == 10) ? 7 : 23;
+                float inset = _menu.Kind == CanvasMenuKind.BranchStats && !_menu.StatsSourceRow(index) && (_menu.StatsIndex(index) == 1 || _menu.StatsIndex(index) == 10) ? 7 : 23;
                 string tail = _menu.Trailing(index, PanelOwner.DotPlacement, PanelOwner.ValuePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit);
                 if (tail.Length > 0)
                 {
@@ -1047,6 +1055,7 @@ namespace BetterGhPanel
             CloseRowMenu();
             var session = PanelOwner.Session;
             _menu.SearchTargetRows = PanelOwner.PairedInputPresent() ? 1 : 0;
+            _menu.GroupingChoices = PanelOwner.PairedInputPresent();
             var modes = kind == CanvasMenuKind.SearchMode
                 ? Enum.GetValues(typeof(PanelSearchMode)).Cast<PanelSearchMode>().Where(PanelOwner.SearchSnapshot(session.Options.SearchPaired).SupportsSearchMode)
                 : null;
@@ -1318,8 +1327,23 @@ namespace BetterGhPanel
             if (index < 0 || index >= _menu.Count || _menu.Kind == CanvasMenuKind.HeaderSort && !HeaderSortEnabled) return;
             var kind = _menu.Kind;
             if (_menu.IsPreviewPage) { ChoosePreviewMenu(index, canvas); return; }
+            if (kind == CanvasMenuKind.CreateSet)
+            {
+                if (index == 2 && !CanSearchPaired) return;
+                _menu.Close();
+                PanelOwner.SetTreeOperations(PanelOwner.TrimDepth, PanelOwner.FlattenTree, PanelOwner.ReverseTree,
+                    PanelOwner.SimplifyTree, index > 0, PanelOwner.CleanTree, index == 2);
+                canvas.Invalidate(); return;
+            }
             if (kind == CanvasMenuKind.BranchStats)
             {
+                if (_menu.StatsSourceRow(index))
+                {
+                    if (index == 2 && !CanSearchPaired) return;
+                    PanelOwner.SetBranchStats(true, null, index == 2);
+                    canvas.Invalidate(); return;
+                }
+                index = _menu.StatsIndex(index);
                 if (index == 0) { _menu.Close(); PanelOwner.SetBranchStats(false); }
                 else if (index >= 2 && index <= 9)
                 {

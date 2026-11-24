@@ -118,6 +118,7 @@ namespace BetterGhPanel
         internal int CleanedEmptyBranches { get; private set; }
         internal bool CreateSetTree { get; private set; }
         internal bool BranchStatsTree { get; private set; }
+        internal bool GroupByPaired { get; private set; }
         internal PanelStatKinds StatKinds { get; private set; } = PanelBranchStats.Default;
         internal bool HasTreeOperations => BranchStatsTree || TrimDepth > 0 || FlattenTree || ReverseTree || CleanTree || SimplifyTree || CreateSetTree;
         internal PanelUnitConversion UnitConversion { get; private set; }
@@ -305,6 +306,7 @@ namespace BetterGhPanel
             if (settingsChanged) RecordUndoEvent("Panel+ reset all");
             TrimDepth = 0;
             FlattenTree = ReverseTree = CleanTree = SimplifyTree = CreateSetTree = BranchStatsTree = false;
+            GroupByPaired = false;
             UnitConversion = PanelUnitConversion.None;
             RoundUpFactor = 0;
             Formula = null;
@@ -343,10 +345,11 @@ namespace BetterGhPanel
         internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet) =>
             SetTreeOperations(trimDepth, flatten, reverse, simplify, createSet, CleanTree);
 
-        internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet, bool clean)
+        internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet, bool clean, bool? byPaired = null)
         {
             trimDepth = Math.Max(0, trimDepth);
-            if (TrimDepth == trimDepth && FlattenTree == flatten && ReverseTree == reverse && SimplifyTree == simplify && CreateSetTree == createSet && CleanTree == clean) return;
+            bool groupByPaired = byPaired ?? (createSet || BranchStatsTree) && GroupByPaired;
+            if (TrimDepth == trimDepth && FlattenTree == flatten && ReverseTree == reverse && SimplifyTree == simplify && CreateSetTree == createSet && CleanTree == clean && GroupByPaired == groupByPaired) return;
             bool pathsChanged = TrimDepth != trimDepth || FlattenTree != flatten || SimplifyTree != simplify || CleanTree != clean && simplify;
             RecordUndoEvent("Panel+ tree tools");
             TrimDepth = trimDepth;
@@ -355,6 +358,7 @@ namespace BetterGhPanel
             SimplifyTree = simplify;
             CleanTree = clean;
             CreateSetTree = createSet;
+            GroupByPaired = groupByPaired;
             if (createSet) BranchStatsTree = false;
             if (!CanOutputValues) OutputValues = PanelOutputValues.Items;
             if (pathsChanged)
@@ -373,16 +377,20 @@ namespace BetterGhPanel
             Instances.ActiveCanvas?.Invalidate();
         }
 
-        internal void SetBranchStats(bool enabled, PanelStatKinds? picks = null)
+        internal void SetBranchStats(bool enabled, PanelStatKinds? picks = null) => SetBranchStats(enabled, picks, BranchStatsTree && GroupByPaired);
+
+        internal void SetBranchStats(bool enabled, PanelStatKinds? picks, bool byPaired)
         {
             var kinds = PanelBranchStats.Normalize(picks ?? StatKinds);
-            if (enabled == BranchStatsTree && kinds == StatKinds) return;
+            byPaired &= enabled;
+            if (enabled == BranchStatsTree && kinds == StatKinds && byPaired == GroupByPaired) return;
             RecordUndoEvent("Panel+ branch stats");
             BranchStatsTree = enabled;
+            GroupByPaired = byPaired;
             StatKinds = kinds;
             if (enabled) CreateSetTree = false;
             RowSelection.Clear();
-            Session.UpdateQuery(Session.Options);
+            Session.UpdateQuery(WithCurrentColumnSort(Session.Options));
             OnPingDocument()?.Modified();
             if (!Session.IsBusy) ScheduleOutput();
             Instances.ActiveCanvas?.Invalidate();
@@ -624,6 +632,7 @@ namespace BetterGhPanel
             if (CleanTree) writer.SetBoolean("PanelClean", true);
             writer.SetBoolean("PanelCreateSet", CreateSetTree);
             writer.SetBoolean("PanelBranchStats", BranchStatsTree);
+            if (GroupByPaired) writer.SetBoolean("PanelGroupByPaired", true);
             writer.SetInt32("PanelStatKinds", (int)StatKinds);
             writer.SetInt32("PanelUnitConversion", (int)UnitConversion);
             writer.SetInt32("PanelDecimalPlaces", DecimalPlaces);
@@ -657,6 +666,8 @@ namespace BetterGhPanel
             reader.TryGetBoolean("PanelCreateSet", ref createSet);
             bool branchStats = false; int statKinds = (int)PanelBranchStats.Default;
             reader.TryGetBoolean("PanelBranchStats", ref branchStats);
+            bool groupByPaired = false;
+            reader.TryGetBoolean("PanelGroupByPaired", ref groupByPaired);
             reader.TryGetInt32("PanelStatKinds", ref statKinds);
             BranchStatsTree = branchStats; StatKinds = PanelBranchStats.Normalize((PanelStatKinds)statKinds);
             TrimDepth = Math.Max(0, trimDepth);
@@ -665,6 +676,7 @@ namespace BetterGhPanel
             SimplifyTree = simplify;
             CleanTree = clean;
             CreateSetTree = createSet && !BranchStatsTree;
+            GroupByPaired = groupByPaired && (CreateSetTree || BranchStatsTree);
             return createSet;
         }
 

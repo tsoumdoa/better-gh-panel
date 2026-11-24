@@ -133,7 +133,17 @@ namespace BetterGhPanel.Runtime
             long visits = 0;
             var set = query.DisplaySet;
             // A selected row or set group with no F partner keeps its path, as S and D do.
-            if (set == null) AddGroup(positions, selected ? branchPaths.Concat(positions.Select(position => query.Snapshot.Rows[position].Path)).Distinct() : branchPaths, path => Parse(path));
+            if (query.GroupedStatPaths != null)
+            {
+                if (!selected) foreach (string path in query.GroupedStatPaths) result.EnsurePath(Parse(path));
+                foreach (int position in positions.OrderBy(value => value))
+                {
+                    var branch = result.EnsurePath(Parse(query.StatPathAt(position)));
+                    if (ItemAt(position) is int item) branch.Add(_rawItems[item]);
+                    visits++;
+                }
+            }
+            else if (set == null) AddGroup(positions, selected ? branchPaths.Concat(positions.Select(position => query.Snapshot.Rows[position].Path)).Distinct() : branchPaths, path => Parse(path));
             else if (set.IsBranchSet)
                 foreach (string representative in branchPaths)
                 {

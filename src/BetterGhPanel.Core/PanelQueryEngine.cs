@@ -50,6 +50,10 @@ namespace BetterGhPanel.Core
             var search = new PanelSearchFilter(query);
             var scope = new PanelQueryScope(snapshot, query, search);
             var statBranches = query.BranchStats ? new Dictionary<string, PanelBranchStats>(StringComparer.Ordinal) : null;
+            var pairedStats = query.BranchStats && query.GroupByPaired ? new PanelPairedGroups(snapshot, query) : null;
+            var statPaths = pairedStats == null ? null : new List<string>();
+            var statGroups = pairedStats == null ? null : new Dictionary<string, PanelPairedGroups.Group>(StringComparer.Ordinal);
+            var statGroupPositions = pairedStats == null ? null : new Dictionary<int, string>();
             var set = query.CreateSet && !query.BranchStats ? new PanelDisplaySet(snapshot, query) : null;
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
@@ -94,7 +98,7 @@ namespace BetterGhPanel.Core
                     if (scope.MatchesBranch(branch) && (set == null || set.IncludeBranch(branch.Path)))
                     {
                         branches.Add(branch.Path);
-                        if (statBranches != null) statBranches[branch.Path] = new PanelBranchStats(query.StatKinds);
+                        if (statBranches != null && pairedStats == null) statBranches[branch.Path] = new PanelBranchStats(query.StatKinds);
                         branchCounts[branch.Path] = 0;
                     }
                 }
@@ -138,7 +142,14 @@ namespace BetterGhPanel.Core
 
                 if (statBranches != null)
                 {
-                    if (!statBranches.TryGetValue(row.Path, out var stats)) statBranches.Add(row.Path, stats = new PanelBranchStats(query.StatKinds));
+                    var group = pairedStats?.Add(i);
+                    string statPath = group?.Path ?? row.Path;
+                    if (!statBranches.TryGetValue(statPath, out var stats))
+                    {
+                        statBranches.Add(statPath, stats = new PanelBranchStats(query.StatKinds));
+                        if (group != null) { statPaths!.Add(statPath); statGroups!.Add(statPath, group); }
+                    }
+                    statGroupPositions?.Add(i, statPath);
                     stats.Add(snapshot, row, i, query, measured);
                 }
                 rowPositions.Add(i);
@@ -281,6 +292,9 @@ namespace BetterGhPanel.Core
                         if (stats.Source(kind) >= 0) sources.Add(stats.Source(kind));
                 }
                 result.BranchStats = new ReadOnlyDictionary<string, PanelBranchStats>(statBranches);
+                result.GroupedStatPaths = statPaths?.AsReadOnly();
+                result.StatGroups = statGroups;
+                result.StatGroupByPosition = statGroupPositions;
                 result.StatSources = sources;
                 result.StatRows = new List<PanelStatKinds>(PanelBranchStats.Picks(query.StatKinds)).AsReadOnly();
                 result.StatDecimals = query.DecimalPlaces;
@@ -304,13 +318,14 @@ namespace BetterGhPanel.Core
             PanelPairedQuerySource source, CancellationToken token)
         {
             var search = new PanelSearchFilter(options);
-            if (!search.HasFilter || !search.IsGeometry && !search.UsesDisplayText) yield break;
+            bool grouping = options.GroupByPaired;
+            if (!grouping && (!search.HasFilter || !search.IsGeometry && !search.UsesDisplayText)) yield break;
             var scope = new PanelQueryScope(snapshot, options, search);
             for (int position = 0; position < snapshot.Rows.Count; position++)
             {
                 CheckCancellation(position, token);
                 if (!scope.MatchesRow(snapshot.Rows[position]) || source.PositionAt(position) is not int item) continue;
-                if (search.CanMeasure(source.Snapshot.Rows[item])) yield return item;
+                if (search.CanMeasure(source.Snapshot.Rows[item], forPresentation: grouping)) yield return item;
             }
         }
 

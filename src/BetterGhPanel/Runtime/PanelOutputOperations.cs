@@ -76,13 +76,13 @@ namespace BetterGhPanel.Runtime
         }
 
         internal static GH_Structure<IGH_Goo> DisplaySet(GH_Structure<IGH_Goo> source, PanelQueryResult query,
-            IReadOnlyList<int> positions, IEnumerable<string> branchPaths, Action<long>? countVisits = null)
+            IReadOnlyList<int> positions, IEnumerable<string> branchPaths, Action<long>? countVisits = null, bool flatten = false)
         {
             var result = new GH_Structure<IGH_Goo>();
             var lookup = new SourceLookup(source);
             long values = 0;
             var set = query.DisplaySet ?? throw new ArgumentException("A completed displayed set is required.", nameof(query));
-            foreach (string path in branchPaths)
+            foreach (string path in set.IsPaired ? Array.Empty<string>() : branchPaths)
             {
                 var outputPath = lookup.Path(path);
                 result.EnsurePath(outputPath);
@@ -97,7 +97,9 @@ namespace BetterGhPanel.Runtime
                 {
                     var value = set.Values[position];
                     IGH_Goo item = value.Unavailable ? null! : value.Number.HasValue ? new GH_Number(value.Number.Value) : new GH_String(value.Text);
-                    result.Append(item, lookup.Path(query.Snapshot.Rows[position].Path));
+                    var path = lookup.Path(query.Snapshot.Rows[position].Path);
+                    if (set.IsPaired) path = flatten ? new GH_Path(set.MemberIndices[position]) : path.AppendElement(set.MemberIndices[position]);
+                    result.EnsurePath(path).Add(item);
                     values++;
                 }
             countVisits?.Invoke(lookup.PathCount + values);

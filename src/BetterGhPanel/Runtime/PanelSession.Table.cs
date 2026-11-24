@@ -72,7 +72,8 @@ namespace BetterGhPanel.Runtime
         {
             if (_tableSource == null || ReferenceEquals(_statColumnsRunning, result)) return;
             var options = _options.Clone();
-            var columns = _columns.Where(column => column.Snapshot != null && column.Pair != null && !result.ColumnBranchStats.ContainsKey(column.Input.InstanceGuid))
+            var columns = _columns.Where(column => (result.StatGroups == null || column != _pairedColumn) &&
+                    column.Snapshot != null && column.Pair != null && !result.ColumnBranchStats.ContainsKey(column.Input.InstanceGuid))
                 .Select(column => (Column: column, Snapshot: column.Snapshot!, Queue: column.Geometry, Pair: column.Pair!)).ToArray();
             if (columns.Length == 0) return;
             _statColumnsRunning = result;
@@ -100,7 +101,7 @@ namespace BetterGhPanel.Runtime
                         catch (Exception)
                         {
                             // A failed column is complete and unavailable. Never run another failing/cancelled scan in the fallback.
-                            stats = result.BranchPaths.ToDictionary(path => path, _ => new PanelBranchStats(options.StatKinds), StringComparer.Ordinal);
+                            stats = result.StatPaths.ToDictionary(path => path, _ => new PanelBranchStats(options.StatKinds), StringComparer.Ordinal);
                         }
                         Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
                         {

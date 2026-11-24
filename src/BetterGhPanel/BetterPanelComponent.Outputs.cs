@@ -139,7 +139,7 @@ namespace BetterGhPanel
         {
             var tree = new GH_Structure<IGH_Goo>();
             var selection = selected ? new HashSet<int>(positions) : null;
-            foreach (string path in query.BranchPaths)
+            foreach (string path in query.StatPaths)
             {
                 var stats = query.BranchStats![path];
                 var ghPath = new GH_Path();
@@ -161,7 +161,7 @@ namespace BetterGhPanel
             if (selected && positions.Count == 0 && branches.Count == 0) return new GH_Structure<IGH_Goo>();
             if (query.BranchStats != null) return StatsOutput(query, positions, selected);
             if (query.DisplaySet != null) return OutputsValues
-                ? PanelOutputOperations.DisplaySet(source, query, positions, branches, CountOutputVisits)
+                ? PanelOutputOperations.DisplaySet(source, query, positions, branches, CountOutputVisits, FlattenTree)
                 : PanelOutputOperations.SetItems(source, query, positions, branches, FlattenTree, CountOutputVisits);
             if (OutputsValues) return PanelOutputOperations.Values(source, query, positions,
                 selected ? Array.Empty<string>() : branches, CountOutputVisits);

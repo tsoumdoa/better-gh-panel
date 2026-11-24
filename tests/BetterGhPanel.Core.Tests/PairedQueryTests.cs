@@ -4,6 +4,34 @@ using Xunit;
 public class PairedQueryTests
 {
     [Fact]
+    public void GroupingByFUsesFirstSeenKeysAndRetainsUnpairedRows()
+    {
+        var data = PanelQueryTestData.Sample();
+        var paired = new PanelSnapshot(new[]
+        {
+            new PanelRow(0, "{0}", "Text", "Wall", null),
+            new PanelRow(1, "{0}", "Text", "—", null),
+            new PanelRow(2, "{0}", "Text", "Wall", null)
+        }, new[] { new PanelBranch("{0}", 3) });
+        int?[] partners = { 0, 2, 0, 0, 1, null };
+        var options = new PanelQueryOptions
+        {
+            CreateSet = true, GroupByPaired = true, StatKinds = PanelStatKinds.Sum,
+            PairedSource = new PanelPairedQuerySource(paired, position => partners[position])
+        };
+        var set = PanelQueryEngine.Execute(data, options).DisplaySet!;
+        Assert.Equal(new[] { 0, 1 }, set.Members[0]);
+        Assert.Equal("Wall", set.Values[3].Text);
+        Assert.Equal("—", set.Values[4].Text);
+        Assert.False(set.Values[4].Unavailable);
+        Assert.True(set.Values[5].Unavailable);
+        Assert.Equal(new[] { 0, 1, 2, 3, 4, 5 }, set.AllMembers);
+        options.BranchStats = true;
+        var stats = PanelQueryEngine.Execute(data, options);
+        Assert.Equal(new[] { "{0;1;0}", "{0;1;2;0}", "{0;10;0}", "{0;10;1}", "{0;10;2}" }, stats.StatPaths);
+        Assert.Equal(12d, stats.BranchStats!["{0;1;0}"].Value(PanelStatKinds.Sum));
+    }
+    [Fact]
     public void SearchUsesOriginalPartnersAndKeepsDataRestrictions()
     {
         var data = PanelQueryTestData.Sample();

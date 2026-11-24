@@ -193,6 +193,11 @@ namespace BetterGhPanel
         private GH_ObjectResponse? ClickTree(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             var point = e.CanvasLocation;
+            if (_layout.CreateSet.Contains(point) && PanelOwner.PairedInputPresent())
+            {
+                OpenMenu(CanvasMenuKind.CreateSet, sender);
+                return GH_ObjectResponse.Handled;
+            }
             PanelOwner.SetTreeOperations(PanelOwner.TrimDepth,
                 _layout.Flatten.Contains(point) ? !PanelOwner.FlattenTree : PanelOwner.FlattenTree,
                 _layout.Reverse.Contains(point) ? !PanelOwner.ReverseTree : PanelOwner.ReverseTree,
@@ -216,7 +221,7 @@ namespace BetterGhPanel
 
         private GH_ObjectResponse? ClickBranchStats(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
-            if (!PanelOwner.BranchStatsTree) PanelOwner.SetBranchStats(true);
+            if (!PanelOwner.BranchStatsTree && !PanelOwner.PairedInputPresent()) PanelOwner.SetBranchStats(true);
             OpenMenu(CanvasMenuKind.BranchStats, sender);
             return GH_ObjectResponse.Handled;
         }

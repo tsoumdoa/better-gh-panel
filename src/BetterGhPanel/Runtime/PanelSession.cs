@@ -24,6 +24,7 @@ namespace BetterGhPanel.Runtime
         private Func<double>? _roundUpFactorResolver;
         private Func<PanelFormula?>? _formulaResolver;
         private Func<bool>? _createSetResolver;
+        private Func<bool>? _pairedGroupResolver, _flattenResolver;
         private Func<bool>? _branchStatsResolver;
         private Func<PanelStatKinds>? _statKindsResolver;
         private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryPreparationResolver;
@@ -168,6 +169,8 @@ namespace BetterGhPanel.Runtime
         internal void SetFormulaResolver(Func<PanelFormula?> resolver) => _formulaResolver = resolver;
         internal void SetRoundUpFactorResolver(Func<double> resolver) => _roundUpFactorResolver = resolver;
         internal void SetCreateSetResolver(Func<bool> resolver) => _createSetResolver = resolver;
+        internal void SetPairedGroupingResolver(Func<bool> group, Func<bool> flatten)
+        { _pairedGroupResolver = group; _flattenResolver = flatten; }
         internal void SetBranchStatsResolver(Func<bool> enabled, Func<PanelStatKinds> picks)
         { _branchStatsResolver = enabled; _statKindsResolver = picks; }
         private Func<bool>? _outputValuesResolver;
@@ -258,6 +261,8 @@ namespace BetterGhPanel.Runtime
             if (_branchStatsResolver != null) next.BranchStats = _branchStatsResolver();
             if (_statKindsResolver != null) next.StatKinds = _statKindsResolver();
             if (_createSetResolver != null) next.CreateSet = _createSetResolver();
+            if (_pairedGroupResolver != null) next.GroupByPaired = _pairedGroupResolver();
+            if (_flattenResolver != null) next.Flattened = _flattenResolver();
             if (_outputValuesResolver != null) next.OutputValues = _outputValuesResolver() && (next.DisplaysDataFilterValue || next.CreateSet);
             next.DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, next.DecimalPlaces));
             // Canonical paths keep direct input, saved options and menu checkmarks
@@ -284,15 +289,16 @@ namespace BetterGhPanel.Runtime
             var token = cancellation.Token;
             var snapshot = Snapshot;
             var options = _options.Clone();
-            var paired = options.SearchPaired ? _pairedColumn : null;
+            if (_pairedGroupResolver != null && (_pairedColumn == null || _pairedColumn.Error != null)) options.GroupByPaired = false;
+            var paired = options.SearchPaired || options.GroupByPaired ? _pairedColumn : null;
             var pairedSnapshot = paired?.Snapshot;
             var pairedQueue = paired?.Geometry;
             if (pairedSnapshot != null && paired?.Pair is PanelPairedData pair)
                 options.PairedSource = new PanelPairedQuerySource(pairedSnapshot, pair.ItemAt);
             bool measurePaired = pairedSnapshot?.HasMeasurableGeometry == true && pairedQueue != null &&
-                !options.DisplayFilterValue && (PanelQueryEngine.UsesDisplayedText(options) ||
+                (options.GroupByPaired || options.SearchPaired && !options.DisplayFilterValue && (PanelQueryEngine.UsesDisplayedText(options) ||
                     !string.IsNullOrWhiteSpace(options.Search) &&
-                    (options.SearchMode >= PanelSearchMode.Length && options.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(options.SearchMode)));
+                    (options.SearchMode >= PanelSearchMode.Length && options.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(options.SearchMode))));
             bool measureGeometry = snapshot.HasMeasurableGeometry && PanelQueryEngine.RequiresGeometryMeasurements(options);
             var sortColumn = options.BranchStats || options.SortMode == PanelSortMode.SourceOrder ? null :
                 _columns.Find(column => column.Input.InstanceGuid == options.SortColumn && column.Snapshot?.HasMeasurableGeometry == true);
