@@ -149,6 +149,7 @@ namespace BetterGhPanel.Core
             if (query.GroupByPaired) _pairedGroups = new PanelPairedGroups(snapshot, query);
         }
         internal bool IsBranchSet => _pairedGroups == null && _query.DisplaysDataFilterValue && _query.SearchMode == PanelSearchMode.ListLength;
+        internal bool IsPaired => _pairedGroups != null;
         internal IReadOnlyDictionary<int, PanelDisplayedValue> Values => _values;
         internal IReadOnlyList<int> MembersAt(int position) => _members[position];
 

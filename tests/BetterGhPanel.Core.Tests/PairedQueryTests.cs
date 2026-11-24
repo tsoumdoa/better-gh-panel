@@ -7,6 +7,28 @@ using Xunit;
 public class PairedQueryTests
 {
     [Fact]
+    public void PairedSetSortsByItsKeyOrItsFirstDataMember()
+    {
+        var branch = new[] { new PanelBranch("{0}", 5) };
+        PanelSnapshot Snapshot(params double[] numbers) => new PanelSnapshot(
+            numbers.Select((number, index) => new PanelRow(index, "{0}", "Number", number.ToString(), number)).ToArray(), branch);
+        var data = Snapshot(1, 100, 9, 2, 12);
+        var keys = Snapshot(10, 10, 2, 20, 20);
+        var options = new PanelQueryOptions
+        {
+            CreateSet = true, GroupByPaired = true, SortMode = PanelSortMode.ValueAscending,
+            PairedSource = new PanelPairedQuerySource(keys, position => position)
+        };
+        var sortedData = PanelQueryEngine.Execute(data, options);
+        Assert.Equal(new[] { 0, 3, 2 }, sortedData.RowPositions);
+        Assert.Equal(new[] { 0, 1 }, sortedData.DisplaySet!.Members[0]);
+        options.SortPairedKey = true;
+        Assert.Equal(new[] { 2, 0, 3 }, PanelQueryEngine.Execute(data, options).RowPositions);
+        options.SortMode = PanelSortMode.ValueDescending;
+        Assert.Equal(new[] { 3, 0, 2 }, PanelQueryEngine.Execute(data, options).RowPositions);
+    }
+
+    [Fact]
     public void CleanKeepsOriginalPairOffsetsAndUsesDataBranchLength()
     {
         var data = new[] { new PanelBranch("{0}", 1), new PanelBranch("{1}", 0), new PanelBranch("{2}", 2) };

@@ -59,12 +59,13 @@ namespace BetterGhPanel.Core
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
             var outputValues = !query.BranchStats && query.OutputValues && query.DisplaysDataFilterValue && set == null ? new Dictionary<int, PanelPropertyValue?>() : null;
-            var propertySortValues = !query.BranchStats && query.ColumnSortKeys == null && set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplaysDataFilterValue && ShowsMetric(query.SearchMode)
+            bool useSetKey = set != null && (!set.IsPaired || query.SortPairedKey);
+            bool sortData = !query.BranchStats && query.SortMode != PanelSortMode.SourceOrder && !useSetKey && query.ColumnSortKeys == null;
+            var propertySortValues = sortData && query.DisplaysDataFilterValue && ShowsMetric(query.SearchMode)
                 ? new Dictionary<int, PanelDisplayedValue>() : null;
-            // Sets and metric views already supply complete displayed sort keys.
-            var sortText = !query.BranchStats && query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder && set == null && propertySortValues == null
+            var sortText = sortData && propertySortValues == null
                 ? new Dictionary<int, RowSortKey>() : null;
-            var columnSortRows = !query.BranchStats && query.ColumnSortKeys != null && query.SortMode != PanelSortMode.SourceOrder
+            var columnSortRows = !query.BranchStats && !query.SortPairedKey && query.ColumnSortKeys != null && query.SortMode != PanelSortMode.SourceOrder
                 ? new Dictionary<int, PanelRow?>() : null;
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -193,7 +194,7 @@ namespace BetterGhPanel.Core
             var columnKeys = columnSortRows == null ? null : new PanelColumnSortKeys(columnSortRows);
             if (!query.BranchStats && query.SortMode != PanelSortMode.SourceOrder && set?.IsBranchSet != true)
                 foreach (var step in SortBranches(positions, snapshot, branchCounts, sortText!,
-                    query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work, set?.Values ?? propertySortValues, columnKeys))
+                    query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work, useSetKey ? set!.Values : propertySortValues, columnKeys))
                     yield return step;
             // Build the scroll index as part of the cooperative query, not in a
             // paint or gesture. The first row of the next retained non-empty

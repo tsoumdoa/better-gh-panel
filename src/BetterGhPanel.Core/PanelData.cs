@@ -418,6 +418,7 @@ namespace BetterGhPanel.Core
         public PanelSortMode SortMode { get; set; } = PanelSortMode.SourceOrder;
         /// <summary>Input identity of the presentation sort; empty means D.</summary>
         public Guid SortColumn { get; set; }
+        internal bool SortPairedKey { get; set; }
         /// <summary>Immutable captured column keys, indexed by D snapshot position.</summary>
         public PanelColumnSortKeys? ColumnSortKeys { get; set; }
         internal PanelTableSource? TableSource { get; set; }
@@ -442,6 +443,7 @@ namespace BetterGhPanel.Core
             OnlyInvalid = OnlyInvalid,
             SortMode = SortMode,
             SortColumn = SortColumn,
+            SortPairedKey = SortPairedKey,
             ColumnSortKeys = ColumnSortKeys,
             TableSource = TableSource
         };

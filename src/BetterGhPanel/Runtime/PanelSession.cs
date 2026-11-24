@@ -305,12 +305,14 @@ namespace BetterGhPanel.Runtime
             var pairedQueue = paired?.Geometry;
             if (pairedSnapshot != null && paired?.Pair is PanelPairedData pair)
                 options.PairedSource = new PanelPairedQuerySource(pairedSnapshot, pair.ItemAt);
+            options.SortPairedKey = options.CreateSet && options.GroupByPaired && paired != null &&
+                paired.Input.InstanceGuid == options.SortColumn;
             bool measurePaired = pairedSnapshot?.HasMeasurableGeometry == true && pairedQueue != null &&
                 (options.GroupByPaired || options.SearchPaired && !options.DisplayFilterValue && (PanelQueryEngine.UsesDisplayedText(options) ||
                     !string.IsNullOrWhiteSpace(options.Search) &&
                     (options.SearchMode >= PanelSearchMode.Length && options.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(options.SearchMode))));
             bool measureGeometry = !options.PairedGroupingUnavailable && snapshot.HasMeasurableGeometry && PanelQueryEngine.RequiresGeometryMeasurements(options);
-            var sortColumn = options.BranchStats || options.SortMode == PanelSortMode.SourceOrder ? null :
+            var sortColumn = options.BranchStats || options.SortPairedKey || options.SortMode == PanelSortMode.SourceOrder ? null :
                 _columns.Find(column => column.Input.InstanceGuid == options.SortColumn && column.Snapshot?.HasMeasurableGeometry == true);
             var sortSnapshot = sortColumn?.Snapshot;
             var sortQueue = sortColumn?.Geometry;
