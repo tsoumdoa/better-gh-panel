@@ -135,10 +135,15 @@ namespace BetterGhPanel.Runtime
             // A selected row or set group with no F partner keeps its path, as S and D do.
             if (query.GroupedStatPaths != null)
             {
-                if (!selected) foreach (string path in query.GroupedStatPaths) result.EnsurePath(Parse(path));
+                var destinations = new Dictionary<string, IList<IGH_Goo>>(StringComparer.Ordinal);
+                if (!selected)
+                    foreach (string path in query.GroupedStatPaths)
+                        destinations.Add(path, result.EnsurePath(Parse(path)));
                 foreach (int position in positions.OrderBy(value => value))
                 {
-                    var branch = result.EnsurePath(Parse(query.StatPathAt(position)));
+                    string path = query.StatPathAt(position);
+                    if (!destinations.TryGetValue(path, out var branch))
+                        destinations.Add(path, branch = result.EnsurePath(Parse(path)));
                     if (ItemAt(position) is int item) branch.Add(_rawItems[item]);
                     visits++;
                 }
