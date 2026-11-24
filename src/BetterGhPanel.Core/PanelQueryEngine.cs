@@ -395,7 +395,7 @@ namespace BetterGhPanel.Core
             return candidates.AsReadOnly();
         }
 
-        private static bool PresentationNeedsGeometry(PanelQueryOptions query) => (query.BranchStats || (!query.GroupByPaired || query.ShowsDataListLength) &&
+        private static bool PresentationNeedsGeometry(PanelQueryOptions query) => (query.BranchStats || !query.GroupByPaired &&
             (query.CreateSet || query.OutputValues && query.DisplayFilterValue)) &&
             (query.BranchStats || !query.DisplayFilterValue || query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(query.SearchMode));
 
