@@ -9,23 +9,26 @@ namespace BetterGhPanel.Core
     public sealed class PanelDisplayedValue
     {
         private readonly PanelText _text, _copyText;
-        internal PanelDisplayedValue(PanelText text, PanelText copyText, double? number, bool numeric, bool unavailable = false)
-        { _text = text; _copyText = copyText; Number = number; IsNumeric = numeric; Unavailable = unavailable; }
+        internal PanelDisplayedValue(PanelText text, PanelText copyText, double? number, bool numeric, bool unavailable = false,
+            double? sortNumber = null)
+        { _text = text; _copyText = copyText; Number = number; IsNumeric = numeric; Unavailable = unavailable; SortNumber = sortNumber ?? number; }
         public bool Unavailable { get; }
         public bool IsNumeric { get; }
         public string Text => _text.ToString();
         public string CopyText => _copyText.ToString();
         public double? Number { get; }
+        internal double? SortNumber { get; }
         internal PanelText SemanticText => _text;
 
-        internal static PanelDisplayedValue CapturePaired(PanelRow? row, PanelUnitConversion conversion,
+        internal static PanelDisplayedValue CapturePaired(PanelSnapshot? snapshot, int? item, PanelUnitConversion conversion,
             PanelQueryOptions query, PanelGeometryInfo? measured)
         {
-            if (row == null)
+            if (!item.HasValue || snapshot == null)
             {
                 var missing = new PanelText("—");
                 return new PanelDisplayedValue(missing, missing, null, false, true);
             }
+            var row = snapshot.Rows[item.Value];
             if (row.IsValid && !row.IsNull && row.NumericValue is double raw)
             {
                 double number = PanelUnits.Transform(raw, conversion, query.RoundUpFactor, query.DecimalPlaces);
@@ -33,8 +36,16 @@ namespace BetterGhPanel.Core
                 if (double.IsNaN(number) || double.IsInfinity(number)) return new PanelDisplayedValue(text, text, null, true, true);
                 return new PanelDisplayedValue(text, text, query.DecimalPlaces < 0 ? PanelNumber.GeneralValue(number, 12) : number, true);
             }
-            var display = PanelValuePresentation.DisplayText(row, conversion, query.DecimalPlaces, measured, query.RoundUpFactor);
-            return new PanelDisplayedValue(display, display, null, false, row.IsNull);
+            if (row.GeometryInfo == null)
+            {
+                var display = PanelValuePresentation.DisplayText(row, conversion, query.DecimalPlaces, measured, query.RoundUpFactor);
+                return new PanelDisplayedValue(display, display, null, false, row.IsNull);
+            }
+            var sample = PanelTableText.ColumnPreviewValue(snapshot, item.Value, measured ?? row.GeometryInfo,
+                snapshot.CommonGeometryMetric?.MetricLabel.Length > 0, false, conversion, query.DecimalPlaces,
+                query.RoundUpFactor, null, "");
+            var shown = new PanelText(sample.ValueText);
+            return new PanelDisplayedValue(shown, shown, null, false, row.IsNull, sortNumber: sample.Number);
         }
 
         internal static PanelDisplayedValue Capture(PanelSnapshot snapshot, PanelRow row, PanelQueryOptions query,

@@ -6,6 +6,47 @@ using Xunit;
 
 public class PairedQueryTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void PairedSetDistinguishesNumericAndTextKeysWithIdenticalDisplay(bool reverse)
+    {
+        var branches = new[] { new PanelBranch("{0}", 2) };
+        var keys = new PanelSnapshot(new[]
+        {
+            new PanelRow(0, "{0}", "Number", "10", 10),
+            new PanelRow(1, "{0}", "Text", "10", null)
+        }, branches);
+        var options = new PanelQueryOptions
+        {
+            CreateSet = true, GroupByPaired = true,
+            PairedSource = new PanelPairedQuerySource(keys, position => reverse ? 1 - position : position)
+        };
+        var set = PanelQueryEngine.Execute(keys, options).DisplaySet!;
+        Assert.Equal("10", set.Values[0].Text);
+        Assert.Equal("10", set.Values[1].Text);
+        Assert.Equal(reverse, set.Values[1].IsNumeric);
+        Assert.Equal(!reverse, set.Values[0].IsNumeric);
+    }
+
+    [Fact]
+    public void PairedGeometryKeysUseCompactMeasuredValuesAndSortNumerically()
+    {
+        var branches = new[] { new PanelBranch("{0}", 2) };
+        PanelRow Curve(int index, double length) => new PanelRow(index, "{0}", "Curve", "Curve", null,
+            geometryInfo: new PanelGeometryInfo("Curve", length, units: "m", metricName: "Length", metricLabel: "L"));
+        var data = new PanelSnapshot(new[] { Curve(0, 10), Curve(1, 9) }, branches);
+        var options = new PanelQueryOptions
+        {
+            CreateSet = true, GroupByPaired = true, SortPairedKey = true, SortMode = PanelSortMode.ValueAscending,
+            PairedSource = new PanelPairedQuerySource(data, position => position)
+        };
+        var result = PanelQueryEngine.Execute(data, options);
+        Assert.Equal(new[] { 1, 0 }, result.RowPositions);
+        Assert.Equal("9", result.DisplaySet!.Values[1].Text);
+        Assert.Equal("10", result.DisplaySet!.Values[0].Text);
+    }
+
     [Fact]
     public void PairedSetSortsByItsKeyOrItsFirstDataMember()
     {

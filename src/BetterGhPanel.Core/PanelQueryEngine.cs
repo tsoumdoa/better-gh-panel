@@ -575,8 +575,8 @@ namespace BetterGhPanel.Core
                 var leftValue = displayedValues[leftId];
                 var rightValue = displayedValues[rightId];
                 if (leftValue.Unavailable != rightValue.Unavailable) return leftValue.Unavailable ? 1 : -1;
-                if (leftValue.Number.HasValue != rightValue.Number.HasValue) return leftValue.Number.HasValue ? -1 : 1;
-                int order = leftValue.Number.HasValue ? leftValue.Number.Value.CompareTo(rightValue.Number!.Value) :
+                if (leftValue.SortNumber.HasValue != rightValue.SortNumber.HasValue) return leftValue.SortNumber.HasValue ? -1 : 1;
+                int order = leftValue.SortNumber.HasValue ? leftValue.SortNumber.Value.CompareTo(rightValue.SortNumber!.Value) :
                     leftValue.SemanticText.Compare(rightValue.SemanticText, StringComparison.OrdinalIgnoreCase);
                 return order == 0 ? leftId.CompareTo(rightId) : descending ? -order : order;
             }
