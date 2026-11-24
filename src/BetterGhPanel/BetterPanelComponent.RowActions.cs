@@ -238,7 +238,8 @@ namespace BetterGhPanel
         {
             _session?.RequestPreviewMeasurements(null, null);
             bool visible = _highlight.PreviewCount > 0;
-            bool retained = _highlight.ClearForQuery(keepValues: keepValues && (ShowValues || ActiveValuePalette != PanelValuePalette.Off) &&
+            bool retained = _highlight.ClearForQuery(keepValues: keepValues &&
+                (ShowValues || ActiveValuePalette != PanelValuePalette.Off || PreviewMode == PanelPreviewMode.PassFail) &&
                 PreviewMode != PanelPreviewMode.Off && !Hidden && !Locked && !_previewSuspended);
             if (retained) WatchRetainedPreviewSolution();
             else StopRetainedPreviewCheck();

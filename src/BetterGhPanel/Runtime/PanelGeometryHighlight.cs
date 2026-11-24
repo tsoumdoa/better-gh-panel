@@ -57,8 +57,11 @@ namespace BetterGhPanel.Runtime
             try
             {
                 var labelResult = order || values ? result : null;
-                bool attachLabels = labelResult != null && !ReferenceEquals(_orderResult, labelResult);
-                SetOrderResult(labelResult);
+                bool keepLabels = passFail && _passFail && labelResult != null &&
+                    ReferenceEquals(_orderResult?.Snapshot, result.Snapshot);
+                bool attachLabels = !keepLabels && labelResult != null && !ReferenceEquals(_orderResult, labelResult);
+                if (keepLabels) _orderResult = labelResult;
+                else SetOrderResult(labelResult);
                 long generation = _generation;
                 if (!current()) return;
                 bool coloursChanged = _orderLabels.Configure(result, order, values, placement, palette, reverse, search, decimals, factor, scope, sample, current, labelSource, colourByPaired, passFail);
@@ -169,13 +172,16 @@ namespace BetterGhPanel.Runtime
             IReadOnlyList<int> selectedPositions, Func<bool> current, PanelRowSelection? selection = null, bool passFail = false)
         {
             long generation = ++_generation;
-            bool fresh = !ReferenceEquals(_source, sourceItems) || !ReferenceEquals(_result, result) || _filtered != filtered || _passFail != passFail || _legacyPositions != null;
+            bool samePassFailCapture = passFail && _passFail && ReferenceEquals(_result?.Snapshot, result.Snapshot);
+            bool fresh = !ReferenceEquals(_source, sourceItems) || !samePassFailCapture && !ReferenceEquals(_result, result) ||
+                _filtered != filtered || _passFail != passFail || _legacyPositions != null;
             if (fresh)
             {
                 ClearGeometry();
                 if (!Current(generation, current)) return;
-                _source = sourceItems; _result = result; _filtered = filtered; _passFail = passFail; _legacyPositions = null;
+                _source = sourceItems; _filtered = filtered; _passFail = passFail; _legacyPositions = null;
             }
+            _result = result;
             if (!filtered) { _partial = false; _partialReason = null; }
             LastVisitedRows = LastVisitedNodes = 0;
             var update = UpdateMembership(selectedPositions, result, selection);
@@ -757,12 +763,13 @@ namespace BetterGhPanel.Runtime
         internal bool ClearForQuery(bool keepValues)
         {
             _generation++;
-            if (keepValues && _orderLabels.HasValuePreview)
+            if (keepValues && (_orderLabels.HasValuePreview || _passFail))
             {
                 // Keep the owned preview visible until SetScopeChecked replaces it.
                 // No callback tied to the expired input may clear this retained generation.
-                CancelRecovery(); _meshPriorityDirty = false;
-                _source = null; _result = null; _orderResult = null; _legacyPositions = null;
+                CancelRecovery(keepFiltered: _passFail); _meshPriorityDirty = false;
+                if (!_passFail)
+                { _source = null; _result = null; _orderResult = null; _legacyPositions = null; }
                 _membership.DetachResult();
                 _orderLabels.SuspendValues();
                 return true;
@@ -776,10 +783,11 @@ namespace BetterGhPanel.Runtime
             }
             return false;
         }
-        private void CancelRecovery()
+        private void CancelRecovery(bool keepFiltered = false)
         {
             if (_recoveryScheduled) Rhino.RhinoApp.Idle -= RecoverOnIdle;
-            _recoveryScheduled = false; _recoveryCurrent = null; _recovery.Clear(); _filteredRecovery.Clear();
+            _recoveryScheduled = false; _recoveryCurrent = null; _recovery.Clear();
+            if (!keepFiltered) _filteredRecovery.Clear();
             _admissionBlockedByRetirement = _selectionRecoveryReady = false;
         }
 
@@ -792,6 +800,7 @@ namespace BetterGhPanel.Runtime
             _orderLabels.ClearPreviewAdmissions();
             _bounds.Clear(); _orderLabels.ClearEntries(); _selectedCount = _unavailable = _meshFailures = 0; _bytes = 0; _partial = false; _partialReason = null;
             _source = null; _result = null; _legacyPositions = null; _meshPriorityDirty = false;
+            _passFail = false;
             foreach (var entry in old) Retire(entry);
             FlushRetired();
         }
