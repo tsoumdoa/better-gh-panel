@@ -29,10 +29,10 @@ namespace BetterGhPanel.Runtime
         private readonly Dictionary<string, List<PanelBranchPair>> _byDestination = new Dictionary<string, List<PanelBranchPair>>(StringComparer.Ordinal);
         private readonly IGH_Goo[] _rawItems;
         internal PanelPairedData(GH_Structure<IGH_Goo> data, GH_Structure<IGH_Goo> paired,
-            IReadOnlyList<PanelSourceAddress> sources, int trim, bool simplify, bool flatten, bool reverse)
+            IReadOnlyList<PanelSourceAddress> sources, int trim, bool simplify, bool flatten, bool reverse, bool clean = false)
         {
             Pairs = PanelPairing.Match(Shape(data), Shape(paired));
-            HasUnequal = Pairs.Any(pair => pair.Unequal);
+            HasUnequal = Pairs.Any(pair => pair.Unequal && (!clean || pair.Data.ItemCount > 0));
             _dataOrder = Pairs.Select((pair, index) => (pair, index)).ToDictionary(value => value.pair.Data.Path, value => value.index, StringComparer.Ordinal);
             _sources = sources;
             _sourcePairs = sources.Select(source => _dataOrder[source.Path]).ToArray();
@@ -50,13 +50,15 @@ namespace BetterGhPanel.Runtime
             else
             {
                 var markers = new GH_Structure<IGH_Goo>();
-                for (int b = 0; b < data.PathCount; b++) markers.Append(new GH_Integer(b), new GH_Path(data.Paths[b]));
+                for (int b = 0; b < data.PathCount; b++)
+                    if (!clean || data.Branches[b].Count > 0) markers.Append(new GH_Integer(b), new GH_Path(data.Paths[b]));
                 var mapped = PanelTreeOperations.ApplyWithSources(markers, trim, simplify, flatten, reverse, out _);
                 for (int b = 0; b < mapped.PathCount; b++)
                     foreach (GH_Integer marker in mapped.Branches[b]) destinations.Add(Pairs[marker.Value].Data.Path, mapped.Paths[b].ToString());
             }
             foreach (var pair in Pairs)
             {
+                if (clean && pair.Data.ItemCount == 0) continue;
                 string path = destinations[pair.Data.Path];
                 if (!_byDestination.TryGetValue(path, out var branches)) _byDestination.Add(path, branches = new List<PanelBranchPair>());
                 branches.Add(pair);

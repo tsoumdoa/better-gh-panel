@@ -18,6 +18,7 @@ namespace BetterGhPanel
             internal RectangleF Resize { get; }
             internal RectangleF Footer { get; }
             internal RectangleF Trim { get; }
+            internal RectangleF Clean { get; }
             internal RectangleF Simplify { get; }
             internal RectangleF Flatten { get; }
             internal RectangleF Reverse { get; }
@@ -65,7 +66,8 @@ namespace BetterGhPanel
                 RectangleF restore = default,
                 RectangleF searchClear = default,
                 RectangleF branchClear = default,
-                RectangleF split = default)
+                RectangleF split = default,
+                RectangleF clean = default)
             {
                 Panel = panel;
                 Search = search;
@@ -77,6 +79,7 @@ namespace BetterGhPanel
                 Resize = resize;
                 Footer = footer;
                 Trim = trim;
+                Clean = clean;
                 Simplify = simplify;
                 Flatten = flatten;
                 Reverse = reverse;
@@ -104,7 +107,7 @@ namespace BetterGhPanel
 
         // Units may widen until the two-line footer status keeps room for a
         // "D: 1 filter ×" chip (59 units; 300-wide panels keep the 48 minimum).
-        private float UnitsWidth(float panelWidth) => Math.Max(48, Math.Min(_unitsWidth, panelWidth - 252));
+        private float UnitsWidth(float panelWidth) => Math.Max(48, Math.Min(_unitsWidth, panelWidth - 263));
 
         // Computes the immutable fixed-control layout and, in the original
         // calculation order, updates the list rectangle, _warningsHeight and
@@ -181,18 +184,19 @@ namespace BetterGhPanel
             // Active Units widens leftward, shifting Reset and the tree tools with it.
             float unitsWidth = UnitsWidth(panel.Width);
             units = new RectangleF(footer.Right - unitsWidth, footer.Bottom - 20, unitsWidth, 20);
-            // Reset all sits beside Units, which it also resets, 8 units clear of the six tree tools.
+            // Reset all sits beside Units, clear of the tree tools.
             reset = new RectangleF(units.Left - 23, units.Y, 20, units.Height);
-            float toolWidth = ShowingStats && panel.Width < 340 ? 18 : 20;
-            trim = new RectangleF(reset.Left - (6 * toolWidth + 18), units.Y, toolWidth, units.Height);
-            simplify = new RectangleF(trim.Right + 2, trim.Y, toolWidth, 20);
-            flatten = new RectangleF(simplify.Right + 2, trim.Y, toolWidth, 20);
+            float toolWidth = panel.Width < 340 ? 18 : 20;
+            var clean = new RectangleF(reset.Left - (7 * toolWidth + 20), units.Y, toolWidth, units.Height);
+            simplify = new RectangleF(clean.Right + 2, clean.Y, toolWidth, 20);
+            trim = new RectangleF(simplify.Right + 2, clean.Y, toolWidth, 20);
+            flatten = new RectangleF(trim.Right + 2, trim.Y, toolWidth, 20);
             reverse = new RectangleF(flatten.Right + 2, trim.Y, toolWidth, 20);
             createSet = new RectangleF(reverse.Right + 2, trim.Y, toolWidth, 20);
             branchStats = new RectangleF(createSet.Right + 2, trim.Y, toolWidth, 20);
             if (_singleLineFooter)
             {
-                selectAll = new RectangleF(trim.Left - 62, units.Y + 2, 58, 16);
+                selectAll = new RectangleF(clean.Left - 62, units.Y + 2, 58, 16);
             }
             else
             {
@@ -215,7 +219,7 @@ namespace BetterGhPanel
             _trackHit = new RectangleF(panel.Right - 21, _list.Y, 8, _list.Height);
             LayoutTable();
             resize = new RectangleF(panel.Right - 24, panel.Bottom - 24, 24, 24);
-            return new PanelLayout(panel, search, filter, type, sort, branch, reset, resize, footer, trim, simplify, flatten, reverse, createSet, units, outLabel, outItems, outValues, display, preview, move, branchStats, selectAll, close, restore, searchClear, branchClear, split);
+            return new PanelLayout(panel, search, filter, type, sort, branch, reset, resize, footer, trim, simplify, flatten, reverse, createSet, units, outLabel, outItems, outValues, display, preview, move, branchStats, selectAll, close, restore, searchClear, branchClear, split, clean);
         }
     }
 }

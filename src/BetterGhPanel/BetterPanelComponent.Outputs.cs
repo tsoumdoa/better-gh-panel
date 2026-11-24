@@ -44,6 +44,7 @@ namespace BetterGhPanel
         {
             (Attributes as BetterPanelAttributes)?.ClearTableWidths();
             _inputTree = _preConversionTree = null;
+            CleanedEmptyBranches = 0;
             _liveInputTree = _itemOutputTree = null;
             _captureGraphs = Array.Empty<CaptureGraphWitness>();
             _captureHasGeometry = false;

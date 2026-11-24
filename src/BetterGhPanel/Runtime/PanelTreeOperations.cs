@@ -73,10 +73,10 @@ namespace BetterGhPanel.Runtime
         }
 
         internal static GH_Structure<IGH_Goo> ApplyWithSources(GH_Structure<IGH_Goo> source,
-            int trimDepth, bool simplify, bool flatten, bool reverse, out IReadOnlyList<PanelSourceAddress> retainedSources)
+            int trimDepth, bool simplify, bool flatten, bool reverse, out IReadOnlyList<PanelSourceAddress> retainedSources, bool clean = false)
         {
             var retained = new List<PanelSourceAddress>(source.DataCount);
-            if (trimDepth == 0 && !simplify && !flatten && !reverse)
+            if (trimDepth == 0 && !simplify && !flatten && !reverse && !clean)
             {
                 for (int b = 0; b < source.PathCount; b++)
                 {
@@ -93,6 +93,7 @@ namespace BetterGhPanel.Runtime
             var inputs = new List<(IGH_Goo Item, PanelSourceAddress Address)>(source.DataCount);
             for (int b = 0; b < source.PathCount; b++)
             {
+                if (clean && source.Branches[b].Count == 0) continue;
                 var path = new GH_Path(source.Paths[b]);
                 var pathText = path.ToString();
                 var positions = markers.EnsurePath(path);
@@ -103,7 +104,8 @@ namespace BetterGhPanel.Runtime
                     inputs.Add((source.Branches[b][i], new PanelSourceAddress(pathText, i)));
                 }
             }
-            markers = Transform(markers, trimDepth, simplify, flatten, reverse);
+            if (markers.PathCount > 0 || !clean)
+                markers = Transform(markers, trimDepth, simplify, flatten, reverse);
             foreach (var branch in markers.Branches)
                 for (int i = 0; i < branch.Count; i++)
                 {

@@ -78,6 +78,7 @@ namespace BetterGhPanel
             new ControlEntry("Branch", layout => layout.Branch, ClickBranch, TooltipQuery, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("SelectAll", layout => layout.SelectAll, ClickSelectAll, TooltipSelectAll, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Trim", layout => layout.Trim, ClickTrim, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("Clean", layout => layout.Clean, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Simplify", layout => layout.Simplify, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Flatten", layout => layout.Flatten, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Reverse", layout => layout.Reverse, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
@@ -196,7 +197,8 @@ namespace BetterGhPanel
                 _layout.Flatten.Contains(point) ? !PanelOwner.FlattenTree : PanelOwner.FlattenTree,
                 _layout.Reverse.Contains(point) ? !PanelOwner.ReverseTree : PanelOwner.ReverseTree,
                 _layout.Simplify.Contains(point) ? !PanelOwner.SimplifyTree : PanelOwner.SimplifyTree,
-                _layout.CreateSet.Contains(point) ? !PanelOwner.CreateSetTree : PanelOwner.CreateSetTree);
+                _layout.CreateSet.Contains(point) ? !PanelOwner.CreateSetTree : PanelOwner.CreateSetTree,
+                _layout.Clean.Contains(point) ? !PanelOwner.CleanTree : PanelOwner.CleanTree);
             return GH_ObjectResponse.Handled;
         }
 
@@ -387,6 +389,13 @@ namespace BetterGhPanel
 
         private void TooltipTree(PointF point, GH_TooltipDisplayEventArgs e)
         {
+            if (_layout.Clean.Contains(point))
+            {
+                e.Title = "Clean tree";
+                e.Text = (PanelOwner.CleanTree ? "On" : "Off") + " · Changes output";
+                e.Description = "Remove empty input branches from the rows and D. Keeps null items and B's original shape. Runs before Simplify.";
+                return;
+            }
             e.Title = _layout.Trim.Contains(point) ? "Trim tree" : _layout.Simplify.Contains(point) ? "Simplify tree" : _layout.Flatten.Contains(point) ? "Flatten tree" : _layout.Reverse.Contains(point) ? "Reverse tree" : "Create set";
             e.Text = (_layout.Trim.Contains(point) ? "Depth: " + PanelOwner.TrimDepth + " · " : "") + "Changes output · Tree tools → Units → Filters → Create set / Stats";
             e.Description = _layout.Trim.Contains(point) ? "Remove this many trailing path levels. Matching branches merge. 0 turns Trim off." :
@@ -505,7 +514,7 @@ namespace BetterGhPanel
             e.Text = _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus : System.FormattableString.Invariant($"{_selection.Count:N0} selected");
             // The footer may drop its range for the Clear filters chip; the tooltip keeps it.
             if (PanelOwner.Session.HasCurrentResult)
-                e.Text += " · " + CanvasStatistics.Summary(PanelOwner.Session.Result) + " · showing " + FooterRange(PanelOwner.Session.Result, singleLine: false);
+                e.Text += " · " + FooterSummary(PanelOwner.Session.Result) + " · showing " + FooterRange(PanelOwner.Session.Result, singleLine: false);
             e.Description = "Click to select; Ctrl/Cmd toggles, Shift extends, Alt/Option picks the same index in every branch. Right-click a row to copy, frame or view the full value, or a branch heading for branch actions. Double-click a row to view its full value, or empty list space to clear the selection.\n\n" + KeyboardHint;
         }
 

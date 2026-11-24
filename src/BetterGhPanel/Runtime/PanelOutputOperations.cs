@@ -152,10 +152,10 @@ namespace BetterGhPanel.Runtime
         }
 
         internal static PanelPairedData? Pair(GH_Structure<IGH_Goo> input, GH_Structure<IGH_Goo> paired,
-            IReadOnlyList<PanelSourceAddress> retainedSources, int trim, bool simplify, bool flatten, bool reverse, out string? error)
+            IReadOnlyList<PanelSourceAddress> retainedSources, int trim, bool simplify, bool flatten, bool reverse, out string? error, bool clean = false)
         {
             error = PanelPairing.Diagnose(PanelPairedData.Shape(input), PanelPairedData.Shape(paired));
-            return error == null ? new PanelPairedData(input, paired, retainedSources, trim, simplify, flatten, reverse) : null;
+            return error == null ? new PanelPairedData(input, paired, retainedSources, trim, simplify, flatten, reverse, clean) : null;
         }
     }
 }

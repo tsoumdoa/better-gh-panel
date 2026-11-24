@@ -114,10 +114,12 @@ namespace BetterGhPanel
         internal bool FlattenTree { get; private set; }
         internal bool ReverseTree { get; private set; }
         internal bool SimplifyTree { get; private set; }
+        internal bool CleanTree { get; private set; }
+        internal int CleanedEmptyBranches { get; private set; }
         internal bool CreateSetTree { get; private set; }
         internal bool BranchStatsTree { get; private set; }
         internal PanelStatKinds StatKinds { get; private set; } = PanelBranchStats.Default;
-        internal bool HasTreeOperations => BranchStatsTree || TrimDepth > 0 || FlattenTree || ReverseTree || SimplifyTree || CreateSetTree;
+        internal bool HasTreeOperations => BranchStatsTree || TrimDepth > 0 || FlattenTree || ReverseTree || CleanTree || SimplifyTree || CreateSetTree;
         internal PanelUnitConversion UnitConversion { get; private set; }
         internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
         internal double RoundUpFactor { get; private set; }
@@ -302,7 +304,7 @@ namespace BetterGhPanel
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
             if (settingsChanged) RecordUndoEvent("Panel+ reset all");
             TrimDepth = 0;
-            FlattenTree = ReverseTree = SimplifyTree = CreateSetTree = BranchStatsTree = false;
+            FlattenTree = ReverseTree = CleanTree = SimplifyTree = CreateSetTree = BranchStatsTree = false;
             UnitConversion = PanelUnitConversion.None;
             RoundUpFactor = 0;
             Formula = null;
@@ -338,16 +340,20 @@ namespace BetterGhPanel
             Instances.ActiveCanvas?.Invalidate();
         }
 
-        internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet)
+        internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet) =>
+            SetTreeOperations(trimDepth, flatten, reverse, simplify, createSet, CleanTree);
+
+        internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet, bool clean)
         {
             trimDepth = Math.Max(0, trimDepth);
-            if (TrimDepth == trimDepth && FlattenTree == flatten && ReverseTree == reverse && SimplifyTree == simplify && CreateSetTree == createSet) return;
-            bool pathsChanged = TrimDepth != trimDepth || FlattenTree != flatten || SimplifyTree != simplify;
+            if (TrimDepth == trimDepth && FlattenTree == flatten && ReverseTree == reverse && SimplifyTree == simplify && CreateSetTree == createSet && CleanTree == clean) return;
+            bool pathsChanged = TrimDepth != trimDepth || FlattenTree != flatten || SimplifyTree != simplify || CleanTree != clean && simplify;
             RecordUndoEvent("Panel+ tree tools");
             TrimDepth = trimDepth;
             FlattenTree = flatten;
             ReverseTree = reverse;
             SimplifyTree = simplify;
+            CleanTree = clean;
             CreateSetTree = createSet;
             if (createSet) BranchStatsTree = false;
             if (!CanOutputValues) OutputValues = PanelOutputValues.Items;
@@ -614,6 +620,7 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelFlatten", FlattenTree);
             writer.SetBoolean("PanelReverse", ReverseTree);
             writer.SetBoolean("PanelSimplify", SimplifyTree);
+            if (CleanTree) writer.SetBoolean("PanelClean", true);
             writer.SetBoolean("PanelCreateSet", CreateSetTree);
             writer.SetBoolean("PanelBranchStats", BranchStatsTree);
             writer.SetInt32("PanelStatKinds", (int)StatKinds);
@@ -644,6 +651,8 @@ namespace BetterGhPanel
             reader.TryGetBoolean("PanelFlatten", ref flatten);
             reader.TryGetBoolean("PanelReverse", ref reverse);
             reader.TryGetBoolean("PanelSimplify", ref simplify);
+            bool clean = false;
+            reader.TryGetBoolean("PanelClean", ref clean);
             reader.TryGetBoolean("PanelCreateSet", ref createSet);
             bool branchStats = false; int statKinds = (int)PanelBranchStats.Default;
             reader.TryGetBoolean("PanelBranchStats", ref branchStats);
@@ -653,6 +662,7 @@ namespace BetterGhPanel
             FlattenTree = flatten;
             ReverseTree = reverse;
             SimplifyTree = simplify;
+            CleanTree = clean;
             CreateSetTree = createSet && !BranchStatsTree;
             return createSet;
         }

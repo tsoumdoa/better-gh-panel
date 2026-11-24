@@ -42,7 +42,7 @@ namespace BetterGhPanel
                     if (!da.GetDataTree(index, out GH_Structure<IGH_Goo> live)) live = new GH_Structure<IGH_Goo>();
                     liveTree = live;
                     tree = PanelTreeOperations.CopyStructure(live);
-                    map = PanelOutputOperations.Pair(inputTree, tree, sources, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out error);
+                    map = PanelOutputOperations.Pair(inputTree, tree, sources, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out error, CleanTree);
                 }
                 var column = new PanelTableColumn(Params.Input[index], map, tree, error, present, liveTree);
                 if (PanelSplit || Session.Options.SortColumn == column.Input.InstanceGuid) column.Capture(units);

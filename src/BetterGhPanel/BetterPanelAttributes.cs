@@ -399,7 +399,7 @@ namespace BetterGhPanel
                 // Minimum Half split needs a one-line footer to fit a value row below the pane captions.
                 // One line holds the summary and output part left of Select all, tools, Reset and Units.
                 bool singleLine = PanelOwner.PanelSplit && _layout.Panel.Height < 140 || _layout.Panel.Width >= 500 &&
-                    TightWidth(graphics, CanvasStatistics.Summary(result) + " · ", small) + OutputPartWidth(graphics, result, small) <=
+                    TightWidth(graphics, FooterSummary(result) + " · ", small) + OutputPartWidth(graphics, result, small) <=
                         _layout.Panel.Width - 313 - UnitsWidth(_layout.Panel.Width) - (ShowOutputControl ? OutputControlWidth + 4 : 0);
                 if (_formulaDraft != null) singleLine = _singleLineFooter;
                 if (resized || singleLine != _singleLineFooter || ShowOutputControl == _layout.OutLabel.IsEmpty ||
@@ -804,12 +804,12 @@ namespace BetterGhPanel
             var session = PanelOwner.Session;
             bool current = !PanelOwner.Locked && session.HasCurrentResult;
             if (current && !_singleLineFooter)
-                Text(g, CanvasStatistics.Summary(result), small, Ink,
+                Text(g, FooterSummary(result), small, Ink,
                     new RectangleF(_layout.Footer.X, _layout.Footer.Y, (!_layout.OutLabel.IsEmpty ? _layout.OutLabel.Left - 4 : _layout.SelectAll.Left - 5) - _layout.Footer.X, 16), trim);
             int selected = !current ? 0 : DisplayListLengths ? _selection.BranchPaths(result).Count : _selection.Count;
             int selectableCount = result.BranchStats != null ? result.StatSources.Count : DisplayListLengths ? result.BranchPaths.Count : result.RowPositions.Count;
             Control(g, _layout.SelectAll, "Select all", small, trim, current && selectableCount > 0 && selected == selectableCount);
-            float statusRight = _singleLineFooter ? (!_layout.OutLabel.IsEmpty ? _layout.OutLabel.Left - 4 : _layout.SelectAll.Left - 6) : _layout.Trim.Left - 2;
+            float statusRight = _singleLineFooter ? (!_layout.OutLabel.IsEmpty ? _layout.OutLabel.Left - 4 : _layout.SelectAll.Left - 6) : _layout.Clean.Left - 2;
             if (!_layout.OutLabel.IsEmpty) DrawOutputControl(g, small, trim);
             var status = new RectangleF(_layout.Footer.X, _layout.Units.Y, statusRight - _layout.Footer.X, _layout.Units.Height);
             string? notice = FooterNotice(result);
@@ -822,6 +822,7 @@ namespace BetterGhPanel
             _jumpBounds = KeepPaintedTarget(g, _jumpBounds, jump);
             _clearFiltersBounds = KeepPaintedTarget(g, _clearFiltersBounds, chip);
             // Depths above 9 read "9+"; the tooltip and editor keep the full value.
+            TreeToolIcons.Draw(g, _layout.Clean, TreeToolIcon.Clean, PanelOwner.CleanTree);
             TreeToolIcons.Draw(g, _layout.Trim, TreeToolIcon.Trim, PanelOwner.TrimDepth > 0,
                 PanelOwner.TrimDepth <= 0 ? null : PanelOwner.TrimDepth > 9 ? "9+" : PanelOwner.TrimDepth.ToString(System.Globalization.CultureInfo.InvariantCulture), small);
             TreeToolIcons.Draw(g, _layout.Simplify, TreeToolIcon.Simplify, PanelOwner.SimplifyTree);
@@ -848,7 +849,7 @@ namespace BetterGhPanel
             float rangeWidth = TightWidth(g, range, small), separator = TightWidth(g, " · ", small), width = OutputPartWidth(g, result, small);
             bool both = (result.BranchStats == null || _singleLineFooter) && rangeWidth + separator + width <= status.Width;
             float x = status.X, y = status.Y + 2;
-            if (both || !clearable)
+            if (both || !clearable && !PanelOwner.CleanTree)
             {
                 jump = new RectangleF(x, y, Math.Min(rangeWidth, status.Width), 16);
                 using (var link = new Font(small, jump == _hoverBounds ? FontStyle.Underline : FontStyle.Regular))
@@ -925,8 +926,11 @@ namespace BetterGhPanel
                 selected > 0 ? System.FormattableString.Invariant($"{selected:N0} selected") + (DisplayListLengths ? " branches" : " · right-click to copy") : null;
         }
 
+        private string FooterSummary(PanelQueryResult result) => CanvasStatistics.Summary(result) +
+            (PanelOwner.CleanedEmptyBranches > 0 ? $" · {PanelOwner.CleanedEmptyBranches} empty hidden" : "");
+
         private string FooterRange(PanelQueryResult result, bool singleLine) =>
-            singleLine ? CanvasStatistics.Summary(result) :
+            singleLine ? FooterSummary(result) :
             result.BranchStats != null ? $"{_offset + 1}–{Math.Min(Count, _offset + _shown)}/{Count} rows" :
             DisplayListLengths ? System.FormattableString.Invariant($"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} branches") :
             _firstShownItem < 0 ? System.FormattableString.Invariant($"{result.RowPositions.Count:N0} items") :
