@@ -187,7 +187,7 @@ namespace BetterGhPanel
         }
 
         internal static bool HasFilters(PanelQueryOptions options) =>
-            !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue ||
+            !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue || options.SearchPaired ||
             options.TypeName != null || options.BranchPath != null || options.BranchPrefix || options.OnlyInvalid ||
             options.SortMode != PanelSortMode.SourceOrder;
 
@@ -208,7 +208,7 @@ namespace BetterGhPanel
             var previousResult = Session.Result;
             var options = new PanelQueryOptions { DecimalPlaces = DecimalPlaces, RoundUpFactor = RoundUpFactor, Formula = Formula };
             if (!CanOutputValuesFor(CreateSetTree, options)) OutputValues = PanelOutputValues.Items;
-            Session.UpdateQuery(options);
+            Session.UpdateQuery(WithCurrentColumnSort(options));
             if (ReferenceEquals(previousResult, Session.Result)) (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
         }
 
@@ -300,7 +300,7 @@ namespace BetterGhPanel
             var options = Session.Options;
             bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0 || Formula != null || DecimalPlaces >= 0;
             bool settingsChanged = outputChanged || OutputScope != PanelOutputScope.Filtered || OutputValues != PanelOutputValues.Items || DecimalPlaces != PanelUnits.AutomaticDecimals ||
-                !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.TypeName != null || options.BranchPath != null ||
+                !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.SearchPaired || options.TypeName != null || options.BranchPath != null ||
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
             if (settingsChanged) RecordUndoEvent("Panel+ reset all");
             TrimDepth = 0;
@@ -523,7 +523,7 @@ namespace BetterGhPanel
             }
             foreach (var column in _tableColumns)
             {
-                if (split || Session.Options.SortColumn == column.Input.InstanceGuid) column.Capture(_geometryUnits);
+                if (split || Session.Options.SortColumn == column.Input.InstanceGuid || column == PairedColumn && KeepPairedPresentation(Session.Options)) column.Capture(_geometryUnits);
                 else column.ReleasePresentation();
             }
             if (ContextFenced && !GeometryContextCurrent(_geometryContext) && _session != null)
@@ -576,6 +576,7 @@ namespace BetterGhPanel
             var options = _queryPreviewOptions ?? _session?.Options ?? _savedOptions;
             writer.SetString("PanelSearch", options.Search ?? "");
             writer.SetInt32("PanelSearchMode", (int)options.SearchMode);
+            if (options.SearchPaired) writer.SetBoolean("PanelSearchPaired", true);
             writer.SetBoolean("PanelDisplayFilterValue", options.DisplayFilterValue);
             writer.SetString("PanelType", options.TypeName ?? "");
             writer.SetString("PanelBranch", options.BranchPath ?? "");
@@ -689,6 +690,8 @@ namespace BetterGhPanel
             var prefix = false; var invalid = false; var sort = 0; var size = 1; var searchMode = 0;
             reader.TryGetString("PanelSearch", ref search);
             reader.TryGetInt32("PanelSearchMode", ref searchMode);
+            bool searchPaired = false;
+            reader.TryGetBoolean("PanelSearchPaired", ref searchPaired);
             bool displayFilterValue = false;
             reader.TryGetBoolean("PanelDisplayFilterValue", ref displayFilterValue);
             reader.TryGetString("PanelType", ref type);
@@ -708,6 +711,7 @@ namespace BetterGhPanel
                 TypeName = string.IsNullOrEmpty(type) ? null : type,
                 DisplayFilterValue = displayFilterValue && searchMode >= (int)PanelSearchMode.Value && Enum.IsDefined(typeof(PanelSearchMode), searchMode),
                 SearchMode = Enum.IsDefined(typeof(PanelSearchMode), searchMode) ? (PanelSearchMode)searchMode : PanelSearchMode.Text,
+                SearchPaired = searchPaired,
                 BranchPath = string.IsNullOrEmpty(branch) ? null : branch,
                 BranchPrefix = prefix,
                 OnlyInvalid = invalid,

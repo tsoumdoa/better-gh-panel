@@ -345,7 +345,10 @@ namespace BetterGhPanel.Core
             PumpLater();
         }
 
-        internal Task<IReadOnlyDictionary<int, TResult?>?> CaptureCompletedAsync(TSnapshot snapshot, int count, CancellationToken token)
+        internal Task<IReadOnlyDictionary<int, TResult?>?> CaptureCompletedAsync(TSnapshot snapshot, int count, CancellationToken token) =>
+            CaptureCompletedAsync(snapshot, new SequentialPositions(count), token);
+
+        internal Task<IReadOnlyDictionary<int, TResult?>?> CaptureCompletedAsync(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token)
         {
             var completion = new TaskCompletionSource<IReadOnlyDictionary<int, TResult?>?>(TaskCreationOptions.RunContinuationsAsynchronously);
             var values = new Dictionary<int, TResult?>();
@@ -355,15 +358,16 @@ namespace BetterGhPanel.Core
                 _verifyUi();
                 bool Current() => !_disposed && !token.IsCancellationRequested && ReferenceEquals(snapshot, _snapshot);
                 if (!Current()) { completion.TrySetResult(null); return; }
-                int end = Math.Min(count, next + DemandChunkSize);
+                int end = Math.Min(positions.Count, next + DemandChunkSize);
                 for (; next < end; next++)
                 {
                     if (!Current()) { completion.TrySetResult(null); return; }
-                    if (!TryGetEntry(next, out var entry) || !entry.Complete) continue;
-                    if (!IsCurrentEntry(snapshot, next, entry) || !Current()) { completion.TrySetResult(null); return; }
-                    values.Add(next, entry.Value);
+                    int position = positions[next];
+                    if (!TryGetEntry(position, out var entry) || !entry.Complete) continue;
+                    if (!IsCurrentEntry(snapshot, position, entry) || !Current()) { completion.TrySetResult(null); return; }
+                    values.Add(position, entry.Value);
                 }
-                if (next < count) _postCancellation(Step);
+                if (next < positions.Count) _postCancellation(Step);
                 else completion.TrySetResult(new ReadOnlyDictionary<int, TResult?>(values));
             }
             _postUi(Step);

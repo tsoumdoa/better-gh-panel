@@ -15,7 +15,7 @@ namespace BetterGhPanel
         private PanelRowSelection? _queryPreviewSelection;
         internal PanelRowSelection CommittedSelection => _committedSelection;
         internal PanelRowSelection RowSelection => _queryPreviewSelection ?? _committedSelection;
-        internal static bool CanOutputValuesFor(bool createSet, PanelQueryOptions options) => !options.BranchStats && (createSet || options.DisplayFilterValue);
+        internal static bool CanOutputValuesFor(bool createSet, PanelQueryOptions options) => !options.BranchStats && (createSet || options.DisplaysDataFilterValue);
         internal bool CanOutputValues => !BranchStatsTree && CanOutputValuesFor(CreateSetTree, Session.Options);
         internal bool OutputsValues => CanOutputValues && OutputValues == PanelOutputValues.Values;
         private GH_Structure<IGH_Goo>? _inputTree, _preConversionTree;

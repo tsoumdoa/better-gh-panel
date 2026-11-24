@@ -10,6 +10,7 @@ namespace BetterGhPanel.Runtime
     public sealed partial class PanelSession
     {
         private readonly List<PanelTableColumn> _columns = new List<PanelTableColumn>();
+        private PanelTableColumn? _pairedColumn;
         private CancellationTokenSource? _visibleColumns;
         private PanelSnapshot? _visibleSnapshot;
         private int[][]? _visibleDemand;
@@ -27,7 +28,7 @@ namespace BetterGhPanel.Runtime
 
         internal void ConfigureColumnGeometry(IReadOnlyList<PanelTableColumn> columns,
             Func<PanelTableColumn, int, PreparedMeasurement<PanelGeometryInfo>?> prepare,
-            Func<PanelTableColumn, PanelSnapshot, int, bool> current)
+            Func<PanelTableColumn, PanelSnapshot, int, bool> current, PanelTableColumn? pairedColumn = null)
         {
             if (_disposed) return;
             var generation = ++_columnGeneration;
@@ -40,6 +41,7 @@ namespace BetterGhPanel.Runtime
                     if (_disposed || generation != _columnGeneration) return;
                 }
             _columns.Clear(); _columns.AddRange(next);
+            _pairedColumn = pairedColumn;
             for (int index = 0; index < next.Length; index++)
             {
                 var column = next[index];

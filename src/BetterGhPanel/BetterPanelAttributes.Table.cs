@@ -150,7 +150,7 @@ namespace BetterGhPanel
                 int position = result.RowPositions[index];
                 var row = result.Snapshot.Rows[position];
                 var geometry = session.GetGeometryDetails(result.Snapshot, position) ?? row.GeometryInfo;
-                if (options.DisplayFilterValue)
+                if (options.DisplaysDataFilterValue)
                 {
                     var value = PanelFilterValue.OutputValue(result.Snapshot, row, options.SearchMode, geometry, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor, PanelOwner.PresentedFormula);
                     if (value?.Kind == PanelPropertyKind.Number)
@@ -253,7 +253,7 @@ namespace BetterGhPanel
                     }
                     int position = result.RowPositions[item];
                     var dataRow = result.Snapshot.Rows[position];
-                    bool metric = PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null;
+                    bool metric = PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null;
                     bool showType = ShowDataTypes(result) && (metric || dataRow.GeometryInfo == null || StockTypeLabels.SeparateLabel(dataRow.TypeName));
                     bool numeric = result.DisplaySet != null ? result.DisplaySet.Values[position].IsNumeric :
                         metric ? !PanelProperties.IsProperty(PanelOwner.Session.Options.SearchMode) || PanelProperties.Kind(PanelOwner.Session.Options.SearchMode) == PanelPropertyKind.Number : dataRow.NumericValue.HasValue;
@@ -335,6 +335,11 @@ namespace BetterGhPanel
                     float left = columnIndex == 0 ? bounds.X : Math.Max(bounds.X, _list.X + _frozenWidth);
                     Text(g, ColumnTitle(columnIndex), bold, columnIndex == 0 ? Accent : column?.Present == false ? Muted : column?.Pair == null ? PanelTheme.PairingWarning : Ink,
                         new RectangleF(left + 6, bounds.Y, Math.Max(0, bounds.Right - left - 12), bounds.Height), trim);
+                    var search = PanelOwner.Session.Options;
+                    bool targeted = search.SearchPaired ? column == PanelOwner.PairedColumn && column?.Pair != null : columnIndex == 0;
+                    if (targeted && (!string.IsNullOrEmpty(search.Search) || search.DisplayFilterValue))
+                        using (var underline = new Pen(Accent, 1.5f))
+                            g.DrawLine(underline, left, bounds.Bottom - 2, bounds.Right, bounds.Bottom - 2);
                 });
                 var target = HeaderTarget(index, false);
                 if (target.Width > 0 && TargetPainted(g, target)) _paintedHeaders[ColumnId(index)] = target;

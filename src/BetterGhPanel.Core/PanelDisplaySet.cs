@@ -23,7 +23,7 @@ namespace BetterGhPanel.Core
         {
             PanelText text, copy;
             bool numeric, unavailable = false;
-            if (query.DisplayFilterValue)
+            if (query.DisplaysDataFilterValue)
             {
                 text = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, roundUpFactor: query.RoundUpFactor, formula: query.Formula));
                 copy = new PanelText(PanelFilterValue.Format(snapshot, row, query.SearchMode, query.DecimalPlaces, measured, includeUnits: false, roundUpFactor: query.RoundUpFactor, formula: query.Formula));
@@ -37,14 +37,14 @@ namespace BetterGhPanel.Core
                 copy = numeric ? new PanelText(PanelUnits.Format(PanelValuePresentation.PresentedNumber(row, query.DecimalPlaces, query.RoundUpFactor, query.Formula), PanelUnitConversion.None,
                     query.DecimalPlaces)) : text;
             }
-            var presented = query.DisplayFilterValue
+            var presented = query.DisplaysDataFilterValue
                 ? PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured, query.DecimalPlaces, query.RoundUpFactor, query.Formula)
                 : numeric ? PanelFilterValue.OutputValue(snapshot, row, PanelSearchMode.Value, measured, query.DecimalPlaces, query.RoundUpFactor, query.Formula) : null;
             unavailable |= numeric && presented == null;
             // Automatic deliberately preserves main's compact set grouping/value semantics.
             double? number = presented?.Kind == PanelPropertyKind.Number ? presented.Number : (double?)null;
             if (query.DecimalPlaces < 0 && number.HasValue)
-                number = PanelNumber.GeneralValue(number.Value, query.DisplayFilterValue &&
+                number = PanelNumber.GeneralValue(number.Value, query.DisplaysDataFilterValue &&
                     query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume ? 6 : 12);
             return new PanelDisplayedValue(text, copy, number, numeric, unavailable);
         }
@@ -123,7 +123,7 @@ namespace BetterGhPanel.Core
 
         internal PanelDisplaySet(PanelSnapshot snapshot, PanelQueryOptions query)
         { _snapshot = snapshot; _query = query; }
-        internal bool IsBranchSet => _query.DisplayFilterValue && _query.SearchMode == PanelSearchMode.ListLength;
+        internal bool IsBranchSet => _query.DisplaysDataFilterValue && _query.SearchMode == PanelSearchMode.ListLength;
         internal IReadOnlyDictionary<int, PanelDisplayedValue> Values => _values;
         internal IReadOnlyList<int> MembersAt(int position) => _members[position];
 

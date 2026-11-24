@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -257,7 +258,7 @@ namespace BetterGhPanel.Runtime
             if (_branchStatsResolver != null) next.BranchStats = _branchStatsResolver();
             if (_statKindsResolver != null) next.StatKinds = _statKindsResolver();
             if (_createSetResolver != null) next.CreateSet = _createSetResolver();
-            if (_outputValuesResolver != null) next.OutputValues = _outputValuesResolver() && (next.DisplayFilterValue || next.CreateSet);
+            if (_outputValuesResolver != null) next.OutputValues = _outputValuesResolver() && (next.DisplaysDataFilterValue || next.CreateSet);
             next.DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, next.DecimalPlaces));
             // Canonical paths keep direct input, saved options and menu checkmarks
             // consistent. Malformed input stays in the query so it reports the same
@@ -283,6 +284,15 @@ namespace BetterGhPanel.Runtime
             var token = cancellation.Token;
             var snapshot = Snapshot;
             var options = _options.Clone();
+            var paired = options.SearchPaired ? _pairedColumn : null;
+            var pairedSnapshot = paired?.Snapshot;
+            var pairedQueue = paired?.Geometry;
+            if (pairedSnapshot != null && paired?.Pair is PanelPairedData pair)
+                options.PairedSource = new PanelPairedQuerySource(pairedSnapshot, pair.ItemAt);
+            bool measurePaired = pairedSnapshot?.HasMeasurableGeometry == true && pairedQueue != null &&
+                !options.DisplayFilterValue && (PanelQueryEngine.UsesDisplayedText(options) ||
+                    !string.IsNullOrWhiteSpace(options.Search) &&
+                    (options.SearchMode >= PanelSearchMode.Length && options.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(options.SearchMode)));
             bool measureGeometry = snapshot.HasMeasurableGeometry && PanelQueryEngine.RequiresGeometryMeasurements(options);
             var sortColumn = options.BranchStats || options.SortMode == PanelSortMode.SourceOrder ? null :
                 _columns.Find(column => column.Input.InstanceGuid == options.SortColumn && column.Snapshot?.HasMeasurableGeometry == true);
@@ -297,7 +307,7 @@ namespace BetterGhPanel.Runtime
             PanelQueryWork? work = null;
             // Regex and native calls cannot yield midway through one operation.
             // All other queries get the same time budget regardless of tree size.
-            if (options.SearchMode != PanelSearchMode.Regex && !measureGeometry && sortColumn == null)
+            if (options.SearchMode != PanelSearchMode.Regex && !measureGeometry && !measurePaired && sortColumn == null)
             {
                 try
                 {
@@ -353,6 +363,16 @@ namespace BetterGhPanel.Runtime
                         }));
                         if (!await completion.Task.ConfigureAwait(false)) return;
                     }
+                    if (measurePaired && options.PairedSource is PanelPairedQuerySource source)
+                    {
+                        var candidates = PanelQueryEngine.PairedGeometryCandidates(snapshot, options, source, token).ToArray();
+                        if (candidates.Length > 0)
+                        {
+                            if (!await pairedQueue!.MeasureAsync(source.Snapshot, candidates, token).ConfigureAwait(false)) return;
+                            source.Measurements = await pairedQueue.CaptureCompletedAsync(source.Snapshot, candidates, token).ConfigureAwait(false);
+                            if (source.Measurements == null) return;
+                        }
+                    }
                     // Resume the same scan, statistics and sort state. Work already
                     // performed within the UI budget is never restarted.
                     var result = work?.Complete() ?? PanelQueryEngine.Execute(snapshot, options, token, measurements);
@@ -360,6 +380,7 @@ namespace BetterGhPanel.Runtime
                     {
                         if (!CanPublish(snapshot, request, token)) return;
                         if (measureGeometry && !_geometry.SourcesCurrent(snapshot)) return;
+                        if (measurePaired && (!ReferenceEquals(paired?.Snapshot, pairedSnapshot) || !pairedQueue!.SourcesCurrent(pairedSnapshot!))) return;
                         if (sortColumn != null && (sortSnapshot == null || sortQueue == null ||
                             !ReferenceEquals(sortColumn.Snapshot, sortSnapshot) || !sortQueue.SourcesCurrent(sortSnapshot))) return;
                         if (!CanPublish(snapshot, request, token)) return;

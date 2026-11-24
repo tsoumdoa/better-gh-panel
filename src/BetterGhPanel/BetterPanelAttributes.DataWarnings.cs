@@ -63,6 +63,7 @@ namespace BetterGhPanel
                 var before = options.Clone();
                 options.Search = "";
                 options.SearchMode = PanelSearchMode.Text;
+                options.SearchPaired = false;
                 options.DisplayFilterValue = false;
                 options.TypeName = null;
                 options.OnlyInvalid = false;
@@ -73,7 +74,7 @@ namespace BetterGhPanel
                 else { options.SearchMode = PanelSearchMode.ListLength; options.Search = "!= " + PanelOwner.Session.Result.Warnings.MajorityLength!.Value.ToString(CultureInfo.InvariantCulture); options.DisplayFilterValue = false; }
                 PanelOwner.RecordQueryUndo("Panel+ data checks", before, options);
                 ClearRowSelection(canvas);
-                PanelOwner.Session.UpdateQuery(options);
+                PanelOwner.UpdateSearchTarget(options);
                 PanelOwner.OnPingDocument()?.Modified();
                 InvalidatePaintedHits();
                 canvas.Invalidate();

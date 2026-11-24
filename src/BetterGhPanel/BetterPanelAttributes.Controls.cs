@@ -455,6 +455,8 @@ namespace BetterGhPanel
             if (options.DisplayFilterValue)
                 e.Description = "Shows each item's value. n/a means none. Click the search field to filter by it.";
             else if (!CanvasMenu.HasValueChoices(options.SearchMode)) e.Description += " Rows update as you type. Enter applies, Esc cancels.";
+            if (options.SearchPaired)
+                e.Description = "Search tests each D item's F partner. Types and Paths apply to D. " + e.Description;
             if (PanelOwner.Session.Error != null) e.Description = PanelOwner.Session.Error + "\n\n" + e.Description;
         }
 

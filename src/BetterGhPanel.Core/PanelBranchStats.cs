@@ -103,7 +103,7 @@ namespace BetterGhPanel.Core
             data.RowPositions.Select(partner).Where(item => item.HasValue).Select(item => item!.Value).Distinct().ToArray();
 
         // Rows show the Search value only with Show values; otherwise they show each row's main metric.
-        internal static bool UsesMainMetric(PanelQueryOptions query) => !query.DisplayFilterValue || query.SearchMode == PanelSearchMode.Text || query.SearchMode == PanelSearchMode.Regex;
+        internal static bool UsesMainMetric(PanelQueryOptions query) => !query.DisplaysDataFilterValue || query.SearchMode == PanelSearchMode.Text || query.SearchMode == PanelSearchMode.Regex;
         internal static bool NeedsMeasurement(PanelRow row, PanelQueryOptions query)
         {
             var geometry = row.GeometryInfo;

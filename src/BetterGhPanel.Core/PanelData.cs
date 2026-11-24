@@ -391,6 +391,9 @@ namespace BetterGhPanel.Core
     {
         public string Search { get; set; } = string.Empty;
         public PanelSearchMode SearchMode { get; set; } = PanelSearchMode.Text;
+        public bool SearchPaired { get; set; }
+        internal bool DisplaysDataFilterValue => DisplayFilterValue && !SearchPaired;
+        internal PanelPairedQuerySource? PairedSource { get; set; }
         /// <summary>Inspect the selected numeric metric without applying a search predicate.</summary>
         public bool DisplayFilterValue { get; set; }
         /// <summary>Create a set of the current formatted values after filtering.</summary>
@@ -420,6 +423,8 @@ namespace BetterGhPanel.Core
         {
             Search = Search,
             SearchMode = SearchMode,
+            SearchPaired = SearchPaired,
+            PairedSource = PairedSource,
             DisplayFilterValue = DisplayFilterValue,
             CreateSet = CreateSet,
             BranchStats = BranchStats, StatKinds = StatKinds,

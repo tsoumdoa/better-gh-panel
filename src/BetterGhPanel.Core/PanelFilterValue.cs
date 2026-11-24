@@ -139,30 +139,30 @@ namespace BetterGhPanel.Core
             PanelPropertyValue raw;
             var mode = options.SearchMode;
             var geometry = measured ?? row.GeometryInfo;
-            if ((!options.DisplayFilterValue || mode == PanelSearchMode.Value) && row.RawNumericValue.HasValue)
+            if ((!options.DisplaysDataFilterValue || mode == PanelSearchMode.Value) && row.RawNumericValue.HasValue)
                 raw = PanelPropertyValue.Numeric(row.RawNumericValue.Value);
-            else if (options.DisplayFilterValue && PanelProperties.IsProperty(mode))
+            else if (options.DisplaysDataFilterValue && PanelProperties.IsProperty(mode))
             {
                 if (!PanelProperties.TryGet(row, mode, measured, out var property) || property?.Kind != PanelPropertyKind.Number) return "";
                 raw = property;
             }
-            else if (options.DisplayFilterValue && (mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z))
+            else if (options.DisplaysDataFilterValue && (mode == PanelSearchMode.X || mode == PanelSearchMode.Y || mode == PanelSearchMode.Z))
             {
                 if (!TryScalarValue(row, mode, snapshot.UnitConversion, out double component)) return "";
                 raw = PanelPropertyValue.Numeric(component);
             }
             else
             {
-                if (mode == PanelSearchMode.ListLength && options.DisplayFilterValue || geometry?.Value == null) return "";
-                raw = PanelPropertyValue.Numeric(options.DisplayFilterValue ? RawValue(mode, geometry) : geometry.Value.Value,
-                    options.DisplayFilterValue && mode == PanelSearchMode.Area ? 2 : geometry.Power, geometry.Units);
+                if (mode == PanelSearchMode.ListLength && options.DisplaysDataFilterValue || geometry?.Value == null) return "";
+                raw = PanelPropertyValue.Numeric(options.DisplaysDataFilterValue ? RawValue(mode, geometry) : geometry.Value.Value,
+                    options.DisplaysDataFilterValue && mode == PanelSearchMode.Area ? 2 : geometry.Power, geometry.Units);
             }
             double number = raw.Converted(snapshot.UnitConversion);
-            double factor = options.DisplayFilterValue && PanelProperties.IsProperty(mode) && raw.Power == 0 ? 0 : options.RoundUpFactor;
+            double factor = options.DisplaysDataFilterValue && PanelProperties.IsProperty(mode) && raw.Power == 0 ? 0 : options.RoundUpFactor;
             double factored = PanelUnits.Transform(number, PanelUnitConversion.None, factor);
             double shown = PanelUnits.Transform(number, PanelUnitConversion.None, factor,
-                options.DisplayFilterValue && PanelProperties.IsProperty(mode) && raw.KeepInteger ? -1 : options.DecimalPlaces);
-            string shownText = options.DisplayFilterValue
+                options.DisplaysDataFilterValue && PanelProperties.IsProperty(mode) && raw.KeepInteger ? -1 : options.DecimalPlaces);
+            string shownText = options.DisplaysDataFilterValue
                 ? Format(snapshot, row, mode, options.DecimalPlaces, measured, false, options.RoundUpFactor)
                 : row.RawNumericValue.HasValue ? PanelUnits.Format(shown, PanelUnitConversion.None, options.DecimalPlaces)
                 : PanelUnits.Format(shown, PanelUnitConversion.None, options.DecimalPlaces, automaticFormat: "G6");
@@ -170,7 +170,7 @@ namespace BetterGhPanel.Core
                 PanelUnits.TryParseOperand(shownText, out double displayed) && displayed == number) return "";
             string plain = raw.Format(snapshot.UnitConversion, PanelUnits.AutomaticDecimals, false);
             string suffix = raw.Format(snapshot.UnitConversion, PanelUnits.AutomaticDecimals, true).Substring(plain.Length);
-            if (row.RawNumericValue.HasValue && (!options.DisplayFilterValue || mode == PanelSearchMode.Value))
+            if (row.RawNumericValue.HasValue && (!options.DisplaysDataFilterValue || mode == PanelSearchMode.Value))
                 suffix = PanelUnits.Symbol(snapshot.UnitConversion).Length == 0 ? "" : " " + PanelUnits.Symbol(snapshot.UnitConversion);
             string reason = factored != number ? " · rounded to factor " + PanelUnits.FormatFactor(options.RoundUpFactor, "R") : "";
             if (shown != factored) reason += " · " + options.DecimalPlaces.ToString(CultureInfo.InvariantCulture) + " decimal places";
@@ -186,9 +186,9 @@ namespace BetterGhPanel.Core
             unit = "";
             if (row.IsNull || !row.IsValid) return false;
             var mode = options.SearchMode;
-            if (options.DisplayFilterValue || row.NumericValue.HasValue)
+            if (options.DisplaysDataFilterValue || row.NumericValue.HasValue)
             {
-                if (!options.DisplayFilterValue) mode = PanelSearchMode.Value;
+                if (!options.DisplaysDataFilterValue) mode = PanelSearchMode.Value;
                 if (mode == PanelSearchMode.ListLength) return false;
                 if (PanelProperties.IsProperty(mode) &&
                     (!PanelProperties.TryGet(row, mode, measured, out var property) || property?.Power == 0)) return false;

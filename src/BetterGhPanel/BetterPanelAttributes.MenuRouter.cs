@@ -73,7 +73,16 @@ namespace BetterGhPanel
             if (!PaintedViewIsCurrent() || !_menu.IsPaintedAt(point)) return;
             int row = (int)((point.Y - _menu.Bounds.Y) / 20);
             int index = _menu.Offset + row;
-            if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index == CanvasPreviewRows.Limit)
+            if (_menu.Kind == CanvasMenuKind.SearchMode && index < _menu.SearchTargetRows)
+            {
+                var bounds = new RectangleF(_menu.Bounds.X + 1, _menu.Bounds.Y + row * 20, _menu.Bounds.Width - 2, 20);
+                if (SearchTargetButton(bounds, paired: true).Contains(point) && !CanSearchPaired)
+                {
+                    e.Title = "Search in F unavailable";
+                    e.Description = PanelOwner.PairedError ?? "F needs to pair with D.";
+                }
+            }
+            else if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index == CanvasPreviewRows.Limit)
             {
                 e.Title = "Preview limit";
                 e.Description = "Most items previewed and labelled. Higher limits can slow the viewport; the 64 MB memory cap still applies.";

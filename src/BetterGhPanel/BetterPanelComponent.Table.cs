@@ -15,6 +15,15 @@ namespace BetterGhPanel
         private readonly List<PanelTableColumn> _tableColumns = new List<PanelTableColumn>();
         internal int InputBranchCount => _inputTree?.PathCount ?? 0;
         internal IReadOnlyList<PanelTableColumn> TableColumns => _tableColumns;
+        internal PanelTableColumn? PairedColumn => _tableColumns.Count > 0 && _tableColumns[0].Input == Params.Input[1] ? _tableColumns[0] : null;
+        private bool KeepPairedPresentation(PanelQueryOptions options) => options.SearchPaired;
+        internal PanelSnapshot SearchSnapshot(bool paired)
+        {
+            if (!paired) return Session.Snapshot;
+            PairedColumn?.Capture(_geometryUnits);
+            return PairedColumn?.Snapshot ?? PanelSnapshot.Empty;
+        }
+        internal void UpdateSearchTarget(PanelQueryOptions options) => Session.UpdateQuery(WithCurrentColumnSort(options));
         internal bool TableInputPresent => Params.Input.Skip(1).Where(IsTableDataInput).Any(InputPresent);
         private static bool InputPresent(IGH_Param input) => input.SourceCount != 0 ||
             input is not Param_GenericObject generic || generic.PersistentData.PathCount != 0;
@@ -27,7 +36,7 @@ namespace BetterGhPanel
             if (pairedPresent)
             {
                 var column = new PanelTableColumn(Params.Input[1], paired, pairedTree, pairedError, true, livePairedTree);
-                if (PanelSplit || Session.Options.SortColumn == column.Input.InstanceGuid) column.Capture(units);
+                if (PanelSplit || Session.Options.SortColumn == column.Input.InstanceGuid || KeepPairedPresentation(Session.Options)) column.Capture(units);
                 columns.Add(column);
             }
             for (int index = 2; index < Params.Input.Count; index++)
@@ -66,7 +75,7 @@ namespace BetterGhPanel
         internal bool TableSummariesCurrent => !PanelSplit || SummariesCurrent(Session.Result);
         private bool SummariesCurrent(PanelQueryResult result) => result.BranchStats != null
             ? TableColumns.All(column => column.Snapshot == null || column.Pair == null || result.ColumnBranchStats.ContainsKey(column.Input.InstanceGuid))
-            : !(result.DisplaySet != null || Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength) ||
+            : !(result.DisplaySet != null || Session.Options.DisplaysDataFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength) ||
             TableColumns.All(column => column.SummaryCurrent(result));
         private void RequireTableSummaries(PanelQueryResult result)
         {
@@ -76,7 +85,8 @@ namespace BetterGhPanel
         {
             if (PanelSplit) return;
             foreach (var column in _tableColumns)
-                if (options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != options.SortColumn)
+                if ((options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != options.SortColumn) &&
+                    (column != PairedColumn || !KeepPairedPresentation(options)))
                     column.ReleasePresentation();
         }
 
@@ -91,6 +101,7 @@ namespace BetterGhPanel
                 if (options.SortColumn != Guid.Empty) { options.SortColumn = Guid.Empty; options.SortMode = PanelSortMode.SourceOrder; }
             }
             ReleaseInactiveColumns(options);
+            if (KeepPairedPresentation(options)) PairedColumn?.Capture(_geometryUnits);
             column?.Capture(_geometryUnits);
             ConfigureColumnGeometry();
             options.ColumnSortKeys = column?.SortKeys(UnitConversion, DecimalPlaces, RoundUpFactor);
@@ -107,7 +118,7 @@ namespace BetterGhPanel
             (column, position) => column.Snapshot is PanelSnapshot snapshot && ColumnMeasurementCurrent(column, snapshot, position)
                 ? PrepareGeometrySource(column.Sources[position], column.Measurements[position], false,
                     () => ColumnMeasurementCurrent(column, snapshot, position)) : null,
-            ColumnMeasurementCurrent);
+            ColumnMeasurementCurrent, PairedColumn);
 
         private bool ColumnMeasurementCurrent(PanelTableColumn column, PanelSnapshot snapshot, int position)
         {
@@ -185,10 +196,10 @@ namespace BetterGhPanel
             RequireTableSummaries(result);
             foreach (var column in TableColumns)
                 column.RequireMeasurements(ColumnCopyItems(column, result, positions,
-                    Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength
+                    Session.Options.DisplaysDataFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength
                         ? RowSelection.BranchPaths(result).ToArray() : Array.Empty<string>()));
             var titles = new[] { TableHeaderTitle(0) }.Concat(TableColumns.Select((column, index) => TableHeaderTitle(index + 1) + column.HeaderSuffix(UnitConversion)));
-            if (Session.Options.DisplayFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength)
+            if (Session.Options.DisplaysDataFilterValue && Session.Options.SearchMode == PanelSearchMode.ListLength)
             {
                 var selected = new HashSet<string>(RowSelection.BranchPaths(result), StringComparer.Ordinal);
                 var numbers = result.BranchPaths.Select((path, index) => (path, index)).ToDictionary(value => value.path, value => value.index, StringComparer.Ordinal);

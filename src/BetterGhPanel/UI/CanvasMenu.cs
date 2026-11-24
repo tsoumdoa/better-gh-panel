@@ -138,6 +138,7 @@ namespace BetterGhPanel.UI
         };
         internal bool Flattened { get; set; }
         internal Guid HeaderSortColumn { get; set; }
+        internal int SearchTargetRows { get; set; }
         internal CanvasMenuKind Kind { get; private set; }
         internal RectangleF Bounds { get; private set; }
         internal int Offset { get; private set; }
@@ -149,7 +150,7 @@ namespace BetterGhPanel.UI
         internal int Count => Kind == CanvasMenuKind.Type ? _types.Length + 2 :
             (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) ? SortChoices.Length : Kind == CanvasMenuKind.Branch ? (_branchMatches?.Length ?? _snapshot.Branches.Count) + 2 :
             Kind == CanvasMenuKind.Units ? UnitChoices.Length :
-            Kind == CanvasMenuKind.SearchMode ? _searchChoices.Length : Kind == CanvasMenuKind.Comparison ? _comparisonChoices.Length :
+            Kind == CanvasMenuKind.SearchMode ? _searchChoices.Length + SearchTargetRows : Kind == CanvasMenuKind.Comparison ? _comparisonChoices.Length :
             Kind == CanvasMenuKind.DotSize || Kind == CanvasMenuKind.PreviewLimit ? 4 : Kind == CanvasMenuKind.Preview ? PreviewChoices.Length : Kind == CanvasMenuKind.DotPlacement ? CanvasPreviewRows.PlacementCount : Kind == CanvasMenuKind.ValuePalette ? CanvasPreviewRows.PaletteCount :
             Kind == CanvasMenuKind.BranchStats ? Flattened ? 10 : 11 : 0;
         internal int Visible => Math.Min(Count, Math.Max(1, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
@@ -370,7 +371,7 @@ namespace BetterGhPanel.UI
             }
             if (Kind == CanvasMenuKind.HeaderSort) return SortModeAt(index) == (options.SortColumn == HeaderSortColumn ? options.SortMode : PanelSortMode.SourceOrder);
             if (Kind == CanvasMenuKind.Sort) return SortModeAt(index) == options.SortMode;
-            if (Kind == CanvasMenuKind.SearchMode) return SearchModeAt(index) == options.SearchMode;
+            if (Kind == CanvasMenuKind.SearchMode) return index >= SearchTargetRows && SearchModeAt(index) == options.SearchMode;
             if (Kind == CanvasMenuKind.Comparison)
             {
                 var choice = ComparisonChoiceAt(index);
@@ -450,7 +451,7 @@ namespace BetterGhPanel.UI
             return true;
         }
         internal PanelSortMode SortModeAt(int index) => Kind == CanvasMenuKind.HeaderSort ? HeaderSortChoices[index].Value : SortChoices[index].Value;
-        internal PanelSearchMode SearchModeAt(int index) => _searchChoices[index].Value;
+        internal PanelSearchMode SearchModeAt(int index) => _searchChoices[index - SearchTargetRows].Value;
         internal CanvasPreviewChoice PreviewChoiceAt(int index) => PreviewChoices[index];
         internal CanvasUnitChoice UnitChoiceAt(int index) => UnitChoices[index];
         internal CanvasComparisonChoice ComparisonChoiceAt(int index) => _comparisonChoices[index];
@@ -538,7 +539,7 @@ namespace BetterGhPanel.UI
                 return hint == name ? name : hint + " · " + name;
             }
             if (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) return Kind == CanvasMenuKind.HeaderSort ? HeaderSortChoices[index].Label : SortChoices[index].Label;
-            if (Kind == CanvasMenuKind.SearchMode) return _searchChoices[index].Label;
+            if (Kind == CanvasMenuKind.SearchMode) return index < SearchTargetRows ? "Search in" : _searchChoices[index - SearchTargetRows].Label;
             if (Kind == CanvasMenuKind.Comparison) return ComparisonChoiceAt(index).Label;
             if (index == 0) return "All branches";
             if (index == 1) return _branchFilter.Length == 0 ? "Jump to exact path…" :

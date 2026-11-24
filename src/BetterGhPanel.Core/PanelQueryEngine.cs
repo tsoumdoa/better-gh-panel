@@ -54,8 +54,8 @@ namespace BetterGhPanel.Core
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
-            var outputValues = !query.BranchStats && query.OutputValues && query.DisplayFilterValue && set == null ? new Dictionary<int, PanelPropertyValue?>() : null;
-            var propertySortValues = !query.BranchStats && query.ColumnSortKeys == null && set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplayFilterValue && ShowsMetric(query.SearchMode)
+            var outputValues = !query.BranchStats && query.OutputValues && query.DisplaysDataFilterValue && set == null ? new Dictionary<int, PanelPropertyValue?>() : null;
+            var propertySortValues = !query.BranchStats && query.ColumnSortKeys == null && set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplaysDataFilterValue && ShowsMetric(query.SearchMode)
                 ? new Dictionary<int, PanelDisplayedValue>() : null;
             // Sets and metric views already supply complete displayed sort keys.
             var sortText = !query.BranchStats && query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder && set == null && propertySortValues == null
@@ -116,7 +116,11 @@ namespace BetterGhPanel.Core
                 if (!scope.MatchesRow(row)) continue;
                 PanelGeometryInfo? measured = null;
                 measuredGeometry?.TryGetValue(i, out measured);
-                if (!search.Matches(row, snapshot.UnitConversion, measured, cancellationToken)) continue;
+                if (query.SearchPaired)
+                {
+                    if (search.HasFilter && !MatchesPartner(query.PairedSource, i, search, snapshot.UnitConversion, cancellationToken)) continue;
+                }
+                else if (!search.Matches(row, snapshot.UnitConversion, measured, cancellationToken)) continue;
                 filteredSourceStatuses = filteredSourceStatuses.Add(row.Validity);
                 if (set != null && !set.IncludeRow(i, measured)) continue;
 
@@ -127,7 +131,7 @@ namespace BetterGhPanel.Core
                     // Pending measurements cannot change whether a metric accepts a
                     // formula. Capture that fact here, never by scanning rows in paint.
                     if (!hasFormulaValues && geometry?.CanMeasure == true)
-                        hasFormulaValues = query.DisplayFilterValue
+                        hasFormulaValues = query.DisplaysDataFilterValue
                             ? !PanelProperties.IsProperty(query.SearchMode) && PanelFilterValue.MatchesGeometry(query.SearchMode, geometry)
                             : geometry.MetricName.Length > 0;
                 }
@@ -257,12 +261,12 @@ namespace BetterGhPanel.Core
             }
             cancellationToken.ThrowIfCancellationRequested();
             var result = new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings, hasFormulaValues);
-            if (!query.BranchStats && query.TableSource?.Extras != null && displaySet == null && !(query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
+            if (!query.BranchStats && query.TableSource?.Extras != null && displaySet == null && !(query.DisplaysDataFilterValue && query.SearchMode == PanelSearchMode.ListLength))
                 foreach (var index in PanelTableIndex.Build(result, query.TableSource.Columns,
                     query.TableSource.Extras(result, rowPositions, !HasItemFilter(query)), work, cancellationToken))
                     if (index == null) yield return null;
                     else result.TableIndex = index;
-            if (!query.BranchStats && query.TableSource != null && (displaySet != null || query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
+            if (!query.BranchStats && query.TableSource != null && (displaySet != null || query.DisplaysDataFilterValue && query.SearchMode == PanelSearchMode.ListLength))
                 foreach (var step in PanelTableSummaries.Build(result, rowPositions, query.TableSource, !HasItemFilter(query), work, cancellationToken))
                     if (step) yield return null;
             if (statBranches != null)
@@ -286,9 +290,44 @@ namespace BetterGhPanel.Core
             yield return result;
         }
 
+        private static bool MatchesPartner(PanelPairedQuerySource? source, int position, PanelSearchFilter search,
+            PanelUnitConversion conversion, CancellationToken token)
+        {
+            var partner = source?.RowAt(position);
+            if (source == null || partner == null) return false;
+            if (search.IsBranchFilter)
+                return source.Snapshot.BranchItemCounts.TryGetValue(partner.Path, out int count) && search.MatchesBranchCount(count);
+            return search.Matches(partner, conversion, source.GeometryAt(position), token);
+        }
+
+        internal static IEnumerable<int> PairedGeometryCandidates(PanelSnapshot snapshot, PanelQueryOptions options,
+            PanelPairedQuerySource source, CancellationToken token)
+        {
+            var search = new PanelSearchFilter(options);
+            if (!search.HasFilter || !search.IsGeometry && !search.UsesDisplayText) yield break;
+            var scope = new PanelQueryScope(snapshot, options, search);
+            for (int position = 0; position < snapshot.Rows.Count; position++)
+            {
+                CheckCancellation(position, token);
+                if (!scope.MatchesRow(snapshot.Rows[position]) || source.PositionAt(position) is not int item) continue;
+                if (search.CanMeasure(source.Snapshot.Rows[item])) yield return item;
+            }
+        }
+
+        private static PanelQueryOptions DataMeasurementOptions(PanelQueryOptions options)
+        {
+            if (!options.SearchPaired) return options;
+            var data = options.Clone();
+            data.Search = string.Empty;
+            data.SearchMode = PanelSearchMode.Text;
+            data.DisplayFilterValue = false;
+            return data;
+        }
+
         public static bool RequiresGeometryMeasurements(PanelQueryOptions options)
         {
             if (options == null) throw new ArgumentNullException(nameof(options));
+            options = DataMeasurementOptions(options);
             if (UsesDisplayedText(options)) return true;
             if (PresentationNeedsGeometry(options)) return true;
             bool hasSearch = !(options.DisplayFilterValue && options.SearchMode >= PanelSearchMode.Value) && !string.IsNullOrWhiteSpace(options.Search);
@@ -317,7 +356,7 @@ namespace BetterGhPanel.Core
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
             if (options == null) throw new ArgumentNullException(nameof(options));
             cancellationToken.ThrowIfCancellationRequested();
-            var query = options.Clone();
+            var query = DataMeasurementOptions(options.Clone());
             var filter = new PanelSearchFilter(query);
             var sorting = !query.BranchStats && query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder;
             bool setGeometry = PresentationNeedsGeometry(query);

@@ -45,7 +45,7 @@ namespace BetterGhPanel
             get
             {
                 var options = PanelOwner.Session.Options;
-                return !_layout.SearchClear.IsEmpty && (!string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue || CanvasMenu.IsComparisonMode(options.SearchMode));
+                return !_layout.SearchClear.IsEmpty && (!string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue || options.SearchPaired || CanvasMenu.IsComparisonMode(options.SearchMode));
             }
         }
         private bool BranchClearVisible => !_layout.BranchClear.IsEmpty && PanelOwner.Session.Options.BranchPath != null;
@@ -80,7 +80,7 @@ namespace BetterGhPanel
         private PanelQueryResult DisplayResult => PanelOwner.Session.IsBusy && _lastResult?.BranchStats != null ? _lastResult : PanelOwner.Session.Result;
         private bool ShowingStats => DisplayResult.BranchStats != null;
         private bool ShowOutputControl => PanelOwner.CanOutputValues && !ShowingStats;
-        private bool DisplayListLengths => !ShowingStats && PanelOwner.Session.Options.DisplayFilterValue && PanelOwner.Session.Options.SearchMode == PanelSearchMode.ListLength;
+        private bool DisplayListLengths => !ShowingStats && PanelOwner.Session.Options.DisplaysDataFilterValue && PanelOwner.Session.Options.SearchMode == PanelSearchMode.ListLength;
         private int Count => PanelOwner.Session.HasCurrentResult || PanelOwner.Session.IsBusy && ShowingStats ? ShowingStats ? StatViewCount(DisplayResult) : DisplayListLengths ? DisplayResult.BranchPaths.Count : ViewCount(DisplayResult) : 0;
         private int MaximumOffset
         {
@@ -388,7 +388,7 @@ namespace BetterGhPanel
                 }
                 FitTableOnPaint(graphics, result, font);
                 // Chip and Units widths follow their labels, so measure them before laying out.
-                float searchChipWidth = (float)Math.Ceiling(TightWidth(graphics, CanvasMenu.SearchModeChip(session.Options.SearchMode), small)) + 19;
+                float searchChipWidth = (float)Math.Ceiling(TightWidth(graphics, SearchChip(session.Options), small)) + 19;
                 float unitsWidth = (float)Math.Ceiling(graphics.MeasureString(UnitsLabel(), small, PointF.Empty, trim).Width) + 18;
                 float sortChipWidth = session.Options.SortMode != PanelSortMode.SourceOrder && SortedColumnName(session.Options) != null
                     ? Math.Max(43, Math.Min(96, TightWidth(graphics, SortChipLabel(session.Options), small) + 27)) : 43;
@@ -702,7 +702,7 @@ namespace BetterGhPanel
             }
         }
 
-        private bool ShowDataTypes(PanelQueryResult result) => PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null ||
+        private bool ShowDataTypes(PanelQueryResult result) => PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null ||
             result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
 
         private void DrawDataCell(Graphics g, CanvasRowRenderer renderer, PanelQueryResult result, int position, int viewNumber,
@@ -712,7 +712,7 @@ namespace BetterGhPanel
             var dataRow = row;
             bool selected = _selection.Contains(position);
             float y = bounds.Y;
-            bool displayMetric = PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null;
+            bool displayMetric = PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null;
             bool numericMetric = displayMetric && (!PanelProperties.IsProperty(PanelOwner.Session.Options.SearchMode) ||
                 PanelProperties.Kind(PanelOwner.Session.Options.SearchMode) == PanelPropertyKind.Number);
             bool showTypes = ShowDataTypes(result);
@@ -789,10 +789,10 @@ namespace BetterGhPanel
             if (!BetterPanelComponent.HasFilters(options)) return OutputLabel(result);
             if (ActiveFilterCount() > 0) return OutputLabel(result) +
                 (options.SortMode != PanelSortMode.SourceOrder && SortedColumnName(options) != null ? " · " + SortChipLabel(options) : "");
-            bool mode = options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue;
+            bool mode = options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue || options.SearchPaired;
             bool sorted = options.SortMode != PanelSortMode.SourceOrder;
             string sort = SortedColumnName(options) != null ? SortChipLabel(options) : "Sorted";
-            return mode ? CanvasMenu.SearchModeChip(options.SearchMode) + (sorted ? " · " + sort : "") : sorted ? sort : "Filters";
+            return mode ? SearchChip(options) + (sorted ? " · " + sort : "") : sorted ? sort : "Filters";
         }
 
         // With filters to clear, the output part is a chip: 3 units of padding, the label, then the ×.
@@ -990,6 +990,12 @@ namespace BetterGhPanel
             {
                 int index = i + _menu.Offset;
                 var row = new RectangleF(_menu.Bounds.X + 1, _menu.Bounds.Y + i * 20, _menu.Bounds.Width - 2, 20);
+                if (_menu.Kind == CanvasMenuKind.SearchMode && index < _menu.SearchTargetRows)
+                {
+                    DrawSearchTarget(g, row, small, trim, options.SearchPaired);
+                    if (TargetPainted(g, new RectangleF(_menu.Bounds.X, row.Y, _menu.Bounds.Width, row.Height))) _menu.MarkRowPainted(i);
+                    continue;
+                }
                 bool enabled = (_menu.Kind != CanvasMenuKind.HeaderSort || HeaderSortEnabled) && _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette, PanelOwner.PreviewMode);
                 bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor, PanelOwner.ShowValues, PanelOwner.DotPlacement, PanelOwner.ValuePalette, PanelOwner.ReversePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit, PanelOwner.HideOccludedDots);
                 if (enabled && (index == _menu.HoveredIndex || selected))
@@ -1040,8 +1046,9 @@ namespace BetterGhPanel
         {
             CloseRowMenu();
             var session = PanelOwner.Session;
+            _menu.SearchTargetRows = PanelOwner.PairedInputPresent() ? 1 : 0;
             var modes = kind == CanvasMenuKind.SearchMode
-                ? Enum.GetValues(typeof(PanelSearchMode)).Cast<PanelSearchMode>().Where(session.Snapshot.SupportsSearchMode)
+                ? Enum.GetValues(typeof(PanelSearchMode)).Cast<PanelSearchMode>().Where(PanelOwner.SearchSnapshot(session.Options.SearchPaired).SupportsSearchMode)
                 : null;
             _menu.Toggle(kind, session.Snapshot, session.Options, modes, _editingSearchMode);
             InvalidatePaintedHits();
@@ -1207,7 +1214,11 @@ namespace BetterGhPanel
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }
-                if (_menu.TrySelect(point, out var index)) ChooseMenu(index, sender);
+                if (_menu.TrySelect(point, out var index))
+                {
+                    if (_menu.Kind == CanvasMenuKind.SearchMode && index < _menu.SearchTargetRows) ChooseSearchTarget(point, sender);
+                    else ChooseMenu(index, sender);
+                }
                 if (_menu.Kind == CanvasMenuKind.None)
                 {
                     InvalidatePaintedHits();
@@ -1462,9 +1473,10 @@ namespace BetterGhPanel
             var options = PanelOwner.Session.Options;
             PanelOwner.RecordUndoEvent("Panel+ clear search");
             options.SearchMode = PanelSearchMode.Text;
+            options.SearchPaired = false;
             options.DisplayFilterValue = false;
             options.Search = string.Empty;
-            PanelOwner.Session.UpdateQuery(options);
+            PanelOwner.UpdateSearchTarget(options);
             canvas.Invalidate();
         }
 
@@ -1521,7 +1533,7 @@ namespace BetterGhPanel
             if (_previewOriginal == null || !ReferenceEquals(_previewOwner, token)) return;
             var original = _previewOriginal;
             _viewRestore = new ViewRestore(PanelOwner.Session.Snapshot, _previewOffset,
-                original.DisplayFilterValue && original.SearchMode == PanelSearchMode.ListLength);
+                original.DisplaysDataFilterValue && original.SearchMode == PanelSearchMode.ListLength);
             ClearPreviewState();
             PanelOwner.Session.UpdateQuery(original);
             PanelOwner.EndQueryPreview(committed: false);
@@ -1803,7 +1815,7 @@ namespace BetterGhPanel
                     string rounding = PanelFilterValue.RoundingDescription(snapshot, row, PanelOwner.Session.Options, geometry);
                     // The rounding line already describes the shown metric. Retain
                     // the labeled geometry details without repeating its compact summaries.
-                    if (PanelOwner.Session.Options.DisplayFilterValue && !(rounding.Length > 0 && geometry != null))
+                    if (PanelOwner.Session.Options.DisplaysDataFilterValue && !(rounding.Length > 0 && geometry != null))
                         details = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode) + ": " + value + "\n" +
                             PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, PanelOwner.DecimalPlaces, geometry, roundUpFactor: PanelOwner.RoundUpFactor, formula: PanelOwner.PresentedFormula) + "\n" + details;
                     if (rounding.Length > 0) details = rounding + "\n" + details;
@@ -1866,10 +1878,10 @@ namespace BetterGhPanel
         {
             var search = _layout.Search;
             var chip = _layout.Filter;
-            bool mode = options.SearchMode != PanelSearchMode.Text, placeholder = string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue;
+            bool mode = options.SearchMode != PanelSearchMode.Text || options.SearchPaired, placeholder = string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue;
             Control(g, search, "", small, trim, !placeholder);
             var modeColor = mode ? Accent : Muted;
-            Text(g, CanvasMenu.SearchModeChip(options.SearchMode), small, modeColor,
+            Text(g, SearchChip(options), small, modeColor,
                 new RectangleF(chip.X + 2, chip.Y, chip.Width - 17, chip.Height), Tight);
             DrawChevron(g, new RectangleF(chip.X, chip.Y, chip.Width - 2, chip.Height), modeColor);
             using (var divider = new Pen(PanelTheme.Rgb(224, 229, 222)))
