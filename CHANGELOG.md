@@ -1,13 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.6.4-beta
 
-- Search D or its paired F column, including F text, numbers and geometry properties. Types and Paths continue to filter D.
-- Label viewport geometry with D, F or both. Colour geometry by F numbers or text categories and see the category counts in the legend.
-- Preview **Pass / Fail** to see matches and red failures together, with a count in the viewport legend.
-- Group **Create set** or **Σ** by F values to collect D items or calculate their statistics per key.
-- Use **Clean** to remove empty branches from the panel and D while keeping null items and B's original shape.
-- **Show all dots** in the Preview menu keeps full text on every preview dot, even behind objects or overlapping. The preview limit and memory cap still apply.
+- **Search in D / F.** The Search mode menu can test D or its paired F input. With F picked, D's rows and geometry follow F's matches. F offers the same modes as D, including its own geometry properties; Types and Paths still filter D.
+- **Viewport values from F.** Show values can label D, F or both (`Wall · 4.20 m`). Colour by value can use F: numbers use the palette, and text gets category colours with counts in the legend.
+- **Pass / Fail preview.** Matching items keep their value colour (green when colouring is off) and failures draw red, with pass and fail counts in the legend.
+- **Group by F.** Create set and Σ can group D items by their F value.
+- **Clean** (first tree tool) removes empty branches from the rows and D. Nulls stay, and B keeps the original shape.
+- **Show all dots** (Preview menu) keeps full text on every dot, even behind objects or overlapping. The preview limit and memory cap still apply.
+- **Validation.** The Core tests cover these features. The automated Rhino fixtures could not run, and these features have not yet been tried in a live Rhino session.
 
 ## 0.6.3-beta
 
