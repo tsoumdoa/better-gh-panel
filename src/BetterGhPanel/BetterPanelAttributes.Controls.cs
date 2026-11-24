@@ -193,7 +193,7 @@ namespace BetterGhPanel
         private GH_ObjectResponse? ClickTree(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             var point = e.CanvasLocation;
-            if (_layout.CreateSet.Contains(point) && PanelOwner.PairedInputPresent())
+            if (_layout.CreateSet.Contains(point) && (PanelOwner.PairedInputPresent() || PanelOwner.CreateSetTree && PanelOwner.GroupByPaired))
             {
                 OpenMenu(CanvasMenuKind.CreateSet, sender);
                 return GH_ObjectResponse.Handled;
@@ -462,7 +462,10 @@ namespace BetterGhPanel
                     "n/a means none. Click the search field to filter by it.";
             else if (!CanvasMenu.HasValueChoices(options.SearchMode)) e.Description += " Rows update as you type. Enter applies, Esc cancels.";
             if (options.SearchPaired)
+            {
                 e.Description = "Search tests each D item's F partner. Types and Paths apply to D. " + e.Description;
+                if (PanelOwner.PairedUnavailableReason is string reason) e.Description = reason + " " + e.Description;
+            }
             if (PanelOwner.Session.Error != null) e.Description = PanelOwner.Session.Error + "\n\n" + e.Description;
         }
 
@@ -488,6 +491,11 @@ namespace BetterGhPanel
             e.Title = "Search mode";
             var options = PanelOwner.Session.Options;
             e.Text = (options.SearchPaired ? "F · " : "") + CanvasMenu.SearchModeLabel(options.SearchMode);
+            if (options.SearchPaired && PanelOwner.PairedUnavailableReason is string reason)
+            {
+                e.Description = reason + " Choose D in Search in to use D values.";
+                return;
+            }
             e.Description = "Choose what the search matches: displayed text, a regular expression, numbers, geometry metrics, list length or an input property.";
         }
 

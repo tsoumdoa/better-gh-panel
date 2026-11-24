@@ -400,6 +400,7 @@ namespace BetterGhPanel.Core
         public bool CreateSet { get; set; }
         public bool BranchStats { get; set; }
         public bool GroupByPaired { get; set; }
+        internal bool PairedGroupingUnavailable { get; set; }
         public bool Flattened { get; set; }
         public PanelStatKinds StatKinds { get; set; } = PanelBranchStats.Default;
         /// <summary>Prepare typed displayed values for D/S, including offscreen measurements.</summary>
@@ -430,6 +431,7 @@ namespace BetterGhPanel.Core
             DisplayFilterValue = DisplayFilterValue,
             CreateSet = CreateSet,
             BranchStats = BranchStats, StatKinds = StatKinds, GroupByPaired = GroupByPaired, Flattened = Flattened,
+            PairedGroupingUnavailable = PairedGroupingUnavailable,
             OutputValues = OutputValues,
             DecimalPlaces = DecimalPlaces,
             RoundUpFactor = RoundUpFactor,

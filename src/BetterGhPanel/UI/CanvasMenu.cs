@@ -145,6 +145,9 @@ namespace BetterGhPanel.UI
         internal int PaletteIndex(int index) => index == CanvasPreviewRows.Back ? index : index - PaletteSourceRows;
         internal bool IsPaletteSource(int index) => Kind == CanvasMenuKind.ValuePalette && index > 0 && index <= PaletteSourceRows;
         internal bool StatsSourceRow(int index) => Kind == CanvasMenuKind.BranchStats && GroupingChoices && (index == 1 || index == 2);
+        internal bool PairedSourceRow(int index) =>
+            Kind == CanvasMenuKind.ShowValues && index >= 3 ||
+            index == 2 && (IsPaletteSource(index) || StatsSourceRow(index) || Kind == CanvasMenuKind.CreateSet);
         internal int StatsIndex(int index) => GroupingChoices && index >= 3 ? index - 2 : index;
         internal CanvasMenuKind Kind { get; private set; }
         internal RectangleF Bounds { get; private set; }

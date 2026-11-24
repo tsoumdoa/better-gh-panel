@@ -12,13 +12,13 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
-        private bool PreviewMenuRowEnabled(int index) =>
+        private bool MenuRowEnabled(int index) =>
             _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette, PanelOwner.PreviewMode) &&
-            (CanSearchPaired || !(_menu.Kind == CanvasMenuKind.ShowValues && index >= 3 || _menu.IsPaletteSource(index) && index == 2));
+            (!_menu.PairedSourceRow(index) || PanelOwner.PairedUnavailableReason == null);
 
         private void ChoosePreviewMenu(int index, GH_Canvas canvas)
         {
-            if (!PreviewMenuRowEnabled(index)) return;
+            if (!MenuRowEnabled(index)) return;
             var page = _menu.Kind;
             var next = page;
             if (page == CanvasMenuKind.Preview)
@@ -77,13 +77,19 @@ namespace BetterGhPanel
             if (!PaintedViewIsCurrent() || !_menu.IsPaintedAt(point)) return;
             int row = (int)((point.Y - _menu.Bounds.Y) / 20);
             int index = _menu.Offset + row;
-            if (_menu.Kind == CanvasMenuKind.SearchMode && index < _menu.SearchTargetRows)
+            if (row >= _menu.Visible) return;
+            if (PanelOwner.PairedUnavailableReason is string reason && _menu.PairedSourceRow(index))
+            {
+                e.Title = "F unavailable";
+                e.Description = reason;
+            }
+            else if (_menu.Kind == CanvasMenuKind.SearchMode && index < _menu.SearchTargetRows)
             {
                 var bounds = new RectangleF(_menu.Bounds.X + 1, _menu.Bounds.Y + row * 20, _menu.Bounds.Width - 2, 20);
-                if (SearchTargetButton(bounds, paired: true).Contains(point) && !CanSearchPaired)
+                if (SearchTargetButton(bounds, paired: true).Contains(point) && PanelOwner.PairedUnavailableReason is string searchReason)
                 {
                     e.Title = "Search in F unavailable";
-                    e.Description = PanelOwner.PairedError ?? "F needs to pair with D.";
+                    e.Description = searchReason;
                 }
             }
             else if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index == CanvasPreviewRows.Limit)

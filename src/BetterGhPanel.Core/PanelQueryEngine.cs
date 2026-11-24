@@ -88,7 +88,7 @@ namespace BetterGhPanel.Core
             }
 
             // Empty branches remain visible when browsing the tree, but not in item-filter results.
-            if (!scope.HasItemFilter || query.BranchStats)
+            if (!query.PairedGroupingUnavailable && (!scope.HasItemFilter || query.BranchStats))
             {
                 for (var i = 0; i < snapshot.Branches.Count; i++)
                 {
@@ -117,7 +117,7 @@ namespace BetterGhPanel.Core
                 if (row.IsNull) warnings.NullCount++;
                 else if (row.Validity == PanelValidity.VerifiedInvalid) warnings.InvalidCount++;
                 else if (row.Validity == PanelValidity.Unverified) warnings.UnverifiedCount++;
-                if (!scope.MatchesRow(row)) continue;
+                if (query.PairedGroupingUnavailable || !scope.MatchesRow(row)) continue;
                 PanelGeometryInfo? measured = null;
                 measuredGeometry?.TryGetValue(i, out measured);
                 if (query.SearchPaired)

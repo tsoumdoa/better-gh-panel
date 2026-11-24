@@ -12,8 +12,6 @@ namespace BetterGhPanel
         private static string SearchChip(PanelQueryOptions options) =>
             (options.SearchPaired ? "F · " : "") + CanvasMenu.SearchModeChip(options.SearchMode);
 
-        private bool CanSearchPaired => PanelOwner.PairedData != null;
-
         private RectangleF SearchTargetButton(RectangleF row, bool paired)
         {
             float width = Math.Max(0, (row.Width - 68) / 2);
@@ -25,13 +23,14 @@ namespace BetterGhPanel
             Text(g, "Search in", font, Muted, new RectangleF(row.X + 6, row.Y, 54, row.Height), trim);
             for (int i = 0; i <= 1; i++)
             {
-                bool paired = i == 1, enabled = !paired || CanSearchPaired;
+                bool paired = i == 1, enabled = !paired || PanelOwner.PairedUnavailableReason == null;
                 var button = SearchTargetButton(row, paired);
-                if (enabled && paired == searchPaired) Fill(g, PanelTheme.Rgb(226, 236, 226), button);
                 var title = PanelOwner.HeaderTitleForInput(PanelOwner.Params.Input[i]);
                 string port = paired ? "F" : "D";
-                Text(g, title == port ? port : port + " · " + title, font, !enabled ? PanelTheme.Disabled : paired == searchPaired ? Accent : Ink,
-                    new RectangleF(button.X + 4, button.Y, Math.Max(0, button.Width - 7), button.Height), trim);
+                string label = title == port ? port : port + " · " + title;
+                if (enabled && paired == searchPaired) Control(g, button, label, font, trim, active: true);
+                else Text(g, label, font, enabled ? Muted : PanelTheme.Disabled,
+                    new RectangleF(button.X + 3, button.Y, Math.Max(0, button.Width - 6), button.Height), trim);
             }
         }
 
@@ -39,7 +38,7 @@ namespace BetterGhPanel
         {
             var row = new RectangleF(_menu.Bounds.X + 1, _menu.Bounds.Y - _menu.Offset * 20, _menu.Bounds.Width - 2, 20);
             bool paired = SearchTargetButton(row, paired: true).Contains(point);
-            if (paired ? !CanSearchPaired : !SearchTargetButton(row, paired: false).Contains(point)) return;
+            if (paired ? PanelOwner.PairedUnavailableReason != null : !SearchTargetButton(row, paired: false).Contains(point)) return;
             var before = PanelOwner.Session.Options;
             if (before.SearchPaired == paired) return;
             var options = before.Clone();

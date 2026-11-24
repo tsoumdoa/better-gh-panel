@@ -930,6 +930,7 @@ namespace BetterGhPanel
             var session = PanelOwner.Session;
             int selected = PanelOwner.Locked || !session.HasCurrentResult ? 0 : DisplayListLengths ? _selection.BranchPaths(result).Count : _selection.Count;
             return PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
+                PanelOwner.GroupByPaired && PanelOwner.PairedUnavailableReason is string reason ? reason :
                 _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
                 !string.IsNullOrEmpty(PanelOwner.PreviewStatus) ? PanelOwner.PreviewStatus :
                 selected > 0 ? System.FormattableString.Invariant($"{selected:N0} selected") + (DisplayListLengths ? " branches" : " · right-click to copy") : null;
@@ -1006,16 +1007,15 @@ namespace BetterGhPanel
                     if (TargetPainted(g, new RectangleF(_menu.Bounds.X, row.Y, _menu.Bounds.Width, row.Height))) _menu.MarkRowPainted(i);
                     continue;
                 }
-                bool enabled = (_menu.Kind != CanvasMenuKind.HeaderSort || HeaderSortEnabled) && PreviewMenuRowEnabled(index);
-                if ((_menu.Kind == CanvasMenuKind.CreateSet || _menu.StatsSourceRow(index)) && index == 2) enabled &= CanSearchPaired;
+                bool enabled = (_menu.Kind != CanvasMenuKind.HeaderSort || HeaderSortEnabled) && MenuRowEnabled(index);
                 bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor, PanelOwner.ShowValues, PanelOwner.DotPlacement, PanelOwner.ValuePalette, PanelOwner.ReversePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit, PanelOwner.HideOccludedDots, PanelOwner.LabelSource, PanelOwner.ColourByPaired);
                 if (enabled && (index == _menu.HoveredIndex || selected))
                     Fill(g, index == _menu.HoveredIndex ? PanelTheme.Rgb(226, 236, 226) : PanelTheme.Rgb(242, 247, 241), row);
                 if (_menu.IsSectionStart(index))
                     using (var divider = new Pen(PanelTheme.Rgb(225, 231, 224)))
                         g.DrawLine(divider, row.X + 7, row.Y, row.Right - 7, row.Y);
-                if (enabled && selected)
-                    using (var check = new Pen(Accent, 1.3f))
+                if (selected && (enabled || _menu.PairedSourceRow(index)))
+                    using (var check = new Pen(enabled ? Accent : PanelTheme.Disabled, 1.3f))
                         g.DrawLines(check, new[] { new PointF(row.X + 7, row.Y + 10), new PointF(row.X + 10, row.Y + 13), new PointF(row.X + 16, row.Y + 7) });
                 float inset = _menu.Kind == CanvasMenuKind.BranchStats && !_menu.StatsSourceRow(index) && (_menu.StatsIndex(index) == 1 || _menu.StatsIndex(index) == 10) ? 7 : 23;
                 string tail = _menu.Trailing(index, PanelOwner.DotPlacement, PanelOwner.ValuePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit);
@@ -1060,8 +1060,15 @@ namespace BetterGhPanel
         {
             CloseRowMenu();
             var session = PanelOwner.Session;
-            _menu.SearchTargetRows = PanelOwner.PairedInputPresent() ? 1 : 0;
-            _menu.GroupingChoices = PanelOwner.PairedInputPresent();
+            bool pairedPresent = PanelOwner.PairedInputPresent();
+            _menu.SearchTargetRows = pairedPresent || session.Options.SearchPaired ? 1 : 0;
+            _menu.GroupingChoices = pairedPresent || (kind switch
+            {
+                CanvasMenuKind.ShowValues => PanelOwner.LabelSource >= PanelLabelSource.Paired,
+                CanvasMenuKind.ValuePalette => PanelOwner.ColourByPaired,
+                CanvasMenuKind.BranchStats => PanelOwner.BranchStatsTree && PanelOwner.GroupByPaired,
+                _ => false
+            });
             var modes = kind == CanvasMenuKind.SearchMode
                 ? Enum.GetValues(typeof(PanelSearchMode)).Cast<PanelSearchMode>().Where(PanelOwner.SearchSnapshot(session.Options.SearchPaired).SupportsSearchMode)
                 : null;
@@ -1335,7 +1342,7 @@ namespace BetterGhPanel
             if (_menu.IsPreviewPage) { ChoosePreviewMenu(index, canvas); return; }
             if (kind == CanvasMenuKind.CreateSet)
             {
-                if (index == 2 && !CanSearchPaired) return;
+                if (!MenuRowEnabled(index)) return;
                 _menu.Close();
                 PanelOwner.SetTreeTools(PanelOwner.TrimDepth, PanelOwner.FlattenTree, PanelOwner.ReverseTree,
                     PanelOwner.SimplifyTree, index > 0, PanelOwner.CleanTree, index == 2);
@@ -1345,7 +1352,7 @@ namespace BetterGhPanel
             {
                 if (_menu.StatsSourceRow(index))
                 {
-                    if (index == 2 && !CanSearchPaired) return;
+                    if (!MenuRowEnabled(index)) return;
                     PanelOwner.SetStatsGrouping(true, null, index == 2);
                     canvas.Invalidate(); return;
                 }
@@ -1910,7 +1917,14 @@ namespace BetterGhPanel
             var chip = _layout.Filter;
             bool mode = options.SearchMode != PanelSearchMode.Text || options.SearchPaired, placeholder = string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue;
             Control(g, search, "", small, trim, !placeholder);
-            var modeColor = mode ? Accent : Muted;
+            bool unavailable = options.SearchPaired && PanelOwner.PairedUnavailableReason != null;
+            var modeColor = unavailable ? PanelTheme.PairingWarning : mode ? Accent : Muted;
+            if (unavailable)
+            {
+                Fill(g, PanelTheme.Rgb(255, 246, 222), chip);
+                using var underline = new Pen(modeColor);
+                g.DrawLine(underline, chip.Left, chip.Bottom - 1, chip.Right, chip.Bottom - 1);
+            }
             Text(g, SearchChip(options), small, modeColor,
                 new RectangleF(chip.X + 2, chip.Y, chip.Width - 17, chip.Height), Tight);
             DrawChevron(g, new RectangleF(chip.X, chip.Y, chip.Width - 2, chip.Height), modeColor);

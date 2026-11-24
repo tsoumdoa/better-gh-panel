@@ -23,7 +23,8 @@ namespace BetterGhPanel
         private IReadOnlyList<PanelSourceAddress> _retainedSources = Array.Empty<PanelSourceAddress>();
         private string? _pairedError;
         internal PanelPairedData? PairedData { get; private set; }
-        internal string? PairedError => _pairedError;
+        internal string? PairedUnavailableReason => PairedData != null ? null :
+            !PairedInputPresent() ? "F is not wired." : _pairedError ?? "F is waiting for paired data.";
         internal bool CanSplit => TableColumns.Any(column => column.Present && column.Pair != null) && Session.HasCurrentResult;
         private long _selectionVersion, _publishedSelectionVersion;
         private PanelOutputScope _publishedScope;
