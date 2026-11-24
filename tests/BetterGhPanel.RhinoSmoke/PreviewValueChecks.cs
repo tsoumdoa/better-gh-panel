@@ -306,6 +306,7 @@ internal static partial class PreviewSafetyChecks
         var membership = Activator.CreateInstance(membershipType, AnyInstance, null, new object?[] { null }, null)!;
         var type = assembly.GetType("BetterGhPanel.Runtime.PanelOrderLabels", true)!;
         var labels = Activator.CreateInstance(type, AnyInstance, null, new[] { membership }, null)!;
+        var labelSource = Enum.Parse(typeof(PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelLabelSource", true)!, "Data");
         var sampled = new List<int>(); bool changed = false;
         PanelPreviewValue Sample(int position)
         {
@@ -316,7 +317,7 @@ internal static partial class PreviewSafetyChecks
         {
             Call(labels, "Configure", result, order, true, PanelDotPlacement.Centre,
                 PanelValuePalette.Viridis, false, PanelSearchMode.Value, decimals, 0d, new[] { 0, half },
-                (Func<int, PanelPreviewValue>)Sample, (Func<bool>)(() => true));
+                (Func<int, PanelPreviewValue>)Sample, (Func<bool>)(() => true), labelSource, false, false);
             // This probe advances ticks explicitly; native reentry must not also
             // advance the sampling timer while the fixture checks intermediate state.
             var timer = FieldValue<System.Windows.Forms.Timer>(labels, "_refresh");
