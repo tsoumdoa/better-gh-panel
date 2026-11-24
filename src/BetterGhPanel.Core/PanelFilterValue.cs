@@ -29,10 +29,12 @@ namespace BetterGhPanel.Core
             return IsFinite(value) ? PanelPropertyValue.Numeric(value) : null;
         }
 
-        public static string UnitSymbol(PanelSnapshot snapshot, PanelRow row, PanelSearchMode mode, PanelGeometryInfo? measured = null)
+        public static string UnitSymbol(PanelSnapshot snapshot, PanelRow row, PanelSearchMode mode, PanelGeometryInfo? measured = null,
+            PanelUnitConversion? pairedConversion = null)
         {
+            var conversion = pairedConversion ?? snapshot.UnitConversion;
             if (mode == PanelSearchMode.ListLength) return "";
-            if (mode == PanelSearchMode.Value) return PanelUnits.Symbol(snapshot.UnitConversion);
+            if (mode == PanelSearchMode.Value) return PanelUnits.Symbol(conversion);
             PanelPropertyValue? property;
             if (PanelProperties.IsProperty(mode))
             {
@@ -48,7 +50,7 @@ namespace BetterGhPanel.Core
                 if (geometry == null) return "";
                 property = PanelPropertyValue.Numeric(1, mode == PanelSearchMode.Area ? 2 : geometry.Power, geometry.Units);
             }
-            return property.UnitSymbol(snapshot.UnitConversion);
+            return property.UnitSymbol(conversion);
         }
 
         public static bool MatchesGeometry(PanelSearchMode mode, PanelGeometryInfo geometry) =>

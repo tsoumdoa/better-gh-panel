@@ -7,6 +7,34 @@ using Xunit;
 
 public class TableColumnsTests
 {
+    [Fact]
+    public void ColumnPreviewUsesTheCellTextForRadiusCircumferenceAndAngles()
+    {
+        var circle = new PanelGeometryInfo("Cir", 1000, units: "mm", metricName: "Radius", metricLabel: "R");
+        var angle = new PanelGeometryInfo("Dim", Math.PI / 2, -1, "rad", "Angle", "");
+        var snapshot = new PanelSnapshot(new[]
+        {
+            new PanelRow(0, "{0}", "Circle", "circle", null, geometryInfo: circle),
+            new PanelRow(1, "{0}", "Dimension", "angle", null, geometryInfo: angle)
+        }, new[] { new PanelBranch("{0}", 2) });
+        Verify(0, circle, true, PanelUnitConversion.MillimetersToMeters, null, "1.00", 1);
+        Verify(0, circle, true, PanelUnitConversion.MillimetersToMeters, PanelSearchMode.Length, "6.28 m", 6.28);
+        const PanelUnitConversion degrees = PanelUnitConversion.RadiansToDegrees;
+        var angleValue = PanelTableText.ColumnPreviewValue(snapshot, 1, angle, false, false, degrees, 2, 0, null, "F");
+        Assert.Equal(PanelTableText.ColumnValue(snapshot, 1, angle, false, false, degrees, 2, 0, null), angleValue.Label(null, true));
+        Assert.Equal(90d, angleValue.Number);
+        Assert.Contains("90.00", angleValue.Label(null, true));
+
+        void Verify(int item, PanelGeometryInfo metric, bool homogeneous, PanelUnitConversion conversion,
+            PanelSearchMode? mode, string label, double number)
+        {
+            var preview = PanelTableText.ColumnPreviewValue(snapshot, item, metric, homogeneous, false, conversion, 2, 0, mode, "F");
+            Assert.Equal(label, PanelTableText.ColumnValue(snapshot, item, metric, homogeneous, false, conversion, 2, 0, mode));
+            Assert.Equal(label, preview.Label(null, true));
+            Assert.Equal(number, preview.Number);
+        }
+    }
+
     [Theory]
     [InlineData("Point", false)]
     [InlineData("Point", true)]

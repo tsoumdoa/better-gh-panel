@@ -48,9 +48,8 @@ namespace BetterGhPanel
             if (column == PairedColumn)
             {
                 if (result.DisplaySet?.IsPaired == true) return result.DisplaySet.Values[position].Text;
-                if (ShowsPairedComparison(column) && column.Snapshot is PanelSnapshot snapshot && column.Pair?.ItemAt(position) is int item)
-                    return PanelFilterValue.Format(snapshot, snapshot.Rows[item], Session.Options.SearchMode, DecimalPlaces,
-                        column.Details(item), roundUpFactor: RoundUpFactor, pairedConversion: UnitConversion);
+                if (ShowsPairedComparison(column) && column.Snapshot != null && column.Pair?.ItemAt(position) is int item)
+                    return column.ItemValue(item, UnitConversion, DecimalPlaces, RoundUpFactor, Session.Options.SearchMode);
             }
             return column.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor);
         }

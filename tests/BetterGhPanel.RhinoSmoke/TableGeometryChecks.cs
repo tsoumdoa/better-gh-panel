@@ -113,7 +113,7 @@ internal static class TableGeometryChecks
             string label = index < 2 ? "Crv" : index == 2 ? "Srf" : "Brep";
             string expected = label + " " + metric.MetricLabel + " " + PanelUnits.FormatGeometry(metric.Value!.Value,
                 metric.Power, metric.Units, conversion, decimals, roundUpFactor: factor);
-            Check((string)Call(column, "ItemValue", index, conversion, decimals, factor)! == expected,
+            Check((string)Call(column, "ItemValue", index, conversion, decimals, factor, null)! == expected,
                 "Mixed column shows its compact primary metric for " + shapes[index].TypeName);
             string tooltip = (string)Call(column, "ItemTooltip", index, conversion, decimals, factor)!;
             Check(tooltip.Contains(metric.Description) && tooltip.Contains(metric.FormatDetails(conversion, decimals, factor)),

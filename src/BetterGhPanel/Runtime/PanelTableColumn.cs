@@ -107,12 +107,10 @@ namespace BetterGhPanel.Runtime
             string note = BranchExtraNote(result, path, title);
             return value + (note.Length > 0 ? " · " + note : "");
         }
-        internal string ItemValue(int item, PanelUnitConversion conversion, int decimals, double factor)
-        {
-            var row = Snapshot!.Rows[item];
-            if (row.GeometryInfo == null) return PanelTableText.Value(row, conversion, decimals, factor);
-            return PanelTableText.GeometryCell(row, Details(item), HomogeneousMetric, Measuring(item), conversion, decimals, factor);
-        }
+        internal string ItemValue(int item, PanelUnitConversion conversion, int decimals, double factor, PanelSearchMode? mode = null) =>
+            PanelTableText.ColumnValue(Snapshot!, item, Details(item), HomogeneousMetric, Measuring(item), conversion, decimals, factor, mode);
+        internal PanelPreviewValue PreviewValue(int item, PanelUnitConversion conversion, int decimals, double factor, PanelSearchMode? mode, string title) =>
+            PanelTableText.ColumnPreviewValue(Snapshot!, item, Details(item), HomogeneousMetric, Measuring(item), conversion, decimals, factor, mode, title);
         internal string ItemTooltip(int item, PanelUnitConversion conversion, int decimals, double factor)
         {
             var row = Snapshot!.Rows[item];

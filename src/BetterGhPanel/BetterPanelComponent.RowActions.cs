@@ -167,6 +167,9 @@ namespace BetterGhPanel
                 stamp.IsCurrent();
             var options = session.Options;
             var searchMode = options.SearchPaired ? PanelSearchMode.Text : options.SearchMode;
+            PanelSearchMode? pairedMode = options.SearchPaired && options.DisplayFilterValue && expectedResult.DisplaySet == null
+                ? options.SearchMode : (PanelSearchMode?)null;
+            string pairedTitle = HeaderTitleForInput(Params.Input[1]);
             PanelPreviewValue SampleData(int position)
             {
                 var geometry = session.GetGeometryDetails(snapshot, position);
@@ -175,17 +178,9 @@ namespace BetterGhPanel
             }
             PanelPreviewValue SamplePaired(int position)
             {
-                if (pairedColumn?.Snapshot is not PanelSnapshot paired || pairedColumn.Pair?.ItemAt(position) is not int item) return default;
-                var row = paired.Rows[item];
-                if (!row.IsValid || row.IsNull) return default;
-                if (row.NumericValue.HasValue)
-                {
-                    string text = pairedColumn.ItemValue(item, UnitConversion, DecimalPlaces, RoundUpFactor);
-                    return PanelUnits.TryParseOperand(text, out double shown) ? new PanelPreviewValue(HeaderTitleForInput(Params.Input[1]), "", shown, text) : default;
-                }
-                if (row.GeometryInfo != null)
-                    return PanelPreviewValues.Sample(snapshot, row, PanelSearchMode.Text, pairedColumn.Details(item), DecimalPlaces, RoundUpFactor);
-                return PanelPreviewValue.FromCategory(row.DisplayValue);
+                return pairedColumn?.Snapshot != null && pairedColumn.Pair?.ItemAt(position) is int item
+                    ? pairedColumn.PreviewValue(item, UnitConversion, DecimalPlaces, RoundUpFactor, pairedMode, pairedTitle)
+                    : default;
             }
             PanelPreviewValue Sample(int position)
             {

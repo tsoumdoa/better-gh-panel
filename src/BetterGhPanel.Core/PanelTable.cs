@@ -310,17 +310,60 @@ namespace BetterGhPanel.Core
             (geometry.CanMeasure || geometry.Value.HasValue || geometry.MeasurementUnavailable);
 
         internal static string GeometryCell(PanelRow row, PanelGeometryInfo? geometry, bool homogeneous, bool measuring,
-            PanelUnitConversion conversion, int decimals, double factor)
+            PanelUnitConversion conversion, int decimals, double factor, PanelFormula? formula = null)
         {
             if (row.IsNull || geometry == null) return Value(row, conversion, decimals, factor);
             if (!row.IsValid) return row.Validity == PanelValidity.VerifiedInvalid ? "invalid" : "unverified";
             if (!HasGeometryMetric(geometry)) return Value(row, conversion, decimals, factor);
             if (measuring) return "measuring…";
-            string number = geometry!.Value is double primary && primary >= 0 && !double.IsNaN(primary) && !double.IsInfinity(primary)
-                ? PanelUnits.FormatGeometry(geometry.Value.Value, geometry.Power, geometry.Units, conversion, decimals,
-                    includeUnits: !homogeneous, roundUpFactor: factor) : "unavailable";
+            string number = GeometryNumber(geometry!, conversion, decimals, factor, includeUnits: !homogeneous, formula: formula);
             return homogeneous ? number : StockTypeLabels.ShortName(row.TypeName) +
-                (geometry.MetricLabel.Length == 0 ? "" : " " + geometry.MetricLabel) + " " + number;
+                (geometry!.MetricLabel.Length == 0 ? "" : " " + geometry.MetricLabel) + " " + number;
+        }
+
+        private static string GeometryNumber(PanelGeometryInfo geometry, PanelUnitConversion conversion, int decimals, double factor,
+            bool includeUnits, PanelFormula? formula = null) =>
+            geometry.Value is double primary && primary >= 0 && !double.IsNaN(primary) && !double.IsInfinity(primary)
+                ? PanelUnits.FormatGeometry(primary, geometry.Power, geometry.Units, conversion, decimals,
+                    includeUnits, roundUpFactor: factor, formula: formula) : "unavailable";
+
+        internal static string ColumnValue(PanelSnapshot snapshot, int item, PanelGeometryInfo? metric, bool homogeneous, bool measuring,
+            PanelUnitConversion conversion, int decimals, double factor, PanelSearchMode? mode) =>
+            mode is PanelSearchMode comparison
+                ? PanelFilterValue.Format(snapshot, snapshot.Rows[item], comparison, decimals, metric, roundUpFactor: factor, pairedConversion: conversion)
+                : GeometryCell(snapshot.Rows[item], metric, homogeneous, measuring, conversion, decimals, factor);
+
+        internal static PanelPreviewValue ColumnPreviewValue(PanelSnapshot snapshot, int item, PanelGeometryInfo? metric, bool homogeneous,
+            bool measuring, PanelUnitConversion conversion, int decimals, double factor, PanelSearchMode? mode, string title)
+        {
+            var row = snapshot.Rows[item];
+            string text = ColumnValue(snapshot, item, metric, homogeneous, measuring, conversion, decimals, factor, mode);
+            bool pending = text == "measuring…" && (measuring || mode.HasValue);
+            if (!row.IsValid || row.IsNull || pending) return default(PanelPreviewValue).WithLabel(text, pending);
+
+            string name = title, unit = "", digits;
+            if (mode is PanelSearchMode comparison)
+            {
+                if (PanelProperties.IsProperty(comparison) && PanelProperties.Kind(comparison) != PanelPropertyKind.Number)
+                    return PanelProperties.TryGet(row, comparison, metric, out var property) && property != null
+                        ? PanelPreviewValue.FromCategory(text) : default(PanelPreviewValue).WithLabel(text, false);
+                digits = PanelFilterValue.Format(snapshot, row, comparison, decimals, metric, includeUnits: false,
+                    roundUpFactor: factor, pairedConversion: conversion);
+                unit = PanelFilterValue.UnitSymbol(snapshot, row, comparison, metric, conversion);
+                if (comparison != PanelSearchMode.Value) name = PanelProperties.IsProperty(comparison) ? PanelProperties.Label(comparison) : comparison.ToString();
+            }
+            else if (metric != null && HasGeometryMetric(metric))
+            {
+                name = metric.MetricName;
+                unit = PanelPropertyValue.Numeric(0, metric.Power, metric.Units).UnitSymbol(conversion);
+                digits = GeometryNumber(metric, conversion, decimals, factor, includeUnits: false);
+            }
+            else if (row.NumericValue.HasValue) digits = text;
+            else return PanelPreviewValue.FromCategory(text);
+
+            return PanelUnits.TryParseOperand(digits, out double shown)
+                ? new PanelPreviewValue(name, unit, shown, digits).WithLabel(text, false)
+                : default(PanelPreviewValue).WithLabel(text, false);
         }
 
         internal static PanelGeometryInfo? CommonGeometryMetric(PanelSnapshot snapshot)
