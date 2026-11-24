@@ -55,6 +55,7 @@ namespace BetterGhPanel.Runtime
         private Dictionary<int, PanelPreviewValue>? _buildingValues;
         private Dictionary<string, PanelPreviewRange>? _buildingRanges;
         private HashSet<int>? _buildingPending;
+        private Dictionary<string, int>? _buildingCategories;
         private LegendRow[] _legend = Array.Empty<LegendRow>();
         private LegendRow? _passFailLegend;
         private float _legendWidth, _legendNameWidth, _legendMinWidth, _legendScale, _legendRowHeight;
@@ -128,6 +129,7 @@ namespace BetterGhPanel.Runtime
         private void ClearBuild()
         {
             _buildingValues = null; _buildingRanges = null; _buildingPending = null;
+            _buildingCategories = null;
             _prioritySamples.Clear(); _queuedSamples.Clear(); _sentPartialPending = false;
         }
 
@@ -173,6 +175,7 @@ namespace BetterGhPanel.Runtime
             {
                 _buildingValues = new Dictionary<int, PanelPreviewValue>(); _buildingRanges = new Dictionary<string, PanelPreviewRange>();
                 _buildingPending = new HashSet<int>(); _cursor = 0; _dirty = false;
+                if (_settings.ColourByPaired && Gradient) _buildingCategories = new Dictionary<string, int>(StringComparer.Ordinal);
                 foreach (var label in _labels.Values) Prioritise(label.Position);
             }
             long generation = _valueGeneration;
@@ -187,7 +190,11 @@ namespace BetterGhPanel.Runtime
                 int position = priority ? _prioritySamples.Dequeue() : positions[_cursor++];
                 if (priority && !_queuedSamples.Remove(position)) continue;
                 bool captured = _buildingValues.ContainsKey(position);
-                if (captured && (!priority || _values.TryGetValue(position, out var shown) && !shown.Pending)) continue;
+                if (captured && (!priority || _values.TryGetValue(position, out var shown) && !shown.Pending))
+                {
+                    if (!priority) RememberCategory(_buildingValues[position]);
+                    continue;
+                }
                 var value = sample(position); sampled++; if (priority) prioritised++;
                 if (generation != _valueGeneration || current?.Invoke() != true || !ReferenceEquals(result, _valueResult)) return;
                 if (_values.TryGetValue(position, out var previous) || _colourValues.TryGetValue(position, out previous)) value = value.RetainNumber(previous);
@@ -196,6 +203,7 @@ namespace BetterGhPanel.Runtime
                 // cannot leave an old extremum in its completed colour snapshot.
                 if (priority || _queuedSamples.Contains(position)) _values[position] = value;
                 if (value.Pending) _buildingPending!.Add(position); else _buildingPending!.Remove(position);
+                if (!priority) RememberCategory(value);
                 // Rescan only when the range sample is actually stale.
                 if (captured) { if (!Same(_buildingValues[position], value)) _dirty = true; continue; }
                 // Numeric ranges use all Results. Per-position F samples are needed
@@ -216,7 +224,7 @@ namespace BetterGhPanel.Runtime
                 static int Order(string metric) => metric == "Length" ? 0 : metric == "Area" ? 1 : metric == "Volume" ? 2 : 3;
                 var legend = _ranges.Values.OrderBy(range => Order(range.Metric)).ThenBy(range => range.Metric, StringComparer.Ordinal)
                     .ThenBy(range => range.Unit, StringComparer.Ordinal).Select(range => new LegendRow(range)).ToList();
-                if (_settings.ColourByPaired && Gradient) AppendCategories(result, legend);
+                if (_buildingCategories != null) AppendCategories(_buildingCategories, legend);
                 _legend = legend.ToArray();
                 _legendScale = 0;
             }
@@ -236,30 +244,32 @@ namespace BetterGhPanel.Runtime
         private static bool Same(PanelPreviewValue a, PanelPreviewValue b) =>
             a.Pending == b.Pending && a.Number == b.Number && a.Text == b.Text && a.Key == b.Key && a.LabelText == b.LabelText && a.Category == b.Category;
 
-        private void AppendCategories(PanelQueryResult result, List<LegendRow> legend)
+        private void RememberCategory(PanelPreviewValue value)
         {
-            _categories.Clear();
-            var names = new List<string>(PanelPreviewValues.CategoryCount);
+            var categories = _buildingCategories;
+            if (value.Category && categories != null && categories.Count < PanelPreviewValues.CategoryCount && !categories.ContainsKey(value.Text))
+                categories.Add(value.Text, PanelPreviewValues.CategoryFirst + categories.Count);
+        }
+
+        private void AppendCategories(Dictionary<string, int> categories, List<LegendRow> legend)
+        {
+            _categories = categories;
             var counts = new int[PanelPreviewValues.CategoryCount];
             var others = new HashSet<string>(StringComparer.Ordinal);
             int otherItems = 0;
-            foreach (var sample in _colourValues.Where(pair => pair.Value.Category && !Failed(pair.Key))
-                .OrderBy(pair => result.DisplaySet != null ? pair.Key : result.TryGetViewIndex(pair.Key, out int index) ? index : int.MaxValue))
+            foreach (var sample in _colourValues)
             {
+                if (!sample.Value.Category || Failed(sample.Key)) continue;
                 string key = sample.Value.Text;
                 if (_categories.TryGetValue(key, out int id)) counts[id - PanelPreviewValues.CategoryFirst]++;
-                else if (names.Count < PanelPreviewValues.CategoryCount)
-                {
-                    _categories.Add(key, PanelPreviewValues.CategoryFirst + names.Count);
-                    counts[names.Count] = 1;
-                    names.Add(key);
-                }
                 else { others.Add(key); otherItems++; }
             }
-            for (int index = 0; index < names.Count; index++)
+            foreach (var category in categories.OrderBy(key => key.Value))
             {
-                string label = PanelValuePresentation.Visualize(names[index]);
-                legend.Add(new LegendRow(label.Length <= 48 ? label : label.Substring(0, 47) + "…", counts[index], PanelPreviewValues.CategoryFirst + index));
+                int count = counts[category.Value - PanelPreviewValues.CategoryFirst];
+                if (count == 0) continue;
+                string label = PanelValuePresentation.Visualize(category.Key);
+                legend.Add(new LegendRow(label.Length <= 48 ? label : label.Substring(0, 47) + "…", count, category.Value));
             }
             if (otherItems > 0) legend.Add(new LegendRow(
                 System.FormattableString.Invariant($"+{others.Count:N0} others · {otherItems:N0} items"), "", PanelPreviewValues.OtherCategory));
