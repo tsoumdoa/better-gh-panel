@@ -623,7 +623,8 @@ namespace BetterGhPanel
             float valueStart = rowRenderer.GutterWidth + pathWidth;
             var measurements = new List<int>();
             var options = PanelOwner.Session.Options;
-            var pairedMeasurements = options.SearchPaired && options.DisplayFilterValue ? new List<int>() : null;
+            // Sets grouped by F already show their F key, so they get no F suffix.
+            var pairedMeasurements = options.SearchPaired && options.DisplayFilterValue && result.DisplaySet?.IsPaired != true ? new List<int>() : null;
             offset = Math.Max(0, Math.Min(Math.Max(0, Count - 1), offset));
             var clip = g.Save();
             try
