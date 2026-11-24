@@ -34,7 +34,7 @@ namespace BetterGhPanel.Core
                 return new PanelDisplayedValue(text, text, query.DecimalPlaces < 0 ? PanelNumber.GeneralValue(number, 12) : number, true);
             }
             var display = PanelValuePresentation.DisplayText(row, conversion, query.DecimalPlaces, measured, query.RoundUpFactor);
-            return new PanelDisplayedValue(display, display, null, false);
+            return new PanelDisplayedValue(display, display, null, false, row.IsNull);
         }
 
         internal static PanelDisplayedValue Capture(PanelSnapshot snapshot, PanelRow row, PanelQueryOptions query,

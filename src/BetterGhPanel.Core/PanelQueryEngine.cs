@@ -162,7 +162,7 @@ namespace BetterGhPanel.Core
                 branches.Add(row.Path);
                 Increment(branchCounts, row.Path);
                 if (set?.IsBranchSet == true) continue;
-                var projected = set == null ? null : set.Values[i];
+                var projected = set == null || query.GroupByPaired ? null : set.Values[i];
                 Increment(typeCounts, projected == null ? row.TypeName : projected.IsNumeric ? "Number" : "Text");
                 if (projected == null && row.IsNull) nullCount++;
                 if (projected == null && row.Validity == PanelValidity.VerifiedInvalid) invalidCount++;

@@ -782,6 +782,7 @@ namespace BetterGhPanel
             if (result.BranchStats != null) return "D: stats";
             int filters = ActiveFilterCount();
             if (filters > 0) return filters == 1 ? "D: 1 filter" : "D: " + filters + " filters";
+            if (result.DisplaySet?.IsPaired == true) return "D: tools";
             if (result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count)
                 return "D: filtered";
             return PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.RoundUpFactor > 0 || PanelOwner.Formula != null || PanelOwner.DecimalPlaces >= 0

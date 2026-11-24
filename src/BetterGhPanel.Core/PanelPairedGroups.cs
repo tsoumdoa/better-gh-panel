@@ -8,7 +8,7 @@ namespace BetterGhPanel.Core
     {
         private readonly PanelSnapshot _data;
         private readonly PanelQueryOptions _query;
-        private readonly Dictionary<string, Dictionary<(PanelText Text, bool Missing), Group>> _branches =
+        private readonly Dictionary<string, Dictionary<(PanelText Text, bool NullKey), Group>> _branches =
             new Dictionary<string, Dictionary<(PanelText, bool), Group>>(StringComparer.Ordinal);
 
         internal PanelPairedGroups(PanelSnapshot data, PanelQueryOptions query)
@@ -22,7 +22,7 @@ namespace BetterGhPanel.Core
             var key = PanelDisplayedValue.CapturePaired(row, _data.UnitConversion, _query, source?.GeometryAt(position));
             if (!_branches.TryGetValue(path, out var groups))
                 _branches.Add(path, groups = new Dictionary<(PanelText, bool), Group>());
-            var identity = (key.SemanticText, row == null);
+            var identity = (key.SemanticText, row == null || row.IsNull);
             if (!groups.TryGetValue(identity, out var group))
             {
                 int index = groups.Count;
