@@ -77,7 +77,7 @@ namespace BetterGhPanel
             if (index == CanvasPreviewRows.ShowAllDots)
             {
                 e.Title = "Show all dots";
-                e.Description = "Shows every dot with full text, even behind objects or overlapping.";
+                e.Description = "Shows every dot with full text, even behind objects or overlapping. The preview limit still applies; many dots can slow the viewport.";
             }
             else if (index == CanvasPreviewRows.Limit)
             {

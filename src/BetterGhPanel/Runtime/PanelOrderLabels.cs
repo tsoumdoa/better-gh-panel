@@ -524,7 +524,7 @@ namespace BetterGhPanel.Runtime
                 frame.HideOccludedDots == hideOccludedDots && frame.ShowAllDots == ShowAllDots;
             if (sameIdentity && frame.LabelRevision == _labelRevision && frame.Clip == clip && frame.Camera == camera && frame.SelectedBias == selected &&
                 frame.Dpi == dpi && frame.Size == dimensions && frame.SelectionRevision == _membership.Revision) return frame;
-            if (!sameIdentity && !ShowAllDots) frame.Layout.ResetStability();
+            if (!sameIdentity) frame.Layout.ResetStability();
             if (_labelListDirty)
             {
                 _orderedLabels.Clear(); foreach (var label in _labels.Values) _orderedLabels.Add(label);
@@ -638,7 +638,8 @@ namespace BetterGhPanel.Runtime
                 if (!_textDots.TryGetValue(height, out var dot))
                 { dot = new TextDot("", Point3d.Origin) { FontHeight = height }; _textDots.Add(height, dot); }
                 dot.Text = label.Text;
-                if (frame.Dots[i].Selected) DrawDotHalo(args, anchor, dot, dpi);
+                // Each halo is eight extra dots; Show all dots caps them so Select all stays responsive.
+                if (frame.Dots[i].Selected && (!frame.ShowAllDots || k < 256)) DrawDotHalo(args, anchor, dot, dpi);
                 var fill = Gradient ? _colours[anchorLabel.ColourId] : PlainFill;
                 dot.Point = anchor;
                 args.Display.DrawDot(dot, fill, Gradient ? _textColours[anchorLabel.ColourId] : Border, Border);
