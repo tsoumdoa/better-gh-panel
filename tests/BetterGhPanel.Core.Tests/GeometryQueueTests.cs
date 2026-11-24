@@ -10,6 +10,23 @@ using System.Threading.Tasks;
 [Collection("NurbsCandidateLimits")]
 public class GeometryQueueTests
 {
+    [Fact]
+    public async Task HidingTheTableCancelsPresentationAndKeepsQueryMeasurements()
+    {
+        using var fixture = new Fixture();
+        var query = fixture.Queue.MeasureAsync(fixture.Current, new[] { 0, 1 }, CancellationToken.None, requiredForQuery: true);
+        var presentation = fixture.Measure(CancellationToken.None, 2);
+        fixture.Ui(); fixture.Delay();
+        fixture.Queue.CancelRequests(preserveQuery: true);
+        Assert.False(await presentation);
+        Assert.False(query.IsCompleted);
+        fixture.Worker(); fixture.Ui();
+        fixture.Queue.CancelRequests(preserveQuery: true);
+        fixture.Delay(); fixture.Worker(); fixture.Ui();
+        Assert.True(await query);
+        Assert.Equal(new[] { 0, 1 }, fixture.PreparedPositions);
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(300)]

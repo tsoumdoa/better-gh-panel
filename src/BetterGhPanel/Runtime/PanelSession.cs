@@ -232,7 +232,7 @@ namespace BetterGhPanel.Runtime
             foreach (var column in _columns.ToArray())
                 if ((_options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != _options.SortColumn) &&
                     (!_previewMeasurePaired || column != _pairedColumn))
-                    column.Geometry?.CancelRequests();
+                    column.Geometry?.CancelRequests(preserveQuery: true);
             _geometry.RequestVisible(snapshot, visiblePositions);
         }
         internal Task<bool> MeasureGeometryAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken cancellationToken) =>
@@ -344,6 +344,9 @@ namespace BetterGhPanel.Runtime
             // Only plain immutable managed snapshot values cross this boundary.
             Task.Run(async () =>
             {
+                const string interrupted = "Measurements were interrupted. Edit the query to try again.";
+                PanelQueryResult? result = null;
+                string? error = interrupted;
                 try
                 {
                     IReadOnlyDictionary<int, PanelGeometryInfo>? measurements = null;
@@ -383,35 +386,33 @@ namespace BetterGhPanel.Runtime
                         var candidates = PanelQueryEngine.PairedGeometryCandidates(snapshot, options, source, token).ToArray();
                         if (candidates.Length > 0)
                         {
-                            if (!await pairedQueue!.MeasureAsync(source.Snapshot, candidates, token).ConfigureAwait(false)) return;
+                            if (!await pairedQueue!.MeasureAsync(source.Snapshot, candidates, token, requiredForQuery: true).ConfigureAwait(false)) return;
                             source.Measurements = await pairedQueue.CaptureCompletedAsync(source.Snapshot, candidates, token).ConfigureAwait(false);
                             if (source.Measurements == null) return;
                         }
                     }
                     // Resume the same scan, statistics and sort state. Work already
                     // performed within the UI budget is never restarted.
-                    var result = work?.Complete() ?? PanelQueryEngine.Execute(snapshot, options, token, measurements);
-                    RhinoApp.InvokeOnUiThread((Action)(() =>
-                    {
-                        if (!CanPublish(snapshot, request, token)) return;
-                        if (measureGeometry && !_geometry.SourcesCurrent(snapshot)) return;
-                        if (measurePaired && (!ReferenceEquals(paired?.Snapshot, pairedSnapshot) || !pairedQueue!.SourcesCurrent(pairedSnapshot!))) return;
-                        if (sortColumn != null && (sortSnapshot == null || sortQueue == null ||
-                            !ReferenceEquals(sortColumn.Snapshot, sortSnapshot) || !sortQueue.SourcesCurrent(sortSnapshot))) return;
-                        if (!CanPublish(snapshot, request, token)) return;
-                        PublishQuery(result, null);
-                    }));
+                    result = work?.Complete() ?? PanelQueryEngine.Execute(snapshot, options, token, measurements);
+                    error = null;
                 }
                 catch (OperationCanceledException) { }
-                catch (Exception ex)
+                catch (Exception ex) { error = ex.Message; }
+                finally
                 {
+                    work?.Dispose();
                     RhinoApp.InvokeOnUiThread((Action)(() =>
                     {
                         if (!CanPublish(snapshot, request, token)) return;
-                        PublishQuery(null, ex.Message);
+                        if (result != null &&
+                            (measureGeometry && !_geometry.SourcesCurrent(snapshot) ||
+                             measurePaired && (!ReferenceEquals(paired?.Snapshot, pairedSnapshot) || !pairedQueue!.SourcesCurrent(pairedSnapshot!)) ||
+                             sortColumn != null && (sortSnapshot == null || sortQueue == null ||
+                                 !ReferenceEquals(sortColumn.Snapshot, sortSnapshot) || !sortQueue.SourcesCurrent(sortSnapshot))))
+                        { result = null; error = interrupted; }
+                        if (CanPublish(snapshot, request, token)) PublishQuery(result, error);
                     }));
                 }
-                finally { work?.Dispose(); }
             });
         }
 

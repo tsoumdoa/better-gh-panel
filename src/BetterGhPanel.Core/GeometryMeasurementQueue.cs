@@ -294,7 +294,8 @@ namespace BetterGhPanel.Core
         internal Task<bool> MeasureAllAsync(TSnapshot snapshot, int count, CancellationToken token) =>
             MeasureAsync(snapshot, new SequentialPositions(count), token);
 
-        internal Task<bool> MeasureAsync(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token, bool background = false)
+        internal Task<bool> MeasureAsync(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token,
+            bool background = false, bool requiredForQuery = false)
         {
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _postUi(() =>
@@ -302,7 +303,7 @@ namespace BetterGhPanel.Core
                 _verifyUi();
                 if (_disposed || !ReferenceEquals(snapshot, _snapshot) || token.IsCancellationRequested)
                 { completion.TrySetResult(false); return; }
-                var batch = new Batch(snapshot, positions, token, completion, background);
+                var batch = new Batch(snapshot, positions, token, completion, background, requiredForQuery);
                 _batches.Add(batch);
                 var registration = token.Register(() => _postCancellation(() =>
                 {
@@ -451,13 +452,19 @@ namespace BetterGhPanel.Core
             PumpLater(true);
         }
 
-        internal void CancelRequests()
+        internal void CancelRequests(bool preserveQuery = false)
         {
             _verifyUi();
-            CancelBatches(); _visible.Clear();
+            for (int i = _batches.Count - 1; i >= 0; i--)
+                if (!preserveQuery || !_batches[i].RequiredForQuery) CompleteBatch(_batches[i], false);
+            _visible.Clear();
             AbandonUndemanded();
-            _scheduler?.Cancel(this);
-            StopCapacityWait();
+            if (preserveQuery) PumpLater();
+            else
+            {
+                _scheduler?.Cancel(this);
+                StopCapacityWait();
+            }
         }
 
         private void Pump(GeometryMeasurementScheduler.Lease? admission = null)
@@ -668,12 +675,14 @@ namespace BetterGhPanel.Core
         }
         private sealed class Batch
         {
-            internal Batch(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token, TaskCompletionSource<bool> completion, bool background)
-            { Snapshot = snapshot; Requested = positions; Token = token; Completion = completion; Background = background; }
+            internal Batch(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token,
+                TaskCompletionSource<bool> completion, bool background, bool requiredForQuery)
+            { Snapshot = snapshot; Requested = positions; Token = token; Completion = completion; Background = background; RequiredForQuery = requiredForQuery; }
             internal IReadOnlyList<int>? Requested;
             internal int Next;
             internal bool Registered;
             internal readonly bool Background;
+            internal readonly bool RequiredForQuery;
             internal readonly TSnapshot Snapshot;
             internal readonly Queue<int> Positions = new Queue<int>();
             internal readonly HashSet<int> Pending = new HashSet<int>();
