@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Show all dots** in the Preview menu keeps full text on every preview dot, even behind objects or overlapping. The preview limit and memory cap still apply.
+
 ## 0.6.3-beta
 
 - Fixed crowded viewport dots giving way before they actually touched. The overlap check now uses the size Rhino draws, so more labels keep their text.

@@ -23,6 +23,7 @@ namespace BetterGhPanel.Runtime
         private Color _selectedColor;
         internal PanelDotSize DotSize { get; set; } = PanelDotSize.Medium;
         internal bool HideOccludedDots { get; set; } = true;
+        internal bool ShowAllDots { get; set; }
         private readonly Dictionary<(Guid Viewport, bool Capture), ViewportFrame> _frames = new Dictionary<(Guid Viewport, bool Capture), ViewportFrame>();
         private readonly Dictionary<string, int> _textIds = new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly List<Label> _orderedLabels = new List<Label>();
@@ -437,14 +438,14 @@ namespace BetterGhPanel.Runtime
                         if (labels._drawing || !labels.Visible) continue;
                         panel.Frame = labels.PrepareFrame(key, clip, camera, panel.Selected, dimensions, dpi);
                         labels._drawing = true;
-                        if (labels.HideOccludedDots && panel.Frame.ProjectedCount != 0)
+                        if (panel.Frame.HideOccludedDots && panel.Frame.ProjectedCount != 0)
                             bounds = bounds.IsEmpty ? panel.Frame.Bounds : Rectangle.Union(bounds, panel.Frame.Bounds);
                     }
                     using var depth = bounds.IsEmpty ? null : PanelSceneDepth.Capture(e.Display, e.Viewport, dimensions, bounds, clip);
                     foreach (var panel in pass.Panels)
                     {
                         if (panel.Frame == null || !panel.Labels.Visible) continue;
-                        panel.Labels.FinishFrame(panel.Frame, panel.Labels.HideOccludedDots ? depth : null);
+                        panel.Labels.FinishFrame(panel.Frame, panel.Frame.HideOccludedDots ? depth : null);
                     }
                     DrawPanels(e, dpi, pass.Panels);
                 }
@@ -518,8 +519,9 @@ namespace BetterGhPanel.Runtime
                 frame = new ViewportFrame(); _frames.Add(id, frame);
             }
             frame.LastUse = ++_frameUse;
+            bool hideOccludedDots = HideOccludedDots && !ShowAllDots;
             bool sameIdentity = frame.IdentityRevision == _identityRevision && frame.DotSize == DotSize &&
-                frame.HideOccludedDots == HideOccludedDots;
+                frame.HideOccludedDots == hideOccludedDots && frame.ShowAllDots == ShowAllDots;
             if (sameIdentity && frame.LabelRevision == _labelRevision && frame.Clip == clip && frame.Camera == camera && frame.SelectedBias == selected &&
                 frame.Dpi == dpi && frame.Size == dimensions && frame.SelectionRevision == _membership.Revision) return frame;
             if (!sameIdentity) frame.Layout.ResetStability();
@@ -543,9 +545,9 @@ namespace BetterGhPanel.Runtime
                 var anchor = camera * label.Anchor;
                 if (!TryProjectCached(clip, anchor, dimensions, out var point)) continue;
                 bool isSelected = _membership.Contains(label.Position);
-                double nearest = anchor.Z;
-                if (HideOccludedDots)
+                if (hideOccludedDots)
                 {
+                    double nearest = anchor.Z;
                     if (isSelected && !selected.IsIdentity)
                         nearest = Math.Max(nearest, (camera * (selected * label.Anchor)).Z);
                     if (label.Bounds.IsValid)
@@ -557,24 +559,24 @@ namespace BetterGhPanel.Runtime
                             camera.M21 >= 0 ? max.Y : min.Y, camera.M22 >= 0 ? max.Z : min.Z);
                         nearest = Math.Max(nearest, (camera * nearCorner).Z);
                     }
+                    frame.ProjectedDepth[count] = nearest;
+                    left = Math.Min(left, (int)point.X); right = Math.Max(right, (int)point.X + 1);
+                    top = Math.Min(top, (int)point.Y); bottom = Math.Max(bottom, (int)point.Y + 1);
                 }
-                frame.ProjectedDepth[count] = nearest;
                 // Rhino draws a 14 pt "43.5" dot 41 × 18 px at 100% scale. An
                 // oversized box made the overlap allowance hide dots with visible gaps.
                 double width = (label.Text.Length * 7.5 + 11) * scale;
                 frame.ProjectedDots[count] = new PanelDotInput(point.X, point.Y, width, 18 * scale, label.GroupKey,
                     isSelected, label.Position, label.Value, label.Band);
                 frame.ProjectedLabels[count++] = label;
-                left = Math.Min(left, (int)point.X); right = Math.Max(right, (int)point.X + 1);
-                top = Math.Min(top, (int)point.Y); bottom = Math.Max(bottom, (int)point.Y + 1);
             }
             frame.ProjectedCount = count;
-            frame.Bounds = count == 0 ? Rectangle.Empty : Rectangle.FromLTRB(left, top, right, bottom);
+            frame.Bounds = !hideOccludedDots || count == 0 ? Rectangle.Empty : Rectangle.FromLTRB(left, top, right, bottom);
             if (frame.Dpi != dpi) { frame.ActiveBuckets.Clear(); frame.Buckets.Clear(); }
             frame.Clip = clip; frame.Camera = camera; frame.SelectedBias = selected; frame.Size = dimensions; frame.Dpi = dpi;
             frame.LabelRevision = _labelRevision; frame.IdentityRevision = _identityRevision;
             frame.SelectionRevision = _membership.Revision;
-            frame.DotSize = DotSize; frame.HideOccludedDots = HideOccludedDots; frame.Valid = false;
+            frame.DotSize = DotSize; frame.HideOccludedDots = hideOccludedDots; frame.ShowAllDots = ShowAllDots; frame.Valid = false;
             return frame;
         }
 
@@ -613,8 +615,12 @@ namespace BetterGhPanel.Runtime
             frame.HadDepth = hadDepth;
             if (same && count == frame.Count) return;
             frame.Count = count;
-            double size = PanelDotSettings.Scale(frame.DotSize);
-            frame.Layout.Calculate(frame.Dots, count, size, frame.Dpi, 14 * size);
+            if (frame.ShowAllDots) frame.Layout.CalculateAll(frame.Dots, count);
+            else
+            {
+                double size = PanelDotSettings.Scale(frame.DotSize);
+                frame.Layout.Calculate(frame.Dots, count, size, frame.Dpi, 14 * size);
+            }
             BuildSwatches(frame, frame.Dpi);
             frame.Valid = true;
         }
@@ -632,7 +638,8 @@ namespace BetterGhPanel.Runtime
                 if (!_textDots.TryGetValue(height, out var dot))
                 { dot = new TextDot("", Point3d.Origin) { FontHeight = height }; _textDots.Add(height, dot); }
                 dot.Text = label.Text;
-                if (frame.Dots[i].Selected) DrawDotHalo(args, anchor, dot, dpi);
+                // Each halo is eight extra dots; Show all dots caps them so Select all stays responsive.
+                if (frame.Dots[i].Selected && (!frame.ShowAllDots || k < 256)) DrawDotHalo(args, anchor, dot, dpi);
                 var fill = Gradient ? _colours[anchorLabel.ColourId] : PlainFill;
                 dot.Point = anchor;
                 args.Display.DrawDot(dot, fill, Gradient ? _textColours[anchorLabel.ColourId] : Border, Border);
@@ -643,6 +650,7 @@ namespace BetterGhPanel.Runtime
         {
             foreach (var bucket in frame.ActiveBuckets) bucket.Points.Clear();
             frame.ActiveBuckets.Clear();
+            if (frame.ShowAllDots) return;
             for (int i = 0; i < frame.Count; i++)
             {
                 double radius = frame.Layout.Results[i].SwatchRadius;
@@ -752,7 +760,7 @@ namespace BetterGhPanel.Runtime
             internal PanelDotInput[] Dots = Array.Empty<PanelDotInput>();
             internal Label[] Labels = Array.Empty<Label>();
             internal int Count, ProjectedCount;
-            internal bool Valid, HideOccludedDots, HadDepth;
+            internal bool Valid, HideOccludedDots, ShowAllDots, HadDepth;
             internal long LabelRevision, IdentityRevision, SelectionRevision, LastUse;
             internal Transform Clip, Camera, SelectedBias;
             internal Size Size;

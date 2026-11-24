@@ -81,6 +81,19 @@ namespace BetterGhPanel.Core
             }
         }
 
+        public void CalculateAll(PanelDotInput[] dots, int count)
+        {
+            EnsureResults(count);
+            // The renderer walks the order backwards, so selected dots go first here.
+            int selected = 0, unselected = count - 1;
+            for (int i = 0; i < count; i++)
+            {
+                Results[i] = new PanelDotOutput { TextScale = 1, LabelAnchor = i };
+                _order[dots[i].Selected ? selected++ : unselected--] = i;
+            }
+            TextCount = count;
+        }
+
         // Inputs arrive in ItemHash order. Negative text IDs are never grouped.
         public void Calculate(PanelDotInput[] dots, int count, double size = 1, double dpi = 1, double fontHeight = 0)
         {
@@ -347,11 +360,19 @@ namespace BetterGhPanel.Core
 
         private static int Neighbour(int index) => index == 0 ? 0 : index == 1 ? -1 : 1;
 
-        private void Ensure(int n)
+        private void EnsureResults(int n)
         {
             if (Results.Length >= n) return;
             int capacity = Math.Max(n, Math.Max(16, Results.Length * 2));
-            Results = new PanelDotOutput[capacity]; _order = new int[capacity]; _nextBand = new int[capacity]; _blocker = new int[capacity];
+            Results = new PanelDotOutput[capacity]; _order = new int[capacity];
+        }
+
+        private void Ensure(int n)
+        {
+            EnsureResults(n);
+            if (_representative.Length >= n) return;
+            int capacity = Math.Max(n, Math.Max(16, _representative.Length * 2));
+            _nextBand = new int[capacity]; _blocker = new int[capacity];
             _count = new int[capacity]; _anchor = new int[capacity]; _representative = new int[capacity];
             _boxes = new PlacedBox[capacity];
             _sumX = new double[capacity]; _sumY = new double[capacity]; _best = new double[capacity];
