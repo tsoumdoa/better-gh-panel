@@ -407,17 +407,17 @@ internal static partial class PreviewSafetyChecks
             Method(selection, "SelectAll").Invoke(selection, new object?[] { result, null, false });
             var ordered = (IReadOnlyList<int>)Method(selection, "OrderedPositions").Invoke(selection, new object[] { result })!;
             Method(highlight, "SetOrderResult").Invoke(highlight, new object?[] { labels ? result : null });
-            Method(highlight, "SetScopeChecked").Invoke(highlight, new object[] { source, result, filtered, ordered, (Func<bool>)(() => true), selection });
+            Method(highlight, "SetScopeChecked").Invoke(highlight, new object[] { source, result, filtered, ordered, (Func<bool>)(() => true), selection, false });
             visits = 0;
             Method(selection, "SelectAt").Invoke(selection, new object[] { result, 4000, 4000, true, false, false });
             ordered = (IReadOnlyList<int>)Method(selection, "OrderedPositions").Invoke(selection, new object[] { result })!;
-            Method(highlight, "SetScopeChecked").Invoke(highlight, new object[] { source, result, filtered, ordered, (Func<bool>)(() => true), selection });
+            Method(highlight, "SetScopeChecked").Invoke(highlight, new object[] { source, result, filtered, ordered, (Func<bool>)(() => true), selection, false });
             Check(visits <= 2 && PropertyValue<int>(highlight, "LastVisitedRows") <= 1 && ordered.Count == count - 1,
                 "dense deselection avoids full-result ordering and preview visits in both preview modes and label settings");
             visits = 0;
             Method(selection, "SelectAt").Invoke(selection, new object[] { result, 4000, 4000, true, false, false });
             ordered = (IReadOnlyList<int>)Method(selection, "OrderedPositions").Invoke(selection, new object[] { result })!;
-            Method(highlight, "SetScopeChecked").Invoke(highlight, new object[] { source, result, filtered, ordered, (Func<bool>)(() => true), selection });
+            Method(highlight, "SetScopeChecked").Invoke(highlight, new object[] { source, result, filtered, ordered, (Func<bool>)(() => true), selection, false });
             Check(visits <= 2 && PropertyValue<int>(highlight, "LastVisitedRows") <= 1 && ordered.Count == count,
                 "reselecting one dense member updates only that preview classification");
             Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());

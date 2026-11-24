@@ -54,7 +54,7 @@ internal static class BranchStatsHeadlessChecks
             var input = new GH_Structure<IGH_Goo>();
             input.AppendRange(new IGH_Goo[] { new GH_Number(1), new GH_Number(3) }, new GH_Path(8, 0));
             input.Append(new GH_Number(2), new GH_Path(8, 1)); input.EnsurePath(new GH_Path(8, 2));
-            object?[] transform = { input, 0, false, true, false, null };
+            object?[] transform = { input, 0, false, true, false, null, false };
             var tree = (GH_Structure<IGH_Goo>)plugin.GetType("BetterGhPanel.Runtime.PanelTreeOperations", true)!
                 .GetMethod("ApplyWithSources", BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, transform)!;
             var rows = tree.Branches.SelectMany((branch, b) => branch.Select((item, i) => new PanelRow(i, tree.Paths[b].ToString(), "Number", "", ((GH_Number)item).Value))).ToArray();

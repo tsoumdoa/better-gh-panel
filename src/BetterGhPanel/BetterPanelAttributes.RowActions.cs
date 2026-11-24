@@ -291,7 +291,7 @@ namespace BetterGhPanel
                 if (column.Row(position) == null && result.DisplaySet == null) return;
                 columnValue = column.Cell(result, position, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor, raw: true);
             }
-            string value = !projected && !PanelOwner.Session.Options.DisplayFilterValue && row.StringValue != null
+            string value = !projected && !PanelOwner.Session.Options.DisplaysDataFilterValue && row.StringValue != null
                 ? row.StringValue : PanelOwner.DisplayValue(result.Snapshot, row, position);
             try { PanelFullValueWindow.Show(columnValue ?? value); }
             catch (Exception)

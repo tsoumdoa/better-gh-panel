@@ -12,6 +12,7 @@ namespace BetterGhPanel.Runtime
     {
         internal IReadOnlyList<PanelBranchPair> Pairs { get; }
         internal bool HasUnequal { get; }
+        internal bool Flattened { get; }
         internal readonly struct PairHeading
         {
             internal readonly string DataCount;
@@ -29,10 +30,11 @@ namespace BetterGhPanel.Runtime
         private readonly Dictionary<string, List<PanelBranchPair>> _byDestination = new Dictionary<string, List<PanelBranchPair>>(StringComparer.Ordinal);
         private readonly IGH_Goo[] _rawItems;
         internal PanelPairedData(GH_Structure<IGH_Goo> data, GH_Structure<IGH_Goo> paired,
-            IReadOnlyList<PanelSourceAddress> sources, int trim, bool simplify, bool flatten, bool reverse)
+            IReadOnlyList<PanelSourceAddress> sources, int trim, bool simplify, bool flatten, bool reverse, bool clean = false)
         {
+            Flattened = flatten;
             Pairs = PanelPairing.Match(Shape(data), Shape(paired));
-            HasUnequal = Pairs.Any(pair => pair.Unequal);
+            HasUnequal = Pairs.Any(pair => pair.Unequal && pair.RetainedAfterClean(clean));
             _dataOrder = Pairs.Select((pair, index) => (pair, index)).ToDictionary(value => value.pair.Data.Path, value => value.index, StringComparer.Ordinal);
             _sources = sources;
             _sourcePairs = sources.Select(source => _dataOrder[source.Path]).ToArray();
@@ -50,13 +52,15 @@ namespace BetterGhPanel.Runtime
             else
             {
                 var markers = new GH_Structure<IGH_Goo>();
-                for (int b = 0; b < data.PathCount; b++) markers.Append(new GH_Integer(b), new GH_Path(data.Paths[b]));
+                for (int b = 0; b < data.PathCount; b++)
+                    if (Pairs[b].RetainedAfterClean(clean)) markers.Append(new GH_Integer(b), new GH_Path(data.Paths[b]));
                 var mapped = PanelTreeOperations.ApplyWithSources(markers, trim, simplify, flatten, reverse, out _);
                 for (int b = 0; b < mapped.PathCount; b++)
                     foreach (GH_Integer marker in mapped.Branches[b]) destinations.Add(Pairs[marker.Value].Data.Path, mapped.Paths[b].ToString());
             }
             foreach (var pair in Pairs)
             {
+                if (!pair.RetainedAfterClean(clean)) continue;
                 string path = destinations[pair.Data.Path];
                 if (!_byDestination.TryGetValue(path, out var branches)) _byDestination.Add(path, branches = new List<PanelBranchPair>());
                 branches.Add(pair);
@@ -131,7 +135,22 @@ namespace BetterGhPanel.Runtime
             long visits = 0;
             var set = query.DisplaySet;
             // A selected row or set group with no F partner keeps its path, as S and D do.
-            if (set == null) AddGroup(positions, selected ? branchPaths.Concat(positions.Select(position => query.Snapshot.Rows[position].Path)).Distinct() : branchPaths, path => Parse(path));
+            if (query.GroupedStatPaths != null)
+            {
+                var destinations = new Dictionary<string, IList<IGH_Goo>>(StringComparer.Ordinal);
+                if (!selected)
+                    foreach (string path in query.GroupedStatPaths)
+                        destinations.Add(path, result.EnsurePath(Parse(path)));
+                foreach (int position in positions.OrderBy(value => value))
+                {
+                    string path = query.StatPathAt(position);
+                    if (!destinations.TryGetValue(path, out var branch))
+                        destinations.Add(path, branch = result.EnsurePath(Parse(path)));
+                    if (ItemAt(position) is int item) branch.Add(_rawItems[item]);
+                    visits++;
+                }
+            }
+            else if (set == null) AddGroup(positions, selected ? branchPaths.Concat(positions.Select(position => query.Snapshot.Rows[position].Path)).Distinct() : branchPaths, path => Parse(path));
             else if (set.IsBranchSet)
                 foreach (string representative in branchPaths)
                 {

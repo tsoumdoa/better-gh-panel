@@ -73,19 +73,24 @@ namespace BetterGhPanel.Runtime
         }
 
         internal static GH_Structure<IGH_Goo> ApplyWithSources(GH_Structure<IGH_Goo> source,
-            int trimDepth, bool simplify, bool flatten, bool reverse, out IReadOnlyList<PanelSourceAddress> retainedSources)
+            int trimDepth, bool simplify, bool flatten, bool reverse, out IReadOnlyList<PanelSourceAddress> retainedSources, bool clean = false)
         {
             var retained = new List<PanelSourceAddress>(source.DataCount);
             if (trimDepth == 0 && !simplify && !flatten && !reverse)
             {
+                var filtered = clean ? new GH_Structure<IGH_Goo>() : source;
                 for (int b = 0; b < source.PathCount; b++)
                 {
-                    var pathText = source.Paths[b].ToString();
-                    for (int i = 0; i < source.Branches[b].Count; i++)
+                    var branch = source.Branches[b];
+                    if (branch.Count == 0) continue;
+                    var path = source.Paths[b];
+                    if (clean) filtered.EnsurePath(new GH_Path(path)).AddRange(branch);
+                    var pathText = path.ToString();
+                    for (int i = 0; i < branch.Count; i++)
                         retained.Add(new PanelSourceAddress(pathText, i));
                 }
                 retainedSources = retained.AsReadOnly();
-                return source;
+                return filtered;
             }
             // Transform positions so typed input and original addresses stay aligned.
             // Create set belongs to the displayed-value query, after filters and units.
@@ -93,6 +98,7 @@ namespace BetterGhPanel.Runtime
             var inputs = new List<(IGH_Goo Item, PanelSourceAddress Address)>(source.DataCount);
             for (int b = 0; b < source.PathCount; b++)
             {
+                if (clean && source.Branches[b].Count == 0) continue;
                 var path = new GH_Path(source.Paths[b]);
                 var pathText = path.ToString();
                 var positions = markers.EnsurePath(path);
@@ -103,7 +109,8 @@ namespace BetterGhPanel.Runtime
                     inputs.Add((source.Branches[b][i], new PanelSourceAddress(pathText, i)));
                 }
             }
-            markers = Transform(markers, trimDepth, simplify, flatten, reverse);
+            if (markers.PathCount > 0 || !clean)
+                markers = Transform(markers, trimDepth, simplify, flatten, reverse);
             foreach (var branch in markers.Branches)
                 for (int i = 0; i < branch.Count; i++)
                 {

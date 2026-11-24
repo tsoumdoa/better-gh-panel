@@ -24,15 +24,16 @@ namespace BetterGhPanel.Core
         internal bool HasItemFilter => ItemFilter(_query, _search);
 
         internal static bool ItemFilter(PanelQueryOptions query, PanelSearchFilter search) =>
-            search.HasFilter && !search.IsBranchFilter || query.TypeName != null || query.OnlyInvalid;
+            search.HasFilter && (!search.IsBranchFilter || query.SearchPaired) || query.TypeName != null || query.OnlyInvalid;
 
-        internal bool MatchesBranch(PanelBranch branch) => MatchesPath(branch.Path) && _search.MatchesBranchCount(branch.ItemCount);
+        internal bool MatchesBranch(PanelBranch branch) => MatchesPath(branch.Path) &&
+            (_query.SearchPaired || _search.MatchesBranchCount(branch.ItemCount));
 
         internal bool MatchesRow(PanelRow row)
         {
             if (!MatchesPath(row.Path)) return false;
             // List length uses the transformed branch count, before any item restrictions.
-            if (_search.IsBranchFilter && _search.HasFilter &&
+            if (!_query.SearchPaired && _search.IsBranchFilter && _search.HasFilter &&
                 (!_snapshot.BranchItemCounts.TryGetValue(row.Path, out var count) || !_search.MatchesBranchCount(count))) return false;
             return (_query.TypeName == null || string.Equals(row.TypeName, _query.TypeName, StringComparison.OrdinalIgnoreCase)) &&
                 (!_query.OnlyInvalid || row.Validity == PanelValidity.VerifiedInvalid);

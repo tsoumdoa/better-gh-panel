@@ -39,6 +39,7 @@ namespace BetterGhPanel.Core
             cancellationToken.ThrowIfCancellationRequested();
             // Capture options now, before either execution or handoff can be deferred.
             var query = options.Clone();
+            if (query.ShowsDataListLength) query.GroupByPaired = false;
             return new PanelQueryWork(work => ExecuteSteps(snapshot, query, cancellationToken, measuredGeometry, work).GetEnumerator());
         }
 
@@ -50,17 +51,22 @@ namespace BetterGhPanel.Core
             var search = new PanelSearchFilter(query);
             var scope = new PanelQueryScope(snapshot, query, search);
             var statBranches = query.BranchStats ? new Dictionary<string, PanelBranchStats>(StringComparer.Ordinal) : null;
+            var pairedStats = query.BranchStats && query.GroupByPaired ? new PanelPairedGroups(snapshot, query) : null;
+            var statPaths = pairedStats == null ? null : new List<string>();
+            var statGroups = pairedStats == null ? null : new Dictionary<string, PanelPairedGroups.Group>(StringComparer.Ordinal);
+            var statGroupPositions = pairedStats == null ? null : new Dictionary<int, string>();
             var set = query.CreateSet && !query.BranchStats ? new PanelDisplaySet(snapshot, query) : null;
             // Grow with the work performed instead of allocating for a whole large
             // tree before the first opportunity to yield.
             var rowPositions = new List<int>();
-            var outputValues = !query.BranchStats && query.OutputValues && query.DisplayFilterValue && set == null ? new Dictionary<int, PanelPropertyValue?>() : null;
-            var propertySortValues = !query.BranchStats && query.ColumnSortKeys == null && set == null && query.SortMode != PanelSortMode.SourceOrder && query.DisplayFilterValue && ShowsMetric(query.SearchMode)
+            var outputValues = !query.BranchStats && query.OutputValues && query.DisplaysDataFilterValue && set == null ? new Dictionary<int, PanelPropertyValue?>() : null;
+            bool useSetKey = set != null && (!set.IsPaired || query.SortPairedKey);
+            bool sortData = !query.BranchStats && query.SortMode != PanelSortMode.SourceOrder && !useSetKey && query.ColumnSortKeys == null;
+            var propertySortValues = sortData && query.DisplaysDataFilterValue && ShowsMetric(query.SearchMode)
                 ? new Dictionary<int, PanelDisplayedValue>() : null;
-            // Sets and metric views already supply complete displayed sort keys.
-            var sortText = !query.BranchStats && query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder && set == null && propertySortValues == null
+            var sortText = sortData && propertySortValues == null
                 ? new Dictionary<int, RowSortKey>() : null;
-            var columnSortRows = !query.BranchStats && query.ColumnSortKeys != null && query.SortMode != PanelSortMode.SourceOrder
+            var columnSortRows = !query.BranchStats && !query.SortPairedKey && query.ColumnSortKeys != null && query.SortMode != PanelSortMode.SourceOrder
                 ? new Dictionary<int, PanelRow?>() : null;
             var branches = new HashSet<string>(StringComparer.Ordinal);
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -84,7 +90,7 @@ namespace BetterGhPanel.Core
             }
 
             // Empty branches remain visible when browsing the tree, but not in item-filter results.
-            if (!scope.HasItemFilter || query.BranchStats)
+            if (!query.PairedGroupingUnavailable && (!scope.HasItemFilter || query.BranchStats))
             {
                 for (var i = 0; i < snapshot.Branches.Count; i++)
                 {
@@ -94,7 +100,7 @@ namespace BetterGhPanel.Core
                     if (scope.MatchesBranch(branch) && (set == null || set.IncludeBranch(branch.Path)))
                     {
                         branches.Add(branch.Path);
-                        if (statBranches != null) statBranches[branch.Path] = new PanelBranchStats(query.StatKinds);
+                        if (statBranches != null && pairedStats == null) statBranches[branch.Path] = new PanelBranchStats(query.StatKinds);
                         branchCounts[branch.Path] = 0;
                     }
                 }
@@ -113,10 +119,14 @@ namespace BetterGhPanel.Core
                 if (row.IsNull) warnings.NullCount++;
                 else if (row.Validity == PanelValidity.VerifiedInvalid) warnings.InvalidCount++;
                 else if (row.Validity == PanelValidity.Unverified) warnings.UnverifiedCount++;
-                if (!scope.MatchesRow(row)) continue;
+                if (query.PairedGroupingUnavailable || !scope.MatchesRow(row)) continue;
                 PanelGeometryInfo? measured = null;
                 measuredGeometry?.TryGetValue(i, out measured);
-                if (!search.Matches(row, snapshot.UnitConversion, measured, cancellationToken)) continue;
+                if (query.SearchPaired)
+                {
+                    if (search.HasFilter && !MatchesPartner(query.PairedSource, i, search, snapshot.UnitConversion, cancellationToken)) continue;
+                }
+                else if (!search.Matches(row, snapshot.UnitConversion, measured, cancellationToken)) continue;
                 filteredSourceStatuses = filteredSourceStatuses.Add(row.Validity);
                 if (set != null && !set.IncludeRow(i, measured)) continue;
 
@@ -127,27 +137,34 @@ namespace BetterGhPanel.Core
                     // Pending measurements cannot change whether a metric accepts a
                     // formula. Capture that fact here, never by scanning rows in paint.
                     if (!hasFormulaValues && geometry?.CanMeasure == true)
-                        hasFormulaValues = query.DisplayFilterValue
+                        hasFormulaValues = query.DisplaysDataFilterValue
                             ? !PanelProperties.IsProperty(query.SearchMode) && PanelFilterValue.MatchesGeometry(query.SearchMode, geometry)
                             : geometry.MetricName.Length > 0;
                 }
 
                 if (statBranches != null)
                 {
-                    if (!statBranches.TryGetValue(row.Path, out var stats)) statBranches.Add(row.Path, stats = new PanelBranchStats(query.StatKinds));
+                    var group = pairedStats?.Add(i);
+                    string statPath = group?.Path ?? row.Path;
+                    if (!statBranches.TryGetValue(statPath, out var stats))
+                    {
+                        statBranches.Add(statPath, stats = new PanelBranchStats(query.StatKinds));
+                        if (group != null) { statPaths!.Add(statPath); statGroups!.Add(statPath, group); }
+                    }
+                    statGroupPositions?.Add(i, statPath);
                     stats.Add(snapshot, row, i, query, measured);
                 }
                 rowPositions.Add(i);
-                if (columnSortRows != null && set == null) columnSortRows.Add(i, query.ColumnSortKeys!.RowAt(i));
+                if (columnSortRows != null && (set == null || set.IsPaired)) columnSortRows.Add(i, query.ColumnSortKeys!.RowAt(i));
                 outputValues?.Add(i, PanelFilterValue.OutputValue(snapshot, row, query.SearchMode, measured,
                     query.DecimalPlaces, query.RoundUpFactor, query.Formula));
                 if (propertySortValues != null) propertySortValues.Add(i, PanelDisplayedValue.Capture(snapshot, row, query, measured));
                 if (sortText != null && !row.IsNull)
-                    sortText.Add(i, new RowSortKey(row, measured, snapshot.UnitConversion, query));
+                    sortText.Add(i, new RowSortKey(row, measured, snapshot.UnitConversion, query, set?.IsPaired == true));
                 branches.Add(row.Path);
                 Increment(branchCounts, row.Path);
                 if (set?.IsBranchSet == true) continue;
-                var projected = set == null ? null : set.Values[i];
+                var projected = set == null || query.GroupByPaired ? null : set.Values[i];
                 Increment(typeCounts, projected == null ? row.TypeName : projected.IsNumeric ? "Number" : "Text");
                 if (projected == null && row.IsNull) nullCount++;
                 if (projected == null && row.Validity == PanelValidity.VerifiedInvalid) invalidCount++;
@@ -158,7 +175,7 @@ namespace BetterGhPanel.Core
             if (work.ShouldYield()) yield return null;
             cancellationToken.ThrowIfCancellationRequested();
             var positions = rowPositions.ToArray();
-            if (columnSortRows != null && set != null && !set.IsBranchSet)
+            if (columnSortRows != null && set != null && !set.IsBranchSet && !set.IsPaired)
                 foreach (int position in positions)
                 {
                     var preview = new List<string>(4);
@@ -178,7 +195,7 @@ namespace BetterGhPanel.Core
             var columnKeys = columnSortRows == null ? null : new PanelColumnSortKeys(columnSortRows);
             if (!query.BranchStats && query.SortMode != PanelSortMode.SourceOrder && set?.IsBranchSet != true)
                 foreach (var step in SortBranches(positions, snapshot, branchCounts, sortText!,
-                    query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work, set?.Values ?? propertySortValues, columnKeys))
+                    query.SortMode == PanelSortMode.ValueDescending, cancellationToken, work, useSetKey ? set!.Values : propertySortValues, columnKeys))
                     yield return step;
             // Build the scroll index as part of the cooperative query, not in a
             // paint or gesture. The first row of the next retained non-empty
@@ -257,12 +274,12 @@ namespace BetterGhPanel.Core
             }
             cancellationToken.ThrowIfCancellationRequested();
             var result = new PanelQueryResult(snapshot, positions, viewIndices, statistics, orderedBranches, branches, viewIndex, displaySet, outputValues, warnings, hasFormulaValues);
-            if (!query.BranchStats && query.TableSource?.Extras != null && displaySet == null && !(query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
+            if (!query.BranchStats && query.TableSource?.Extras != null && displaySet == null && !(query.DisplaysDataFilterValue && query.SearchMode == PanelSearchMode.ListLength))
                 foreach (var index in PanelTableIndex.Build(result, query.TableSource.Columns,
                     query.TableSource.Extras(result, rowPositions, !HasItemFilter(query)), work, cancellationToken))
                     if (index == null) yield return null;
                     else result.TableIndex = index;
-            if (!query.BranchStats && query.TableSource != null && (displaySet != null || query.DisplayFilterValue && query.SearchMode == PanelSearchMode.ListLength))
+            if (!query.BranchStats && query.TableSource != null && (displaySet != null || query.DisplaysDataFilterValue && query.SearchMode == PanelSearchMode.ListLength))
                 foreach (var step in PanelTableSummaries.Build(result, rowPositions, query.TableSource, !HasItemFilter(query), work, cancellationToken))
                     if (step) yield return null;
             if (statBranches != null)
@@ -277,6 +294,9 @@ namespace BetterGhPanel.Core
                         if (stats.Source(kind) >= 0) sources.Add(stats.Source(kind));
                 }
                 result.BranchStats = new ReadOnlyDictionary<string, PanelBranchStats>(statBranches);
+                result.GroupedStatPaths = statPaths?.AsReadOnly();
+                result.StatGroups = statGroups;
+                result.StatGroupByPosition = statGroupPositions;
                 result.StatSources = sources;
                 result.StatRows = new List<PanelStatKinds>(PanelBranchStats.Picks(query.StatKinds)).AsReadOnly();
                 result.StatDecimals = query.DecimalPlaces;
@@ -286,16 +306,52 @@ namespace BetterGhPanel.Core
             yield return result;
         }
 
+        private static bool MatchesPartner(PanelPairedQuerySource? source, int position, PanelSearchFilter search,
+            PanelUnitConversion conversion, CancellationToken token)
+        {
+            var partner = source?.RowAt(position);
+            if (source == null || partner == null) return false;
+            if (search.IsBranchFilter)
+                return source.Snapshot.BranchItemCounts.TryGetValue(partner.Path, out int count) && search.MatchesBranchCount(count);
+            return search.Matches(partner, conversion, source.GeometryAt(position), token);
+        }
+
+        internal static IEnumerable<int> PairedGeometryCandidates(PanelSnapshot snapshot, PanelQueryOptions options,
+            PanelPairedQuerySource source, CancellationToken token)
+        {
+            var search = new PanelSearchFilter(options);
+            bool grouping = options.GroupByPaired;
+            if (!grouping && (!search.HasFilter || !search.IsGeometry && !search.UsesDisplayText)) yield break;
+            var scope = new PanelQueryScope(snapshot, options, search);
+            for (int position = 0; position < snapshot.Rows.Count; position++)
+            {
+                CheckCancellation(position, token);
+                if (!scope.MatchesRow(snapshot.Rows[position]) || source.PositionAt(position) is not int item) continue;
+                if (search.CanMeasure(source.Snapshot.Rows[item], forPresentation: grouping)) yield return item;
+            }
+        }
+
+        private static PanelQueryOptions DataMeasurementOptions(PanelQueryOptions options)
+        {
+            if (!options.SearchPaired) return options;
+            var data = options.Clone();
+            data.Search = string.Empty;
+            data.SearchMode = PanelSearchMode.Text;
+            data.DisplayFilterValue = false;
+            return data;
+        }
+
         public static bool RequiresGeometryMeasurements(PanelQueryOptions options)
         {
             if (options == null) throw new ArgumentNullException(nameof(options));
+            options = DataMeasurementOptions(options);
             if (UsesDisplayedText(options)) return true;
             if (PresentationNeedsGeometry(options)) return true;
             bool hasSearch = !(options.DisplayFilterValue && options.SearchMode >= PanelSearchMode.Value) && !string.IsNullOrWhiteSpace(options.Search);
             if (hasSearch && (options.SearchMode == PanelSearchMode.Length ||
                 options.SearchMode == PanelSearchMode.Area || options.SearchMode == PanelSearchMode.Volume || PanelProperties.IsProperty(options.SearchMode))) return true;
             // Active scalar comparisons cannot return geometry or need geometry sort keys.
-            return options.ColumnSortKeys == null && options.SortMode != PanelSortMode.SourceOrder &&
+            return !options.SortPairedKey && options.ColumnSortKeys == null && options.SortMode != PanelSortMode.SourceOrder &&
                 (!hasSearch || options.SearchMode != PanelSearchMode.Value && options.SearchMode != PanelSearchMode.Text);
         }
 
@@ -317,9 +373,9 @@ namespace BetterGhPanel.Core
             if (snapshot == null) throw new ArgumentNullException(nameof(snapshot));
             if (options == null) throw new ArgumentNullException(nameof(options));
             cancellationToken.ThrowIfCancellationRequested();
-            var query = options.Clone();
+            var query = DataMeasurementOptions(options.Clone());
             var filter = new PanelSearchFilter(query);
-            var sorting = !query.BranchStats && query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder;
+            var sorting = !query.BranchStats && !query.SortPairedKey && query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder;
             bool setGeometry = PresentationNeedsGeometry(query);
             if (!sorting && !setGeometry && (!filter.HasFilter || !filter.IsGeometry && !filter.UsesDisplayText)) return Array.Empty<int>();
             var scope = new PanelQueryScope(snapshot, query, filter);
@@ -339,7 +395,8 @@ namespace BetterGhPanel.Core
             return candidates.AsReadOnly();
         }
 
-        private static bool PresentationNeedsGeometry(PanelQueryOptions query) => (query.BranchStats || query.CreateSet || query.OutputValues && query.DisplayFilterValue) &&
+        private static bool PresentationNeedsGeometry(PanelQueryOptions query) => (query.BranchStats || !query.GroupByPaired &&
+            (query.CreateSet || query.OutputValues && query.DisplayFilterValue)) &&
             (query.BranchStats || !query.DisplayFilterValue || query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(query.SearchMode));
 
         /// <summary>Accepts a semicolon-separated path with or without braces. Blank means all branches.</summary>
@@ -371,15 +428,17 @@ namespace BetterGhPanel.Core
         // Non-scalar rows sort by their measurement when they have one, so 9 precedes 10.
         private readonly struct RowSortKey
         {
-            internal RowSortKey(PanelRow row, PanelGeometryInfo? measured, PanelUnitConversion conversion, PanelQueryOptions query)
+            internal RowSortKey(PanelRow row, PanelGeometryInfo? measured, PanelUnitConversion conversion, PanelQueryOptions query, bool shownPrecision)
             {
                 var geometry = row.IsValid ? measured ?? row.GeometryInfo : null;
                 double scalar = row.IsValid && row.NumericValue.HasValue ? PanelValuePresentation.PresentedNumber(row, query.DecimalPlaces, query.RoundUpFactor, query.Formula) : double.NaN;
+                bool compact = shownPrecision && query.DecimalPlaces == PanelUnits.AutomaticDecimals;
+                if (compact && !double.IsNaN(scalar) && !double.IsInfinity(scalar)) scalar = PanelNumber.GeneralValue(scalar, 12);
                 Number = !double.IsNaN(scalar) && !double.IsInfinity(scalar) ? scalar : (double?)null;
                 Text = Number.HasValue ? default : PanelValuePresentation.DisplayText(row, conversion, query.DecimalPlaces, measured, query.RoundUpFactor, query.Formula);
                 double value = geometry?.Value is double raw && raw >= 0 ? PanelUnits.Transform(PanelUnits.ConvertGeometry(raw, geometry.Power, geometry.Units, conversion), PanelUnitConversion.None, query.RoundUpFactor, query.DecimalPlaces, query.Formula) : double.NaN;
                 Metric = !double.IsNaN(value) && !double.IsInfinity(value) ? geometry!.MetricName : null;
-                Value = value;
+                Value = compact && Metric != null ? PanelNumber.GeneralValue(value, 6) : value;
             }
             internal PanelText Text { get; }
             internal double? Number { get; }
@@ -518,8 +577,8 @@ namespace BetterGhPanel.Core
                 var leftValue = displayedValues[leftId];
                 var rightValue = displayedValues[rightId];
                 if (leftValue.Unavailable != rightValue.Unavailable) return leftValue.Unavailable ? 1 : -1;
-                if (leftValue.Number.HasValue != rightValue.Number.HasValue) return leftValue.Number.HasValue ? -1 : 1;
-                int order = leftValue.Number.HasValue ? leftValue.Number.Value.CompareTo(rightValue.Number!.Value) :
+                if (leftValue.SortNumber.HasValue != rightValue.SortNumber.HasValue) return leftValue.SortNumber.HasValue ? -1 : 1;
+                int order = leftValue.SortNumber.HasValue ? leftValue.SortNumber.Value.CompareTo(rightValue.SortNumber!.Value) :
                     leftValue.SemanticText.Compare(rightValue.SemanticText, StringComparison.OrdinalIgnoreCase);
                 return order == 0 ? leftId.CompareTo(rightId) : descending ? -order : order;
             }

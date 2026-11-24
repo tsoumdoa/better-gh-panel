@@ -84,14 +84,14 @@ public class FilterCanvasTests
         menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
         menu.Layout(panel, default, default, default, preview: anchor);
         menu.MarkPainted();
-        Assert.True(menu.Visible == menu.Count, "Preview controls fit on one page without a paging row");
+        Assert.True(menu.Count == 12 && menu.Visible == menu.Count, "Preview controls fit on one page without a paging row");
         foreach (PanelPreviewMode mode in Enum.GetValues(typeof(PanelPreviewMode)))
         {
-            int index = (int)mode;
+            int index = Enumerable.Range(0, CanvasPreviewRows.ScopeCount).Single(i => menu.PreviewChoiceAt(i).Mode == mode);
             Assert.True(menu.TrySelect(new PointF(menu.Bounds.X + 10, menu.Bounds.Y + index * 20 + 10), out int chosen) && chosen == index,
                 "Each preview mode is directly selectable");
             Assert.True(menu.IsSelected(index, options, PanelUnitConversion.None, -1, mode) &&
-                !menu.IsSelected((index + 1) % 3, options, PanelUnitConversion.None, -1, mode),
+                !menu.IsSelected((index + 1) % CanvasPreviewRows.ScopeCount, options, PanelUnitConversion.None, -1, mode),
                 "Only the active preview mode is checked");
         }
     }

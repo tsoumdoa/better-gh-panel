@@ -12,11 +12,24 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
-        private bool PreviewMenuRowEnabled(int index) => _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette, PanelOwner.PreviewMode, PanelOwner.ShowAllDots);
+        private bool ShowValuesHasSourceMenu => PanelOwner.PairedInputPresent() || PanelOwner.LabelSource >= PanelLabelSource.Paired;
+
+        private bool MenuRowEnabled(int index) =>
+            _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ActiveValuePalette, PanelOwner.PreviewMode, PanelOwner.ShowAllDots) &&
+            PairedSourceUnavailableReason(index) == null;
+
+        private string? PairedSourceUnavailableReason(int index)
+        {
+            if (!_menu.PairedSourceRow(index)) return null;
+            if ((_menu.Kind == CanvasMenuKind.CreateSet || _menu.Kind == CanvasMenuKind.BranchStats) &&
+                PanelOwner.Session.Options.ShowsDataListLength)
+                return "Grouping by F is unavailable while D shows List length.";
+            return PanelOwner.PairedUnavailableReason;
+        }
 
         private void ChoosePreviewMenu(int index, GH_Canvas canvas)
         {
-            if (!PreviewMenuRowEnabled(index)) return;
+            if (!MenuRowEnabled(index)) return;
             var page = _menu.Kind;
             var next = page;
             if (page == CanvasMenuKind.Preview)
@@ -24,7 +37,11 @@ namespace BetterGhPanel
                 if (index < CanvasPreviewRows.ScopeCount) { PanelOwner.SetPreviewMode(_menu.PreviewChoiceAt(index).Mode!.Value); _menu.Close(); canvas.Invalidate(); return; }
                 if (index == CanvasPreviewRows.ShowAllDots) PanelOwner.SetShowAllDots(!PanelOwner.ShowAllDots);
                 if (index == CanvasPreviewRows.ItemOrder) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
-                if (index == CanvasPreviewRows.Values) PanelOwner.SetShowValues(!PanelOwner.ShowValues);
+                if (index == CanvasPreviewRows.Values)
+                {
+                    if (ShowValuesHasSourceMenu) next = CanvasMenuKind.ShowValues;
+                    else PanelOwner.SetShowValues(!PanelOwner.ShowValues);
+                }
                 if (index == CanvasPreviewRows.Placement) next = CanvasMenuKind.DotPlacement;
                 if (index == CanvasPreviewRows.Size) next = CanvasMenuKind.DotSize;
                 if (index == CanvasPreviewRows.HideOccludedDots) PanelOwner.SetHideOccludedDots(!PanelOwner.HideOccludedDots);
@@ -32,11 +49,20 @@ namespace BetterGhPanel
                 if (index == CanvasPreviewRows.Colour) next = CanvasMenuKind.ValuePalette;
             }
             else if (index == CanvasPreviewRows.Back) next = CanvasMenuKind.Preview;
+            else if (page == CanvasMenuKind.ShowValues) { PanelOwner.SetLabelSource((PanelLabelSource)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.DotPlacement) { PanelOwner.SetDotPlacement((PanelDotPlacement)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.DotSize) { PanelOwner.SetDotSize((PanelDotSize)(index - 1)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.PreviewLimit) { PanelOwner.SetPreviewLimit(PanelDotSettings.LimitAt(index - 1)); next = CanvasMenuKind.Preview; }
-            else if (index == CanvasPreviewRows.Reverse) PanelOwner.SetReversePalette(!PanelOwner.ReversePalette);
-            else PanelOwner.SetValuePalette((PanelValuePalette)(index - CanvasPreviewRows.FirstChoice));
+            else if (_menu.IsPaletteSource(index))
+            {
+                PanelOwner.SetColourByPaired(index == 2);
+                _menu.Close();
+                OpenMenu(page, canvas);
+                return;
+            }
+            else if (_menu.CategoricalColours) PanelOwner.SetPairedCategoriesEnabled(_menu.PaletteIndex(index) == CanvasPreviewRows.PaletteFirst);
+            else if (_menu.PaletteIndex(index) == CanvasPreviewRows.Reverse) PanelOwner.SetReversePalette(!PanelOwner.ReversePalette);
+            else PanelOwner.SetValuePalette((PanelValuePalette)(_menu.PaletteIndex(index) - CanvasPreviewRows.FirstChoice));
             if (next != page)
             {
                 _menu.Close();
@@ -72,25 +98,40 @@ namespace BetterGhPanel
             if (_rowMenuResult != null && _rowMenuBounds.Contains(point)) { RowActionTooltip(point, e); return; }
             if (!PaintedViewIsCurrent() || !_menu.IsPaintedAt(point)) return;
             int row = (int)((point.Y - _menu.Bounds.Y) / 20);
-            if (_menu.Kind != CanvasMenuKind.Preview || row >= _menu.Visible) return;
             int index = _menu.Offset + row;
-            if (index == CanvasPreviewRows.ShowAllDots)
+            if (row >= _menu.Visible) return;
+            bool preview = _menu.Kind == CanvasMenuKind.Preview;
+            if (PairedSourceUnavailableReason(index) is string reason)
+            {
+                e.Title = "F unavailable";
+                e.Description = reason;
+            }
+            else if (_menu.Kind == CanvasMenuKind.SearchMode && index < _menu.SearchTargetRows)
+            {
+                var bounds = new RectangleF(_menu.Bounds.X + 1, _menu.Bounds.Y + row * 20, _menu.Bounds.Width - 2, 20);
+                if (SearchTargetButton(bounds, paired: true).Contains(point) && PanelOwner.PairedUnavailableReason is string searchReason)
+                {
+                    e.Title = "Search in F unavailable";
+                    e.Description = searchReason;
+                }
+            }
+            else if (preview && index == CanvasPreviewRows.ShowAllDots)
             {
                 e.Title = "Show all dots";
                 e.Description = "Shows every dot with full text, even behind objects or overlapping. The preview limit still applies; many dots can slow the viewport.";
             }
-            else if (index == CanvasPreviewRows.Limit)
+            else if (preview && index == CanvasPreviewRows.Limit)
             {
                 e.Title = "Preview limit";
                 e.Description = "Most items previewed and labelled. Higher limits can slow the viewport; the 64 MB memory cap still applies.";
             }
-            else if (index == CanvasPreviewRows.HideOccludedDots)
+            else if (preview && index == CanvasPreviewRows.HideOccludedDots)
             {
                 e.Title = "Hide dots behind objects";
                 e.Description = PanelOwner.ShowAllDots ? "Off while Show all dots is on." :
                     "Dots whose point is hidden by geometry in this view aren't drawn, so nearby visible dots have room for text.";
             }
-            else if (index == CanvasPreviewRows.ItemOrder)
+            else if (preview && index == CanvasPreviewRows.ItemOrder)
             {
                 e.Title = "Show item order";
                 e.Text = PanelOwner.ShowItemOrder ? "On" : "Off";

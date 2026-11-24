@@ -16,13 +16,46 @@ namespace BetterGhPanel
         internal string DisplayValue(PanelSnapshot snapshot, PanelRow row, int sourcePosition = -1)
         {
             if (ReferenceEquals(snapshot, Session.Result.Snapshot) && Session.Result.DisplaySet?.Values.TryGetValue(sourcePosition, out var projected) == true)
-                return projected.Text;
+            {
+                var set = Session.Result.DisplaySet;
+                if (!set.IsPaired) return projected.Text;
+                string members = PairedSetMemberSummary(snapshot, set.Members[sourcePosition]);
+                return PanelSplit ? members : PanelValuePresentation.Visualize(projected.Text) + " · " + members;
+            }
+            return DisplaySourceValue(snapshot, row, sourcePosition);
+        }
+
+        internal string PairedSetDHeaderSuffix(PanelQueryResult result) => result.DisplaySet?.IsPaired == true
+            ? PanelTableText.GeometryHeaderSuffix(PairedSetDataMetric(result.Snapshot), UnitConversion) : "";
+
+        private PanelGeometryInfo? PairedSetDataMetric(PanelSnapshot snapshot) => PanelSplit && !Session.Options.DisplaysDataFilterValue &&
+            PanelTableText.CommonGeometryMetric(snapshot) is { MetricLabel.Length: > 0 } metric ? metric : null;
+
+        private string PairedSetMemberSummary(PanelSnapshot snapshot, IReadOnlyList<int> members, bool full = false)
+        {
+            bool homogeneous = PairedSetDataMetric(snapshot) != null;
+            string Member(int position)
+            {
+                var row = snapshot.Rows[position];
+                if (!homogeneous || row.GeometryInfo == null) return DisplaySourceValue(snapshot, row, position);
+                var geometry = Session.GetGeometryDetails(snapshot, position) ?? row.GeometryInfo;
+                bool measuring = geometry.CanMeasure && !geometry.Value.HasValue && !Session.HasGeometryMeasurement(snapshot, position);
+                return PanelTableText.GeometryCell(row, geometry, true, measuring,
+                    snapshot.UnitConversion, DecimalPlaces, RoundUpFactor, PresentedFormula);
+            }
+            return full
+                ? string.Join(" · ", members.Select(Member).Select(PanelValuePresentation.Visualize))
+                : PanelTableText.Summary(members.Take(4).Select(Member).ToArray(), members.Count);
+        }
+
+        private string DisplaySourceValue(PanelSnapshot snapshot, PanelRow row, int sourcePosition)
+        {
             var geometry = Session.GetGeometryDetails(snapshot, sourcePosition);
             if (geometry == null)
                 geometry = Session.HasGeometryMeasurement(snapshot, sourcePosition)
                     ? row.GeometryInfo?.WithUnavailableMeasurement() : row.GeometryInfo;
             var options = Session.Options;
-            if (options.DisplayFilterValue)
+            if (options.DisplaysDataFilterValue)
                 return PanelFilterValue.Format(snapshot, row, options.SearchMode, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor, formula: PresentedFormula);
             var display = PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, DecimalPlaces, geometry, roundUpFactor: RoundUpFactor, formula: PresentedFormula);
             if (row.IsValid && geometry != null)
@@ -36,9 +69,11 @@ namespace BetterGhPanel
                 throw new InvalidOperationException("The selected data has changed. Select the rows again.");
             if (Session.Result.BranchStats != null) return SelectedStatText(Session.Result, new[] { position });
             var row = snapshot.Rows[position];
-            if (Session.Result.DisplaySet?.Values.TryGetValue(position, out var projected) == true) return projected.CopyText;
+            if (Session.Result.DisplaySet?.Values.TryGetValue(position, out var projected) == true)
+                return Session.Result.DisplaySet.IsPaired
+                    ? PairedSetMemberSummary(snapshot, Session.Result.DisplaySet.Members[position], full: true) : projected.CopyText;
             var options = Session.Options;
-            if (options.DisplayFilterValue)
+            if (options.DisplaysDataFilterValue)
             {
                 var metric = Session.GetGeometryDetails(snapshot, position);
                 if (metric == null && Session.HasGeometryMeasurement(snapshot, position)) metric = row.GeometryInfo?.WithUnavailableMeasurement();
@@ -136,34 +171,66 @@ namespace BetterGhPanel
                 return;
             }
             ordered = ExpandSetMembers(ordered);
-            var previewPositions = PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.DisplaySet?.AllMembers ?? session.Result.RowPositions : ordered;
+            var previewPositions = PreviewMode == PanelPreviewMode.FilteredResults ? session.Result.DisplaySet?.AllMembers ?? session.Result.RowPositions :
+                PreviewMode == PanelPreviewMode.PassFail ? Array.Empty<int>() : ordered;
             var source = _sourceItems;
             var expectedResult = session.Result;
             var mode = PreviewMode;
             bool showOrder = ShowItemOrder, showValues = ShowValues, reverse = ReversePalette;
-            var placement = DotPlacement; var palette = ValuePalette; int limit = PreviewLimit;
+            var labelSource = LabelSource;
+            bool colourByPaired = ColourByPaired;
+            var pairedColumn = PairedColumn;
+            var savedPalette = ValuePalette;
+            var categorySetting = _pairedCategoriesEnabled;
+            var placement = DotPlacement; var palette = ActiveValuePalette; int limit = PreviewLimit;
             var stamp = new ActionStamp(this, session, snapshot, expectedResult, source, _selectionVersion);
             bool Current() => !_previewSuspended && !Locked && PreviewMode == mode &&
-                ShowItemOrder == showOrder && ShowValues == showValues && ReversePalette == reverse && DotPlacement == placement && ValuePalette == palette && PreviewLimit == limit &&
+                ShowItemOrder == showOrder && LabelSource == labelSource && ColourByPaired == colourByPaired && ReversePalette == reverse &&
+                DotPlacement == placement && ValuePalette == savedPalette && _pairedCategoriesEnabled == categorySetting &&
+                PreviewLimit == limit && ReferenceEquals(pairedColumn, PairedColumn) &&
                 stamp.IsCurrent();
             var options = session.Options;
-            PanelPreviewValue Sample(int position)
+            var searchMode = options.SearchPaired ? PanelSearchMode.Text : options.SearchMode;
+            PanelSearchMode? pairedMode = PairedComparisonMode(options, expectedResult);
+            string pairedTitle = HeaderTitleForInput(Params.Input[1]);
+            PanelPreviewValue SampleData(int position)
             {
                 var geometry = session.GetGeometryDetails(snapshot, position);
                 if (geometry == null && session.HasGeometryMeasurement(snapshot, position)) geometry = snapshot.Rows[position].GeometryInfo?.WithUnavailableMeasurement();
-                return PanelPreviewValues.Sample(snapshot, snapshot.Rows[position], options.SearchMode, geometry, DecimalPlaces, RoundUpFactor, PresentedFormula);
+                return PanelPreviewValues.Sample(snapshot, snapshot.Rows[position], searchMode, geometry, DecimalPlaces, RoundUpFactor, PresentedFormula);
+            }
+            PanelPreviewValue SamplePaired(int position)
+            {
+                return pairedColumn?.Snapshot != null && pairedColumn.Pair?.ItemAt(position) is int item
+                    ? pairedColumn.PreviewValue(item, UnitConversion, DecimalPlaces, RoundUpFactor, pairedMode, pairedTitle)
+                    : default(PanelPreviewValue).WithLabel("—", false);
+            }
+            PanelPreviewValue Sample(int position, bool admitted)
+            {
+                bool dataLabels = admitted && (labelSource == PanelLabelSource.Data || labelSource == PanelLabelSource.PairedAndData);
+                bool pairedLabels = admitted && labelSource >= PanelLabelSource.Paired;
+                var d = dataLabels || !colourByPaired && palette != PanelValuePalette.Off ? SampleData(position) : default;
+                var f = pairedLabels || colourByPaired && palette != PanelValuePalette.Off ? SamplePaired(position) : default;
+                var colour = colourByPaired ? f : d;
+                // Offscreen F contributes only already-available colour samples.
+                if (!admitted) return colourByPaired && colour.Pending ? default : colour;
+                if (!showValues) return colour;
+                string label = labelSource == PanelLabelSource.Data ? d.ValueText : f.ValueText;
+                if (labelSource == PanelLabelSource.PairedAndData)
+                    label += " · " + (d.ValueText.Length > 0 ? d.ValueText : "—");
+                return colour.WithLabel(label, (dataLabels && d.Pending) || (pairedLabels && f.Pending));
             }
             _highlight.SetPreviewLimit(PreviewLimit);
             if (!Current()) return;
             _highlight.DotSize = DotSize;
             _highlight.HideOccludedDots = HideOccludedDots;
             _highlight.ShowAllDots = ShowAllDots;
-            _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, ValuePalette, ReversePalette,
-                options.SearchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current);
+            _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, palette, ReversePalette,
+                searchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current, labelSource, colourByPaired, mode == PanelPreviewMode.PassFail);
             if (!Current()) return;
-            _highlight.SetScopeChecked(source, expectedResult, mode == PanelPreviewMode.FilteredResults, ordered, Current, RowSelection);
+            _highlight.SetScopeChecked(source, expectedResult, mode != PanelPreviewMode.Selected, ordered, Current, RowSelection, mode == PanelPreviewMode.PassFail);
             if (!Current()) return;
-            if (!ShowValues && ValuePalette == PanelValuePalette.Off) session.RequestPreviewMeasurements(null, null);
+            if (!ShowValues && palette == PanelValuePalette.Off) session.RequestPreviewMeasurements(null, null);
             StopRetainedPreviewCheck();
             InvalidatePreviewCaches();
             Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
@@ -177,12 +244,15 @@ namespace BetterGhPanel
         internal void ClearHighlightCore(bool keepValues)
         {
             _session?.RequestPreviewMeasurements(null, null);
-            bool visible = _highlight.PreviewCount > 0;
-            bool retained = _highlight.ClearForQuery(keepValues: keepValues && (ShowValues || ValuePalette != PanelValuePalette.Off) &&
-                PreviewMode != PanelPreviewMode.Off && !Hidden && !Locked && !_previewSuspended);
+            bool visible = _highlight.HasVisiblePreview;
+            int count = _highlight.PreviewCount;
+            bool retained = _highlight.ClearForQuery(keepValues: keepValues &&
+                (ShowValues || ActiveValuePalette != PanelValuePalette.Off || PreviewMode == PanelPreviewMode.PassFail) &&
+                PreviewMode != PanelPreviewMode.Off && !Hidden && !Locked && !_previewSuspended, PreviewMode, PreviewLimit);
             if (retained) WatchRetainedPreviewSolution();
             else StopRetainedPreviewCheck();
-            if (visible && !retained) { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
+            if (visible && (!retained || count != _highlight.PreviewCount))
+            { InvalidatePreviewCaches(); Rhino.RhinoDoc.ActiveDoc?.Views.Redraw(); }
         }
 
         private GH_Document? _retainedPreviewDocument;
@@ -238,7 +308,7 @@ namespace BetterGhPanel
             if ((includeColumns || tableColumn != null) && !SummariesCurrent(result)) return "Column summaries are recomputing. Try copying again.";
             bool statsCopy = result.BranchStats != null && path == null && (action == PanelRowAction.CopyValues || action == PanelRowAction.CopyTable);
             bool statsTable = statsCopy && (includeColumns || positions.Count == 0 || action == PanelRowAction.CopyTable);
-            bool listLengthCopy = result.BranchStats == null && path == null && (action == PanelRowAction.CopyValues || includeColumns) && session.Options.DisplayFilterValue && session.Options.SearchMode == PanelSearchMode.ListLength;
+            bool listLengthCopy = result.BranchStats == null && path == null && (action == PanelRowAction.CopyValues || includeColumns) && session.Options.DisplaysDataFilterValue && session.Options.SearchMode == PanelSearchMode.ListLength;
             bool branchSet = path == null && (action == PanelRowAction.CopyValues || includeColumns) && result.DisplaySet?.IsBranchSet == true;
             IReadOnlyList<int> ordered;
             if (path != null || columnBranch != null || action == PanelRowAction.CopyPaths && RowSelection.Count > 0) ordered = positions;
@@ -255,9 +325,14 @@ namespace BetterGhPanel
             long selectionVersion = RowSelection.Version;
             var cancellation = new CancellationTokenSource();
             _copyCancellation = cancellation;
-            var measurementPositions = statsCopy ? Array.Empty<int>() : session.Options.DisplayFilterValue && PanelProperties.IsProperty(session.Options.SearchMode)
-                ? ordered.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
-                    session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray() : ordered;
+            IReadOnlyList<int> measurementPositions = ordered;
+            if (statsCopy) measurementPositions = Array.Empty<int>();
+            else if (tableColumn == null && result.DisplaySet is { IsPaired: true } set)
+                measurementPositions = ordered.SelectMany(position => action == PanelRowAction.CopyValues
+                    ? set.Members[position] : set.Members[position].Take(4)).ToArray();
+            if (session.Options.DisplaysDataFilterValue && PanelProperties.IsProperty(session.Options.SearchMode))
+                measurementPositions = measurementPositions.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
+                    session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray();
             bool addressOnly = action != PanelRowAction.CopyValues && action != PanelRowAction.CopyTable;
             var copyToken = cancellation.Token;
             var columnMeasurements = (statsCopy ? Array.Empty<PanelTableColumn>() : includeColumns ? TableColumns : tableColumn != null ? new[] { tableColumn } : Array.Empty<PanelTableColumn>())
@@ -304,7 +379,7 @@ namespace BetterGhPanel
                         else if (includeColumns) text = TableTsv(result, ordered);
                         else if (tableColumn != null && action == PanelRowAction.CopyValues)
                             text = columnBranch != null ? tableColumn.BranchCellText(result, columnBranch, UnitConversion, DecimalPlaces, RoundUpFactor, HeaderTitleForInput(tableColumn.Input)) :
-                                string.Join(Environment.NewLine, ordered.Select(position => tableColumn.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor)));
+                                string.Join(Environment.NewLine, ordered.Select(position => ResultColumnCell(tableColumn, result, position)));
                         else if (path != null) text = pathText!;
                         else if (action == PanelRowAction.CopyPaths)
                         {

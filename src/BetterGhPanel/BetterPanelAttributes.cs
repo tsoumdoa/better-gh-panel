@@ -45,7 +45,7 @@ namespace BetterGhPanel
             get
             {
                 var options = PanelOwner.Session.Options;
-                return !_layout.SearchClear.IsEmpty && (!string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue || CanvasMenu.IsComparisonMode(options.SearchMode));
+                return !_layout.SearchClear.IsEmpty && (!string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue || options.SearchPaired || CanvasMenu.IsComparisonMode(options.SearchMode));
             }
         }
         private bool BranchClearVisible => !_layout.BranchClear.IsEmpty && PanelOwner.Session.Options.BranchPath != null;
@@ -80,7 +80,8 @@ namespace BetterGhPanel
         private PanelQueryResult DisplayResult => PanelOwner.Session.IsBusy && _lastResult?.BranchStats != null ? _lastResult : PanelOwner.Session.Result;
         private bool ShowingStats => DisplayResult.BranchStats != null;
         private bool ShowOutputControl => PanelOwner.CanOutputValues && !ShowingStats;
-        private bool DisplayListLengths => !ShowingStats && PanelOwner.Session.Options.DisplayFilterValue && PanelOwner.Session.Options.SearchMode == PanelSearchMode.ListLength;
+        private bool DisplayListLengths => !ShowingStats && DisplayResult.DisplaySet?.IsPaired != true &&
+            PanelOwner.Session.Options.DisplaysDataFilterValue && PanelOwner.Session.Options.SearchMode == PanelSearchMode.ListLength;
         private int Count => PanelOwner.Session.HasCurrentResult || PanelOwner.Session.IsBusy && ShowingStats ? ShowingStats ? StatViewCount(DisplayResult) : DisplayListLengths ? DisplayResult.BranchPaths.Count : ViewCount(DisplayResult) : 0;
         private int MaximumOffset
         {
@@ -388,7 +389,7 @@ namespace BetterGhPanel
                 }
                 FitTableOnPaint(graphics, result, font);
                 // Chip and Units widths follow their labels, so measure them before laying out.
-                float searchChipWidth = (float)Math.Ceiling(TightWidth(graphics, CanvasMenu.SearchModeChip(session.Options.SearchMode), small)) + 19;
+                float searchChipWidth = (float)Math.Ceiling(TightWidth(graphics, SearchChip(session.Options), small)) + 19;
                 float unitsWidth = (float)Math.Ceiling(graphics.MeasureString(UnitsLabel(), small, PointF.Empty, trim).Width) + 18;
                 float sortChipWidth = session.Options.SortMode != PanelSortMode.SourceOrder && SortedColumnName(session.Options) != null
                     ? Math.Max(43, Math.Min(96, TightWidth(graphics, SortChipLabel(session.Options), small) + 27)) : 43;
@@ -399,7 +400,7 @@ namespace BetterGhPanel
                 // Minimum Half split needs a one-line footer to fit a value row below the pane captions.
                 // One line holds the summary and output part left of Select all, tools, Reset and Units.
                 bool singleLine = PanelOwner.PanelSplit && _layout.Panel.Height < 140 || _layout.Panel.Width >= 500 &&
-                    TightWidth(graphics, CanvasStatistics.Summary(result) + " · ", small) + OutputPartWidth(graphics, result, small) <=
+                    TightWidth(graphics, FooterSummary(result) + " · ", small) + OutputPartWidth(graphics, result, small) <=
                         _layout.Panel.Width - 313 - UnitsWidth(_layout.Panel.Width) - (ShowOutputControl ? OutputControlWidth + 4 : 0);
                 if (_formulaDraft != null) singleLine = _singleLineFooter;
                 if (resized || singleLine != _singleLineFooter || ShowOutputControl == _layout.OutLabel.IsEmpty ||
@@ -621,6 +622,9 @@ namespace BetterGhPanel
                 (showTypes ? TypeColumnWidth + CellGap : 12) - 40 - setWidth));
             float valueStart = rowRenderer.GutterWidth + pathWidth;
             var measurements = new List<int>();
+            var options = PanelOwner.Session.Options;
+            // Sets grouped by F already show their F key, so they get no F suffix.
+            var pairedMeasurements = options.SearchPaired && options.DisplayFilterValue && result.DisplaySet?.IsPaired != true ? new List<int>() : null;
             offset = Math.Max(0, Math.Min(Math.Max(0, Count - 1), offset));
             var clip = g.Save();
             try
@@ -674,10 +678,16 @@ namespace BetterGhPanel
 
                     var address = RowAddress(result, sourcePosition);
                     if (address.Index >= 0) rowRenderer.DrawAddress(g, bounds, i + 1, address.Index, address.Sorted, selected);
-                    DrawDataCell(g, rowRenderer, result, sourcePosition, i + 1, bounds, valueStart, setWidth, font, small, mono, grouped, pathWidth);
+                    DrawDataCell(g, rowRenderer, result, sourcePosition, i + 1, bounds, valueStart, setWidth, font, small, mono,
+                        grouped, pathWidth, showPairedSuffix: pairedMeasurements != null);
                     if (TargetPainted(g, bounds) && !_rowHits.Any(hit => hit.Bounds == bounds && hit.SourcePosition == sourcePosition))
                         _rowHits.Add(new RowHit(bounds, sourcePosition, i + 1));
-                    if (bounds.IntersectsWith(visibleRegion)) measurements.Add(sourcePosition);
+                    if (bounds.IntersectsWith(visibleRegion))
+                    {
+                        if (result.DisplaySet?.IsPaired == true) measurements.AddRange(result.DisplaySet.Members[sourcePosition].Take(4));
+                        else measurements.Add(sourcePosition);
+                        pairedMeasurements?.Add(sourcePosition);
+                    }
                     if (firstShownItem < 0) firstShownItem = i;
                     lastShownItem = i;
                     shown++;
@@ -685,7 +695,7 @@ namespace BetterGhPanel
                 }
                 if (ViewCount(result) == 0)
                 {
-                    Text(g, result.Snapshot.Branches.Count == 0 ? "Connect a tree to start exploring." : "No results. Clear a filter or Reset all.",
+                    Text(g, result.Snapshot.Branches.Count == 0 ? EmptyTreeMessage() : "No results. Clear a filter or Reset all.",
                         small, Muted, new RectangleF(list.X + 6, list.Y + 12, list.Width - 12, 22), trim);
                 }
             }
@@ -693,7 +703,7 @@ namespace BetterGhPanel
 
             _firstShownItem = firstShownItem;
             _lastShownItem = lastShownItem;
-            PanelOwner.Session.RequestGeometryMeasurements(result.Snapshot, measurements);
+            PanelOwner.Session.RequestListGeometryMeasurements(result.Snapshot, measurements, pairedMeasurements);
 
             if (Count > shown && !track.IsEmpty)
             {
@@ -702,17 +712,23 @@ namespace BetterGhPanel
             }
         }
 
-        private bool ShowDataTypes(PanelQueryResult result) => PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null ||
+        private string EmptyTreeMessage() => PanelOwner.CleanedEmptyBranches > 0
+            ? $"All {PanelOwner.CleanedEmptyBranches} branches are empty" : "Connect a tree to start exploring.";
+
+        private bool ShowDataTypes(PanelQueryResult result) => PanelOwner.Session.Options.DisplaysDataFilterValue ||
+            result.DisplaySet != null ||
             result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;
 
         private void DrawDataCell(Graphics g, CanvasRowRenderer renderer, PanelQueryResult result, int position, int viewNumber,
-            RectangleF bounds, float valueStart, float setWidth, Font font, Font small, Font mono, bool grouped = true, float pathWidth = 0)
+            RectangleF bounds, float valueStart, float setWidth, Font font, Font small, Font mono, bool grouped = true, float pathWidth = 0,
+            bool showPairedSuffix = false)
         {
             var row = result.Snapshot.Rows[position];
             var dataRow = row;
             bool selected = _selection.Contains(position);
             float y = bounds.Y;
-            bool displayMetric = PanelOwner.Session.Options.DisplayFilterValue || result.DisplaySet != null;
+            bool pairedSet = result.DisplaySet?.IsPaired == true;
+            bool displayMetric = !pairedSet && (PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null);
             bool numericMetric = displayMetric && (!PanelProperties.IsProperty(PanelOwner.Session.Options.SearchMode) ||
                 PanelProperties.Kind(PanelOwner.Session.Options.SearchMode) == PanelPropertyKind.Number);
             bool showTypes = ShowDataTypes(result);
@@ -729,8 +745,9 @@ namespace BetterGhPanel
             // Analytic summaries name their type. Native metadata summaries
             // (for example dot text/location) use the catalog's separate label.
             bool showRowType = showTypes && (displayMetric || row.GeometryInfo == null || StockTypeLabels.SeparateLabel(row.TypeName));
-            float valueRight = bounds.Right - setWidth - (showRowType ? TypeColumnWidth + CellGap : 12);
-            var projectedType = result.DisplaySet != null ? result.DisplaySet.Values[position] : null;
+            float typeRight = bounds.Right - setWidth;
+            float typeSpace = showRowType ? TypeColumnWidth + CellGap : 12;
+            var projectedType = result.DisplaySet != null && !pairedSet ? result.DisplaySet.Values[position] : null;
             // A glyph as well as the colour bar, so validity never relies on colour alone.
             float marker = 0;
             if (sourceStatuses.VerifiedInvalid > 0 || sourceStatuses.Unverified > 0)
@@ -739,14 +756,23 @@ namespace BetterGhPanel
                     sourceStatuses.VerifiedInvalid > 0 ? "!" : "?", sourceStatuses.VerifiedInvalid > 0 ? PanelTheme.Warning : PanelTheme.Unverified, small);
                 marker = 12;
             }
+            float valueLeft = bounds.X + valueStart + 3 + marker;
+            if (showPairedSuffix)
+            {
+                string value = PanelOwner.PairedComparisonValue(position);
+                string suffix = "F " + (value == "measuring…" ? "…" : PanelValuePresentation.Visualize(value));
+                float width = Math.Min(Math.Max(0, typeRight - typeSpace - valueLeft), renderer.MeasureCell(g, suffix, small) + 2);
+                renderer.DrawCell(g, suffix, small, Muted, new RectangleF(typeRight - 12 - width, y, width, RowHeight), true);
+                typeRight -= width + 8;
+            }
             renderer.DrawValue(g, PanelValuePresentation.Visualize(PanelOwner.DisplayValue(result.Snapshot, row, position)), font, Ink,
-                new RectangleF(bounds.X + valueStart + 3 + marker, y, Math.Max(0, valueRight - bounds.X - valueStart - 3 - marker), RowHeight),
-                projectedType != null ? projectedType.IsNumeric : (numericMetric || !displayMetric && row.NumericValue.HasValue));
+                new RectangleF(valueLeft, y, Math.Max(0, typeRight - typeSpace - valueLeft), RowHeight),
+                projectedType != null ? projectedType.IsNumeric : !pairedSet && (numericMetric || !displayMetric && row.NumericValue.HasValue));
             if (showRowType)
                 renderer.DrawCell(g, projectedType != null
                         ? projectedType.IsNumeric ? "Num" : "Text" : CanvasMenu.ShortTypeName(row.TypeName), small, Muted,
-                    new RectangleF(bounds.Right - setWidth - TypeColumnWidth, y, TypeColumnWidth - CellGap, RowHeight), true);
-            DrawSetCount(g, renderer, bounds, position, viewNumber, small);
+                    new RectangleF(typeRight - TypeColumnWidth, y, TypeColumnWidth - CellGap, RowHeight), true);
+            if (!pairedSet || !TableVisible) DrawSetCount(g, renderer, bounds, position, viewNumber, small);
         }
 
         private static void DrawStatusBadge(Graphics g, PointF center, string glyph, Color color, Font font)
@@ -789,10 +815,10 @@ namespace BetterGhPanel
             if (!BetterPanelComponent.HasFilters(options)) return OutputLabel(result);
             if (ActiveFilterCount() > 0) return OutputLabel(result) +
                 (options.SortMode != PanelSortMode.SourceOrder && SortedColumnName(options) != null ? " · " + SortChipLabel(options) : "");
-            bool mode = options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue;
+            bool mode = options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue || options.SearchPaired;
             bool sorted = options.SortMode != PanelSortMode.SourceOrder;
             string sort = SortedColumnName(options) != null ? SortChipLabel(options) : "Sorted";
-            return mode ? CanvasMenu.SearchModeChip(options.SearchMode) + (sorted ? " · " + sort : "") : sorted ? sort : "Filters";
+            return mode ? SearchChip(options) + (sorted ? " · " + sort : "") : sorted ? sort : "Filters";
         }
 
         // With filters to clear, the output part is a chip: 3 units of padding, the label, then the ×.
@@ -804,12 +830,12 @@ namespace BetterGhPanel
             var session = PanelOwner.Session;
             bool current = !PanelOwner.Locked && session.HasCurrentResult;
             if (current && !_singleLineFooter)
-                Text(g, CanvasStatistics.Summary(result), small, Ink,
+                Text(g, FooterSummary(result), small, Ink,
                     new RectangleF(_layout.Footer.X, _layout.Footer.Y, (!_layout.OutLabel.IsEmpty ? _layout.OutLabel.Left - 4 : _layout.SelectAll.Left - 5) - _layout.Footer.X, 16), trim);
             int selected = !current ? 0 : DisplayListLengths ? _selection.BranchPaths(result).Count : _selection.Count;
             int selectableCount = result.BranchStats != null ? result.StatSources.Count : DisplayListLengths ? result.BranchPaths.Count : result.RowPositions.Count;
             Control(g, _layout.SelectAll, "Select all", small, trim, current && selectableCount > 0 && selected == selectableCount);
-            float statusRight = _singleLineFooter ? (!_layout.OutLabel.IsEmpty ? _layout.OutLabel.Left - 4 : _layout.SelectAll.Left - 6) : _layout.Trim.Left - 2;
+            float statusRight = _singleLineFooter ? (!_layout.OutLabel.IsEmpty ? _layout.OutLabel.Left - 4 : _layout.SelectAll.Left - 6) : _layout.Clean.Left - 2;
             if (!_layout.OutLabel.IsEmpty) DrawOutputControl(g, small, trim);
             var status = new RectangleF(_layout.Footer.X, _layout.Units.Y, statusRight - _layout.Footer.X, _layout.Units.Height);
             string? notice = FooterNotice(result);
@@ -822,6 +848,7 @@ namespace BetterGhPanel
             _jumpBounds = KeepPaintedTarget(g, _jumpBounds, jump);
             _clearFiltersBounds = KeepPaintedTarget(g, _clearFiltersBounds, chip);
             // Depths above 9 read "9+"; the tooltip and editor keep the full value.
+            TreeToolIcons.Draw(g, _layout.Clean, TreeToolIcon.Clean, PanelOwner.CleanTree);
             TreeToolIcons.Draw(g, _layout.Trim, TreeToolIcon.Trim, PanelOwner.TrimDepth > 0,
                 PanelOwner.TrimDepth <= 0 ? null : PanelOwner.TrimDepth > 9 ? "9+" : PanelOwner.TrimDepth.ToString(System.Globalization.CultureInfo.InvariantCulture), small);
             TreeToolIcons.Draw(g, _layout.Simplify, TreeToolIcon.Simplify, PanelOwner.SimplifyTree);
@@ -848,7 +875,7 @@ namespace BetterGhPanel
             float rangeWidth = TightWidth(g, range, small), separator = TightWidth(g, " · ", small), width = OutputPartWidth(g, result, small);
             bool both = (result.BranchStats == null || _singleLineFooter) && rangeWidth + separator + width <= status.Width;
             float x = status.X, y = status.Y + 2;
-            if (both || !clearable)
+            if (both || !clearable && !PanelOwner.CleanTree)
             {
                 jump = new RectangleF(x, y, Math.Min(rangeWidth, status.Width), 16);
                 using (var link = new Font(small, jump == _hoverBounds ? FontStyle.Underline : FontStyle.Regular))
@@ -920,13 +947,17 @@ namespace BetterGhPanel
             var session = PanelOwner.Session;
             int selected = PanelOwner.Locked || !session.HasCurrentResult ? 0 : DisplayListLengths ? _selection.BranchPaths(result).Count : _selection.Count;
             return PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
+                session.Options.GroupByPaired && PanelOwner.PairedUnavailableReason is string reason ? reason :
                 _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
                 !string.IsNullOrEmpty(PanelOwner.PreviewStatus) ? PanelOwner.PreviewStatus :
                 selected > 0 ? System.FormattableString.Invariant($"{selected:N0} selected") + (DisplayListLengths ? " branches" : " · right-click to copy") : null;
         }
 
+        private string FooterSummary(PanelQueryResult result) => CanvasStatistics.Summary(result) +
+            (PanelOwner.CleanedEmptyBranches > 0 ? $" · {PanelOwner.CleanedEmptyBranches} empty hidden" : "");
+
         private string FooterRange(PanelQueryResult result, bool singleLine) =>
-            singleLine ? CanvasStatistics.Summary(result) :
+            singleLine ? FooterSummary(result) :
             result.BranchStats != null ? $"{_offset + 1}–{Math.Min(Count, _offset + _shown)}/{Count} rows" :
             DisplayListLengths ? System.FormattableString.Invariant($"{(Count == 0 ? 0 : _offset + 1):N0}–{Math.Min(Count, _offset + _shown):N0}/{Count:N0} branches") :
             _firstShownItem < 0 ? System.FormattableString.Invariant($"{result.RowPositions.Count:N0} items") :
@@ -955,7 +986,8 @@ namespace BetterGhPanel
         private void LayoutMenu()
         {
             _menu.Flattened = PanelOwner.FlattenTree;
-            _menu.Layout(_layout.Panel, _layout.Type, _menu.Kind == CanvasMenuKind.HeaderSort ? _headerMenuAnchor : _layout.Sort, _layout.Branch, _layout.Units, _layout.Search, _layout.Preview, _layout.BranchStats,
+            _menu.Layout(_layout.Panel, _layout.Type, _menu.Kind == CanvasMenuKind.HeaderSort ? _headerMenuAnchor : _layout.Sort, _layout.Branch, _layout.Units, _layout.Search, _layout.Preview,
+            _menu.Kind == CanvasMenuKind.CreateSet ? _layout.CreateSet : _layout.BranchStats,
             _renderVisibleRegion);
         }
 
@@ -982,22 +1014,32 @@ namespace BetterGhPanel
             Fill(g, PanelTheme.Background, _menu.Bounds);
             int visible = _menu.Visible;
             var options = PanelOwner.Session.Options;
+            var palette = PanelOwner.ActiveValuePalette;
             for (int i = 0; i < visible && i + _menu.Offset < _menu.Count; i++)
             {
                 int index = i + _menu.Offset;
                 var row = new RectangleF(_menu.Bounds.X + 1, _menu.Bounds.Y + i * 20, _menu.Bounds.Width - 2, 20);
-                bool enabled = (_menu.Kind != CanvasMenuKind.HeaderSort || HeaderSortEnabled) && PreviewMenuRowEnabled(index);
-                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor, PanelOwner.ShowValues, PanelOwner.DotPlacement, PanelOwner.ValuePalette, PanelOwner.ReversePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit, PanelOwner.HideOccludedDots, PanelOwner.ShowAllDots);
+                if (_menu.Kind == CanvasMenuKind.SearchMode && index < _menu.SearchTargetRows)
+                {
+                    DrawSearchTarget(g, row, small, trim, options.SearchPaired);
+                    if (TargetPainted(g, new RectangleF(_menu.Bounds.X, row.Y, _menu.Bounds.Width, row.Height))) _menu.MarkRowPainted(i);
+                    continue;
+                }
+                bool enabled = (_menu.Kind != CanvasMenuKind.HeaderSort || HeaderSortEnabled) && MenuRowEnabled(index);
+                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor, PanelOwner.ShowValues, PanelOwner.DotPlacement, palette, PanelOwner.ReversePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit, PanelOwner.HideOccludedDots, PanelOwner.LabelSource, PanelOwner.ColourByPaired, PanelOwner.ShowAllDots);
                 if (enabled && (index == _menu.HoveredIndex || selected))
                     Fill(g, index == _menu.HoveredIndex ? PanelTheme.Rgb(226, 236, 226) : PanelTheme.Rgb(242, 247, 241), row);
                 if (_menu.IsSectionStart(index))
-                    using (var divider = new Pen(PanelTheme.Rgb(225, 231, 224)))
+                    using (var divider = new Pen(_menu.PaletteSettingsStart(index) ? PanelTheme.Rgb(197, 207, 196) : PanelTheme.Rgb(225, 231, 224)))
                         g.DrawLine(divider, row.X + 7, row.Y, row.Right - 7, row.Y);
-                if (enabled && selected)
-                    using (var check = new Pen(Accent, 1.3f))
+                if (selected && (enabled || _menu.PairedSourceRow(index)))
+                    using (var check = new Pen(enabled ? Accent : PanelTheme.Disabled, 1.3f))
                         g.DrawLines(check, new[] { new PointF(row.X + 7, row.Y + 10), new PointF(row.X + 10, row.Y + 13), new PointF(row.X + 16, row.Y + 7) });
-                float inset = _menu.Kind == CanvasMenuKind.BranchStats && (index == 1 || index == 10) ? 7 : 23;
-                string tail = _menu.Trailing(index, PanelOwner.DotPlacement, PanelOwner.ValuePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit);
+                float inset = _menu.Kind == CanvasMenuKind.BranchStats && !_menu.StatsSourceRow(index) && (_menu.StatsIndex(index) == 1 || _menu.StatsIndex(index) == 10) ? 7 : 23;
+                string tail = _menu.Trailing(index, PanelOwner.DotPlacement, palette, PanelOwner.DotSize, PanelOwner.PreviewLimit);
+                if (_menu.Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.Values && ShowValuesHasSourceMenu)
+                    tail = (PanelOwner.LabelSource == PanelLabelSource.Paired ? "F value" : PanelOwner.LabelSource == PanelLabelSource.PairedAndData ? "F · D" :
+                        PanelOwner.LabelSource == PanelLabelSource.Data ? "D value" : "Off") + "…";
                 if (tail.Length > 0)
                 {
                     using var trailing = new StringFormat(trim) { Alignment = StringAlignment.Far };
@@ -1036,8 +1078,17 @@ namespace BetterGhPanel
         {
             CloseRowMenu();
             var session = PanelOwner.Session;
+            bool pairedPresent = PanelOwner.PairedInputPresent();
+            _menu.SearchTargetRows = pairedPresent || session.Options.SearchPaired ? 1 : 0;
+            _menu.CategoricalColours = PanelOwner.PairedColourIsCategorical;
+            _menu.GroupingChoices = kind == CanvasMenuKind.ShowValues ? ShowValuesHasSourceMenu : pairedPresent || (kind switch
+            {
+                CanvasMenuKind.ValuePalette => PanelOwner.ColourByPaired,
+                CanvasMenuKind.BranchStats => PanelOwner.BranchStatsTree && PanelOwner.GroupByPaired,
+                _ => false
+            });
             var modes = kind == CanvasMenuKind.SearchMode
-                ? Enum.GetValues(typeof(PanelSearchMode)).Cast<PanelSearchMode>().Where(session.Snapshot.SupportsSearchMode)
+                ? Enum.GetValues(typeof(PanelSearchMode)).Cast<PanelSearchMode>().Where(PanelOwner.SearchSnapshot(session.Options.SearchPaired).SupportsSearchMode)
                 : null;
             _menu.Toggle(kind, session.Snapshot, session.Options, modes, _editingSearchMode);
             InvalidatePaintedHits();
@@ -1203,7 +1254,11 @@ namespace BetterGhPanel
                     sender.Invalidate();
                     return GH_ObjectResponse.Handled;
                 }
-                if (_menu.TrySelect(point, out var index)) ChooseMenu(index, sender);
+                if (_menu.TrySelect(point, out var index))
+                {
+                    if (_menu.Kind == CanvasMenuKind.SearchMode && index < _menu.SearchTargetRows) ChooseSearchTarget(point, sender);
+                    else ChooseMenu(index, sender);
+                }
                 if (_menu.Kind == CanvasMenuKind.None)
                 {
                     InvalidatePaintedHits();
@@ -1300,11 +1355,25 @@ namespace BetterGhPanel
 
         private void ChooseMenu(int index, GH_Canvas canvas)
         {
-            if (index < 0 || index >= _menu.Count || _menu.Kind == CanvasMenuKind.HeaderSort && !HeaderSortEnabled) return;
+            if (index < 0 || index >= _menu.Count || !MenuRowEnabled(index) ||
+                _menu.Kind == CanvasMenuKind.HeaderSort && !HeaderSortEnabled) return;
             var kind = _menu.Kind;
             if (_menu.IsPreviewPage) { ChoosePreviewMenu(index, canvas); return; }
+            if (kind == CanvasMenuKind.CreateSet)
+            {
+                _menu.Close();
+                PanelOwner.SetTreeTools(PanelOwner.TrimDepth, PanelOwner.FlattenTree, PanelOwner.ReverseTree,
+                    PanelOwner.SimplifyTree, index > 0, PanelOwner.CleanTree, index == 2);
+                canvas.Invalidate(); return;
+            }
             if (kind == CanvasMenuKind.BranchStats)
             {
+                if (_menu.StatsSourceRow(index))
+                {
+                    PanelOwner.SetStatsGrouping(true, null, index == 2);
+                    canvas.Invalidate(); return;
+                }
+                index = _menu.StatsIndex(index);
                 if (index == 0) { _menu.Close(); PanelOwner.SetBranchStats(false); }
                 else if (index >= 2 && index <= 9)
                 {
@@ -1458,9 +1527,10 @@ namespace BetterGhPanel
             var options = PanelOwner.Session.Options;
             PanelOwner.RecordUndoEvent("Panel+ clear search");
             options.SearchMode = PanelSearchMode.Text;
+            options.SearchPaired = false;
             options.DisplayFilterValue = false;
             options.Search = string.Empty;
-            PanelOwner.Session.UpdateQuery(options);
+            PanelOwner.UpdateSearchTarget(options);
             canvas.Invalidate();
         }
 
@@ -1517,7 +1587,7 @@ namespace BetterGhPanel
             if (_previewOriginal == null || !ReferenceEquals(_previewOwner, token)) return;
             var original = _previewOriginal;
             _viewRestore = new ViewRestore(PanelOwner.Session.Snapshot, _previewOffset,
-                original.DisplayFilterValue && original.SearchMode == PanelSearchMode.ListLength);
+                original.DisplaysDataFilterValue && original.SearchMode == PanelSearchMode.ListLength);
             ClearPreviewState();
             PanelOwner.Session.UpdateQuery(original);
             PanelOwner.EndQueryPreview(committed: false);
@@ -1799,7 +1869,7 @@ namespace BetterGhPanel
                     string rounding = PanelFilterValue.RoundingDescription(snapshot, row, PanelOwner.Session.Options, geometry);
                     // The rounding line already describes the shown metric. Retain
                     // the labeled geometry details without repeating its compact summaries.
-                    if (PanelOwner.Session.Options.DisplayFilterValue && !(rounding.Length > 0 && geometry != null))
+                    if (PanelOwner.Session.Options.DisplaysDataFilterValue && !(rounding.Length > 0 && geometry != null))
                         details = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode) + ": " + value + "\n" +
                             PanelValuePresentation.FormatDisplay(row, snapshot.UnitConversion, PanelOwner.DecimalPlaces, geometry, roundUpFactor: PanelOwner.RoundUpFactor, formula: PanelOwner.PresentedFormula) + "\n" + details;
                     if (rounding.Length > 0) details = rounding + "\n" + details;
@@ -1862,10 +1932,17 @@ namespace BetterGhPanel
         {
             var search = _layout.Search;
             var chip = _layout.Filter;
-            bool mode = options.SearchMode != PanelSearchMode.Text, placeholder = string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue;
+            bool mode = options.SearchMode != PanelSearchMode.Text || options.SearchPaired, placeholder = string.IsNullOrEmpty(options.Search) || options.DisplayFilterValue;
             Control(g, search, "", small, trim, !placeholder);
-            var modeColor = mode ? Accent : Muted;
-            Text(g, CanvasMenu.SearchModeChip(options.SearchMode), small, modeColor,
+            bool unavailable = options.SearchPaired && PanelOwner.PairedUnavailableReason != null;
+            var modeColor = unavailable ? PanelTheme.PairingWarning : mode ? Accent : Muted;
+            if (unavailable)
+            {
+                Fill(g, PanelTheme.Rgb(255, 246, 222), chip);
+                using var underline = new Pen(modeColor);
+                g.DrawLine(underline, chip.Left, chip.Bottom - 1, chip.Right, chip.Bottom - 1);
+            }
+            Text(g, SearchChip(options), small, modeColor,
                 new RectangleF(chip.X + 2, chip.Y, chip.Width - 17, chip.Height), Tight);
             DrawChevron(g, new RectangleF(chip.X, chip.Y, chip.Width - 2, chip.Height), modeColor);
             using (var divider = new Pen(PanelTheme.Rgb(224, 229, 222)))

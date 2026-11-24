@@ -86,7 +86,7 @@ namespace BetterGhPanel.Core
             Func<int, int?> partner, PanelQueryOptions options, IReadOnlyDictionary<int, PanelGeometryInfo?>? measurements, CancellationToken token)
         {
             var query = options.Clone(); query.Formula = null; query.SearchMode = PanelSearchMode.Text; query.DisplayFilterValue = false;
-            var stats = data.BranchPaths.ToDictionary(path => path, path => new PanelBranchStats(query.StatKinds), StringComparer.Ordinal);
+            var stats = data.StatPaths.ToDictionary(path => path, path => new PanelBranchStats(query.StatKinds), StringComparer.Ordinal);
             foreach (int position in data.RowPositions)
             {
                 token.ThrowIfCancellationRequested();
@@ -94,7 +94,7 @@ namespace BetterGhPanel.Core
                 var row = snapshot.Rows[item];
                 PanelGeometryInfo? measured = null;
                 if (measurements?.TryGetValue(item, out measured) == true && measured == null) measured = row.GeometryInfo?.WithUnavailableMeasurement();
-                stats[data.Snapshot.Rows[position].Path].Add(snapshot, row, item, query, measured, data.Snapshot.UnitConversion);
+                stats[data.StatPathAt(position)].Add(snapshot, row, item, query, measured, data.Snapshot.UnitConversion);
             }
             foreach (var branch in stats.Values) branch.Complete(query, token);
             return stats;
@@ -103,7 +103,7 @@ namespace BetterGhPanel.Core
             data.RowPositions.Select(partner).Where(item => item.HasValue).Select(item => item!.Value).Distinct().ToArray();
 
         // Rows show the Search value only with Show values; otherwise they show each row's main metric.
-        internal static bool UsesMainMetric(PanelQueryOptions query) => !query.DisplayFilterValue || query.SearchMode == PanelSearchMode.Text || query.SearchMode == PanelSearchMode.Regex;
+        internal static bool UsesMainMetric(PanelQueryOptions query) => !query.DisplaysDataFilterValue || query.SearchMode == PanelSearchMode.Text || query.SearchMode == PanelSearchMode.Regex;
         internal static bool NeedsMeasurement(PanelRow row, PanelQueryOptions query)
         {
             var geometry = row.GeometryInfo;

@@ -13,6 +13,7 @@ namespace BetterGhPanel.Core
         public int PairedOffset { get; }
         public bool ByOrder => Data.Path != Paired.Path;
         public bool Unequal => Data.ItemCount != Paired.ItemCount;
+        internal bool RetainedAfterClean(bool clean) => !clean || Data.ItemCount > 0;
         public int? ItemPosition(int dataIndex) => dataIndex < Paired.ItemCount ? PairedOffset + dataIndex : (int?)null;
     }
 

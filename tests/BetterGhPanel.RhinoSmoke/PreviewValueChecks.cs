@@ -306,6 +306,7 @@ internal static partial class PreviewSafetyChecks
         var membership = Activator.CreateInstance(membershipType, AnyInstance, null, new object?[] { null }, null)!;
         var type = assembly.GetType("BetterGhPanel.Runtime.PanelOrderLabels", true)!;
         var labels = Activator.CreateInstance(type, AnyInstance, null, new[] { membership }, null)!;
+        var labelSource = Enum.Parse(typeof(PanelSnapshot).Assembly.GetType("BetterGhPanel.Core.PanelLabelSource", true)!, "Data");
         var sampled = new List<int>(); bool changed = false;
         PanelPreviewValue Sample(int position)
         {
@@ -316,7 +317,7 @@ internal static partial class PreviewSafetyChecks
         {
             Call(labels, "Configure", result, order, true, PanelDotPlacement.Centre,
                 PanelValuePalette.Viridis, false, PanelSearchMode.Value, decimals, 0d, new[] { 0, half },
-                (Func<int, PanelPreviewValue>)Sample, (Func<bool>)(() => true));
+                (Func<int, bool, PanelPreviewValue>)((position, _) => Sample(position)), (Func<bool>)(() => true), labelSource, false, false);
             // This probe advances ticks explicitly; native reentry must not also
             // advance the sampling timer while the fixture checks intermediate state.
             var timer = FieldValue<System.Windows.Forms.Timer>(labels, "_refresh");
@@ -336,7 +337,7 @@ internal static partial class PreviewSafetyChecks
             Check(FieldValue<string>(dots[0]!, "Text") == "…" && FieldValue<string>(dots[half]!, "Text") == "…" &&
                 FieldValue<int>(dots[0]!, "GroupKey") != FieldValue<int>(dots[half]!, "GroupKey"), "pending value dots never share a group key");
             for (int tick = 0; tick < 4 && FieldValue<string>(dots[half]!, "Text") == "…"; tick++) Tick();
-            Check(sampled.Take(2).SequenceEqual(new[] { 0, half }) && FieldValue<int>(labels, "_cursor") < total &&
+            Check(sampled.Take(2).SequenceEqual(new[] { 0, half }) && sampled.Count < total &&
                 FieldValue<string>(dots[half]!, "Text") == "42 m", "admitted labels sample and publish before the all-Results colour scan completes");
             Check(FieldValue<System.Collections.IDictionary>(labels, "_ranges").Count == 0, "partial text publication does not publish partial colour ranges");
             Configure(true, 2);

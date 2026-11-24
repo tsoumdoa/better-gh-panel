@@ -78,6 +78,7 @@ namespace BetterGhPanel
             new ControlEntry("Branch", layout => layout.Branch, ClickBranch, TooltipQuery, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("SelectAll", layout => layout.SelectAll, ClickSelectAll, TooltipSelectAll, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Trim", layout => layout.Trim, ClickTrim, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
+            new ControlEntry("Clean", layout => layout.Clean, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Simplify", layout => layout.Simplify, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Flatten", layout => layout.Flatten, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
             new ControlEntry("Reverse", layout => layout.Reverse, ClickTree, TooltipTree, click: ControlStep.Main, hover: ControlStep.Main, tooltip: ControlStep.Main),
@@ -192,11 +193,17 @@ namespace BetterGhPanel
         private GH_ObjectResponse? ClickTree(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
             var point = e.CanvasLocation;
-            PanelOwner.SetTreeOperations(PanelOwner.TrimDepth,
+            if (_layout.CreateSet.Contains(point) && (PanelOwner.PairedInputPresent() || PanelOwner.CreateSetTree && PanelOwner.GroupByPaired))
+            {
+                OpenMenu(CanvasMenuKind.CreateSet, sender);
+                return GH_ObjectResponse.Handled;
+            }
+            PanelOwner.SetTreeTools(PanelOwner.TrimDepth,
                 _layout.Flatten.Contains(point) ? !PanelOwner.FlattenTree : PanelOwner.FlattenTree,
                 _layout.Reverse.Contains(point) ? !PanelOwner.ReverseTree : PanelOwner.ReverseTree,
                 _layout.Simplify.Contains(point) ? !PanelOwner.SimplifyTree : PanelOwner.SimplifyTree,
-                _layout.CreateSet.Contains(point) ? !PanelOwner.CreateSetTree : PanelOwner.CreateSetTree);
+                _layout.CreateSet.Contains(point) ? !PanelOwner.CreateSetTree : PanelOwner.CreateSetTree,
+                _layout.Clean.Contains(point) ? !PanelOwner.CleanTree : PanelOwner.CleanTree);
             return GH_ObjectResponse.Handled;
         }
 
@@ -214,7 +221,7 @@ namespace BetterGhPanel
 
         private GH_ObjectResponse? ClickBranchStats(GH_Canvas sender, GH_CanvasMouseEvent e)
         {
-            if (!PanelOwner.BranchStatsTree) PanelOwner.SetBranchStats(true);
+            if (!PanelOwner.BranchStatsTree && !PanelOwner.PairedInputPresent()) PanelOwner.SetBranchStats(true);
             OpenMenu(CanvasMenuKind.BranchStats, sender);
             return GH_ObjectResponse.Handled;
         }
@@ -387,6 +394,13 @@ namespace BetterGhPanel
 
         private void TooltipTree(PointF point, GH_TooltipDisplayEventArgs e)
         {
+            if (_layout.Clean.Contains(point))
+            {
+                e.Title = "Clean tree";
+                e.Text = (PanelOwner.CleanTree ? "On" : "Off") + " · Changes output";
+                e.Description = "Remove empty input branches from the rows and D. Keeps null items and B's original shape. Runs before Simplify.";
+                return;
+            }
             e.Title = _layout.Trim.Contains(point) ? "Trim tree" : _layout.Simplify.Contains(point) ? "Simplify tree" : _layout.Flatten.Contains(point) ? "Flatten tree" : _layout.Reverse.Contains(point) ? "Reverse tree" : "Create set";
             e.Text = (_layout.Trim.Contains(point) ? "Depth: " + PanelOwner.TrimDepth + " · " : "") + "Changes output · Tree tools → Units → Filters → Create set / Stats";
             e.Description = _layout.Trim.Contains(point) ? "Remove this many trailing path levels. Matching branches merge. 0 turns Trim off." :
@@ -444,8 +458,14 @@ namespace BetterGhPanel
                 : PanelProperties.IsProperty(options.SearchMode) ? CanvasMenu.PropertyHelp(options.SearchMode)
                 : "Compare the shown number with >, >=, <, <=, = or != (a bare number means =). Rows without this value are excluded.";
             if (options.DisplayFilterValue)
-                e.Description = "Shows each item's value. n/a means none. Click the search field to filter by it.";
+                e.Description = (options.SearchPaired ? "The F column shows the chosen value in Table. " : "Shows each item's value. ") +
+                    "n/a means none. Click the search field to filter by it.";
             else if (!CanvasMenu.HasValueChoices(options.SearchMode)) e.Description += " Rows update as you type. Enter applies, Esc cancels.";
+            if (options.SearchPaired)
+            {
+                e.Description = "Search tests each D item's F partner. Types and Paths apply to D. " + e.Description;
+                if (PanelOwner.PairedUnavailableReason is string reason) e.Description = reason + " " + e.Description;
+            }
             if (PanelOwner.Session.Error != null) e.Description = PanelOwner.Session.Error + "\n\n" + e.Description;
         }
 
@@ -462,14 +482,20 @@ namespace BetterGhPanel
             if (PanelOwner.BranchStatsTree) { e.Title = "Turn off branch stats"; e.Description = "Keeps your stat picks, filters and other tree tools. Undo restores Stats."; return; }
             e.Title = "Clear filters";
             e.Text = "Undo restores them";
-            e.Description = "Clears search, mode, type, path, invalid-only, sorting, selection and scroll. Tree tools, units and decimals stay. " +
+            e.Description = "Clears search, mode, type, path, invalid-only, sorting, selection and scroll. Returns Search in to D. Tree tools, units and decimals stay. " +
                 "Out Values falls back to Items when clearing the mode leaves no values to send (Create set keeps them).";
         }
 
         private void TooltipFilter(PointF point, GH_TooltipDisplayEventArgs e)
         {
             e.Title = "Search mode";
-            e.Text = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode);
+            var options = PanelOwner.Session.Options;
+            e.Text = (options.SearchPaired ? "F · " : "") + CanvasMenu.SearchModeLabel(options.SearchMode);
+            if (options.SearchPaired && PanelOwner.PairedUnavailableReason is string reason)
+            {
+                e.Description = reason + " Choose D in Search in to use D values.";
+                return;
+            }
             e.Description = "Choose what the search matches: displayed text, a regular expression, numbers, geometry metrics, list length or an input property.";
         }
 
@@ -505,7 +531,7 @@ namespace BetterGhPanel
             e.Text = _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus : System.FormattableString.Invariant($"{_selection.Count:N0} selected");
             // The footer may drop its range for the Clear filters chip; the tooltip keeps it.
             if (PanelOwner.Session.HasCurrentResult)
-                e.Text += " · " + CanvasStatistics.Summary(PanelOwner.Session.Result) + " · showing " + FooterRange(PanelOwner.Session.Result, singleLine: false);
+                e.Text += " · " + FooterSummary(PanelOwner.Session.Result) + " · showing " + FooterRange(PanelOwner.Session.Result, singleLine: false);
             e.Description = "Click to select; Ctrl/Cmd toggles, Shift extends, Alt/Option picks the same index in every branch. Right-click a row to copy, frame or view the full value, or a branch heading for branch actions. Double-click a row to view its full value, or empty list space to clear the selection.\n\n" + KeyboardHint;
         }
 

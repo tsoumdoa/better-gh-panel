@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -23,6 +24,7 @@ namespace BetterGhPanel.Runtime
         private Func<double>? _roundUpFactorResolver;
         private Func<PanelFormula?>? _formulaResolver;
         private Func<bool>? _createSetResolver;
+        private Func<bool>? _pairedGroupResolver;
         private Func<bool>? _branchStatsResolver;
         private Func<PanelStatKinds>? _statKindsResolver;
         private Func<int, PreparedMeasurement<PanelGeometryInfo>?>? _geometryPreparationResolver;
@@ -78,19 +80,33 @@ namespace BetterGhPanel.Runtime
         internal event EventHandler? PreviewMeasurementsChanged;
         private CancellationTokenSource? _previewMeasurements;
         private PanelQueryResult? _previewMeasurementResult;
-        private HashSet<int>? _previewMeasurementPositions;
-        internal void RequestPreviewMeasurements(PanelQueryResult? result, IReadOnlyList<int>? positions)
+        private HashSet<int>? _previewMeasurementPositions, _previewPairedPositions;
+        private bool _previewMeasureData, _previewMeasurePaired;
+        internal void RequestPreviewMeasurements(PanelQueryResult? result, IReadOnlyList<int>? positions, bool data = true, bool paired = false,
+            Func<int, bool>? previewAdmits = null)
         {
+            var column = paired ? _pairedColumn : null;
+            var pairedSnapshot = column?.Snapshot;
+            var partners = positions != null && pairedSnapshot != null && column?.Pair is PanelPairedData map
+                ? positions.Where(position => previewAdmits?.Invoke(position) == true)
+                    .Select(map.ItemAt).Where(item => item.HasValue).Select(item => item!.Value).ToArray()
+                : Array.Empty<int>();
             if (ReferenceEquals(result, _previewMeasurementResult) &&
-                (positions == null ? _previewMeasurementPositions == null : _previewMeasurementPositions?.SetEquals(positions) == true)) return;
+                _previewMeasureData == data && _previewMeasurePaired == paired &&
+                (positions == null ? _previewMeasurementPositions == null : _previewMeasurementPositions?.SetEquals(positions) == true) &&
+                (_previewPairedPositions?.SetEquals(partners) ?? partners.Length == 0)) return;
             var old = _previewMeasurements; _previewMeasurements = null;
             var pending = positions == null ? null : new HashSet<int>(positions);
             _previewMeasurementResult = result; _previewMeasurementPositions = pending;
+            _previewPairedPositions = partners.Length > 0 ? new HashSet<int>(partners) : null;
+            _previewMeasureData = data; _previewMeasurePaired = paired;
             old?.Cancel(); old?.Dispose();
             if (result == null || positions == null || positions.Count == 0 || !HasCurrentResult ||
                 !ReferenceEquals(result, Result) || !ReferenceEquals(_previewMeasurementPositions, pending)) return;
             var cancellation = _previewMeasurements = new CancellationTokenSource();
-            _ = _geometry.MeasureAsync(result.Snapshot, positions, cancellation.Token, background: true);
+            if (data) _ = _geometry.MeasureAsync(result.Snapshot, positions, cancellation.Token, background: true);
+            if (partners.Length > 0)
+                _ = column?.Geometry?.MeasureAsync(pairedSnapshot!, partners, cancellation.Token, background: true);
         }
 
         // Capture stages these immutable providers immediately before attaching their
@@ -167,6 +183,7 @@ namespace BetterGhPanel.Runtime
         internal void SetFormulaResolver(Func<PanelFormula?> resolver) => _formulaResolver = resolver;
         internal void SetRoundUpFactorResolver(Func<double> resolver) => _roundUpFactorResolver = resolver;
         internal void SetCreateSetResolver(Func<bool> resolver) => _createSetResolver = resolver;
+        internal void SetPairedGroupingResolver(Func<bool> group) => _pairedGroupResolver = group;
         internal void SetBranchStatsResolver(Func<bool> enabled, Func<PanelStatKinds> picks)
         { _branchStatsResolver = enabled; _statKindsResolver = picks; }
         private Func<bool>? _outputValuesResolver;
@@ -212,14 +229,24 @@ namespace BetterGhPanel.Runtime
         internal long GeometrySourceScansForTesting => _geometry.SourceScansForTesting;
         internal int GeometryEntryCountForTesting => _geometry.EntryCountForTesting;
         internal void ResetGeometryDiagnosticsForTesting() => _geometry.ResetDiagnosticsForTesting();
-        internal void RequestGeometryMeasurements(PanelSnapshot snapshot, IEnumerable<int> visiblePositions)
+        internal void RequestGeometryMeasurements(PanelSnapshot snapshot, IEnumerable<int> visiblePositions) =>
+            RequestListGeometryMeasurements(snapshot, visiblePositions, null);
+
+        internal void RequestListGeometryMeasurements(PanelSnapshot snapshot, IEnumerable<int> visiblePositions,
+            IReadOnlyList<int>? visiblePairedRows)
         {
             CancelVisibleColumnMeasurements();
             // The ordinary D renderer also signals hidden/offscreen/compact tables.
             // Explicit copy demand must not keep an inactive column measuring.
             foreach (var column in _columns.ToArray())
-                if (_options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != _options.SortColumn)
-                    column.Geometry?.CancelRequests();
+                if (visiblePairedRows != null && column == _pairedColumn) continue;
+                else if ((_options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != _options.SortColumn) &&
+                    (!_previewMeasurePaired || column != _pairedColumn))
+                    column.Geometry?.CancelRequests(preserveQuery: true);
+            if (_pairedColumn?.Snapshot is PanelSnapshot pairedSnapshot && _pairedColumn.Pair is PanelPairedData pair)
+                _pairedColumn.Geometry?.RequestVisible(pairedSnapshot, visiblePairedRows != null && ReferenceEquals(snapshot, Snapshot)
+                    ? visiblePairedRows.Select(pair.ItemAt).Where(item => item.HasValue).Select(item => item!.Value)
+                    : Array.Empty<int>());
             _geometry.RequestVisible(snapshot, visiblePositions);
         }
         internal Task<bool> MeasureGeometryAsync(PanelSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken cancellationToken) =>
@@ -257,7 +284,9 @@ namespace BetterGhPanel.Runtime
             if (_branchStatsResolver != null) next.BranchStats = _branchStatsResolver();
             if (_statKindsResolver != null) next.StatKinds = _statKindsResolver();
             if (_createSetResolver != null) next.CreateSet = _createSetResolver();
-            if (_outputValuesResolver != null) next.OutputValues = _outputValuesResolver() && (next.DisplayFilterValue || next.CreateSet);
+            if (_pairedGroupResolver != null) next.GroupByPaired = _pairedGroupResolver();
+            if (next.ShowsDataListLength) next.GroupByPaired = false;
+            if (_outputValuesResolver != null) next.OutputValues = _outputValuesResolver() && (next.DisplaysDataFilterValue || next.CreateSet);
             next.DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, next.DecimalPlaces));
             // Canonical paths keep direct input, saved options and menu checkmarks
             // consistent. Malformed input stays in the query so it reports the same
@@ -274,7 +303,9 @@ namespace BetterGhPanel.Runtime
             else Notify(); // View resets can clear transient state even when options are unchanged.
         }
 
-        private void QueueQuery()
+        private const int MeasurementRetryLimit = 3;
+
+        private void QueueQuery(int retriesRemaining = MeasurementRetryLimit)
         {
             _queryCancellation?.Cancel();
             _queryCancellation?.Dispose();
@@ -283,8 +314,21 @@ namespace BetterGhPanel.Runtime
             var token = cancellation.Token;
             var snapshot = Snapshot;
             var options = _options.Clone();
-            bool measureGeometry = snapshot.HasMeasurableGeometry && PanelQueryEngine.RequiresGeometryMeasurements(options);
-            var sortColumn = options.BranchStats || options.SortMode == PanelSortMode.SourceOrder ? null :
+            options.PairedGroupingUnavailable = options.GroupByPaired && _pairedGroupResolver != null &&
+                (_pairedColumn == null || _pairedColumn.Error != null);
+            var paired = options.SearchPaired || options.GroupByPaired ? _pairedColumn : null;
+            var pairedSnapshot = paired?.Snapshot;
+            var pairedQueue = paired?.Geometry;
+            if (pairedSnapshot != null && paired?.Pair is PanelPairedData pair)
+                options.PairedSource = new PanelPairedQuerySource(pairedSnapshot, pair.ItemAt, pair.Flattened);
+            options.SortPairedKey = options.CreateSet && options.GroupByPaired && paired != null &&
+                paired.Input.InstanceGuid == options.SortColumn;
+            bool measurePaired = pairedSnapshot?.HasMeasurableGeometry == true && pairedQueue != null &&
+                (options.GroupByPaired || options.SearchPaired && !options.DisplayFilterValue && (PanelQueryEngine.UsesDisplayedText(options) ||
+                    !string.IsNullOrWhiteSpace(options.Search) &&
+                    (options.SearchMode >= PanelSearchMode.Length && options.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(options.SearchMode))));
+            bool measureGeometry = !options.PairedGroupingUnavailable && snapshot.HasMeasurableGeometry && PanelQueryEngine.RequiresGeometryMeasurements(options);
+            var sortColumn = options.BranchStats || options.SortPairedKey || options.SortMode == PanelSortMode.SourceOrder ? null :
                 _columns.Find(column => column.Input.InstanceGuid == options.SortColumn && column.Snapshot?.HasMeasurableGeometry == true);
             var sortSnapshot = sortColumn?.Snapshot;
             var sortQueue = sortColumn?.Geometry;
@@ -297,7 +341,7 @@ namespace BetterGhPanel.Runtime
             PanelQueryWork? work = null;
             // Regex and native calls cannot yield midway through one operation.
             // All other queries get the same time budget regardless of tree size.
-            if (options.SearchMode != PanelSearchMode.Regex && !measureGeometry && sortColumn == null)
+            if (options.SearchMode != PanelSearchMode.Regex && !measureGeometry && !measurePaired && sortColumn == null)
             {
                 try
                 {
@@ -319,6 +363,8 @@ namespace BetterGhPanel.Runtime
             // Only plain immutable managed snapshot values cross this boundary.
             Task.Run(async () =>
             {
+                PanelQueryResult? result = null;
+                string? error = null;
                 try
                 {
                     IReadOnlyDictionary<int, PanelGeometryInfo>? measurements = null;
@@ -328,7 +374,7 @@ namespace BetterGhPanel.Runtime
                         // geometry. Filters include offscreen rows through the same bounded
                         // worker used by visible rows and explicit copy requests.
                         var candidates = PanelQueryEngine.GeometryCandidates(snapshot, options, token);
-                        if (!await MeasureGeometryAsync(snapshot, candidates, token).ConfigureAwait(false)) return;
+                        if (!await _geometry.MeasureAsync(snapshot, candidates, token, requiredForQuery: true).ConfigureAwait(false)) return;
                         measurements = await CaptureGeometryMeasurements(snapshot, request, token).ConfigureAwait(false);
                         if (measurements == null) return;
                     }
@@ -336,7 +382,7 @@ namespace BetterGhPanel.Runtime
                     {
                         // Validate before native work, as D's candidate preparation does.
                         _ = new PanelQueryScope(snapshot, options, new PanelSearchFilter(options));
-                        if (!await sortQueue.MeasureAllAsync(sortSnapshot, sortSnapshot.Rows.Count, token).ConfigureAwait(false)) return;
+                        if (!await sortQueue.MeasureAllAsync(sortSnapshot, sortSnapshot.Rows.Count, token, requiredForQuery: true).ConfigureAwait(false)) return;
                         var sortMeasurements = await sortQueue.CaptureCompletedAsync(sortSnapshot, sortSnapshot.Rows.Count, token).ConfigureAwait(false);
                         if (sortMeasurements == null) return;
                         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -353,29 +399,46 @@ namespace BetterGhPanel.Runtime
                         }));
                         if (!await completion.Task.ConfigureAwait(false)) return;
                     }
+                    if (measurePaired && options.PairedSource is PanelPairedQuerySource source)
+                    {
+                        var candidates = PanelQueryEngine.PairedGeometryCandidates(snapshot, options, source, token).ToArray();
+                        if (candidates.Length > 0)
+                        {
+                            if (!await pairedQueue!.MeasureAsync(source.Snapshot, candidates, token, requiredForQuery: true).ConfigureAwait(false)) return;
+                            source.Measurements = await pairedQueue.CaptureCompletedAsync(source.Snapshot, candidates, token).ConfigureAwait(false);
+                            if (source.Measurements == null) return;
+                        }
+                    }
                     // Resume the same scan, statistics and sort state. Work already
                     // performed within the UI budget is never restarted.
-                    var result = work?.Complete() ?? PanelQueryEngine.Execute(snapshot, options, token, measurements);
-                    RhinoApp.InvokeOnUiThread((Action)(() =>
-                    {
-                        if (!CanPublish(snapshot, request, token)) return;
-                        if (measureGeometry && !_geometry.SourcesCurrent(snapshot)) return;
-                        if (sortColumn != null && (sortSnapshot == null || sortQueue == null ||
-                            !ReferenceEquals(sortColumn.Snapshot, sortSnapshot) || !sortQueue.SourcesCurrent(sortSnapshot))) return;
-                        if (!CanPublish(snapshot, request, token)) return;
-                        PublishQuery(result, null);
-                    }));
+                    result = work?.Complete() ?? PanelQueryEngine.Execute(snapshot, options, token, measurements);
                 }
                 catch (OperationCanceledException) { }
-                catch (Exception ex)
+                catch (Exception ex) { error = ex.Message; }
+                finally
                 {
+                    work?.Dispose();
+                    if (retriesRemaining > 0 && result == null && error == null && !token.IsCancellationRequested)
+                        await Task.Delay(60).ConfigureAwait(false);
                     RhinoApp.InvokeOnUiThread((Action)(() =>
                     {
                         if (!CanPublish(snapshot, request, token)) return;
-                        PublishQuery(null, ex.Message);
+                        if (result != null &&
+                            (measureGeometry && !_geometry.SourcesCurrent(snapshot) ||
+                             measurePaired && (!ReferenceEquals(paired?.Snapshot, pairedSnapshot) || !pairedQueue!.SourcesCurrent(pairedSnapshot!)) ||
+                             sortColumn != null && (sortSnapshot == null || sortQueue == null ||
+                                 !ReferenceEquals(sortColumn.Snapshot, sortSnapshot) || !sortQueue.SourcesCurrent(sortSnapshot))))
+                            result = null;
+                        if (!CanPublish(snapshot, request, token)) return;
+                        // The same capture can retry an interrupted measurement. A newer
+                        // query or a source recapture takes over through CanPublish.
+                        if (result == null && error == null && retriesRemaining > 0)
+                            QueueQuery(retriesRemaining - 1);
+                        else if (result == null && error == null)
+                            PublishQuery(null, "Measurements were interrupted. Edit the query to try again.");
+                        else PublishQuery(result, error);
                     }));
                 }
-                finally { work?.Dispose(); }
             });
         }
 

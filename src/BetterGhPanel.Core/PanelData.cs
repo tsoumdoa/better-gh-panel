@@ -207,6 +207,8 @@ namespace BetterGhPanel.Core
             var rowCopy = new PanelRow[rows.Count];
             var typeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             bool hasMeasurableGeometry = false, hasGeometryMetrics = false;
+            PanelGeometryInfo? commonMetric = null;
+            bool mixedMetrics = false;
             var capabilities = PanelSearchCapabilities.None;
             int unverifiedCount = 0, unavailableTypeIdentityCount = 0;
             for (var i = 0; i < rowCopy.Length; i++)
@@ -217,6 +219,12 @@ namespace BetterGhPanel.Core
                 typeCounts[row.TypeName] = count + 1;
                 if (row.IsValid && !row.IsNull && row.GeometryInfo?.CanMeasure == true) hasMeasurableGeometry = true;
                 hasGeometryMetrics |= PanelTableText.HasGeometryMetric(row.GeometryInfo);
+                if (!mixedMetrics && row.IsValid && !row.IsNull && row.GeometryInfo is PanelGeometryInfo metric &&
+                    (metric.CanMeasure || metric.Value.HasValue))
+                {
+                    if (commonMetric == null) commonMetric = metric;
+                    else mixedMetrics = !PanelTableText.SameGeometryMetric(commonMetric, metric);
+                }
                 capabilities |= row.SearchCapabilities;
                 foreach (var mode in row.Properties.Keys) _properties.Add(mode);
                 if (row.GeometryInfo != null) foreach (var mode in row.GeometryInfo.Properties.Keys) _properties.Add(mode);
@@ -237,6 +245,7 @@ namespace BetterGhPanel.Core
             CachedGroupSummaryCount = cachedGroupSummaryCount;
             HasMeasurableGeometry = hasMeasurableGeometry;
             HasGeometryMetrics = hasGeometryMetrics;
+            CommonGeometryMetric = mixedMetrics ? null : commonMetric;
             SearchCapabilities = capabilities;
             UnverifiedCount = unverifiedCount;
             UnavailableTypeIdentityCount = unavailableTypeIdentityCount;
@@ -250,6 +259,7 @@ namespace BetterGhPanel.Core
         /// <summary>Whether any valid captured row can require a deferred geometry measurement.</summary>
         public bool HasMeasurableGeometry { get; }
         internal bool HasGeometryMetrics { get; }
+        internal PanelGeometryInfo? CommonGeometryMetric { get; }
         /// <summary>Union captured from transformed, unfiltered primary D; it does not change the saved query.</summary>
         public PanelSearchCapabilities SearchCapabilities { get; }
         /// <summary>Input-level diagnostics before any query filter or set projection.</summary>
@@ -391,11 +401,17 @@ namespace BetterGhPanel.Core
     {
         public string Search { get; set; } = string.Empty;
         public PanelSearchMode SearchMode { get; set; } = PanelSearchMode.Text;
+        public bool SearchPaired { get; set; }
+        internal bool DisplaysDataFilterValue => DisplayFilterValue && !SearchPaired;
+        internal bool ShowsDataListLength => DisplaysDataFilterValue && SearchMode == PanelSearchMode.ListLength;
+        internal PanelPairedQuerySource? PairedSource { get; set; }
         /// <summary>Inspect the selected numeric metric without applying a search predicate.</summary>
         public bool DisplayFilterValue { get; set; }
         /// <summary>Create a set of the current formatted values after filtering.</summary>
         public bool CreateSet { get; set; }
         public bool BranchStats { get; set; }
+        public bool GroupByPaired { get; set; }
+        internal bool PairedGroupingUnavailable { get; set; }
         public PanelStatKinds StatKinds { get; set; } = PanelBranchStats.Default;
         /// <summary>Prepare typed displayed values for D/S, including offscreen measurements.</summary>
         public bool OutputValues { get; set; }
@@ -412,6 +428,7 @@ namespace BetterGhPanel.Core
         public PanelSortMode SortMode { get; set; } = PanelSortMode.SourceOrder;
         /// <summary>Input identity of the presentation sort; empty means D.</summary>
         public Guid SortColumn { get; set; }
+        internal bool SortPairedKey { get; set; }
         /// <summary>Immutable captured column keys, indexed by D snapshot position.</summary>
         public PanelColumnSortKeys? ColumnSortKeys { get; set; }
         internal PanelTableSource? TableSource { get; set; }
@@ -420,9 +437,12 @@ namespace BetterGhPanel.Core
         {
             Search = Search,
             SearchMode = SearchMode,
+            SearchPaired = SearchPaired,
+            PairedSource = PairedSource,
             DisplayFilterValue = DisplayFilterValue,
             CreateSet = CreateSet,
-            BranchStats = BranchStats, StatKinds = StatKinds,
+            BranchStats = BranchStats, StatKinds = StatKinds, GroupByPaired = GroupByPaired,
+            PairedGroupingUnavailable = PairedGroupingUnavailable,
             OutputValues = OutputValues,
             DecimalPlaces = DecimalPlaces,
             RoundUpFactor = RoundUpFactor,
@@ -433,6 +453,7 @@ namespace BetterGhPanel.Core
             OnlyInvalid = OnlyInvalid,
             SortMode = SortMode,
             SortColumn = SortColumn,
+            SortPairedKey = SortPairedKey,
             ColumnSortKeys = ColumnSortKeys,
             TableSource = TableSource
         };
@@ -474,6 +495,11 @@ namespace BetterGhPanel.Core
     {
         public PanelTableIndex? TableIndex { get; internal set; }
         public IReadOnlyDictionary<string, PanelBranchStats>? BranchStats { get; internal set; }
+        internal IReadOnlyList<string>? GroupedStatPaths { get; set; }
+        internal IReadOnlyList<string> StatPaths => GroupedStatPaths ?? BranchPaths;
+        internal Dictionary<string, PanelPairedGroups.Group>? StatGroups { get; set; }
+        internal Dictionary<int, string>? StatGroupByPosition { get; set; }
+        internal string StatPathAt(int position) => StatGroupByPosition?.TryGetValue(position, out string path) == true ? path : Snapshot.Rows[position].Path;
         internal HashSet<int> StatSources { get; set; } = new HashSet<int>();
         internal string StatHeaderSuffix { get; set; } = "";
         internal Dictionary<Guid, string> ColumnStatHeaderSuffixes { get; } = new Dictionary<Guid, string>();

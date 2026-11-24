@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using BetterGhPanel.Core;
 using BetterGhPanel.Runtime;
@@ -189,7 +190,7 @@ namespace BetterGhPanel
                     if (!Current()) return;
                     var liveInputTree = tree;
                     var inputTree = PanelTreeOperations.CopyStructure(liveInputTree);
-                    tree = PanelTreeOperations.ApplyWithSources(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out var retainedSources);
+                    tree = PanelTreeOperations.ApplyWithSources(tree, TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out var retainedSources, CleanTree);
                     var preConversionTree = tree;
                     var conversion = UnitConversion;
                     var roundUpFactor = RoundUpFactor;
@@ -221,6 +222,7 @@ namespace BetterGhPanel
                     // locals together only while this solve still owns the component.
                     _scalarInputs = scalarInputs; _presentedScalars = queryScalars;
                     _inputTree = inputTree; _preConversionTree = preConversionTree; _queryTree = queryTree;
+                    CleanedEmptyBranches = CleanTree ? inputTree.Branches.Count(branch => branch.Count == 0) : 0;
                     RefreshFormulaItems();
                     _retainedSources = retainedSources;
                     _liveInputTree = liveInputTree;
@@ -323,7 +325,7 @@ namespace BetterGhPanel
             livePairedTree = paired;
             capturedPairedTree = PanelTreeOperations.CopyStructure(paired);
             pairedTree = PanelOutputOperations.Pair(inputTree, capturedPairedTree, retainedSources,
-                TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out error);
+                TrimDepth, SimplifyTree, FlattenTree, ReverseTree, out error, CleanTree);
         }
 
         internal bool PairedInputPresent() => Params.Input[1].SourceCount != 0 ||

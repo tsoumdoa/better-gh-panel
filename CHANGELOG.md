@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Search D or its paired F column, including F text, numbers and geometry properties. Types and Paths continue to filter D.
+- Label viewport geometry with D, F or both. Colour geometry by F numbers or text categories and see the category counts in the legend.
+- Preview **Pass / Fail** to see matches and red failures together, with a count in the viewport legend.
+- Group **Create set** or **Σ** by F values to collect D items or calculate their statistics per key.
+- Use **Clean** to remove empty branches from the panel and D while keeping null items and B's original shape.
 - **Show all dots** in the Preview menu keeps full text on every preview dot, even behind objects or overlapping. The preview limit and memory cap still apply.
 
 ## 0.6.3-beta

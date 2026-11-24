@@ -15,7 +15,7 @@ namespace BetterGhPanel
         private PanelRowSelection? _queryPreviewSelection;
         internal PanelRowSelection CommittedSelection => _committedSelection;
         internal PanelRowSelection RowSelection => _queryPreviewSelection ?? _committedSelection;
-        internal static bool CanOutputValuesFor(bool createSet, PanelQueryOptions options) => !options.BranchStats && (createSet || options.DisplayFilterValue);
+        internal static bool CanOutputValuesFor(bool createSet, PanelQueryOptions options) => !options.BranchStats && (createSet || options.DisplaysDataFilterValue);
         internal bool CanOutputValues => !BranchStatsTree && CanOutputValuesFor(CreateSetTree, Session.Options);
         internal bool OutputsValues => CanOutputValues && OutputValues == PanelOutputValues.Values;
         private GH_Structure<IGH_Goo>? _inputTree, _preConversionTree;
@@ -24,6 +24,9 @@ namespace BetterGhPanel
         private string? _pairedError;
         internal PanelPairedData? PairedData { get; private set; }
         internal string? PairedError => _pairedError;
+        internal string? PairedUnavailableReason => PairedData != null ? null :
+            !PairedInputPresent() ? "F is not wired." : PairedError is string error
+                ? error + " Pairing uses the input branch counts before Clean." : "F is waiting for paired data.";
         internal bool CanSplit => TableColumns.Any(column => column.Present && column.Pair != null) && Session.HasCurrentResult;
         private long _selectionVersion, _publishedSelectionVersion;
         private PanelOutputScope _publishedScope;
@@ -44,6 +47,7 @@ namespace BetterGhPanel
         {
             (Attributes as BetterPanelAttributes)?.ClearTableWidths();
             _inputTree = _preConversionTree = null;
+            CleanedEmptyBranches = 0;
             _liveInputTree = _itemOutputTree = null;
             _captureGraphs = Array.Empty<CaptureGraphWitness>();
             _captureHasGeometry = false;
@@ -138,7 +142,7 @@ namespace BetterGhPanel
         {
             var tree = new GH_Structure<IGH_Goo>();
             var selection = selected ? new HashSet<int>(positions) : null;
-            foreach (string path in query.BranchPaths)
+            foreach (string path in query.StatPaths)
             {
                 var stats = query.BranchStats![path];
                 var ghPath = new GH_Path();
@@ -160,7 +164,7 @@ namespace BetterGhPanel
             if (selected && positions.Count == 0 && branches.Count == 0) return new GH_Structure<IGH_Goo>();
             if (query.BranchStats != null) return StatsOutput(query, positions, selected);
             if (query.DisplaySet != null) return OutputsValues
-                ? PanelOutputOperations.DisplaySet(source, query, positions, branches, CountOutputVisits)
+                ? PanelOutputOperations.DisplaySet(source, query, positions, branches, CountOutputVisits, FlattenTree)
                 : PanelOutputOperations.SetItems(source, query, positions, branches, FlattenTree, CountOutputVisits);
             if (OutputsValues) return PanelOutputOperations.Values(source, query, positions,
                 selected ? Array.Empty<string>() : branches, CountOutputVisits);

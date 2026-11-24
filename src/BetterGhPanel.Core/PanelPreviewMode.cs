@@ -1,4 +1,4 @@
 namespace BetterGhPanel.Core
 {
-    internal enum PanelPreviewMode { Selected, FilteredResults, Off }
+    internal enum PanelPreviewMode { Selected, FilteredResults, Off, PassFail }
 }

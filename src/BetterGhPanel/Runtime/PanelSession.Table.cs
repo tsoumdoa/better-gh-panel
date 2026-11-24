@@ -10,6 +10,7 @@ namespace BetterGhPanel.Runtime
     public sealed partial class PanelSession
     {
         private readonly List<PanelTableColumn> _columns = new List<PanelTableColumn>();
+        private PanelTableColumn? _pairedColumn;
         private CancellationTokenSource? _visibleColumns;
         private PanelSnapshot? _visibleSnapshot;
         private int[][]? _visibleDemand;
@@ -27,7 +28,7 @@ namespace BetterGhPanel.Runtime
 
         internal void ConfigureColumnGeometry(IReadOnlyList<PanelTableColumn> columns,
             Func<PanelTableColumn, int, PreparedMeasurement<PanelGeometryInfo>?> prepare,
-            Func<PanelTableColumn, PanelSnapshot, int, bool> current)
+            Func<PanelTableColumn, PanelSnapshot, int, bool> current, PanelTableColumn? pairedColumn = null)
         {
             if (_disposed) return;
             var generation = ++_columnGeneration;
@@ -40,6 +41,7 @@ namespace BetterGhPanel.Runtime
                     if (_disposed || generation != _columnGeneration) return;
                 }
             _columns.Clear(); _columns.AddRange(next);
+            _pairedColumn = pairedColumn;
             for (int index = 0; index < next.Length; index++)
             {
                 var column = next[index];
@@ -70,7 +72,8 @@ namespace BetterGhPanel.Runtime
         {
             if (_tableSource == null || ReferenceEquals(_statColumnsRunning, result)) return;
             var options = _options.Clone();
-            var columns = _columns.Where(column => column.Snapshot != null && column.Pair != null && !result.ColumnBranchStats.ContainsKey(column.Input.InstanceGuid))
+            var columns = _columns.Where(column => (result.StatGroups == null || column != _pairedColumn) &&
+                    column.Snapshot != null && column.Pair != null && !result.ColumnBranchStats.ContainsKey(column.Input.InstanceGuid))
                 .Select(column => (Column: column, Snapshot: column.Snapshot!, Queue: column.Geometry, Pair: column.Pair!)).ToArray();
             if (columns.Length == 0) return;
             _statColumnsRunning = result;
@@ -98,7 +101,7 @@ namespace BetterGhPanel.Runtime
                         catch (Exception)
                         {
                             // A failed column is complete and unavailable. Never run another failing/cancelled scan in the fallback.
-                            stats = result.BranchPaths.ToDictionary(path => path, _ => new PanelBranchStats(options.StatKinds), StringComparer.Ordinal);
+                            stats = result.StatPaths.ToDictionary(path => path, _ => new PanelBranchStats(options.StatKinds), StringComparer.Ordinal);
                         }
                         Rhino.RhinoApp.InvokeOnUiThread((Action)(() =>
                         {
@@ -132,6 +135,7 @@ namespace BetterGhPanel.Runtime
             var retired = _columns.Select(column => column.Geometry).ToArray();
             foreach (var column in _columns) column.Geometry = null;
             _columns.Clear();
+            _pairedColumn = null;
             foreach (var queue in retired) queue?.Dispose();
         }
 

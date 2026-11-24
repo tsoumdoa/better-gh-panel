@@ -72,7 +72,9 @@ namespace BetterGhPanel
             "Inspect and manipulate data trees on the canvas. Choose Items or displayed Values for D/S. Create set groups every member in a branch per value, or emits unique displayed values. B/F and geometry actions include all set members. Sorting changes only view order.",
             "Params", "Util")
         {
-            _highlight.PendingMeasurements = (result, positions) => _session?.RequestPreviewMeasurements(result, positions);
+            _highlight.PendingMeasurements = (result, positions) => _session?.RequestPreviewMeasurements(result, positions,
+                LabelSource == PanelLabelSource.Data || LabelSource == PanelLabelSource.PairedAndData || !ColourByPaired && ValuePalette != PanelValuePalette.Off,
+                UsesPairedPreviewValues, _highlight.IsAdmitted);
             _highlight.PreviewChanged = () =>
             {
                 InvalidatePreviewCaches();
@@ -122,6 +124,7 @@ namespace BetterGhPanel
                     _session.SetRoundUpFactorResolver(() => RoundUpFactor);
                     _session.SetFormulaResolver(() => PresentedFormula);
                     _session.SetCreateSetResolver(() => CreateSetTree);
+                    _session.SetPairedGroupingResolver(() => GroupByPaired);
                     _session.SetBranchStatsResolver(() => BranchStatsTree, () => StatKinds);
                     _session.SetOutputValuesResolver(() => OutputValues == PanelOutputValues.Values);
                     if (Locked) _session.InvalidateInput(false, suspended: true);

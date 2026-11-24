@@ -6,23 +6,33 @@ namespace BetterGhPanel.Core
 {
     public enum PanelDotPlacement { Centre, BoxTop, BoxBottom }
     public enum PanelValuePalette { Off, Viridis, Heat, BlueWhiteRed }
+    internal enum PanelLabelSource { Off, Data, Paired, PairedAndData }
 
     /// <summary>Captured dot value. Pending replacements can retain a published number until measured.</summary>
     public readonly struct PanelPreviewValue
     {
         public PanelPreviewValue(string metric, string unit, double? number, string text, bool pending = false)
-        { Metric = metric; Unit = unit; Number = number; Text = text; Pending = pending; Key = metric + "\n" + unit; }
+            : this(metric, unit, number, text, pending, null, false) { }
+        private PanelPreviewValue(string metric, string unit, double? number, string text, bool pending, string? labelText, bool category)
+        { Metric = metric; Unit = unit; Number = number; Text = text; Pending = pending; Key = metric + "\n" + unit; LabelText = labelText; Category = category; }
         public string Metric { get; }
         public string Unit { get; }
         public double? Number { get; }
         public string Text { get; }
         public bool Pending { get; }
         public string Key { get; }
-        public PanelPreviewValue RetainNumber(PanelPreviewValue previous) => Pending && previous.Number.HasValue &&
+        internal string? LabelText { get; }
+        internal bool Category { get; }
+        internal static PanelPreviewValue FromCategory(string text) =>
+            new PanelPreviewValue("", "", null, text, false, PanelValuePresentation.Visualize(text), true);
+        internal string ValueText => LabelText ?? (Pending ? "…" : Number.HasValue ? Text : "");
+        internal PanelPreviewValue WithLabel(string text, bool pending) =>
+            new PanelPreviewValue(Metric ?? "", Unit ?? "", Number, Text ?? "", Pending || pending, text, Category);
+        public PanelPreviewValue RetainNumber(PanelPreviewValue previous) => Pending && !Number.HasValue && previous.Number.HasValue &&
             (string.IsNullOrEmpty(Metric) || Metric == previous.Metric) && (string.IsNullOrEmpty(Unit) || Unit == previous.Unit)
-                ? new PanelPreviewValue(previous.Metric, previous.Unit, previous.Number, previous.Text, pending: true) : this;
+                ? new PanelPreviewValue(previous.Metric, previous.Unit, previous.Number, previous.Text, true, LabelText, false) : this;
         public string Label(int? order, bool values) => (order?.ToString(CultureInfo.InvariantCulture) ?? "") +
-            (values && (Number.HasValue || Pending) ? (order.HasValue ? " · " : "") + (Pending ? "…" : Text) : "");
+            (values && ValueText.Length > 0 ? (order.HasValue ? " · " : "") + ValueText : "");
     }
 
     public sealed class PanelPreviewRange
@@ -54,7 +64,16 @@ namespace BetterGhPanel.Core
     public static class PanelPreviewValues
     {
         public const int Buckets = 65;
-        public const int ColourCount = 1 + 3 * Buckets;
+        internal const int CategoryFirst = 1 + 3 * Buckets;
+        internal const int CategoryCount = 10;
+        internal const int OtherCategory = CategoryFirst + CategoryCount;
+        internal const int FailedColour = OtherCategory + 1;
+        internal const int PassedColour = FailedColour + 1;
+        public const int ColourCount = PassedColour + 1;
+        private static readonly int[] Categories = { 0x3b6fd8, 0xe08a1e, 0x8a4fc7, 0x168795, 0xda6096, 0x82700b, 0x344979, 0x835136, 0x39a8c9, 0xa170bb };
+        internal static Color SpecialColour(int id) => id == FailedColour ? Color.FromArgb(217, 68, 58) :
+            id == PassedColour ? Color.FromArgb(63, 174, 73) : id == OtherCategory ? Color.FromArgb(145, 145, 145) :
+            Color.FromArgb(unchecked((int)0xff000000) | Categories[id - CategoryFirst]);
         private static readonly int[][] Stops = {
             new[] { 0x440154, 0x3b528b, 0x21918c, 0x5ec962, 0xfde725 },
             new[] { 0x000004, 0x51127c, 0xb73779, 0xfc8961, 0xfcfdbf },

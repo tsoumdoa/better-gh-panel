@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections;
 using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
@@ -292,10 +291,11 @@ namespace BetterGhPanel.Core
 
         // Position lists are immutable request inputs; the queue retains them only
         // until registration ends. Whole-column callers use the allocation-free range.
-        internal Task<bool> MeasureAllAsync(TSnapshot snapshot, int count, CancellationToken token) =>
-            MeasureAsync(snapshot, new SequentialPositions(count), token);
+        internal Task<bool> MeasureAllAsync(TSnapshot snapshot, int count, CancellationToken token, bool requiredForQuery = false) =>
+            MeasureAsync(snapshot, new SequentialPositions(count), token, requiredForQuery: requiredForQuery);
 
-        internal Task<bool> MeasureAsync(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token, bool background = false)
+        internal Task<bool> MeasureAsync(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token,
+            bool background = false, bool requiredForQuery = false)
         {
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             _postUi(() =>
@@ -303,7 +303,7 @@ namespace BetterGhPanel.Core
                 _verifyUi();
                 if (_disposed || !ReferenceEquals(snapshot, _snapshot) || token.IsCancellationRequested)
                 { completion.TrySetResult(false); return; }
-                var batch = new Batch(snapshot, positions, token, completion, background);
+                var batch = new Batch(snapshot, positions, token, completion, background, requiredForQuery);
                 _batches.Add(batch);
                 var registration = token.Register(() => _postCancellation(() =>
                 {
@@ -345,7 +345,10 @@ namespace BetterGhPanel.Core
             PumpLater();
         }
 
-        internal Task<IReadOnlyDictionary<int, TResult?>?> CaptureCompletedAsync(TSnapshot snapshot, int count, CancellationToken token)
+        internal Task<IReadOnlyDictionary<int, TResult?>?> CaptureCompletedAsync(TSnapshot snapshot, int count, CancellationToken token) =>
+            CaptureCompletedAsync(snapshot, new SequentialPositions(count), token);
+
+        internal Task<IReadOnlyDictionary<int, TResult?>?> CaptureCompletedAsync(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token)
         {
             var completion = new TaskCompletionSource<IReadOnlyDictionary<int, TResult?>?>(TaskCreationOptions.RunContinuationsAsynchronously);
             var values = new Dictionary<int, TResult?>();
@@ -355,28 +358,20 @@ namespace BetterGhPanel.Core
                 _verifyUi();
                 bool Current() => !_disposed && !token.IsCancellationRequested && ReferenceEquals(snapshot, _snapshot);
                 if (!Current()) { completion.TrySetResult(null); return; }
-                int end = Math.Min(count, next + DemandChunkSize);
+                int end = Math.Min(positions.Count, next + DemandChunkSize);
                 for (; next < end; next++)
                 {
                     if (!Current()) { completion.TrySetResult(null); return; }
-                    if (!TryGetEntry(next, out var entry) || !entry.Complete) continue;
-                    if (!IsCurrentEntry(snapshot, next, entry) || !Current()) { completion.TrySetResult(null); return; }
-                    values.Add(next, entry.Value);
+                    int position = positions[next];
+                    if (!TryGetEntry(position, out var entry) || !entry.Complete) continue;
+                    if (!IsCurrentEntry(snapshot, position, entry) || !Current()) { completion.TrySetResult(null); return; }
+                    values.Add(position, entry.Value);
                 }
-                if (next < count) _postCancellation(Step);
+                if (next < positions.Count) _postCancellation(Step);
                 else completion.TrySetResult(new ReadOnlyDictionary<int, TResult?>(values));
             }
             _postUi(Step);
             return completion.Task;
-        }
-
-        private sealed class SequentialPositions : IReadOnlyList<int>
-        {
-            internal SequentialPositions(int count) { Count = count; }
-            public int Count { get; }
-            public int this[int index] => index;
-            public IEnumerator<int> GetEnumerator() { for (int i = 0; i < Count; i++) yield return i; }
-            IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
         }
 
         private bool CanStart(TSnapshot snapshot, int position) =>
@@ -457,13 +452,19 @@ namespace BetterGhPanel.Core
             PumpLater(true);
         }
 
-        internal void CancelRequests()
+        internal void CancelRequests(bool preserveQuery = false)
         {
             _verifyUi();
-            CancelBatches(); _visible.Clear();
+            for (int i = _batches.Count - 1; i >= 0; i--)
+                if (!preserveQuery || !_batches[i].RequiredForQuery) CompleteBatch(_batches[i], false);
+            _visible.Clear();
             AbandonUndemanded();
-            _scheduler?.Cancel(this);
-            StopCapacityWait();
+            if (preserveQuery) PumpLater();
+            else
+            {
+                _scheduler?.Cancel(this);
+                StopCapacityWait();
+            }
         }
 
         private void Pump(GeometryMeasurementScheduler.Lease? admission = null)
@@ -674,12 +675,14 @@ namespace BetterGhPanel.Core
         }
         private sealed class Batch
         {
-            internal Batch(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token, TaskCompletionSource<bool> completion, bool background)
-            { Snapshot = snapshot; Requested = positions; Token = token; Completion = completion; Background = background; }
+            internal Batch(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token,
+                TaskCompletionSource<bool> completion, bool background, bool requiredForQuery)
+            { Snapshot = snapshot; Requested = positions; Token = token; Completion = completion; Background = background; RequiredForQuery = requiredForQuery; }
             internal IReadOnlyList<int>? Requested;
             internal int Next;
             internal bool Registered;
             internal readonly bool Background;
+            internal readonly bool RequiredForQuery;
             internal readonly TSnapshot Snapshot;
             internal readonly Queue<int> Positions = new Queue<int>();
             internal readonly HashSet<int> Pending = new HashSet<int>();

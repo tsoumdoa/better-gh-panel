@@ -31,10 +31,17 @@ namespace BetterGhPanel
         internal bool PanelSplit { get; private set; }
         internal PanelPreviewMode PreviewMode { get; private set; }
         internal bool ShowItemOrder { get; private set; }
-        internal bool ShowValues { get; private set; }
+        internal bool ShowValues => LabelSource != PanelLabelSource.Off;
         internal bool ShowAllDots { get; private set; }
+        internal PanelLabelSource LabelSource { get; private set; }
+        internal bool ColourByPaired { get; private set; }
         internal PanelDotPlacement DotPlacement { get; private set; }
         internal PanelValuePalette ValuePalette { get; private set; }
+        private bool? _pairedCategoriesEnabled;
+        private bool PairedCategoriesEnabled => _pairedCategoriesEnabled ?? (ValuePalette != PanelValuePalette.Off);
+        internal PanelValuePalette ActiveValuePalette => PairedColourIsCategorical
+            ? PairedCategoriesEnabled ? PanelValuePalette.Viridis : PanelValuePalette.Off
+            : ValuePalette;
         internal PanelDotSize DotSize { get; private set; } = PanelDotSize.Medium;
         internal bool HideOccludedDots { get; private set; } = true;
         internal int PreviewLimit { get; private set; } = 5000;
@@ -52,11 +59,33 @@ namespace BetterGhPanel
         }
         internal void SetPreviewLimit(int value)
         { if (PanelDotSettings.ValidLimit(value)) SetPreviewSetting("preview limit", PreviewLimit, value, (c, v) => c.PreviewLimit = v); }
-        internal void SetShowValues(bool value) => SetPreviewSetting("values", ShowValues, value, (c, v) => c.ShowValues = v);
+        internal void SetShowValues(bool value) => SetLabelSource(value ? PanelLabelSource.Data : PanelLabelSource.Off);
+        internal void SetLabelSource(PanelLabelSource value) => SetPreviewSetting("values", LabelSource, value, (c, v) => { c.LabelSource = v; c.RefreshPairedPreviewSource(); });
+        internal void SetColourByPaired(bool value)
+        {
+            if (value && PairedColumn is { Snapshot: null, Pair: not null } column)
+            {
+                column.Capture(_geometryUnits);
+                ConfigureColumnGeometry();
+            }
+            bool? categories = value && PairedValuesAreCategorical ? true : _pairedCategoriesEnabled;
+            SetPreviewSetting("colour source", (Paired: ColourByPaired, Categories: _pairedCategoriesEnabled),
+                (Paired: value, Categories: categories), (component, choice) =>
+                {
+                    component.ColourByPaired = choice.Paired;
+                    component._pairedCategoriesEnabled = choice.Categories;
+                    component.RefreshPairedPreviewSource();
+                });
+        }
         internal void SetDotPlacement(PanelDotPlacement value)
         { if (Enum.IsDefined(typeof(PanelDotPlacement), value)) SetPreviewSetting("dot placement", DotPlacement, value, (c, v) => c.DotPlacement = v); }
         internal void SetValuePalette(PanelValuePalette value)
-        { if (Enum.IsDefined(typeof(PanelValuePalette), value)) SetPreviewSetting("colour by value", ValuePalette, value, (c, v) => c.ValuePalette = v); }
+        { if (Enum.IsDefined(typeof(PanelValuePalette), value)) SetPreviewSetting("colour by value", ValuePalette, value, (c, v) => { c.ValuePalette = v; c.RefreshPairedPreviewSource(); }); }
+        internal void SetPairedCategoriesEnabled(bool enabled)
+        {
+            if (enabled != PairedCategoriesEnabled)
+                SetPreviewSetting<bool?>("colour categories", _pairedCategoriesEnabled, enabled, (c, v) => c._pairedCategoriesEnabled = v);
+        }
         internal void SetReversePalette(bool value) => SetPreviewSetting("reverse palette", ReversePalette, value, (c, v) => c.ReversePalette = v);
         private void SetPreviewSetting<T>(string name, T before, T after, Action<BetterPanelComponent, T> apply)
         {
@@ -122,10 +151,13 @@ namespace BetterGhPanel
         internal bool FlattenTree { get; private set; }
         internal bool ReverseTree { get; private set; }
         internal bool SimplifyTree { get; private set; }
+        internal bool CleanTree { get; private set; }
+        internal int CleanedEmptyBranches { get; private set; }
         internal bool CreateSetTree { get; private set; }
         internal bool BranchStatsTree { get; private set; }
+        internal bool GroupByPaired { get; private set; }
         internal PanelStatKinds StatKinds { get; private set; } = PanelBranchStats.Default;
-        internal bool HasTreeOperations => BranchStatsTree || TrimDepth > 0 || FlattenTree || ReverseTree || SimplifyTree || CreateSetTree;
+        internal bool HasTreeOperations => BranchStatsTree || TrimDepth > 0 || FlattenTree || ReverseTree || CleanTree || SimplifyTree || CreateSetTree;
         internal PanelUnitConversion UnitConversion { get; private set; }
         internal int DecimalPlaces { get; private set; } = PanelUnits.AutomaticDecimals;
         internal double RoundUpFactor { get; private set; }
@@ -193,7 +225,7 @@ namespace BetterGhPanel
         }
 
         internal static bool HasFilters(PanelQueryOptions options) =>
-            !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue ||
+            !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.DisplayFilterValue || options.SearchPaired ||
             options.TypeName != null || options.BranchPath != null || options.BranchPrefix || options.OnlyInvalid ||
             options.SortMode != PanelSortMode.SourceOrder;
 
@@ -214,7 +246,7 @@ namespace BetterGhPanel
             var previousResult = Session.Result;
             var options = new PanelQueryOptions { DecimalPlaces = DecimalPlaces, RoundUpFactor = RoundUpFactor, Formula = Formula };
             if (!CanOutputValuesFor(CreateSetTree, options)) OutputValues = PanelOutputValues.Items;
-            Session.UpdateQuery(options);
+            Session.UpdateQuery(WithCurrentColumnSort(options));
             if (ReferenceEquals(previousResult, Session.Result)) (Attributes as BetterPanelAttributes)?.OnQueryCompleted();
         }
 
@@ -306,11 +338,12 @@ namespace BetterGhPanel
             var options = Session.Options;
             bool outputChanged = HasTreeOperations || UnitConversion != PanelUnitConversion.None || RoundUpFactor > 0 || Formula != null || DecimalPlaces >= 0;
             bool settingsChanged = outputChanged || OutputScope != PanelOutputScope.Filtered || OutputValues != PanelOutputValues.Items || DecimalPlaces != PanelUnits.AutomaticDecimals ||
-                !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.TypeName != null || options.BranchPath != null ||
+                !string.IsNullOrEmpty(options.Search) || options.SearchMode != PanelSearchMode.Text || options.SearchPaired || options.TypeName != null || options.BranchPath != null ||
                 options.BranchPrefix || options.OnlyInvalid || options.SortMode != PanelSortMode.SourceOrder;
             if (settingsChanged) RecordUndoEvent("Panel+ reset all");
             TrimDepth = 0;
-            FlattenTree = ReverseTree = SimplifyTree = CreateSetTree = BranchStatsTree = false;
+            FlattenTree = ReverseTree = CleanTree = SimplifyTree = CreateSetTree = BranchStatsTree = false;
+            GroupByPaired = false;
             UnitConversion = PanelUnitConversion.None;
             RoundUpFactor = 0;
             Formula = null;
@@ -346,17 +379,23 @@ namespace BetterGhPanel
             Instances.ActiveCanvas?.Invalidate();
         }
 
-        internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet)
+        internal void SetTreeOperations(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet) =>
+            SetTreeTools(trimDepth, flatten, reverse, simplify, createSet, CleanTree);
+
+        internal void SetTreeTools(int trimDepth, bool flatten, bool reverse, bool simplify, bool createSet, bool clean, bool? byPaired = null)
         {
             trimDepth = Math.Max(0, trimDepth);
-            if (TrimDepth == trimDepth && FlattenTree == flatten && ReverseTree == reverse && SimplifyTree == simplify && CreateSetTree == createSet) return;
-            bool pathsChanged = TrimDepth != trimDepth || FlattenTree != flatten || SimplifyTree != simplify;
+            bool groupByPaired = byPaired ?? (createSet ? CreateSetTree : BranchStatsTree) && GroupByPaired;
+            if (TrimDepth == trimDepth && FlattenTree == flatten && ReverseTree == reverse && SimplifyTree == simplify && CreateSetTree == createSet && CleanTree == clean && GroupByPaired == groupByPaired) return;
+            bool pathsChanged = TrimDepth != trimDepth || FlattenTree != flatten || SimplifyTree != simplify || CleanTree != clean;
             RecordUndoEvent("Panel+ tree tools");
             TrimDepth = trimDepth;
             FlattenTree = flatten;
             ReverseTree = reverse;
             SimplifyTree = simplify;
+            CleanTree = clean;
             CreateSetTree = createSet;
+            GroupByPaired = groupByPaired;
             if (createSet) BranchStatsTree = false;
             if (!CanOutputValues) OutputValues = PanelOutputValues.Items;
             if (pathsChanged)
@@ -375,16 +414,20 @@ namespace BetterGhPanel
             Instances.ActiveCanvas?.Invalidate();
         }
 
-        internal void SetBranchStats(bool enabled, PanelStatKinds? picks = null)
+        internal void SetBranchStats(bool enabled, PanelStatKinds? picks = null) => SetStatsGrouping(enabled, picks, BranchStatsTree && GroupByPaired);
+
+        internal void SetStatsGrouping(bool enabled, PanelStatKinds? picks, bool byPaired)
         {
             var kinds = PanelBranchStats.Normalize(picks ?? StatKinds);
-            if (enabled == BranchStatsTree && kinds == StatKinds) return;
+            byPaired &= enabled;
+            if (enabled == BranchStatsTree && kinds == StatKinds && byPaired == GroupByPaired) return;
             RecordUndoEvent("Panel+ branch stats");
             BranchStatsTree = enabled;
+            GroupByPaired = byPaired;
             StatKinds = kinds;
             if (enabled) CreateSetTree = false;
             RowSelection.Clear();
-            Session.UpdateQuery(Session.Options);
+            Session.UpdateQuery(WithCurrentColumnSort(Session.Options));
             OnPingDocument()?.Modified();
             if (!Session.IsBusy) ScheduleOutput();
             Instances.ActiveCanvas?.Invalidate();
@@ -525,7 +568,7 @@ namespace BetterGhPanel
             }
             foreach (var column in _tableColumns)
             {
-                if (split || Session.Options.SortColumn == column.Input.InstanceGuid) column.Capture(_geometryUnits);
+                if (split || Session.Options.SortColumn == column.Input.InstanceGuid || column == PairedColumn && KeepPairedPresentation(Session.Options)) column.Capture(_geometryUnits);
                 else column.ReleasePresentation();
             }
             if (ContextFenced && !GeometryContextCurrent(_geometryContext) && _session != null)
@@ -578,6 +621,7 @@ namespace BetterGhPanel
             var options = _queryPreviewOptions ?? _session?.Options ?? _savedOptions;
             writer.SetString("PanelSearch", options.Search ?? "");
             writer.SetInt32("PanelSearchMode", (int)options.SearchMode);
+            if (options.SearchPaired) writer.SetBoolean("PanelSearchPaired", true);
             writer.SetBoolean("PanelDisplayFilterValue", options.DisplayFilterValue);
             writer.SetString("PanelType", options.TypeName ?? "");
             writer.SetString("PanelBranch", options.BranchPath ?? "");
@@ -612,6 +656,9 @@ namespace BetterGhPanel
             writer.SetInt32("PanelPreviewMode", (int)PreviewMode);
             writer.SetBoolean("PanelShowItemOrder", ShowItemOrder);
             writer.SetBoolean("PanelShowValues", ShowValues);
+            if (LabelSource >= PanelLabelSource.Paired) writer.SetInt32("PanelLabelSource", (int)LabelSource);
+            if (ColourByPaired) writer.SetBoolean("PanelColourByPaired", true);
+            if (_pairedCategoriesEnabled.HasValue) writer.SetBoolean("PanelPairedCategoriesEnabled", _pairedCategoriesEnabled.Value);
             writer.SetBoolean("PanelShowAllDots", ShowAllDots);
             writer.SetInt32("PanelDotPlacement", (int)DotPlacement);
             writer.SetInt32("PanelDotSize", (int)DotSize);
@@ -623,8 +670,10 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelFlatten", FlattenTree);
             writer.SetBoolean("PanelReverse", ReverseTree);
             writer.SetBoolean("PanelSimplify", SimplifyTree);
+            if (CleanTree) writer.SetBoolean("PanelClean", true);
             writer.SetBoolean("PanelCreateSet", CreateSetTree);
             writer.SetBoolean("PanelBranchStats", BranchStatsTree);
+            if (GroupByPaired) writer.SetBoolean("PanelGroupByPaired", true);
             writer.SetInt32("PanelStatKinds", (int)StatKinds);
             writer.SetInt32("PanelUnitConversion", (int)UnitConversion);
             writer.SetInt32("PanelDecimalPlaces", DecimalPlaces);
@@ -653,16 +702,22 @@ namespace BetterGhPanel
             reader.TryGetBoolean("PanelFlatten", ref flatten);
             reader.TryGetBoolean("PanelReverse", ref reverse);
             reader.TryGetBoolean("PanelSimplify", ref simplify);
+            bool clean = false;
+            reader.TryGetBoolean("PanelClean", ref clean);
             reader.TryGetBoolean("PanelCreateSet", ref createSet);
             bool branchStats = false; int statKinds = (int)PanelBranchStats.Default;
             reader.TryGetBoolean("PanelBranchStats", ref branchStats);
+            bool groupByPaired = false;
+            reader.TryGetBoolean("PanelGroupByPaired", ref groupByPaired);
             reader.TryGetInt32("PanelStatKinds", ref statKinds);
             BranchStatsTree = branchStats; StatKinds = PanelBranchStats.Normalize((PanelStatKinds)statKinds);
             TrimDepth = Math.Max(0, trimDepth);
             FlattenTree = flatten;
             ReverseTree = reverse;
             SimplifyTree = simplify;
+            CleanTree = clean;
             CreateSetTree = createSet && !BranchStatsTree;
+            GroupByPaired = groupByPaired && (CreateSetTree || BranchStatsTree);
             return createSet;
         }
 
@@ -688,6 +743,8 @@ namespace BetterGhPanel
             var prefix = false; var invalid = false; var sort = 0; var size = 1; var searchMode = 0;
             reader.TryGetString("PanelSearch", ref search);
             reader.TryGetInt32("PanelSearchMode", ref searchMode);
+            bool searchPaired = false;
+            reader.TryGetBoolean("PanelSearchPaired", ref searchPaired);
             bool displayFilterValue = false;
             reader.TryGetBoolean("PanelDisplayFilterValue", ref displayFilterValue);
             reader.TryGetString("PanelType", ref type);
@@ -707,6 +764,7 @@ namespace BetterGhPanel
                 TypeName = string.IsNullOrEmpty(type) ? null : type,
                 DisplayFilterValue = displayFilterValue && searchMode >= (int)PanelSearchMode.Value && Enum.IsDefined(typeof(PanelSearchMode), searchMode),
                 SearchMode = Enum.IsDefined(typeof(PanelSearchMode), searchMode) ? (PanelSearchMode)searchMode : PanelSearchMode.Text,
+                SearchPaired = searchPaired,
                 BranchPath = string.IsNullOrEmpty(branch) ? null : branch,
                 BranchPrefix = prefix,
                 OnlyInvalid = invalid,
@@ -757,7 +815,15 @@ namespace BetterGhPanel
             reader.TryGetBoolean("PanelReversePalette", ref reversePalette);
             reader.TryGetInt32("PanelDotPlacement", ref dotPlacement);
             reader.TryGetInt32("PanelValuePalette", ref valuePalette);
-            ShowValues = showValues; ReversePalette = reversePalette;
+            int labelSource = showValues ? (int)PanelLabelSource.Data : (int)PanelLabelSource.Off;
+            reader.TryGetInt32("PanelLabelSource", ref labelSource);
+            LabelSource = Enum.IsDefined(typeof(PanelLabelSource), labelSource) ? (PanelLabelSource)labelSource : PanelLabelSource.Off;
+            bool colourByPaired = false;
+            reader.TryGetBoolean("PanelColourByPaired", ref colourByPaired);
+            ColourByPaired = colourByPaired;
+            bool categoriesEnabled = false;
+            _pairedCategoriesEnabled = reader.TryGetBoolean("PanelPairedCategoriesEnabled", ref categoriesEnabled) ? (bool?)categoriesEnabled : null;
+            ReversePalette = reversePalette;
             DotPlacement = Enum.IsDefined(typeof(PanelDotPlacement), dotPlacement) ? (PanelDotPlacement)dotPlacement : PanelDotPlacement.Centre;
             ValuePalette = Enum.IsDefined(typeof(PanelValuePalette), valuePalette) ? (PanelValuePalette)valuePalette : PanelValuePalette.Off;
             bool createSet = ReadTreeTools(reader);
