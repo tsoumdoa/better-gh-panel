@@ -124,7 +124,7 @@ namespace BetterGhPanel
                     _session.SetRoundUpFactorResolver(() => RoundUpFactor);
                     _session.SetFormulaResolver(() => PresentedFormula);
                     _session.SetCreateSetResolver(() => CreateSetTree);
-                    _session.SetPairedGroupingResolver(() => GroupByPaired, () => FlattenTree);
+                    _session.SetPairedGroupingResolver(() => GroupByPaired);
                     _session.SetBranchStatsResolver(() => BranchStatsTree, () => StatKinds);
                     _session.SetOutputValuesResolver(() => OutputValues == PanelOutputValues.Values);
                     if (Locked) _session.InvalidateInput(false, suspended: true);

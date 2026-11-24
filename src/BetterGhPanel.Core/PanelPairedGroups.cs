@@ -31,7 +31,7 @@ namespace BetterGhPanel.Core
             {
                 int index = groups.Count;
                 string suffix = index.ToString(CultureInfo.InvariantCulture) + "}";
-                string destination = _query.Flattened ? "{" + suffix : path.Substring(0, path.Length - 1) + ";" + suffix;
+                string destination = source?.Flattened == true ? "{" + suffix : path.Substring(0, path.Length - 1) + ";" + suffix;
                 group = new Group(position, index, destination, key);
                 groups.Add(identity, group);
             }

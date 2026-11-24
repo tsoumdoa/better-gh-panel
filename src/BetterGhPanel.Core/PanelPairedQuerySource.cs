@@ -7,10 +7,11 @@ namespace BetterGhPanel.Core
     internal sealed class PanelPairedQuerySource
     {
         private readonly Func<int, int?> _partner;
-        internal PanelPairedQuerySource(PanelSnapshot snapshot, Func<int, int?> partner)
-        { Snapshot = snapshot; _partner = partner; }
+        internal PanelPairedQuerySource(PanelSnapshot snapshot, Func<int, int?> partner, bool flattened = false)
+        { Snapshot = snapshot; _partner = partner; Flattened = flattened; }
 
         internal PanelSnapshot Snapshot { get; }
+        internal bool Flattened { get; }
         internal IReadOnlyDictionary<int, PanelGeometryInfo?>? Measurements { get; set; }
         internal int? PositionAt(int position) => _partner(position);
         internal PanelRow? RowAt(int position) => PositionAt(position) is int item ? Snapshot.Rows[item] : null;

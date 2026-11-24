@@ -140,8 +140,7 @@ public class PairedQueryTests
             new PanelRow(0, "{0}", "Number", "10", 10),
             new PanelRow(1, "{0}", "Number", "3", 3)
         }, new[] { new PanelBranch("{0}", 2) });
-        options.Flattened = true;
-        options.PairedSource = new PanelPairedQuerySource(paired, position => position == 0 ? 0 : 2);
+        options.PairedSource = new PanelPairedQuerySource(paired, position => position == 0 ? 0 : 2, flattened: true);
         var pooled = PanelQueryEngine.Execute(flat, options);
         Assert.Equal(new[] { "{0}" }, pooled.StatPaths);
         Assert.Equal(13d, pooled.BranchStats!["{0}"].Value(PanelStatKinds.Sum));

@@ -12,6 +12,7 @@ namespace BetterGhPanel.Runtime
     {
         internal IReadOnlyList<PanelBranchPair> Pairs { get; }
         internal bool HasUnequal { get; }
+        internal bool Flattened { get; }
         internal readonly struct PairHeading
         {
             internal readonly string DataCount;
@@ -31,6 +32,7 @@ namespace BetterGhPanel.Runtime
         internal PanelPairedData(GH_Structure<IGH_Goo> data, GH_Structure<IGH_Goo> paired,
             IReadOnlyList<PanelSourceAddress> sources, int trim, bool simplify, bool flatten, bool reverse, bool clean = false)
         {
+            Flattened = flatten;
             Pairs = PanelPairing.Match(Shape(data), Shape(paired));
             HasUnequal = Pairs.Any(pair => pair.Unequal && pair.RetainedAfterClean(clean));
             _dataOrder = Pairs.Select((pair, index) => (pair, index)).ToDictionary(value => value.pair.Data.Path, value => value.index, StringComparer.Ordinal);

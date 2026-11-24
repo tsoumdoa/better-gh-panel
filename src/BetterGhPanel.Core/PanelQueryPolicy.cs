@@ -35,6 +35,6 @@ namespace BetterGhPanel.Core
             left.SearchPaired == right.SearchPaired && left.BranchPath == right.BranchPath && left.BranchPrefix == right.BranchPrefix &&
             left.OnlyInvalid == right.OnlyInvalid && left.DisplayFilterValue == right.DisplayFilterValue &&
             left.BranchStats == right.BranchStats && left.StatKinds == right.StatKinds && left.CreateSet == right.CreateSet &&
-            left.GroupByPaired == right.GroupByPaired && left.Flattened == right.Flattened && left.OutputValues == right.OutputValues;
+            left.GroupByPaired == right.GroupByPaired && left.OutputValues == right.OutputValues;
     }
 }
