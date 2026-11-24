@@ -21,11 +21,13 @@ namespace BetterGhPanel
             LabelSource >= PanelLabelSource.Paired || ColourByPaired;
         private bool UsesPairedPreviewValues => LabelSource >= PanelLabelSource.Paired || ColourByPaired && ActiveValuePalette != PanelValuePalette.Off;
 
-        internal bool PairedColourIsCategorical
+        internal bool PairedColourIsCategorical => ColourByPaired && PairedValuesAreCategorical;
+
+        private bool PairedValuesAreCategorical
         {
             get
             {
-                if (!ColourByPaired || PairedColumn?.Snapshot is not PanelSnapshot snapshot) return false;
+                if (PairedColumn?.Snapshot is not PanelSnapshot snapshot) return false;
                 if (PairedComparisonMode(Session.Options, Session.Result) is PanelSearchMode mode)
                     return PanelProperties.IsProperty(mode) && PanelProperties.Kind(mode) != PanelPropertyKind.Number;
                 return !snapshot.HasGeometryMetrics && !snapshot.SupportsSearchMode(PanelSearchMode.Value) &&

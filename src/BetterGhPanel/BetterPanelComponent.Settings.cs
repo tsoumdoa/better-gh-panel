@@ -53,7 +53,22 @@ namespace BetterGhPanel
         { if (PanelDotSettings.ValidLimit(value)) SetPreviewSetting("preview limit", PreviewLimit, value, (c, v) => c.PreviewLimit = v); }
         internal void SetShowValues(bool value) => SetLabelSource(value ? PanelLabelSource.Data : PanelLabelSource.Off);
         internal void SetLabelSource(PanelLabelSource value) => SetPreviewSetting("values", LabelSource, value, (c, v) => { c.LabelSource = v; c.RefreshPairedPreviewSource(); });
-        internal void SetColourByPaired(bool value) => SetPreviewSetting("colour source", ColourByPaired, value, (c, v) => { c.ColourByPaired = v; c.RefreshPairedPreviewSource(); });
+        internal void SetColourByPaired(bool value)
+        {
+            if (value && PairedColumn is { Snapshot: null, Pair: not null } column)
+            {
+                column.Capture(_geometryUnits);
+                ConfigureColumnGeometry();
+            }
+            bool? categories = value && PairedValuesAreCategorical ? true : _pairedCategoriesEnabled;
+            SetPreviewSetting("colour source", (Paired: ColourByPaired, Categories: _pairedCategoriesEnabled),
+                (Paired: value, Categories: categories), (component, choice) =>
+                {
+                    component.ColourByPaired = choice.Paired;
+                    component._pairedCategoriesEnabled = choice.Categories;
+                    component.RefreshPairedPreviewSource();
+                });
+        }
         internal void SetDotPlacement(PanelDotPlacement value)
         { if (Enum.IsDefined(typeof(PanelDotPlacement), value)) SetPreviewSetting("dot placement", DotPlacement, value, (c, v) => c.DotPlacement = v); }
         internal void SetValuePalette(PanelValuePalette value)

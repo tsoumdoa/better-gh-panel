@@ -1015,14 +1015,14 @@ namespace BetterGhPanel
                 if (enabled && (index == _menu.HoveredIndex || selected))
                     Fill(g, index == _menu.HoveredIndex ? PanelTheme.Rgb(226, 236, 226) : PanelTheme.Rgb(242, 247, 241), row);
                 if (_menu.IsSectionStart(index))
-                    using (var divider = new Pen(PanelTheme.Rgb(225, 231, 224)))
+                    using (var divider = new Pen(_menu.PaletteSettingsStart(index) ? PanelTheme.Rgb(197, 207, 196) : PanelTheme.Rgb(225, 231, 224)))
                         g.DrawLine(divider, row.X + 7, row.Y, row.Right - 7, row.Y);
                 if (selected && (enabled || _menu.PairedSourceRow(index)))
                     using (var check = new Pen(enabled ? Accent : PanelTheme.Disabled, 1.3f))
                         g.DrawLines(check, new[] { new PointF(row.X + 7, row.Y + 10), new PointF(row.X + 10, row.Y + 13), new PointF(row.X + 16, row.Y + 7) });
                 float inset = _menu.Kind == CanvasMenuKind.BranchStats && !_menu.StatsSourceRow(index) && (_menu.StatsIndex(index) == 1 || _menu.StatsIndex(index) == 10) ? 7 : 23;
                 string tail = _menu.Trailing(index, PanelOwner.DotPlacement, palette, PanelOwner.DotSize, PanelOwner.PreviewLimit);
-                if (_menu.Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.Values)
+                if (_menu.Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.Values && PanelOwner.PairedUnavailableReason == null)
                     tail = (PanelOwner.LabelSource == PanelLabelSource.Paired ? "F value" : PanelOwner.LabelSource == PanelLabelSource.PairedAndData ? "F · D" :
                         PanelOwner.LabelSource == PanelLabelSource.Data ? "D value" : "Off") + "…";
                 if (tail.Length > 0)
@@ -1068,7 +1068,6 @@ namespace BetterGhPanel
             _menu.CategoricalColours = PanelOwner.PairedColourIsCategorical;
             _menu.GroupingChoices = pairedPresent || (kind switch
             {
-                CanvasMenuKind.ShowValues => PanelOwner.LabelSource >= PanelLabelSource.Paired,
                 CanvasMenuKind.ValuePalette => PanelOwner.ColourByPaired,
                 CanvasMenuKind.BranchStats => PanelOwner.BranchStatsTree && PanelOwner.GroupByPaired,
                 _ => false

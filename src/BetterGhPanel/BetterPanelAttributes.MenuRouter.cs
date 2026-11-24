@@ -34,7 +34,11 @@ namespace BetterGhPanel
             {
                 if (index < CanvasPreviewRows.ScopeCount) { PanelOwner.SetPreviewMode(_menu.PreviewChoiceAt(index).Mode!.Value); _menu.Close(); canvas.Invalidate(); return; }
                 if (index == CanvasPreviewRows.ItemOrder) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
-                if (index == CanvasPreviewRows.Values) next = CanvasMenuKind.ShowValues;
+                if (index == CanvasPreviewRows.Values)
+                {
+                    if (PanelOwner.PairedUnavailableReason == null) next = CanvasMenuKind.ShowValues;
+                    else PanelOwner.SetShowValues(!PanelOwner.ShowValues);
+                }
                 if (index == CanvasPreviewRows.Placement) next = CanvasMenuKind.DotPlacement;
                 if (index == CanvasPreviewRows.Size) next = CanvasMenuKind.DotSize;
                 if (index == CanvasPreviewRows.HideOccludedDots) PanelOwner.SetHideOccludedDots(!PanelOwner.HideOccludedDots);
