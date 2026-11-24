@@ -18,6 +18,7 @@ namespace BetterGhPanel.Runtime
         internal int PreviewLimit { get; private set; } = 5000;
         internal PanelDotSize DotSize { get => _orderLabels.DotSize; set => _orderLabels.DotSize = value; }
         internal bool HideOccludedDots { get => _orderLabels.HideOccludedDots; set => _orderLabels.HideOccludedDots = value; }
+        internal bool ShowAllDots { get => _orderLabels.ShowAllDots; set => _orderLabels.ShowAllDots = value; }
         internal void SetPreviewLimit(int limit)
         {
             if (!PanelDotSettings.ValidLimit(limit) || PreviewLimit == limit) return;

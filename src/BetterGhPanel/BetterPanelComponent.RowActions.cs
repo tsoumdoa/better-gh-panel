@@ -224,6 +224,7 @@ namespace BetterGhPanel
             if (!Current()) return;
             _highlight.DotSize = DotSize;
             _highlight.HideOccludedDots = HideOccludedDots;
+            _highlight.ShowAllDots = ShowAllDots;
             _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, palette, ReversePalette,
                 searchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current, labelSource, colourByPaired, mode == PanelPreviewMode.PassFail);
             if (!Current()) return;

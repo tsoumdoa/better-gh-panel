@@ -31,18 +31,26 @@ public class ItemOrderTests
         var panel = new RectangleF(50, 100, 300, 110); var anchor = new RectangleF(110, 102, 112, 18);
         menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
         menu.Layout(panel, default, default, default, preview: anchor); menu.MarkPainted();
-        Assert.Equal(new[] { "Selection", "Results", "Pass / Fail", "Off", "Preview limit" },
-            new[] { menu.Label(0), menu.Label(1), menu.Label(2), menu.Label(3), menu.Label(CanvasPreviewRows.Limit) });
+        Assert.Equal(new[] { "Selection", "Results", "Pass / Fail", "Off", "Show all dots", "Preview limit" },
+            new[] { menu.Label(0), menu.Label(1), menu.Label(2), menu.Label(3), menu.Label(CanvasPreviewRows.ShowAllDots), menu.Label(CanvasPreviewRows.Limit) });
+        Assert.False(menu.RowEnabled(CanvasPreviewRows.ShowAllDots, false, false, PanelValuePalette.Off));
+        Assert.True(menu.RowEnabled(CanvasPreviewRows.ShowAllDots, true, false, PanelValuePalette.Off));
+        Assert.False(menu.RowEnabled(CanvasPreviewRows.ShowAllDots, true, false, PanelValuePalette.Off, PanelPreviewMode.Off));
+        Assert.True(menu.IsSectionStart(CanvasPreviewRows.ShowAllDots));
+        Assert.False(menu.IsSelected(CanvasPreviewRows.ShowAllDots, options, PanelUnitConversion.None, -1));
+        Assert.True(menu.IsSelected(CanvasPreviewRows.ShowAllDots, options, PanelUnitConversion.None, -1, showAllDots: true));
         Assert.False(menu.RowEnabled(CanvasPreviewRows.Size, false, false, PanelValuePalette.Viridis));
         Assert.True(menu.RowEnabled(CanvasPreviewRows.Size, true, false, PanelValuePalette.Off));
         Assert.True(menu.RowEnabled(CanvasPreviewRows.Limit, false, false, PanelValuePalette.Off));
         Assert.Equal("Dot size", menu.Label(CanvasPreviewRows.Size));
-        int occlusion = CanvasPreviewRows.Size + 1;
+        int occlusion = CanvasPreviewRows.HideOccludedDots;
         Assert.Equal("Hide dots behind objects", menu.Label(occlusion));
         Assert.False(menu.RowEnabled(occlusion, false, false, PanelValuePalette.Viridis));
         Assert.True(menu.RowEnabled(occlusion, false, true, PanelValuePalette.Off));
         Assert.False(menu.RowEnabled(occlusion, true, true, PanelValuePalette.Off, PanelPreviewMode.Off));
+        Assert.False(menu.RowEnabled(occlusion, true, true, PanelValuePalette.Off, showAllDots: true));
         Assert.True(menu.IsSelected(occlusion, options, PanelUnitConversion.None, -1));
+        Assert.False(menu.IsSelected(occlusion, options, PanelUnitConversion.None, -1, showAllDots: true));
         Assert.False(menu.IsSelected(occlusion, options, PanelUnitConversion.None, -1, hideOccludedDots: false));
         Assert.Equal("Preview limit", menu.Label(CanvasPreviewRows.Limit));
         Assert.True(menu.TrySelect(new PointF(menu.Bounds.Left + 10, menu.Bounds.Top + CanvasPreviewRows.Limit * 20 + 10), out int index));

@@ -1026,7 +1026,7 @@ namespace BetterGhPanel
                     continue;
                 }
                 bool enabled = (_menu.Kind != CanvasMenuKind.HeaderSort || HeaderSortEnabled) && MenuRowEnabled(index);
-                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor, PanelOwner.ShowValues, PanelOwner.DotPlacement, palette, PanelOwner.ReversePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit, PanelOwner.HideOccludedDots, PanelOwner.LabelSource, PanelOwner.ColourByPaired);
+                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor, PanelOwner.ShowValues, PanelOwner.DotPlacement, palette, PanelOwner.ReversePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit, PanelOwner.HideOccludedDots, PanelOwner.LabelSource, PanelOwner.ColourByPaired, PanelOwner.ShowAllDots);
                 if (enabled && (index == _menu.HoveredIndex || selected))
                     Fill(g, index == _menu.HoveredIndex ? PanelTheme.Rgb(226, 236, 226) : PanelTheme.Rgb(242, 247, 241), row);
                 if (_menu.IsSectionStart(index))

@@ -32,6 +32,7 @@ namespace BetterGhPanel
         internal PanelPreviewMode PreviewMode { get; private set; }
         internal bool ShowItemOrder { get; private set; }
         internal bool ShowValues => LabelSource != PanelLabelSource.Off;
+        internal bool ShowAllDots { get; private set; }
         internal PanelLabelSource LabelSource { get; private set; }
         internal bool ColourByPaired { get; private set; }
         internal PanelDotPlacement DotPlacement { get; private set; }
@@ -47,8 +48,15 @@ namespace BetterGhPanel
         internal bool ReversePalette { get; private set; }
 
         internal void SetDotSize(PanelDotSize value)
-        { if (Enum.IsDefined(typeof(PanelDotSize), value)) SetPreviewSetting("dot size", DotSize, value, (c, v) => c.DotSize = v); }
-        internal void SetHideOccludedDots(bool value) => SetPreviewSetting("hide dots behind objects", HideOccludedDots, value, (c, v) => c.HideOccludedDots = v);
+        { if (Enum.IsDefined(typeof(PanelDotSize), value)) SetPreviewSetting("dot size", DotSize, value, (c, v) => { c.DotSize = v; c.PushDotDisplay(); }); }
+        internal void SetShowAllDots(bool value) => SetPreviewSetting("show all dots", ShowAllDots, value, (c, v) => { c.ShowAllDots = v; c.PushDotDisplay(); });
+        internal void SetHideOccludedDots(bool value) => SetPreviewSetting("hide dots behind objects", HideOccludedDots, value, (c, v) => { c.HideOccludedDots = v; c.PushDotDisplay(); });
+        // Dot display settings reach the viewport at once, even while a query is still running.
+        private void PushDotDisplay()
+        {
+            _highlight.DotSize = DotSize; _highlight.HideOccludedDots = HideOccludedDots; _highlight.ShowAllDots = ShowAllDots;
+            Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
+        }
         internal void SetPreviewLimit(int value)
         { if (PanelDotSettings.ValidLimit(value)) SetPreviewSetting("preview limit", PreviewLimit, value, (c, v) => c.PreviewLimit = v); }
         internal void SetShowValues(bool value) => SetLabelSource(value ? PanelLabelSource.Data : PanelLabelSource.Off);
@@ -651,6 +659,7 @@ namespace BetterGhPanel
             if (LabelSource >= PanelLabelSource.Paired) writer.SetInt32("PanelLabelSource", (int)LabelSource);
             if (ColourByPaired) writer.SetBoolean("PanelColourByPaired", true);
             if (_pairedCategoriesEnabled.HasValue) writer.SetBoolean("PanelPairedCategoriesEnabled", _pairedCategoriesEnabled.Value);
+            writer.SetBoolean("PanelShowAllDots", ShowAllDots);
             writer.SetInt32("PanelDotPlacement", (int)DotPlacement);
             writer.SetInt32("PanelDotSize", (int)DotSize);
             writer.SetBoolean("PanelHideOccludedDots", HideOccludedDots);
@@ -790,6 +799,9 @@ namespace BetterGhPanel
             bool showOrder = false;
             reader.TryGetBoolean("PanelShowItemOrder", ref showOrder);
             ShowItemOrder = showOrder;
+            bool showAllDots = false;
+            reader.TryGetBoolean("PanelShowAllDots", ref showAllDots);
+            ShowAllDots = showAllDots;
             bool showValues = false, reversePalette = false;
             int dotPlacement = 0, valuePalette = 0, dotSize = (int)PanelDotSize.Medium, previewLimit = 5000;
             reader.TryGetInt32("PanelDotSize", ref dotSize);

@@ -11,6 +11,31 @@ public class PanelDotLayoutTests
         new PanelDotInput(x, y, 100, 20, text, selected, ItemIds[rank], value, PanelDotLayout.ValueBand(value, 1, 100));
 
     [Fact]
+    public void ShowAllKeepsFullTextAtEachAnchorAndDrawsSelectionLastAtThePreviewLimit()
+    {
+        var dots = Enumerable.Range(0, 20000).OrderBy(PanelDotLayout.ItemHash)
+            .Select((id, index) => new PanelDotInput(0, 0, 100, 20, 1, index == 4 || index == 19999, id)).ToArray();
+        var layout = new PanelDotLayout();
+        layout.Calculate(dots, 4);
+        Assert.Equal(1, layout.TextCount);
+
+        layout.CalculateAll(dots, dots.Length);
+        Assert.Equal(dots.Length, layout.TextCount);
+        Assert.Equal(new[] { 4, 19999 }, new[] { layout.TextIndex(0), layout.TextIndex(1) });
+        for (int i = 0; i < dots.Length; i++)
+        {
+            Assert.Equal(1, layout.Results[i].TextScale);
+            Assert.Equal(0, layout.Results[i].SwatchRadius);
+            Assert.Equal(i, layout.Results[i].LabelAnchor);
+        }
+        Assert.Equal(dots.Length, Enumerable.Range(0, layout.TextCount).Select(layout.TextIndex).Distinct().Count());
+
+        layout.Calculate(dots, 32);
+        Assert.Equal(1, layout.TextCount);
+        Assert.Equal(4, layout.TextIndex(0));
+    }
+
+    [Fact]
     public void ARejectedSwatchLeavesRoomForFullSizeText()
     {
         var dots = new[] { Dot(0), Dot(49, 1), Dot(90, 2) };
