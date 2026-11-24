@@ -291,8 +291,8 @@ namespace BetterGhPanel.Core
 
         // Position lists are immutable request inputs; the queue retains them only
         // until registration ends. Whole-column callers use the allocation-free range.
-        internal Task<bool> MeasureAllAsync(TSnapshot snapshot, int count, CancellationToken token) =>
-            MeasureAsync(snapshot, new SequentialPositions(count), token);
+        internal Task<bool> MeasureAllAsync(TSnapshot snapshot, int count, CancellationToken token, bool requiredForQuery = false) =>
+            MeasureAsync(snapshot, new SequentialPositions(count), token, requiredForQuery: requiredForQuery);
 
         internal Task<bool> MeasureAsync(TSnapshot snapshot, IReadOnlyList<int> positions, CancellationToken token,
             bool background = false, bool requiredForQuery = false)

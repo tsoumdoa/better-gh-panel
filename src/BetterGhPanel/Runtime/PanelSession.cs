@@ -346,9 +346,8 @@ namespace BetterGhPanel.Runtime
             // Only plain immutable managed snapshot values cross this boundary.
             Task.Run(async () =>
             {
-                const string interrupted = "Measurements were interrupted. Edit the query to try again.";
                 PanelQueryResult? result = null;
-                string? error = interrupted;
+                string? error = null;
                 try
                 {
                     IReadOnlyDictionary<int, PanelGeometryInfo>? measurements = null;
@@ -358,7 +357,7 @@ namespace BetterGhPanel.Runtime
                         // geometry. Filters include offscreen rows through the same bounded
                         // worker used by visible rows and explicit copy requests.
                         var candidates = PanelQueryEngine.GeometryCandidates(snapshot, options, token);
-                        if (!await MeasureGeometryAsync(snapshot, candidates, token).ConfigureAwait(false)) return;
+                        if (!await _geometry.MeasureAsync(snapshot, candidates, token, requiredForQuery: true).ConfigureAwait(false)) return;
                         measurements = await CaptureGeometryMeasurements(snapshot, request, token).ConfigureAwait(false);
                         if (measurements == null) return;
                     }
@@ -366,7 +365,7 @@ namespace BetterGhPanel.Runtime
                     {
                         // Validate before native work, as D's candidate preparation does.
                         _ = new PanelQueryScope(snapshot, options, new PanelSearchFilter(options));
-                        if (!await sortQueue.MeasureAllAsync(sortSnapshot, sortSnapshot.Rows.Count, token).ConfigureAwait(false)) return;
+                        if (!await sortQueue.MeasureAllAsync(sortSnapshot, sortSnapshot.Rows.Count, token, requiredForQuery: true).ConfigureAwait(false)) return;
                         var sortMeasurements = await sortQueue.CaptureCompletedAsync(sortSnapshot, sortSnapshot.Rows.Count, token).ConfigureAwait(false);
                         if (sortMeasurements == null) return;
                         var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -396,13 +395,14 @@ namespace BetterGhPanel.Runtime
                     // Resume the same scan, statistics and sort state. Work already
                     // performed within the UI budget is never restarted.
                     result = work?.Complete() ?? PanelQueryEngine.Execute(snapshot, options, token, measurements);
-                    error = null;
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex) { error = ex.Message; }
                 finally
                 {
                     work?.Dispose();
+                    if (result == null && error == null && !token.IsCancellationRequested)
+                        await Task.Delay(60).ConfigureAwait(false);
                     RhinoApp.InvokeOnUiThread((Action)(() =>
                     {
                         if (!CanPublish(snapshot, request, token)) return;
@@ -411,8 +411,12 @@ namespace BetterGhPanel.Runtime
                              measurePaired && (!ReferenceEquals(paired?.Snapshot, pairedSnapshot) || !pairedQueue!.SourcesCurrent(pairedSnapshot!)) ||
                              sortColumn != null && (sortSnapshot == null || sortQueue == null ||
                                  !ReferenceEquals(sortColumn.Snapshot, sortSnapshot) || !sortQueue.SourcesCurrent(sortSnapshot))))
-                        { result = null; error = interrupted; }
-                        if (CanPublish(snapshot, request, token)) PublishQuery(result, error);
+                            result = null;
+                        if (!CanPublish(snapshot, request, token)) return;
+                        // The same capture can retry an interrupted measurement. A newer
+                        // query or a source recapture takes over through CanPublish.
+                        if (result == null && error == null) QueueQuery();
+                        else PublishQuery(result, error);
                     }));
                 }
             });
