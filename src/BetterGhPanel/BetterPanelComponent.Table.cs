@@ -209,9 +209,10 @@ namespace BetterGhPanel
         }
         // Query mode decides whether to consume summaries; viewport and zoom never change this provider.
         private PanelTableSource? CurrentTableSource() => PanelSplit ? PanelTableColumn.ViewSource(TableColumns, !PanelMinimized) : null;
-        private static int[] ColumnCopyItems(PanelTableColumn column, PanelQueryResult result,
+        private int[] ColumnCopyItems(PanelTableColumn column, PanelQueryResult result,
             IReadOnlyList<int> positions, IReadOnlyList<string> branches) =>
-            positions.SelectMany(position => column.CellItems(result, position))
+            column == PairedColumn && result.DisplaySet?.IsPaired == true ? Array.Empty<int>() :
+                positions.SelectMany(position => column.CellItems(result, position))
                 .Concat(branches.SelectMany(path => column.BranchItems(result, path))).Distinct().ToArray();
 
         internal string StatsTsv(PanelQueryResult result, bool includeColumns)

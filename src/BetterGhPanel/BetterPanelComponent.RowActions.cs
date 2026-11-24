@@ -33,7 +33,7 @@ namespace BetterGhPanel
         private PanelGeometryInfo? PairedSetDataMetric(PanelSnapshot snapshot) => PanelSplit && !Session.Options.DisplaysDataFilterValue &&
             PanelTableText.CommonGeometryMetric(snapshot) is { MetricLabel.Length: > 0 } metric ? metric : null;
 
-        private string PairedSetMemberSummary(PanelSnapshot snapshot, IReadOnlyList<int> members)
+        private string PairedSetMemberSummary(PanelSnapshot snapshot, IReadOnlyList<int> members, bool full = false)
         {
             bool homogeneous = PairedSetDataMetric(snapshot) != null;
             string Member(int position)
@@ -45,7 +45,9 @@ namespace BetterGhPanel
                 return PanelTableText.GeometryCell(row, geometry, true, measuring,
                     snapshot.UnitConversion, DecimalPlaces, RoundUpFactor, PresentedFormula);
             }
-            return PanelTableText.Summary(members.Take(4).Select(Member).ToArray(), members.Count);
+            return full
+                ? string.Join(" · ", members.Select(Member).Select(PanelValuePresentation.Visualize))
+                : PanelTableText.Summary(members.Take(4).Select(Member).ToArray(), members.Count);
         }
 
         private string DisplaySourceValue(PanelSnapshot snapshot, PanelRow row, int sourcePosition)
@@ -70,7 +72,8 @@ namespace BetterGhPanel
             if (Session.Result.BranchStats != null) return SelectedStatText(Session.Result, new[] { position });
             var row = snapshot.Rows[position];
             if (Session.Result.DisplaySet?.Values.TryGetValue(position, out var projected) == true)
-                return Session.Result.DisplaySet.IsPaired ? PairedSetMemberSummary(snapshot, Session.Result.DisplaySet.Members[position]) : projected.CopyText;
+                return Session.Result.DisplaySet.IsPaired
+                    ? PairedSetMemberSummary(snapshot, Session.Result.DisplaySet.Members[position], full: true) : projected.CopyText;
             var options = Session.Options;
             if (options.DisplaysDataFilterValue)
             {
@@ -321,9 +324,14 @@ namespace BetterGhPanel
             long selectionVersion = RowSelection.Version;
             var cancellation = new CancellationTokenSource();
             _copyCancellation = cancellation;
-            var measurementPositions = statsCopy ? Array.Empty<int>() : session.Options.DisplaysDataFilterValue && PanelProperties.IsProperty(session.Options.SearchMode)
-                ? ordered.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
-                    session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray() : ordered;
+            IReadOnlyList<int> measurementPositions = ordered;
+            if (statsCopy) measurementPositions = Array.Empty<int>();
+            else if (tableColumn == null && result.DisplaySet is { IsPaired: true } set)
+                measurementPositions = ordered.SelectMany(position => action == PanelRowAction.CopyValues
+                    ? set.Members[position] : set.Members[position].Take(4)).ToArray();
+            if (session.Options.DisplaysDataFilterValue && PanelProperties.IsProperty(session.Options.SearchMode))
+                measurementPositions = measurementPositions.Where(position => PanelProperties.TryGet(snapshot.Rows[position], session.Options.SearchMode,
+                    session.GetGeometryDetails(snapshot, position), out var property) && property == null).ToArray();
             bool addressOnly = action != PanelRowAction.CopyValues && action != PanelRowAction.CopyTable;
             var copyToken = cancellation.Token;
             var columnMeasurements = (statsCopy ? Array.Empty<PanelTableColumn>() : includeColumns ? TableColumns : tableColumn != null ? new[] { tableColumn } : Array.Empty<PanelTableColumn>())
