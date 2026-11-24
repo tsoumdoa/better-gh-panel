@@ -155,24 +155,56 @@ namespace BetterGhPanel
             var expectedResult = session.Result;
             var mode = PreviewMode;
             bool showOrder = ShowItemOrder, showValues = ShowValues, reverse = ReversePalette;
+            var labelSource = LabelSource;
+            bool colourByPaired = ColourByPaired;
+            var pairedColumn = PairedColumn;
             var placement = DotPlacement; var palette = ValuePalette; int limit = PreviewLimit;
             var stamp = new ActionStamp(this, session, snapshot, expectedResult, source, _selectionVersion);
             bool Current() => !_previewSuspended && !Locked && PreviewMode == mode &&
-                ShowItemOrder == showOrder && ShowValues == showValues && ReversePalette == reverse && DotPlacement == placement && ValuePalette == palette && PreviewLimit == limit &&
+                ShowItemOrder == showOrder && LabelSource == labelSource && ColourByPaired == colourByPaired && ReversePalette == reverse &&
+                DotPlacement == placement && ValuePalette == palette && PreviewLimit == limit && ReferenceEquals(pairedColumn, PairedColumn) &&
                 stamp.IsCurrent();
             var options = session.Options;
-            PanelPreviewValue Sample(int position)
+            var searchMode = options.SearchPaired ? PanelSearchMode.Text : options.SearchMode;
+            PanelPreviewValue SampleData(int position)
             {
                 var geometry = session.GetGeometryDetails(snapshot, position);
                 if (geometry == null && session.HasGeometryMeasurement(snapshot, position)) geometry = snapshot.Rows[position].GeometryInfo?.WithUnavailableMeasurement();
-                return PanelPreviewValues.Sample(snapshot, snapshot.Rows[position], options.SearchMode, geometry, DecimalPlaces, RoundUpFactor, PresentedFormula);
+                return PanelPreviewValues.Sample(snapshot, snapshot.Rows[position], searchMode, geometry, DecimalPlaces, RoundUpFactor, PresentedFormula);
+            }
+            PanelPreviewValue SamplePaired(int position)
+            {
+                if (pairedColumn?.Snapshot is not PanelSnapshot paired || pairedColumn.Pair?.ItemAt(position) is not int item) return default;
+                var row = paired.Rows[item];
+                if (!row.IsValid || row.IsNull) return default;
+                if (row.NumericValue is double raw)
+                {
+                    string text = pairedColumn.ItemValue(item, UnitConversion, DecimalPlaces, RoundUpFactor);
+                    return PanelUnits.TryParseOperand(text, out double shown) ? new PanelPreviewValue(HeaderTitleForInput(Params.Input[1]), "", shown, text) :
+                        new PanelPreviewValue("", "", null, PanelUnits.Format(raw, PanelUnitConversion.None, DecimalPlaces));
+                }
+                if (row.GeometryInfo != null)
+                    return PanelPreviewValues.Sample(snapshot, row, PanelSearchMode.Text, pairedColumn.Details(item), DecimalPlaces, RoundUpFactor);
+                return PanelPreviewValue.FromCategory(PanelValuePresentation.Visualize(row.DisplayValue));
+            }
+            PanelPreviewValue Sample(int position)
+            {
+                bool dataLabels = labelSource == PanelLabelSource.Data || labelSource == PanelLabelSource.PairedAndData;
+                var d = dataLabels || !colourByPaired && palette != PanelValuePalette.Off ? SampleData(position) : default;
+                var f = labelSource >= PanelLabelSource.Paired || colourByPaired && palette != PanelValuePalette.Off ? SamplePaired(position) : default;
+                var colour = colourByPaired ? f : d;
+                if (!showValues) return colour;
+                string label = labelSource == PanelLabelSource.Data ? d.ValueText : f.ValueText;
+                if (labelSource == PanelLabelSource.PairedAndData && d.ValueText.Length > 0)
+                    label = label.Length == 0 ? d.ValueText : label + " · " + d.ValueText;
+                return colour.WithLabel(label, (dataLabels && d.Pending) || (labelSource >= PanelLabelSource.Paired && f.Pending));
             }
             _highlight.SetPreviewLimit(PreviewLimit);
             if (!Current()) return;
             _highlight.DotSize = DotSize;
             _highlight.HideOccludedDots = HideOccludedDots;
             _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, ValuePalette, ReversePalette,
-                options.SearchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current);
+                searchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current, labelSource, colourByPaired);
             if (!Current()) return;
             _highlight.SetScopeChecked(source, expectedResult, mode == PanelPreviewMode.FilteredResults, ordered, Current, RowSelection);
             if (!Current()) return;

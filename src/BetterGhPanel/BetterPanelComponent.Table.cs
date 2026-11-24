@@ -16,7 +16,20 @@ namespace BetterGhPanel
         internal int InputBranchCount => _inputTree?.PathCount ?? 0;
         internal IReadOnlyList<PanelTableColumn> TableColumns => _tableColumns;
         internal PanelTableColumn? PairedColumn => _tableColumns.Count > 0 && _tableColumns[0].Input == Params.Input[1] ? _tableColumns[0] : null;
-        private bool KeepPairedPresentation(PanelQueryOptions options) => options.SearchPaired || GroupByPaired;
+        private bool KeepPairedPresentation(PanelQueryOptions options) => options.SearchPaired || GroupByPaired || UsesPairedPreviewValues;
+        private bool UsesPairedPreviewValues => LabelSource >= PanelLabelSource.Paired || ColourByPaired && ValuePalette != PanelValuePalette.Off;
+
+        private void RefreshPairedPreviewSource()
+        {
+            var column = PairedColumn;
+            if (column == null) return;
+            var options = Session.Options;
+            bool keep = PanelSplit || KeepPairedPresentation(options) || options.SortColumn == column.Input.InstanceGuid;
+            if (keep == (column.Snapshot != null) || column.Pair == null) return;
+            if (keep) column.Capture(_geometryUnits);
+            else column.ReleasePresentation();
+            ConfigureColumnGeometry();
+        }
         internal PanelSnapshot SearchSnapshot(bool paired)
         {
             if (!paired) return Session.Snapshot;

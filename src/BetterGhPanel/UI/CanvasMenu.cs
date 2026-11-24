@@ -6,7 +6,7 @@ using BetterGhPanel.Core;
 
 namespace BetterGhPanel.UI
 {
-    internal enum CanvasMenuKind { None, Type, Sort, HeaderSort, Branch, Units, SearchMode, Comparison, Preview, DotPlacement, ValuePalette, BranchStats, DotSize, PreviewLimit, CreateSet }
+    internal enum CanvasMenuKind { None, Type, Sort, HeaderSort, Branch, Units, SearchMode, Comparison, Preview, DotPlacement, ValuePalette, BranchStats, DotSize, PreviewLimit, CreateSet, ShowValues }
     internal enum CanvasComparison { GreaterThan, AtLeast, LessThan, AtMost, Equal, NotEqual }
     internal enum CanvasNumberSetting { Automatic, Custom, RoundingOff, RoundingFactor, FormulaOff, Formula }
     internal enum CanvasPreviewSetting { None, ItemOrder, Values, Placement, Colour, Size, Limit, HideOccludedDots }
@@ -59,7 +59,7 @@ namespace BetterGhPanel.UI
         internal const string ItemOrderDescription = "Shows each item's zero-based index, starting at 0 in each branch. Filters, sorting and selection keep these numbers. " +
             "Dots follow Preview and stay on when minimized. Curves label a point on the curve; closed solids and meshes keep their centre, while open surfaces stay on the material. " +
             "Choose Box top or Box bottom to move dots above or below their geometry. Crowded dots can overlap slightly, shrink their text, or become small colour dots that leave room for other labels. Text favours selected items and spreads across visible values. Nearby dots with the same value share one label when Show item order is off. " +
-            "Show values uses the chosen numeric Search value or the row's usual measurement; circles show radius in other Search modes.";
+            "Show values can label D, F or both, with F first. When item order is on, the index comes first. D uses its chosen numeric Search value or usual measurement; circles show radius in other Search modes.";
         private static readonly CanvasChoice<PanelSortMode>[] SortChoices =
         {
             new CanvasChoice<PanelSortMode>(PanelSortMode.SourceOrder, "Source order"),
@@ -140,6 +140,9 @@ namespace BetterGhPanel.UI
         internal Guid HeaderSortColumn { get; set; }
         internal int SearchTargetRows { get; set; }
         internal bool GroupingChoices { get; set; }
+        internal int PaletteSourceRows => GroupingChoices ? 2 : 0;
+        internal int PaletteIndex(int index) => index == CanvasPreviewRows.Back ? index : index - PaletteSourceRows;
+        internal bool IsPaletteSource(int index) => Kind == CanvasMenuKind.ValuePalette && index > 0 && index <= PaletteSourceRows;
         internal bool StatsSourceRow(int index) => Kind == CanvasMenuKind.BranchStats && GroupingChoices && (index == 1 || index == 2);
         internal int StatsIndex(int index) => GroupingChoices && index >= 3 ? index - 2 : index;
         internal CanvasMenuKind Kind { get; private set; }
@@ -154,7 +157,8 @@ namespace BetterGhPanel.UI
             (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) ? SortChoices.Length : Kind == CanvasMenuKind.Branch ? (_branchMatches?.Length ?? _snapshot.Branches.Count) + 2 :
             Kind == CanvasMenuKind.Units ? UnitChoices.Length :
             Kind == CanvasMenuKind.SearchMode ? _searchChoices.Length + SearchTargetRows : Kind == CanvasMenuKind.Comparison ? _comparisonChoices.Length :
-            Kind == CanvasMenuKind.DotSize || Kind == CanvasMenuKind.PreviewLimit ? 4 : Kind == CanvasMenuKind.Preview ? PreviewChoices.Length : Kind == CanvasMenuKind.DotPlacement ? CanvasPreviewRows.PlacementCount : Kind == CanvasMenuKind.ValuePalette ? CanvasPreviewRows.PaletteCount :
+            Kind == CanvasMenuKind.DotSize || Kind == CanvasMenuKind.PreviewLimit ? 4 : Kind == CanvasMenuKind.Preview ? PreviewChoices.Length : Kind == CanvasMenuKind.DotPlacement ? CanvasPreviewRows.PlacementCount :
+            Kind == CanvasMenuKind.ValuePalette ? CanvasPreviewRows.PaletteCount + PaletteSourceRows : Kind == CanvasMenuKind.ShowValues ? GroupingChoices ? 5 : 3 :
             Kind == CanvasMenuKind.BranchStats ? (Flattened ? 10 : 11) + (GroupingChoices ? 2 : 0) : Kind == CanvasMenuKind.CreateSet ? 3 : 0;
         internal int Visible => Math.Min(Count, Math.Max(1, (int)(Bounds.Height / 20) - (Count * 20 > Bounds.Height ? 1 : 0)));
         internal bool HasPaintedTargets => Kind != CanvasMenuKind.None && _paintedKind == Kind &&
@@ -338,23 +342,31 @@ namespace BetterGhPanel.UI
             return true;
         }
 
-        internal bool IsPreviewPage => Kind == CanvasMenuKind.Preview || Kind == CanvasMenuKind.DotPlacement || Kind == CanvasMenuKind.ValuePalette || Kind == CanvasMenuKind.DotSize || Kind == CanvasMenuKind.PreviewLimit;
+        internal bool IsPreviewPage => Kind == CanvasMenuKind.Preview || Kind == CanvasMenuKind.DotPlacement || Kind == CanvasMenuKind.ValuePalette || Kind == CanvasMenuKind.DotSize || Kind == CanvasMenuKind.PreviewLimit || Kind == CanvasMenuKind.ShowValues;
         internal bool RowEnabled(int index, bool order, bool values, PanelValuePalette palette, PanelPreviewMode preview = PanelPreviewMode.Selected) =>
             !(Kind == CanvasMenuKind.BranchStats && !StatsSourceRow(index) && (StatsIndex(index) == 1 || StatsIndex(index) == 10)) &&
             !(Kind == CanvasMenuKind.Preview && (index == CanvasPreviewRows.Placement || index == CanvasPreviewRows.Size ||
                 index == CanvasPreviewRows.HideOccludedDots) && !order && !values) &&
             !(Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.HideOccludedDots && preview == PanelPreviewMode.Off) &&
-            !(Kind == CanvasMenuKind.ValuePalette && index == CanvasPreviewRows.Reverse && palette == PanelValuePalette.Off);
+            !(Kind == CanvasMenuKind.ValuePalette && PaletteIndex(index) == CanvasPreviewRows.Reverse && palette == PanelValuePalette.Off);
         internal string Trailing(int index, PanelDotPlacement placement, PanelValuePalette palette, PanelDotSize size = PanelDotSize.Medium, int limit = 5000) => Kind == CanvasMenuKind.BranchStats ? StatsIndex(index) == 8 ? "max − min" : StatsIndex(index) == 9 ? "population" : "" : Kind == CanvasMenuKind.Preview ?
             index == CanvasPreviewRows.Size ? size.ToString() + "…" : index == CanvasPreviewRows.Limit ? limit.ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + "…" : index == CanvasPreviewRows.Placement ? PanelPreviewValues.PlacementLabel(placement) + "…" : index == CanvasPreviewRows.Colour ? PanelPreviewValues.PaletteLabel(palette) + "…" : "" : "";
-        internal PanelValuePalette Swatch(int index) => Kind == CanvasMenuKind.ValuePalette && index >= CanvasPreviewRows.PaletteFirst && index <= CanvasPreviewRows.PaletteLast ? (PanelValuePalette)(index - CanvasPreviewRows.FirstChoice) : PanelValuePalette.Off;
+        internal PanelValuePalette Swatch(int index) => Kind == CanvasMenuKind.ValuePalette &&
+            PaletteIndex(index) >= CanvasPreviewRows.PaletteFirst && PaletteIndex(index) <= CanvasPreviewRows.PaletteLast
+                ? (PanelValuePalette)(PaletteIndex(index) - CanvasPreviewRows.FirstChoice) : PanelValuePalette.Off;
 
-        internal bool IsSelected(int index, PanelQueryOptions options, PanelUnitConversion conversion, int decimals, PanelPreviewMode preview = PanelPreviewMode.Selected, bool showItemOrder = false, double roundUpFactor = 0, bool showValues = false, PanelDotPlacement placement = PanelDotPlacement.Centre, PanelValuePalette palette = PanelValuePalette.Off, bool reverse = false, PanelDotSize size = PanelDotSize.Medium, int limit = 5000, bool hideOccludedDots = true)
+        internal bool IsSelected(int index, PanelQueryOptions options, PanelUnitConversion conversion, int decimals, PanelPreviewMode preview = PanelPreviewMode.Selected, bool showItemOrder = false, double roundUpFactor = 0, bool showValues = false, PanelDotPlacement placement = PanelDotPlacement.Centre, PanelValuePalette palette = PanelValuePalette.Off, bool reverse = false, PanelDotSize size = PanelDotSize.Medium, int limit = 5000, bool hideOccludedDots = true, PanelLabelSource labelSource = PanelLabelSource.Off, bool colourByPaired = false)
         {
             if (Kind == CanvasMenuKind.DotSize) return index > 0 && (int)size == index - 1;
             if (Kind == CanvasMenuKind.PreviewLimit) return index > 0 && limit == PanelDotSettings.LimitAt(index - 1);
             if (Kind == CanvasMenuKind.DotPlacement) return index > CanvasPreviewRows.Back && (int)placement == index - CanvasPreviewRows.FirstChoice;
-            if (Kind == CanvasMenuKind.ValuePalette) return index == CanvasPreviewRows.Reverse ? reverse : index > CanvasPreviewRows.Back && (int)palette == index - CanvasPreviewRows.FirstChoice;
+            if (Kind == CanvasMenuKind.ShowValues) return index > CanvasPreviewRows.Back && (int)labelSource == index - CanvasPreviewRows.FirstChoice;
+            if (Kind == CanvasMenuKind.ValuePalette)
+            {
+                if (IsPaletteSource(index)) return colourByPaired == (index == 2);
+                index = PaletteIndex(index);
+                return index == CanvasPreviewRows.Reverse ? reverse : index > CanvasPreviewRows.Back && (int)palette == index - CanvasPreviewRows.FirstChoice;
+            }
             if (Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.HideOccludedDots) return hideOccludedDots;
             if (Kind == CanvasMenuKind.Preview && index >= CanvasPreviewRows.Values) return index == CanvasPreviewRows.Values ? showValues : index == CanvasPreviewRows.Colour && palette != PanelValuePalette.Off;
             if (Kind == CanvasMenuKind.CreateSet) return options.CreateSet && index > 0 && (index == 2) == options.GroupByPaired;
@@ -470,7 +482,8 @@ namespace BetterGhPanel.UI
             Kind == CanvasMenuKind.BranchStats && (GroupingChoices ? index == 1 || index == 3 : index == 1) ||
             Kind == CanvasMenuKind.CreateSet && index == 1 ||
             Kind == CanvasMenuKind.Preview && (index == CanvasPreviewRows.ItemOrder || index == CanvasPreviewRows.Placement) ||
-            Kind == CanvasMenuKind.DotPlacement && index == CanvasPreviewRows.FirstChoice || Kind == CanvasMenuKind.ValuePalette && (index == CanvasPreviewRows.FirstChoice || index == CanvasPreviewRows.Reverse) ||
+            (Kind == CanvasMenuKind.DotPlacement || Kind == CanvasMenuKind.ShowValues) && index == CanvasPreviewRows.FirstChoice ||
+            Kind == CanvasMenuKind.ValuePalette && (index == CanvasPreviewRows.FirstChoice || PaletteIndex(index) == CanvasPreviewRows.FirstChoice || PaletteIndex(index) == CanvasPreviewRows.Reverse) ||
             Kind == CanvasMenuKind.Comparison && ComparisonChoiceAt(index).IsDisplayValue;
         internal static string SearchModeLabel(PanelSearchMode mode) =>
             SearchChoices.FirstOrDefault(choice => choice.Value == mode).Label ?? mode.ToString();
@@ -534,7 +547,14 @@ namespace BetterGhPanel.UI
             if (Kind == CanvasMenuKind.DotSize) return index == 0 ? "‹ Preview" : ((PanelDotSize)(index - 1)).ToString();
             if (Kind == CanvasMenuKind.PreviewLimit) return index == 0 ? "‹ Preview" : PanelDotSettings.LimitAt(index - 1).ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " items";
             if (Kind == CanvasMenuKind.DotPlacement) return index == CanvasPreviewRows.Back ? "‹ Preview" : PanelPreviewValues.PlacementLabel((PanelDotPlacement)(index - CanvasPreviewRows.FirstChoice));
-            if (Kind == CanvasMenuKind.ValuePalette) return index == CanvasPreviewRows.Back ? "‹ Preview" : index == CanvasPreviewRows.Reverse ? "Reverse" : PanelPreviewValues.PaletteLabel((PanelValuePalette)(index - CanvasPreviewRows.FirstChoice));
+            if (Kind == CanvasMenuKind.ShowValues)
+                return index == 0 ? "‹ Preview" : index == 1 ? "Off" : index == 2 ? "D value" : index == 3 ? "F value" : "F · D";
+            if (Kind == CanvasMenuKind.ValuePalette)
+            {
+                if (IsPaletteSource(index)) return index == 1 ? "Source · D value" : "Source · F value";
+                index = PaletteIndex(index);
+                return index == CanvasPreviewRows.Back ? "‹ Preview" : index == CanvasPreviewRows.Reverse ? "Reverse" : PanelPreviewValues.PaletteLabel((PanelValuePalette)(index - CanvasPreviewRows.FirstChoice));
+            }
             if (Kind == CanvasMenuKind.Preview) return PreviewChoiceAt(index).Label;
             if (Kind == CanvasMenuKind.Units)
             {

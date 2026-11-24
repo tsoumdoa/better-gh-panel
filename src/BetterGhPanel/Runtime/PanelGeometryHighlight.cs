@@ -50,7 +50,8 @@ namespace BetterGhPanel.Runtime
         private readonly Queue<DisplayMaterial> _retiredMaterials = new Queue<DisplayMaterial>();
         internal void ConfigureValues(PanelQueryResult result, bool order, bool values, PanelDotPlacement placement,
             PanelValuePalette palette, bool reverse, PanelSearchMode search, int decimals, double factor,
-            IReadOnlyList<int> scope, Func<int, PanelPreviewValue> sample, Func<bool> current)
+            IReadOnlyList<int> scope, Func<int, PanelPreviewValue> sample, Func<bool> current,
+            PanelLabelSource labelSource = PanelLabelSource.Off, bool colourByPaired = false)
         {
             _activeDraws++;
             try
@@ -60,7 +61,7 @@ namespace BetterGhPanel.Runtime
                 SetOrderResult(labelResult);
                 long generation = _generation;
                 if (!current()) return;
-                bool coloursChanged = _orderLabels.Configure(result, order, values, placement, palette, reverse, search, decimals, factor, scope, sample, current);
+                bool coloursChanged = _orderLabels.Configure(result, order, values, placement, palette, reverse, search, decimals, factor, scope, sample, current, labelSource, colourByPaired);
                 if (generation != _generation || !current()) return;
                 if (palette != PanelValuePalette.Off && _valueMaterials == null && !_displayFlushFailed)
                 {

@@ -81,18 +81,26 @@ namespace BetterGhPanel.Runtime
         private CancellationTokenSource? _previewMeasurements;
         private PanelQueryResult? _previewMeasurementResult;
         private HashSet<int>? _previewMeasurementPositions;
-        internal void RequestPreviewMeasurements(PanelQueryResult? result, IReadOnlyList<int>? positions)
+        private bool _previewMeasureData, _previewMeasurePaired;
+        internal void RequestPreviewMeasurements(PanelQueryResult? result, IReadOnlyList<int>? positions, bool data = true, bool paired = false)
         {
             if (ReferenceEquals(result, _previewMeasurementResult) &&
+                _previewMeasureData == data && _previewMeasurePaired == paired &&
                 (positions == null ? _previewMeasurementPositions == null : _previewMeasurementPositions?.SetEquals(positions) == true)) return;
             var old = _previewMeasurements; _previewMeasurements = null;
             var pending = positions == null ? null : new HashSet<int>(positions);
             _previewMeasurementResult = result; _previewMeasurementPositions = pending;
+            _previewMeasureData = data; _previewMeasurePaired = paired;
             old?.Cancel(); old?.Dispose();
             if (result == null || positions == null || positions.Count == 0 || !HasCurrentResult ||
                 !ReferenceEquals(result, Result) || !ReferenceEquals(_previewMeasurementPositions, pending)) return;
             var cancellation = _previewMeasurements = new CancellationTokenSource();
-            _ = _geometry.MeasureAsync(result.Snapshot, positions, cancellation.Token, background: true);
+            if (data) _ = _geometry.MeasureAsync(result.Snapshot, positions, cancellation.Token, background: true);
+            if (paired && _pairedColumn?.Snapshot is PanelSnapshot snapshot && _pairedColumn.Pair is PanelPairedData map)
+            {
+                var partners = positions.Select(map.ItemAt).Where(item => item.HasValue).Select(item => item!.Value).ToArray();
+                if (partners.Length > 0) _ = _pairedColumn.Geometry?.MeasureAsync(snapshot, partners, cancellation.Token, background: true);
+            }
         }
 
         // Capture stages these immutable providers immediately before attaching their
@@ -222,7 +230,8 @@ namespace BetterGhPanel.Runtime
             // The ordinary D renderer also signals hidden/offscreen/compact tables.
             // Explicit copy demand must not keep an inactive column measuring.
             foreach (var column in _columns.ToArray())
-                if (_options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != _options.SortColumn)
+                if ((_options.SortMode == PanelSortMode.SourceOrder || column.Input.InstanceGuid != _options.SortColumn) &&
+                    (!_previewMeasurePaired || column != _pairedColumn))
                     column.Geometry?.CancelRequests();
             _geometry.RequestVisible(snapshot, visiblePositions);
         }

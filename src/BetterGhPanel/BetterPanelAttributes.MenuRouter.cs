@@ -12,7 +12,9 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
-        private bool PreviewMenuRowEnabled(int index) => _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette, PanelOwner.PreviewMode);
+        private bool PreviewMenuRowEnabled(int index) =>
+            _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette, PanelOwner.PreviewMode) &&
+            (CanSearchPaired || !(_menu.Kind == CanvasMenuKind.ShowValues && index >= 3 || _menu.IsPaletteSource(index) && index == 2));
 
         private void ChoosePreviewMenu(int index, GH_Canvas canvas)
         {
@@ -23,7 +25,7 @@ namespace BetterGhPanel
             {
                 if (index < CanvasPreviewRows.ScopeCount) { PanelOwner.SetPreviewMode(_menu.PreviewChoiceAt(index).Mode!.Value); _menu.Close(); canvas.Invalidate(); return; }
                 if (index == CanvasPreviewRows.ItemOrder) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
-                if (index == CanvasPreviewRows.Values) PanelOwner.SetShowValues(!PanelOwner.ShowValues);
+                if (index == CanvasPreviewRows.Values) next = CanvasMenuKind.ShowValues;
                 if (index == CanvasPreviewRows.Placement) next = CanvasMenuKind.DotPlacement;
                 if (index == CanvasPreviewRows.Size) next = CanvasMenuKind.DotSize;
                 if (index == CanvasPreviewRows.HideOccludedDots) PanelOwner.SetHideOccludedDots(!PanelOwner.HideOccludedDots);
@@ -31,11 +33,13 @@ namespace BetterGhPanel
                 if (index == CanvasPreviewRows.Colour) next = CanvasMenuKind.ValuePalette;
             }
             else if (index == CanvasPreviewRows.Back) next = CanvasMenuKind.Preview;
+            else if (page == CanvasMenuKind.ShowValues) { PanelOwner.SetLabelSource((PanelLabelSource)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.DotPlacement) { PanelOwner.SetDotPlacement((PanelDotPlacement)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.DotSize) { PanelOwner.SetDotSize((PanelDotSize)(index - 1)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.PreviewLimit) { PanelOwner.SetPreviewLimit(PanelDotSettings.LimitAt(index - 1)); next = CanvasMenuKind.Preview; }
-            else if (index == CanvasPreviewRows.Reverse) PanelOwner.SetReversePalette(!PanelOwner.ReversePalette);
-            else PanelOwner.SetValuePalette((PanelValuePalette)(index - CanvasPreviewRows.FirstChoice));
+            else if (_menu.IsPaletteSource(index)) PanelOwner.SetColourByPaired(index == 2);
+            else if (_menu.PaletteIndex(index) == CanvasPreviewRows.Reverse) PanelOwner.SetReversePalette(!PanelOwner.ReversePalette);
+            else PanelOwner.SetValuePalette((PanelValuePalette)(_menu.PaletteIndex(index) - CanvasPreviewRows.FirstChoice));
             if (next != page)
             {
                 _menu.Close();

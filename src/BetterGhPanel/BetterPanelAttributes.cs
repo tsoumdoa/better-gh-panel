@@ -1003,9 +1003,9 @@ namespace BetterGhPanel
                     if (TargetPainted(g, new RectangleF(_menu.Bounds.X, row.Y, _menu.Bounds.Width, row.Height))) _menu.MarkRowPainted(i);
                     continue;
                 }
-                bool enabled = (_menu.Kind != CanvasMenuKind.HeaderSort || HeaderSortEnabled) && _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette, PanelOwner.PreviewMode);
+                bool enabled = (_menu.Kind != CanvasMenuKind.HeaderSort || HeaderSortEnabled) && PreviewMenuRowEnabled(index);
                 if ((_menu.Kind == CanvasMenuKind.CreateSet || _menu.StatsSourceRow(index)) && index == 2) enabled &= CanSearchPaired;
-                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor, PanelOwner.ShowValues, PanelOwner.DotPlacement, PanelOwner.ValuePalette, PanelOwner.ReversePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit, PanelOwner.HideOccludedDots);
+                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor, PanelOwner.ShowValues, PanelOwner.DotPlacement, PanelOwner.ValuePalette, PanelOwner.ReversePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit, PanelOwner.HideOccludedDots, PanelOwner.LabelSource, PanelOwner.ColourByPaired);
                 if (enabled && (index == _menu.HoveredIndex || selected))
                     Fill(g, index == _menu.HoveredIndex ? PanelTheme.Rgb(226, 236, 226) : PanelTheme.Rgb(242, 247, 241), row);
                 if (_menu.IsSectionStart(index))
@@ -1016,6 +1016,9 @@ namespace BetterGhPanel
                         g.DrawLines(check, new[] { new PointF(row.X + 7, row.Y + 10), new PointF(row.X + 10, row.Y + 13), new PointF(row.X + 16, row.Y + 7) });
                 float inset = _menu.Kind == CanvasMenuKind.BranchStats && !_menu.StatsSourceRow(index) && (_menu.StatsIndex(index) == 1 || _menu.StatsIndex(index) == 10) ? 7 : 23;
                 string tail = _menu.Trailing(index, PanelOwner.DotPlacement, PanelOwner.ValuePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit);
+                if (_menu.Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.Values)
+                    tail = (PanelOwner.LabelSource == PanelLabelSource.Paired ? "F value" : PanelOwner.LabelSource == PanelLabelSource.PairedAndData ? "F · D" :
+                        PanelOwner.LabelSource == PanelLabelSource.Data ? "D value" : "Off") + "…";
                 if (tail.Length > 0)
                 {
                     using var trailing = new StringFormat(trim) { Alignment = StringAlignment.Far };

@@ -31,7 +31,9 @@ namespace BetterGhPanel
         internal bool PanelSplit { get; private set; }
         internal PanelPreviewMode PreviewMode { get; private set; }
         internal bool ShowItemOrder { get; private set; }
-        internal bool ShowValues { get; private set; }
+        internal bool ShowValues => LabelSource != PanelLabelSource.Off;
+        internal PanelLabelSource LabelSource { get; private set; }
+        internal bool ColourByPaired { get; private set; }
         internal PanelDotPlacement DotPlacement { get; private set; }
         internal PanelValuePalette ValuePalette { get; private set; }
         internal PanelDotSize DotSize { get; private set; } = PanelDotSize.Medium;
@@ -44,11 +46,13 @@ namespace BetterGhPanel
         internal void SetHideOccludedDots(bool value) => SetPreviewSetting("hide dots behind objects", HideOccludedDots, value, (c, v) => c.HideOccludedDots = v);
         internal void SetPreviewLimit(int value)
         { if (PanelDotSettings.ValidLimit(value)) SetPreviewSetting("preview limit", PreviewLimit, value, (c, v) => c.PreviewLimit = v); }
-        internal void SetShowValues(bool value) => SetPreviewSetting("values", ShowValues, value, (c, v) => c.ShowValues = v);
+        internal void SetShowValues(bool value) => SetLabelSource(value ? PanelLabelSource.Data : PanelLabelSource.Off);
+        internal void SetLabelSource(PanelLabelSource value) => SetPreviewSetting("values", LabelSource, value, (c, v) => { c.LabelSource = v; c.RefreshPairedPreviewSource(); });
+        internal void SetColourByPaired(bool value) => SetPreviewSetting("colour source", ColourByPaired, value, (c, v) => { c.ColourByPaired = v; c.RefreshPairedPreviewSource(); });
         internal void SetDotPlacement(PanelDotPlacement value)
         { if (Enum.IsDefined(typeof(PanelDotPlacement), value)) SetPreviewSetting("dot placement", DotPlacement, value, (c, v) => c.DotPlacement = v); }
         internal void SetValuePalette(PanelValuePalette value)
-        { if (Enum.IsDefined(typeof(PanelValuePalette), value)) SetPreviewSetting("colour by value", ValuePalette, value, (c, v) => c.ValuePalette = v); }
+        { if (Enum.IsDefined(typeof(PanelValuePalette), value)) SetPreviewSetting("colour by value", ValuePalette, value, (c, v) => { c.ValuePalette = v; c.RefreshPairedPreviewSource(); }); }
         internal void SetReversePalette(bool value) => SetPreviewSetting("reverse palette", ReversePalette, value, (c, v) => c.ReversePalette = v);
         private void SetPreviewSetting<T>(string name, T before, T after, Action<BetterPanelComponent, T> apply)
         {
@@ -619,6 +623,8 @@ namespace BetterGhPanel
             writer.SetInt32("PanelPreviewMode", (int)PreviewMode);
             writer.SetBoolean("PanelShowItemOrder", ShowItemOrder);
             writer.SetBoolean("PanelShowValues", ShowValues);
+            if (LabelSource >= PanelLabelSource.Paired) writer.SetInt32("PanelLabelSource", (int)LabelSource);
+            if (ColourByPaired) writer.SetBoolean("PanelColourByPaired", true);
             writer.SetInt32("PanelDotPlacement", (int)DotPlacement);
             writer.SetInt32("PanelDotSize", (int)DotSize);
             writer.SetBoolean("PanelHideOccludedDots", HideOccludedDots);
@@ -771,7 +777,13 @@ namespace BetterGhPanel
             reader.TryGetBoolean("PanelReversePalette", ref reversePalette);
             reader.TryGetInt32("PanelDotPlacement", ref dotPlacement);
             reader.TryGetInt32("PanelValuePalette", ref valuePalette);
-            ShowValues = showValues; ReversePalette = reversePalette;
+            int labelSource = showValues ? (int)PanelLabelSource.Data : (int)PanelLabelSource.Off;
+            reader.TryGetInt32("PanelLabelSource", ref labelSource);
+            LabelSource = Enum.IsDefined(typeof(PanelLabelSource), labelSource) ? (PanelLabelSource)labelSource : PanelLabelSource.Off;
+            bool colourByPaired = false;
+            reader.TryGetBoolean("PanelColourByPaired", ref colourByPaired);
+            ColourByPaired = colourByPaired;
+            ReversePalette = reversePalette;
             DotPlacement = Enum.IsDefined(typeof(PanelDotPlacement), dotPlacement) ? (PanelDotPlacement)dotPlacement : PanelDotPlacement.Centre;
             ValuePalette = Enum.IsDefined(typeof(PanelValuePalette), valuePalette) ? (PanelValuePalette)valuePalette : PanelValuePalette.Off;
             bool createSet = ReadTreeTools(reader);
