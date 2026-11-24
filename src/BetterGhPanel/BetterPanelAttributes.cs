@@ -783,7 +783,6 @@ namespace BetterGhPanel
             if (result.BranchStats != null) return "D: stats";
             int filters = ActiveFilterCount();
             if (filters > 0) return filters == 1 ? "D: 1 filter" : "D: " + filters + " filters";
-            if (result.DisplaySet?.IsPaired == true) return "D: tools";
             if (result.RowPositions.Count != result.Snapshot.Rows.Count || result.Statistics.BranchCount != result.Snapshot.Branches.Count)
                 return "D: filtered";
             return PanelOwner.HasTreeOperations || PanelOwner.UnitConversion != PanelUnitConversion.None || PanelOwner.RoundUpFactor > 0 || PanelOwner.Formula != null || PanelOwner.DecimalPlaces >= 0
@@ -931,7 +930,7 @@ namespace BetterGhPanel
             var session = PanelOwner.Session;
             int selected = PanelOwner.Locked || !session.HasCurrentResult ? 0 : DisplayListLengths ? _selection.BranchPaths(result).Count : _selection.Count;
             return PanelOwner.Locked ? "Disabled" : session.Error != null ? "Query failed: " + Short(session.Error, 150) : session.IsBusy ? "Recomputing…" :
-                PanelOwner.GroupByPaired && PanelOwner.PairedUnavailableReason is string reason ? reason :
+                session.Options.GroupByPaired && PanelOwner.PairedUnavailableReason is string reason ? reason :
                 _copyPending || DateTime.UtcNow < _copiedUntil ? _actionStatus :
                 !string.IsNullOrEmpty(PanelOwner.PreviewStatus) ? PanelOwner.PreviewStatus :
                 selected > 0 ? System.FormattableString.Invariant($"{selected:N0} selected") + (DisplayListLengths ? " branches" : " · right-click to copy") : null;

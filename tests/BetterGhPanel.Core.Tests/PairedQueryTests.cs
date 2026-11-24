@@ -48,6 +48,36 @@ public class PairedQueryTests
     }
 
     [Fact]
+    public void PairedSetOnlyNeedsDataGeometryWhenSortingOrFilteringByData()
+    {
+        var curve = new PanelGeometryInfo("Curve", units: "m", metricName: "Length", canMeasure: true);
+        var data = new PanelSnapshot(new[] { new PanelRow(0, "{0}", "Curve", "Curve", null, geometryInfo: curve) },
+            new[] { new PanelBranch("{0}", 1) });
+        var options = new PanelQueryOptions { CreateSet = true, GroupByPaired = true, OutputValues = true };
+        Assert.False(PanelQueryEngine.RequiresGeometryMeasurements(options));
+        Assert.Empty(PanelQueryEngine.GeometryCandidates(data, options));
+        options.SortMode = PanelSortMode.ValueAscending;
+        options.SortPairedKey = true;
+        Assert.False(PanelQueryEngine.RequiresGeometryMeasurements(options));
+        Assert.Empty(PanelQueryEngine.GeometryCandidates(data, options));
+        options.SortPairedKey = false;
+        Assert.True(PanelQueryEngine.RequiresGeometryMeasurements(options));
+        Assert.Equal(new[] { 0 }, PanelQueryEngine.GeometryCandidates(data, options));
+    }
+
+    [Fact]
+    public void ListLengthUsesDataGroupingEvenWithAPreviousPairedPreference()
+    {
+        var options = new PanelQueryOptions
+        {
+            CreateSet = true, GroupByPaired = true, SearchMode = PanelSearchMode.ListLength, DisplayFilterValue = true
+        };
+        var set = PanelQueryEngine.Execute(PanelQueryTestData.Sample(), options).DisplaySet!;
+        Assert.True(set.IsBranchSet);
+        Assert.False(set.IsPaired);
+    }
+
+    [Fact]
     public void PairedSetSortsByItsKeyOrItsFirstDataMember()
     {
         var branch = new[] { new PanelBranch("{0}", 5) };

@@ -403,6 +403,7 @@ namespace BetterGhPanel.Core
         public PanelSearchMode SearchMode { get; set; } = PanelSearchMode.Text;
         public bool SearchPaired { get; set; }
         internal bool DisplaysDataFilterValue => DisplayFilterValue && !SearchPaired;
+        internal bool ShowsDataListLength => DisplaysDataFilterValue && SearchMode == PanelSearchMode.ListLength;
         internal PanelPairedQuerySource? PairedSource { get; set; }
         /// <summary>Inspect the selected numeric metric without applying a search predicate.</summary>
         public bool DisplayFilterValue { get; set; }

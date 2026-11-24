@@ -39,6 +39,7 @@ namespace BetterGhPanel.Core
             cancellationToken.ThrowIfCancellationRequested();
             // Capture options now, before either execution or handoff can be deferred.
             var query = options.Clone();
+            if (query.ShowsDataListLength) query.GroupByPaired = false;
             return new PanelQueryWork(work => ExecuteSteps(snapshot, query, cancellationToken, measuredGeometry, work).GetEnumerator());
         }
 
@@ -350,7 +351,7 @@ namespace BetterGhPanel.Core
             if (hasSearch && (options.SearchMode == PanelSearchMode.Length ||
                 options.SearchMode == PanelSearchMode.Area || options.SearchMode == PanelSearchMode.Volume || PanelProperties.IsProperty(options.SearchMode))) return true;
             // Active scalar comparisons cannot return geometry or need geometry sort keys.
-            return options.ColumnSortKeys == null && options.SortMode != PanelSortMode.SourceOrder &&
+            return !options.SortPairedKey && options.ColumnSortKeys == null && options.SortMode != PanelSortMode.SourceOrder &&
                 (!hasSearch || options.SearchMode != PanelSearchMode.Value && options.SearchMode != PanelSearchMode.Text);
         }
 
@@ -374,7 +375,7 @@ namespace BetterGhPanel.Core
             cancellationToken.ThrowIfCancellationRequested();
             var query = DataMeasurementOptions(options.Clone());
             var filter = new PanelSearchFilter(query);
-            var sorting = !query.BranchStats && query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder;
+            var sorting = !query.BranchStats && !query.SortPairedKey && query.ColumnSortKeys == null && query.SortMode != PanelSortMode.SourceOrder;
             bool setGeometry = PresentationNeedsGeometry(query);
             if (!sorting && !setGeometry && (!filter.HasFilter || !filter.IsGeometry && !filter.UsesDisplayText)) return Array.Empty<int>();
             var scope = new PanelQueryScope(snapshot, query, filter);
@@ -394,7 +395,8 @@ namespace BetterGhPanel.Core
             return candidates.AsReadOnly();
         }
 
-        private static bool PresentationNeedsGeometry(PanelQueryOptions query) => (query.BranchStats || query.CreateSet || query.OutputValues && query.DisplayFilterValue) &&
+        private static bool PresentationNeedsGeometry(PanelQueryOptions query) => (query.BranchStats || (!query.GroupByPaired || query.ShowsDataListLength) &&
+            (query.CreateSet || query.OutputValues && query.DisplayFilterValue)) &&
             (query.BranchStats || !query.DisplayFilterValue || query.SearchMode >= PanelSearchMode.Length && query.SearchMode <= PanelSearchMode.Volume || PanelProperties.IsProperty(query.SearchMode));
 
         /// <summary>Accepts a semicolon-separated path with or without braces. Blank means all branches.</summary>

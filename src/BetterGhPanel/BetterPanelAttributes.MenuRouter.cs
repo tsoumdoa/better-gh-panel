@@ -14,7 +14,16 @@ namespace BetterGhPanel
     {
         private bool MenuRowEnabled(int index) =>
             _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ActiveValuePalette, PanelOwner.PreviewMode) &&
-            (!_menu.PairedSourceRow(index) || PanelOwner.PairedUnavailableReason == null);
+            PairedSourceUnavailableReason(index) == null;
+
+        private string? PairedSourceUnavailableReason(int index)
+        {
+            if (!_menu.PairedSourceRow(index)) return null;
+            if ((_menu.Kind == CanvasMenuKind.CreateSet || _menu.Kind == CanvasMenuKind.BranchStats) &&
+                PanelOwner.Session.Options.ShowsDataListLength)
+                return "Grouping by F is unavailable while D shows List length.";
+            return PanelOwner.PairedUnavailableReason;
+        }
 
         private void ChoosePreviewMenu(int index, GH_Canvas canvas)
         {
@@ -85,7 +94,7 @@ namespace BetterGhPanel
             int row = (int)((point.Y - _menu.Bounds.Y) / 20);
             int index = _menu.Offset + row;
             if (row >= _menu.Visible) return;
-            if (PanelOwner.PairedUnavailableReason is string reason && _menu.PairedSourceRow(index))
+            if (PairedSourceUnavailableReason(index) is string reason)
             {
                 e.Title = "F unavailable";
                 e.Description = reason;

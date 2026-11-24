@@ -271,6 +271,7 @@ namespace BetterGhPanel.Runtime
             if (_statKindsResolver != null) next.StatKinds = _statKindsResolver();
             if (_createSetResolver != null) next.CreateSet = _createSetResolver();
             if (_pairedGroupResolver != null) next.GroupByPaired = _pairedGroupResolver();
+            if (next.ShowsDataListLength) next.GroupByPaired = false;
             if (_flattenResolver != null) next.Flattened = _flattenResolver();
             if (_outputValuesResolver != null) next.OutputValues = _outputValuesResolver() && (next.DisplaysDataFilterValue || next.CreateSet);
             next.DecimalPlaces = Math.Max(PanelUnits.AutomaticDecimals, Math.Min(PanelUnits.MaximumDecimals, next.DecimalPlaces));
