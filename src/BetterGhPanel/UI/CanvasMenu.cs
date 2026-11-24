@@ -287,7 +287,9 @@ namespace BetterGhPanel.UI
             var anchor = grouping ? branchStats : IsPreviewPage ? preview : Kind == CanvasMenuKind.Type ? type : (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) ? sort : Kind == CanvasMenuKind.Units ? units :
                 Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? search : branch;
             float width = Math.Min(panel.Width - 28, Kind == CanvasMenuKind.BranchStats ? 238 : (Kind == CanvasMenuKind.Sort || Kind == CanvasMenuKind.HeaderSort) ? 138 :
-                Kind == CanvasMenuKind.Preview ? 280 : IsPreviewPage ? 246 : Kind == CanvasMenuKind.Units ? 156 : Kind == CanvasMenuKind.Type || Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? 180 : 235);
+                Kind == CanvasMenuKind.Preview ? 280 : IsPreviewPage ? 246 : Kind == CanvasMenuKind.Units ? 156 :
+                Kind == CanvasMenuKind.SearchMode && SearchTargetRows > 0 ? 235 :
+                Kind == CanvasMenuKind.Type || Kind == CanvasMenuKind.SearchMode || Kind == CanvasMenuKind.Comparison ? 180 : 235);
             // Menus may extend beyond the panel. Units and Σ prefer to open
             // upward, others downward; a menu that overflows the viewport flips
             // when the other side has more room, and pages the rows that do not fit.

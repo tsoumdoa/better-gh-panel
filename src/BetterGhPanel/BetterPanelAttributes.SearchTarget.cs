@@ -16,13 +16,13 @@ namespace BetterGhPanel
 
         private RectangleF SearchTargetButton(RectangleF row, bool paired)
         {
-            float width = Math.Max(0, (row.Width - 59) / 2);
-            return new RectangleF(row.X + 53 + (paired ? width + 2 : 0), row.Y + 2, width, row.Height - 4);
+            float width = Math.Max(0, (row.Width - 68) / 2);
+            return new RectangleF(row.X + 62 + (paired ? width + 2 : 0), row.Y + 2, width, row.Height - 4);
         }
 
         private void DrawSearchTarget(Graphics g, RectangleF row, Font font, StringFormat trim, bool searchPaired)
         {
-            Text(g, "Search in", font, Muted, new RectangleF(row.X + 6, row.Y, 45, row.Height), trim);
+            Text(g, "Search in", font, Muted, new RectangleF(row.X + 6, row.Y, 54, row.Height), trim);
             for (int i = 0; i <= 1; i++)
             {
                 bool paired = i == 1, enabled = !paired || CanSearchPaired;

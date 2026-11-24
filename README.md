@@ -147,6 +147,7 @@ F sends the F items paired with the D items that B + F follow, at D's transforme
 - F items beyond D's length have no B entry. They are sent only when no item filter, Create set or selection narrows D.
 - Empty D partners are included when D retains the branch, without item filters or Create set; path and list-length filters preserve them.
 - Sets use {path;k} ({k} when flattened; {k;path} for list-length sets), in both output modes.
+- When Σ groups by F, F follows the same group paths with the raw partners.
 - F must have the same branch count as D; exact paths pair first, then remaining branches in tree order.
 
 </details>
