@@ -1,5 +1,15 @@
 # Release validation records
 
+## 0.6.4-beta
+
+Uses D and its paired F input as a key/value pair (#87): Search in D / F, F labels and F colours in the viewport (numeric palette or text categories), a Pass / Fail preview, and grouping Create set and Σ by F. Adds the Clean tree tool for empty branches. Adds Show all dots (#86), which turns off occlusion hiding and crowding for every preview dot. Both were built from approved mocks with a Sol first review and Sol and Opus adversarial rounds. #87 had three fix rounds and a final Opus re-check.
+
+`npm run check` passed on the release branch: 474 managed tests on each of net48 and net8.0, 17 coordinator tests, one packaging test, 12 headless branch-stats assertions, both runtime builds, source encoding/style checks and the native smoke host compile. The extracted assemblies report `0.6.4-beta+af36bb77c8193ddad285911472a3e21f0ee6ed2a`.
+
+**No Rhino validation.** At the user's request, this release shipped without the native fixture inventory or a live Rhino session. The Windows session was disconnected. Not exercised: the Pass / Fail and F category viewport drawing, Show all dots with a large selection, opening files saved by earlier versions, 150% DPI, Mac and the Windows .NET Framework host.
+
+Artifact source commit: `af36bb77c8193ddad285911472a3e21f0ee6ed2a`. Archive: `panel-plus-0.6.4-beta-rh8_0-any.yak`. SHA-256: `91b87cacf6520575f7afc4bf17907ed74ed321d8016a5d4d040a2b6748d9fc6c`. GitHub prerelease and public Yak publication succeeded. Yak search lists `0.6.4-beta`, and a fresh GitHub asset download matches the archive SHA-256.
+
 ## 0.6.3-beta
 
 Fixes crowded viewport dots giving way before they actually touched (#83). The layout box was 24 px tall, but Rhino draws a 14 pt text dot 18 px tall: a 4-character Medium dot is 41 × 18 px at 100% scale. Two stacked dots with a visible gap therefore exceeded the 15% overlap allowance. The box is now `(characters × 7.5 + 11) × 18` px, scaled by DPI and Dot size.
