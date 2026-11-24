@@ -91,6 +91,7 @@ namespace BetterGhPanel.Runtime
         internal void InvalidateValues() => _orderLabels.InvalidateValues();
         private void AddLabel(Entry entry, Func<bool> current)
         {
+            _orderLabels.PreviewAdmissionChanged();
             entry.ColourId = _orderLabels.ColourId(entry.Position);
             if (_orderResult == null) return;
             var anchor = entry.Leaves.Count == 1 ? entry.Leaves[0].Anchor(current) : entry.Bounds.Center;
@@ -129,6 +130,7 @@ namespace BetterGhPanel.Runtime
             _admissionObserver = admissionObserver;
             _displayMemory = new PanelPreviewMemory(MaxRetainedBytes, () => SourceAndMaterialBytes);
             _orderLabels = new PanelOrderLabels(_membership);
+            _orderLabels.IsAdmitted = _byPosition.ContainsKey;
             _orderLabels.ValuesChanged = ValuesChanged;
             _orderLabels.PendingChanged = (result, positions) => PendingMeasurements?.Invoke(result, positions);
         }
@@ -583,6 +585,7 @@ namespace BetterGhPanel.Runtime
         {
             _entries.Remove(entry.Order); _byPosition.Remove(entry.Position); _unselected.Remove(entry.Order);
             _orderLabels.Remove(entry.Order);
+            _orderLabels.PreviewAdmissionChanged(entry.Position);
             if (_membership.Contains(entry.Position)) _selectedCount--;
             _bytes -= entry.Bytes; _bounds.Remove(entry.Bounds);
             if (dispose) { Retire(entry); FlushRetired(); }
@@ -786,6 +789,7 @@ namespace BetterGhPanel.Runtime
             CancelRecovery();
             _scopeToken = new object();
             _entries.Clear(); _byPosition.Clear(); _unselected.Clear(); _attempted.Clear(); _unavailablePositions.Clear(); _attemptOrder.Clear(); _membership.Clear();
+            _orderLabels.ClearPreviewAdmissions();
             _bounds.Clear(); _orderLabels.ClearEntries(); _selectedCount = _unavailable = _meshFailures = 0; _bytes = 0; _partial = false; _partialReason = null;
             _source = null; _result = null; _legacyPositions = null; _meshPriorityDirty = false;
             foreach (var entry in old) Retire(entry);
