@@ -371,7 +371,7 @@ namespace BetterGhPanel.Core
         {
             EnsureResults(n);
             if (_representative.Length >= n) return;
-            int capacity = Results.Length;
+            int capacity = Math.Max(n, Math.Max(16, _representative.Length * 2));
             _nextBand = new int[capacity]; _blocker = new int[capacity];
             _count = new int[capacity]; _anchor = new int[capacity]; _representative = new int[capacity];
             _boxes = new PlacedBox[capacity];
