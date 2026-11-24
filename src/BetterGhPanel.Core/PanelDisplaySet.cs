@@ -30,6 +30,7 @@ namespace BetterGhPanel.Core
             {
                 double number = PanelUnits.Transform(raw, conversion, query.RoundUpFactor, query.DecimalPlaces);
                 var text = new PanelText(PanelTableText.Value(row, conversion, query.DecimalPlaces, query.RoundUpFactor));
+                if (double.IsNaN(number) || double.IsInfinity(number)) return new PanelDisplayedValue(text, text, null, true, true);
                 return new PanelDisplayedValue(text, text, query.DecimalPlaces < 0 ? PanelNumber.GeneralValue(number, 12) : number, true);
             }
             var display = PanelValuePresentation.DisplayText(row, conversion, query.DecimalPlaces, measured, query.RoundUpFactor);

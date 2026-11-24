@@ -303,9 +303,7 @@ namespace BetterGhPanel
         }
 
         private string ColumnCell(PanelQueryResult result, int position, int column) =>
-            result.DisplaySet?.IsPaired == true && PanelOwner.TableColumns[column] == PanelOwner.PairedColumn
-                ? result.DisplaySet.Values[position].Text
-                : PanelOwner.TableColumns[column].Cell(result, position, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.RoundUpFactor);
+            PanelOwner.ResultColumnCell(PanelOwner.TableColumns[column], result, position);
 
         private RectangleF ColumnClip(int index, float y, float height) => index == 0 ?
             new RectangleF(_list.X, y, _frozenWidth, height) : new RectangleF(_list.X + _frozenWidth, y, Math.Max(0, _list.Width - _frozenWidth), height);
@@ -413,7 +411,7 @@ namespace BetterGhPanel
                         var key = result.DisplaySet.Values[position];
                         DrawTableCell(g, renderer, null, key.Text, new RectangleF(cell.X, cell.Y, Math.Max(0, cell.Width - _setCountWidth), cell.Height),
                             font, small, numeric: key.IsNumeric, muted: key.Unavailable);
-                        DrawSetCount(g, renderer, cell, position, offset + 1, small);
+                        if (result.TryGetViewIndex(position, out int viewIndex)) DrawSetCount(g, renderer, cell, position, viewIndex + 1, small);
                     }
                     else if (row == null && result.DisplaySet == null)
                     {
@@ -427,6 +425,8 @@ namespace BetterGhPanel
                         if (column.Pair != null && firstMissing) renderer.DrawCell(g, "—", small, Muted,
                             new RectangleF(cell.X + 6, cell.Y, Math.Max(0, cell.Width - 12 - typeWidth), RowHeight), column.Numeric || column.HomogeneousMetric);
                     }
+                    else if (row != null && PanelOwner.ShowsPairedComparison(column))
+                        DrawTableCell(g, renderer, row, ColumnCell(result, position, columnIndex), cell, font, small);
                     else if (column.Present && column.Pair != null && column.Snapshot != null) DrawTableCell(g, renderer, result.DisplaySet == null ? row : null, ColumnCell(result, position, columnIndex), cell, font, small,
                         showType: result.DisplaySet == null && column.CellShowsType(row), numeric: result.DisplaySet == null && column.CellIsNumeric(row),
                         metricLane: result.DisplaySet == null ? column.MetricLane(row) : "",

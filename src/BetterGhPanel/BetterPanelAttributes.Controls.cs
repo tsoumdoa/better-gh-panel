@@ -458,7 +458,8 @@ namespace BetterGhPanel
                 : PanelProperties.IsProperty(options.SearchMode) ? CanvasMenu.PropertyHelp(options.SearchMode)
                 : "Compare the shown number with >, >=, <, <=, = or != (a bare number means =). Rows without this value are excluded.";
             if (options.DisplayFilterValue)
-                e.Description = "Shows each item's value. n/a means none. Click the search field to filter by it.";
+                e.Description = (options.SearchPaired ? "The F column shows the chosen value in Table. " : "Shows each item's value. ") +
+                    "n/a means none. Click the search field to filter by it.";
             else if (!CanvasMenu.HasValueChoices(options.SearchMode)) e.Description += " Rows update as you type. Enter applies, Esc cancels.";
             if (options.SearchPaired)
                 e.Description = "Search tests each D item's F partner. Types and Paths apply to D. " + e.Description;
@@ -478,14 +479,15 @@ namespace BetterGhPanel
             if (PanelOwner.BranchStatsTree) { e.Title = "Turn off branch stats"; e.Description = "Keeps your stat picks, filters and other tree tools. Undo restores Stats."; return; }
             e.Title = "Clear filters";
             e.Text = "Undo restores them";
-            e.Description = "Clears search, mode, type, path, invalid-only, sorting, selection and scroll. Tree tools, units and decimals stay. " +
+            e.Description = "Clears search, mode, type, path, invalid-only, sorting, selection and scroll. Returns Search in to D. Tree tools, units and decimals stay. " +
                 "Out Values falls back to Items when clearing the mode leaves no values to send (Create set keeps them).";
         }
 
         private void TooltipFilter(PointF point, GH_TooltipDisplayEventArgs e)
         {
             e.Title = "Search mode";
-            e.Text = CanvasMenu.SearchModeLabel(PanelOwner.Session.Options.SearchMode);
+            var options = PanelOwner.Session.Options;
+            e.Text = (options.SearchPaired ? "F · " : "") + CanvasMenu.SearchModeLabel(options.SearchMode);
             e.Description = "Choose what the search matches: displayed text, a regular expression, numbers, geometry metrics, list length or an input property.";
         }
 

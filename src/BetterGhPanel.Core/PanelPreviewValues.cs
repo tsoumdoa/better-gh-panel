@@ -23,7 +23,8 @@ namespace BetterGhPanel.Core
         public string Key { get; }
         internal string? LabelText { get; }
         internal bool Category { get; }
-        internal static PanelPreviewValue FromCategory(string text) => new PanelPreviewValue("", "", null, text, false, text, true);
+        internal static PanelPreviewValue FromCategory(string text) =>
+            new PanelPreviewValue("", "", null, text, false, PanelValuePresentation.Visualize(text), true);
         internal string ValueText => LabelText ?? (Pending ? "…" : Number.HasValue ? Text : "");
         internal PanelPreviewValue WithLabel(string text, bool pending) =>
             new PanelPreviewValue(Metric ?? "", Unit ?? "", Number, Text ?? "", Pending || pending, text, Category);

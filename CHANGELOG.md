@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Search D or its paired F column, including F text, numbers and geometry properties. Types and Paths continue to filter D.
+- Label viewport geometry with D, F or both. Colour geometry by F numbers or text categories and see the category counts in the legend.
+- Preview **Pass / Fail** to see matches and red failures together, with a count in the viewport legend.
+- Group **Create set** or **Σ** by F values to collect D items or calculate their statistics per key.
+- Use **Clean** to remove empty branches from the panel and D while keeping null items and B's original shape.
+
 ## 0.6.3-beta
 
 - Fixed crowded viewport dots giving way before they actually touched. The overlap check now uses the size Rhino draws, so more labels keep their text.

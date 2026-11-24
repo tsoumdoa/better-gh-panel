@@ -178,15 +178,14 @@ namespace BetterGhPanel
                 if (pairedColumn?.Snapshot is not PanelSnapshot paired || pairedColumn.Pair?.ItemAt(position) is not int item) return default;
                 var row = paired.Rows[item];
                 if (!row.IsValid || row.IsNull) return default;
-                if (row.NumericValue is double raw)
+                if (row.NumericValue.HasValue)
                 {
                     string text = pairedColumn.ItemValue(item, UnitConversion, DecimalPlaces, RoundUpFactor);
-                    return PanelUnits.TryParseOperand(text, out double shown) ? new PanelPreviewValue(HeaderTitleForInput(Params.Input[1]), "", shown, text) :
-                        new PanelPreviewValue("", "", null, PanelUnits.Format(raw, PanelUnitConversion.None, DecimalPlaces));
+                    return PanelUnits.TryParseOperand(text, out double shown) ? new PanelPreviewValue(HeaderTitleForInput(Params.Input[1]), "", shown, text) : default;
                 }
                 if (row.GeometryInfo != null)
                     return PanelPreviewValues.Sample(snapshot, row, PanelSearchMode.Text, pairedColumn.Details(item), DecimalPlaces, RoundUpFactor);
-                return PanelPreviewValue.FromCategory(PanelValuePresentation.Visualize(row.DisplayValue));
+                return PanelPreviewValue.FromCategory(row.DisplayValue);
             }
             PanelPreviewValue Sample(int position)
             {
@@ -350,7 +349,7 @@ namespace BetterGhPanel
                         else if (includeColumns) text = TableTsv(result, ordered);
                         else if (tableColumn != null && action == PanelRowAction.CopyValues)
                             text = columnBranch != null ? tableColumn.BranchCellText(result, columnBranch, UnitConversion, DecimalPlaces, RoundUpFactor, HeaderTitleForInput(tableColumn.Input)) :
-                                string.Join(Environment.NewLine, ordered.Select(position => tableColumn.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor)));
+                                string.Join(Environment.NewLine, ordered.Select(position => ResultColumnCell(tableColumn, result, position)));
                         else if (path != null) text = pathText!;
                         else if (action == PanelRowAction.CopyPaths)
                         {

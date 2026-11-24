@@ -37,6 +37,23 @@ namespace BetterGhPanel
             return PairedColumn?.Snapshot ?? PanelSnapshot.Empty;
         }
         internal void UpdateSearchTarget(PanelQueryOptions options) => Session.UpdateQuery(WithCurrentColumnSort(options));
+        internal bool ShowsPairedComparison(PanelTableColumn column)
+        {
+            var options = Session.Options;
+            return column == PairedColumn && options.SearchPaired && options.DisplayFilterValue;
+        }
+
+        internal string ResultColumnCell(PanelTableColumn column, PanelQueryResult result, int position)
+        {
+            if (column == PairedColumn)
+            {
+                if (result.DisplaySet?.IsPaired == true) return result.DisplaySet.Values[position].Text;
+                if (ShowsPairedComparison(column) && column.Snapshot is PanelSnapshot snapshot && column.Pair?.ItemAt(position) is int item)
+                    return PanelFilterValue.Format(snapshot, snapshot.Rows[item], Session.Options.SearchMode, DecimalPlaces,
+                        column.Details(item), roundUpFactor: RoundUpFactor, pairedConversion: UnitConversion);
+            }
+            return column.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor);
+        }
         internal bool TableInputPresent => Params.Input.Skip(1).Where(IsTableDataInput).Any(InputPresent);
         private static bool InputPresent(IGH_Param input) => input.SourceCount != 0 ||
             input is not Param_GenericObject generic || generic.PersistentData.PathCount != 0;
@@ -175,12 +192,13 @@ namespace BetterGhPanel
         internal string StatsTsv(PanelQueryResult result, bool includeColumns)
         {
             if (includeColumns) RequireTableSummaries(result);
-            var columns = includeColumns ? TableColumns.ToArray() : Array.Empty<PanelTableColumn>();
+            var columns = includeColumns ? TableColumns.Where(column => result.StatGroups == null || column != PairedColumn).ToArray() : Array.Empty<PanelTableColumn>();
             bool countOnly = result.StatRows.All(kind => kind == PanelStatKinds.Count);
             // A column without one shared metric/unit keeps the unit in each cell.
             var suffixes = new[] { result.StatHeaderSuffix }.Concat(columns.Select(column => result.ColumnBranchStats.TryGetValue(column.Input.InstanceGuid, out var branches)
                 ? PanelBranchStats.CommonHeaderSuffix(branches.Values) : "")).ToArray();
-            var titles = suffixes.Select((suffix, index) => TableHeaderTitle(index) + (countOnly ? "" : suffix));
+            var titles = new[] { TableHeaderTitle(0) }.Concat(columns.Select(column => HeaderTitleForInput(column.Input)))
+                .Select((title, index) => title + (countOnly ? "" : suffixes[index]));
             string keyHeader = result.StatGroups == null ? "" : PanelTableTsv.Escape(HeaderTitleForInput(Params.Input[1])) + "\t";
             var text = new System.Text.StringBuilder("Path\t" + keyHeader + "Stat\t" + string.Join("\t", titles.Select(PanelTableTsv.Escape)) + Environment.NewLine);
             foreach (string path in result.StatPaths)
@@ -230,8 +248,7 @@ namespace BetterGhPanel
             {
                 PanelItemOrder.TryGetNumber(result, position, out int index);
                 IReadOnlyList<string> cells = new[] { DisplayValue(result.Snapshot, result.Snapshot.Rows[position], position) }
-                    .Concat(TableColumns.Select(column => result.DisplaySet?.IsPaired == true && column == PairedColumn
-                        ? result.DisplaySet.Values[position].CopyText : column.Cell(result, position, UnitConversion, DecimalPlaces, RoundUpFactor))).ToArray();
+                    .Concat(TableColumns.Select(column => ResultColumnCell(column, result, position))).ToArray();
                 return (result.Snapshot.Rows[position].Path, index, cells);
             }));
         }

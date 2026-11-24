@@ -55,7 +55,10 @@ namespace BetterGhPanel.Runtime
         private Dictionary<int, PanelPreviewValue>? _buildingValues;
         private Dictionary<string, PanelPreviewRange>? _buildingRanges;
         private HashSet<int>? _buildingPending;
+        private Dictionary<string, int>? _buildingCategoryCounts;
+        private List<string>? _buildingCategoryOrder;
         private LegendRow[] _legend = Array.Empty<LegendRow>();
+        private int _legendOverflow;
         private LegendRow? _passFailLegend;
         private float _legendWidth, _legendNameWidth, _legendMinWidth, _legendScale, _legendRowHeight;
         private int _legendFontHeight;
@@ -73,7 +76,8 @@ namespace BetterGhPanel.Runtime
             if (Failed(position)) return PanelPreviewValues.FailedColour;
             if (!Gradient) return _settings.PassFail ? PanelPreviewValues.PassedColour : 0;
             if (!_colourValues.TryGetValue(position, out var value)) return 0;
-            if (_settings.ColourByPaired && value.Category && _categories.TryGetValue(value.Text, out int id)) return id;
+            if (_settings.ColourByPaired && value.Category)
+                return _categories.TryGetValue(value.Text, out int id) ? id : PanelPreviewValues.OtherCategory;
             if (!value.Number.HasValue || !_ranges.TryGetValue(value.Key, out var range)) return 0;
             int bucket = range.Bucket(value.Number.Value);
             if (_settings.Reverse) bucket = PanelPreviewValues.Buckets - 1 - bucket;
@@ -101,7 +105,7 @@ namespace BetterGhPanel.Runtime
             }
             if (_settings.ColourByPaired != colourByPaired || _settings.LabelSource != labelSource)
             {
-                _values.Clear(); _colourValues.Clear(); _ranges.Clear(); _categories.Clear(); _legend = Array.Empty<LegendRow>();
+                _values.Clear(); _colourValues.Clear(); _ranges.Clear(); _categories.Clear(); _legend = Array.Empty<LegendRow>(); _legendOverflow = 0;
             }
             if (changed) _labelRevision++;
             if (!ReferenceEquals(result, _valueResult) || _settings.Order != order || _settings.Values != values ||
@@ -114,7 +118,7 @@ namespace BetterGhPanel.Runtime
             if (!values && !Gradient)
             {
                 _refresh?.Stop();
-                _values.Clear(); _colourValues.Clear(); _ranges.Clear(); _categories.Clear(); _legend = Array.Empty<LegendRow>();
+                _values.Clear(); _colourValues.Clear(); _ranges.Clear(); _categories.Clear(); _legend = Array.Empty<LegendRow>(); _legendOverflow = 0;
             }
             else InvalidateValues();
             if (changed) { RebuildLabels(); UpdateEnabled(); }
@@ -124,6 +128,7 @@ namespace BetterGhPanel.Runtime
         private void ClearBuild()
         {
             _buildingValues = null; _buildingRanges = null; _buildingPending = null;
+            _buildingCategoryCounts = null; _buildingCategoryOrder = null;
             _prioritySamples.Clear(); _queuedSamples.Clear(); _sentPartialPending = false;
         }
 
@@ -147,6 +152,11 @@ namespace BetterGhPanel.Runtime
             {
                 _buildingValues = new Dictionary<int, PanelPreviewValue>(); _buildingRanges = new Dictionary<string, PanelPreviewRange>();
                 _buildingPending = new HashSet<int>(); _cursor = 0; _dirty = false;
+                if (_settings.ColourByPaired && Gradient)
+                {
+                    _buildingCategoryCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+                    _buildingCategoryOrder = new List<string>();
+                }
                 foreach (var label in _labels.Values) Prioritise(label.Position);
             }
             long generation = _valueGeneration;
@@ -161,7 +171,11 @@ namespace BetterGhPanel.Runtime
                 int position = priority ? _prioritySamples.Dequeue() : positions[_cursor++];
                 if (priority && !_queuedSamples.Remove(position)) continue;
                 bool captured = _buildingValues.ContainsKey(position);
-                if (captured && (!priority || _values.TryGetValue(position, out var shown) && !shown.Pending)) continue;
+                if (captured && (!priority || _values.TryGetValue(position, out var shown) && !shown.Pending))
+                {
+                    if (!priority) CountCategory(_buildingValues[position]);
+                    continue;
+                }
                 var value = sample(position); sampled++; if (priority) prioritised++;
                 if (generation != _valueGeneration || current?.Invoke() != true || !ReferenceEquals(result, _valueResult)) return;
                 if (_values.TryGetValue(position, out var previous) || _colourValues.TryGetValue(position, out previous)) value = value.RetainNumber(previous);
@@ -170,6 +184,7 @@ namespace BetterGhPanel.Runtime
                 // cannot leave an old extremum in its completed colour snapshot.
                 if (priority || _queuedSamples.Contains(position)) _values[position] = value;
                 if (value.Pending) _buildingPending!.Add(position); else _buildingPending!.Remove(position);
+                if (!priority) CountCategory(value);
                 // Rescan only when the range sample is actually stale.
                 if (captured) { if (!Same(_buildingValues[position], value)) _dirty = true; continue; }
                 _buildingValues[position] = value;
@@ -188,7 +203,8 @@ namespace BetterGhPanel.Runtime
                 static int Order(string metric) => metric == "Length" ? 0 : metric == "Area" ? 1 : metric == "Volume" ? 2 : 3;
                 var legend = _ranges.Values.OrderBy(range => Order(range.Metric)).ThenBy(range => range.Metric, StringComparer.Ordinal)
                     .ThenBy(range => range.Unit, StringComparer.Ordinal).Select(range => new LegendRow(range)).ToList();
-                if (_settings.ColourByPaired && Gradient) AppendCategories(positions, legend);
+                _legendOverflow = 0;
+                AppendCategories(legend);
                 _legend = legend.ToArray();
                 _legendScale = 0;
             }
@@ -208,28 +224,28 @@ namespace BetterGhPanel.Runtime
         private static bool Same(PanelPreviewValue a, PanelPreviewValue b) =>
             a.Pending == b.Pending && a.Number == b.Number && a.Text == b.Text && a.Key == b.Key && a.LabelText == b.LabelText && a.Category == b.Category;
 
-        private void AppendCategories(IReadOnlyList<int> positions, List<LegendRow> legend)
+        private void CountCategory(PanelPreviewValue value)
         {
-            var counts = new Dictionary<string, int>(StringComparer.Ordinal);
-            var ordered = new List<string>();
-            foreach (int position in positions)
+            if (_buildingCategoryCounts == null || !value.Category) return;
+            if (!_buildingCategoryCounts.TryGetValue(value.Text, out int count)) _buildingCategoryOrder!.Add(value.Text);
+            _buildingCategoryCounts[value.Text] = count + 1;
+        }
+
+        private void AppendCategories(List<LegendRow> legend)
+        {
+            if (_buildingCategoryOrder == null || _buildingCategoryCounts == null) return;
+            _categories = new Dictionary<string, int>(StringComparer.Ordinal);
+            int available = Math.Max(PanelPreviewValues.CategoryCount, 64 - legend.Count);
+            int shown = Math.Min(available, _buildingCategoryOrder.Count);
+            for (int index = 0; index < shown; index++)
             {
-                if (!_colourValues.TryGetValue(position, out var value) || !value.Category) continue;
-                if (!counts.TryGetValue(value.Text, out int count)) ordered.Add(value.Text);
-                counts[value.Text] = count + 1;
-            }
-            _categories = new Dictionary<string, int>(counts.Count, StringComparer.Ordinal);
-            int extra = 0;
-            for (int index = 0; index < ordered.Count; index++)
-            {
-                string text = ordered[index];
+                string text = _buildingCategoryOrder[index];
                 int id = index < PanelPreviewValues.CategoryCount ? PanelPreviewValues.CategoryFirst + index : PanelPreviewValues.OtherCategory;
-                _categories.Add(text, id);
-                if (index < PanelPreviewValues.CategoryCount)
-                    legend.Add(new LegendRow(text.Length <= 48 ? text : text.Substring(0, 47) + "…", counts[text], id));
-                else extra += counts[text];
+                if (id != PanelPreviewValues.OtherCategory) _categories.Add(text, id);
+                string label = PanelValuePresentation.Visualize(text);
+                legend.Add(new LegendRow(label.Length <= 48 ? label : label.Substring(0, 47) + "…", _buildingCategoryCounts[text], id));
             }
-            if (extra > 0) legend.Add(new LegendRow("Other values", extra, PanelPreviewValues.OtherCategory));
+            _legendOverflow = _buildingCategoryOrder.Count - shown;
         }
 
         private PanelPreviewValue Value(int position) => !_settings.Values && !Gradient ? default :
@@ -330,7 +346,7 @@ namespace BetterGhPanel.Runtime
             SuspendValues();
             _passFailLegend = null;
             ClearEntries(); SetResult(null);
-            _values.Clear(); _colourValues.Clear(); _ranges.Clear(); _categories.Clear(); _legend = Array.Empty<LegendRow>(); _lastPublish = -PublishInterval;
+            _values.Clear(); _colourValues.Clear(); _ranges.Clear(); _categories.Clear(); _legend = Array.Empty<LegendRow>(); _legendOverflow = 0; _lastPublish = -PublishInterval;
             foreach (var dot in _textDots.Values) dot.Dispose();
             _textDots.Clear();
             UpdateEnabled();
@@ -834,7 +850,8 @@ namespace BetterGhPanel.Runtime
             _legendFontHeight = Math.Max(1, (int)(12 * scale));
             _legendRowHeight = 24 * scale;
             float maxWidth = 0; bool hasRange = false;
-            foreach (var row in _legend)
+            // Rows beyond this are counted in the overflow line, even on large viewports.
+            foreach (var row in _legend.Take(64))
             {
                 row.NameBounds = display.Measure2dText(row.Name, Point2d.Origin, false, 0, _legendFontHeight, "Arial");
                 row.MinBounds = display.Measure2dText(row.Min, Point2d.Origin, false, 0, _legendFontHeight, "Arial");
@@ -866,14 +883,17 @@ namespace BetterGhPanel.Runtime
             if (_legendScale != scale) LayoutLegend(args.Display, scale);
             int width = (int)Math.Ceiling(_legendWidth);
             int statusRows = _passFailLegend == null ? 0 : 1;
-            int height = (int)Math.Ceiling((_legend.Length + statusRows) * _legendRowHeight + 2 * LegendPadding * scale);
+            int available = Math.Max(1, Math.Min(64, (int)((args.Viewport.Size.Height - offset - 36 * scale) / _legendRowHeight) - statusRows));
+            bool overflow = _legendOverflow > 0 || _legend.Length > available;
+            int shown = Math.Min(_legend.Length, overflow ? available - 1 : available);
+            int height = (int)Math.Ceiling((shown + (overflow ? 1 : 0) + statusRows) * _legendRowHeight + 2 * LegendPadding * scale);
             int x = Math.Max(4, args.Viewport.Size.Width - width - (int)(16 * scale));
             int top = args.Viewport.Size.Height - (int)(16 * scale) - offset - height;
             args.Display.Draw2dRectangle(new Rectangle(x, top, width, height), Color.FromArgb(170, 180, 170), 1, Color.FromArgb(238, 245, 247, 244));
             if (_passFailLegend is LegendRow status)
                 DrawLegendText(args, status.Name, status.NameBounds, x + LegendPadding * scale, top + LegendPadding * scale);
             float minRight = x + (LegendPadding + LegendGap) * scale + _legendNameWidth + _legendMinWidth;
-            for (int index = 0; index < _legend.Length; index++)
+            for (int index = 0; index < shown; index++)
             {
                 var row = _legend[index];
                 float y = top + LegendPadding * scale + (index + statusRows) * _legendRowHeight;
@@ -891,6 +911,12 @@ namespace BetterGhPanel.Runtime
                             _colours[1 + ((int)_settings.Palette - 1) * PanelPreviewValues.Buckets + (_settings.Reverse ? PanelPreviewValues.Buckets - 1 - bucket : bucket)]);
                     DrawLegendText(args, row.Max, row.MaxBounds, barX + (LegendBarWidth + LegendGap) * scale, y);
                 }
+            }
+            if (overflow)
+            {
+                string remaining = System.FormattableString.Invariant($"{_legend.Length - shown + _legendOverflow:N0} more values");
+                var bounds = args.Display.Measure2dText(remaining, Point2d.Origin, false, 0, _legendFontHeight, "Arial");
+                DrawLegendText(args, remaining, bounds, x + LegendPadding * scale, top + LegendPadding * scale + (shown + statusRows) * _legendRowHeight);
             }
             offset += height + (int)(6 * scale);
         }

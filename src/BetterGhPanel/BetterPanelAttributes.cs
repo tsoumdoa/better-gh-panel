@@ -690,7 +690,7 @@ namespace BetterGhPanel
                 }
                 if (ViewCount(result) == 0)
                 {
-                    Text(g, result.Snapshot.Branches.Count == 0 ? "Connect a tree to start exploring." : "No results. Clear a filter or Reset all.",
+                    Text(g, result.Snapshot.Branches.Count == 0 ? EmptyTreeMessage() : "No results. Clear a filter or Reset all.",
                         small, Muted, new RectangleF(list.X + 6, list.Y + 12, list.Width - 12, 22), trim);
                 }
             }
@@ -706,6 +706,8 @@ namespace BetterGhPanel
                 Fill(g, PanelTheme.Rgb(153, 174, 156), Thumb());
             }
         }
+
+        private string EmptyTreeMessage() => PanelOwner.CleanedEmptyBranches > 0 ? "Clean removed all empty branches." : "Connect a tree to start exploring.";
 
         private bool ShowDataTypes(PanelQueryResult result) => PanelOwner.Session.Options.DisplaysDataFilterValue || result.DisplaySet != null ||
             result.Statistics.TypeCounts.Count > 1 || PanelOwner.Session.Options.OnlyInvalid;

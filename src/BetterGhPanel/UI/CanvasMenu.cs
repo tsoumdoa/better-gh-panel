@@ -543,7 +543,8 @@ namespace BetterGhPanel.UI
             {
                 if (StatsSourceRow(index)) return index == 1 ? "Stats per · Branch" : "Stats per · F value";
                 index = StatsIndex(index);
-                return index == 0 ? "Turn off" : index == 1 ? "Rows in this order" : index == 10 ? "Flatten for stats across all branches" : PanelBranchStats.Name(StatAt(index));
+                return index == 0 ? "Turn off" : index == 1 ? GroupingChoices ? "Rows in this order" : "Rows per branch, in this order" :
+                    index == 10 ? "Flatten for stats across all branches" : PanelBranchStats.Name(StatAt(index));
             }
             if (Kind == CanvasMenuKind.DotSize) return index == 0 ? "‹ Preview" : ((PanelDotSize)(index - 1)).ToString();
             if (Kind == CanvasMenuKind.PreviewLimit) return index == 0 ? "‹ Preview" : PanelDotSettings.LimitAt(index - 1).ToString("N0", System.Globalization.CultureInfo.InvariantCulture) + " items";

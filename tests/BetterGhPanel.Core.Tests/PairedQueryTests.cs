@@ -1,8 +1,20 @@
 using BetterGhPanel.Core;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
 using Xunit;
 
 public class PairedQueryTests
 {
+    [Fact]
+    public void CleanKeepsOriginalPairOffsetsAndUsesDataBranchLength()
+    {
+        var data = new[] { new PanelBranch("{0}", 1), new PanelBranch("{1}", 0), new PanelBranch("{2}", 2) };
+        var paired = new[] { new PanelBranch("{2}", 2), new PanelBranch("{4}", 3), new PanelBranch("{5}", 1) };
+        var groups = PanelPairing.Match(data, paired).Where(pair => pair.RetainedAfterClean(true)).ToArray();
+        Assert.Equal(new[] { "{0}", "{2}" }, groups.Select(pair => pair.Data.Path));
+        Assert.Equal(new int?[] { 2, 0 }, groups.Select(pair => pair.ItemPosition(0)));
+    }
     [Fact]
     public void GroupingByFUsesFirstSeenKeysAndRetainsUnpairedRows()
     {
@@ -30,6 +42,16 @@ public class PairedQueryTests
         var stats = PanelQueryEngine.Execute(data, options);
         Assert.Equal(new[] { "{0;1;0}", "{0;1;2;0}", "{0;10;0}", "{0;10;1}", "{0;10;2}" }, stats.StatPaths);
         Assert.Equal(12d, stats.BranchStats!["{0;1;0}"].Value(PanelStatKinds.Sum));
+        var flat = new PanelSnapshot(new[]
+        {
+            new PanelRow(0, "{0}", "Number", "10", 10),
+            new PanelRow(1, "{0}", "Number", "3", 3)
+        }, new[] { new PanelBranch("{0}", 2) });
+        options.Flattened = true;
+        options.PairedSource = new PanelPairedQuerySource(paired, position => position == 0 ? 0 : 2);
+        var pooled = PanelQueryEngine.Execute(flat, options);
+        Assert.Equal(new[] { "{0}" }, pooled.StatPaths);
+        Assert.Equal(13d, pooled.BranchStats!["{0}"].Value(PanelStatKinds.Sum));
     }
     [Fact]
     public void SearchUsesOriginalPartnersAndKeepsDataRestrictions()
@@ -73,5 +95,26 @@ public class PairedQueryTests
         options.SearchMode = PanelSearchMode.Regex;
         options.Search = @"^1\.23$";
         Assert.Equal(new[] { 0 }, PanelQueryEngine.Execute(data, options).RowPositions);
+    }
+
+    [Fact]
+    public void PairedGeometrySearchMeasuresOnlyPartnersInTheDataScope()
+    {
+        var data = PanelQueryTestData.Sample();
+        var curve = new PanelGeometryInfo("Curve", units: "mm", metricName: "Length", canMeasure: true);
+        var paired = new PanelSnapshot(new[]
+        {
+            new PanelRow(0, "{6}", "Curve", "Curve", null, geometryInfo: curve),
+            new PanelRow(1, "{6}", "Curve", "Curve", null, geometryInfo: curve)
+        }, new[] { new PanelBranch("{6}", 2) });
+        var source = new PanelPairedQuerySource(paired, position => position == 0 ? 1 : position == 2 ? 0 : (int?)null);
+        var query = new PanelQueryOptions
+        {
+            SearchPaired = true, SearchMode = PanelSearchMode.Length, Search = "> 25", TypeName = "Number", PairedSource = source
+        };
+        Assert.Equal(new[] { 1 }, PanelQueryEngine.PairedGeometryCandidates(data, query, source, CancellationToken.None));
+        Assert.Empty(PanelQueryEngine.Execute(data, query).RowPositions);
+        source.Measurements = new Dictionary<int, PanelGeometryInfo?> { [1] = new PanelGeometryInfo("Curve", 30, units: "mm", metricName: "Length") };
+        Assert.Equal(new[] { 0 }, PanelQueryEngine.Execute(data, query).RowPositions);
     }
 }
