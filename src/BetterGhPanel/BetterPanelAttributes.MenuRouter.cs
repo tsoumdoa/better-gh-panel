@@ -12,7 +12,7 @@ namespace BetterGhPanel
 {
     internal sealed partial class BetterPanelAttributes
     {
-        private bool PreviewMenuRowEnabled(int index) => _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette, PanelOwner.PreviewMode);
+        private bool PreviewMenuRowEnabled(int index) => _menu.RowEnabled(index, PanelOwner.ShowItemOrder, PanelOwner.ShowValues, PanelOwner.ValuePalette, PanelOwner.PreviewMode, PanelOwner.ShowAllDots);
 
         private void ChoosePreviewMenu(int index, GH_Canvas canvas)
         {
@@ -22,6 +22,7 @@ namespace BetterGhPanel
             if (page == CanvasMenuKind.Preview)
             {
                 if (index < CanvasPreviewRows.ScopeCount) { PanelOwner.SetPreviewMode(_menu.PreviewChoiceAt(index).Mode!.Value); _menu.Close(); canvas.Invalidate(); return; }
+                if (index == CanvasPreviewRows.ShowAllDots) PanelOwner.SetShowAllDots(!PanelOwner.ShowAllDots);
                 if (index == CanvasPreviewRows.ItemOrder) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
                 if (index == CanvasPreviewRows.Values) PanelOwner.SetShowValues(!PanelOwner.ShowValues);
                 if (index == CanvasPreviewRows.Placement) next = CanvasMenuKind.DotPlacement;
@@ -65,25 +66,31 @@ namespace BetterGhPanel
             _menuRouter = new MenuRouter(this, canvas);
         }
 
-        // Menus answer their own tooltips: Preview's item order and
-        // row actions. Other menu rows stay silent rather than show the panel's.
+        // Menu tooltips describe preview settings and row actions.
         private void MenuTooltip(PointF point, GH_TooltipDisplayEventArgs e)
         {
             if (_rowMenuResult != null && _rowMenuBounds.Contains(point)) { RowActionTooltip(point, e); return; }
             if (!PaintedViewIsCurrent() || !_menu.IsPaintedAt(point)) return;
             int row = (int)((point.Y - _menu.Bounds.Y) / 20);
+            if (_menu.Kind != CanvasMenuKind.Preview || row >= _menu.Visible) return;
             int index = _menu.Offset + row;
-            if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index == CanvasPreviewRows.Limit)
+            if (index == CanvasPreviewRows.ShowAllDots)
+            {
+                e.Title = "Show all dots";
+                e.Description = "Shows every dot with full text, even behind objects or overlapping.";
+            }
+            else if (index == CanvasPreviewRows.Limit)
             {
                 e.Title = "Preview limit";
                 e.Description = "Most items previewed and labelled. Higher limits can slow the viewport; the 64 MB memory cap still applies.";
             }
-            else if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index == CanvasPreviewRows.HideOccludedDots)
+            else if (index == CanvasPreviewRows.HideOccludedDots)
             {
                 e.Title = "Hide dots behind objects";
-                e.Description = "Dots whose point is hidden by geometry in this view aren't drawn, so nearby visible dots have room for text.";
+                e.Description = PanelOwner.ShowAllDots ? "Off while Show all dots is on." :
+                    "Dots whose point is hidden by geometry in this view aren't drawn, so nearby visible dots have room for text.";
             }
-            else if (_menu.Kind == CanvasMenuKind.Preview && row < _menu.Visible && index < _menu.Count && _menu.PreviewChoiceAt(index).IsItemOrder)
+            else if (index == CanvasPreviewRows.ItemOrder)
             {
                 e.Title = "Show item order";
                 e.Text = PanelOwner.ShowItemOrder ? "On" : "Off";
