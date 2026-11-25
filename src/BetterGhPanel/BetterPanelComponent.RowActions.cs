@@ -176,7 +176,6 @@ namespace BetterGhPanel
             var source = _sourceItems;
             var expectedResult = session.Result;
             var mode = PreviewMode;
-            var noMatchStyle = NoMatchStyle;
             bool showOrder = ShowItemOrder, showValues = ShowValues, reverse = ReversePalette;
             var labelSource = LabelSource;
             bool colourByPaired = ColourByPaired;
@@ -185,7 +184,7 @@ namespace BetterGhPanel
             var categorySetting = _pairedCategoriesEnabled;
             var placement = DotPlacement; var palette = ActiveValuePalette; int limit = PreviewLimit;
             var stamp = new ActionStamp(this, session, snapshot, expectedResult, source, _selectionVersion);
-            bool Current() => !_previewSuspended && !Locked && PreviewMode == mode && NoMatchStyle == noMatchStyle &&
+            bool Current() => !_previewSuspended && !Locked && PreviewMode == mode &&
                 ShowItemOrder == showOrder && LabelSource == labelSource && ColourByPaired == colourByPaired && ReversePalette == reverse &&
                 DotPlacement == placement && ValuePalette == savedPalette && _pairedCategoriesEnabled == categorySetting &&
                 PreviewLimit == limit && ReferenceEquals(pairedColumn, PairedColumn) &&
@@ -227,7 +226,7 @@ namespace BetterGhPanel
             _highlight.HideOccludedDots = HideOccludedDots;
             _highlight.ShowAllDots = ShowAllDots;
             _highlight.ConfigureValues(expectedResult, ShowItemOrder, ShowValues, DotPlacement, palette, ReversePalette,
-                searchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current, labelSource, colourByPaired, mode == PanelPreviewMode.PassFail, noMatchStyle);
+                searchMode, DecimalPlaces, RoundUpFactor, previewPositions, Sample, Current, labelSource, colourByPaired, mode == PanelPreviewMode.PassFail);
             if (!Current()) return;
             _highlight.SetScopeChecked(source, expectedResult, mode != PanelPreviewMode.Selected, ordered, Current, RowSelection, mode == PanelPreviewMode.PassFail);
             if (!Current()) return;

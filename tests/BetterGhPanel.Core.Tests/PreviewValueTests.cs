@@ -22,6 +22,15 @@ public class PreviewValueTests
     }
 
     [Fact]
+    public void MissingOrUnknownPreviewStyleDefaultsToGrey()
+    {
+        Assert.Equal(PanelNoMatchStyle.Grey, PanelPreviewValues.RestoreNoMatchStyle(null));
+        Assert.Equal(PanelNoMatchStyle.Grey, PanelPreviewValues.RestoreNoMatchStyle(99));
+        Assert.Equal(PanelNoMatchStyle.Red, PanelPreviewValues.RestoreNoMatchStyle((int)PanelNoMatchStyle.Red));
+        Assert.Equal(PanelNoMatchStyle.Ghosted, PanelPreviewValues.RestoreNoMatchStyle((int)PanelNoMatchStyle.Ghosted));
+    }
+
+    [Fact]
     public void MainMetricAndExplicitAreaShareRowFormatting()
     {
         var solid = new PanelGeometryInfo("Solid", 12.345, 3, "m", "Volume", "V", hasArea: true, areaValue: 45.678);

@@ -89,6 +89,10 @@ namespace BetterGhPanel.Core
             PanelNoMatchStyle.Ghosted => NoMatchGhosted,
             _ => NoMatchGrey
         };
+        internal static bool IsNoMatch(int id) => id is NoMatchRed or NoMatchGrey or NoMatchGhosted;
+
+        internal static PanelNoMatchStyle RestoreNoMatchStyle(int? saved) =>
+            saved is int value && Enum.IsDefined(typeof(PanelNoMatchStyle), value) ? (PanelNoMatchStyle)value : PanelNoMatchStyle.Grey;
         private static readonly int[][] Stops = {
             new[] { 0x440154, 0x3b528b, 0x21918c, 0x5ec962, 0xfde725 },
             new[] { 0x000004, 0x51127c, 0xb73779, 0xfc8961, 0xfcfdbf },

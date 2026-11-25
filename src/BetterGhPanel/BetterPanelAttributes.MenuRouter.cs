@@ -50,7 +50,13 @@ namespace BetterGhPanel
                 if (index == CanvasPreviewRows.Colour) next = CanvasMenuKind.ValuePalette;
             }
             else if (index == CanvasPreviewRows.Back) next = CanvasMenuKind.Preview;
-            else if (page == CanvasMenuKind.NoMatchStyle) { PanelOwner.SetNoMatchStyle(CanvasMenu.NoMatchStyleAt(index)); next = CanvasMenuKind.Preview; }
+            else if (page == CanvasMenuKind.NoMatchStyle)
+            {
+                PanelOwner.SetNoMatchStyle(CanvasMenu.NoMatchStyleAt(index));
+                _menu.Close();
+                canvas.Invalidate();
+                return;
+            }
             else if (page == CanvasMenuKind.ShowValues) { PanelOwner.SetLabelSource((PanelLabelSource)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.DotPlacement) { PanelOwner.SetDotPlacement((PanelDotPlacement)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.DotSize) { PanelOwner.SetDotSize((PanelDotSize)(index - 1)); next = CanvasMenuKind.Preview; }
@@ -120,7 +126,17 @@ namespace BetterGhPanel
             else if (preview && index == CanvasPreviewRows.MatchScope)
             {
                 e.Title = _menu.Label(index);
-                e.Description = "Items that meet the search and filters keep their colours, and other items use the chosen style. The legend shows counts and percentages.";
+                e.Description = "Items that meet the search and filters keep their value colour (green when colouring is off), and other items use the chosen style. The legend shows counts and percentages.";
+            }
+            else if (_menu.Kind == CanvasMenuKind.NoMatchStyle && index != CanvasPreviewRows.Back)
+            {
+                e.Title = _menu.Label(index);
+                e.Description = CanvasMenu.NoMatchStyleAt(index) switch
+                {
+                    PanelNoMatchStyle.Red => "Items that don't match draw red.",
+                    PanelNoMatchStyle.Grey => "Items that don't match draw grey and keep their dots.",
+                    _ => "Items that don't match are see-through with no dots."
+                };
             }
             else if (preview && index == CanvasPreviewRows.ShowAllDots)
             {

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Pass / Fail is now Match / No match**, a calmer name for items that meet the search and filters or not. Choose grey (default), red or ghosted for items outside the search and filters. Ghosted geometry is see-through and keeps dots only for selected items. The legend shows counts and percentages for all items after the tree tools.
+- **Pass / Fail is now Match / No match**, a calmer name for items that meet the search and filters or not. Choose grey (default), red or ghosted for items outside the search and filters. Ghosted geometry is see-through and has no dots. The legend shows counts and percentages for all items after the tree tools.
 
 ## 0.6.4-beta
 

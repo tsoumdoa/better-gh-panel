@@ -65,9 +65,13 @@ namespace BetterGhPanel
             SetPreviewSetting("match preview", (Mode: PreviewMode, Style: NoMatchStyle), (Mode: PanelPreviewMode.PassFail, Style: style),
                 (component, choice) =>
                 {
+                    bool modeChanged = component.PreviewMode != choice.Mode;
                     component.PreviewMode = choice.Mode;
                     component.NoMatchStyle = choice.Style;
-                });
+                    component._highlight.SetNoMatchStyle(choice.Style);
+                    if (modeChanged) (component.Attributes as BetterPanelAttributes)?.OnQueryCompleted();
+                    else Rhino.RhinoDoc.ActiveDoc?.Views.Redraw();
+                }, refreshPreview: false);
         }
         internal void SetShowValues(bool value) => SetLabelSource(value ? PanelLabelSource.Data : PanelLabelSource.Off);
         internal void SetLabelSource(PanelLabelSource value) => SetPreviewSetting("values", LabelSource, value, (c, v) => { c.LabelSource = v; c.RefreshPairedPreviewSource(); });
@@ -97,13 +101,13 @@ namespace BetterGhPanel
                 SetPreviewSetting<bool?>("colour categories", _pairedCategoriesEnabled, enabled, (c, v) => c._pairedCategoriesEnabled = v);
         }
         internal void SetReversePalette(bool value) => SetPreviewSetting("reverse palette", ReversePalette, value, (c, v) => c.ReversePalette = v);
-        private void SetPreviewSetting<T>(string name, T before, T after, Action<BetterPanelComponent, T> apply)
+        private void SetPreviewSetting<T>(string name, T before, T after, Action<BetterPanelComponent, T> apply, bool refreshPreview = true)
         {
             if (EqualityComparer<T>.Default.Equals(before, after)) return;
             void Apply(BetterPanelComponent component, T value)
             {
                 apply(component, value);
-                (component.Attributes as BetterPanelAttributes)?.OnQueryCompleted();
+                if (refreshPreview) (component.Attributes as BetterPanelAttributes)?.OnQueryCompleted();
                 component.OnPingDocument()?.Modified();
                 Instances.ActiveCanvas?.Invalidate();
             }
@@ -116,7 +120,7 @@ namespace BetterGhPanel
         {
             get
             {
-                if (PreviewMode == PanelPreviewMode.Off || !_highlight.HasVisiblePreview) return null;
+                if (PreviewMode == PanelPreviewMode.Off || (_highlight.PreviewCount == 0 && !_highlight.HasMatchLegend)) return null;
                 var document = OnPingDocument();
                 return document?.PreviewMode == GH_PreviewMode.Disabled ? "Preview hidden: Grasshopper preview is off." :
                     Hidden ? "Preview hidden: this component's preview is off." :
@@ -807,9 +811,9 @@ namespace BetterGhPanel
             reader.TryGetInt32("PanelPreviewMode", ref previewMode);
             PreviewMode = Enum.IsDefined(typeof(PanelPreviewMode), previewMode)
                 ? (PanelPreviewMode)previewMode : PanelPreviewMode.Selected;
-            int noMatchStyle = (int)PanelNoMatchStyle.Grey;
-            reader.TryGetInt32("PanelNoMatchStyle", ref noMatchStyle);
-            NoMatchStyle = Enum.IsDefined(typeof(PanelNoMatchStyle), noMatchStyle) ? (PanelNoMatchStyle)noMatchStyle : PanelNoMatchStyle.Grey;
+            int noMatchStyle = 0;
+            NoMatchStyle = PanelPreviewValues.RestoreNoMatchStyle(reader.TryGetInt32("PanelNoMatchStyle", ref noMatchStyle) ? (int?)noMatchStyle : null);
+            _highlight.SetNoMatchStyle(NoMatchStyle);
             bool showOrder = false;
             reader.TryGetBoolean("PanelShowItemOrder", ref showOrder);
             ShowItemOrder = showOrder;

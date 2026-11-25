@@ -53,8 +53,7 @@ namespace BetterGhPanel.Runtime
         internal void ConfigureValues(PanelQueryResult result, bool order, bool values, PanelDotPlacement placement,
             PanelValuePalette palette, bool reverse, PanelSearchMode search, int decimals, double factor,
             IReadOnlyList<int> scope, Func<int, bool, PanelPreviewValue> sample, Func<bool> current,
-            PanelLabelSource labelSource = PanelLabelSource.Off, bool colourByPaired = false, bool passFail = false,
-            PanelNoMatchStyle noMatchStyle = PanelNoMatchStyle.Grey)
+            PanelLabelSource labelSource = PanelLabelSource.Off, bool colourByPaired = false, bool passFail = false)
         {
             _activeDraws++;
             try
@@ -67,7 +66,7 @@ namespace BetterGhPanel.Runtime
                 else SetOrderResult(labelResult);
                 long generation = _generation;
                 if (!current()) return;
-                bool coloursChanged = _orderLabels.Configure(result, order, values, placement, palette, reverse, search, decimals, factor, scope, sample, current, labelSource, colourByPaired, passFail, noMatchStyle);
+                bool coloursChanged = _orderLabels.Configure(result, order, values, placement, palette, reverse, search, decimals, factor, scope, sample, current, labelSource, colourByPaired, passFail);
                 if (generation != _generation || !current()) return;
                 if (_orderLabels.ColourGeometry && _valueMaterials == null && !_displayFlushFailed)
                 {
@@ -76,8 +75,21 @@ namespace BetterGhPanel.Runtime
                     {
                         var colour = _orderLabels.Colour(id);
                         var half = System.Drawing.Color.FromArgb(colour.R / 2, colour.G / 2, colour.B / 2);
-                        _valueMaterials[id] = new DisplayMaterial(half) { Emission = half, Specular = System.Drawing.Color.Black, Shine = 0 };
-                        if (id == PanelPreviewValues.NoMatchGhosted) _valueMaterials[id].Transparency = .7;
+                        bool ghosted = id == PanelPreviewValues.NoMatchGhosted;
+                        var material = ghosted ? new DisplayMaterial(half, .7) : new DisplayMaterial(half);
+                        material.Emission = half;
+                        material.Specular = System.Drawing.Color.Black;
+                        material.Shine = 0;
+                        if (ghosted)
+                        {
+                            material.IsTwoSided = true;
+                            material.BackDiffuse = half;
+                            material.BackEmission = half;
+                            material.BackSpecular = material.Specular;
+                            material.BackShine = material.Shine;
+                            material.BackTransparency = material.Transparency;
+                        }
+                        _valueMaterials[id] = material;
                     }
                 }
                 if (attachLabels || coloursChanged && _orderLabels.ColourGeometry)
@@ -90,6 +102,16 @@ namespace BetterGhPanel.Runtime
             }
             finally { _activeDraws--; FlushRetired(); }
         }
+
+        internal void SetNoMatchStyle(PanelNoMatchStyle style)
+        {
+            int id = PanelPreviewValues.NoMatchColour(style);
+            if (_orderLabels.NoMatchColourId == id) return;
+            _orderLabels.SetNoMatchColour(id);
+            foreach (var entry in _entries.Values)
+                if (PanelPreviewValues.IsNoMatch(entry.ColourId)) entry.ColourId = id;
+        }
+
         private void ValuesChanged()
         {
             foreach (var entry in _entries.Values) entry.ColourId = _orderLabels.ColourId(entry.Position);
@@ -143,6 +165,7 @@ namespace BetterGhPanel.Runtime
         internal int Count => _selectedCount;
         internal int PreviewCount => _entries.Count;
         internal bool HasVisiblePreview => PreviewCount > 0 || _orderLabels.Visible;
+        internal bool HasMatchLegend => _orderLabels.HasMatchLegend;
         internal bool IsAdmitted(int position) => _byPosition.ContainsKey(position);
         private long SourceAndMaterialBytes => _bytes + _retiredBytes + _stagedBytes + ((_valueMaterials?.Length ?? 0) + _retiredMaterials.Count) * 512L;
         internal long RetainedBytes => SourceAndMaterialBytes + _displayMemory.UsedBytes;
@@ -853,59 +876,67 @@ namespace BetterGhPanel.Runtime
             // Keep resources alive through our explicit pipeline flush, including
             // reentrant idle, and suppress nested draws that could reset a cache.
             if (_activeDraws != 0 || _displayFlushFailed) return;
+            var display = args.Display;
+            bool flushPending = true;
             _activeDraws++;
             DrawWireCalls++;
             try
             {
-            long generation = _generation;
-            // GH can request wires first. Reserve selected shading first when shading is on.
-            if (args.Document.PreviewMode == GH_PreviewMode.Shaded) PrepareSelectedMeshes(args, generation);
-            if (generation != _generation) return;
-            for (int pass = 0; pass < 2; pass++)
-                foreach (var entry in _entries.Values)
-                {
-                    if (_membership.Contains(entry.Position) != (pass == 0)) continue;
-                    foreach (var leaf in entry.Leaves)
+                long generation = _generation;
+                int noMatchColour = _orderLabels.NoMatchColourId;
+                bool Current() => generation == _generation && noMatchColour == _orderLabels.NoMatchColourId;
+                bool shaded = args.Document.PreviewMode == GH_PreviewMode.Shaded;
+                // GH can request wires first. Reserve selected shading first when shading is on.
+                if (shaded) PrepareSelectedMeshes(args, generation);
+                if (!Current()) return;
+                for (int pass = 0; pass < 2; pass++)
+                    foreach (var entry in _entries.Values)
                     {
-                        try { leaf.PrepareWires(() => generation == _generation); } catch (Exception) { }
-                        if (generation != _generation) return;
-                        if (pass == 0 && leaf.PendingDisplayBytes > 0) RequestMeshPriority();
+                        if (_membership.Contains(entry.Position) != (pass == 0)) continue;
+                        foreach (var leaf in entry.Leaves)
+                        {
+                            try { leaf.PrepareWires(Current); } catch (Exception) { }
+                            if (!Current()) return;
+                            if (pass == 0 && leaf.PendingDisplayBytes > 0) RequestMeshPriority();
+                        }
                     }
-                }
-            var normal = new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour, args.DefaultCurveThickness);
-            // Selected rows must stand out against the same geometry's upstream preview,
-            // whether or not this component is selected on the canvas.
-            int thickness = args.DefaultCurveThickness + Math.Max(MinSelectionThickening, componentSelected ? 0 : CentralSettings.PreviewSelectionThickening);
-            var selected = new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour_Selected, thickness);
-            GH_PreviewWireArgs[]? colours = null;
-            if (_orderLabels.ColourGeometry && _valueMaterials != null)
-            {
-                colours = new GH_PreviewWireArgs[_valueMaterials.Length];
-            }
-            DrawWires(normal, false, colours, args.DefaultCurveThickness, args.Document.PreviewMode == GH_PreviewMode.Shaded);
-            if (generation != _generation) return;
-            bool pushed = false;
-            try
-            {
-                if (_selectedCount > 0 && args.Display != null)
+                var normal = new GH_PreviewWireArgs(args.Viewport, display, args.WireColour, args.DefaultCurveThickness);
+                // Selected rows must stand out against the same geometry's upstream preview,
+                // whether or not this component is selected on the canvas.
+                int thickness = args.DefaultCurveThickness + Math.Max(MinSelectionThickening, componentSelected ? 0 : CentralSettings.PreviewSelectionThickening);
+                var selected = new GH_PreviewWireArgs(args.Viewport, display, args.WireColour_Selected, thickness);
+                var colours = _orderLabels.ColourGeometry && _valueMaterials != null ? new GH_PreviewWireArgs[_valueMaterials.Length] : null;
+                DrawWires(normal, false, colours, args.DefaultCurveThickness, shaded, Current);
+                if (!Current()) return;
+                bool pushed = false;
+                try
                 {
-                    PushPreviewDepthBias(args); pushed = true;
+                    if (_selectedCount > 0 && display != null)
+                    {
+                        PushPreviewDepthBias(args); pushed = true;
+                    }
+                    DrawWires(selected, true, colours, args.DefaultCurveThickness, shaded, Current);
                 }
-                DrawWires(selected, true, colours, args.DefaultCurveThickness, args.Document.PreviewMode == GH_PreviewMode.Shaded);
+                finally { if (pushed) display!.PopModelTransform(); }
+                if (!Current()) return;
+                if (display != null && colours != null && HasGhostedEntries(noMatchColour))
+                {
+                    flushPending = false;
+                    DrawGhosted(display, Current, () => DrawWires(normal, false, colours, args.DefaultCurveThickness, shaded, Current, ghosted: true));
+                }
+                if (Current() && !_displayFlushFailed) _orderLabels.Arm(args);
             }
-            finally { if (pushed) args.Display.PopModelTransform(); }
-            if (generation != _generation) return;
-            _orderLabels.Arm(args);
-            }
-            finally { EndDraw(args.Display); }
+            finally { EndDraw(flushPending ? display : null); }
         }
 
-        private void DrawWires(GH_PreviewWireArgs args, bool selected, GH_PreviewWireArgs[]? colours, int normalThickness, bool shaded)
+        private void DrawWires(GH_PreviewWireArgs args, bool selected, GH_PreviewWireArgs[]? colours, int normalThickness, bool shaded,
+            Func<bool> current, bool ghosted = false)
         {
-            long generation = _generation;
+            if (!current()) return;
             foreach (var entry in _entries.Values)
             {
-                if (_membership.Contains(entry.Position) != selected) continue;
+                if ((colours != null && entry.ColourId == PanelPreviewValues.NoMatchGhosted) != ghosted) continue;
+                if (!ghosted && _membership.Contains(entry.Position) != selected) continue;
                 entry.WasDrawn = true;
                 var draw = colours == null ? args : colours[entry.ColourId] ??=
                     new GH_PreviewWireArgs(args.Viewport, args.Pipeline, _orderLabels.Colour(entry.ColourId), normalThickness);
@@ -916,14 +947,14 @@ namespace BetterGhPanel.Runtime
                         if (selected && colours != null)
                         {
                             args.Pipeline.PushDepthWriting(false);
-                            try { leaf.DrawWires(args, () => generation == _generation, colourByValue: true, halo: true, shaded: shaded); }
+                            try { leaf.DrawWires(args, current, colourByValue: true, halo: true, shaded: shaded); }
                             finally { args.Pipeline.PopDepthWriting(); }
                         }
-                        if (generation != _generation) return;
-                        leaf.DrawWires(draw, () => generation == _generation, colourByValue: colours != null);
+                        if (!current()) return;
+                        leaf.DrawWires(draw, current, colourByValue: colours != null);
                     }
                     catch (Exception) { }
-                    if (generation != _generation) return;
+                    if (!current()) return;
                 }
             }
         }
@@ -959,67 +990,103 @@ namespace BetterGhPanel.Runtime
 
         internal void DrawMeshes(IGH_PreviewArgs args)
         {
-            if (args.MeshingParameters == null) return;
+            var parameters = args.MeshingParameters;
+            if (parameters == null) return;
             if (_activeDraws != 0 || _displayFlushFailed) return;
+            var display = args.Display;
+            bool flushPending = true;
             _activeDraws++;
             DrawMeshCalls++;
             try
             {
-            long generation = _generation;
-            PrepareSelectedMeshes(args, generation);
-            if (generation != _generation) return;
-            var normal = new GH_PreviewMeshArgs(args.Viewport, args.Display, args.ShadeMaterial, args.MeshingParameters);
-            var selected = new GH_PreviewMeshArgs(args.Viewport, args.Display, args.ShadeMaterial_Selected, args.MeshingParameters);
-            var halo = _orderLabels.ColourGeometry ? new GH_PreviewWireArgs(args.Viewport, args.Display, args.WireColour_Selected,
-                args.DefaultCurveThickness + Math.Max(MinSelectionThickening, CentralSettings.PreviewSelectionThickening)) : null;
-            // Fixed meshes need no remeshing. Brep/Surface/SubD entries manage
-            // their own bounded meshes and invalidate them on setting changes.
-            GH_PreviewMeshArgs[]? colours = null;
-            if (_orderLabels.ColourGeometry && _valueMaterials != null)
-            {
-                colours = new GH_PreviewMeshArgs[_valueMaterials.Length];
-            }
-            bool pushed = false;
-            try
-            {
-                // Keep fills just ahead of coincident upstream preview, without
-                // the wire bias's dependence on clipping-plane depth.
-                if (colours != null && args.Display != null)
-                    pushed = PushGradientDepthOffset(args);
-                for (int pass = 0; pass < (colours == null ? 1 : 2); pass++)
+                long generation = _generation;
+                int noMatchColour = _orderLabels.NoMatchColourId;
+                bool Current() => generation == _generation && noMatchColour == _orderLabels.NoMatchColourId;
+                PrepareSelectedMeshes(args, generation);
+                if (!Current()) return;
+                var normal = new GH_PreviewMeshArgs(args.Viewport, display, args.ShadeMaterial, parameters);
+                var selected = new GH_PreviewMeshArgs(args.Viewport, display, args.ShadeMaterial_Selected, parameters);
+                var halo = _orderLabels.ColourGeometry ? new GH_PreviewWireArgs(args.Viewport, display, args.WireColour_Selected,
+                    args.DefaultCurveThickness + Math.Max(MinSelectionThickening, CentralSettings.PreviewSelectionThickening)) : null;
+                var materials = _orderLabels.ColourGeometry ? _valueMaterials : null;
+                var colours = materials == null ? null : new GH_PreviewMeshArgs[materials.Length];
+
+                void DrawPass(bool? selectedOnly, bool ghosted = false)
+                {
+                    if (!Current()) return;
                     foreach (var entry in _entries.Values)
                     {
+                        if ((colours != null && entry.ColourId == PanelPreviewValues.NoMatchGhosted) != ghosted) continue;
                         bool isSelected = _membership.Contains(entry.Position);
-                        if (colours != null && isSelected != (pass == 1)) continue;
+                        if (selectedOnly.HasValue && isSelected != selectedOnly.Value) continue;
                         entry.WasDrawn = true;
                         var draw = colours == null ? isSelected ? selected : normal : colours[entry.ColourId] ??=
-                            new GH_PreviewMeshArgs(args.Viewport, args.Display, _valueMaterials![entry.ColourId], args.MeshingParameters);
+                            new GH_PreviewMeshArgs(args.Viewport, display, materials![entry.ColourId], parameters);
                         foreach (var leaf in entry.Leaves)
                         {
-                            try { leaf.DrawMeshes(draw, () => generation == _generation, colours != null, isSelected && colours != null ? halo : null); } catch (Exception) { }
-                            if (generation != _generation) return;
+                            try { leaf.DrawMeshes(draw, Current, colours != null, isSelected && colours != null && !ghosted ? halo : null); } catch (Exception) { }
+                            if (!Current()) return;
                         }
                     }
+                }
+
+                // Keep fills just ahead of coincident upstream preview, without
+                // the wire bias's dependence on clipping-plane depth.
+                bool pushed = colours != null && display != null && PushGradientDepthOffset(args);
+                try
+                {
+                    if (colours == null) DrawPass(null);
+                    else
+                    {
+                        DrawPass(false);
+                        if (!Current()) return;
+                        DrawPass(true);
+                        if (!Current()) return;
+                        if (display != null && HasGhostedEntries(noMatchColour))
+                        {
+                            flushPending = false;
+                            DrawGhosted(display, Current, () => DrawPass(null, ghosted: true));
+                        }
+                    }
+                }
+                finally { if (pushed) display!.PopModelTransform(); }
             }
-            finally { if (pushed) args.Display.PopModelTransform(); }
-            }
-            finally { EndDraw(args.Display); }
+            finally { EndDraw(flushPending ? display : null); }
         }
 
-        private void EndDraw(Rhino.Display.DisplayPipeline? pipeline)
+        private bool HasGhostedEntries(int noMatchColour) => noMatchColour == PanelPreviewValues.NoMatchGhosted &&
+            _entries.Values.Any(entry => entry.ColourId == PanelPreviewValues.NoMatchGhosted);
+
+        private void DrawGhosted(DisplayPipeline display, Func<bool> current, Action draw)
+        {
+            // Drain both batches under their own depth state, including queued shaded meshes.
+            if (!FlushDisplay(display) || !current()) return;
+            display.PushDepthTesting(true);
+            try
+            {
+                display.PushDepthWriting(false);
+                try { if (current()) draw(); }
+                finally
+                {
+                    try { FlushDisplay(display); }
+                    finally { display.PopDepthWriting(); }
+                }
+            }
+            finally { display.PopDepthTesting(); }
+        }
+
+        private bool FlushDisplay(DisplayPipeline pipeline)
         {
             try
             {
-                if (pipeline != null)
-                {
-                    BeforeDisplayFlush?.Invoke();
-                    // Flush drains RhinoCommon's managed MeshCache and invokes
-                    // the native flush while every submitted resource is alive.
-                    // Native consumption after return still needs host validation;
-                    // idle alone is not an end-of-frame or GPU completion fence.
-                    pipeline.Flush();
-                    CompletedDisplayFlushes++;
-                }
+                BeforeDisplayFlush?.Invoke();
+                // Flush drains RhinoCommon's managed MeshCache and invokes
+                // the native flush while every submitted resource is alive.
+                // Native consumption after return still needs host validation;
+                // idle alone is not an end-of-frame or GPU completion fence.
+                pipeline.Flush();
+                CompletedDisplayFlushes++;
+                return true;
             }
             catch (Exception)
             {
@@ -1028,7 +1095,13 @@ namespace BetterGhPanel.Runtime
                 // and stop drawing instead of retrying disposal after a delay.
                 _displayFlushFailed = true;
                 ScheduleRelease();
+                return false;
             }
+        }
+
+        private void EndDraw(DisplayPipeline? pipeline)
+        {
+            try { if (pipeline != null) FlushDisplay(pipeline); }
             finally { _activeDraws--; FlushRetired(); }
         }
 

@@ -93,7 +93,7 @@ namespace BetterGhPanel
         protected override Bitmap Icon => PanelIcon.Create();
         public override GH_Exposure Exposure => GH_Exposure.primary;
 
-        public override bool IsPreviewCapable => _highlight.HasVisiblePreview || base.IsPreviewCapable;
+        public override bool IsPreviewCapable => _highlight.PreviewCount > 0 || _highlight.HasMatchLegend || base.IsPreviewCapable;
 
         public override Rhino.Geometry.BoundingBox ClippingBox =>
             Hidden || Locked || _previewSuspended || PreviewMode == PanelPreviewMode.Off

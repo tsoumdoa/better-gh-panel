@@ -37,7 +37,8 @@ namespace BetterGhPanel.Runtime
         private (double Min, double Max) _orderRange;
         private bool _dirty, _sentPartialPending;
         private (bool Order, bool Values, PanelDotPlacement Placement, PanelValuePalette Palette, bool Reverse,
-            PanelSearchMode Search, int Decimals, double Factor, PanelLabelSource LabelSource, bool ColourByPaired, bool PassFail, PanelNoMatchStyle NoMatchStyle) _settings;
+            PanelSearchMode Search, int Decimals, double Factor, PanelLabelSource LabelSource, bool ColourByPaired, bool PassFail) _settings;
+        internal int NoMatchColourId { get; private set; } = PanelPreviewValues.NoMatchGrey;
         private readonly Stopwatch _publishClock = Stopwatch.StartNew();
         private long _lastPublish = -PublishInterval;
         private const int PublishInterval = 250;
@@ -75,7 +76,7 @@ namespace BetterGhPanel.Runtime
         internal Color Colour(int id) => _colours[id];
         internal int ColourId(int position)
         {
-            if (IsNoMatch(position)) return PanelPreviewValues.NoMatchColour(_settings.NoMatchStyle);
+            if (IsNoMatch(position)) return NoMatchColourId;
             if (!Gradient) return _settings.PassFail ? PanelPreviewValues.MatchColour : 0;
             if (!_colourValues.TryGetValue(position, out var value)) return 0;
             if (_settings.ColourByPaired && value.Category)
@@ -87,13 +88,22 @@ namespace BetterGhPanel.Runtime
         }
         private bool IsNoMatch(int position) => _settings.PassFail && _valueResult != null && !_valueResult.TryGetPreviewIndex(position, out _);
 
+        internal void SetNoMatchColour(int id)
+        {
+            NoMatchColourId = id;
+            // The last result may be suspended, so keep its classification.
+            foreach (var label in _labels.Values)
+                if (PanelPreviewValues.IsNoMatch(label.ColourId)) label.ColourId = id;
+            _identityRevision++;
+        }
+
         internal bool Configure(PanelQueryResult result, bool order, bool values, PanelDotPlacement placement,
             PanelValuePalette palette, bool reverse, PanelSearchMode search, int decimals, double factor,
             IReadOnlyList<int> scope, Func<int, bool, PanelPreviewValue> sample, Func<bool> current,
-            PanelLabelSource labelSource, bool colourByPaired, bool passFail, PanelNoMatchStyle noMatchStyle)
+            PanelLabelSource labelSource, bool colourByPaired, bool passFail)
         {
             _valueGeneration++;
-            var settings = (order, values, placement, palette, reverse, search, decimals, factor, labelSource, colourByPaired, passFail, noMatchStyle);
+            var settings = (order, values, placement, palette, reverse, search, decimals, factor, labelSource, colourByPaired, passFail);
             var valueScope = palette == PanelValuePalette.Off && values && labelSource < PanelLabelSource.Paired ? scope : null;
             bool changed = !_settings.Equals(settings) || !ReferenceEquals(result, _valueResult);
             _sample = sample; _current = current;
@@ -110,6 +120,7 @@ namespace BetterGhPanel.Runtime
                 }
                 _legendScale = 0;
             }
+            if (Gradient != (palette != PanelValuePalette.Off)) _legendScale = 0;
             if (_settings.ColourByPaired != colourByPaired || _settings.LabelSource != labelSource)
             {
                 _values.Clear(); _colourValues.Clear(); _ranges.Clear(); _categories.Clear(); _legend = Array.Empty<LegendRow>();
@@ -117,7 +128,7 @@ namespace BetterGhPanel.Runtime
             if (changed) _labelRevision++;
             if (!ReferenceEquals(result, _valueResult) || _settings.Order != order || _settings.Values != values ||
                 _settings.Placement != placement || _settings.Search != search || _settings.Decimals != decimals || _settings.Factor != factor ||
-                _settings.LabelSource != labelSource || _settings.PassFail != passFail || _settings.NoMatchStyle != noMatchStyle)
+                _settings.LabelSource != labelSource || _settings.PassFail != passFail)
             { _identityRevision++; _labelListDirty = true; }
             _settings = settings; _valueResult = result; _valueScope = valueScope;
             _valuePositions = palette != PanelValuePalette.Off
@@ -329,7 +340,7 @@ namespace BetterGhPanel.Runtime
             if (_settings.Order || _valueResult == null || value.Pending) label.GroupKey = ~label.Order;
             else
             {
-                var identity = (label.Text, label.ColourId >= PanelPreviewValues.NoMatchRed);
+                var identity = (label.Text, PanelPreviewValues.IsNoMatch(label.ColourId));
                 if (!_textIds.TryGetValue(identity, out int id)) { id = _textIds.Count + 1; _textIds.Add(identity, id); }
                 label.GroupKey = id;
             }
@@ -349,7 +360,8 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        internal bool Visible => _labels.Count > 0 || _matchLegend != null || Gradient && _legend.Length > 0;
+        internal bool HasMatchLegend => _matchLegend != null;
+        internal bool Visible => _labels.Count > 0 || HasMatchLegend || Gradient && _legend.Length > 0;
         private void UpdateEnabled()
         {
             bool visible = Visible;
@@ -558,7 +570,7 @@ namespace BetterGhPanel.Runtime
                         if (labels._drawing || !labels.Visible) continue;
                         panel.Frame = labels.PrepareFrame(key, clip, camera, panel.Selected, dimensions, dpi);
                         labels._drawing = true;
-                        if (panel.Frame.HideOccludedDots && panel.Frame.ProjectedCount != 0)
+                        if (!panel.Frame.Bounds.IsEmpty)
                             bounds = bounds.IsEmpty ? panel.Frame.Bounds : Rectangle.Union(bounds, panel.Frame.Bounds);
                     }
                     using var depth = bounds.IsEmpty ? null : PanelSceneDepth.Capture(e.Display, e.Viewport, dimensions, bounds, clip);
@@ -661,13 +673,11 @@ namespace BetterGhPanel.Runtime
             int count = 0, left = dimensions.Width, top = dimensions.Height, right = 0, bottom = 0;
             foreach (var label in _orderedLabels)
             {
-                if (label.Text.Length == 0) continue;
-                bool ghosted = label.ColourId == PanelPreviewValues.NoMatchGhosted;
-                bool isSelected = _membership.Contains(label.Position);
-                if (ghosted && !isSelected) continue;
+                if (label.Text.Length == 0 || label.ColourId == PanelPreviewValues.NoMatchGhosted) continue;
                 var anchor = camera * label.Anchor;
                 if (!TryProjectCached(clip, anchor, dimensions, out var point)) continue;
-                if (hideOccludedDots && !ghosted)
+                bool isSelected = _membership.Contains(label.Position);
+                if (hideOccludedDots)
                 {
                     double nearest = anchor.Z;
                     if (isSelected && !selected.IsIdentity)
@@ -726,7 +736,7 @@ namespace BetterGhPanel.Runtime
             {
                 ref readonly var dot = ref frame.ProjectedDots[i];
                 var label = frame.ProjectedLabels[i];
-                if (hadDepth && label.ColourId != PanelPreviewValues.NoMatchGhosted &&
+                if (hadDepth &&
                     !scene.IsVisible(new Point2d(dot.X, dot.Y), frame.ProjectedDepth[i], label.Bounds.Min == label.Bounds.Max)) continue;
                 int slot = count++;
                 if (same && slot < frame.Count && ReferenceEquals(frame.Labels[slot], label)) continue;
@@ -813,7 +823,7 @@ namespace BetterGhPanel.Runtime
         private (Color Fill, Color Text, Color Border) DotColours(int id) => id switch
         {
             PanelPreviewValues.NoMatchRed => (Color.FromArgb(253, 230, 227), Color.FromArgb(122, 29, 22), _colours[id]),
-            PanelPreviewValues.NoMatchGrey or PanelPreviewValues.NoMatchGhosted =>
+            PanelPreviewValues.NoMatchGrey =>
                 (Color.FromArgb(228, 230, 232), Color.FromArgb(85, 90, 95), _colours[PanelPreviewValues.NoMatchGrey]),
             _ => Gradient ? (_colours[id], _textColours[id], Border) : (PlainFill, Border, Border)
         };
@@ -932,8 +942,9 @@ namespace BetterGhPanel.Runtime
             {
                 status.NameBounds = display.Measure2dText(status.Name, Point2d.Origin, false, 0, _legendFontHeight, "Arial");
                 status.MinBounds = display.Measure2dText(status.Min, Point2d.Origin, false, 0, _legendFontHeight, "Arial");
+                float swatches = (Gradient ? 1 : 2) * (MatchSwatchWidth + LegendGap);
                 _legendWidth = Math.Max(_legendWidth, status.NameBounds.Width + status.MinBounds.Width +
-                    (2 * LegendPadding + 2 * MatchSwatchWidth + 3 * LegendGap) * scale);
+                    (2 * LegendPadding + swatches + LegendGap) * scale);
             }
         }
 
@@ -960,9 +971,14 @@ namespace BetterGhPanel.Runtime
             if (_matchLegend is LegendRow status)
             {
                 float left = x + LegendPadding * scale, y = top + LegendPadding * scale;
-                DrawMatchCaption(args, status.Name, status.NameBounds, left, y, scale, PanelPreviewValues.MatchColour);
-                left += status.NameBounds.Width + (MatchSwatchWidth + 2 * LegendGap) * scale;
-                DrawMatchCaption(args, status.Min, status.MinBounds, left, y, scale, PanelPreviewValues.NoMatchColour(_settings.NoMatchStyle));
+                if (Gradient) DrawLegendText(args, status.Name, status.NameBounds, left, y);
+                else
+                {
+                    DrawMatchCaption(args, status.Name, status.NameBounds, left, y, scale, PanelPreviewValues.MatchColour);
+                    left += (MatchSwatchWidth + LegendGap) * scale;
+                }
+                left += status.NameBounds.Width + LegendGap * scale;
+                DrawMatchCaption(args, status.Min, status.MinBounds, left, y, scale, NoMatchColourId);
             }
             float minRight = x + (LegendPadding + LegendGap) * scale + _legendNameWidth + _legendMinWidth;
             for (int index = 0; index < shown; index++)
