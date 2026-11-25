@@ -919,7 +919,8 @@ namespace BetterGhPanel.Runtime
                 }
                 finally { if (pushed) display!.PopModelTransform(); }
                 if (!Current()) return;
-                if (display != null && colours != null && HasGhostedEntries(noMatchColour))
+                // Grasshopper draws wires before meshes. In Shaded mode, draw ghost wires after the opaque fills.
+                if (!shaded && display != null && colours != null && HasGhostedEntries(noMatchColour))
                 {
                     flushPending = false;
                     DrawGhosted(display, Current, () => DrawWires(normal, false, colours, args.DefaultCurveThickness, shaded, Current, ghosted: true));
@@ -1045,7 +1046,15 @@ namespace BetterGhPanel.Runtime
                         if (display != null && HasGhostedEntries(noMatchColour))
                         {
                             flushPending = false;
-                            DrawGhosted(display, Current, () => DrawPass(null, ghosted: true));
+                            DrawGhosted(display, Current, () =>
+                            {
+                                DrawPass(null, ghosted: true);
+                                if (!Current() || args.Document.PreviewMode != GH_PreviewMode.Shaded) return;
+                                int thickness = args.DefaultCurveThickness;
+                                var wires = new GH_PreviewWireArgs(args.Viewport, display, args.WireColour, thickness);
+                                var wireColours = new GH_PreviewWireArgs[colours.Length];
+                                DrawWires(wires, false, wireColours, thickness, shaded: true, current: Current, ghosted: true);
+                            });
                         }
                     }
                 }
