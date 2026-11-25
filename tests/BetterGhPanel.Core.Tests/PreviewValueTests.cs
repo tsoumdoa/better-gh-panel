@@ -11,6 +11,17 @@ public class PreviewValueTests
     private static PanelRow Geometry(PanelGeometryInfo info) => new PanelRow(2, "{0}", "Geometry", "", null, geometryInfo: info);
 
     [Fact]
+    public void MatchLegendFormatsCountsAndComplementaryPercentages()
+    {
+        Assert.Equal(("Match 5 · 63%", "No match 3 · 37%"), PanelMatchLegend.Format(5, 8));
+        Assert.Equal(("Match 1 · <1%", "No match 200 · >99%"), PanelMatchLegend.Format(1, 201));
+        Assert.Equal(("Match 199 · >99%", "No match 1 · <1%"), PanelMatchLegend.Format(199, 200));
+        Assert.Equal(("Match 0 · 0%", "No match 1,000 · 100%"), PanelMatchLegend.Format(0, 1000));
+        Assert.Equal(("Match 1 · 100%", "No match 0 · 0%"), PanelMatchLegend.Format(1, 1));
+        Assert.Equal(("Match 0", "No match 0"), PanelMatchLegend.Format(0, 0));
+    }
+
+    [Fact]
     public void MainMetricAndExplicitAreaShareRowFormatting()
     {
         var solid = new PanelGeometryInfo("Solid", 12.345, 3, "m", "Volume", "V", hasArea: true, areaValue: 45.678);

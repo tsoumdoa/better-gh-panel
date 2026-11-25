@@ -30,6 +30,7 @@ namespace BetterGhPanel
         internal bool PanelMinimized { get; private set; }
         internal bool PanelSplit { get; private set; }
         internal PanelPreviewMode PreviewMode { get; private set; }
+        internal PanelNoMatchStyle NoMatchStyle { get; private set; } = PanelNoMatchStyle.Grey;
         internal bool ShowItemOrder { get; private set; }
         internal bool ShowValues => LabelSource != PanelLabelSource.Off;
         internal bool ShowAllDots { get; private set; }
@@ -59,6 +60,15 @@ namespace BetterGhPanel
         }
         internal void SetPreviewLimit(int value)
         { if (PanelDotSettings.ValidLimit(value)) SetPreviewSetting("preview limit", PreviewLimit, value, (c, v) => c.PreviewLimit = v); }
+        internal void SetNoMatchStyle(PanelNoMatchStyle style)
+        {
+            SetPreviewSetting("match preview", (Mode: PreviewMode, Style: NoMatchStyle), (Mode: PanelPreviewMode.PassFail, Style: style),
+                (component, choice) =>
+                {
+                    component.PreviewMode = choice.Mode;
+                    component.NoMatchStyle = choice.Style;
+                });
+        }
         internal void SetShowValues(bool value) => SetLabelSource(value ? PanelLabelSource.Data : PanelLabelSource.Off);
         internal void SetLabelSource(PanelLabelSource value) => SetPreviewSetting("values", LabelSource, value, (c, v) => { c.LabelSource = v; c.RefreshPairedPreviewSource(); });
         internal void SetColourByPaired(bool value)
@@ -106,7 +116,7 @@ namespace BetterGhPanel
         {
             get
             {
-                if (PreviewMode == PanelPreviewMode.Off || _highlight.PreviewCount == 0) return null;
+                if (PreviewMode == PanelPreviewMode.Off || !_highlight.HasVisiblePreview) return null;
                 var document = OnPingDocument();
                 return document?.PreviewMode == GH_PreviewMode.Disabled ? "Preview hidden: Grasshopper preview is off." :
                     Hidden ? "Preview hidden: this component's preview is off." :
@@ -654,6 +664,7 @@ namespace BetterGhPanel
             writer.SetBoolean("PanelMinimized", PanelMinimized);
             writer.SetBoolean("PanelSplit", PanelSplit);
             writer.SetInt32("PanelPreviewMode", (int)PreviewMode);
+            writer.SetInt32("PanelNoMatchStyle", (int)NoMatchStyle);
             writer.SetBoolean("PanelShowItemOrder", ShowItemOrder);
             writer.SetBoolean("PanelShowValues", ShowValues);
             if (LabelSource >= PanelLabelSource.Paired) writer.SetInt32("PanelLabelSource", (int)LabelSource);
@@ -796,6 +807,9 @@ namespace BetterGhPanel
             reader.TryGetInt32("PanelPreviewMode", ref previewMode);
             PreviewMode = Enum.IsDefined(typeof(PanelPreviewMode), previewMode)
                 ? (PanelPreviewMode)previewMode : PanelPreviewMode.Selected;
+            int noMatchStyle = (int)PanelNoMatchStyle.Grey;
+            reader.TryGetInt32("PanelNoMatchStyle", ref noMatchStyle);
+            NoMatchStyle = Enum.IsDefined(typeof(PanelNoMatchStyle), noMatchStyle) ? (PanelNoMatchStyle)noMatchStyle : PanelNoMatchStyle.Grey;
             bool showOrder = false;
             reader.TryGetBoolean("PanelShowItemOrder", ref showOrder);
             ShowItemOrder = showOrder;

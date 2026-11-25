@@ -53,7 +53,8 @@ namespace BetterGhPanel.Runtime
         internal void ConfigureValues(PanelQueryResult result, bool order, bool values, PanelDotPlacement placement,
             PanelValuePalette palette, bool reverse, PanelSearchMode search, int decimals, double factor,
             IReadOnlyList<int> scope, Func<int, bool, PanelPreviewValue> sample, Func<bool> current,
-            PanelLabelSource labelSource = PanelLabelSource.Off, bool colourByPaired = false, bool passFail = false)
+            PanelLabelSource labelSource = PanelLabelSource.Off, bool colourByPaired = false, bool passFail = false,
+            PanelNoMatchStyle noMatchStyle = PanelNoMatchStyle.Grey)
         {
             _activeDraws++;
             try
@@ -66,7 +67,7 @@ namespace BetterGhPanel.Runtime
                 else SetOrderResult(labelResult);
                 long generation = _generation;
                 if (!current()) return;
-                bool coloursChanged = _orderLabels.Configure(result, order, values, placement, palette, reverse, search, decimals, factor, scope, sample, current, labelSource, colourByPaired, passFail);
+                bool coloursChanged = _orderLabels.Configure(result, order, values, placement, palette, reverse, search, decimals, factor, scope, sample, current, labelSource, colourByPaired, passFail, noMatchStyle);
                 if (generation != _generation || !current()) return;
                 if (_orderLabels.ColourGeometry && _valueMaterials == null && !_displayFlushFailed)
                 {
@@ -76,6 +77,7 @@ namespace BetterGhPanel.Runtime
                         var colour = _orderLabels.Colour(id);
                         var half = System.Drawing.Color.FromArgb(colour.R / 2, colour.G / 2, colour.B / 2);
                         _valueMaterials[id] = new DisplayMaterial(half) { Emission = half, Specular = System.Drawing.Color.Black, Shine = 0 };
+                        if (id == PanelPreviewValues.NoMatchGhosted) _valueMaterials[id].Transparency = .7;
                     }
                 }
                 if (attachLabels || coloursChanged && _orderLabels.ColourGeometry)

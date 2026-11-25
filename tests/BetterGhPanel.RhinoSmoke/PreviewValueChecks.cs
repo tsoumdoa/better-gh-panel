@@ -317,7 +317,8 @@ internal static partial class PreviewSafetyChecks
         {
             Call(labels, "Configure", result, order, true, PanelDotPlacement.Centre,
                 PanelValuePalette.Viridis, false, PanelSearchMode.Value, decimals, 0d, new[] { 0, half },
-                (Func<int, bool, PanelPreviewValue>)((position, _) => Sample(position)), (Func<bool>)(() => true), labelSource, false, false);
+                (Func<int, bool, PanelPreviewValue>)((position, _) => Sample(position)), (Func<bool>)(() => true), labelSource, false, false,
+                Enum.Parse(labelSource.GetType().Assembly.GetType("BetterGhPanel.Core.PanelNoMatchStyle", true)!, "Grey"));
             // This probe advances ticks explicitly; native reentry must not also
             // advance the sampling timer while the fixture checks intermediate state.
             var timer = FieldValue<System.Windows.Forms.Timer>(labels, "_refresh");

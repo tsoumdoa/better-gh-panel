@@ -34,7 +34,8 @@ namespace BetterGhPanel
             var next = page;
             if (page == CanvasMenuKind.Preview)
             {
-                if (index < CanvasPreviewRows.ScopeCount) { PanelOwner.SetPreviewMode(_menu.PreviewChoiceAt(index).Mode!.Value); _menu.Close(); canvas.Invalidate(); return; }
+                if (index == CanvasPreviewRows.MatchScope) next = CanvasMenuKind.NoMatchStyle;
+                else if (index < CanvasPreviewRows.ScopeCount) { PanelOwner.SetPreviewMode(_menu.PreviewChoiceAt(index).Mode!.Value); _menu.Close(); canvas.Invalidate(); return; }
                 if (index == CanvasPreviewRows.ShowAllDots) PanelOwner.SetShowAllDots(!PanelOwner.ShowAllDots);
                 if (index == CanvasPreviewRows.ItemOrder) PanelOwner.SetShowItemOrder(!PanelOwner.ShowItemOrder);
                 if (index == CanvasPreviewRows.Values)
@@ -49,6 +50,7 @@ namespace BetterGhPanel
                 if (index == CanvasPreviewRows.Colour) next = CanvasMenuKind.ValuePalette;
             }
             else if (index == CanvasPreviewRows.Back) next = CanvasMenuKind.Preview;
+            else if (page == CanvasMenuKind.NoMatchStyle) { PanelOwner.SetNoMatchStyle(CanvasMenu.NoMatchStyleAt(index)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.ShowValues) { PanelOwner.SetLabelSource((PanelLabelSource)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.DotPlacement) { PanelOwner.SetDotPlacement((PanelDotPlacement)(index - CanvasPreviewRows.FirstChoice)); next = CanvasMenuKind.Preview; }
             else if (page == CanvasMenuKind.DotSize) { PanelOwner.SetDotSize((PanelDotSize)(index - 1)); next = CanvasMenuKind.Preview; }
@@ -114,6 +116,11 @@ namespace BetterGhPanel
                     e.Title = "Search in F unavailable";
                     e.Description = searchReason;
                 }
+            }
+            else if (preview && index == CanvasPreviewRows.MatchScope)
+            {
+                e.Title = _menu.Label(index);
+                e.Description = "Items that meet the search and filters keep their colours, and other items use the chosen style. The legend shows counts and percentages.";
             }
             else if (preview && index == CanvasPreviewRows.ShowAllDots)
             {

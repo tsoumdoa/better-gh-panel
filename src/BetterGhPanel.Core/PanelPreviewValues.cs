@@ -67,13 +67,28 @@ namespace BetterGhPanel.Core
         internal const int CategoryFirst = 1 + 3 * Buckets;
         internal const int CategoryCount = 10;
         internal const int OtherCategory = CategoryFirst + CategoryCount;
-        internal const int FailedColour = OtherCategory + 1;
-        internal const int PassedColour = FailedColour + 1;
-        public const int ColourCount = PassedColour + 1;
+        internal const int MatchColour = OtherCategory + 1;
+        internal const int NoMatchRed = MatchColour + 1;
+        internal const int NoMatchGrey = NoMatchRed + 1;
+        internal const int NoMatchGhosted = NoMatchGrey + 1;
+        public const int ColourCount = NoMatchGhosted + 1;
         private static readonly int[] Categories = { 0x3b6fd8, 0xe08a1e, 0x8a4fc7, 0x168795, 0xda6096, 0x82700b, 0x344979, 0x835136, 0x39a8c9, 0xa170bb };
-        internal static Color SpecialColour(int id) => id == FailedColour ? Color.FromArgb(217, 68, 58) :
-            id == PassedColour ? Color.FromArgb(63, 174, 73) : id == OtherCategory ? Color.FromArgb(145, 145, 145) :
-            Color.FromArgb(unchecked((int)0xff000000) | Categories[id - CategoryFirst]);
+        internal static Color SpecialColour(int id) => id switch
+        {
+            MatchColour => Color.FromArgb(63, 174, 73),
+            NoMatchRed => Color.FromArgb(217, 68, 58),
+            NoMatchGrey => Color.FromArgb(139, 143, 148),
+            NoMatchGhosted => Color.FromArgb(77, 189, 193, 197),
+            OtherCategory => Color.FromArgb(145, 145, 145),
+            _ => Color.FromArgb(unchecked((int)0xff000000) | Categories[id - CategoryFirst])
+        };
+
+        internal static int NoMatchColour(PanelNoMatchStyle style) => style switch
+        {
+            PanelNoMatchStyle.Red => NoMatchRed,
+            PanelNoMatchStyle.Ghosted => NoMatchGhosted,
+            _ => NoMatchGrey
+        };
         private static readonly int[][] Stops = {
             new[] { 0x440154, 0x3b528b, 0x21918c, 0x5ec962, 0xfde725 },
             new[] { 0x000004, 0x51127c, 0xb73779, 0xfc8961, 0xfcfdbf },
