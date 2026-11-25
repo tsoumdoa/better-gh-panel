@@ -25,14 +25,22 @@ public class ItemOrderTests
     }
 
     [Fact]
-    public void PreviewSizeAndLimitSubmenusKeepCurrentSettingsReachable()
+    public void PreviewSubmenusKeepCurrentSettingsReachable()
     {
         var menu = new CanvasMenu(); var options = new PanelQueryOptions();
         var panel = new RectangleF(50, 100, 300, 110); var anchor = new RectangleF(110, 102, 112, 18);
         menu.Toggle(CanvasMenuKind.Preview, PanelSnapshot.Empty, options);
         menu.Layout(panel, default, default, default, preview: anchor); menu.MarkPainted();
-        Assert.Equal(new[] { "Selection", "Results", "Pass / Fail", "Off", "Show all dots", "Preview limit" },
-            new[] { menu.Label(0), menu.Label(1), menu.Label(2), menu.Label(3), menu.Label(CanvasPreviewRows.ShowAllDots), menu.Label(CanvasPreviewRows.Limit) });
+        int matchScope = CanvasPreviewRows.MatchScope;
+        Assert.Equal(12, menu.Count);
+        Assert.Equal(new[] { "Selection", "Results", "Match / No match", "Off", "Show all dots", "Preview limit" },
+            new[] { menu.Label(0), menu.Label(1), menu.Label(matchScope), menu.Label(3), menu.Label(CanvasPreviewRows.ShowAllDots), menu.Label(CanvasPreviewRows.Limit) });
+        Assert.Equal("Grey…", menu.Trailing(matchScope, PanelDotPlacement.Centre, PanelValuePalette.Off));
+        Assert.Equal("Red…", menu.Trailing(matchScope, PanelDotPlacement.Centre, PanelValuePalette.Off, noMatchStyle: PanelNoMatchStyle.Red));
+        Assert.Equal("Ghosted…", menu.Trailing(matchScope, PanelDotPlacement.Centre, PanelValuePalette.Off, noMatchStyle: PanelNoMatchStyle.Ghosted));
+        Assert.True(menu.RowEnabled(matchScope, false, false, PanelValuePalette.Off, PanelPreviewMode.Off));
+        Assert.False(menu.IsSelected(matchScope, options, PanelUnitConversion.None, -1));
+        Assert.True(menu.IsSelected(matchScope, options, PanelUnitConversion.None, -1, PanelPreviewMode.PassFail));
         Assert.False(menu.RowEnabled(CanvasPreviewRows.ShowAllDots, false, false, PanelValuePalette.Off));
         Assert.True(menu.RowEnabled(CanvasPreviewRows.ShowAllDots, true, false, PanelValuePalette.Off));
         Assert.False(menu.RowEnabled(CanvasPreviewRows.ShowAllDots, true, false, PanelValuePalette.Off, PanelPreviewMode.Off));
@@ -55,16 +63,26 @@ public class ItemOrderTests
         Assert.Equal("Preview limit", menu.Label(CanvasPreviewRows.Limit));
         Assert.True(menu.TrySelect(new PointF(menu.Bounds.Left + 10, menu.Bounds.Top + CanvasPreviewRows.Limit * 20 + 10), out int index));
         Assert.Equal(CanvasPreviewRows.Limit, index);
-        foreach (var kind in new[] { CanvasMenuKind.DotSize, CanvasMenuKind.PreviewLimit })
+        foreach (var kind in new[] { CanvasMenuKind.DotSize, CanvasMenuKind.PreviewLimit, CanvasMenuKind.NoMatchStyle })
         {
             menu.Close(); menu.Toggle(kind, PanelSnapshot.Empty, options);
             menu.Layout(panel, default, default, default, preview: anchor); menu.MarkPainted();
             Assert.True(menu.IsPreviewPage && menu.Visible == menu.Count);
             Assert.Equal("‹ Preview", menu.Label(0));
+            if (kind == CanvasMenuKind.NoMatchStyle)
+            {
+                Assert.True(menu.IsSectionStart(1));
+                Assert.False(menu.IsSelected(0, options, PanelUnitConversion.None, -1));
+                Assert.Equal("No match in red", menu.Label(1));
+                Assert.Equal("No match in grey", menu.Label(2));
+                Assert.Equal("No match ghosted", menu.Label(3));
+                Assert.True(menu.IsSelected(2, options, PanelUnitConversion.None, -1));
+            }
             for (int choice = 0; choice < 3; choice++)
             {
                 Assert.True(menu.IsSelected(choice + 1, options, PanelUnitConversion.None, -1,
-                    size: (PanelDotSize)choice, limit: PanelDotSettings.LimitAt(choice)));
+                    size: (PanelDotSize)choice, limit: PanelDotSettings.LimitAt(choice), noMatchStyle: (PanelNoMatchStyle)choice));
+                Assert.True(menu.RowEnabled(choice + 1, false, false, PanelValuePalette.Off, PanelPreviewMode.Off));
                 Assert.True(menu.TrySelect(new PointF(menu.Bounds.Left + 10, menu.Bounds.Top + (choice + 1) * 20 + 10), out index));
                 Assert.Equal(choice + 1, index);
             }

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Pass / Fail is now Match / No match**, a calmer name for items that meet the search and filters or not. Choose grey (default), red or ghosted for items outside the search and filters. Ghosted geometry is see-through and has no dots. The legend shows counts and percentages for all items after the tree tools.
+
 ## 0.6.4-beta
 
 - **Search in D / F.** The Search mode menu can test D or its paired F input. With F picked, D's rows and geometry follow F's matches. F offers the same modes as D, including its own geometry properties; Types and Paths still filter D.

@@ -426,7 +426,7 @@ namespace BetterGhPanel
                 if (canvas.Viewport.Zoom >= 0.5f)
                 {
                     var options = session.Options;
-                    DropdownControl(graphics, _layout.Preview, "Preview: " + CanvasMenu.PreviewLabel(PanelOwner.PreviewMode), small, trim,
+                    DropdownControl(graphics, _layout.Preview, "Preview: " + CanvasMenu.PreviewChipLabel(PanelOwner.PreviewMode), small, trim,
                         PanelOwner.PreviewMode != PanelPreviewMode.Off);
                     bool branchClear = BranchClearVisible;
                     DrawSearchControl(graphics, options, small, trim);
@@ -1026,7 +1026,7 @@ namespace BetterGhPanel
                     continue;
                 }
                 bool enabled = (_menu.Kind != CanvasMenuKind.HeaderSort || HeaderSortEnabled) && MenuRowEnabled(index);
-                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor, PanelOwner.ShowValues, PanelOwner.DotPlacement, palette, PanelOwner.ReversePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit, PanelOwner.HideOccludedDots, PanelOwner.LabelSource, PanelOwner.ColourByPaired, PanelOwner.ShowAllDots);
+                bool selected = _menu.IsSelected(index, options, PanelOwner.UnitConversion, PanelOwner.DecimalPlaces, PanelOwner.PreviewMode, PanelOwner.ShowItemOrder, PanelOwner.RoundUpFactor, PanelOwner.ShowValues, PanelOwner.DotPlacement, palette, PanelOwner.ReversePalette, PanelOwner.DotSize, PanelOwner.PreviewLimit, PanelOwner.HideOccludedDots, PanelOwner.LabelSource, PanelOwner.ColourByPaired, PanelOwner.ShowAllDots, PanelOwner.NoMatchStyle);
                 if (enabled && (index == _menu.HoveredIndex || selected))
                     Fill(g, index == _menu.HoveredIndex ? PanelTheme.Rgb(226, 236, 226) : PanelTheme.Rgb(242, 247, 241), row);
                 if (_menu.IsSectionStart(index))
@@ -1036,7 +1036,7 @@ namespace BetterGhPanel
                     using (var check = new Pen(enabled ? Accent : PanelTheme.Disabled, 1.3f))
                         g.DrawLines(check, new[] { new PointF(row.X + 7, row.Y + 10), new PointF(row.X + 10, row.Y + 13), new PointF(row.X + 16, row.Y + 7) });
                 float inset = _menu.Kind == CanvasMenuKind.BranchStats && !_menu.StatsSourceRow(index) && (_menu.StatsIndex(index) == 1 || _menu.StatsIndex(index) == 10) ? 7 : 23;
-                string tail = _menu.Trailing(index, PanelOwner.DotPlacement, palette, PanelOwner.DotSize, PanelOwner.PreviewLimit);
+                string tail = _menu.Trailing(index, PanelOwner.DotPlacement, palette, PanelOwner.DotSize, PanelOwner.PreviewLimit, PanelOwner.NoMatchStyle);
                 if (_menu.Kind == CanvasMenuKind.Preview && index == CanvasPreviewRows.Values && ShowValuesHasSourceMenu)
                     tail = (PanelOwner.LabelSource == PanelLabelSource.Paired ? "F value" : PanelOwner.LabelSource == PanelLabelSource.PairedAndData ? "F · D" :
                         PanelOwner.LabelSource == PanelLabelSource.Data ? "D value" : "Off") + "…";
