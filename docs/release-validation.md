@@ -1,5 +1,15 @@
 # Release validation records
 
+## 0.6.5-beta
+
+Renames the Pass / Fail preview to Match / No match, adds a style for non-matches (grey by default, red, or ghosted: see-through with no dots) and puts counts and percentages in the legend (#90). Built from an approved mock. Sol and Opus adversarial reviews and a Sol + Opus re-check found two drawing-order problems, both fixed: ghosts wrote depth, and ghost wires drew before opaque fills in Shaded mode. A decompile of Grasshopper 8 confirmed that `DrawViewportMeshes` runs whenever the document preview is Shaded, whatever the Rhino display mode, so ghost wires drawn in that pass reach every viewport.
+
+`npm run check` passed on the release branch: 476 managed tests on each of net48 and net8.0, 17 coordinator tests, one packaging test, 12 headless branch-stats assertions, both runtime builds, source encoding/style checks and the native smoke host compile. The extracted assemblies report `0.6.5-beta+866e0c09bee26b2a2d62cc0cb09083a81bdac03d`.
+
+**No Rhino validation.** At the user's request, this release shipped without the native fixture inventory or a live Rhino session. The Windows session was disconnected. Not exercised: ghosted transparency in Rhino display modes, Undo of a style pick, opening 0.6.4 files saved in Pass / Fail, 150% DPI, Mac and the Windows .NET Framework host. Known limit: geometry from other components that Grasshopper draws after Panel+ can paint over a ghost in front of it.
+
+Artifact source commit: `866e0c09bee26b2a2d62cc0cb09083a81bdac03d`. Archive: `panel-plus-0.6.5-beta-rh8_0-any.yak`. SHA-256: `bea94716b1f330ed7a549532c6e0f164982e7c790dcb6a86bf702f01fa901c19`. GitHub prerelease and public Yak publication succeeded. Yak search lists `0.6.5-beta`, and a fresh GitHub asset download matches the archive SHA-256.
+
 ## 0.6.4-beta
 
 Uses D and its paired F input as a key/value pair (#87): Search in D / F, F labels and F colours in the viewport (numeric palette or text categories), a Pass / Fail preview, and grouping Create set and Σ by F. Adds the Clean tree tool for empty branches. Adds Show all dots (#86), which turns off occlusion hiding and crowding for every preview dot. Both were built from approved mocks with a Sol first review and Sol and Opus adversarial rounds. #87 had three fix rounds and a final Opus re-check.
