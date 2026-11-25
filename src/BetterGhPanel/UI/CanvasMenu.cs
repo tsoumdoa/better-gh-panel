@@ -514,6 +514,8 @@ namespace BetterGhPanel.UI
             SearchChoices.FirstOrDefault(choice => choice.Value == mode).Label ?? mode.ToString();
         internal static string PreviewLabel(PanelPreviewMode mode) =>
             PreviewChoices.FirstOrDefault(choice => choice.Mode == mode).Label ?? mode.ToString();
+        // The header chip is sized for "Preview: Selection"; its tooltip gives the full name.
+        internal static string PreviewChipLabel(PanelPreviewMode mode) => mode == PanelPreviewMode.PassFail ? "Match" : PreviewLabel(mode);
         internal static bool IsComparisonMode(PanelSearchMode mode) =>
             mode == PanelSearchMode.Value || mode == PanelSearchMode.Length || mode == PanelSearchMode.Area ||
             mode == PanelSearchMode.Volume || mode == PanelSearchMode.ListLength ||

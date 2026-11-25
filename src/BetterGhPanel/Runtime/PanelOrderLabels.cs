@@ -996,7 +996,10 @@ namespace BetterGhPanel.Runtime
         private void DrawMatchCaption(DrawEventArgs args, string text, Rectangle bounds, float left, float top, float scale, int colour)
         {
             int y = (int)(top + (_legendRowHeight - 10 * scale) / 2);
-            args.Display.Draw2dRectangle(new Rectangle((int)left, y, (int)(MatchSwatchWidth * scale), (int)(10 * scale)), Color.Transparent, 0, _colours[colour]);
+            // The faint ghosted swatch gets an outline so it reads against the legend.
+            bool ghosted = colour == PanelPreviewValues.NoMatchGhosted;
+            args.Display.Draw2dRectangle(new Rectangle((int)left, y, (int)(MatchSwatchWidth * scale), (int)(10 * scale)),
+                ghosted ? _colours[PanelPreviewValues.NoMatchGrey] : Color.Transparent, ghosted ? 1 : 0, _colours[colour]);
             DrawLegendText(args, text, bounds, left + (MatchSwatchWidth + LegendGap) * scale, top);
         }
 

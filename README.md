@@ -32,7 +32,7 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 - **Search in D / F.** The Search mode menu can test D or its paired F input. With F picked, D's rows and geometry follow F's matches. F offers the same modes as D, including its own geometry properties; Types and Paths still filter D.
 - **Viewport values from F.** Show values can label D, F or both (`Wall · 4.20 m`). Colour by value can use F: numbers use the palette, and text gets category colours with counts in the legend.
-- **Match / No match preview.** Matching items keep their value colour (green when colouring is off). The 0.6.4-beta preview draws other items in red and counts both groups in the legend.
+- **Pass / Fail preview.** Matching items keep their value colour (green when colouring is off) and failures draw red, with pass and fail counts in the legend.
 - **Group by F.** Create set and Σ can group D items by their F value.
 - **Clean** (first tree tool) removes empty branches from the rows and D. Nulls stay, and B keeps the original shape.
 - **Show all dots** (Preview menu) keeps full text on every dot, even behind objects or overlapping. The preview limit and memory cap still apply.

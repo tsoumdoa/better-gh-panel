@@ -2,13 +2,13 @@
 
 ## Unreleased
 
-- **Match / No match preview.** Choose grey (default), red or ghosted for items outside the search and filters. Ghosted geometry is see-through and keeps dots only for selected items. The legend shows counts and percentages for all items after the tree tools.
+- **Pass / Fail is now Match / No match**, a calmer name for items that meet the search and filters or not. Choose grey (default), red or ghosted for items outside the search and filters. Ghosted geometry is see-through and keeps dots only for selected items. The legend shows counts and percentages for all items after the tree tools.
 
 ## 0.6.4-beta
 
 - **Search in D / F.** The Search mode menu can test D or its paired F input. With F picked, D's rows and geometry follow F's matches. F offers the same modes as D, including its own geometry properties; Types and Paths still filter D.
 - **Viewport values from F.** Show values can label D, F or both (`Wall · 4.20 m`). Colour by value can use F: numbers use the palette, and text gets category colours with counts in the legend.
-- **Match / No match preview.** Matching items keep their value colour (green when colouring is off), and other items draw red. The legend counts both groups.
+- **Pass / Fail preview.** Matching items keep their value colour (green when colouring is off) and failures draw red, with pass and fail counts in the legend.
 - **Group by F.** Create set and Σ can group D items by their F value.
 - **Clean** (first tree tool) removes empty branches from the rows and D. Nulls stay, and B keeps the original shape.
 - **Show all dots** (Preview menu) keeps full text on every dot, even behind objects or overlapping. The preview limit and memory cap still apply.

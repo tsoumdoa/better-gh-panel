@@ -426,7 +426,7 @@ namespace BetterGhPanel
                 if (canvas.Viewport.Zoom >= 0.5f)
                 {
                     var options = session.Options;
-                    DropdownControl(graphics, _layout.Preview, "Preview: " + CanvasMenu.PreviewLabel(PanelOwner.PreviewMode), small, trim,
+                    DropdownControl(graphics, _layout.Preview, "Preview: " + CanvasMenu.PreviewChipLabel(PanelOwner.PreviewMode), small, trim,
                         PanelOwner.PreviewMode != PanelPreviewMode.Off);
                     bool branchClear = BranchClearVisible;
                     DrawSearchControl(graphics, options, small, trim);
