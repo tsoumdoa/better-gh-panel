@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.6.4-beta
+yak install panel-plus 0.6.5-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -28,15 +28,12 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
-**[`0.6.4-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.6.4-beta)**
+**[`0.6.5-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.6.5-beta)**
 
-- **Search in D / F.** The Search mode menu can test D or its paired F input. With F picked, D's rows and geometry follow F's matches. F offers the same modes as D, including its own geometry properties; Types and Paths still filter D.
-- **Viewport values from F.** Show values can label D, F or both (`Wall · 4.20 m`). Colour by value can use F: numbers use the palette, and text gets category colours with counts in the legend.
-- **Pass / Fail preview.** Matching items keep their value colour (green when colouring is off) and failures draw red, with pass and fail counts in the legend.
-- **Group by F.** Create set and Σ can group D items by their F value.
-- **Clean** (first tree tool) removes empty branches from the rows and D. Nulls stay, and B keeps the original shape.
-- **Show all dots** (Preview menu) keeps full text on every dot, even behind objects or overlapping. The preview limit and memory cap still apply.
-- **Validation.** The Core tests cover these features. The automated Rhino fixtures could not run, and these features have not yet been tried in a live Rhino session.
+- **Pass / Fail is now Match / No match**, a calmer name for items that meet the search and filters or not. Files saved with Pass / Fail open in the new mode.
+- **Choose how non-matches look:** grey (the new default), red, or ghosted (see-through, with no dots). Click **Match / No match** in the Preview menu to pick a style.
+- **Legend percentages.** The legend shows counts and percentages for all items after the tree tools, for example `Match 5 · 63%   No match 3 · 37%`.
+- **Validation.** The Core tests cover the percentages and saved styles. The automated Rhino fixtures could not run, and the ghosted drawing has not yet been tried in a live Rhino session.
 
 See [CHANGELOG](CHANGELOG.md) for earlier releases.
 

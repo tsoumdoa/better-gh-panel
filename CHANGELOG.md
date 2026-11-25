@@ -1,8 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.6.5-beta
 
-- **Pass / Fail is now Match / No match**, a calmer name for items that meet the search and filters or not. Choose grey (default), red or ghosted for items outside the search and filters. Ghosted geometry is see-through and has no dots. The legend shows counts and percentages for all items after the tree tools.
+- **Pass / Fail is now Match / No match**, a calmer name for items that meet the search and filters or not. Files saved with Pass / Fail open in the new mode.
+- **Choose how non-matches look:** grey (the new default), red, or ghosted (see-through, with no dots). Click **Match / No match** in the Preview menu to pick a style.
+- **Legend percentages.** The legend shows counts and percentages for all items after the tree tools, for example `Match 5 · 63%   No match 3 · 37%`.
+- **Validation.** The Core tests cover the percentages and saved styles. The automated Rhino fixtures could not run, and the ghosted drawing has not yet been tried in a live Rhino session.
 
 ## 0.6.4-beta
 
