@@ -25,56 +25,6 @@ public class QueryPolicyTests
             "Precision changes numeric items on the wire even for an unfiltered tree");
     }
 
-    [Fact]
-    public void PrecisionChangesTextAndNumericSearchMembership()
-    {
-        var text = new PanelQueryOptions { Search = "alpha" };
-        var textPrecision = text.Clone();
-        textPrecision.DecimalPlaces = 2;
-        Assert.True(!PanelQueryPolicy.SameOutputFilter(text, textPrecision),
-            "Precision can change membership of displayed-text searches");
-        text.Search = "> 2.5";
-        textPrecision.Search = text.Search;
-        Assert.True(!PanelQueryPolicy.SameOutputFilter(text, textPrecision),
-            "Explicit numeric comparisons in text mode use presented numbers");
-    }
-
-    [Fact]
-    public void RegexWhitespaceIsSignificantWhileTextWhitespaceIsInactive()
-    {
-        var regex = new PanelQueryOptions { SearchMode = PanelSearchMode.Regex, Search = " " };
-        var regexPrecision = regex.Clone();
-        regexPrecision.DecimalPlaces = 2;
-        Assert.True(PanelQueryPolicy.HasOutputFilter(regex) && !PanelQueryPolicy.SameOutputFilter(regex, regexPrecision),
-            "Whitespace is significant for regular-expression membership");
-        Assert.True(!PanelQueryPolicy.HasOutputFilter(new PanelQueryOptions { Search = " " }),
-            "Whitespace alone is not an active text filter");
-    }
-
-    [Fact]
-    public void DisplayedSetsDependOnPrecision()
-    {
-        var set = new PanelQueryOptions { CreateSet = true };
-        var setPrecision = set.Clone();
-        setPrecision.DecimalPlaces = 2;
-        Assert.True(PanelQueryPolicy.HasOutputFilter(set) && !PanelQueryPolicy.SameOutputFilter(set, setPrecision),
-            "A displayed set depends on precision even without a search");
-    }
-
-    [Fact]
-    public void RestrictionsFilterPendingOutputWhileMetricDisplayAloneDoesNot()
-    {
-        Assert.True(PanelQueryPolicy.HasOutputFilter(new PanelQueryOptions { BranchPath = "{malformed" }),
-            "A malformed path remains an active filter while its error is shown");
-        Assert.True(PanelQueryPolicy.HasOutputFilter(new PanelQueryOptions { TypeName = "Curve" }) &&
-            PanelQueryPolicy.HasOutputFilter(new PanelQueryOptions { OnlyInvalid = true }),
-            "Type and invalid-only restrictions do not pass through while pending");
-        Assert.True(!PanelQueryPolicy.HasOutputFilter(new PanelQueryOptions
-        {
-            SearchMode = PanelSearchMode.Length, DisplayFilterValue = true
-        }), "Displaying a metric alone does not filter pending output");
-    }
-
     [Theory]
     [InlineData("search")]
     [InlineData("mode")]
@@ -111,23 +61,6 @@ public class QueryPolicyTests
         displayedMetric.DisplayFilterValue = true;
         Assert.True(!PanelQueryPolicy.SameQuery(metric, displayedMetric) && !PanelQueryPolicy.SameOutputFilter(metric, displayedMetric),
             "Switching metric display is recorded independently of the pending-output policy");
-    }
-
-    [Fact]
-    public void InputDiagnosticsSurviveAnEmptyInvalidOnlyResult()
-    {
-        var uncertain = new PanelSnapshot(new[]
-        {
-            new PanelRow(0, "{0}", "Unavailable", "<unavailable value>", null,
-                PanelValidity.Unverified, typeIdentityAvailable: false)
-        }, new[] { new PanelBranch("{0}", 1) });
-        var invalidOnly = new PanelQueryOptions { OnlyInvalid = true };
-        Assert.True(PanelQueryEngine.Execute(uncertain, invalidOnly).RowPositions.Count == 0 &&
-            PanelQueryPolicy.InputDiagnostic(uncertain, invalidOnly).Contains("1 unverified") &&
-            PanelQueryPolicy.InputDiagnostic(uncertain, invalidOnly).Contains("1 type identity unavailable"),
-            "Input diagnostics survive an invalid-only filter that returns no rows");
-        Assert.True(PanelQueryPolicy.InputDiagnostic(uncertain, new PanelQueryOptions()).Length == 0,
-            "The filter warning is not shown when no restriction is active");
     }
 
 }

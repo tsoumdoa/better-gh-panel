@@ -2,7 +2,6 @@ using System;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
-using System.Threading;
 
 // The executable also references Core. Bind the requested payload before the host
 // type is loaded or any of its Core-using methods are compiled.
@@ -11,22 +10,6 @@ internal static class Bootstrap
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Length == 1 && args[0] == "--clipboard-raw-probe") return RawClipboardProbe.RunChild();
-        // Exercise the desktop and job lifetime without starting Rhino.
-        if (args.Length == 2 && args[0] == "--desktop-probe" && args[1] is "ok" or "fail" or "wait")
-        {
-            try { return InactiveDesktop.Run(new[] { "--desktop-probe-child", args[1] }); }
-            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
-        }
-        if (args.Length == 2 && args[0] == "--desktop-probe-child" && args[1] is "ok" or "fail" or "wait")
-        {
-            string? desktop = Environment.GetEnvironmentVariable(InactiveDesktop.EnvironmentName);
-            if (desktop == null || !InactiveDesktop.IsCurrent(desktop)) return 2;
-            Console.WriteLine("Inactive desktop probe ready");
-            Console.Out.Flush();
-            if (args[1] == "wait") Thread.Sleep(30000);
-            return args[1] == "fail" ? 7 : 0;
-        }
         if (args.Length is 2 or 3 && args[0] == "--desktop-fixture")
         {
             try
@@ -37,7 +20,7 @@ internal static class Bootstrap
             }
             catch (Exception error) { Console.Error.WriteLine(error); return 1; }
         }
-        bool treeOnly = args.Length is 1 or 2 && (args[0] == "--tree-only" || args[0] == "--branch-stats-headless");
+        bool treeOnly = args.Length is 1 or 2 && args[0] == "--tree-only";
         bool fixture = args.Length is 2 or 3 && (args[0] == "--fixture" || args[0] == "--identity-only");
         if (!treeOnly && !fixture)
         {

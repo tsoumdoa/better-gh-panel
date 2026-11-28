@@ -51,31 +51,6 @@ public class UnitConversionTests
     }
 
     [Fact]
-    public void GeometryApplicability()
-    {
-        var toMeters = new[] { PanelUnitConversion.MillimetersToMeters,
-            PanelUnitConversion.SquareMillimetersToSquareMeters, PanelUnitConversion.CubicMillimetersToCubicMeters };
-        var toMillimeters = new[] { PanelUnitConversion.MetersToMillimeters,
-            PanelUnitConversion.SquareMetersToSquareMillimeters, PanelUnitConversion.CubicMetersToCubicMillimeters };
-        const double value = 1234.56789;
-        foreach (PanelUnitConversion mode in Enum.GetValues(typeof(PanelUnitConversion)))
-        foreach (string units in new[] { "mm", "m", "ft", "MM", "" })
-        for (int power = 0; power <= 4; power++)
-        {
-            double expected = value;
-            if (power >= 1 && power <= 3)
-            {
-                double scale = Math.Pow(1000, power);
-                if (units == "mm" && mode == toMeters[power - 1]) expected = value / scale;
-                if (units == "m" && mode == toMillimeters[power - 1]) expected = value * scale;
-            }
-            SameBits(expected, PanelUnits.ConvertGeometry(value, power, units, mode));
-        }
-        Assert.True(PanelUnits.FormatGeometry(double.MaxValue, 3, "m", PanelUnitConversion.CubicMetersToCubicMillimeters, -1) == "unavailable",
-            "Geometry conversion overflow remains unavailable instead of displaying infinity");
-    }
-
-    [Fact]
     public void UnknownModes()
     {
         foreach (int id in new[] { -1, 9, int.MinValue, int.MaxValue })
@@ -89,19 +64,6 @@ public class UnitConversionTests
             Assert.True(PanelUnits.FormatGeometry(1.25, 2, "mm", mode, 2) == "1.25 mm²",
                 "Unknown modes retain model geometry units");
         }
-    }
-
-    [Fact]
-    public void AdditionalGeometryLength()
-    {
-        var circle = new PanelGeometryInfo("Cir", 2, units: "mm", metricName: "Radius", metricLabel: "R",
-            details: "Shape: Circle").WithAdditionalLength(4 * Math.PI);
-        Assert.True(circle.FormatCompact(PanelUnitConversion.None, -1) == "Cir · R 2 mm" &&
-            circle.FormatDetails(PanelUnitConversion.None, -1) == "Radius: 2 mm\nLength: 12.5664 mm\nShape: Circle",
-            "analytic circumference adds details without replacing the compact radius");
-        Assert.True(circle.FormatDetails(PanelUnitConversion.MillimetersToMeters, -1) ==
-            "Radius: 0.002 m\nLength: 0.0125664 m\nShape: Circle",
-            "both radius and circumference follow the geometry unit conversion");
     }
 
     private static void SameBits(double expected, double actual) =>

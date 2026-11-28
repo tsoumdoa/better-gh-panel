@@ -202,7 +202,7 @@ Before host parameter reading, migration upgrades only known unversioned one-inp
 
 ## Testing
 
-Core xUnit runs without Rhino on net8.0 and, on Windows, net48. Deterministic yield policies test resumable scans/empty branches/sort/cancellation/handoff without timing-sensitive assertions; fingerprints/oracles check numeric consistency. Pure canvas/menu/size policy uses Core and explicitly linked drawing policy. Native fixtures test capture freshness, ownership/disposal, drawing, clipboard/Paste, outputs and host/UI interaction, with reflection isolated in the adapter. See [CONTRIBUTING](../CONTRIBUTING.md#validation) for commands/fixture selection and [packaging](packaging.md) for build/staging.
+The suite is deliberately small. Core xUnit runs without Rhino on net8.0 and, on Windows, net48, and covers the presented-number pipeline, query semantics, the measurement queue lifecycle and the preview memory budget. Three native fixtures cover capture safety, preview safety and real Grasshopper solves, with reflection isolated in the adapter. See [CONTRIBUTING](../CONTRIBUTING.md#validation) for commands/fixture selection and [packaging](packaging.md) for build/staging.
 
 ## Known limits
 

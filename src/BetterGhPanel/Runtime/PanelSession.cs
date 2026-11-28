@@ -222,13 +222,6 @@ namespace BetterGhPanel.Runtime
         // Ownership only: source freshness is established by the component's full
         // capture fence. Do not use this alone to accept a measurement or action.
         internal bool GeometrySnapshotAttached(PanelSnapshot snapshot) => _geometry.IsAttachedTo(snapshot);
-        internal bool GeometryDiagnosticsForTesting { set => _geometry.DiagnosticsForTesting = value; }
-        internal long GeometryEntryVisitsForTesting => _geometry.EntryVisitsForTesting;
-        internal long GeometryEntryCopiesForTesting => _geometry.EntryCopiesForTesting;
-        internal long GeometrySourceChecksForTesting => _geometry.SourceChecksForTesting;
-        internal long GeometrySourceScansForTesting => _geometry.SourceScansForTesting;
-        internal int GeometryEntryCountForTesting => _geometry.EntryCountForTesting;
-        internal void ResetGeometryDiagnosticsForTesting() => _geometry.ResetDiagnosticsForTesting();
         internal void RequestGeometryMeasurements(PanelSnapshot snapshot, IEnumerable<int> visiblePositions) =>
             RequestListGeometryMeasurements(snapshot, visiblePositions, null);
 
@@ -506,7 +499,6 @@ namespace BetterGhPanel.Runtime
             RequestPreviewMeasurements(null, null);
             _geometry.Dispose();
             _geometryScheduler.Dispose();
-            GeometryWorkerSubmissionForTesting = null;
             ++_request;
             _queryCancellation?.Cancel();
             _queryCancellation?.Dispose();

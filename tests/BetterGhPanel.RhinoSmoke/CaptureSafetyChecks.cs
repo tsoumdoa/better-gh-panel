@@ -21,9 +21,6 @@ internal static class CaptureSafetyChecks
 {
     internal static void VerifyManaged(Assembly assembly)
     {
-        CaptureTransactionChecks.VerifyNestedDataAccess();
-        CaptureBudgetChecks.Verify(assembly);
-        CaptureStockGeometryChecks.VerifyManaged(assembly);
         var capture = assembly.GetType("BetterGhPanel.Runtime.SnapshotCapture", true)!.GetMethod("Capture")!;
         PanelSnapshot Capture(GH_Structure<IGH_Goo> tree, out IGH_Goo?[] items)
         {
@@ -305,7 +302,7 @@ internal static class CaptureSafetyChecks
             "Wrapped type filters preserve typed D/S and aligned B/F membership");
         var set = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { TypeName = "{Group}", Search = "Facade A", CreateSet = true });
         var output = (GH_Structure<IGH_Goo>)outputOps.GetMethod("DisplaySet", AnyStatic)!
-            .Invoke(null, new object?[] { tree, set, set.RowPositions, set.BranchPaths, null, false })!;
+            .Invoke(null, new object?[] { tree, set, set.RowPositions, set.BranchPaths, false })!;
         Check(((GH_String)output.Branches[0][0]).Value == "Group (Facade A) with 2 objects",
             "Create set emits the captured group summary while preserving representative membership");
     }

@@ -129,10 +129,9 @@ namespace BetterGhPanel.Runtime
         }
 
         internal GH_Structure<IGH_Goo> Output(PanelQueryResult query, IReadOnlyList<int> positions,
-            IReadOnlyList<string> branchPaths, bool flatten, bool includeEmpty, Action<long>? countVisits = null, bool selected = false)
+            IReadOnlyList<string> branchPaths, bool flatten, bool includeEmpty, bool selected = false)
         {
             var result = new GH_Structure<IGH_Goo>();
-            long visits = 0;
             var set = query.DisplaySet;
             // A selected row or set group with no F partner keeps its path, as S and D do.
             if (query.GroupedStatPaths != null)
@@ -147,7 +146,6 @@ namespace BetterGhPanel.Runtime
                     if (!destinations.TryGetValue(path, out var branch))
                         destinations.Add(path, branch = result.EnsurePath(Parse(path)));
                     if (ItemAt(position) is int item) branch.Add(_rawItems[item]);
-                    visits++;
                 }
             }
             else if (set == null) AddGroup(positions, selected ? branchPaths.Concat(positions.Select(position => query.Snapshot.Rows[position].Path)).Distinct() : branchPaths, path => Parse(path));
@@ -164,23 +162,19 @@ namespace BetterGhPanel.Runtime
                 var destination = flatten ? new GH_Path(k) : Parse(query.Snapshot.Rows[representative].Path).AppendElement(k);
                 AddGroup(set.Members[representative], new[] { query.Snapshot.Rows[representative].Path }, _ => destination);
             }
-            countVisits?.Invoke(visits + result.DataCount);
             return result;
 
             void AddGroup(IReadOnlyList<int> members, IEnumerable<string> paths, Func<string, GH_Path> destination)
             {
-                visits += members.Count;
                 var retainedPaths = paths.ToArray();
                 foreach (string path in retainedPaths)
                 {
-                    visits++;
                     result.EnsurePath(destination(path));
                 }
                 string? previousPath = null;
                 IList<IGH_Goo>? branch = null;
                 foreach (var item in BranchItems(query.Snapshot, members, retainedPaths, includeEmpty && !selected))
                 {
-                    visits++;
                     if (item.Path != previousPath)
                     { branch = result.EnsurePath(destination(item.Path)); previousPath = item.Path; }
                     branch!.Add(_rawItems[item.Item]);

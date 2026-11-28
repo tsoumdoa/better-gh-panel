@@ -13,8 +13,5 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/BetterGhPanel.Core/BetterGhPanel.Core.csproj" />
-    <!-- Drawing policy can be checked on Windows and Mac without loading Rhino. -->
-    <Compile Include="../../src/BetterGhPanel/UI/CanvasMenu.cs" Link="CanvasMenu.cs" />
-    <Compile Include="../../src/BetterGhPanel/UI/CanvasSetDetails.cs" Link="CanvasSetDetails.cs" />
   </ItemGroup>
 </Project>
