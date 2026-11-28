@@ -232,7 +232,7 @@ namespace BetterGhPanel.Runtime
         }
 
         internal static PanelPreviewLeaf? Create(object value, long bytes, PanelNativeGeometry.Scan? scan,
-            PanelGeometrySources.OperationBudget budget, ref int remaining, Action<int> meshStatus, Func<bool>? current = null,
+            Action<int> meshStatus, Func<bool>? current = null,
             PanelPreviewMemory? memory = null, Action<Mesh[], int[][]?, PanelPreviewMemory.Lease?>? retireMeshes = null,
             Action<NurbsCurve[], PanelPreviewMemory.Lease?>? retireCurves = null)
         {
@@ -277,11 +277,13 @@ namespace BetterGhPanel.Runtime
                     var copy = new Mesh();
                     owned = copy;
                     copy.Vertices.UseDoublePrecisionVertices = source.Vertices.UseDoublePrecisionVertices;
-                    for (int i = 0; i < vertexCount; i++) copy.Vertices.Add(source.Vertices.Point3dAt(i));
-                    for (int i = 0; i < faceCount; i++) copy.Faces.AddFace(source.Faces[i]);
-                    for (int i = 0; i < normalCount; i++) copy.Normals.Add(source.Normals[i]);
-                    for (int i = 0; i < colorCount; i++) copy.VertexColors.Add(source.VertexColors[i]);
-                    for (int i = 0; i < textureCount; i++) copy.TextureCoordinates.Add(source.TextureCoordinates[i]);
+                    // Large meshes take a while to copy; stop as soon as the preview is stale.
+                    bool Stale(int i) => (i & 4095) == 4095 && current != null && !current();
+                    for (int i = 0; i < vertexCount; i++) { copy.Vertices.Add(source.Vertices.Point3dAt(i)); if (Stale(i)) return null; }
+                    for (int i = 0; i < faceCount; i++) { copy.Faces.AddFace(source.Faces[i]); if (Stale(i)) return null; }
+                    for (int i = 0; i < normalCount; i++) { copy.Normals.Add(source.Normals[i]); if (Stale(i)) return null; }
+                    for (int i = 0; i < colorCount; i++) { copy.VertexColors.Add(source.VertexColors[i]); if (Stale(i)) return null; }
+                    for (int i = 0; i < textureCount; i++) { copy.TextureCoordinates.Add(source.TextureCoordinates[i]); if (Stale(i)) return null; }
                     if (!copy.IsValid) return null;
                     if (copy.Normals.Count == 0) copy.Normals.ComputeNormals();
                     value = copy;
@@ -309,8 +311,11 @@ namespace BetterGhPanel.Runtime
                     if (scan == null) return null;
                     owned = geometry.Duplicate();
                     if (current != null && !current()) return null;
+                    // The copy has the source's already-bounded structure. Check it
+                    // with its own budget so a large Brep is not charged twice.
+                    int copyRemaining = PanelGeometrySources.MaxNodesPerRoot;
                     if (owned == null || owned.GetType() != geometry.GetType() ||
-                        !PanelNativeGeometry.TryScanForCopy(owned, budget, ref remaining, current, out var copiedScan) || copiedScan == null ||
+                        !PanelNativeGeometry.TryScanForCopy(owned, new PanelGeometrySources.OperationBudget(), ref copyRemaining, current, out var copiedScan) || copiedScan == null ||
                         !PanelNativeGeometry.SameMetadata(scan, copiedScan)) return null;
                     if (current != null && !current()) return null;
                     value = owned;
@@ -692,13 +697,18 @@ namespace BetterGhPanel.Runtime
                     if (target.Tolerance > 0 && size / target.Tolerance > MaxToleranceRatio) target.Tolerance = size / MaxToleranceRatio;
                 }
                 Coarsen(parameters, diagonal);
-                meshes = BuildMeshes(parameters, requestedDensity, current, ref limited, out bool invalid);
+                // Each Brep face gets at least its minimum grid; skip a first attempt
+                // that is certain to exceed the limits.
+                int brepFaces = _value is Brep faceCounted ? faceCounted.Faces.Count : 0;
+                bool tooDense = brepFaces * (long)Math.Max(1, parameters.GridMinCount) * 2 > MaxGeneratedFaces;
+                bool invalid = false;
+                if (!tooDense) meshes = BuildMeshes(parameters, requestedDensity, current, ref limited, out invalid);
                 if (invalid) { SetMeshUnavailable(true); return; }
                 if (!current()) return;
-                if (meshes != null && _value is not SubD && !FitsGeneratedLimits(meshes))
+                if (_value is not SubD && (tooDense || meshes != null && !FitsGeneratedLimits(meshes)))
                 {
                     // Too dense at the requested quality: retry once at Rhino's coarse preset.
-                    foreach (var mesh in meshes) try { mesh?.Dispose(); } catch (Exception) { }
+                    if (meshes != null) foreach (var mesh in meshes) try { mesh?.Dispose(); } catch (Exception) { }
                     meshes = null;
                     using var coarse = MeshingParameters.FastRenderMesh;
                     Coarsen(coarse, diagonal);

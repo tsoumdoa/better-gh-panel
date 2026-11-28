@@ -69,6 +69,12 @@ internal static partial class PreviewSafetyChecks
             Method(leaf, "PrepareMeshes").Invoke(leaf, new object[] { fine, (Func<bool>)(() => true) });
             Check(FieldValue<Mesh[]?>(leaf, "_generatedMeshes")?.Length > 0 && string.IsNullOrEmpty(Status(highlight)),
                 "an over-fine tolerance on very large geometry is coarsened instead of dropping the shaded preview: " + Status(highlight));
+
+            var huge = new GH_GeometryGroup { Name = "many" };
+            for (int i = 0; i < 70_000; i++) huge.Objects.Add(new GH_Point(new Point3d(i, 0, 0)));
+            Set(highlight, new IGH_Goo?[] { huge }, new[] { 0 }, new[] { 0 });
+            Check(Count(highlight) == 0 && PropertyValue<int>(highlight, "LastVisitedNodes") <= 262_144 && Status(highlight).Contains("partial"),
+                "a group beyond the per-root leaf limit is unavailable rather than partially dispatched");
         }
         finally { Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>()); }
     }
@@ -145,14 +151,15 @@ internal static partial class PreviewSafetyChecks
             var shaded = DisplayModeDescription.FindByName("Shaded");
             static bool Red(Color c) => c.R > c.G + 60 && c.R > c.B + 60;
             static bool Blue(Color c) => c.B > c.R + 60 && c.B > c.G + 60;
-            foreach (var (view, height) in new[] { (top, 50.0), (perspective, 50.0), (perspective, 500.0) })
+            // The last view is about 80 degrees off vertical, where a slope-scaled bias is largest.
+            foreach (var (view, height, slope) in new[] { (top, 50.0, .3), (perspective, 50.0, .3), (perspective, 500.0, .3), (perspective, 8.0, 5.7) })
             {
                 rhino.Views.ActiveView = view;
                 var viewport = view.ActiveViewport;
                 viewport.DisplayMode = shaded;
-                viewport.SetCameraLocations(Point3d.Origin, new Point3d(0, -.3 * height, height));
+                viewport.SetCameraLocations(Point3d.Origin, new Point3d(0, -slope * height, height));
                 if (viewport.IsParallelProjection) viewport.ZoomBoundingBox(bounds);
-                string name = $"{(viewport.IsParallelProjection ? "Top" : "Perspective")} at {height}";
+                string name = $"{(viewport.IsParallelProjection ? "Top" : "Perspective")} at {height}, slope {slope}";
                 var visible = CaptureDotFrame(view, shaded, labels, true);
                 Check(visible.Contains(0), $"a coloured surface keeps its own dot with Hide dots behind objects on ({name})");
                 using var image = view.CaptureToBitmap(new Size(1000, 720), shaded);

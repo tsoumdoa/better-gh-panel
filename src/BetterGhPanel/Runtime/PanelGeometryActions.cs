@@ -193,7 +193,7 @@ namespace BetterGhPanel.Runtime
                     continue;
                 }
                 if (!PanelPreviewLeaf.TryEstimate(value, budget, ref remaining, out long bytes, out var scan)) return BoundingBox.Empty;
-                using var leaf = PanelPreviewLeaf.Create(value, bytes, scan, budget, ref remaining, _ => { });
+                using var leaf = PanelPreviewLeaf.Create(value, bytes, scan, _ => { });
                 if (leaf == null || !leaf.Bounds.IsValid) return BoundingBox.Empty;
                 bounds.Union(leaf.Bounds);
             }

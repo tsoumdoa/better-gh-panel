@@ -161,8 +161,11 @@ namespace BetterGhPanel.Runtime
         {
             _admissionObserver = admissionObserver;
             _displayMemory = new PanelPreviewMemory(MaxRetainedBytes, () => SourceAndMaterialBytes + OtherPreviewBytes());
-            s_previews.RemoveAll(reference => !reference.TryGetTarget(out _));
-            s_previews.Add(new WeakReference<PanelGeometryHighlight>(this));
+            lock (s_previews)
+            {
+                s_previews.RemoveAll(reference => !reference.TryGetTarget(out _));
+                s_previews.Add(new WeakReference<PanelGeometryHighlight>(this));
+            }
             _orderLabels = new PanelOrderLabels(_membership);
             _orderLabels.IsAdmitted = IsAdmitted;
             _orderLabels.ValuesChanged = ValuesChanged;
@@ -180,10 +183,18 @@ namespace BetterGhPanel.Runtime
         {
             long bytes = 0;
             if (!ShareRetainedBytes) return bytes;
-            foreach (var reference in s_previews)
-                if (reference.TryGetTarget(out var other) && !ReferenceEquals(other, this)) bytes += other.RetainedBytes;
+            lock (s_previews)
+                foreach (var reference in s_previews)
+                    if (reference.TryGetTarget(out var other) && !ReferenceEquals(other, this) && other.SharesBudget) bytes += other.RetainedBytes;
             return bytes;
         }
+
+        // Set by the component: false while the panel is hidden, locked, unloaded or Off.
+        internal Func<bool>? Drawable { get; set; }
+        // A hidden panel keeps its preview for when it is shown again, and a panel
+        // whose display flush failed keeps its quarantined resources for the
+        // session. Neither may starve the panels that are drawing.
+        private bool SharesBudget => !_displayFlushFailed && (Drawable?.Invoke() ?? true);
         internal int LastVisitedRows { get; private set; }
         internal int LastVisitedNodes { get; private set; }
         internal int DrawWireCalls { get; private set; }
@@ -263,7 +274,7 @@ namespace BetterGhPanel.Runtime
                     { _filteredRecovery.Reset(positions, index, end); break; }
                     if (SharedRetainedBytes >= MaxRetainedBytes)
                     {
-                        if (RetiringBytes > 0 || WaitForSharedCapacity()) _filteredRecovery.Reset(positions, index, end);
+                        if (RetiringBytes > 0 || WaitForSharedCapacity(0)) _filteredRecovery.Reset(positions, index, end);
                         else _partial = true;
                         break;
                     }
@@ -326,7 +337,7 @@ namespace BetterGhPanel.Runtime
                     if (budget.Remaining <= 0) { budgetBlocked = true; return PanelPreviewRecovery.Admission.Blocked; }
                     if (_entries.Count >= PreviewLimit || SharedRetainedBytes >= MaxRetainedBytes)
                     {
-                        if (_entries.Count >= PreviewLimit || RetiringBytes == 0 && !WaitForSharedCapacity())
+                        if (_entries.Count >= PreviewLimit || RetiringBytes == 0 && !WaitForSharedCapacity(0))
                         { _partial = true; _filteredRecovery.Clear(); }
                         return PanelPreviewRecovery.Admission.Blocked;
                     }
@@ -514,7 +525,7 @@ namespace BetterGhPanel.Runtime
                 {
                     // Every leaf comes from this one bounded graph capture. Do
                     // not resolve a later member from the live group here.
-                    var copy = PanelPreviewLeaf.Create(inspected.Leaves[i], estimates[i], scans[i], budget, ref remaining,
+                    var copy = PanelPreviewLeaf.Create(inspected.Leaves[i], estimates[i], scans[i],
                         MeshStatusCallback(scopeToken),
                         () => Current(generation, current), _displayMemory, RetireMeshes, RetireCurves);
                     if (copy == null)
@@ -567,7 +578,7 @@ namespace BetterGhPanel.Runtime
         private bool CanAdmitBytes(long bytes)
         {
             if (bytes <= MaxRetainedBytes - SharedRetainedBytes) return true;
-            _admissionBlockedByRetirement |= RetiringBytes > 0 || WaitForSharedCapacity();
+            _admissionBlockedByRetirement |= RetiringBytes > 0 || WaitForSharedCapacity(bytes);
             return false;
         }
 
@@ -608,7 +619,7 @@ namespace BetterGhPanel.Runtime
             if (inspected.Leaves.Count != 1 || !(inspected.Leaves[0] is Point3d point))
             { Remember(position); return true; }
             int remaining = inspected.Remaining;
-            var leaf = PanelPreviewLeaf.Create(point, estimate, null, budget, ref remaining, _ => { });
+            var leaf = PanelPreviewLeaf.Create(point, estimate, null, _ => { });
             if (leaf == null) { RememberUnavailable(position); return true; }
             var entry = new Entry(position, order, leaf.Bounds, estimate, new List<PanelPreviewLeaf> { leaf });
             _entries.Add(order, entry); _byPosition.Add(position, entry);
@@ -796,16 +807,19 @@ namespace BetterGhPanel.Runtime
         private bool _waitingForSharedCapacity;
 
         // Blocked only by other panels' previews: wait for one of them to free memory.
-        private bool WaitForSharedCapacity()
+        private bool WaitForSharedCapacity(long bytes)
         {
-            if (OtherPreviewBytes() == 0) return false;
+            // Wait only when other panels' previews, not this panel's own, cause the shortfall.
+            if (OtherPreviewBytes() == 0 || RetainedBytes + bytes > MaxRetainedBytes) return false;
             _waitingForSharedCapacity = true;
             return true;
         }
 
         private void WakeSharedWaiters()
         {
-            foreach (var reference in s_previews.ToArray())
+            WeakReference<PanelGeometryHighlight>[] previews;
+            lock (s_previews) previews = s_previews.ToArray();
+            foreach (var reference in previews)
             {
                 if (!reference.TryGetTarget(out var other) || ReferenceEquals(other, this) || !other._waitingForSharedCapacity) continue;
                 other._waitingForSharedCapacity = false;

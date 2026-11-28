@@ -137,12 +137,16 @@ retention, cache rejection/retry, clear and close. This is host regression
 evidence, not a proof for every Rhino version, driver or native/GPU operation.
 Native duplication and meshing can still exceed estimated allocation peaks.
 
-Each geometry root has a 262,144-visit, 65,536-leaf and depth-64 limit; Brep,
+Each geometry root has a 262,144-visit, 65,536-leaf and depth-64 limit (a Brep
+costs about 16 visits per four-sided face, so roughly 16,000 faces); Brep,
 polycurve and extrusion collections may each hold 65,536 items and an exact
 geometry's native size may reach 512 MiB. Meshes are reconstructed up to
 2,000,000 vertices and faces. Builds and actions share a 262,144-visit budget per
 turn. The Preview limit setting caps root preview entries (1,000, 5,000 or 20,000),
-and all Panel+ components share one estimated 4 GiB preview budget. The accounting includes source-copy estimates for admitted,
+and all Panel+ components share one estimated 4 GiB preview budget. Hidden,
+locked or unloaded panels, and a panel whose display flush failed, do not count
+against the other panels; a panel blocked only by other panels' previews resumes
+when any of them frees memory. The accounting includes source-copy estimates for admitted,
 staged and retired entries; fixed material-cache overhead; and actual charges for
 active and retired display meshes, face indices and SubD limit-edge curves.
 The entire staged group's estimate is reserved before leaf creation,
