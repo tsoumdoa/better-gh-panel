@@ -6,7 +6,6 @@ using BetterGhPanel.Core;
 using Grasshopper;
 using Grasshopper.Kernel;
 using Grasshopper.Kernel.Types;
-using Rhino.DocObjects;
 using Rhino.Geometry;
 
 namespace BetterGhPanel.Runtime
@@ -30,7 +29,9 @@ namespace BetterGhPanel.Runtime
         }
         internal const int MaxBuildRows = 20000;
         internal const int MaxUpdateRows = 128;
-        internal const long MaxRetainedBytes = 64L * 1024 * 1024;
+        // One budget shared by every Panel+ preview in the Rhino session.
+        internal const long MaxRetainedBytes = 4L * 1024 * 1024 * 1024;
+        private static readonly List<WeakReference<PanelGeometryHighlight>> s_previews = new List<WeakReference<PanelGeometryHighlight>>();
         private const int MinSelectionThickening = 2;
         private readonly SortedDictionary<int, Entry> _entries = new SortedDictionary<int, Entry>();
         private readonly Dictionary<int, Entry> _byPosition = new Dictionary<int, Entry>();
@@ -156,7 +157,9 @@ namespace BetterGhPanel.Runtime
         internal PanelGeometryHighlight(Action<int, object>? admissionObserver)
         {
             _admissionObserver = admissionObserver;
-            _displayMemory = new PanelPreviewMemory(MaxRetainedBytes, () => SourceAndMaterialBytes);
+            _displayMemory = new PanelPreviewMemory(MaxRetainedBytes, () => SourceAndMaterialBytes + OtherPreviewBytes());
+            s_previews.RemoveAll(reference => !reference.TryGetTarget(out _));
+            s_previews.Add(new WeakReference<PanelGeometryHighlight>(this));
             _orderLabels = new PanelOrderLabels(_membership);
             _orderLabels.IsAdmitted = IsAdmitted;
             _orderLabels.ValuesChanged = ValuesChanged;
@@ -169,6 +172,14 @@ namespace BetterGhPanel.Runtime
         internal bool IsAdmitted(int position) => _byPosition.ContainsKey(position);
         private long SourceAndMaterialBytes => _bytes + _retiredBytes + _stagedBytes + ((_valueMaterials?.Length ?? 0) + _retiredMaterials.Count) * 512L;
         internal long RetainedBytes => SourceAndMaterialBytes + _displayMemory.UsedBytes;
+        private long SharedRetainedBytes => RetainedBytes + OtherPreviewBytes();
+        private long OtherPreviewBytes()
+        {
+            long bytes = 0;
+            foreach (var reference in s_previews)
+                if (reference.TryGetTarget(out var other) && !ReferenceEquals(other, this)) bytes += other.RetainedBytes;
+            return bytes;
+        }
         internal int LastVisitedRows { get; private set; }
         internal int LastVisitedNodes { get; private set; }
         internal int DrawWireCalls { get; private set; }
@@ -246,7 +257,7 @@ namespace BetterGhPanel.Runtime
                     if (_entries.Count >= PreviewLimit) { _partial = true; break; }
                     if (budget.Remaining <= 0)
                     { _filteredRecovery.Reset(positions, index, end); break; }
-                    if (RetainedBytes >= MaxRetainedBytes)
+                    if (SharedRetainedBytes >= MaxRetainedBytes)
                     {
                         if (RetiringBytes > 0) _filteredRecovery.Reset(positions, index, end);
                         else _partial = true;
@@ -309,7 +320,7 @@ namespace BetterGhPanel.Runtime
                 {
                     if (!Current(generation, current)) return PanelPreviewRecovery.Admission.Blocked;
                     if (budget.Remaining <= 0) { budgetBlocked = true; return PanelPreviewRecovery.Admission.Blocked; }
-                    if (_entries.Count >= PreviewLimit || RetainedBytes >= MaxRetainedBytes)
+                    if (_entries.Count >= PreviewLimit || SharedRetainedBytes >= MaxRetainedBytes)
                     {
                         if (_entries.Count >= PreviewLimit || RetiringBytes == 0)
                         { _partial = true; _filteredRecovery.Clear(); }
@@ -551,7 +562,7 @@ namespace BetterGhPanel.Runtime
 
         private bool CanAdmitBytes(long bytes)
         {
-            if (bytes <= MaxRetainedBytes - RetainedBytes) return true;
+            if (bytes <= MaxRetainedBytes - SharedRetainedBytes) return true;
             _admissionBlockedByRetirement |= RetiringBytes > 0;
             return false;
         }
@@ -908,16 +919,11 @@ namespace BetterGhPanel.Runtime
                 var colours = _orderLabels.ColourGeometry && _valueMaterials != null ? new GH_PreviewWireArgs[_valueMaterials.Length] : null;
                 DrawWires(normal, false, colours, args.DefaultCurveThickness, shaded, Current);
                 if (!Current()) return;
-                bool pushed = false;
-                try
-                {
-                    if (_selectedCount > 0 && display != null)
-                    {
-                        PushPreviewDepthBias(args); pushed = true;
-                    }
-                    DrawWires(selected, true, colours, args.DefaultCurveThickness, shaded, Current);
-                }
-                finally { if (pushed) display!.PopModelTransform(); }
+                // Rhino's coplanar bias lets selected rows win over the same geometry's
+                // upstream preview without showing through anything genuinely in front.
+                var previousBias = _selectedCount > 0 && display != null ? PushCoplanarBias(display) : (ZBiasMode?)null;
+                try { DrawWires(selected, true, colours, args.DefaultCurveThickness, shaded, Current); }
+                finally { if (previousBias.HasValue) PopCoplanarBias(display!, previousBias.Value); }
                 if (!Current()) return;
                 // Grasshopper draws wires before meshes. In Shaded mode, draw ghost wires after the opaque fills.
                 if (!shaded && display != null && colours != null && HasGhostedEntries(noMatchColour))
@@ -960,33 +966,18 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        private static void PushPreviewDepthBias(IGH_PreviewArgs args)
-            => args.Display.PushModelTransform(WireDepthBias(args.Viewport) * args.Display.ModelTransform);
-
-        internal static Transform WireDepthBias(Rhino.Display.RhinoViewport viewport)
+        private static ZBiasMode PushCoplanarBias(DisplayPipeline display)
         {
-            var clipBias = Transform.Identity; clipBias.M22 = 0.995; clipBias.M23 = 0.01;
-            return viewport.GetTransform(CoordinateSystem.Clip, CoordinateSystem.World) * clipBias *
-                viewport.GetTransform(CoordinateSystem.World, CoordinateSystem.Clip);
+            var previous = display.ZBiasMode;
+            display.ZBiasMode = ZBiasMode.TowardsCamera;
+            return previous;
         }
 
-        private const double GradientDepthOffset = 1e-3;
-        private static bool PushGradientDepthOffset(IGH_PreviewArgs args)
+        // Submit anything still batched while the bias applies, then restore it.
+        private void PopCoplanarBias(DisplayPipeline display, ZBiasMode previous)
         {
-            var viewport = args.Viewport;
-            Transform offset;
-            if (viewport.IsParallelProjection)
-            {
-                // A small fraction of the visible world height, independent of clip depth.
-                if (!viewport.GetFrustum(out _, out _, out double bottom, out double top, out _, out _)) return false;
-                var direction = viewport.CameraDirection;
-                double distance = (top - bottom) * GradientDepthOffset;
-                if (!direction.Unitize() || distance <= 0 || double.IsNaN(distance) || double.IsInfinity(distance)) return false;
-                offset = Transform.Translation(direction * -distance);
-            }
-            else offset = Transform.Scale(viewport.CameraLocation, 1 - GradientDepthOffset);
-            args.Display.PushModelTransform(offset * args.Display.ModelTransform);
-            return true;
+            try { if (!_displayFlushFailed) FlushDisplay(display); }
+            finally { display.ZBiasMode = previous; }
         }
 
         internal void DrawMeshes(IGH_PreviewArgs args)
@@ -1031,9 +1022,10 @@ namespace BetterGhPanel.Runtime
                     }
                 }
 
-                // Keep fills just ahead of coincident upstream preview, without
-                // the wire bias's dependence on clipping-plane depth.
-                bool pushed = colours != null && display != null && PushGradientDepthOffset(args);
+                // Keep fills just ahead of the same geometry's upstream preview. Rhino's
+                // coplanar bias is a few depth steps at any zoom, so nearby curves,
+                // surfaces and model objects in front stay visible.
+                var previousBias = colours != null && display != null ? PushCoplanarBias(display) : (ZBiasMode?)null;
                 try
                 {
                     if (colours == null) DrawPass(null);
@@ -1058,7 +1050,7 @@ namespace BetterGhPanel.Runtime
                         }
                     }
                 }
-                finally { if (pushed) display!.PopModelTransform(); }
+                finally { if (previousBias.HasValue) PopCoplanarBias(display!, previousBias.Value); }
             }
             finally { EndDraw(flushPending ? display : null); }
         }
