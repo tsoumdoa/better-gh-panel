@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Coloured previews no longer cover nearby geometry.** Colour by value and Match / No match fills, and selected rows' wires, used to be pushed toward the camera by 0.1–1% of the view depth, hiding curves, surfaces and Rhino objects in front of them. They now use Rhino's own coplanar bias, so they only win over the same geometry's upstream preview.
+- **Dots no longer vanish under their own colour.** With colouring on, the same push made "Hide dots behind objects" treat each dot as hidden by its own fill, most visibly on flat surfaces in Top or elevation views and when zoomed out.
+- **Fixed dots disappearing from every Panel+** when one panel used Match / No match with Show values on and Colour by value off. Its legend crashed each frame and took the other panels' dots with it. Each panel's dots and legend now draw independently.
+- **Much larger previews.** All Panel+ components now share one 4 GiB preview budget (was 64 MiB per panel). Breps with more than 256 faces, edges or trims, meshes over 8,192 faces, and point clouds or polylines over 32,768 points now preview. Generated display meshes may reach 1,000,000 faces (was 16,384); very fine mesh settings on very large geometry are coarsened instead of dropping the colour.
+
 ## 0.6.5-beta
 
 - **Pass / Fail is now Match / No match**, a calmer name for items that meet the search and filters or not. Files saved with Pass / Fail open in the new mode.

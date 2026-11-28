@@ -42,7 +42,7 @@ all knots, control points, weights, order, dimension and domain are compared to
 the owned curve before use. This narrow reconstruction does not duplicate or
 remove live source UserData. When the narrow provider cannot admit a NURBS or
 polyline, the compatibility path may instead use Rhino's owned native duplicate
-after structural and metadata inspection. Its curve scan permits up to 32,768
+after structural and metadata inspection. Its curve scan permits up to 1,048,576
 points, subject to its other limits and estimates; this is not a promise that
 every curve at that size is admitted. The 1,024-control-point NURBS and
 2,048-point polyline limits apply to the narrow reconstruction paths, not to
@@ -85,7 +85,11 @@ reserving worst-case display mesh or SubD limit-edge space. Fixed value previews
 Brep, surface, extrusion, sphere and SubD display caches are charged when built,
 using their reported native size plus face-index storage. SubD limit-edge curves
 are prepared lazily and charged at their reported size plus per-curve overhead.
-The existing 2 MiB generated-cache/curve-collection and 16,384-face limits remain.
+A generated mesh may hold up to 1,000,000 faces and 256 MiB. Mesh settings that
+are too fine for the geometry's size (bounding-box diagonal over 65,536 × the
+tolerance or 512 × the maximum edge length) are coarsened to those ratios rather
+than rejected. A mesh still over the limits is rebuilt once with Rhino's coarse
+render-mesh preset before the shaded preview is dropped.
 
 Accepted caches and deterministic size/quality rejections are reused for unchanged
 meshing settings/density. A cache that does not fit is disposed before drawing;
@@ -133,9 +137,12 @@ retention, cache rejection/retry, clear and close. This is host regression
 evidence, not a proof for every Rhino version, driver or native/GPU operation.
 Native duplication and meshing can still exceed estimated allocation peaks.
 
-Each root has a 4,096-visit, 1,024-leaf and depth-64 limit. Builds and actions
-share a 20,000-visit budget. At most 1,024 root preview entries and an estimated
-64 MiB are admitted. The accounting includes source-copy estimates for admitted,
+Each geometry root has a 262,144-visit, 65,536-leaf and depth-64 limit; Brep,
+polycurve and extrusion collections may each hold 65,536 items and an exact
+geometry's native size may reach 512 MiB. Meshes are reconstructed up to
+2,000,000 vertices and faces. Builds and actions share a 262,144-visit budget per
+turn. The Preview limit setting caps root preview entries (1,000, 5,000 or 20,000),
+and all Panel+ components share one estimated 4 GiB preview budget. The accounting includes source-copy estimates for admitted,
 staged and retired entries; fixed material-cache overhead; and actual charges for
 active and retired display meshes, face indices and SubD limit-edge curves.
 The entire staged group's estimate is reserved before leaf creation,
@@ -265,7 +272,7 @@ both preview modes with labels on and off.
 
 Exact `GH_PointCloud` and `GH_Extrusion` terminals, including those reached
 through bounded group/wrapper traversal, use owned native duplicates after
-inspection. Point-cloud preflight admits at most 32,768 points, subject also
+inspection. Point-cloud preflight admits at most 1,048,576 points, subject also
 to the native-size and live-memory limits. Drawing uses bounded point-value
 batches from the owned duplicate, grouped into consecutive source-ARGB runs
 to preserve point order when the cloud has colors. Uncolored clouds use the selection or filtered color, and hidden points

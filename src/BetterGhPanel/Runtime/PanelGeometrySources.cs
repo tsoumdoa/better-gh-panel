@@ -16,7 +16,9 @@ namespace BetterGhPanel.Runtime
 
         // Geometry previews and actions. Sized for detailed Breps and large
         // meshes; the shared preview memory budget is the real ceiling.
-        internal const int MaxNodesPerOperation = 262_144;
+        internal const int DefaultMaxNodesPerOperation = 262_144;
+        // Test seam: native safety fixtures exercise aggregate limits at a small budget.
+        internal static int MaxNodesPerOperation { get; set; } = DefaultMaxNodesPerOperation;
         internal const int MaxNodesPerRoot = 262_144;
         internal const int MaxLeavesPerRoot = 65_536;
 

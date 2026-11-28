@@ -30,7 +30,9 @@ namespace BetterGhPanel.Runtime
         internal const int MaxBuildRows = 20000;
         internal const int MaxUpdateRows = 128;
         // One budget shared by every Panel+ preview in the Rhino session.
-        internal const long MaxRetainedBytes = 4L * 1024 * 1024 * 1024;
+        internal const long DefaultMaxRetainedBytes = 4L * 1024 * 1024 * 1024;
+        // Test seam: native safety fixtures exercise the accounting at a small limit.
+        internal static long MaxRetainedBytes { get; set; } = DefaultMaxRetainedBytes;
         private static readonly List<WeakReference<PanelGeometryHighlight>> s_previews = new List<WeakReference<PanelGeometryHighlight>>();
         private const int MinSelectionThickening = 2;
         private readonly SortedDictionary<int, Entry> _entries = new SortedDictionary<int, Entry>();
