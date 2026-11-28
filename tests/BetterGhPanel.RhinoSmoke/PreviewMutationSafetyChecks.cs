@@ -119,7 +119,7 @@ internal static partial class PreviewSafetyChecks
         Set(highlight, new IGH_Goo?[] { new GH_Curve { Value = beyondNarrow } }, new[] { 0 }, new[] { 0 });
         Check(Count(highlight) == 1 && Box(highlight).Max.X == 2048 && PropertyValue<long>(highlight, "RetainedBytes") <= 64L * 1024 * 1024,
             "a 2049-point polyline outside the narrow reconstruction uses the bounded compatibility provider");
-        using var oversized = new PolylineCurve(Enumerable.Range(0, 32769).Select(i => new Point3d(i, i % 2, 0)));
+        using var oversized = new PolylineCurve(Enumerable.Range(0, 1_048_577).Select(i => new Point3d(i, i % 2, 0)));
         Set(highlight, new IGH_Goo?[] { new GH_Curve { Value = oversized } }, new[] { 0 }, new[] { 0 });
         Check(Count(highlight) == 0 && PropertyValue<long>(highlight, "RetainedBytes") == 0 && Status(highlight).Contains("partial"),
             "geometry beyond the compatibility provider limit is rejected before constructing a preview copy");

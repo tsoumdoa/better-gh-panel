@@ -33,6 +33,7 @@ namespace BetterGhPanel.Runtime
         internal const long DefaultMaxRetainedBytes = 4L * 1024 * 1024 * 1024;
         // Test seam: native safety fixtures exercise the accounting at a small limit.
         internal static long MaxRetainedBytes { get; set; } = DefaultMaxRetainedBytes;
+        internal static bool ShareRetainedBytes { get; set; } = true;
         private static readonly List<WeakReference<PanelGeometryHighlight>> s_previews = new List<WeakReference<PanelGeometryHighlight>>();
         private const int MinSelectionThickening = 2;
         private readonly SortedDictionary<int, Entry> _entries = new SortedDictionary<int, Entry>();
@@ -178,6 +179,7 @@ namespace BetterGhPanel.Runtime
         private long OtherPreviewBytes()
         {
             long bytes = 0;
+            if (!ShareRetainedBytes) return bytes;
             foreach (var reference in s_previews)
                 if (reference.TryGetTarget(out var other) && !ReferenceEquals(other, this)) bytes += other.RetainedBytes;
             return bytes;

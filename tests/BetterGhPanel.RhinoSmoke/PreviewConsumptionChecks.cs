@@ -88,12 +88,12 @@ internal static partial class PreviewSafetyChecks
         component.DrawViewportMeshes(rejectedArgs);
         component.DrawViewportMeshes(rejectedArgs);
         component.DrawViewportMeshes(rejectedArgs);
-        Check(Attempts() == before + 1 && !string.IsNullOrEmpty(Status(highlight)),
-            "unchanged deterministic meshing rejection is cached and remains visibly partial");
-        component.DrawViewportMeshes(args);
         var leaf = PreviewLeaves(highlight).Single();
+        Check(Attempts() == before + 1 && FieldValue<Mesh[]?>(leaf, "_generatedMeshes")?.Length > 0 && string.IsNullOrEmpty(Status(highlight)),
+            "an over-fine tolerance is coarsened to fit, meshed once and cached instead of dropping the shaded preview");
+        component.DrawViewportMeshes(args);
         Check(Attempts() == before + 2 && FieldValue<Mesh[]?>(leaf, "_generatedMeshes")?.Length > 0,
-            "changed settings retry a previously rejected mesh and admit an ordinary result");
+            "changed settings remesh and admit an ordinary result");
         using var changed = new MeshingParameters(args.MeshingParameters) { GridMinCount = 64, GridMaxCount = 64 };
         var changedArgs = new MeshingPreviewArgs(args, changed);
         long staged = FieldValue<long>(highlight, "_stagedBytes");

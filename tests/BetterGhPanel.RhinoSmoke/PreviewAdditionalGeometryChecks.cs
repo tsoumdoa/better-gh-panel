@@ -278,7 +278,7 @@ internal static partial class PreviewSafetyChecks
                 Check(ArchiveGeometries(mediumArchive).OfType<PointCloud>().Single().Count == 8193,
                     "the medium cloud clipboard archive retains every point");
             using var largeCloud = new PointCloud();
-            for (int i = 0; i < 32769; i++) largeCloud.Add(new Point3d(i, 0, 0));
+            for (int i = 0; i < 1_048_577; i++) largeCloud.Add(new Point3d(i, 0, 0));
             Check(largeCloud.UserData.Add(new PolylineSafetyUserData()), "oversized point cloud has callback metadata before preflight");
             PolylineSafetyUserData.Reset(true);
             Forms.Clipboard.SetText("keep cloud limit clipboard");
