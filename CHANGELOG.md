@@ -6,7 +6,7 @@
 - **Dots no longer vanish under their own colour.** With colouring on, the same push made "Hide dots behind objects" treat each dot as hidden by its own fill, most visibly on flat surfaces in Top or elevation views and when zoomed out.
 - **Fixed dots disappearing from every Panel+** when one panel used Match / No match with Show values on and Colour by value off. Its legend crashed each frame and took the other panels' dots with it. Each panel's dots and legend now draw independently.
 - **Much larger previews.** All Panel+ components now share one 4 GiB preview budget (was 64 MiB per panel). Breps with more than 256 faces, edges or trims, meshes over 8,192 faces, and point clouds or polylines over 32,768 points now preview. Generated display meshes may reach 1,000,000 faces (was 16,384); very fine mesh settings on very large geometry are coarsened instead of dropping the colour.
-- **Validation.** In a live Rhino 8.36 session, the new `preview-large-geometry` fixture passed 33 assertions (large Brep/mesh admission, the shared budget, coloured fills and selected wires against nearby and coplanar Rhino objects in Top, perspective and grazing views, and the Match legend). The other 26 fixtures gave the same results as `main` in that session; the isolated RhinoSmoke host could not start Rhino.
+- **Validation.** In a live Rhino 8.36 session, the new `preview-large-geometry` fixture passed 33 assertions (large Brep/mesh admission, the shared budget, coloured fills and selected wires against nearby and coplanar Rhino objects in Top, perspective and grazing views, and the Match legend). The other 25 fixtures gave the same results as `main` in that session; the isolated RhinoSmoke host could not start Rhino.
 
 ## 0.6.5-beta
 
