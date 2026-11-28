@@ -1,5 +1,25 @@
 # Release validation records
 
+## 0.6.6-beta
+
+Fixes preview failures and raises the preview limits (#93).
+- Coloured fills and selected wires were pushed 0.1–1% of the view depth toward the camera. That hid nearby geometry and made Hide dots behind objects hide each dot behind its own fill. They now use Rhino's coplanar bias plus a 1/100,000 distance pull, and dot occlusion compensates for the pull.
+- A Match / No match legend with no palette indexed the palette at −32 inside the shared foreground conduit, removing other panels' dots. That is fixed, and each panel now draws in isolation.
+- Limits: one 4 GiB budget shared by all panels (was 64 MiB per panel); Brep collections 256 → 65,536; meshes 8,192 → 2,000,000; clouds and polylines 32,768 → 1,048,576; generated meshes 16,384 → 1,000,000 faces. Fine mesh settings are coarsened instead of rejected.
+
+Fable investigated the failures. Sol and Opus adversarial reviews followed, and their findings were applied: shared-budget wake-up and fairness, cloud draw batching, single-charge copy scans, and fixture fixes.
+
+`npm run check` passed on the release branch: 476 managed tests on each of net48 and net8.0, plus the coordinator, packaging, build and style checks. The extracted net7.0 and net48 assemblies report `0.6.6-beta+b9f0672a9565c2eaa67138aadd41bf94450dfb45`.
+
+**Native validation in a live Rhino 8.36 session, not the isolated host.** The RhinoSmoke host timed out before `RhinoCore` started, even with the Windows session Active. Each fixture was instead run in its own normal `Rhino.exe` (`/runscript`), with the build loaded before Grasshopper's libraries and the legacy limits applied.
+- **Branch build (#93 head):** all 26 fixtures ran. 17 passed, including the new `preview-large-geometry` with 33 assertions. Those 33 covered large Brep and mesh admission, the shared-budget wait and wake, and coloured fills and selected wires against Rhino objects 0.01 units in front and coplanar, in Top, perspective at 50 and 500 units, and an 80° grazing view.
+- **The 9 that failed** also failed identically on `main` in the same session, at the same assertion with the same counts: `preview-safety`, `preview-additional-geometry`, `capture-transaction`, `property-inspection`, `ui-ux`, `table-columns`, `wysiwyg-values`, `branch-pairing` and `pairing-wysiwyg`. The causes are canvas sizing, screenshot paths under Program Files, and live-host timing. They are host differences, not regressions.
+- **Plugin extracted from the final archive:** `preview-large-geometry` (33), `preview-geometry` (89), `preview-additional-draw` (19) and `row-selection` (84) passed.
+
+Not exercised: the isolated-host inventory, the user's own models, 150% DPI, Mac, and the Windows .NET Framework host.
+
+Artifact source commit: `b9f0672a9565c2eaa67138aadd41bf94450dfb45`. Archive: `panel-plus-0.6.6-beta-rh8_0-any.yak`. SHA-256: `b6cb1acaa65e854c03f533f1db7640a063ae22c8b26a9d78fd9c5dfc21739fcc`. GitHub prerelease and public Yak publication succeeded. Yak search lists `0.6.6-beta`, and a fresh GitHub asset download matches the archive SHA-256.
+
 ## 0.6.5-beta
 
 Renames the Pass / Fail preview to Match / No match, adds a style for non-matches (grey by default, red, or ghosted: see-through with no dots) and puts counts and percentages in the legend (#90). Built from an approved mock. Sol and Opus adversarial reviews and a Sol + Opus re-check found two drawing-order problems, both fixed: ghosts wrote depth, and ghost wires drew before opaque fills in Shaded mode. A decompile of Grasshopper 8 confirmed that `DrawViewportMeshes` runs whenever the document preview is Shaded, whatever the Rhino display mode, so ghost wires drawn in that pass reach every viewport.
