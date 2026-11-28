@@ -15,7 +15,7 @@ Created in [T3 Code](https://t3.codes).
 Panel+ is published on Yak as **`panel-plus`** (beta). In Rhino 8, run `PackageManager`, tick **Include pre-releases**, search for `panel-plus` and install. Or close Rhino and run:
 
 ```text
-yak install panel-plus 0.6.5-beta
+yak install panel-plus 0.6.6-beta
 ```
 
 If the earlier `better-gh-panel` package is installed, remove it first so the two copies don't both load. Find **Panel+** in **Params → Util** and connect a tree to **D**. Release notes for every version are on [GitHub Releases](https://github.com/tsoumdoa/better-gh-panel/releases).
@@ -28,12 +28,13 @@ If the earlier `better-gh-panel` package is installed, remove it first so the tw
 
 ## What's new
 
-**[`0.6.5-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.6.5-beta)**
+**[`0.6.6-beta`](https://github.com/tsoumdoa/better-gh-panel/releases/tag/v0.6.6-beta)**
 
-- **Pass / Fail is now Match / No match**, a calmer name for items that meet the search and filters or not. Files saved with Pass / Fail open in the new mode.
-- **Choose how non-matches look:** grey (the new default), red, or ghosted (see-through, with no dots). Click **Match / No match** in the Preview menu to pick a style.
-- **Legend percentages.** The legend shows counts and percentages for all items after the tree tools, for example `Match 5 · 63%   No match 3 · 37%`.
-- **Validation.** The Core tests cover the percentages and saved styles. The automated Rhino fixtures could not run, and the ghosted drawing has not yet been tried in a live Rhino session.
+- **Coloured previews no longer hide nearby geometry.** Colour by value and Match / No match colours, and selected rows' wires, no longer cover curves, surfaces or Rhino objects in front of them. They still win over the same geometry's own upstream preview or referenced Rhino object.
+- **Dots stay visible on coloured surfaces.** With colouring on, **Hide dots behind objects** could hide every dot behind its own colour, most often on flat surfaces in Top or elevation views and when zoomed out.
+- **Fixed dots disappearing from every Panel+** when one panel used Match / No match with Show values on and Colour by value off.
+- **Much larger previews.** All Panel+ components share one 4 GiB preview budget (was 64 MiB per panel). Detailed Breps (up to about 16,000 faces), meshes up to 2 million faces, and point clouds and polylines up to a million points now preview. Very fine mesh settings on very large geometry are coarsened instead of dropping the colour. Hidden panels don't use up the budget, and a panel waiting for memory fills in as soon as another frees it.
+- **Validation.** In a live Rhino 8.36 session, a new native fixture passed 33 checks covering large geometry, the shared budget, and coloured fills and selected wires against nearby and coplanar Rhino objects in Top, perspective and grazing views. The other 25 native fixtures gave the same results as 0.6.5 in that session.
 
 See [CHANGELOG](CHANGELOG.md) for earlier releases.
 

@@ -7,7 +7,7 @@ description: >
   Panel+ (beta) is a fast, resizable Grasshopper data inspector for Rhino 8.
   Browse branches, measure geometry, search, filter and sort, reshape trees and create sets,
   preview selected rows in Rhino, and send exactly what you picked downstream.
-  New in 0.6.5-beta: Pass / Fail is now Match / No match, with grey, red or ghosted non-matches and percentages in the legend.
+  New in 0.6.6-beta: coloured previews no longer hide nearby geometry, dots stay visible on coloured surfaces, and much larger Breps, meshes and point clouds preview.
 url: https://github.com/tsoumdoa/better-gh-panel
 icon: icon.png
 keywords:
