@@ -43,7 +43,8 @@ internal static partial class PreviewSafetyChecks
         var coloredArgs = new ColoredPreviewArgs(args, args.ShadeMaterial_Selected, System.Drawing.Color.Cyan);
         component.DrawViewportMeshes(coloredArgs);
         component.DrawViewportWires(coloredArgs);
-        Check(PropertyValue<int>(highlight, "CompletedDisplayFlushes") == flushes + 2 && FieldValue<int>(highlight, "_activeDraws") == 0,
+        // Coloured passes also flush before restoring Rhino's depth bias.
+        Check(PropertyValue<int>(highlight, "CompletedDisplayFlushes") >= flushes + 2 && FieldValue<int>(highlight, "_activeDraws") == 0,
             "both component callbacks explicitly flush before releasing their draw guards");
         // Installed RhinoCommon implementation check, separate from native proof.
         var cache = FieldValue<object>(args.Display, "m_cache");

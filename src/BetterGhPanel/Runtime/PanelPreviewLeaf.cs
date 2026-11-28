@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 using Grasshopper;
@@ -467,11 +468,12 @@ namespace BetterGhPanel.Runtime
                         !float.IsInfinity(cloudRadius) && cloudRadius >= 0) radius = cloudRadius;
                 }
                 catch (Exception) { /* Older hosts retain Grasshopper point settings. */ }
-                foreach (var batch in cloud.Batches)
+                if (colourByValue || !cloud.HasColors)
+                    args.Pipeline.DrawPoints(cloud.Visible, style, radius + (halo ? 2 : 0), args.Color);
+                else foreach (var batch in cloud.Batches)
                 {
                     if (!current()) return;
-                    args.Pipeline.DrawPoints(batch.Points, style, radius + (halo ? 2 : 0),
-                        !colourByValue && cloud.HasColors ? Color.FromArgb(batch.Argb) : args.Color);
+                    args.Pipeline.DrawPoints(batch.Points, style, radius + (halo ? 2 : 0), Color.FromArgb(batch.Argb));
                 }
             }
             else if (_value is Mesh mesh && (halo || CentralSettings.PreviewMeshEdges)) args.Pipeline.DrawMeshWires(mesh, args.Color, args.Thickness);
@@ -490,9 +492,11 @@ namespace BetterGhPanel.Runtime
 
         private sealed class CloudPoints
         {
-            internal CloudPoints(bool hasColors, CloudBatch[] batches) { HasColors = hasColors; Batches = batches; }
+            internal CloudPoints(bool hasColors, CloudBatch[] batches, Point3d[] visible) { HasColors = hasColors; Batches = batches; Visible = visible; }
             internal bool HasColors { get; }
             internal CloudBatch[] Batches { get; }
+            // Every visible point, for single-colour draws (Colour by value, selection halo).
+            internal Point3d[] Visible { get; }
         }
 
         private readonly struct CloudBatch
@@ -510,6 +514,7 @@ namespace BetterGhPanel.Runtime
             bool hasColors = cloud.ContainsColors;
             if (65536L + count * (hasColors ? 512L : 128L) > reserved) return null;
             var batches = new List<CloudBatch>();
+            var visible = new List<Point3d>(count);
             List<Point3d>? group = null;
             int groupColor = 0;
             for (int i = 0; i < count; i++)
@@ -530,10 +535,35 @@ namespace BetterGhPanel.Runtime
                     group = new List<Point3d>();
                 }
                 group.Add(point);
+                visible.Add(point);
             }
             if (cloud.Count != count || (current != null && !current())) return null;
             if (group != null) batches.Add(new CloudBatch(groupColor, group.ToArray()));
-            return new CloudPoints(hasColors, batches.ToArray());
+            var runs = batches.Count > MaxCloudBatches ? RegroupByColour(batches) : batches.ToArray();
+            return new CloudPoints(hasColors, runs, visible.ToArray());
+        }
+
+        private const int MaxCloudBatches = 4096;
+
+        // Each colour run is one draw call per frame, so many short runs stall every
+        // redraw. Group them by colour instead, at 4 bits per channel if needed.
+        private static CloudBatch[] RegroupByColour(List<CloudBatch> runs)
+        {
+            bool quantise = runs.Select(run => run.Argb).Distinct().Skip(MaxCloudBatches).Any();
+            static int Quantise(int argb)
+            {
+                var colour = Color.FromArgb(argb);
+                static int Channel(int value) => (value & 0xF0) | 0x08;
+                return Color.FromArgb(255, Channel(colour.R), Channel(colour.G), Channel(colour.B)).ToArgb();
+            }
+            var groups = new Dictionary<int, List<Point3d>>();
+            foreach (var run in runs)
+            {
+                int key = quantise ? Quantise(run.Argb) : run.Argb;
+                if (!groups.TryGetValue(key, out var points)) groups.Add(key, points = new List<Point3d>());
+                points.AddRange(run.Points);
+            }
+            return groups.Select(pair => new CloudBatch(pair.Key, pair.Value.ToArray())).ToArray();
         }
 
         internal void PrepareMeshes(MeshingParameters parameters, Func<bool> current)

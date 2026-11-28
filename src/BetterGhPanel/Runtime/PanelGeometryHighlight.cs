@@ -263,7 +263,7 @@ namespace BetterGhPanel.Runtime
                     { _filteredRecovery.Reset(positions, index, end); break; }
                     if (SharedRetainedBytes >= MaxRetainedBytes)
                     {
-                        if (RetiringBytes > 0) _filteredRecovery.Reset(positions, index, end);
+                        if (RetiringBytes > 0 || WaitForSharedCapacity()) _filteredRecovery.Reset(positions, index, end);
                         else _partial = true;
                         break;
                     }
@@ -326,7 +326,7 @@ namespace BetterGhPanel.Runtime
                     if (budget.Remaining <= 0) { budgetBlocked = true; return PanelPreviewRecovery.Admission.Blocked; }
                     if (_entries.Count >= PreviewLimit || SharedRetainedBytes >= MaxRetainedBytes)
                     {
-                        if (_entries.Count >= PreviewLimit || RetiringBytes == 0)
+                        if (_entries.Count >= PreviewLimit || RetiringBytes == 0 && !WaitForSharedCapacity())
                         { _partial = true; _filteredRecovery.Clear(); }
                         return PanelPreviewRecovery.Admission.Blocked;
                     }
@@ -567,7 +567,7 @@ namespace BetterGhPanel.Runtime
         private bool CanAdmitBytes(long bytes)
         {
             if (bytes <= MaxRetainedBytes - SharedRetainedBytes) return true;
-            _admissionBlockedByRetirement |= RetiringBytes > 0;
+            _admissionBlockedByRetirement |= RetiringBytes > 0 || WaitForSharedCapacity();
             return false;
         }
 
@@ -675,6 +675,10 @@ namespace BetterGhPanel.Runtime
 
         private bool MakeAdmissionRoom(long bytes, bool needsEntry, long generation, Func<bool> current)
         {
+            // Other panels' previews count against the shared budget. Never discard
+            // this panel's previews when doing so still cannot make room.
+            if (!(needsEntry && _entries.Count >= PreviewLimit) &&
+                _displayMemory.RequiredRelease(bytes, RetiringBytes) > UnselectedBytes()) return Current(generation, current);
             while (_unselected.Count > 0 && (needsEntry && _entries.Count >= PreviewLimit ||
                 _displayMemory.RequiredRelease(bytes, RetiringBytes) > 0))
             {
@@ -702,7 +706,7 @@ namespace BetterGhPanel.Runtime
             // Unknown sizes are learned by their first bounded preparation attempt.
             _meshPriorityDirty = false;
             long shortfall = _displayMemory.RequiredRelease(needed, RetiringBytes);
-            if (needed == 0 || shortfall == 0) return;
+            if (needed == 0 || shortfall == 0 || shortfall > UnselectedBytes()) return;
             var entries = new List<Entry>(_entries.Values);
             // Keep the earliest previews. Retire only enough lower-priority caches,
             // outside drawing, to cover the selected resources' measured shortfall.
@@ -754,6 +758,7 @@ namespace BetterGhPanel.Runtime
         {
             if (_activeDraws != 0 || _flushingRetired || _releaseScheduled || _displayFlushFailed) return;
             _flushingRetired = true;
+            long before = RetainedBytes;
             try
             {
                 // Reentrant cleanup can add newly drawn resources. Leave those
@@ -784,7 +789,41 @@ namespace BetterGhPanel.Runtime
             {
                 _flushingRetired = false;
                 if ((_retired.Count > 0 || _retiredMeshes.Count > 0 || _retiredCurves.Count > 0 || _retiredMaterials.Count > 0) && !_releaseScheduled) ScheduleRelease();
+                if (RetainedBytes < before) WakeSharedWaiters();
             }
+        }
+
+        private bool _waitingForSharedCapacity;
+
+        // Blocked only by other panels' previews: wait for one of them to free memory.
+        private bool WaitForSharedCapacity()
+        {
+            if (OtherPreviewBytes() == 0) return false;
+            _waitingForSharedCapacity = true;
+            return true;
+        }
+
+        private void WakeSharedWaiters()
+        {
+            foreach (var reference in s_previews.ToArray())
+            {
+                if (!reference.TryGetTarget(out var other) || ReferenceEquals(other, this) || !other._waitingForSharedCapacity) continue;
+                other._waitingForSharedCapacity = false;
+                other._selectionRecoveryReady = true;
+                other.ScheduleRecovery();
+            }
+        }
+
+        private long UnselectedBytes()
+        {
+            long bytes = 0;
+            foreach (int order in _unselected)
+            {
+                var entry = _entries[order];
+                bytes += entry.Bytes;
+                foreach (var leaf in entry.Leaves) bytes += leaf.DisplayBytes;
+            }
+            return bytes;
         }
 
         private void RememberUnavailable(int position)
@@ -850,7 +889,7 @@ namespace BetterGhPanel.Runtime
             if (_recoveryScheduled) Rhino.RhinoApp.Idle -= RecoverOnIdle;
             _recoveryScheduled = false; _recoveryCurrent = null; _recovery.Clear();
             if (!keepFiltered) _filteredRecovery.Clear();
-            _admissionBlockedByRetirement = _selectionRecoveryReady = false;
+            _admissionBlockedByRetirement = _selectionRecoveryReady = _waitingForSharedCapacity = false;
         }
 
         private void ClearGeometry()

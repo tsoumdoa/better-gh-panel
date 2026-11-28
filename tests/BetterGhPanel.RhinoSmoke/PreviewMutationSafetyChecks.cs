@@ -107,8 +107,8 @@ internal static partial class PreviewSafetyChecks
         var huge = new GH_GeometryGroup { Name = "many" };
         for (int i = 0; i < 5000; i++) huge.Objects.Add(new GH_Point(new Point3d(i, 0, 0)));
         Set(highlight, new IGH_Goo?[] { huge }, new[] { 0 }, new[] { 0 });
-        Check(Count(highlight) == 0 && PropertyValue<int>(highlight, "LastVisitedNodes") <= 4096 && Status(highlight).Contains("partial"),
-            "a group exceeding the per-root budget is unavailable rather than partially dispatched");
+        Check(Count(highlight) == 0 && PropertyValue<int>(highlight, "LastVisitedNodes") <= 20000 && Status(highlight).Contains("partial"),
+            "a group exceeding the per-turn budget is unavailable rather than partially dispatched");
         var shared = new GH_GeometryGroup();
         for (int i = 0; i < 100; i++) shared.Objects.Add(new GH_Point(new Point3d(i, 0, 0)));
         var repeated = Enumerable.Repeat<IGH_Goo?>(shared, 1000).ToArray();

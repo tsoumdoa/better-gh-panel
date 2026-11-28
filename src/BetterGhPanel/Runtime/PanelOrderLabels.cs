@@ -601,7 +601,9 @@ namespace BetterGhPanel.Runtime
                 foreach (var panel in panels)
                 {
                     if (panel.Frame == null || !panel.Labels.Visible || panel.Frame.ActiveBuckets.Count == 0) continue;
-                    try { panel.Labels.DrawSwatches(display, panel.Frame, dpi); swatches = true; }
+                    // A partial submission still needs the flush below.
+                    swatches = true;
+                    try { panel.Labels.DrawSwatches(display, panel.Frame, dpi); }
                     catch (Exception) { }
                 }
                 // The next panel's deferred point batches must never cover
@@ -613,13 +615,17 @@ namespace BetterGhPanel.Runtime
                     foreach (var panel in panels)
                     {
                         if (panel.Frame == null || !panel.Labels.Visible) continue;
-                        foreach (var bucket in panel.Frame.ActiveBuckets)
+                        try
                         {
-                            if (!bucket.Selected) continue;
-                            display.DrawPoints(bucket.Points, PointStyle.Circle, panel.Colour, panel.Colour,
-                                bucket.Radius + 2.5f * dpi, 0, bucket.Radius, 0, true, false);
-                            halos = true;
+                            foreach (var bucket in panel.Frame.ActiveBuckets)
+                            {
+                                if (!bucket.Selected) continue;
+                                halos = true;
+                                display.DrawPoints(bucket.Points, PointStyle.Circle, panel.Colour, panel.Colour,
+                                    bucket.Radius + 2.5f * dpi, 0, bucket.Radius, 0, true, false);
+                            }
                         }
+                        catch (Exception) { }
                     }
                     if (halos) display.Flush();
                 }
