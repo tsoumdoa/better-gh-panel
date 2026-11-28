@@ -374,7 +374,7 @@ internal static partial class PreviewSafetyChecks
             var pasted = rhino.Objects.Where(item => !originalIds.Contains(item.Id)).ToArray();
             Check(pasted.Length == 1 && pasted[0].Geometry is Rhino.Geometry.Point point && point.Location == new Point3d(10, 0, 0),
                 "a partial action pastes only the explicitly supported point");
-            var tooLong = new GH_ObjectWrapper(new Polyline(Enumerable.Range(0, 32769).Select(i => new Point3d(i, 0, 0))));
+            var tooLong = new GH_ObjectWrapper(new Polyline(Enumerable.Range(0, 1_048_577).Select(i => new Point3d(i, 0, 0))));
             Forms.Clipboard.SetText("keep oversized clipboard");
             Set(highlight, new IGH_Goo?[] { tooLong }, new[] { 0 }, new[] { 0 });
             object oversized = Copy(assembly, new IGH_Goo?[] { tooLong, new GH_Point(Point3d.Origin) });

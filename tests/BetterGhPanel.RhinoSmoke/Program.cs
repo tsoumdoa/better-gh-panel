@@ -52,6 +52,7 @@ internal static class Program
         ["preview-native-resources"] = PreviewSafetyChecks.RunNativeResources,
         ["preview-compatibility-draw"] = PreviewSafetyChecks.RunCompatibilityDraw,
         ["preview-retirement-seam"] = PreviewSafetyChecks.RunRetirementSeam,
+        ["preview-large-geometry"] = PreviewSafetyChecks.RunLargeGeometry,
         ["nurbs-value-candidate"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryNurbsCandidateChecks.Run(assembly); },
         ["production-curve-measurement"] = assembly => { FixtureUserData.EnsureRegistered(); return ProductionCurveMeasurementChecks.Run(assembly); },
         ["standalone-compatibility"] = assembly => { Rhino.Runtime.HostUtils.InitializeRhinoCommon(); FixtureUserData.EnsureRegistered(); return StandaloneCompatibilityChecks.Run(assembly); },
@@ -233,6 +234,7 @@ internal static class Program
                 SmokeAssertions.Begin();
                 try
                 {
+                    PreviewLimits.UseLegacy(_loadedPlugin!);
                     await _fixtures[_fixture](_loadedPlugin!);
                     _passed = true;
                     exitCode = 0;

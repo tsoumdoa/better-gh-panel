@@ -13,13 +13,13 @@ namespace BetterGhPanel.Runtime
     // The public API does not expose every native topology or metadata detail.
     internal static class PanelNativeGeometry
     {
-        internal const int MaxNativeBytes = 1024 * 1024;
-        internal const int MaxComponents = 1024;
-        internal const int MaxCollection = 256;
+        internal const int MaxNativeBytes = 512 * 1024 * 1024;
+        internal const int MaxComponents = PanelGeometrySources.MaxNodesPerRoot;
+        internal const int MaxCollection = 65_536;
         internal const int MaxMetadataBytes = 64 * 1024;
         internal const int MaxTextCharacters = 64 * 1024;
-        internal const int MaxLegacyCurvePoints = 32768;
-        internal const int MaxPointCloudPoints = 32768;
+        internal const int MaxLegacyCurvePoints = 1_048_576;
+        internal const int MaxPointCloudPoints = 1_048_576;
         private const int MaxVertexEstimate = 16 * 1024;
         private static readonly Type? SharedDictionaryType = typeof(UserData).Assembly.GetType("Rhino.DocObjects.Custom.SharedUserDictionary");
 

@@ -43,7 +43,8 @@ internal static partial class PreviewSafetyChecks
         var coloredArgs = new ColoredPreviewArgs(args, args.ShadeMaterial_Selected, System.Drawing.Color.Cyan);
         component.DrawViewportMeshes(coloredArgs);
         component.DrawViewportWires(coloredArgs);
-        Check(PropertyValue<int>(highlight, "CompletedDisplayFlushes") == flushes + 2 && FieldValue<int>(highlight, "_activeDraws") == 0,
+        // Coloured passes also flush before restoring Rhino's depth bias.
+        Check(PropertyValue<int>(highlight, "CompletedDisplayFlushes") >= flushes + 2 && FieldValue<int>(highlight, "_activeDraws") == 0,
             "both component callbacks explicitly flush before releasing their draw guards");
         // Installed RhinoCommon implementation check, separate from native proof.
         var cache = FieldValue<object>(args.Display, "m_cache");
@@ -88,12 +89,12 @@ internal static partial class PreviewSafetyChecks
         component.DrawViewportMeshes(rejectedArgs);
         component.DrawViewportMeshes(rejectedArgs);
         component.DrawViewportMeshes(rejectedArgs);
-        Check(Attempts() == before + 1 && !string.IsNullOrEmpty(Status(highlight)),
-            "unchanged deterministic meshing rejection is cached and remains visibly partial");
-        component.DrawViewportMeshes(args);
         var leaf = PreviewLeaves(highlight).Single();
+        Check(Attempts() == before + 1 && FieldValue<Mesh[]?>(leaf, "_generatedMeshes")?.Length > 0 && string.IsNullOrEmpty(Status(highlight)),
+            "an over-fine tolerance is coarsened to fit, meshed once and cached instead of dropping the shaded preview");
+        component.DrawViewportMeshes(args);
         Check(Attempts() == before + 2 && FieldValue<Mesh[]?>(leaf, "_generatedMeshes")?.Length > 0,
-            "changed settings retry a previously rejected mesh and admit an ordinary result");
+            "changed settings remesh and admit an ordinary result");
         using var changed = new MeshingParameters(args.MeshingParameters) { GridMinCount = 64, GridMaxCount = 64 };
         var changedArgs = new MeshingPreviewArgs(args, changed);
         long staged = FieldValue<long>(highlight, "_stagedBytes");

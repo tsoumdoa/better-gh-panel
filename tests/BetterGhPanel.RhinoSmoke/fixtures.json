@@ -11,6 +11,7 @@
   "preview-native-resources",
   "preview-compatibility-draw",
   "preview-retirement-seam",
+  "preview-large-geometry",
   "nurbs-value-candidate",
   "production-curve-measurement",
   "standalone-compatibility",

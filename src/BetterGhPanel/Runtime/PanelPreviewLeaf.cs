@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 using Grasshopper;
@@ -17,10 +18,13 @@ namespace BetterGhPanel.Runtime
     internal sealed class PanelPreviewLeaf : IDisposable
     {
         internal const int MaxPolylinePoints = 2048;
-        internal const int MaxMeshVertices = 8192;
-        internal const int MaxMeshFaces = 8192;
-        internal const int MaxGeneratedBytes = 2 * 1024 * 1024;
-        internal const int MaxGeneratedFaces = 16384;
+        internal const int MaxMeshVertices = 2_000_000;
+        internal const int MaxMeshFaces = 2_000_000;
+        // Owned copy per vertex or face: position, normal, colour, texture and face indices.
+        private const long MeshElementBytes = 128;
+        internal const int MaxGeneratedBytes = 256 * 1024 * 1024;
+        internal const int MaxGeneratedFaces = 1_000_000;
+        private const double MaxEdgeRatio = 512, MaxToleranceRatio = 65536;
         private static int _liveGeneratedMeshes, _generatedMeshBuilds, _generatedMeshAttempts;
         // These public SDK properties were added after the project's 8.0
         // reference assembly. Use them when available in the running host.
@@ -212,14 +216,14 @@ namespace BetterGhPanel.Runtime
                     mesh.VertexColors.Count > MaxMeshVertices || mesh.TextureCoordinates.Count > MaxMeshVertices)
                 { budget.MarkLimit(); return false; }
                 if (vertices <= 0 || faces <= 0) return false;
-                bytes = 8192L + (vertices + (long)faces) * 384L;
+                bytes = 8192L + (vertices + (long)faces) * MeshElementBytes;
                 return true;
             }
             if (!(value is GeometryBase geometry) || !PanelNativeGeometry.TryScanForCopy(geometry, budget, ref remaining, current, out scan) || scan == null)
                 return false;
             // Admission reserves the owned source copy and fixed overhead only.
             // Display meshes and SubD limit curves acquire their actual charge later.
-            bytes = 65536L + scan.NativeBytes * 8L;
+            bytes = 65536L + scan.NativeBytes * 2L;
             // A cloud is rendered from owned, ordered point batches, including
             // temporary lists and colour-run arrays. Reserve before construction
             // even when every point has a different colour.
@@ -228,7 +232,7 @@ namespace BetterGhPanel.Runtime
         }
 
         internal static PanelPreviewLeaf? Create(object value, long bytes, PanelNativeGeometry.Scan? scan,
-            PanelGeometrySources.OperationBudget budget, ref int remaining, Action<int> meshStatus, Func<bool>? current = null,
+            Action<int> meshStatus, Func<bool>? current = null,
             PanelPreviewMemory? memory = null, Action<Mesh[], int[][]?, PanelPreviewMemory.Lease?>? retireMeshes = null,
             Action<NurbsCurve[], PanelPreviewMemory.Lease?>? retireCurves = null)
         {
@@ -269,15 +273,17 @@ namespace BetterGhPanel.Runtime
                     int normalCount = source.Normals.Count, colorCount = source.VertexColors.Count, textureCount = source.TextureCoordinates.Count;
                     if (vertexCount <= 0 || vertexCount > MaxMeshVertices || faceCount <= 0 || faceCount > MaxMeshFaces ||
                         normalCount > MaxMeshVertices || colorCount > MaxMeshVertices || textureCount > MaxMeshVertices ||
-                        8192L + (vertexCount + (long)faceCount) * 384L > bytes) return null;
+                        8192L + (vertexCount + (long)faceCount) * MeshElementBytes > bytes) return null;
                     var copy = new Mesh();
                     owned = copy;
                     copy.Vertices.UseDoublePrecisionVertices = source.Vertices.UseDoublePrecisionVertices;
-                    for (int i = 0; i < vertexCount; i++) copy.Vertices.Add(source.Vertices.Point3dAt(i));
-                    for (int i = 0; i < faceCount; i++) copy.Faces.AddFace(source.Faces[i]);
-                    for (int i = 0; i < normalCount; i++) copy.Normals.Add(source.Normals[i]);
-                    for (int i = 0; i < colorCount; i++) copy.VertexColors.Add(source.VertexColors[i]);
-                    for (int i = 0; i < textureCount; i++) copy.TextureCoordinates.Add(source.TextureCoordinates[i]);
+                    // Large meshes take a while to copy; stop as soon as the preview is stale.
+                    bool Stale(int i) => (i & 4095) == 4095 && current != null && !current();
+                    for (int i = 0; i < vertexCount; i++) { copy.Vertices.Add(source.Vertices.Point3dAt(i)); if (Stale(i)) return null; }
+                    for (int i = 0; i < faceCount; i++) { copy.Faces.AddFace(source.Faces[i]); if (Stale(i)) return null; }
+                    for (int i = 0; i < normalCount; i++) { copy.Normals.Add(source.Normals[i]); if (Stale(i)) return null; }
+                    for (int i = 0; i < colorCount; i++) { copy.VertexColors.Add(source.VertexColors[i]); if (Stale(i)) return null; }
+                    for (int i = 0; i < textureCount; i++) { copy.TextureCoordinates.Add(source.TextureCoordinates[i]); if (Stale(i)) return null; }
                     if (!copy.IsValid) return null;
                     if (copy.Normals.Count == 0) copy.Normals.ComputeNormals();
                     value = copy;
@@ -305,8 +311,11 @@ namespace BetterGhPanel.Runtime
                     if (scan == null) return null;
                     owned = geometry.Duplicate();
                     if (current != null && !current()) return null;
+                    // The copy has the source's already-bounded structure. Check it
+                    // with its own budget so a large Brep is not charged twice.
+                    int copyRemaining = PanelGeometrySources.MaxNodesPerRoot;
                     if (owned == null || owned.GetType() != geometry.GetType() ||
-                        !PanelNativeGeometry.TryScanForCopy(owned, budget, ref remaining, current, out var copiedScan) || copiedScan == null ||
+                        !PanelNativeGeometry.TryScanForCopy(owned, new PanelGeometrySources.OperationBudget(), ref copyRemaining, current, out var copiedScan) || copiedScan == null ||
                         !PanelNativeGeometry.SameMetadata(scan, copiedScan)) return null;
                     if (current != null && !current()) return null;
                     value = owned;
@@ -464,11 +473,12 @@ namespace BetterGhPanel.Runtime
                         !float.IsInfinity(cloudRadius) && cloudRadius >= 0) radius = cloudRadius;
                 }
                 catch (Exception) { /* Older hosts retain Grasshopper point settings. */ }
-                foreach (var batch in cloud.Batches)
+                if (colourByValue || !cloud.HasColors)
+                    args.Pipeline.DrawPoints(cloud.Visible, style, radius + (halo ? 2 : 0), args.Color);
+                else foreach (var batch in cloud.Batches)
                 {
                     if (!current()) return;
-                    args.Pipeline.DrawPoints(batch.Points, style, radius + (halo ? 2 : 0),
-                        !colourByValue && cloud.HasColors ? Color.FromArgb(batch.Argb) : args.Color);
+                    args.Pipeline.DrawPoints(batch.Points, style, radius + (halo ? 2 : 0), Color.FromArgb(batch.Argb));
                 }
             }
             else if (_value is Mesh mesh && (halo || CentralSettings.PreviewMeshEdges)) args.Pipeline.DrawMeshWires(mesh, args.Color, args.Thickness);
@@ -487,9 +497,11 @@ namespace BetterGhPanel.Runtime
 
         private sealed class CloudPoints
         {
-            internal CloudPoints(bool hasColors, CloudBatch[] batches) { HasColors = hasColors; Batches = batches; }
+            internal CloudPoints(bool hasColors, CloudBatch[] batches, Point3d[] visible) { HasColors = hasColors; Batches = batches; Visible = visible; }
             internal bool HasColors { get; }
             internal CloudBatch[] Batches { get; }
+            // Every visible point, for single-colour draws (Colour by value, selection halo).
+            internal Point3d[] Visible { get; }
         }
 
         private readonly struct CloudBatch
@@ -507,6 +519,7 @@ namespace BetterGhPanel.Runtime
             bool hasColors = cloud.ContainsColors;
             if (65536L + count * (hasColors ? 512L : 128L) > reserved) return null;
             var batches = new List<CloudBatch>();
+            var visible = new List<Point3d>(count);
             List<Point3d>? group = null;
             int groupColor = 0;
             for (int i = 0; i < count; i++)
@@ -527,10 +540,35 @@ namespace BetterGhPanel.Runtime
                     group = new List<Point3d>();
                 }
                 group.Add(point);
+                visible.Add(point);
             }
             if (cloud.Count != count || (current != null && !current())) return null;
             if (group != null) batches.Add(new CloudBatch(groupColor, group.ToArray()));
-            return new CloudPoints(hasColors, batches.ToArray());
+            var runs = batches.Count > MaxCloudBatches ? RegroupByColour(batches) : batches.ToArray();
+            return new CloudPoints(hasColors, runs, visible.ToArray());
+        }
+
+        private const int MaxCloudBatches = 4096;
+
+        // Each colour run is one draw call per frame, so many short runs stall every
+        // redraw. Group them by colour instead, at 4 bits per channel if needed.
+        private static CloudBatch[] RegroupByColour(List<CloudBatch> runs)
+        {
+            bool quantise = runs.Select(run => run.Argb).Distinct().Skip(MaxCloudBatches).Any();
+            static int Quantise(int argb)
+            {
+                var colour = Color.FromArgb(argb);
+                static int Channel(int value) => (value & 0xF0) | 0x08;
+                return Color.FromArgb(255, Channel(colour.R), Channel(colour.G), Channel(colour.B)).ToArgb();
+            }
+            var groups = new Dictionary<int, List<Point3d>>();
+            foreach (var run in runs)
+            {
+                int key = quantise ? Quantise(run.Argb) : run.Argb;
+                if (!groups.TryGetValue(key, out var points)) groups.Add(key, points = new List<Point3d>());
+                points.AddRange(run.Points);
+            }
+            return groups.Select(pair => new CloudBatch(pair.Key, pair.Value.ToArray())).ToArray();
         }
 
         internal void PrepareMeshes(MeshingParameters parameters, Func<bool> current)
@@ -561,6 +599,55 @@ namespace BetterGhPanel.Runtime
             else if (_boxMesh != null) args.Pipeline.DrawMeshShaded(_boxMesh, args.Material, _fixedFaces!);
             else if (_value is Brep || _value is Surface || _value is SubD || _value is Sphere)
             { EnsureGeneratedMeshes(args.MeshingParameters, current); if (current()) DrawCachedMeshes(args, current); }
+        }
+
+        private Mesh[]? BuildMeshes(MeshingParameters parameters, int requestedDensity, Func<bool> current, ref bool limited, out bool invalid)
+        {
+            invalid = false;
+            if (_value is Sphere && _owned is Brep sphereBrep) return Mesh.CreateFromBrep(sphereBrep, parameters);
+            if (_value is Brep brep) return Mesh.CreateFromBrep(brep, parameters);
+            if (_value is Extrusion extrusion)
+            {
+                // Meshing only the Surface view of an extrusion omits its
+                // caps and inner profiles. Mesh the complete owned object.
+                // This temporary conversion has the ordinary native-call
+                // limits; only checked meshes enter the retained cache.
+                using var extrusionBrep = extrusion.ToBrep();
+                bool valid = extrusionBrep != null && extrusionBrep.IsValid;
+                if (!current()) return null;
+                if (!valid) { invalid = true; return null; }
+                return Mesh.CreateFromBrep(extrusionBrep, parameters);
+            }
+            if (_value is Surface surface)
+            {
+                var mesh = Mesh.CreateFromSurface(surface, parameters);
+                return mesh != null ? new[] { mesh } : null;
+            }
+            if (_value is SubD subd)
+            {
+                int density = Math.Max(0, Math.Min(requestedDensity, 3));
+                while (density > 0 && subd.Faces.Count * (1L << (2 * density)) > MaxGeneratedFaces) density--;
+                limited |= density < requestedDensity;
+                try
+                {
+                    var mesh = Mesh.CreateFromSubD(subd, density);
+                    return mesh != null ? new[] { mesh } : null;
+                }
+                finally { subd.ClearEvaluationCache(); }
+            }
+            return null;
+        }
+
+        private static bool FitsGeneratedLimits(Mesh[] meshes)
+        {
+            long bytes = 0, faces = 0;
+            foreach (var mesh in meshes)
+            {
+                if (mesh == null) return true; // rejected by the caller's checks
+                bytes += mesh.MemoryEstimate(); faces += mesh.Faces.Count;
+                if (bytes < 0 || faces > MaxGeneratedFaces || mesh.Vertices.Count > MaxGeneratedFaces * 2L) return false;
+            }
+            return bytes + faces * sizeof(int) <= MaxGeneratedBytes;
         }
 
         private void EnsureGeneratedMeshes(MeshingParameters requested, Func<bool> current)
@@ -599,46 +686,36 @@ namespace BetterGhPanel.Runtime
                 // Avoid pathological custom minimum grids and edge lengths before
                 // a native meshing allocation. Compare a private parameter copy
                 // on every draw to invalidate a cache when GH settings change.
-                int requestedMax = parameters.GridMaxCount;
-                if (parameters.GridMinCount > 128) { parameters.GridMinCount = 128; limited = true; }
-                if (requestedMax <= 0 || requestedMax > 128) { parameters.GridMaxCount = 128; limited |= requestedMax > 128; }
                 double diagonal = Bounds.Diagonal.Length;
-                if (parameters.MaximumEdgeLength > 0 && diagonal / parameters.MaximumEdgeLength > 512)
-                { SetMeshUnavailable(true); return; }
-                if (parameters.Tolerance > 0 && diagonal / parameters.Tolerance > 65536)
-                { SetMeshUnavailable(true); return; }
-                if (_value is Sphere && _owned is Brep sphereBrep) meshes = Mesh.CreateFromBrep(sphereBrep, parameters);
-                else if (_value is Brep brep) meshes = Mesh.CreateFromBrep(brep, parameters);
-                else if (_value is Extrusion extrusion)
+                // Very fine settings on very large geometry would take too long to
+                // mesh. Coarsen them to fit instead of dropping the shaded preview.
+                static void Coarsen(MeshingParameters target, double size)
                 {
-                    // Meshing only the Surface view of an extrusion omits its
-                    // caps and inner profiles. Mesh the complete owned object.
-                    // This temporary conversion has the ordinary native-call
-                    // limits; only checked meshes enter the retained cache.
-                    using var extrusionBrep = extrusion.ToBrep();
-                    bool valid = extrusionBrep != null && extrusionBrep.IsValid;
-                    if (!current()) return;
-                    if (!valid) { SetMeshUnavailable(true); return; }
-                    meshes = Mesh.CreateFromBrep(extrusionBrep, parameters);
+                    if (target.GridMinCount > 128) target.GridMinCount = 128;
+                    if (target.GridMaxCount <= 0 || target.GridMaxCount > 128) target.GridMaxCount = 128;
+                    if (target.MaximumEdgeLength > 0 && size / target.MaximumEdgeLength > MaxEdgeRatio) target.MaximumEdgeLength = size / MaxEdgeRatio;
+                    if (target.Tolerance > 0 && size / target.Tolerance > MaxToleranceRatio) target.Tolerance = size / MaxToleranceRatio;
                 }
-                else if (_value is Surface surface)
-                {
-                    var mesh = Mesh.CreateFromSurface(surface, parameters);
-                    if (mesh != null) meshes = new[] { mesh };
-                }
-                else if (_value is SubD subd)
-                {
-                    int density = Math.Max(0, Math.Min(requestedDensity, 3));
-                    while (density > 0 && subd.Faces.Count * (1L << (2 * density)) > MaxGeneratedFaces) density--;
-                    limited |= density < requestedDensity;
-                    try
-                    {
-                        var mesh = Mesh.CreateFromSubD(subd, density);
-                        if (mesh != null) meshes = new[] { mesh };
-                    }
-                    finally { subd.ClearEvaluationCache(); }
-                }
+                Coarsen(parameters, diagonal);
+                // Each Brep face gets at least its minimum grid; skip a first attempt
+                // that is certain to exceed the limits.
+                int brepFaces = _value is Brep faceCounted ? faceCounted.Faces.Count : 0;
+                bool tooDense = brepFaces * (long)Math.Max(1, parameters.GridMinCount) * 2 > MaxGeneratedFaces;
+                bool invalid = false;
+                if (!tooDense) meshes = BuildMeshes(parameters, requestedDensity, current, ref limited, out invalid);
+                if (invalid) { SetMeshUnavailable(true); return; }
                 if (!current()) return;
+                if (_value is not SubD && (tooDense || meshes != null && !FitsGeneratedLimits(meshes)))
+                {
+                    // Too dense at the requested quality: retry once at Rhino's coarse preset.
+                    if (meshes != null) foreach (var mesh in meshes) try { mesh?.Dispose(); } catch (Exception) { }
+                    meshes = null;
+                    using var coarse = MeshingParameters.FastRenderMesh;
+                    Coarsen(coarse, diagonal);
+                    meshes = BuildMeshes(coarse, requestedDensity, current, ref limited, out invalid);
+                    if (invalid) { SetMeshUnavailable(true); return; }
+                    if (!current()) return;
+                }
                 if (meshes == null || meshes.Length == 0 || meshes.Length > PanelNativeGeometry.MaxCollection)
                 { SetMeshUnavailable(true); return; }
                 foreach (var mesh in meshes) if (mesh != null) Interlocked.Increment(ref _liveGeneratedMeshes);

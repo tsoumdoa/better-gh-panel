@@ -14,8 +14,13 @@ namespace BetterGhPanel.Runtime
     {
         private static readonly object EndNode = new object(), NullSlot = new object();
 
-        internal const int MaxNodesPerOperation = 20000;
-        internal const int MaxLeavesPerRoot = 1024;
+        // Geometry previews and actions. Sized for detailed Breps and large
+        // meshes; the shared preview memory budget is the real ceiling.
+        internal const int DefaultMaxNodesPerOperation = 262_144;
+        // Test seam: native safety fixtures exercise aggregate limits at a small budget.
+        internal static int MaxNodesPerOperation { get; set; } = DefaultMaxNodesPerOperation;
+        internal const int MaxNodesPerRoot = 262_144;
+        internal const int MaxLeavesPerRoot = 65_536;
 
         internal const long MaxValueSnapshotWorkBytes = 8L * 1024 * 1024;
 
@@ -54,7 +59,7 @@ namespace BetterGhPanel.Runtime
             internal readonly List<object> Graph = new List<object>();
             internal bool Unavailable;
             internal bool Exhausted;
-            internal int Remaining = InspectionLimits.MaxNodesPerRoot;
+            internal int Remaining = MaxNodesPerRoot;
 
             internal bool ReserveValue(long bytes, OperationBudget budget)
             {
@@ -112,7 +117,7 @@ namespace BetterGhPanel.Runtime
             if (root == null) return result;
             var stack = new Stack<Frame>();
             var active = new HashSet<object>(ReferenceComparer.Instance);
-            int rootRemaining = InspectionLimits.MaxNodesPerRoot;
+            int rootRemaining = MaxNodesPerRoot;
             stack.Push(new Frame(root, 0));
             try
             {
