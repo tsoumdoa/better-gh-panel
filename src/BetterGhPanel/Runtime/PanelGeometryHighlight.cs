@@ -1023,6 +1023,38 @@ namespace BetterGhPanel.Runtime
             }
         }
 
+        // Rhino's coplanar bias alone loses to differently meshed coplanar geometry
+        // (a referenced Rhino surface) far from the camera. Add a pull of 1/100,000
+        // of the view distance, 100 times less than the old push: live Rhino 8.36
+        // keeps a Rhino object 0.01 units in front visible from 500 units away.
+        internal const double FillDepthPull = 1e-5;
+
+        // Camera-space distance the fills move toward the camera at a point camera.Z
+        // in front of it (0 when unavailable). Dot occlusion adds it back.
+        internal static double FillPull(Rhino.Display.RhinoViewport viewport, double cameraZ)
+        {
+            if (!viewport.IsParallelProjection) return Math.Abs(cameraZ) * FillDepthPull;
+            if (!viewport.GetFrustum(out _, out _, out double bottom, out double top, out _, out _)) return 0;
+            double distance = (top - bottom) * FillDepthPull;
+            return distance > 0 && !double.IsNaN(distance) && !double.IsInfinity(distance) ? distance : 0;
+        }
+
+        private static bool PushFillOffset(IGH_PreviewArgs args)
+        {
+            var viewport = args.Viewport;
+            Transform offset;
+            if (viewport.IsParallelProjection)
+            {
+                double distance = FillPull(viewport, 0);
+                var direction = viewport.CameraDirection;
+                if (distance <= 0 || !direction.Unitize()) return false;
+                offset = Transform.Translation(direction * -distance);
+            }
+            else offset = Transform.Scale(viewport.CameraLocation, 1 - FillDepthPull);
+            args.Display.PushModelTransform(offset * args.Display.ModelTransform);
+            return true;
+        }
+
         private static ZBiasMode PushCoplanarBias(DisplayPipeline display)
         {
             var previous = display.ZBiasMode;
@@ -1083,6 +1115,7 @@ namespace BetterGhPanel.Runtime
                 // coplanar bias is a few depth steps at any zoom, so nearby curves,
                 // surfaces and model objects in front stay visible.
                 var previousBias = colours != null && display != null ? PushCoplanarBias(display) : (ZBiasMode?)null;
+                bool pushedOffset = colours != null && display != null && PushFillOffset(args);
                 try
                 {
                     if (colours == null) DrawPass(null);
@@ -1107,7 +1140,11 @@ namespace BetterGhPanel.Runtime
                         }
                     }
                 }
-                finally { if (previousBias.HasValue) PopCoplanarBias(display!, previousBias.Value); }
+                finally
+                {
+                    if (pushedOffset) { try { if (!_displayFlushFailed) FlushDisplay(display!); } finally { display!.PopModelTransform(); } }
+                    if (previousBias.HasValue) PopCoplanarBias(display!, previousBias.Value);
+                }
             }
             finally { EndDraw(flushPending ? display : null); }
         }

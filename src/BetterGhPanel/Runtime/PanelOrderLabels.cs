@@ -556,6 +556,9 @@ namespace BetterGhPanel.Runtime
                 if (e.Viewport.GetScreenPort(out int left, out int right, out int bottom, out int top, out _, out _))
                     dimensions = new Size(Math.Abs(right - left), Math.Abs(bottom - top));
                 var clip = DisplayClipTransform(e);
+                // Coloured fills sit this much nearer the camera (parallel views); -1 means
+                // proportional to distance (perspective).
+                double parallelPull = e.Viewport.IsParallelProjection ? PanelGeometryHighlight.FillPull(e.Viewport, 0) : -1;
                 var key = (pass.Viewport, pass.Capture || dimensions != e.Viewport.Size);
 
                 Rectangle bounds = Rectangle.Empty;
@@ -566,7 +569,7 @@ namespace BetterGhPanel.Runtime
                         var labels = panel.Labels;
                         if (labels._drawing || !labels.Visible) continue;
                         // One panel's failure must not cost every other panel its dots.
-                        try { panel.Frame = labels.PrepareFrame(key, clip, camera, dimensions, dpi); }
+                        try { panel.Frame = labels.PrepareFrame(key, clip, camera, parallelPull, dimensions, dpi); }
                         catch (Exception) { continue; }
                         labels._drawing = true;
                         if (!panel.Frame.Bounds.IsEmpty)
@@ -644,7 +647,7 @@ namespace BetterGhPanel.Runtime
             }
         }
 
-        private ViewportFrame PrepareFrame((Guid Viewport, bool Capture) id, Transform clip, Transform camera, Size dimensions, float dpi)
+        private ViewportFrame PrepareFrame((Guid Viewport, bool Capture) id, Transform clip, Transform camera, double parallelPull, Size dimensions, float dpi)
         {
             if (!_frames.TryGetValue(id, out var frame))
             {
@@ -695,6 +698,8 @@ namespace BetterGhPanel.Runtime
                             camera.M21 >= 0 ? max.Y : min.Y, camera.M22 >= 0 ? max.Z : min.Z);
                         nearest = Math.Max(nearest, (camera * nearCorner).Z);
                     }
+                    // A dot must not hide behind its own coloured fill.
+                    if (ColourGeometry) nearest += parallelPull >= 0 ? parallelPull : Math.Abs(nearest) * PanelGeometryHighlight.FillDepthPull;
                     frame.ProjectedDepth[count] = nearest;
                     left = Math.Min(left, (int)point.X); right = Math.Max(right, (int)point.X + 1);
                     top = Math.Min(top, (int)point.Y); bottom = Math.Max(bottom, (int)point.Y + 1);

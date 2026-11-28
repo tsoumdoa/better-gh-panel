@@ -30,6 +30,7 @@ internal static partial class PreviewSafetyChecks
             await VerifySharedBudget(assembly);
             await VerifyColouredFillDepth(assembly, rhino);
             await VerifyMatchLegendWithoutPalette(assembly, rhino);
+            await VerifySelectedWireDepth(assembly, rhino);
         }
         finally { PreviewLimits.UseDefaults(assembly); rhino.Modified = previousModified; }
     }
@@ -216,6 +217,56 @@ internal static partial class PreviewSafetyChecks
         }
         finally
         {
+            if (previous != null) rhino.Views.ActiveView = previous;
+            view.Close();
+        }
+    }
+
+    // A selected row's wire must win over the same curve drawn by Rhino (a
+    // referenced curve), without the old 1% clip shift showing it through objects.
+    private static async Task VerifySelectedWireDepth(Assembly assembly, RhinoDoc rhino)
+    {
+        using var fixture = new PanelHostFixture.Fixture(assembly);
+        var component = fixture.Component;
+        fixture.Document.PreviewMode = GH_PreviewMode.Shaded;
+        fixture.Source.Hidden = fixture.Paired.Hidden = true;
+        fixture.Source.PersistentData.Clear(); fixture.Paired.PersistentData.Clear();
+        var line = new Line(new Point3d(-10, 0, 0), new Point3d(10, 0, 0));
+        fixture.Source.PersistentData.Append(new GH_Line(line), new GH_Path(0));
+        fixture.Solve();
+        await fixture.Ready(() => fixture.Result.RowPositions.Count == 1);
+        var curveId = rhino.Objects.AddLine(line, new ObjectAttributes { ObjectColor = Color.Blue, ColorSource = ObjectColorSource.ColorFromObject });
+        // An opaque Rhino box covers the right half, 2 units above the line.
+        using var cover = Mesh.CreateFromBox(new BoundingBox(new Point3d(3, -3, 1.5), new Point3d(12, 3, 2)), 1, 1, 1);
+        var coverId = rhino.Objects.AddMesh(cover, new ObjectAttributes { ObjectColor = Color.White, ColorSource = ObjectColorSource.ColorFromObject });
+        var previous = rhino.Views.ActiveView;
+        var view = rhino.Views.Add("Panel+ selected wire depth", DefinedViewportProjection.Perspective, new Rectangle(0, 0, 1000, 720), false);
+        try
+        {
+            rhino.Views.ActiveView = view;
+            var bounds = new BoundingBox(new Point3d(-12, -4, -1), new Point3d(12, 4, 2));
+            using var conduit = new ValuePreviewConduit(component, fixture.Document) { Enabled = true, Bounds = bounds, WireThickness = 6 };
+            PreviewMode(component, "FilteredResults");
+            fixture.Select(0);
+            Call(component, "HighlightRows", fixture.Result.Snapshot, new[] { 0 });
+            var viewport = view.ActiveViewport;
+            var shaded = DisplayModeDescription.FindByName("Shaded");
+            viewport.DisplayMode = shaded;
+            foreach (double height in new[] { 30.0, 300.0 })
+            {
+                viewport.SetCameraLocations(Point3d.Origin, new Point3d(0, -.3 * height, height));
+                using var image = view.CaptureToBitmap(new Size(1000, 720), shaded);
+                var wire = PixelAt(image, viewport, new Point3d(-5, 0, 0));
+                Check(wire.G > wire.R + 60 && wire.G > wire.B + 60, $"the selected wire wins over the same Rhino curve (camera {height}, pixel {wire})");
+                var covered = PixelAt(image, viewport, new Point3d(7, 0, 0));
+                Check(!(covered.G > covered.R + 60 && covered.G > covered.B + 60),
+                    $"the selected wire no longer shows through an object 1.5 units in front of it (camera {height}, pixel {covered})");
+            }
+        }
+        finally
+        {
+            rhino.Objects.Delete(curveId, true);
+            rhino.Objects.Delete(coverId, true);
             if (previous != null) rhino.Views.ActiveView = previous;
             view.Close();
         }
