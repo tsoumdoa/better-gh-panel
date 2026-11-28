@@ -218,7 +218,7 @@ internal static partial class PreviewSafetyChecks
             observerField.SetValue(highlight, null);
             Check(stagedBytes > 128 && Count(highlight) == 0 && Status(highlight).Contains("partial") &&
                 PropertyValue<long>(highlight, "RetainedBytes") == 0,
-                "wrapped polyline staging is accounted and a mid-build mutation rejects and releases the generation");
+                $"wrapped polyline staging is accounted and a mid-build mutation rejects and releases the generation (staged={stagedBytes}, count={Count(highlight)}, bytes={PropertyValue<long>(highlight, "RetainedBytes")}, status={Status(highlight)})");
 
             using var hiddenCloud = new PointCloud();
             hiddenCloud.Add(new Point3d(0, 0, 0)); hiddenCloud.Add(new Point3d(1, 0, 0)); hiddenCloud[1].Hidden = true;

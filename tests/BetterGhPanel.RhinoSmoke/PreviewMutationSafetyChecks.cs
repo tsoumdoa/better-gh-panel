@@ -122,7 +122,7 @@ internal static partial class PreviewSafetyChecks
         using var oversized = new PolylineCurve(Enumerable.Range(0, 1_048_577).Select(i => new Point3d(i, i % 2, 0)));
         Set(highlight, new IGH_Goo?[] { new GH_Curve { Value = oversized } }, new[] { 0 }, new[] { 0 });
         Check(Count(highlight) == 0 && PropertyValue<long>(highlight, "RetainedBytes") == 0 && Status(highlight).Contains("partial"),
-            "geometry beyond the compatibility provider limit is rejected before constructing a preview copy");
+            $"geometry beyond the compatibility provider limit is rejected before constructing a preview copy (count={Count(highlight)}, bytes={PropertyValue<long>(highlight, "RetainedBytes")}, status={Status(highlight)})");
         Method(highlight, "Clear").Invoke(highlight, Array.Empty<object>());
         Call(highlight, "SetPreviewLimit", 5000);
     }
