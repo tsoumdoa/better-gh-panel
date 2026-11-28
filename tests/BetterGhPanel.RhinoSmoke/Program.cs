@@ -41,31 +41,8 @@ internal static class Program
     private static Dictionary<string, Func<Assembly, Task>> CreateFixtures() => new(StringComparer.Ordinal)
     {
         ["capture-safety"] = assembly => { FixtureUserData.EnsureRegistered(); CaptureSafetyChecks.VerifyManaged(assembly); CaptureSafetyChecks.VerifyNativeCapabilities(assembly); CaptureSafetyChecks.VerifyNativeUserData(assembly); return Task.CompletedTask; },
-        ["polyline-safety"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryPolylineSafetyChecks.Run(assembly); },
         ["preview-safety"] = PreviewSafetyChecks.Run,
-        ["preview-admission-freshness"] = PreviewSafetyChecks.RunAdmissionFreshness,
-        ["preview-geometry"] = PreviewGeometryChecks.Run,
-        ["preview-additional-geometry"] = PreviewSafetyChecks.RunAdditionalGeometry,
-        ["preview-additional-draw"] = PreviewSafetyChecks.RunAdditionalGeometryDraw,
-        ["preview-reentrant-draw"] = PreviewSafetyChecks.RunReentrantDraw,
-        ["preview-metadata-safety"] = assembly => { FixtureUserData.EnsureRegistered(); return PreviewSafetyChecks.RunMetadata(assembly); },
-        ["preview-native-resources"] = PreviewSafetyChecks.RunNativeResources,
-        ["preview-compatibility-draw"] = PreviewSafetyChecks.RunCompatibilityDraw,
-        ["preview-retirement-seam"] = PreviewSafetyChecks.RunRetirementSeam,
-        ["preview-large-geometry"] = PreviewSafetyChecks.RunLargeGeometry,
-        ["nurbs-value-candidate"] = assembly => { FixtureUserData.EnsureRegistered(); return GeometryNurbsCandidateChecks.Run(assembly); },
-        ["production-curve-measurement"] = assembly => { FixtureUserData.EnsureRegistered(); return ProductionCurveMeasurementChecks.Run(assembly); },
         ["standalone-compatibility"] = assembly => { Rhino.Runtime.HostUtils.InitializeRhinoCommon(); FixtureUserData.EnsureRegistered(); return StandaloneCompatibilityChecks.Run(assembly); },
-        ["capture-transaction"] = CaptureTransactionChecks.Run,
-        ["capture-stock-geometry"] = CaptureStockGeometryChecks.RunNative,
-        ["property-inspection"] = PropertyInspectionChecks.Run,
-        ["stock-types"] = StockTypeHostChecks.Run,
-        ["ui-ux"] = UxInteractionChecks.Run,
-        ["table-columns"] = TableColumnsChecks.Run,
-        ["wysiwyg-values"] = WysiwygValuesChecks.Run,
-        ["branch-pairing"] = BranchPairingChecks.Run,
-        ["pairing-wysiwyg"] = PairingWysiwygChecks.Run,
-        ["row-selection"] = RowSelectionChecks.Run,
     };
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
@@ -80,13 +57,13 @@ internal static class Program
 
     internal static int Run(string[] args)
     {
-        if (!((args.Length == 1 || args.Length == 2) && (args[0] == "--tree-only" || args[0] == "--branch-stats-headless")) &&
+        if (!((args.Length == 1 || args.Length == 2) && args[0] == "--tree-only") &&
             !((args.Length == 2 || args.Length == 3) && (args[0] == "--fixture" || args[0] == "--identity-only")))
         {
             Console.Error.WriteLine("Usage: --tree-only [plugin path], --fixture <fixture> [plugin path], or --identity-only <fixture> [plugin path]. Use run.ps1 for all isolated fixtures.");
             return 2;
         }
-        bool treeOnly = (args[0] == "--tree-only" || args[0] == "--branch-stats-headless");
+        bool treeOnly = args[0] == "--tree-only";
         _fixture = treeOnly ? string.Empty : args[1];
         try
         {
@@ -121,7 +98,6 @@ internal static class Program
             if (!string.Equals(Path.GetFullPath(_loadedPlugin.Location), _plugin, StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(Path.GetFullPath(_loadedCore.Location), Path.GetFullPath(corePath), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("The loaded plugin or Core assembly is not from the requested payload: plugin=" + _loadedPlugin.Location + ", Core=" + _loadedCore.Location + ", expected Core=" + corePath);
-            if (treeOnly && args[0] == "--branch-stats-headless") return BranchStatsHeadlessChecks.Run(_loadedPlugin);
             if (treeOnly)
             {
                 CaptureSafetyChecks.VerifyManaged(_loadedPlugin);

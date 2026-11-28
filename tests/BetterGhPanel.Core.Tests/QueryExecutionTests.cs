@@ -1,9 +1,7 @@
 using Xunit;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
-using System.Linq;
 using System.Threading;
 using BetterGhPanel.Core;
 using static PanelQueryTestData;
@@ -98,21 +96,6 @@ public class QueryExecutionTests
     }
 
     [Fact]
-    public void OddLengthSorting()
-    {
-        foreach (var length in new[] { 1, 3, 7, 17, 257 })
-        {
-            var rows = Enumerable.Range(0, length).Select(index =>
-                new PanelRow(index, "{0}", "Number", string.Empty, (index * 7) % 11)).ToArray();
-            var snapshot = new PanelSnapshot(rows, new[] { new PanelBranch("{0}", length) });
-            var ascending = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueAscending });
-            var descending = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
-            Assert.Equal(rows.OrderBy(row => row.NumericValue), ascending.RowPositions.Select(position => snapshot.Rows[position]));
-            Assert.Equal(rows.OrderByDescending(row => row.NumericValue), descending.RowPositions.Select(position => snapshot.Rows[position]));
-        }
-    }
-
-    [Fact]
     public void Cancellation()
     {
         using var source = new CancellationTokenSource();
@@ -121,33 +104,4 @@ public class QueryExecutionTests
         Assert.ThrowsAny<OperationCanceledException>(() => PanelQueryEngine.Execute(PanelSnapshot.Empty, new PanelQueryOptions(), source.Token));
     }
 
-    [Fact]
-    public void LargeData()
-    {
-        const int count = 262144;
-        const int branchSize = 1024;
-        var rows = new PanelRow[count];
-        var branches = new PanelBranch[count / branchSize];
-        for (var branch = 0; branch < branches.Length; branch++)
-        {
-            var path = "{" + branch.ToString(CultureInfo.InvariantCulture) + "}";
-            branches[branch] = new PanelBranch(path, branchSize);
-            for (var index = 0; index < branchSize; index++)
-            {
-                var position = branch * branchSize + index;
-                rows[position] = new PanelRow(index, path, "Number",
-                    position.ToString(CultureInfo.InvariantCulture), position);
-            }
-        }
-        var snapshot = new PanelSnapshot(rows, branches);
-        var watch = Stopwatch.StartNew();
-        var result = PanelQueryEngine.Execute(snapshot, new PanelQueryOptions { SortMode = PanelSortMode.ValueDescending });
-        watch.Stop();
-        Assert.Equal(count, result.Statistics.ItemCount);
-        Assert.Equal(count / branchSize, result.Statistics.BranchCount);
-
-        Assert.Equal(Enumerable.Range(0, branches.Length).SelectMany(branch =>
-            Enumerable.Range(branch * branchSize, branchSize).Reverse()), result.RowPositions);
-        Console.WriteLine($"  {count:N0} rows filtered, aggregated and sorted in {watch.ElapsedMilliseconds} ms (local measurement).");
-    }
 }

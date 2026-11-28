@@ -37,34 +37,6 @@ namespace BetterGhPanel
         private long _solveGeneration;
         private bool _issuingCaptureRetry;
         private int _captureRetries;
-        // Fixture injection runs at the same boundary as native capture callbacks.
-        internal Action<int, IGH_Goo?>? CaptureObserverForTesting { get; set; }
-        internal Action<GH_Structure<IGH_Goo>, GH_Structure<IGH_Goo>?>? StructureObserverForTesting { get; set; }
-        internal Action? BeforeOutputValidationForTesting { get; set; }
-        private bool _captureDiagnosticsForTesting;
-        internal bool CaptureDiagnosticsForTesting
-        {
-            get => _captureDiagnosticsForTesting;
-            set { _captureDiagnosticsForTesting = value; if (_session != null) _session.GeometryDiagnosticsForTesting = value; }
-        }
-        internal long CaptureValidationPassesForTesting { get; private set; }
-        internal long CaptureValidationVisitsForTesting { get; private set; }
-        internal long CaptureMeasurementSourceVisitsForTesting { get; private set; }
-        internal long MeasurementEntryVisitsForTesting => _session?.GeometryEntryVisitsForTesting ?? 0;
-        internal long MeasurementEntryCopiesForTesting => _session?.GeometryEntryCopiesForTesting ?? 0;
-        internal long MeasurementSourceChecksForTesting => _session?.GeometrySourceChecksForTesting ?? 0;
-        internal long MeasurementSourceScansForTesting => _session?.GeometrySourceScansForTesting ?? 0;
-        internal int MeasurementEntryCountForTesting => _session?.GeometryEntryCountForTesting ?? 0;
-        internal long OutputReconstructionVisitsForTesting { get; private set; }
-        internal long OutputPublicationItemsForTesting { get; private set; }
-        internal void ResetCaptureDiagnosticsForTesting()
-        {
-            CaptureValidationPassesForTesting = CaptureValidationVisitsForTesting = CaptureMeasurementSourceVisitsForTesting =
-                OutputReconstructionVisitsForTesting = OutputPublicationItemsForTesting = 0;
-            _session?.ResetGeometryDiagnosticsForTesting();
-        }
-        private void CountOutputVisits(long visits)
-        { if (CaptureDiagnosticsForTesting) OutputReconstructionVisitsForTesting += visits; }
         private long _outputRequest;
         private PanelQueryOptions? _outputOptions;
         private bool _outputPending;
@@ -120,7 +92,6 @@ namespace BetterGhPanel
                 {
                     _session = new PanelSession(() => Instances.ActiveCanvas?.Invalidate());
                     _session.PreviewMeasurementsChanged += (_, __) => _highlight.InvalidateValues();
-                    _session.GeometryDiagnosticsForTesting = CaptureDiagnosticsForTesting;
                     _session.SetDecimalPlacesResolver(() => DecimalPlaces);
                     _session.SetRoundUpFactorResolver(() => RoundUpFactor);
                     _session.SetFormulaResolver(() => PresentedFormula);

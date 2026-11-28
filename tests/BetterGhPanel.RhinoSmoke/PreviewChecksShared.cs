@@ -40,49 +40,16 @@ internal static partial class PreviewSafetyChecks
     private static BoundingBox Box(object highlight) => PropertyValue<BoundingBox>(highlight, "ClippingBox");
     private static int Count(object highlight) => PropertyValue<int>(highlight, "PreviewCount");
     private static string Status(object highlight) => PropertyValue<string>(highlight, "Status");
-    private static int GreenPixels(Bitmap bitmap)
+    private static IEnumerable<GeometryBase> OwnedGeometry(object highlight)
     {
-        int count = 0;
-        for (int y = 0; y < bitmap.Height; y++) for (int x = 0; x < bitmap.Width; x++)
-        { var color = bitmap.GetPixel(x, y); if (color.G > color.R + 40 && color.G > color.B + 40) count++; }
-        return count;
-    }
-    private static bool RegionColors(Bitmap bitmap, Rhino.Display.RhinoViewport viewport, BoundingBox bounds, Color shade, Color wire)
-    {
-        var p = viewport.WorldToClient(new Point3d(bounds.Min.X, bounds.Min.Y, bounds.Max.Z));
-        var q = viewport.WorldToClient(new Point3d(bounds.Max.X, bounds.Max.Y, bounds.Max.Z));
-        var size = viewport.Size;
-        double sx = bitmap.Width / (double)Math.Max(1, size.Width), sy = bitmap.Height / (double)Math.Max(1, size.Height);
-        int x0 = Math.Max(0, (int)(Math.Min(p.X, q.X) * sx) - 5), x1 = Math.Min(bitmap.Width, (int)(Math.Max(p.X, q.X) * sx) + 6);
-        int y0 = Math.Max(0, (int)(Math.Min(p.Y, q.Y) * sy) - 5), y1 = Math.Min(bitmap.Height, (int)(Math.Max(p.Y, q.Y) * sy) + 6);
-        bool Matches(Color c, Color target) => target == Color.Blue ? c.B > c.R + 15 && c.B > c.G + 15 :
-            target == Color.Yellow ? c.R > c.B + 15 && c.G > c.B + 15 :
-            target == Color.Magenta ? c.R > c.G + 15 && c.B > c.G + 15 :
-            target == Color.Red ? c.R > c.G + 25 && c.R > c.B + 25 :
-            target == Color.Lime ? c.G > c.R + 25 && c.G > c.B + 25 : c.G > c.R + 15 && c.B > c.R + 15;
-        int shadePixels = 0, wirePixels = 0;
-        for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++)
-        { var color = bitmap.GetPixel(x, y); if (Matches(color, shade)) shadePixels++; if (Matches(color, wire)) wirePixels++; }
-        Console.WriteLine($"Preview region {bounds}: {shade.Name}={shadePixels}, {wire.Name}={wirePixels}, pixels={x0},{y0}-{x1},{y1}");
-        return shadePixels > 20 && wirePixels > 2;
-    }
-    private static bool RegionHasColor(Bitmap bitmap, Rhino.Display.RhinoViewport viewport, BoundingBox bounds, Color target)
-    {
-        var p = viewport.WorldToClient(bounds.Min); var q = viewport.WorldToClient(bounds.Max); var size = viewport.Size;
-        double sx = bitmap.Width / (double)Math.Max(1, size.Width), sy = bitmap.Height / (double)Math.Max(1, size.Height);
-        int x0 = Math.Max(0, (int)(Math.Min(p.X, q.X) * sx) - 4), x1 = Math.Min(bitmap.Width, (int)(Math.Max(p.X, q.X) * sx) + 5);
-        int y0 = Math.Max(0, (int)(Math.Min(p.Y, q.Y) * sy) - 4), y1 = Math.Min(bitmap.Height, (int)(Math.Max(p.Y, q.Y) * sy) + 5);
-        int count = 0;
-        for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++)
+        foreach (object pair in (System.Collections.IEnumerable)FieldValue<object>(highlight, "_entries"))
         {
-            var c = bitmap.GetPixel(x, y);
-            bool match = target == Color.Lime ? c.G > c.R + 25 && c.G > c.B + 25 :
-                target == Color.Red ? c.R > c.G + 25 && c.R > c.B + 25 : c.G > c.R + 25 && c.B > c.R + 25;
-            if (match) count++;
+            object entry = pair.GetType().GetProperty("Value")!.GetValue(pair)!;
+            foreach (object leaf in (System.Collections.IEnumerable)FieldValue<object>(entry, "Leaves"))
+                if (FieldValue<object?>(leaf, "_owned") is GeometryBase owned) yield return owned;
         }
-        Console.WriteLine($"Compatibility region {bounds}: {target.Name}={count}, pixels={x0},{y0}-{x1},{y1}");
-        return count > 10;
     }
+
     private static MethodInfo Method(object value, string name) => value.GetType().GetMethod(name, AnyInstance)!;
 
     private sealed class HostileLineCurve : LineCurve

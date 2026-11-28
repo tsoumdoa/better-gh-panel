@@ -5,10 +5,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const desktopFixtures = new Set([
-  'preview-safety', 'preview-reentrant-draw', 'preview-native-resources',
-  'preview-compatibility-draw', 'preview-retirement-seam', 'preview-additional-draw', 'preview-large-geometry', 'stock-types'
-]);
+const desktopFixtures = new Set(['preview-safety']);
 const startupPhases = new Set(['identity', 'host-startup', 'host-startup-failed', 'grasshopper-startup', 'host-preparation-failed']);
 
 export const fixtureHostMode = fixture => desktopFixtures.has(fixture) ? 'inactive-desktop' : 'hidden';

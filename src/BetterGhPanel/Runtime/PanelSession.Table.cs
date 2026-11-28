@@ -16,12 +16,8 @@ namespace BetterGhPanel.Runtime
         private int[][]? _visibleDemand;
         private long _columnGeneration;
 
-        // Test seam for the native fixture: delay submission without replacing
-        // production capture, preparation, admission or completion/source fences.
-        internal Func<Action, bool>? GeometryWorkerSubmissionForTesting { get; set; }
         private bool SubmitGeometryWorker(Action action)
         {
-            if (GeometryWorkerSubmissionForTesting is { } submit) return submit(action);
             _ = Task.Run(action);
             return true;
         }

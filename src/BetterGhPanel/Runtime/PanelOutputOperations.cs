@@ -12,7 +12,7 @@ namespace BetterGhPanel.Runtime
     internal static class PanelOutputOperations
     {
         internal static GH_Structure<IGH_Goo> Values(GH_Structure<IGH_Goo> source, PanelQueryResult query,
-            IReadOnlyList<int> positions, IEnumerable<string> branchPaths, Action<long>? countVisits = null)
+            IReadOnlyList<int> positions, IEnumerable<string> branchPaths)
         {
             var result = new GH_Structure<IGH_Goo>();
             var lookup = new SourceLookup(source);
@@ -30,18 +30,16 @@ namespace BetterGhPanel.Runtime
                 // Append to the list directly: a null is an item, not a missing row.
                 result.EnsurePath(lookup.Path(query.Snapshot.Rows[position].Path)).Add(item);
             }
-            countVisits?.Invoke((long)lookup.PathCount + positions.Count);
             return result;
         }
 
         internal static GH_Structure<IGH_Goo> SetItems(GH_Structure<IGH_Goo> source, PanelQueryResult query,
-            IReadOnlyList<int> positions, IReadOnlyList<string> branchPaths, bool flatten, Action<long>? countVisits = null)
+            IReadOnlyList<int> positions, IReadOnlyList<string> branchPaths, bool flatten)
         {
             var result = new GH_Structure<IGH_Goo>();
             if (positions.Count == 0 && branchPaths.Count == 0) return result;
             var set = query.DisplaySet!;
             var lookup = new SourceLookup(source);
-            long members = 0;
             if (set.IsBranchSet)
             {
                 foreach (string representative in branchPaths)
@@ -54,7 +52,6 @@ namespace BetterGhPanel.Runtime
                         var row = query.Snapshot.Rows[member];
                         var path = new GH_Path(new[] { k }.Concat(lookup.Path(row.Path).Indices).ToArray());
                         result.EnsurePath(path).Add(lookup.Item(row));
-                        members++;
                     }
                 }
             }
@@ -68,19 +65,16 @@ namespace BetterGhPanel.Runtime
                 {
                     var memberRow = query.Snapshot.Rows[member];
                     branch.Add(lookup.Item(memberRow));
-                    members++;
                 }
             }
-            countVisits?.Invoke(lookup.PathCount + members);
             return result;
         }
 
         internal static GH_Structure<IGH_Goo> DisplaySet(GH_Structure<IGH_Goo> source, PanelQueryResult query,
-            IReadOnlyList<int> positions, IEnumerable<string> branchPaths, Action<long>? countVisits = null, bool flatten = false)
+            IReadOnlyList<int> positions, IEnumerable<string> branchPaths, bool flatten = false)
         {
             var result = new GH_Structure<IGH_Goo>();
             var lookup = new SourceLookup(source);
-            long values = 0;
             var set = query.DisplaySet ?? throw new ArgumentException("A completed displayed set is required.", nameof(query));
             foreach (string path in set.IsPaired ? Array.Empty<string>() : branchPaths)
             {
@@ -89,7 +83,6 @@ namespace BetterGhPanel.Runtime
                 if (set.IsBranchSet)
                 {
                     result.Append(new GH_Integer(query.Snapshot.BranchItemCounts[path]), outputPath);
-                    values++;
                 }
             }
             if (!set.IsBranchSet)
@@ -100,9 +93,7 @@ namespace BetterGhPanel.Runtime
                     var path = lookup.Path(query.Snapshot.Rows[position].Path);
                     if (set.IsPaired) path = flatten ? new GH_Path(set.MemberIndices[position]) : path.AppendElement(set.MemberIndices[position]);
                     result.EnsurePath(path).Add(item);
-                    values++;
                 }
-            countVisits?.Invoke(lookup.PathCount + values);
             return result;
         }
 
@@ -113,7 +104,6 @@ namespace BetterGhPanel.Runtime
             private readonly GH_Structure<IGH_Goo> _source;
             private readonly Dictionary<string, int> _indices = new Dictionary<string, int>(StringComparer.Ordinal);
             internal SourceLookup(GH_Structure<IGH_Goo> source) { _source = source; }
-            internal int PathCount => _indices.Count;
             internal GH_Path Path(string text) => new GH_Path(_source.Paths[Index(text)]);
             internal IGH_Goo Item(PanelRow row) => _source.Branches[Index(row.Path)][row.OriginalIndex];
             private int Index(string text)

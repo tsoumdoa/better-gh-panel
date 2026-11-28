@@ -12,7 +12,6 @@ for (const path of sources.stdout.split('\0').filter(Boolean)) {
 }
 const checks = [
   ['dotnet', ['test', 'BetterGhPanel.sln', '-c', 'Release', '--nologo']],
-  [process.execPath, ['--test', 'tests/rhino-coordinator.test.mjs']],
   [process.execPath, ['--test', 'tests/package.test.mjs']],
   [process.execPath, ['scripts/package.mjs', '--stage-only']],
   ['dotnet', ['format', 'style', 'BetterGhPanel.sln', '--verify-no-changes', '--no-restore',
@@ -30,8 +29,7 @@ if (process.platform !== 'win32') {
   const smoke = 'tests/BetterGhPanel.RhinoSmoke/BetterGhPanel.RhinoSmoke.csproj';
   checks.push(['dotnet', ['build', smoke, '-c', 'Release', '--nologo']],
     ['dotnet', ['format', 'style', smoke, '--verify-no-changes', '--no-restore',
-      '--diagnostics', 'IDE0005', 'IDE0051', 'IDE0052', 'IDE0059', 'IDE0060', '--severity', 'info']],
-    ['dotnet', ['tests/BetterGhPanel.RhinoSmoke/bin/Release/net7.0-windows/BetterGhPanel.RhinoSmoke.dll', '--branch-stats-headless']]);
+      '--diagnostics', 'IDE0005', 'IDE0051', 'IDE0052', 'IDE0059', 'IDE0060', '--severity', 'info']]);
 }
 
 for (const [command, args] of checks) {

@@ -74,21 +74,14 @@ namespace BetterGhPanel.Runtime
             HasGeometry = false;
             retired?.Dispose();
         }
-        internal bool Current(out long visits)
+        internal bool Current()
         {
-            visits = 0;
             if (!Present) return true;
-            bool current = PanelTreeOperations.StructureStillMatchesWithVisits(LiveTree, Tree, out int count);
-            visits += count;
-            if (!current) return false;
+            if (!PanelTreeOperations.StructureStillMatches(LiveTree, Tree)) return false;
             var snapshot = Snapshot;
             if (snapshot == null) return true;
-            current = SnapshotCapture.MeasurementSourcesCurrentWithVisits(Sources, Measurements, out count); visits += count;
-            if (!current) return false;
-            current = SnapshotCapture.GraphSourcesCurrentWithVisits(Graphs, out long graphVisits); visits += graphVisits;
-            if (!current) return false;
-            current = SnapshotCapture.ManagedRowsCurrentWithVisits(snapshot, Sources, out count); visits += count;
-            return current && ReferenceEquals(snapshot, Snapshot);
+            return SnapshotCapture.MeasurementSourcesCurrent(Sources, Measurements) && SnapshotCapture.GraphSourcesCurrent(Graphs) &&
+                SnapshotCapture.ManagedRowsCurrent(snapshot, Sources) && ReferenceEquals(snapshot, Snapshot);
         }
         internal void RequireMeasurements(IEnumerable<int> items)
         {

@@ -1,5 +1,4 @@
 using static PanelTestAdapter;
-using static SmokeAssertions;
 using System;
 using System.Diagnostics;
 using System.Drawing;
@@ -12,27 +11,9 @@ using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Parameters;
 using Grasshopper.Kernel.Types;
 
-// Shared setup for the native ownership and clipboard regressions.
+// Shared real-solve setup for the native fixtures.
 internal static class PanelHostFixture
 {
-    internal static async Task RunWithEditor(Assembly assembly, Func<Assembly, Task> check)
-    {
-        // Scheduled solutions need the host editor's native handle, even while
-        // the test's Rhino window remains hidden.
-        var previous = Grasshopper.Instances.DocumentEditor;
-        using var owned = previous == null ? new Grasshopper.GUI.GH_DocumentEditor() : null;
-        var editor = previous ?? owned!;
-        _ = editor.Handle;
-        var setEditor = typeof(Grasshopper.Instances).GetMethod("SetDocumentEditor", BindingFlags.Static | BindingFlags.NonPublic)!;
-        setEditor.Invoke(null, new object?[] { editor });
-        try
-        {
-            await check(assembly);
-            Console.WriteLine("PASS: Output fixture completed.");
-        }
-        finally { setEditor.Invoke(null, new object?[] { previous }); }
-    }
-
     private static async Task Wait(Func<bool> condition)
     {
         var timer = Stopwatch.StartNew();
@@ -49,11 +30,9 @@ internal static class PanelHostFixture
         internal readonly Param_GenericObject Source = new Param_GenericObject(), Paired = new Param_GenericObject();
         internal readonly Param_GenericObject[] Sinks = Enumerable.Range(0, 4).Select(_ => new Param_GenericObject()).ToArray();
         internal readonly GH_Component Component;
-        internal int Solutions { get; private set; }
         internal object Session => PanelTestAdapter.Session(Component);
         internal PanelQueryResult Result => PropertyValue<PanelQueryResult>(Session, "Result");
         private object Selection => PropertyValue<object>(Component, "RowSelection");
-        internal int SelectedCount => PropertyValue<int>(Selection, "Count");
         internal Fixture(Assembly assembly)
         {
             GH_Document.EnableSolutions = true;
@@ -61,7 +40,6 @@ internal static class PanelHostFixture
             Source.CreateAttributes(); Paired.CreateAttributes(); Component.CreateAttributes();
             Component.Attributes.Pivot = new PointF(40, 40);
             Document.AddObject(Source, false); Document.AddObject(Paired, false); Document.AddObject(Component, false);
-            Document.SolutionEnd += (_, __) => Solutions++;
             var primary = new[] { new double[] { 12, 4, 18, 12, 7 }, new double[] { 3, 20 }, Array.Empty<double>() };
             int letter = 0;
             for (int b = 0; b < primary.Length; b++)
@@ -83,17 +61,8 @@ internal static class PanelHostFixture
         internal void Solve() { Source.ExpireSolution(false); Paired.ExpireSolution(false); Document.NewSolution(false, GH_SolutionMode.Silent); }
         internal string Values(int index) => string.Join(",", Sinks[index].VolatileData.AllData(false).Select(value => value?.ToString() ?? "<null>"));
         internal void Query(PanelQueryOptions options) => Session.GetType().GetMethod("UpdateQuery")!.Invoke(Session, new object[] { options });
-        internal void Scope(PanelOutputScope scope) => Component.GetType().GetMethod("SetOutputScope", AnyInstance)!.Invoke(Component, new object[] { scope });
         internal void Select(int position, bool toggle = false, bool preserveSelected = false) => Selection.GetType().GetMethod("Select", AnyInstance)!
             .Invoke(Selection, new object[] { Result, position, toggle, false, preserveSelected });
-        internal void SelectAt(int position, bool toggle = false, bool preserveSelected = false)
-        {
-            Check(Result.TryGetViewIndex(position, out int index), "Native selected row is visible in the current view");
-            Selection.GetType().GetMethod("SelectAt", AnyInstance)!.Invoke(Selection, new object[] { Result, position, index, toggle, false, preserveSelected });
-        }
-        internal void ClearSelection() => Selection.GetType().GetMethod("Clear", AnyInstance)!.Invoke(Selection, Array.Empty<object>());
-        internal void SelectBranch(string path) => Selection.GetType().GetMethod("SelectAll", AnyInstance)!
-            .Invoke(Selection, new object[] { Result, path, true });
         internal async Task Ready(Func<bool> condition, bool allowError = false)
         {
             try

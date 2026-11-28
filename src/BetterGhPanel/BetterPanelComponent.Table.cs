@@ -113,16 +113,11 @@ namespace BetterGhPanel
             }
             return columns;
         }
-        private bool ColumnsCurrent(IReadOnlyList<PanelTableColumn> columns, out long visits)
+        private bool ColumnsCurrent(IReadOnlyList<PanelTableColumn> columns)
         {
-            visits = 0;
             if (columns.Any(column => column.Input == Params.Input[1]) != PairedInputPresent()) return false;
             foreach (var column in columns)
-            {
-                if (!Params.Input.Contains(column.Input) || InputPresent(column.Input) != column.Present) return false;
-                bool current = column.Current(out long count); visits += count;
-                if (!current) return false;
-            }
+                if (!Params.Input.Contains(column.Input) || InputPresent(column.Input) != column.Present || !column.Current()) return false;
             return true;
         }
         internal bool EffectiveTableVisible => (Attributes as BetterPanelAttributes)?.EffectiveTableVisible == true;

@@ -95,43 +95,12 @@ namespace BetterGhPanel
             var context = _geometryContext;
             if (session == null || session.IsDisposed || Locked || !ReferenceEquals(snapshot, _measurementSnapshot) ||
                 !ReferenceEquals(snapshot, session.Snapshot) || !session.GeometrySnapshotAttached(snapshot) || tree == null) return false;
-            long visits = 0;
-            bool HoldersCurrent(IGH_Goo?[] holders, CapturedMeasurementSource?[] sources)
-            {
-                bool result = SnapshotCapture.MeasurementSourcesCurrentWithVisits(holders, sources, out int count);
-                if (CaptureDiagnosticsForTesting) CaptureMeasurementSourceVisitsForTesting += count;
-                visits += count; return result;
-            }
-            bool GraphsCurrent(CaptureGraphWitness[] graphs)
-            {
-                bool result = SnapshotCapture.GraphSourcesCurrentWithVisits(graphs, out long count);
-                visits += count; return result;
-            }
-            bool ManagedCurrent(PanelSnapshot captured, IGH_Goo?[] holders)
-            {
-                bool result = SnapshotCapture.ManagedRowsCurrentWithVisits(captured, holders, out int count);
-                visits += count; return result;
-            }
-            bool UnitsCurrent()
-            {
-                bool result = PanelUnitOperations.InputsStillMatchWithVisits(_preConversionTree, tree, snapshot.UnitConversion, out int count, RoundUpFactor, DecimalPlaces, _scalarInputs, _presentedScalars);
-                visits += count; return result;
-            }
-            bool StructuresCurrent()
-            {
-                bool result = PanelTreeOperations.StructureStillMatchesWithVisits(_liveInputTree, _inputTree, out int count);
-                visits += count;
-                return result;
-            }
-            bool TableCurrent()
-            {
-                bool result = ColumnsCurrent(_tableColumns, out long count); visits += count; return result;
-            }
             bool current = (!ContextFenced || GeometryContextCurrent(context)) &&
-                HoldersCurrent(_sourceItems, _measurementSources) && GraphsCurrent(_captureGraphs) && ManagedCurrent(snapshot, _sourceItems) &&
-                UnitsCurrent() && StructuresCurrent() && TableCurrent() &&
+                SnapshotCapture.MeasurementSourcesCurrent(_sourceItems, _measurementSources) &&
+                SnapshotCapture.GraphSourcesCurrent(_captureGraphs) && SnapshotCapture.ManagedRowsCurrent(snapshot, _sourceItems) &&
+                PanelUnitOperations.InputsStillMatch(_preConversionTree, tree, snapshot.UnitConversion, RoundUpFactor, DecimalPlaces, _scalarInputs, _presentedScalars) &&
+                PanelTreeOperations.StructureStillMatches(_liveInputTree, _inputTree) && ColumnsCurrent(_tableColumns) &&
                 (!ContextFenced || (context.Equals(_geometryContext) && GeometryContextCurrent(context)));
-            if (CaptureDiagnosticsForTesting) { CaptureValidationPassesForTesting++; CaptureValidationVisitsForTesting += visits; }
             if (!current && generation == _solveGeneration && ReferenceEquals(snapshot, _measurementSnapshot))
                 RecaptureStaleMeasurementSource(snapshot);
             return current && generation == _solveGeneration && ReferenceEquals(session, _session) && !session.IsDisposed &&
@@ -203,14 +172,13 @@ namespace BetterGhPanel
                     var context = ReadGeometryContext(out var unitSystem, out double tolerance, out string units);
                     if (!Current()) return;
                     var snapshot = SnapshotCapture.CaptureForMeasurements(queryTree, out var sources, out var measurementSources, out var graphs,
-                        conversion, units, retainedSources, CaptureObserverForTesting, null, queryScalars, inputSeed);
+                        conversion, units, retainedSources, null, null, queryScalars, inputSeed);
                     var tableColumns = CaptureTableColumns(da, inputTree, retainedSources, pairedTree, capturedPairedTree, livePairedTree, pairedError, pairedPresent, units);
-                    StructureObserverForTesting?.Invoke(liveInputTree, livePairedTree);
                     if (!Current()) return;
                     bool hasGeometry = HasGeometry(snapshot) || tableColumns.Exists(column => column.HasGeometry);
                     if (!SnapshotCapture.MeasurementSourcesCurrent(sources, measurementSources) || !SnapshotCapture.GraphSourcesCurrent(graphs) ||
                         !SnapshotCapture.ManagedRowsCurrent(snapshot, sources) || !PanelUnitOperations.InputsStillMatch(preConversionTree, queryTree, conversion, roundUpFactor, DecimalPlaces, scalarInputs, queryScalars) ||
-                        !ColumnsCurrent(tableColumns, out _) ||
+                        !ColumnsCurrent(tableColumns) ||
                         !PanelTreeOperations.StructureStillMatches(liveInputTree, inputTree) ||
                         (hasGeometry && !GeometryContextCurrent(context)))
                     {
